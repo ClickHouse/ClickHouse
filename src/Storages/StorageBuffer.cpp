@@ -1496,8 +1496,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     Stopwatch watch;
     /// Set once writeBlockToDestination has restored the captured identity, to classify a failure below: before
-    /// restoration it means the identity could not be restored (the user was dropped, or the credential expired);
-    /// after it, the failure is from the destination pipeline.
+    /// restoration it comes from rebuilding the flush context, after it from the destination pipeline.
     bool identity_restored = false;
     try
     {
@@ -1509,19 +1508,23 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         /// Discard a block that can never be delivered under its captured identity rather than retaining it (which
         /// would wedge the shard for every other identity, background flush, OPTIMIZE and shutdown, and let a user
-        /// with INSERT on the buffer but not its destination wedge a single-shard buffer with one row). A failure
-        /// to restore the identity (dropped user, expired credential) is local and permanent whether or not the
-        /// destination is remote. After restoration the failure is from the pipeline: for a LOCAL destination
-        /// ACCESS_DENIED / ACCESS_ENTITY_NOT_FOUND mean the user is not authorized at this or a deeper local hop
-        /// (permanent) - discard; for a REMOTE (`Distributed`) destination they can come from the remote shard
-        /// with a valid local identity (local access was already checked when the rows were buffered), so retain
-        /// for retry after the remote RBAC/secret is corrected rather than losing an already-accepted batch.
+        /// with INSERT on the buffer but not its destination wedge a single-shard buffer with one row).
+        /// While the flush context is rebuilt, only a missing access entity (the user or one of its roles was
+        /// dropped) or an expired credential mean the identity is gone for good, whether or not the destination is
+        /// remote; any other failure there (e.g. the user's default database is detached) can recover, so the block
+        /// is retained. After restoration the failure is from the pipeline: for a LOCAL destination ACCESS_DENIED /
+        /// ACCESS_ENTITY_NOT_FOUND mean the user is not authorized at this or a deeper local hop (permanent) -
+        /// discard; for a REMOTE (`Distributed`) destination they can come from the remote shard with a valid local
+        /// identity (local access was already checked when the rows were buffered), so retain for retry after the
+        /// remote RBAC/secret is corrected rather than losing an already-accepted batch.
         const int code = getCurrentExceptionCode();
         const auto destination = getDestinationTable();
         const bool destination_is_remote = destination && destination->isRemote();
-        const bool undeliverable = (flushed_under_user_identity && !identity_restored)
-            || (!destination_is_remote && (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND));
-        if (flushed_under_user_identity && undeliverable)
+        const bool identity_gone = !identity_restored
+            && (code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+        const bool denied_locally = identity_restored && !destination_is_remote
+            && (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+        if (flushed_under_user_identity && (identity_gone || denied_locally))
         {
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
@@ -1594,8 +1597,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /// destination is re-authorized as that user instead of the full-access buffer context. Done before the
     /// destination schema is read so an `Alias` is resolved under that identity rather than the buffer context.
     restoreWriteIdentity(insert_context, *write_identity);
-    /// The identity has been restored; a later failure is from the destination pipeline, not an unrestorable
-    /// (dropped or expired) identity. The caller uses this to decide whether to discard or retain on failure.
+    /// A later failure is from the destination pipeline rather than from rebuilding the flush context; the caller
+    /// classifies failures by this.
     if (identity_restored)
         *identity_restored = true;
 

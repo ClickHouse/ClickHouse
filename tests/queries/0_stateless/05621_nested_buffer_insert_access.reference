@@ -24,3 +24,6 @@ discard diagnostic hides the buffering user: OK
 ## Part G: a non-authorization flush failure is retained, and its error is not leaked cross-identity
 retained-failure error is neutral: OK
 batch retained, not discarded:    1
+## Part H: a failure to rebuild the flush context that leaves the identity valid is retained
+flush without the default database is retained: OK
+delivered once it is attached again: ['from_home']
