@@ -122,6 +122,9 @@ dotted struct sibling	100	7
 dotted struct sibling	1
 dotted prefix	(100,7,11)
 dotted prefix	100	7
+dotted container sibling	([(11)],{'a':11},7,9,9)
+dotted container sibling	9	9	7
+dotted container sibling	1
 ORC
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -178,6 +181,9 @@ dotted struct sibling	100	7
 dotted struct sibling	1
 dotted prefix	(100,7,11)
 dotted prefix	100	7
+dotted container sibling	([(11)],{'a':11},7,9,9)
+dotted container sibling	9	9	7
+dotted container sibling	1
 Avro
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]

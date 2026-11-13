@@ -65,7 +65,8 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 namespace
 {
 
-void traverseComplexType(Poco::JSON::Object::Ptr type, ColumnNameToFieldId & result, const String & current_path)
+void traverseComplexType(
+    Poco::JSON::Object::Ptr type, ColumnNameToFieldId & result, const String & current_path, std::unordered_map<String, String> * struct_paths)
 {
     auto type_str = type->getValue<String>(Iceberg::f_type);
     if (type_str == "map")
@@ -75,11 +76,11 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, ColumnNameToFieldId & res
         auto key_name = Nested::concatenateName(current_path, "key");
         auto value_name = Nested::concatenateName(current_path, "value");
         if (type->isObject(Iceberg::f_key))
-            traverseComplexType(type->getObject(Iceberg::f_key), result, key_name);
+            traverseComplexType(type->getObject(Iceberg::f_key), result, key_name, struct_paths);
         result[key_name] = key_id;
 
         if (type->isObject(Iceberg::f_value))
-            traverseComplexType(type->getObject(Iceberg::f_value), result, value_name);
+            traverseComplexType(type->getObject(Iceberg::f_value), result, value_name, struct_paths);
         result[value_name] = value_id;
         return;
     }
@@ -88,7 +89,7 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, ColumnNameToFieldId & res
         auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
         auto element_name = Nested::concatenateName(current_path, "element");
         if (type->isObject(Iceberg::f_element))
-            traverseComplexType(type->getObject(Iceberg::f_element), result, element_name);
+            traverseComplexType(type->getObject(Iceberg::f_element), result, element_name, struct_paths);
         result[element_name] = element_id;
         return;
     }
@@ -101,8 +102,10 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, ColumnNameToFieldId & res
             auto field_id = field->getValue<Int32>(Iceberg::f_id);
             auto child_path = Nested::concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
             if (field->isObject(Iceberg::f_type))
-                traverseComplexType(field->getObject(Iceberg::f_type), result, child_path);
+                traverseComplexType(field->getObject(Iceberg::f_type), result, child_path, struct_paths);
             result[child_path] = field_id;
+            if (struct_paths)
+                (*struct_paths)[child_path] = current_path;
         }
         return;
     }
@@ -1637,7 +1640,7 @@ bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
     return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
 }
 
-ColumnNameToFieldId IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
+ColumnNameToFieldId IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema, std::unordered_map<String, String> * struct_paths)
 {
     ColumnNameToFieldId result;
     for (UInt32 i = 0; i < schema->size(); ++i)
@@ -1646,8 +1649,10 @@ ColumnNameToFieldId IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Pt
         auto field_id = current_object->getValue<Int32>(Iceberg::f_id);
         auto cur_name = current_object->getValue<String>(Iceberg::f_name);
         if (current_object->isObject(Iceberg::f_type))
-            traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name);
+            traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name, struct_paths);
         result[cur_name] = field_id;
+        if (struct_paths)
+            (*struct_paths)[cur_name] = "";
     }
     return result;
 }
@@ -1739,7 +1744,9 @@ ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
 {
     auto column_mapper = std::make_shared<ColumnMapper>();
-    column_mapper->setStorageColumnEncoding(IcebergSchemaProcessor::traverseSchema(fields));
+    std::unordered_map<String, String> struct_paths;
+    column_mapper->setStorageColumnEncoding(IcebergSchemaProcessor::traverseSchema(fields, &struct_paths));
+    column_mapper->setIcebergStructPaths(std::move(struct_paths));
     column_mapper->setIcebergStringPaths(IcebergSchemaProcessor::collectIcebergStringPaths(fields));
     column_mapper->setIcebergOptionalPaths(IcebergSchemaProcessor::collectIcebergOptionalPaths(fields));
     column_mapper->setIcebergTimeFieldIds(IcebergSchemaProcessor::collectIcebergTimeFieldIds(fields));

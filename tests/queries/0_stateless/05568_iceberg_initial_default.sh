@@ -81,6 +81,10 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
     elif mode == "dotted_prefix":
         struct = next(f for f in fields if f["name"] == "t")["type"]
         struct["fields"].append({"id": new_id(), "name": "s", "required": False, "type": "int", "initial-default": 11})
+    elif mode == "dotted_container_sibling":
+        struct = next(f for f in fields if f["name"] == "t")["type"]
+        for name in ("s.j", "m.j"):
+            struct["fields"].append({"id": new_id(), "name": name, "required": False, "type": "int", "initial-default": 9})
     elif mode == "readd_in_list":
         by_name = {f["name"]: f for f in fields}
         u = by_name["u"]["type"]["fields"][1]["type"]["element"]
@@ -468,7 +472,7 @@ for format in Parquet ORC Avro; do
                 SELECT 'dotted element', ${optimize}, tupleElement(t, 'd.e'), t.\`d.e\`.f FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = ${optimize};"
         done
 
-        # Neither is an element `s.j` next to a scalar or struct `s`, in the file or added after it.
+        # Neither is an element `s.j` next to a scalar, struct, list or map `s`, in the file or added after it.
         table="${format}_dotted_sibling"
         create+="
             CREATE TABLE t_dotted_sibling (t Tuple(s Nullable(Int32), \`s.j\` Nullable(Int32), k Nullable(Int32)))
@@ -496,6 +500,17 @@ for format in Parquet ORC Avro; do
         after+="
             SELECT 'dotted prefix', t FROM icebergLocal('${table}/');
             SELECT 'dotted prefix', t.\`s.j\`, t.k FROM icebergLocal('${table}/');"
+        table="${format}_dotted_container_sibling"
+        create+="
+            CREATE TABLE t_dotted_container_sibling (t Tuple(s Array(Tuple(x Nullable(Int32))), m Map(String, Nullable(Int32)), k Nullable(Int32)))
+            ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t_dotted_container_sibling VALUES (([(11)], {'a': 11}, 7));"
+        evolve+=("${table}" dotted_container_sibling)
+        bind+=("${table}")
+        after+="
+            SELECT 'dotted container sibling', t FROM icebergLocal('${table}/');
+            SELECT 'dotted container sibling', t.\`s.j\`, t.\`m.j\`, t.k FROM icebergLocal('${table}/');
+            SELECT 'dotted container sibling', count() FROM icebergLocal('${table}/') WHERE t.\`s.j\` = 9;"
     fi
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"

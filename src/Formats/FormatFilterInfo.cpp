@@ -138,6 +138,15 @@ void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encod
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
+String ColumnMapper::getIcebergParentPath(const String & path) const
+{
+    if (const String * struct_path = getIcebergStructPath(path))
+        return *struct_path;
+    /// A list element, map key or map value is named `element`, `key` or `value`.
+    auto pos = path.rfind('.');
+    return pos == String::npos ? String{} : path.substr(0, pos);
+}
+
 UInt64 ColumnMapper::getIcebergInitialDefaultsHash() const
 {
     if (iceberg_initial_defaults.empty())

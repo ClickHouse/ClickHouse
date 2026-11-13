@@ -69,26 +69,15 @@ bool SchemaConverter::isAbsentFromFile(const String & path) const
     if (field_id == encoding.end())
         return false;
 
-    /// The struct that has the field: the longest proper prefix of the path that is a field of the mapper.
-    std::optional<String> parent;
-    for (size_t pos = path.size(); pos != 0 && (pos = path.rfind('.', pos - 1)) != String::npos;)
-    {
-        if (encoding.contains(path.substr(0, pos)))
-        {
-            parent = path.substr(0, pos);
-            break;
-        }
-    }
-
     const std::optional<UnorderedSetWithMemoryTracking<Int64>> * level_field_ids = &top_level_field_ids;
-    if (parent)
+    if (const String parent = column_mapper->getIcebergParentPath(path); !parent.empty())
     {
-        auto it = struct_field_ids.find(*parent);
+        auto it = struct_field_ids.find(parent);
         if (it == struct_field_ids.end())
         {
             /// The struct is not in the file either: the field has a value only if the struct has a default.
-            const Field * parent_default = column_mapper->getIcebergInitialDefault(*parent);
-            return parent_default && parent_default->getType() == Field::Types::Tuple && isAbsentFromFile(*parent);
+            const Field * parent_default = column_mapper->getIcebergInitialDefault(parent);
+            return parent_default && parent_default->getType() == Field::Types::Tuple && isAbsentFromFile(parent);
         }
         level_field_ids = &it->second;
     }

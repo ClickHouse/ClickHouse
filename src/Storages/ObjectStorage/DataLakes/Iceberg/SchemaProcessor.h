@@ -135,7 +135,8 @@ public:
     /// or the legacy `schema` when there is no `schemas`.
     static void checkTableSchemas(const Poco::JSON::Object & metadata);
 
-    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema);
+    /// With `struct_paths`, also the paths of `ColumnMapper::getIcebergStructPath`.
+    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema, std::unordered_map<String, String> * struct_paths = nullptr);
 
     /// The largest field id in `schema`, nested ids included.
     static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);

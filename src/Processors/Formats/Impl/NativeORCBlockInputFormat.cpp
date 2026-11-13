@@ -1428,33 +1428,33 @@ static std::optional<const ORC::Type *> findORCFieldByIcebergId(const ORC::Type 
     return struct_type.getSubtype(static_cast<uint64_t>(it - field_ids->begin()));
 }
 
+/// The fields of the data lake schema from the top-level one down to the field `path`, with their field ids: empty if `path` is
+/// not a field.
+static VectorWithMemoryTracking<std::pair<String, Int64>> getIcebergFieldLevels(const String & path, const ColumnMapper & column_mapper)
+{
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    VectorWithMemoryTracking<std::pair<String, Int64>> levels;
+    for (String level = path; !level.empty(); level = column_mapper.getIcebergParentPath(level))
+    {
+        auto field = encoding.find(level);
+        if (field == encoding.end())
+            return {};
+        levels.emplace_back(level, field->second);
+    }
+    std::ranges::reverse(levels);
+    return levels;
+}
+
 /// Whether the column `path` (a field of the data lake schema or a tuple element of one) is absent from the file, matching
 /// each struct on its way from the root by Iceberg field id, and whether its `initial-default` applies: inside an absent
 /// struct it applies only if every struct from the absent one down has a struct default (else NULL, as in Parquet).
 static std::pair<bool, bool> getORCFieldAbsence(
     const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, ORCFieldIdsCache & cache)
 {
-    const auto & encoding = column_mapper.getStorageColumnEncoding();
-    auto field = encoding.find(path);
-    if (field == encoding.end())
-        return {false, false};
-
-    VectorWithMemoryTracking<std::pair<String, Int64>> levels;
-    for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
-        if (auto ancestor = encoding.find(path.substr(0, pos)); ancestor != encoding.end())
-            levels.emplace_back(ancestor->first, ancestor->second);
-    levels.emplace_back(path, field->second);
-
+    const auto levels = getIcebergFieldLevels(path, column_mapper);
     const ORC::Type * level_type = &file_schema;
     for (size_t i = 0; i < levels.size(); ++i)
     {
-        /// Field ids are unique: a struct on the way that has the column's own id holds the column (a top-level `a.b` next to `a`).
-        if (i + 1 < levels.size())
-        {
-            auto column_field = findORCFieldByIcebergId(*level_type, field->second, cache);
-            if (column_field && *column_field)
-                return {false, false};
-        }
         auto orc_field = findORCFieldByIcebergId(*level_type, levels[i].second, cache);
         if (!orc_field)
             return {false, false};
@@ -1487,28 +1487,13 @@ static DataTypePtr makeTypeHintFromSubcolumns(
 static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
     const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, ORCFieldIdsCache & cache)
 {
-    const auto & encoding = column_mapper.getStorageColumnEncoding();
-    auto field = encoding.find(path);
-    if (field == encoding.end())
+    const auto levels = getIcebergFieldLevels(path, column_mapper);
+    if (levels.empty())
         return std::nullopt;
-
-    VectorWithMemoryTracking<Int64> levels;
-    for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
-        if (auto ancestor = encoding.find(path.substr(0, pos)); ancestor != encoding.end())
-            levels.push_back(ancestor->second);
-    levels.push_back(field->second);
-
     const ORC::Type * level_type = &file_schema;
-    for (size_t i = 0; i < levels.size(); ++i)
+    for (const auto & [_, field_id] : levels)
     {
-        /// Field ids are unique: a struct on the way that has the column's own id holds the column (as in `getORCFieldAbsence`).
-        if (i + 1 < levels.size())
-        {
-            auto column_field = findORCFieldByIcebergId(*level_type, field->second, cache);
-            if (column_field && *column_field)
-                return column_field;
-        }
-        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i], cache);
+        auto orc_field = findORCFieldByIcebergId(*level_type, field_id, cache);
         if (!orc_field || !*orc_field)
             return orc_field;
         level_type = *orc_field;
@@ -3497,77 +3482,22 @@ static const ORC::Type * findStructElementORCType(
     return nullptr;
 }
 
-static bool hasORCElements(const ORC::Type & orc_type)
+/// The element of the struct `path` that the subcolumn path `subpath` starts with, and the rest. Of a struct with the elements `s`
+/// and `s.j`, `s.j` is the element `s.j`.
+static std::pair<String, String> splitStructElementName(const String & path, const String & subpath, const ColumnMapper & column_mapper)
 {
-    const auto kind = orc_type.getKind();
-    return kind == ORC::STRUCT || kind == ORC::LIST || kind == ORC::MAP || kind == ORC::UNION;
-}
-
-static bool hasORCTypeWithIcebergId(const ORC::Type & orc_type, Int64 field_id)
-{
-    checkStackSize();
-    Int64 id = 0;
-    if (orc_type.hasAttributeKey("iceberg.id") && tryParse(id, orc_type.getAttributeValue("iceberg.id")) && id == field_id)
-        return true;
-    for (uint64_t i = 0; i < orc_type.getSubtypeCount(); ++i)
-        if (hasORCTypeWithIcebergId(*orc_type.getSubtype(i), field_id))
-            return true;
-    return false;
-}
-
-/// The element of the struct `path` that the subcolumn path `subpath` starts with, and the rest: of the prefixes of `subpath` that are
-/// fields of the struct, the one whose field in the file is or has below it the longest one's field id, else the shortest one the file
-/// has that can hold the rest, else the shortest one it lacks whose `initial-default` is not a scalar, else the longest.
-static std::pair<String, String> splitStructElementName(
-    const String & path,
-    const String & subpath,
-    const ORC::Type * orc_type,
-    const ColumnMapper & column_mapper,
-    bool ignore_case,
-    ORCFieldIdsCache & field_ids_cache)
-{
-    const auto & encoding = column_mapper.getStorageColumnEncoding();
-    VectorWithMemoryTracking<size_t> ends;
-    for (size_t pos = subpath.find('.'); pos != String::npos; pos = subpath.find('.', pos + 1))
-        if (encoding.contains(path + "." + subpath.substr(0, pos)))
-            ends.push_back(pos);
-    if (encoding.contains(path + "." + subpath))
-        ends.push_back(subpath.size());
-    if (ends.empty())
-        return Nested::splitName(subpath);
-
-    auto split = [&](size_t end) -> std::pair<String, String>
-    { return {subpath.substr(0, end), end == subpath.size() ? String{} : subpath.substr(end + 1)}; };
-
-    const Int64 longest_field_id = encoding.at(path + "." + subpath.substr(0, ends.back()));
-    VectorWithMemoryTracking<const ORC::Type *> element_orc_types;
-    for (size_t end : ends)
+    for (size_t end = subpath.size(); end != String::npos && end != 0; end = subpath.rfind('.', end - 1))
     {
-        const auto * element_orc_type
-            = findStructElementORCType(path, subpath.substr(0, end), orc_type, column_mapper, ignore_case, field_ids_cache);
-        if (element_orc_type && hasORCTypeWithIcebergId(*element_orc_type, longest_field_id))
-            return split(end);
-        element_orc_types.push_back(element_orc_type);
+        const String * struct_path = column_mapper.getIcebergStructPath(path + "." + subpath.substr(0, end));
+        if (struct_path && *struct_path == path)
+            return {subpath.substr(0, end), end == subpath.size() ? String{} : subpath.substr(end + 1)};
     }
-    for (size_t i = 0; i < ends.size(); ++i)
-        if (element_orc_types[i] && (ends[i] == subpath.size() || hasORCElements(*element_orc_types[i])))
-            return split(ends[i]);
-    for (size_t i = 0; i < ends.size(); ++i)
-    {
-        if (element_orc_types[i])
-            continue;
-        const Field * value = column_mapper.getIcebergInitialDefault(path + "." + subpath.substr(0, ends[i]));
-        const auto type = value ? value->getType() : Field::Types::Null;
-        if (type == Field::Types::Null || type == Field::Types::Tuple || type == Field::Types::Array || type == Field::Types::Map)
-            return split(ends[i]);
-    }
-    return split(ends.back());
+    return Nested::splitName(subpath);
 }
 
 /// The type of the column `path` (the file's `orc_type`, if it has one) whose requested subcolumns have the given paths below it
 /// and types, to read it under the data lake schema: a list is an array of its element, a struct has the requested elements, a
-/// whole one with its type. A list is told from a struct with a field `element` by the file; if the file has none, by the type
-/// of its `initial-default`, else by the encoding.
+/// whole one with its type.
 static DataTypePtr makeTypeHintFromSubcolumns(
     const String & path,
     const ORC::Type * orc_type,
@@ -3577,19 +3507,18 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     ORCFieldIdsCache & field_ids_cache)
 {
     /// A subcolumn below a list is an array of the subcolumn of its element.
+    const String element_path = path + ".element";
     bool is_list = false;
     if (orc_type)
         is_list = orc_type->getKind() == ORC::LIST;
-    else if (const Field * value = column_mapper.getIcebergInitialDefault(path))
-        is_list = value->getType() == Field::Types::Array;
     else
-        is_list = column_mapper.getStorageColumnEncoding().contains(path + ".element");
+        is_list = column_mapper.getStorageColumnEncoding().contains(element_path) && !column_mapper.getIcebergStructPath(element_path);
     if (is_list && std::ranges::all_of(subcolumns, [](const auto & subcolumn) { return isArray(subcolumn.second); }))
     {
         for (auto & [_, type] : subcolumns)
             type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
         return std::make_shared<DataTypeArray>(makeTypeHintFromSubcolumns(
-            path + ".element",
+            element_path,
             orc_type ? orc_type->getSubtype(0) : nullptr,
             std::move(subcolumns),
             column_mapper,
@@ -3602,7 +3531,7 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>> nested_subcolumns;
     for (const auto & [subpath, type] : subcolumns)
     {
-        auto [name, rest] = splitStructElementName(path, subpath, orc_type, column_mapper, ignore_case, field_ids_cache);
+        auto [name, rest] = splitStructElementName(path, subpath, column_mapper);
         if (!whole_types.contains(name) && !nested_subcolumns.contains(name))
             names.push_back(name);
         if (rest.empty())

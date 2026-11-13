@@ -132,6 +132,20 @@ public:
     /// 0 if there are no defaults.
     UInt64 getIcebergInitialDefaultsHash() const;
 
+    /// The path of the struct that has the field `path` of the storage encoding, empty for a top-level field, or nullptr for a list
+    /// element or a map key or value. A field name can have dots, so `t.s.j` can be the field `s.j` of `t` or the field `j` of `t.s`.
+    void setIcebergStructPaths(std::unordered_map<String, String> && iceberg_struct_paths_)
+    {
+        iceberg_struct_paths = std::move(iceberg_struct_paths_);
+    }
+    const String * getIcebergStructPath(const String & path) const
+    {
+        auto it = iceberg_struct_paths.find(path);
+        return it == iceberg_struct_paths.end() ? nullptr : &it->second;
+    }
+    /// The path of the struct, list or map that has the field `path`, empty for a top-level field.
+    String getIcebergParentPath(const String & path) const;
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
@@ -145,6 +159,7 @@ private:
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
     std::unordered_map<String, IcebergInitialDefault> iceberg_initial_defaults;
+    std::unordered_map<String, String> iceberg_struct_paths;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
