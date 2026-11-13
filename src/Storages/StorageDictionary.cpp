@@ -400,7 +400,8 @@ void registerStorageDictionary(StorageFactory & factory)
 
             bool lazy_load = external_dictionaries_loader.getObjectLazyLoadOverride(*abstract_dictionary_configuration, "dictionary")
                 .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
-            if (isFreshDefinition(args.mode) && !lazy_load)
+            /// Not on `RESTORE`: the source data is restored after the dictionary.
+            if (isFreshDefinition(args.mode) && args.mode != LoadingStrictnessLevel::RESTORE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
                 /// and throw an exception if the loading is failed.
@@ -419,7 +420,8 @@ void registerStorageDictionary(StorageFactory & factory)
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
         String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
 
-        if (isFreshDefinition(args.mode))
+        /// Not on `RESTORE`: loading the dictionary to compare its structure would read a source that is not restored yet.
+        if (isFreshDefinition(args.mode) && args.mode != LoadingStrictnessLevel::RESTORE)
         {
             const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();

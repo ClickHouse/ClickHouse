@@ -21,6 +21,9 @@ node = cluster.add_instance(
     with_remote_database_disk=False,
 )
 
+# A second replica of a `Replicated` database, which must load the definitions the first one stored.
+replica = cluster.add_instance("replica", with_zookeeper=True)
+
 UK_SETTINGS = {"enable_unique_key": "1"}
 
 
@@ -117,3 +120,35 @@ def test_forbidden_auth_header_is_refused_on_first_use():
     assert node.query("SELECT count() FROM system.databases WHERE name = 'catalog_forbidden'") == "1\n"
     assert "is forbidden" in node.query_and_get_error("CHECK DATABASE catalog_forbidden")
     node.query("DROP DATABASE catalog_forbidden SYNC")
+
+
+def test_new_replica_loads_refreshable_view_whose_target_was_replaced():
+    # A refreshable view without APPEND in a Replicated database needs a replicated target, but the target can be
+    # replaced after the view exists. A replica that joins later still has to load the view.
+    database = "replay_refreshable"
+    for instance in (node, replica):
+        instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    path = f"/clickhouse/databases/{database}"
+    node.query(f"CREATE DATABASE {database} ENGINE = Replicated('{path}', 'shard1', 'replica1')")
+    node.query(
+        f"CREATE TABLE {database}.target_data (id Int64) ENGINE = MergeTree ORDER BY id",
+        settings={"distributed_ddl_output_mode": "none"},
+    )
+    node.query(
+        f"CREATE TABLE {database}.target (id Int64) ENGINE = ReplicatedMergeTree ORDER BY id",
+        settings={"distributed_ddl_output_mode": "none"},
+    )
+    node.query(
+        f"CREATE MATERIALIZED VIEW {database}.view REFRESH EVERY 100 YEAR TO {database}.target (id Int64) "
+        f"AS SELECT id FROM {database}.target_data",
+        settings={"distributed_ddl_output_mode": "none"},
+    )
+    node.query(f"DROP TABLE {database}.target SYNC", settings={"distributed_ddl_output_mode": "none"})
+    node.query(f"RENAME TABLE {database}.target_data TO {database}.target", settings={"distributed_ddl_output_mode": "none"})
+
+    replica.query(f"CREATE DATABASE {database} ENGINE = Replicated('{path}', 'shard1', 'replica2')")
+    replica.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    assert replica.query(f"SELECT name FROM system.tables WHERE database = '{database}' ORDER BY name") == "target\nview\n"
+
+    for instance in (node, replica):
+        instance.query(f"DROP DATABASE {database} SYNC")

@@ -4,8 +4,8 @@
 
 # A refreshable materialized view (no APPEND) in a Replicated database with a
 # non-replicated target is structurally invalid: the storage constructor must reject it
-# when it is defined but accept it on a replay (`RESTORE`), because such an MV can exist: its target can be
-# replaced after the MV was created. So we must be able to read it if someone has such an invalid MV in their database.
+# when it is defined, but such an MV can exist (its target can be replaced after the MV was created).
+# A backup is user input, so `RESTORE` validates it like `CREATE`.
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
@@ -55,13 +55,11 @@ EOF
 
 ${CLICKHOUSE_CLIENT} -q "SELECT 'attached', count() FROM system.tables WHERE database = '${db}' AND name = 'bad_mv'"
 
-# (2) Round-trip through `BACKUP`/`RESTORE`. We must be able to read the existing RMV (even though it may be invalid).
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none <<EOF
-BACKUP DATABASE ${db} TO Memory('bk') FORMAT Null;
-DROP DATABASE ${db} SYNC;
-RESTORE DATABASE ${db} FROM Memory('bk') FORMAT Null;
-EOF
-
-${CLICKHOUSE_CLIENT} -q "SELECT 'restored', name FROM system.tables WHERE database = '${db}' AND name = 'bad_mv'"
+# (2) `RESTORE` of a backup of the database is refused. Replicas loading it are covered by test_stored_definition_replay.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -m -q "
+    BACKUP DATABASE ${db} TO Memory('bk') FORMAT Null;
+    RESTORE DATABASE ${db} AS ${db}_restored FROM Memory('bk') FORMAT Null;
+" 2>&1 | grep -q "BAD_ARGUMENTS" && echo 'restore_rejected'
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "DROP DATABASE IF EXISTS ${db}_restored SYNC"
 
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "DROP DATABASE ${db} SYNC"

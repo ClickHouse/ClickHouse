@@ -33,3 +33,17 @@ RESTORE TABLE t_suspicious_codec FROM Disk('backups', '${CLICKHOUSE_DATABASE}_05
 SELECT x FROM t_suspicious_codec ORDER BY x;
 DROP TABLE t_suspicious_codec;
 "
+
+# A view whose definer is not there yet, since users are restored after tables, is still restored.
+definer="definer_05629_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -m -q "
+DROP USER IF EXISTS ${definer};
+CREATE USER ${definer};
+CREATE VIEW v_definer DEFINER = ${definer} SQL SECURITY DEFINER AS SELECT 1 AS x;
+BACKUP TABLE v_definer TO Disk('backups', '${CLICKHOUSE_DATABASE}_05629_definer') FORMAT Null;
+DROP TABLE v_definer SYNC;
+DROP USER ${definer};
+RESTORE TABLE v_definer FROM Disk('backups', '${CLICKHOUSE_DATABASE}_05629_definer') FORMAT Null;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'v_definer';
+DROP TABLE v_definer;
+"

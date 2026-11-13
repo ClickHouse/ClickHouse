@@ -2151,8 +2151,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// A replay on a secondary replica or from stored metadata is not user input.
     const bool full_definition = create.attach && !create.attach_short_syntax && !isStubAttach(create) && !is_secondary_query
         && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
+    /// A replica that recovers re-creates the tables from the database's stored metadata, like a secondary replica.
+    const bool is_replay = is_secondary_query || getContext()->isRecoveryFromStoredMetadata();
     auto mode = getLoadingStrictnessLevel(
-        create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query, full_definition, is_restore_from_backup);
+        create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_replay, full_definition, is_restore_from_backup);
 
     /// A replayed definition stays loadable with the setting off.
     if (isFreshDefinition(mode))
@@ -4478,7 +4480,8 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
         if (definer_name != current_user_name)
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
-        if (isFreshDefinition(mode))
+        /// Not on `RESTORE`: users are restored after the tables, so the definer may not exist yet.
+        if (isFreshDefinition(mode) && mode != LoadingStrictnessLevel::RESTORE)
         {
             auto & access_control = context_->getAccessControl();
             const auto user = access_control.read<User>(definer_name);
