@@ -525,7 +525,10 @@ struct KeyRangeHistogram
     /// False for a key type it cannot bucket, so the caller falls back to the per-block extremes.
     bool add(const IColumn & column)
     {
-        const IColumn * values = &column;
+        /// A key read from a part with sparse serialization arrives as `ColumnSparse`; without
+        /// unwrapping it the type dispatch below fails and the keys fall back to the envelope.
+        const auto full_column = column.convertToFullIfWrapped();
+        const IColumn * values = full_column.get();
         const NullMap * null_map = nullptr;
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(values))
         {

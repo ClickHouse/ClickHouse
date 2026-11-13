@@ -72,6 +72,29 @@ WHERE current_database = currentDatabase()
     AND log_comment = '05023_shuffled'
     AND type = 'QueryFinish';
 
+-- The same with sparse serialization of the build key: the histogram must see through `ColumnSparse`.
+DROP TABLE IF EXISTS mr_dim_sparse;
+CREATE TABLE mr_dim_sparse (id UInt64, tag String) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.0;
+INSERT INTO mr_dim_sparse SELECT * FROM mr_dim_shuffled;
+
+SELECT count(), sum(f.v)
+FROM mr_fact AS f
+INNER JOIN mr_dim_sparse AS d ON f.id = d.id
+FORMAT Null
+SETTINGS log_comment = '05023_sparse';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time) > 0,
+    argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time) * 2
+        > argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time)
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND log_comment = '05023_sparse'
+    AND type = 'QueryFinish';
+
 SELECT
     (SELECT count() FROM mr_fact AS f INNER JOIN mr_dim_shuffled AS d ON f.id = d.id
      SETTINGS enable_join_runtime_filters_index_analysis = 0) =
@@ -147,6 +170,7 @@ SELECT
 DROP TABLE mr_fact;
 DROP TABLE mr_dim;
 DROP TABLE mr_dim_shuffled;
+DROP TABLE mr_dim_sparse;
 DROP TABLE mr_fact_top;
 DROP TABLE mr_dim_top;
 DROP TABLE mr_fact_top_signed;
