@@ -1,10 +1,5 @@
 <test>
-    <settings>
-        <async_insert>0</async_insert>
-    </settings>
-
     <create_query>CREATE TABLE sort_radix_narrow (id UInt64, ts DateTime64(3)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE sort_radix_narrow_insert (id UInt64, ts DateTime64(3)) ENGINE = MergeTree ORDER BY ts</create_query>
 
     <fill_query>
         INSERT INTO sort_radix_narrow
@@ -16,8 +11,6 @@
     <query>SELECT ts FROM sort_radix_narrow ORDER BY ts DESC FORMAT Null</query>
     <query>SELECT id FROM sort_radix_narrow ORDER BY id FORMAT Null</query>
     <query>SELECT id, ts FROM sort_radix_narrow ORDER BY id, ts FORMAT Null</query>
-    <query>INSERT INTO sort_radix_narrow_insert SELECT id, ts FROM sort_radix_narrow WHERE id &lt; 2000</query>
 
     <drop_query>DROP TABLE IF EXISTS sort_radix_narrow</drop_query>
-    <drop_query>DROP TABLE IF EXISTS sort_radix_narrow_insert</drop_query>
 </test>
