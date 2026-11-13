@@ -122,6 +122,10 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true, const String & timezone_for_timestamptz = "UTC");
 
+    /// Reconstructs one schema field's ClickHouse type exactly as the read path does, so the
+    /// write-side schema check can compare Iceberg-equivalent types instead of raw ones.
+    static DataTypePtr getFieldTypeFromIcebergField(const Poco::JSON::Object::Ptr & field, bool allow_geo_parser);
+
     /// The first Iceberg spec violation in `schema`, or nullopt: a field, list element, map key or value without the members
     /// its type needs, or invalid geo type parameters. With `is_table_schema`, also a non-`struct` schema or an
     /// `identifier-field-ids` entry that is not a required primitive field outside lists, maps and optional structs.
