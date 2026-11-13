@@ -1,7 +1,7 @@
 # cuVS for the `ivf` vector similarity index, on the GPU island like cuDF (see gpu_island_target in cmake/cuda.cmake).
-# Only what the index uses is built: the balanced k-means and `select_k`, with the clustering and distances they call.
-# The generated instantiations come from evaluating upstream's cpp/CMakeLists.txt (cuvs_evaluate_upstream), so they
-# follow the submodule; the source list is ours.
+# Only what the index uses is built: the balanced k-means and `select_k`, with the clustering and the L2 distances they
+# call. The generated instantiations and JIT-LTO fragments come from evaluating upstream's cpp/CMakeLists.txt
+# (cuvs_evaluate_upstream), so they follow the submodule; the source list is ours.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using cuVS")
@@ -29,6 +29,7 @@ add_library (cuco::cuco ALIAS _cuco)
 
 include ("${CUVS_CPP_DIR}/cmake/modules/generate_inst_matrix.cmake")
 include ("${CUVS_CPP_DIR}/cmake/modules/generate_string_matrix.cmake")
+include ("${CMAKE_CURRENT_SOURCE_DIR}/island_jit_lto.cmake")
 
 set (BUILD_MG_ALGOS OFF)
 
@@ -47,28 +48,57 @@ macro (cuvs_evaluate_upstream BEGIN END)
     cmake_language (EVAL CODE "${_cuvs_code}")
 endmacro ()
 
+# The JIT-LTO fragments, of which those of the L2 distances are built: the pairwise distances that k-means calls link them
+# at run time.
+cuvs_evaluate_upstream (
+    "  generate_inst_matrix(\n    cagra_search_inst_files"
+    "  include(cmake/modules/generate_cutile_kernels.cmake)")
 # The instantiations, of which `select_k` and the pairwise distances are built.
 cuvs_evaluate_upstream (
     "  generate_inst_matrix(\n    pairwise_matrix_dispatch_inst_files"
     "  add_library(\n    cuvs_objs OBJECT")
 
+# No interface compile options on contrib targets (cmake/sanitize_targets.cmake); add_jit_lto_kernel sets them.
+set_target_properties (jit_lto_kernel_usage_requirements PROPERTIES INTERFACE_COMPILE_OPTIONS "")
+list (FILTER jit_lto_files INCLUDE REGEX "/generated_kernels/distance/pairwise_matrix/[a-z_]+/pairwise_matrix_[a-z_]*l2_expanded_")
+list (FILTER pairwise_matrix_dispatch_inst_files INCLUDE REGEX "_op_l2_expanded\\.cu$")
+
+# `cuvs::distance::distance` of upstream's src/distance/distance.cu for the L2 distances only, which k-means calls: the
+# rest of that file instantiates every metric, and `pairwise_distance` chooses among them at run time.
+file (READ "${CUVS_CPP_DIR}/src/distance/distance.cu" CUVS_DISTANCE_SOURCE)
+string (FIND "${CUVS_DISTANCE_SOURCE}" "#define instantiate_cuvs_distance_distance(" _cuvs_begin)
+string (FIND "${CUVS_DISTANCE_SOURCE}" "#undef instantiate_cuvs_distance_distance_by_algo" _cuvs_end)
+if (_cuvs_begin EQUAL -1 OR _cuvs_end EQUAL -1 OR NOT _cuvs_end GREATER _cuvs_begin)
+    message (FATAL_ERROR "contrib/cuvs/cpp/src/distance/distance.cu changed: cannot find the instantiations of `distance`")
+endif ()
+math (EXPR _cuvs_length "${_cuvs_end} - ${_cuvs_begin}")
+string (SUBSTRING "${CUVS_DISTANCE_SOURCE}" ${_cuvs_begin} ${_cuvs_length} CUVS_DISTANCE_INSTANTIATIONS)
+string (REGEX REPLACE
+    "instantiate_cuvs_distance_distance_by_algo\\([ \n]*cuvs::distance::DistanceType::[A-Za-z0-9]+\\);"
+    "" CUVS_DISTANCE_INSTANTIATIONS "${CUVS_DISTANCE_INSTANTIATIONS}")
+file (WRITE "${CMAKE_CURRENT_BINARY_DIR}/distance_l2.cu"
+    "#include \"${CUVS_CPP_DIR}/src/distance/detail/kernels/rbf_fin_op.cuh\"\n"
+    "#include \"${CUVS_CPP_DIR}/src/distance/distance-inl.cuh\"\n\n"
+    "${CUVS_DISTANCE_INSTANTIATIONS}\n"
+    "instantiate_cuvs_distance_distance_by_algo(cuvs::distance::DistanceType::L2Expanded);\n"
+    "instantiate_cuvs_distance_distance_by_algo(cuvs::distance::DistanceType::L2SqrtExpanded);\n"
+    "#undef instantiate_cuvs_distance_distance_by_algo\n"
+    "#undef instantiate_cuvs_distance_distance\n")
+
 set (CUVS_SOURCES
     src/core/omp_wrapper.cpp
+    src/cluster/kmeans_balanced_fit_float.cu
+    src/cluster/kmeans_balanced_predict_float.cu
     src/cluster/detail/minClusterDistanceCompute.cu
     src/cluster/kmeans_cluster_cost.cu
-    src/cluster/kmeans_fit_float.cu
-    src/cluster/kmeans_predict_float.cu
-    src/cluster/kmeans_balanced_fit_float.cu
-    src/cluster/kmeans_balanced_fit_predict_float.cu
-    src/cluster/kmeans_balanced_predict_float.cu
-    src/distance/distance.cu
-    src/distance/pairwise_distance.cu
     src/distance/top_1_nn.cu)
 list (TRANSFORM CUVS_SOURCES PREPEND "${CUVS_CPP_DIR}/")
 
 list (APPEND CUVS_SOURCES
+    "${CMAKE_CURRENT_BINARY_DIR}/distance_l2.cu"
     ${select_k_inst_files}
-    ${pairwise_matrix_dispatch_inst_files})
+    ${pairwise_matrix_dispatch_inst_files}
+    ${jit_lto_files})
 
 add_library (_cuvs STATIC ${CUVS_SOURCES})
 

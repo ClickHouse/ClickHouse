@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Recall of the `ivf` vector similarity index and of `vectorSearch` against exact search: both distance functions, after
-# reload and merge, all lists probed. Without a usable GPU the searches by `ORDER BY ... LIMIT` run with `hnsw`, and the
+# reload and merge, all lists probed. The vectors are clustered, as real data are. Without a usable GPU the searches by `ORDER BY ... LIMIT` run with `hnsw`, and the
 # checks that need the device print what they would, so the test runs everywhere.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -18,17 +18,22 @@ K=10
 LISTS=64
 SETTINGS="vector_search_ivf_probes = 16"
 
-# Reproducible pseudo-random vectors in [-1, 1).
+# Reproducible pseudo-random vectors around 64 centers in [-1, 1), as an IVF index expects of real data: uniformly random
+# vectors have no clusters, and their nearest neighbours are spread over all lists.
+vector_of()
+{
+    echo "arrayMap(i -> toFloat32((cityHash64($1 % 64, i) % 2000) / 1000 - 1 + (cityHash64($1, i) % 200) / 1000 - 0.1), range($DIMENSIONS))"
+}
+
 vectors()
 {
     local from=$1 count=$2
-    echo "SELECT number, arrayMap(i -> toFloat32((cityHash64(number, i) % 2000) / 1000 - 1), range($DIMENSIONS))
-          FROM numbers($from, $count)"
+    echo "SELECT number, $(vector_of number) FROM numbers($from, $count)"
 }
 
 query_vector()
 {
-    $CLICKHOUSE_CLIENT --query "SELECT arrayMap(i -> toFloat32((cityHash64(1000000 + $1, i) % 2000) / 1000 - 1), range($DIMENSIONS))"
+    $CLICKHOUSE_CLIENT --query "SELECT $(vector_of "(1000000 + $1)")"
 }
 
 USE_GPU=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'USE_GPU'")
@@ -113,8 +118,7 @@ echo "-- vectorSearch: all the queries at once, against an exact search of each"
 if [ "$HAS_DEVICE" == "1" ]; then
     $CLICKHOUSE_CLIENT --query "
         CREATE TABLE queries (q UInt32, vec Array(Float32)) ENGINE = MergeTree ORDER BY q;
-        INSERT INTO queries SELECT number, arrayMap(i -> toFloat32((cityHash64(1000000 + number, i) % 2000) / 1000 - 1), range($DIMENSIONS))
-            FROM numbers($QUERIES);"
+        INSERT INTO queries SELECT number, $(vector_of "(1000000 + number)") FROM numbers($QUERIES);"
     for table in t_L2Distance t_merged; do
         $CLICKHOUSE_CLIENT --query "
             WITH
