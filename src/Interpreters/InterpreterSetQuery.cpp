@@ -23,6 +23,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/SettingsChanges.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -107,22 +108,20 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
-
-    /// `make_distributed_plan` may be inferred from `distributed_plan_workers_num`/`distributed_plan_worker_cluster`,
-    /// and this clause is applied again later, so an in-query reset counts as an explicit 0, not "unset".
-    auto default_settings = ast.default_settings;
-    if (std::erase(default_settings, "make_distributed_plan"))
-        changes.setSetting("make_distributed_plan", false);
-
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
-        getContext()->checkSettingsConstraintsForSettingsReset(default_settings, changes, SettingSource::QUERY);
+        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, changes, SettingSource::QUERY);
         rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(changes);
-    getContext()->resetSettingsToDefaultValue(default_settings);
+    getContext()->resetSettingsToDefaultValue(ast.default_settings);
+
+    /// `make_distributed_plan` may be inferred from `distributed_plan_workers_num`/`distributed_plan_worker_cluster`,
+    /// and this clause is applied again later, so an in-query reset counts as an explicit 0, not "unset".
+    if (std::ranges::contains(ast.default_settings, "make_distributed_plan"))
+        getContext()->setSetting("make_distributed_plan", Field(false));
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
