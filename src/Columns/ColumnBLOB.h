@@ -122,7 +122,7 @@ public:
         ColumnWithTypeAndName wrapped_column,
         CompressionCodecPtr codec,
         UInt64 client_revision,
-        const std::optional<FormatSettings> & format_settings)
+        const FormatSettings & format_settings)
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
@@ -131,7 +131,7 @@ public:
         NativeWriter::setAggregateFunctionStateVersions(wrapped_column.type, client_revision);
         auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
-            *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
+            *serialization, column_to_write, compressed_buffer, &format_settings, 0, column_to_write->size(), client_revision);
         compressed_buffer.finalize();
     }
 

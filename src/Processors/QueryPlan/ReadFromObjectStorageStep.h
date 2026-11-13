@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -71,7 +72,9 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 #endif
 
-    bool requestReadingInOrder() const;
+    /// Returns true only if the pipeline will deliver one sorted run per output port. Decides
+    /// everything here: it runs during optimization, and the caller drops the sorting step on true.
+    bool requestReadingInOrder(int direction, const QueryPlanOptimizationSettings & optimization_settings);
 
     // The name of the returned type is misleading, this order has nothing in common with the corresponding SELECT query
     // and is taken from the storage metadata.
@@ -91,6 +94,9 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
+    /// Registers a JOIN runtime filter on `column_name` that every row of this read passes.
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+
 private:
     /// What the main read keeps besides `required_names` when columns are split off.
     NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
@@ -103,6 +109,10 @@ private:
     /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
     StorageMetadataPtr iterator_metadata;
 
+    RuntimeFilterIndexAnalysisDescriptors join_runtime_filters_for_file_pruning;
+    /// Built from `join_runtime_filters_for_file_pruning` by `createIterator`, shared by the file iterator and the formats.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+
     /// Memoized `getOrCreateDataLakeReadEstimate`, which walks the manifests; reset when the filter changes.
     /// A storage without an estimate returns nullptr without any work, so nullptr is not memoized.
     mutable std::shared_ptr<const DataLakeReadEstimate> data_lake_read_estimate;
@@ -112,7 +122,9 @@ private:
 
     ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
-    const std::optional<DB::FormatSettings> format_settings;
+    /// Not const: the in-order path pins Parquet's preserve_order, which is what makes a single
+    /// file a sorted run at all.
+    std::optional<DB::FormatSettings> format_settings;
     const bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
@@ -120,6 +132,13 @@ private:
     const bool distributed_processing;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
     bool allow_top_k_query_condition_cache = true;
+
+    /// Set by a successful requestReadingInOrder. `read_in_order_files` is the file list
+    /// enumerated there, so initializePipeline consumes it instead of re-deciding.
+    /// `read_in_order_attempted` keeps the enumeration, which consumes the iterator, single-shot.
+    bool read_in_order_attempted = false;
+    bool read_in_order = false;
+    ObjectInfos read_in_order_files;
 #if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
     /// "bucket_id" task parameter will be used to determine what part of the data to read.
@@ -135,6 +154,12 @@ private:
 
     /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
     bool isReadPinnedToListedGeneration() const;
+
+    bool sortingKeyIsComputableFromSourceHeader() const;
+    Pipe buildInOrderPipe(
+        const ContextPtr & local_context,
+        const FormatFilterInfoPtr & format_filter_info,
+        const std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey> & top_k_query_condition_cache_key);
 };
 
 }
