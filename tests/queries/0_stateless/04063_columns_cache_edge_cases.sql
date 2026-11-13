@@ -5,6 +5,7 @@ SET max_threads = 1; -- Ensure deterministic read order for cache testing
 SET use_columns_cache = 1;
 SET enable_reads_from_columns_cache = 1;
 SET enable_writes_to_columns_cache = 1;
+SET use_statistics_for_sum_avg_aggregation = 0;
 SYSTEM DROP COLUMNS CACHE;
 
 -- ============================================================================

@@ -340,6 +340,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1100,6 +1101,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1160,6 +1162,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1220,6 +1223,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1280,6 +1284,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1340,6 +1345,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1400,6 +1406,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1460,6 +1467,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1520,6 +1528,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1580,6 +1589,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1640,6 +1650,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1700,6 +1711,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1760,6 +1772,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1820,6 +1833,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2103,6 +2117,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2163,6 +2178,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2223,6 +2239,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2283,6 +2300,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2343,6 +2361,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2403,6 +2422,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2463,6 +2483,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2523,6 +2544,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2583,6 +2605,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2643,6 +2666,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2703,6 +2727,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3123,6 +3148,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3183,6 +3209,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3243,6 +3270,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3303,6 +3331,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3363,6 +3392,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3424,6 +3454,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3485,6 +3516,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3546,6 +3578,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3607,6 +3640,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3668,6 +3702,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3729,6 +3764,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3790,6 +3826,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3851,6 +3888,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3912,6 +3950,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3973,6 +4012,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4034,6 +4074,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4139,6 +4180,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4199,6 +4241,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4259,6 +4302,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4454,6 +4498,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4515,6 +4560,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4576,6 +4622,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4637,6 +4684,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4697,6 +4745,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4757,6 +4806,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4817,6 +4867,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4877,6 +4928,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4937,6 +4989,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4997,6 +5050,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5057,6 +5111,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5117,6 +5172,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5177,6 +5233,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5237,6 +5294,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5297,6 +5355,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5358,6 +5417,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5419,6 +5479,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5480,6 +5541,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5541,6 +5603,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5602,6 +5665,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5663,6 +5727,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5724,6 +5789,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5785,6 +5851,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5846,6 +5913,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5907,6 +5975,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5968,6 +6037,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6029,6 +6099,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6090,6 +6161,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6126,6 +6198,51 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_binary_excluded_from_llvm)' --workflow "PR" --ci --timestamp
+
+  unit_tests_amd_debug:
+    runs-on: [self-hosted, pr-amd-large]
+    needs:
+    - build_amd_debug
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2RlYnVnKQ==') }}
+    name: "Unit tests (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_debug)' --workflow "PR" --ci --timestamp
 
   unit_tests_asan_ubsan:
     runs-on: [self-hosted, pr-amd-large]
@@ -6421,6 +6538,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6488,6 +6606,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6555,6 +6674,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6621,6 +6741,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6687,6 +6808,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6753,6 +6875,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6819,6 +6942,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6885,6 +7009,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6951,6 +7076,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7017,6 +7143,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7083,6 +7210,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7143,6 +7271,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7203,6 +7332,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7263,6 +7393,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7323,6 +7454,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7389,6 +7521,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7450,6 +7583,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7511,6 +7645,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7572,6 +7707,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7633,6 +7769,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7694,6 +7831,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7760,6 +7898,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7820,6 +7959,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7881,6 +8021,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7941,6 +8082,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8001,6 +8143,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8067,6 +8210,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8127,6 +8271,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8188,6 +8333,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8248,6 +8394,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8308,6 +8455,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8374,6 +8522,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8382,6 +8531,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 1/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8407,6 +8560,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/6)' --workflow "PR" --ci --timestamp
@@ -8440,6 +8595,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8448,6 +8604,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 2/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8473,6 +8633,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/6)' --workflow "PR" --ci --timestamp
@@ -8506,6 +8668,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8514,6 +8677,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzYp') }}
     name: "Performance Comparison (amd_release, master_head, 3/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8539,6 +8706,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/6)' --workflow "PR" --ci --timestamp
@@ -8572,6 +8741,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8580,6 +8750,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 4/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8605,6 +8779,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/6)' --workflow "PR" --ci --timestamp
@@ -8638,6 +8814,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8646,6 +8823,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 5/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8671,6 +8852,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/6)' --workflow "PR" --ci --timestamp
@@ -8704,6 +8887,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8712,6 +8896,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2LzYp') }}
     name: "Performance Comparison (amd_release, master_head, 6/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8737,9 +8925,595 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/6)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_1_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 1/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 1/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_2_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 2/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 2/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_3_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 3/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 3/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_4_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0Lzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 4/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 4/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_5_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1Lzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 5/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 5/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_6_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2Lzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 6/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 6/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_7_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA3Lzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 7/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 7/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_amd_release_master_head_8_8:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_release
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA4Lzgp') }}
+    name: "Performance Comparison (amd_release, master_head, 8/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (amd_release, master_head, 8/8)' --workflow "PR" --ci --timestamp
 
   performance_comparison_arm_release_master_head_1_6:
     runs-on: [self-hosted, pr-arm-medium]
@@ -8770,6 +9544,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8778,6 +9553,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 1/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8803,6 +9582,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/6)' --workflow "PR" --ci --timestamp
@@ -8836,6 +9617,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8844,6 +9626,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 2/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8869,6 +9655,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/6)' --workflow "PR" --ci --timestamp
@@ -8902,6 +9690,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8910,6 +9699,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzYp') }}
     name: "Performance Comparison (arm_release, master_head, 3/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -8935,6 +9728,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/6)' --workflow "PR" --ci --timestamp
@@ -8968,6 +9763,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8976,6 +9772,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 4/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9001,6 +9801,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/6)' --workflow "PR" --ci --timestamp
@@ -9034,6 +9836,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9042,6 +9845,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 5/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9067,6 +9874,8 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/6)' --workflow "PR" --ci --timestamp
@@ -9100,6 +9909,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9108,6 +9918,10 @@ jobs:
     - unit_tests_tsan_function_prop_fuzzer
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2LzYp') }}
     name: "Performance Comparison (arm_release, master_head, 6/6)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -9133,9 +9947,595 @@ jobs:
 
       - name: Run
         id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/6)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_1_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAxLzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 1/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 1/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_2_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAyLzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 2/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 2/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_3_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCAzLzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 3/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 3/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_4_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA0Lzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 4/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 4/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_5_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA1Lzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 5/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 5/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_6_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA2Lzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 6/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 6/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_7_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA3Lzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 7/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 7/8)' --workflow "PR" --ci --timestamp
+
+  performance_comparison_arm_release_master_head_8_8:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_binary
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_msan
+    - build_arm_release
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_targeted
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_amd_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYXJtX3JlbGVhc2UsIG1hc3Rlcl9oZWFkLCA4Lzgp') }}
+    name: "Performance Comparison (arm_release, master_head, 8/8)"
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        env:
+          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Performance Comparison (arm_release, master_head, 8/8)' --workflow "PR" --ci --timestamp
 
   performance_comparison_arm_release_master_head_iceberg_local_1_3:
     runs-on: [self-hosted, pr-arm-medium]
@@ -9166,6 +10566,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9232,6 +10633,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9298,6 +10700,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9364,6 +10767,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9430,6 +10834,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9496,6 +10901,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9672,6 +11078,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9738,6 +11145,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9821,6 +11229,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_amd_llvm_coverage
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
@@ -9900,6 +11309,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10021,6 +11431,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10087,6 +11498,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10153,6 +11565,7 @@ jobs:
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10417,17 +11830,33 @@ jobs:
     - llvm_coverage
     - parser_memory_check
     - performance_comparison_amd_release_master_head_1_6
+    - performance_comparison_amd_release_master_head_1_8
     - performance_comparison_amd_release_master_head_2_6
+    - performance_comparison_amd_release_master_head_2_8
     - performance_comparison_amd_release_master_head_3_6
+    - performance_comparison_amd_release_master_head_3_8
     - performance_comparison_amd_release_master_head_4_6
+    - performance_comparison_amd_release_master_head_4_8
     - performance_comparison_amd_release_master_head_5_6
+    - performance_comparison_amd_release_master_head_5_8
     - performance_comparison_amd_release_master_head_6_6
+    - performance_comparison_amd_release_master_head_6_8
+    - performance_comparison_amd_release_master_head_7_8
+    - performance_comparison_amd_release_master_head_8_8
     - performance_comparison_arm_release_master_head_1_6
+    - performance_comparison_arm_release_master_head_1_8
     - performance_comparison_arm_release_master_head_2_6
+    - performance_comparison_arm_release_master_head_2_8
     - performance_comparison_arm_release_master_head_3_6
+    - performance_comparison_arm_release_master_head_3_8
     - performance_comparison_arm_release_master_head_4_6
+    - performance_comparison_arm_release_master_head_4_8
     - performance_comparison_arm_release_master_head_5_6
+    - performance_comparison_arm_release_master_head_5_8
     - performance_comparison_arm_release_master_head_6_6
+    - performance_comparison_arm_release_master_head_6_8
+    - performance_comparison_arm_release_master_head_7_8
+    - performance_comparison_arm_release_master_head_8_8
     - performance_comparison_arm_release_master_head_iceberg_local_1_3
     - performance_comparison_arm_release_master_head_iceberg_local_2_3
     - performance_comparison_arm_release_master_head_iceberg_local_3_3
@@ -10489,6 +11918,7 @@ jobs:
     - stress_test_arm_release
     - stress_test_arm_tsan
     - style_check
+    - unit_tests_amd_debug
     - unit_tests_amd_llvm_coverage
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer

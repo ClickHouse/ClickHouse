@@ -123,6 +123,7 @@ private:
     std::atomic_bool has_background_exception{false};
     void writingThread();
     void stopThread();
+    void onCancel() noexcept override;
     void rethrowBackgroundExceptionIfAny();
 };
 
