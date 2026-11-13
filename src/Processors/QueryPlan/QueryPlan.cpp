@@ -918,6 +918,33 @@ static void disableProjectionsForDistributedPlan(QueryPlanOptimizationSettings &
 }
 
 
+/// Drop every `StreamInQueryResultCacheStep` from the plan. The step buffers the rows passing through
+/// it into a `QueryResultCacheWriter`, which is node-local state without a serialized representation,
+/// so a fragment carrying it cannot be shipped to a worker. It is a pass-through, so removing it only
+/// means the subquery result is not written to the cache - which is what a distributed query did
+/// before the step was allowed into the plan at all. The step is kept when the plan takes the local
+/// fallback in `applyDistributedPlanFallbackToLocal`: nothing is serialized there, and the cache works as usual.
+/// It is removed as soon as the plan is accepted for distributed execution, before `QueryPlan::optimize`:
+/// the Cascades optimizer clones every step of the plan, and this step cannot be cloned.
+static void removeQueryResultCacheWriteSteps(QueryPlan::Node *& root)
+{
+    while (typeid_cast<const StreamInQueryResultCacheStep *>(root->step.get()))
+        root = root->children.front();
+
+    std::vector<QueryPlan::Node *> stack = {root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto *& child : node->children)
+        {
+            while (typeid_cast<const StreamInQueryResultCacheStep *>(child->step.get()))
+                child = child->children.front();
+            stack.push_back(child);
+        }
+    }
+}
+
 bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings)
 {
     if (!settings.make_distributed_plan)
@@ -945,6 +972,8 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
     if (!reason.has_value())
     {
         distributed_plan_decision = DistributedPlanDecision::Distributed;
+        /// The plan will be split into fragments, so no cache write step may stay in it.
+        removeQueryResultCacheWriteSteps(root);
         return false;
     }
 
@@ -1010,31 +1039,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 }
 
 
-/// Drop every `StreamInQueryResultCacheStep` from the plan. The step buffers the rows passing through
-/// it into a `QueryResultCacheWriter`, which is node-local state without a serialized representation,
-/// so a fragment carrying it cannot be shipped to a worker. It is a pass-through, so removing it only
-/// means the subquery result is not written to the cache - which is what a distributed query did
-/// before the step was allowed into the plan at all. The step is kept when the plan takes the local
-/// fallback in `applyDistributedPlanFallbackToLocal`: nothing is serialized there, and the cache works as usual.
-static void removeQueryResultCacheWriteSteps(QueryPlan::Node *& root)
-{
-    while (typeid_cast<const StreamInQueryResultCacheStep *>(root->step.get()))
-        root = root->children.front();
-
-    std::vector<QueryPlan::Node *> stack = {root};
-    while (!stack.empty())
-    {
-        auto * node = stack.back();
-        stack.pop_back();
-        for (auto *& child : node->children)
-        {
-            while (typeid_cast<const StreamInQueryResultCacheStep *>(child->step.get()))
-                child = child->children.front();
-            stack.push_back(child);
-        }
-    }
-}
-
 DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// A non-serializable step found here
@@ -1050,7 +1054,8 @@ DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimization
                 "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
                 DistributedPlanLocalObject::kindName(entry->kind), entry->name);
 
-    /// The plan is really split into fragments, so no cache write step may survive into one.
+    /// The plan is really split into fragments, so no cache write step may survive into one. The steps
+    /// are normally removed already when the plan is accepted in `applyDistributedPlanFallbackToLocal`.
     removeQueryResultCacheWriteSteps(root);
 
     DistributedPlanCut cut;
