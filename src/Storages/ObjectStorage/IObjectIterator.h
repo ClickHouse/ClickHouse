@@ -7,6 +7,7 @@
 #include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -40,6 +41,8 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
+    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
     virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
     virtual bool isArchive() const { return false; }
@@ -50,6 +53,8 @@ struct ObjectInfo
 
     /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+
+    virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
 
     /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
     /// It is only an estimate used to report the progress of a query, not to compute any result.
@@ -139,7 +144,7 @@ class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 public:
     ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        const String & format_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
@@ -151,7 +156,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    String format;
+    StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
     StorageID storage_id;

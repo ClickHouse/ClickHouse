@@ -37,11 +37,13 @@ struct PartitionKeyFromSpec
     std::optional<DB::KeyDescription> key_description;
 };
 
+/// With keep_nullable the key columns keep the Nullable type of an optional source column.
 PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context);
+    DB::ContextPtr context,
+    bool keep_nullable = false);
 
 /// NOTE: tricky part to support RENAME column.
 /// Takes ActionDAG representation of user's WHERE expression and
@@ -63,8 +65,13 @@ private:
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key = nullptr;
     std::optional<DB::KeyCondition> partition_key_condition;
+    /// The same key over Nullable inputs, for a partition tuple that holds NULL.
+    std::optional<DB::KeyDescription> nullable_partition_key;
+    std::optional<DB::KeyCondition> nullable_partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
+    /// Float bounds exclude NaN, so these are used for a data file unless its `nan_value_counts` proves the column has none.
+    std::unordered_map<Int32, DB::KeyCondition> nan_relaxed_min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
     std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
 

@@ -65,15 +65,6 @@ const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, size_
     });
 }
 
-const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const
-{
-    return buildRowSkipDataImpl(null_map, join_mask_column, buffer, [&](auto && set_at)
-    {
-        for (size_t i : indexes.getData())
-            set_at(i);
-    });
-}
-
 void LazyOutput::addRef(UInt64 ref_word)
 {
     chassert(ref_word != 0);
@@ -203,7 +194,10 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                     total_byte_size += left_sizes[left_idx];
 
                     if (row_store_row_length)
-                        total_byte_size += *row_store_row_length;
+                    {
+                        const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
+                        total_byte_size += block->row_store->byteSizeAt(refWordRowNo(ref_word));
+                    }
 
                     if (has_columns)
                     {

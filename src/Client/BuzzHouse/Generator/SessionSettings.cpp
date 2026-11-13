@@ -370,7 +370,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"compile_sort_description", trueOrFalseSetting},
        {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
        {"correlated_subqueries_use_in_memory_buffer", trueOrFalseSetting},
-       {"count_distinct_optimization", trueOrFalseSetting},
        {"defer_partition_pruning_after_final", trueOrFalseSetting},
        {"enable_adaptive_aggregator", trueOrFalseSetting},
        {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
@@ -396,6 +395,15 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"group_by_top_k_optimization_shared_boundary", trueOrFalseSetting},
+       {"hash_join_layout",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'auto'", "'serial'", "'parallel'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'auto'", "'serial'", "'parallel'"},
+            false)},
        {"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
@@ -453,6 +461,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_group_by_constant_keys", trueOrFalseSetting},
        {"optimize_group_by_function_keys", trueOrFalseSetting},
        {"optimize_if_chain_to_multiif", trueOrFalseSetting},
+       {"optimize_if_transform_const_strings_to_lowcardinality", trueOrFalseSetting},
        {"optimize_if_transform_strings_to_enum", trueOrFalseSetting},
        {"optimize_injective_functions_in_group_by", trueOrFalseSetting},
        {"optimize_injective_functions_in_limit_by", trueOrFalseSetting},
@@ -515,6 +524,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_execute_functions_after_sorting", trueOrFalseSetting},
        {"query_plan_filter_push_down", trueOrFalseSetting},
        {"query_plan_filter_push_down_below_limit_by", trueOrFalseSetting},
+       {"query_plan_join_order_use_interesting_orders", trueOrFalseSetting},
        {"query_plan_join_shard_by_pk_ranges", trueOrFalseSetting},
        {"query_plan_join_swap_table",
         CHSetting(
@@ -639,6 +649,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_statistics", trueOrFalseSetting},
        {"use_statistics_for_min_max_aggregation", trueOrFalseSetting},
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
+       {"use_statistics_for_sum_avg_aggregation", trueOrFalseSetting},
        {"use_streaming_marks_compression", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_single_string_sort_column", trueOrFalseSetting},
@@ -1655,6 +1666,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"output_format_vortex_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},
     {"page_cache_inject_eviction", trueOrFalseSettingNoOracle},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
@@ -2323,6 +2335,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"remote_filesystem_read_method",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
+        nonzero_rows_values.emplace_back("max_distributed_connections");
         max_block_sizes.insert(
             max_block_sizes.end(),
             {/*"max_analyze_depth",
@@ -2330,7 +2343,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_ast_elements",*/
              "max_autoincrement_series",
              /// "max_backup_bandwidth",
-             "max_distributed_connections",
              /// "max_distributed_depth",
              "max_download_threads",
              /// "max_expanded_ast_elements",

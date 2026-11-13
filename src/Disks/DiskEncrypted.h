@@ -35,6 +35,9 @@ public:
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
+    ReservationPtr reserveAndGetUnreservedSpace(
+        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space) override;
+
     bool existsFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);

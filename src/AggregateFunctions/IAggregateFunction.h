@@ -179,6 +179,42 @@ public:
     /// Delete data for aggregation.
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
+    /// Create `count` states at `place + i * stride`; on exception, destroy the ones already created.
+    /// Zero-sized states (`stride == 0`) are not bounded by memory, so their number is limited per `NestedStatesScope`.
+    void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
+
+    /// While alive, the zero-sized states created on this thread count against one limit. A `create` that creates
+    /// states of several nested functions (`-Tuple`) opens one around them and counts the zero-sized ones itself.
+    class NestedStatesScope
+    {
+    public:
+        NestedStatesScope() : outermost(!active)
+        {
+            if (outermost)
+            {
+                active = true;
+                zero_sized_states = 0;
+            }
+        }
+
+        ~NestedStatesScope()
+        {
+            if (outermost)
+                active = false;
+        }
+
+        NestedStatesScope(const NestedStatesScope &) = delete;
+        NestedStatesScope & operator=(const NestedStatesScope &) = delete;
+
+        void addZeroSizedStates(size_t count, const IAggregateFunction & function);
+
+    private:
+        static thread_local constinit bool active;
+        static thread_local constinit size_t zero_sized_states;
+
+        const bool outermost;
+    };
+
     /// Delete all combinator states that were used after combinator -State.
     /// For example for uniqArrayStateForEachMap(...) it will destroy
     /// states that were created by combinators Map and ForEach.
@@ -346,6 +382,11 @@ public:
 
     /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
+
+    /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
+    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -1173,6 +1214,19 @@ public:
 };
 
 
+/// Which arguments of `Variant` type an aggregate function cannot process natively.
+/// `AggregateFunctionFactory` converts such arguments to `Nullable` of the least common supertype
+/// of the alternatives with `AggregateFunctionVariantAdapter`.
+enum class VariantArgumentsConversion : UInt8
+{
+    /// The function processes `Variant` arguments natively (example: any, count, groupArray), or does not accept them at all.
+    None,
+    /// The function does not support `Variant` arguments (example: sum, avg, quantile).
+    All,
+    /// The first argument is processed natively, and the other arguments are not supported (example: argMin, topKWeighted).
+    AllExceptFirst,
+};
+
 /// Properties of aggregate function that are independent of argument types and parameters.
 struct AggregateFunctionProperties
 {
@@ -1195,6 +1249,8 @@ struct AggregateFunctionProperties
 
     /// Indicates if it's actually window function.
     bool is_window_function = false;
+
+    VariantArgumentsConversion variant_arguments_conversion = VariantArgumentsConversion::None;
 };
 
 

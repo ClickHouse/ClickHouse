@@ -1567,7 +1567,7 @@ struct ConvertThroughParsing
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
-            read_buffer.setPadded();
+            read_buffer.setPaddedStorage(*chars, current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {

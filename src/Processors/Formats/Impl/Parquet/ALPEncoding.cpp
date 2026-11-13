@@ -2,6 +2,7 @@
 
 #include <base/unaligned.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <arrow/buffer.h>
 #include <arrow/memory_pool.h>
@@ -424,7 +425,7 @@ public:
     }
 
 private:
-    std::vector<ExponentAndFactor> candidates;
+    VectorWithMemoryTracking<ExponentAndFactor> candidates;
 
     PaddedPODArray<Signed> encoded;
     PaddedPODArray<UInt8> is_exception;
@@ -583,7 +584,7 @@ private:
             ExponentAndFactor params;
             UInt32 wins = 0;
         };
-        std::vector<Candidate> found;
+        VectorWithMemoryTracking<Candidate> found;
         for (UInt8 exponent = 0; exponent <= Traits::max_exponent; ++exponent)
             for (UInt8 factor = 0; factor <= exponent; ++factor)
                 if (wins[exponent][factor])

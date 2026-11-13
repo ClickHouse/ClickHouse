@@ -3,12 +3,19 @@
 #if USE_AWS_S3
 
 #include <algorithm>
+#include <ctime>
+#include <iterator>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <Poco/URI.h>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/Hex.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
@@ -35,7 +42,14 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
+#include <Common/Base64.h>
 #include <Common/logger_useful.h>
+#include <Common/OpenSSLHelpers.h>
+#include <IO/S3Common.h>
+
+#include <aws/core/http/HttpClient.h>
+#include <aws/core/http/HttpRequest.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
@@ -85,6 +99,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
 }
@@ -243,7 +258,16 @@ std::unique_ptr<Client> Client::clone() const
 
 std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
 {
-    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
+    /// `retryStrategy` is the object the SDK retries with, and `ClientFactory::create` builds it from
+    /// `retry_strategy`, so overriding only the latter would keep the retries of the client being cloned.
+    auto config = client_configuration_override;
+    auto retry_strategy = config.retry_strategy;
+    /// As in `ClientFactory::create`: per-thread retries give way to the global coordination.
+    if (config.s3_slow_all_threads_after_retryable_error)
+        retry_strategy.max_retries = 1;
+    config.retryStrategy = std::make_shared<Client::RetryStrategy>(retry_strategy);
+
+    return std::unique_ptr<Client>(new Client(*this, config));
 }
 
 namespace
@@ -655,7 +679,13 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
+        request,
+        [this](Model::PutObjectRequest & req)
+        {
+            if (isGCSCreateIfAbsentWithHMAC(req))
+                return putObjectWithGOOG4Signature(req);
+            return PutObject(req);
+        });
 
     /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
     if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
@@ -737,6 +767,17 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
+    /// With an empty key the SDK addresses the bucket itself, e.g. `DeleteObject` becomes `DeleteBucket`.
+    if constexpr (requires { request.GetKey(); })
+    {
+        if (request.GetKey().empty())
+            return std::invoke_result_t<RequestFn, RequestType &>(Aws::Client::AWSError<Aws::S3::S3Errors>(
+                Aws::S3::S3Errors::MISSING_PARAMETER,
+                "MISSING_PARAMETER",
+                fmt::format("The object key is empty, so the request would address bucket {} itself", request.GetBucket()),
+                /*isRetryable*/ false));
+    }
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
@@ -848,7 +889,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
+        if (initial_endpoint.size() > 11 && initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
         const auto & current_uri_override = request.getURIOverride();
@@ -1375,6 +1416,21 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     if (!server_side_encryption_customer_key_base64.empty())
     {
+        /// `base64Decode` throws on characters outside the alphabet but skips whitespace and ignores padding bits,
+        /// so the round trip below accepts only the canonical base64 of an AES-256 key, the only key SSE-C takes.
+        String customer_key;
+        try
+        {
+            customer_key = base64Decode(server_side_encryption_customer_key_base64);
+        }
+        catch (const Poco::DataFormatException &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+        }
+
+        if (customer_key.size() != AES256_KEY_BYTES || base64Encode(customer_key) != server_side_encryption_customer_key_base64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+
         /// See Client::GeneratePresignedUrlWithSSEC().
 
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
@@ -1383,10 +1439,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
             server_side_encryption_customer_key_base64});
 
-        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
-        String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
-            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(customer_key))});
     }
 
     // These will be added after request signing
@@ -1403,6 +1457,10 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
+
+    /// Only after the credentials providers have taken their copies of the configuration: their
+    /// requests are helper traffic and must not be reported as the connection of a logged request.
+    client_configuration.publish_connection_info = true;
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)
@@ -1467,6 +1525,142 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
 
     return config;
+}
+
+bool Client::isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const
+{
+    return provider_type == ProviderType::GCS && api_mode == ApiMode::AWS && request.GetIfNoneMatch() == "*";
+}
+
+Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const
+{
+    String body;
+    if (const auto & body_stream = request.GetBody())
+    {
+        body_stream->clear();
+        body_stream->seekg(0);
+        body.assign(std::istreambuf_iterator<char>(*body_stream), std::istreambuf_iterator<char>());
+    }
+
+    const auto credentials = getCredentials();
+    const auto & secret = credentials.GetAWSSecretKey();
+    const auto & access_key = credentials.GetAWSAccessKeyId();
+    if (secret.empty() || access_key.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GCS conditional create of {} requires HMAC credentials", request.GetKey());
+
+    std::time_t now = std::time(nullptr);
+    struct tm tm_buf{};
+    if (!gmtime_r(&now, &tm_buf))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "gmtime_r failed while signing a GCS create");
+
+    char goog_date[32];
+    if (strftime(goog_date, sizeof(goog_date), "%Y%m%dT%H%M%SZ", &tm_buf) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "strftime failed while signing a GCS create");
+    const String datestamp(goog_date, 8);
+
+    const String payload_sha256 = encodeSHA256(body);
+    const String payload_hash = hexString(payload_sha256.data(), payload_sha256.size());
+
+    const Poco::URI endpoint(initial_endpoint);
+    const String host = endpoint.getAuthority();
+    const String path = "/" + request.GetBucket() + "/" + request.GetKey();
+
+    Aws::Http::HeaderValueCollection request_headers = request.GetHeaders();
+    for (const auto & [name, value] : request.GetAdditionalCustomHeaders())
+        request_headers.emplace(name, value);
+
+    MapWithMemoryTracking<String, String> headers;
+    for (const auto & [name, value] : translateHeadersToGCS(std::move(request_headers)))
+        headers[boost::algorithm::to_lower_copy(name)] = boost::algorithm::trim_copy(value);
+
+    headers.erase("content-length");
+    headers["host"] = host;
+    headers["x-goog-content-sha256"] = payload_hash;
+    headers["x-goog-date"] = goog_date;
+
+    String canonical_headers;
+    String signed_headers;
+    for (const auto & [name, value] : headers)
+    {
+        canonical_headers += fmt::format("{}:{}\n", name, value);
+        if (!signed_headers.empty())
+            signed_headers += ';';
+        signed_headers += name;
+    }
+
+    const String canonical_request = fmt::format(
+        "PUT\n{}\n\n{}\n{}\n{}",
+        S3::encodeRequestPath(path),
+        canonical_headers,
+        signed_headers,
+        payload_hash);
+
+    /// `auto` / `s3` / `goog4_request` is the scope GCS accepts for an HMAC key.
+    const String scope = fmt::format("{}/auto/s3/goog4_request", datestamp);
+    const String canonical_request_sha256 = encodeSHA256(canonical_request);
+    const String string_to_sign = fmt::format(
+        "GOOG4-HMAC-SHA256\n{}\n{}\n{}",
+        goog_date,
+        scope,
+        hexString(canonical_request_sha256.data(), canonical_request_sha256.size()));
+
+    std::string key_secret = "GOOG4";
+    key_secret.append(secret.data(), secret.size());
+    const auto date_key = hmacSHA256({key_secret.begin(), key_secret.end()}, datestamp);
+    const auto region_key = hmacSHA256(date_key, "auto");
+    const auto service_key = hmacSHA256(region_key, "s3");
+    const auto signing_key = hmacSHA256(service_key, "goog4_request");
+    const auto signature_bytes = hmacSHA256(signing_key, string_to_sign);
+
+    const String authorization = fmt::format(
+        "GOOG4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
+        access_key,
+        scope,
+        signed_headers,
+        hexString(signature_bytes.data(), signature_bytes.size()));
+
+    auto http_request = Aws::Http::CreateHttpRequest(
+        Aws::String(endpoint.getScheme() + "://" + host + path),
+        Aws::Http::HttpMethod::HTTP_PUT,
+        Aws::Utils::Stream::DefaultResponseStreamFactoryMethod);
+
+    auto payload = Aws::MakeShared<Aws::StringStream>("GCSCreateIfAbsent");
+    payload->write(body.data(), static_cast<std::streamsize>(body.size()));
+    payload->seekg(0);
+    http_request->AddContentBody(payload);
+    http_request->SetContentLength(std::to_string(body.size()));
+    for (const auto & [name, value] : headers)
+        if (name != "host")
+            http_request->SetHeaderValue(name, value);
+    http_request->SetHeaderValue("authorization", authorization);
+
+    const auto & retry_strategy = client_configuration.retryStrategy;
+    for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
+    {
+        auto response = GetHttpClient()->MakeRequest(http_request);
+        Aws::Client::AWSError<Aws::Client::CoreErrors> error;
+        if (!response)
+        {
+            error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
+                Aws::Client::CoreErrors::NETWORK_CONNECTION, "", fmt::format("GCS create of {} returned no response", request.GetKey()), true);
+        }
+        else if (!response->HasClientError() && response->GetResponseCode() == Aws::Http::HttpResponseCode::OK)
+        {
+            Model::PutObjectResult result;
+            if (response->HasHeader("etag"))
+                result.SetETag(response->GetHeader("etag"));
+            return result;
+        }
+        else
+        {
+            error = BuildAWSError(response);
+        }
+
+        if (!retry_strategy->ShouldRetry(error, retries))
+            return Aws::S3::S3Error(error);
+
+        GetHttpClient()->RetryRequestSleep(std::chrono::milliseconds(retry_strategy->CalculateDelayBeforeNextRetry(error, retries)));
+    }
 }
 
 bool isS3ExpressEndpoint(const std::string & endpoint)

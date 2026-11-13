@@ -309,7 +309,7 @@ public:
 
         if (bytes_read > 0)
         {
-            working_buffer = internal_buffer;
+            setWorkingBufferFromInternal();
             working_buffer.resize(bytes_read);
         }
         else

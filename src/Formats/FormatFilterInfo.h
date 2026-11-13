@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/ColumnNameMaps.h>
 #include <exception>
 #include <mutex>
 #include <unordered_set>
@@ -60,10 +61,10 @@ public:
     /// For tuples, the map contains both the tuple itself and all its elements, e.g. {t, t.x, t.y}.
     /// Note that parquet schema reader has to apply the mapping to all tuple fields recursively
     /// even if the whole tuple was requested, because the names of the fields may be different.
-    void setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_);
+    void setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_);
 
-    const std::unordered_map<String, Int64> & getStorageColumnEncoding() const { return storage_encoding; }
-    const std::unordered_map<Int64, String> & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
+    const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
+    const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
     /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
@@ -104,22 +105,18 @@ public:
     bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
     bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
-    void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
-    std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
-
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
-    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding) const;
+    std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
 private:
-    std::unordered_map<String, Int64> storage_encoding;
-    std::unordered_map<Int64, String> field_id_to_clickhouse_name;
+    ColumnNameToFieldId storage_encoding;
+    FieldIdToColumnName field_id_to_clickhouse_name;
     std::unordered_set<String> iceberg_string_paths;
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
-    std::optional<Int64> last_assigned_field_id;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;

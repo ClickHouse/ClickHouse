@@ -55,13 +55,15 @@ size_t adaptiveSpillMinBytes(const Aggregator::Params & params)
 /// are estimated by scaling the hash sample; the record count is known exactly. Counting only sampled
 /// occurrences would let one frequent sampled key distort the repetition estimate for the whole stream.
 /// Growing set states also retain distinct arguments, even when their group keys repeat. Their estimated
-/// payload is added to the per-key state cost. Multiplication by the record count avoids division, and
-/// 128-bit products accommodate streams of billions of records without overflow.
-bool Aggregator::adaptiveStagingWastes(
-    const AdaptiveAggregationProducer & adaptive,
-    size_t state_bytes_per_key,
-    size_t state_cost_multiplier) const
+/// payload is added to the per-key state cost. Switching in the middle of a stream retains the staged records
+/// as well as the new table, so the estimated state cost gets the same hysteresis as the calibrated bound of
+/// cheap states: both are multiplied by `adaptive_thaw_state_cost_multiplier`. Multiplication by the record
+/// count avoids division, and 128-bit products accommodate streams of billions of records without overflow.
+bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
 {
+    if (!params.adaptiveMayThaw())
+        return false;
+
     const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
     const size_t distinct = frozen.getEstimatedStagedKeyCount();
     if (frozen.staged_records < adaptive_thaw_min_staged_records
@@ -69,12 +71,12 @@ bool Aggregator::adaptiveStagingWastes(
         || frozen.staged_records <= distinct)
         return false;
 
-    const size_t retained_bytes_per_key = std::max(adaptive_staging_min_state_bytes_per_key, state_bytes_per_key);
+    const size_t retained_bytes_per_key = std::max(adaptive_thaw_min_state_bytes_per_key, total_size_of_aggregate_states);
     const UInt128 state_bytes = static_cast<UInt128>(retained_bytes_per_key) * distinct
         + static_cast<UInt128>(adaptive_state_bytes_per_distinct_input) * frozen.getEstimatedDistinctInputCount();
 
     return static_cast<UInt128>(frozen.staged_records - distinct) * frozen.staged_bytes
-        > state_bytes * frozen.staged_records * state_cost_multiplier;
+        > state_bytes * frozen.staged_records * adaptive_thaw_state_cost_multiplier;
 }
 
 void Aggregator::accountStagedBatch(
@@ -260,11 +262,7 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     if (params.adaptiveTopKPrunes() && !adaptive.count_bins.isAllocated())
         adaptive.count_bins.allocate();
     const size_t keys = result.sizeWithoutOverflowRow();
-    /// A zero key-count threshold or byte pressure can freeze a table before its first group is inserted.
-    /// Without a measured per-key allocation cost, the aggregate state size supplies a lower bound
-    /// that excludes hash-table and arena overhead.
-    adaptive.freeze(
-        result.usedArenaBytes(), result.memoryUsage(), keys ? result.allocatedBytes() / keys : total_size_of_aggregate_states);
+    adaptive.freeze(result.usedArenaBytes(), result.memoryUsage());
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
     LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", keys);
 }
@@ -306,21 +304,6 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (count_bins)
         bins = AdaptiveTopKPruning::finalizeProducerCounts(std::move(*count_bins));
 
-    /// A producer that thawed was repeat-dominated. One that finishes frozen is when its whole staged stream repeated
-    /// past the bound of the verdict.
-    bool repeat_dominated = adaptive.isBaseline();
-    if (adaptive.isFrozen() && params.adaptiveMayThaw())
-    {
-        /// Admission compares complete executions, so its state cost includes the hash buffer and arenas
-        /// an ordinary local table would retain. A populated table's snapshot at the freeze includes hash-table
-        /// capacity and arena overhead, and remains available if the table is flushed before its producer finishes.
-        const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
-        repeat_dominated = adaptiveStagingWastes(
-            adaptive,
-            frozen.estimated_table_bytes_per_key,
-            /*state_cost_multiplier=*/1);
-    }
-
     if (froze)
     {
         adaptive.partitions->finishAppending();
@@ -337,7 +320,8 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (froze)
     {
         ++shared.frozen_producers;
-        shared.repeat_dominated_producers += repeat_dominated;
+        /// Only a thaw puts a producer that froze back on the baseline path (see `thawAdaptive`).
+        shared.thawed_producers += adaptive.isBaseline();
         shared.spillable_handed_over_bytes.fetch_add(adaptive.partitions->allocatedChunkBytes(), std::memory_order_relaxed);
         shared.producer_buffers.push_back(std::move(adaptive.partitions));
     }
@@ -534,26 +518,18 @@ void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<
     }
 }
 
-bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
-{
-    /// Switching in the middle of a stream retains the staged records as well as the new table. Apply
-    /// the same hysteresis to the estimated state cost as the calibrated bounds apply to cheap states.
-    return params.adaptiveMayThaw()
-        && adaptiveStagingWastes(
-            adaptive,
-            total_size_of_aggregate_states,
-            adaptive_thaw_state_cost_multiplier);
-}
-
 std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
 {
-    /// A run measures the verdict only when some producer froze and the producers could thaw: a run that may not thaw
-    /// gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for. The verdict needs
-    /// half of the frozen producers repeat-dominated, so a few threads that repeat on an otherwise healthy stream do
-    /// not keep the next runs off the adaptive path.
+    /// A run measures the verdict only when some producer froze and the producers could thaw: a run that may
+    /// not thaw gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for.
+    /// The verdict needs at least half of the frozen producers to have thawed. A few threads that repeat on
+    /// an otherwise healthy stream do not keep the next runs off the adaptive path. But when half of the
+    /// threads thaw, every later run pays their switch in the middle of the stream, and the ordinary path
+    /// from the start wins: `SELECT UserID, any(SearchPhrase) FROM hits GROUP BY UserID` thaws 4 of its 8
+    /// threads in every run, and its later runs take 1.23 times as long when they stay adaptive.
     if (!shared.frozen_producers || !params.adaptiveMayThaw())
         return std::nullopt;
-    return 2 * shared.repeat_dominated_producers >= shared.frozen_producers;
+    return 2 * shared.thawed_producers >= shared.frozen_producers;
 }
 
 /// The flushed variants' sizes are meaningless by the time the external path finishes, so a stored entry keeps its

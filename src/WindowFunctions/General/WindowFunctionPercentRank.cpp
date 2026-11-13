@@ -51,15 +51,16 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be '{}', '{}' given", getName(), wholePartitionRangeFrame().toString(), window.frame.toString());
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 partition_rows = bounds.partition_end[i];
             const Float64 denominator = partition_rows == 1 ? 1 : static_cast<Float64>(partition_rows - 1);
             data.push_back(static_cast<Float64>(bounds.peers_start[i]) / denominator);
         }
+        return bounds.row.back() + 1;
     }
 };
 

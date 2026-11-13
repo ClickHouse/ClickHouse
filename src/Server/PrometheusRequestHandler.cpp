@@ -110,7 +110,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent"));
+        LOG_DEBUG(log(), "Handling metrics request from {}", request.get("User-Agent"));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
@@ -316,7 +316,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Write
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -383,7 +383,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Read
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -475,7 +475,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -591,6 +591,11 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
+            else if (uri_path.ends_with("/federate"))
+            {
+                response.setContentType("text/plain; version=0.0.4; charset=utf-8; escaping=underscores");
+                protocol.federate(getOutputStream(response), params->getAll("match[]"), query_finish_callback);
+            }
             else if (uri_path.ends_with("/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
@@ -654,6 +659,8 @@ public:
             /// not with the query: report it as an internal error so that clients don't attribute it
             /// to the PromQL expression.
             bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            /// The error body is JSON, also for endpoints whose success body is not.
+            response.setContentType("application/json");
             response.setStatusAndReason(
                 server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;

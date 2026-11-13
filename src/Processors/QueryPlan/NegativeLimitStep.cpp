@@ -1,4 +1,5 @@
 #include <Core/ProtocolDefines.h>
+#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>

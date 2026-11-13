@@ -172,6 +172,10 @@ public:
     /// Space available for reservation (available space minus reserved space).
     virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
+    /// Reserves like `reserve`, and also sets `unreserved_space` to the unreserved space of the disk after the attempt.
+    virtual ReservationPtr reserveAndGetUnreservedSpace(
+        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space);
+
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
 
@@ -578,7 +582,13 @@ public:
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
     UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
-    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
+    void markDiskAsCustom(UInt128 settings_hash, bool uses_server_credentials)
+    {
+        custom_disk_settings_hash = settings_hash;
+        custom_disk_uses_server_credentials = uses_server_credentials;
+    }
+    /// A custom disk that uses the server's own credentials, directly or through the disk it wraps.
+    bool customDiskUsesServerCredentials() const { return custom_disk_uses_server_credentials; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
@@ -632,6 +642,7 @@ private:
     std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
+    bool custom_disk_uses_server_credentials = false;
 
     /// The configuration the disk was created from, see keepConfigurationAlive.
     std::shared_ptr<const ConfigurationWithUsageTracking> creation_config;

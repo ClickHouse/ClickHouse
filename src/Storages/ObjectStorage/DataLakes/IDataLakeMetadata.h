@@ -59,7 +59,8 @@ struct DataLakeReadEstimate
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
-    /// The rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
+    /// The rows of the live data files left after pruning, without the deleted rows the metadata can count; std::nullopt if
+    /// the metadata is malformed.
     std::optional<UInt64> rows;
     /// The statistics of the requested columns over these files, with their numbers of distinct values, and the estimate of
     /// conditions on them; nullptr if no requested column has statistics.
@@ -254,6 +255,13 @@ protected:
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_,
         UInt64 snapshot_version_) const;
+
+    /// `schema_transforms_` is empty or has the `DataLakeObjectMetadata::schema_transform` of each data file, nullptr for none.
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        std::vector<std::shared_ptr<ActionsDAG>> && schema_transforms_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {

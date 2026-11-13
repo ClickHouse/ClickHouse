@@ -11,6 +11,7 @@
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Common/OneTimePassword.h>
+#include <Access/OneTimePasswordUsageTracker.h>
 
 #include <base/types.h>
 #include "config.h"
@@ -466,7 +467,11 @@ bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authen
     }
 }
 
-bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)
+bool Authentication::consumeOneTimePassword(
+    const Credentials & credentials,
+    const String & user_name,
+    const AuthenticationData & authentication_method,
+    OneTimePasswordUsageTracker & usage_tracker)
 {
     const auto & otp_secret = authentication_method.getOneTimePassword();
     if (!otp_secret)
@@ -481,7 +486,7 @@ bool Authentication::consumeOneTimePassword(const Credentials & credentials, con
     if (one_time_password.empty())
         return true;
 
-    return checkAndConsumeOneTimePassword(one_time_password, *otp_secret);
+    return usage_tracker.tryConsume(user_name, one_time_password, *otp_secret);
 }
 
 }

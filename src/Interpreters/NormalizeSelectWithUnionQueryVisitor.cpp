@@ -30,12 +30,27 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * select_union = ast->as<ASTSelectWithUnionQuery>(); select_union && !select_union->is_normalized)
     {
-        /// The rewrite of ASTSelectWithUnionQuery may strip the format info, so
-        /// we need to keep and restore it.
-        auto format = select_union->format_ast;
+        /// The rewrite of ASTSelectWithUnionQuery may strip the output options
+        /// (INTO OUTFILE, FORMAT, SETTINGS), so we need to keep and restore them.
+        const auto & members = ASTQueryWithOutput::output_option_members;
+        std::array<ASTPtr, members.size()> output_options;
+        for (size_t i = 0; i < members.size(); ++i)
+            output_options[i] = select_union->*members[i];
+        const bool outfile_with_stdout = select_union->isIntoOutfileWithStdout();
+        const bool outfile_append = select_union->isOutfileAppend();
+        const bool outfile_truncate = select_union->isOutfileTruncate();
+
         visit(*select_union, data);
-        select_union->reset(select_union->format_ast);
-        select_union->set(select_union->format_ast, std::move(format));
+
+        /// Re-attach in the canonical order, as the parser does.
+        for (size_t i = 0; i < members.size(); ++i)
+        {
+            select_union->reset(select_union->*members[i]);
+            select_union->set(select_union->*members[i], std::move(output_options[i]));
+        }
+        select_union->setIsIntoOutfileWithStdout(outfile_with_stdout);
+        select_union->setIsOutfileAppend(outfile_append);
+        select_union->setIsOutfileTruncate(outfile_truncate);
     }
 }
 

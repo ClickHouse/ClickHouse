@@ -20,7 +20,7 @@ using namespace DB;
 /// `max_bytes_before_external_join` alone.
 ///
 /// A peer below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS` does not know the name -
-/// `QueryPlanSerializationSettings` is a strict named schema, so `readBinary` would reject the plan outright - but
+/// the reader of the step settings in such a peer throws on an unknown name, so it would reject the plan outright - but
 /// it does know the settings whose meaning changed, and it applies the legacy contract to them. Omitting the name
 /// alone would therefore hand such a peer a plan it happily runs with a different spill behavior, so serialization
 /// fails closed whenever the two contracts can diverge for the step being serialized, and only then.
@@ -38,11 +38,11 @@ JoinSettings makeJoinSettings(const std::vector<std::pair<String, Field>> & chan
     return JoinSettings(query_settings);
 }
 
-/// The name as it appears in the binary settings stream written by `writeChangedBinary`.
+/// The name as it appears in the settings stream written by `QueryPlanSerializationSettings::write`.
 bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains("legacy_join_size_limits_trigger_spilling");
 }
 
@@ -578,7 +578,7 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     auto carries_setting = [](const QueryPlanSerializationSettings & settings)
     {
         WriteBufferFromOwnString out;
-        settings.writeChangedBinary(out);
+        settings.write(out);
         return out.str().contains("allow_block_nested_loop_join");
     };
 
@@ -589,4 +589,28 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(carries_setting(serializeAt(disabled, pre_block_nested_loop_version)));
     EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
                      .allow_block_nested_loop_join);
+}
+
+/// `min_string_column_bytes_for_hash_join_row_store` is written only towards a peer that knows the name, even with
+/// default join settings, and a plan from a peer that predates it is read back with the default.
+TEST(JoinRowStoreStringPlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_row_store_strings_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES - 1;
+    const auto defaults = makeJoinSettings({});
+    const auto changed = makeJoinSettings({{"min_string_column_bytes_for_hash_join_row_store", 1000u}});
+
+    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
+    {
+        WriteBufferFromOwnString out;
+        settings.write(out);
+        return out.str().contains("min_string_column_bytes_for_hash_join_row_store");
+    };
+
+    EXPECT_TRUE(carries_setting(serializeAt(defaults, current_version)));
+    EXPECT_EQ(JoinSettings(serializeAt(changed, current_version), current_version).min_string_column_bytes_for_hash_join_row_store, 1000u);
+
+    EXPECT_FALSE(carries_setting(serializeAt(defaults, pre_row_store_strings_version)));
+    EXPECT_FALSE(carries_setting(serializeAt(changed, pre_row_store_strings_version)));
+    const JoinSettings read_back(serializeAt(changed, pre_row_store_strings_version), pre_row_store_strings_version);
+    EXPECT_EQ(read_back.min_string_column_bytes_for_hash_join_row_store, defaults.min_string_column_bytes_for_hash_join_row_store);
 }

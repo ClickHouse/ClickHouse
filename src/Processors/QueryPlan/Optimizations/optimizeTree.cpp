@@ -118,6 +118,8 @@ static String describeProjectionRejections(const std::unordered_map<String, Stri
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings));
+
     if (!optimization_settings.optimize_plan)
         return;
 
@@ -550,6 +552,9 @@ void optimizeTreeSecondPass(
         [&](auto &) {},
         [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
 
+    /// the conversion makes the pre-join expressions, also without plan optimizations
+    lowerArrayJoinFunctions(root, nodes, extra_settings);
+
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
     /// added around the joins, as that push-down did when the joins were converted before it. With the
     /// same `extra_settings`: a default-constructed one truncates the description of a merged step.
@@ -763,6 +768,24 @@ void optimizeTreeSecondPass(
             /// forms with the outer plan under the same ones.
             if (local_optimization_settings.merge_expressions)
                 tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings));
+
+            /// The merge after the join runtime filters ran while this plan was still opaque, so give it the
+            /// same merge, or it keeps steps the single-node plan has merged (e.g. the part of an expression
+            /// split off by pushing a runtime filter through it) and automatic parallel replicas cannot match
+            /// the two plans.
+            if (join_runtime_filters_were_added)
+            {
+                Stack local_stack;
+                const auto local_extra_settings = makeExtraSettings(local_optimization_settings);
+                traverseQueryPlan(local_stack, *local_plan_node,
+                    [&](auto & frame_node)
+                    {
+                        while (tryMergeExpressions(&frame_node, nodes, local_extra_settings)
+                               + tryMergeFilters(&frame_node, nodes, local_extra_settings))
+                        {
+                        }
+                    });
+            }
         }
         else if (auto * read_from_time_series = typeid_cast<ReadFromTimeSeriesStep *>(frame.node->step.get()))
         {
@@ -1002,6 +1025,11 @@ void optimizeTreeSecondPass(
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
+    /// Run after every optimization that works with `SortingStep`, so that it only changes how the sorting is executed.
+    /// Keep `SortingStep` while building distributed fragments; replace it only when optimizing a local executable plan.
+    if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
+
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
     /// admission check: no later optimization needs to retract the heap or its synthetic sort.
@@ -1016,6 +1044,9 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// Last: it reads the final consumers of every remote read.
+    allowReadingShardsFromSeveralReplicas(root);
 }
 
 void addStepsToBuildSets(

@@ -1,3 +1,4 @@
+#include <Common/ListWithMemoryTracking.h>
 #include <optional>
 #include <unordered_map>
 #include <Core/Settings.h>
@@ -1286,7 +1287,7 @@ void Aggregator::executeImpl(
             /// smaller threshold.
             const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes);
+                && (bytesForPrefetch(method.data) > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
@@ -2644,7 +2645,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
         /// is learning or frozen, and its producer learns again.
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
-            spillAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
+            spillAdaptiveTable(result, *adaptive, result.memoryUsage() + params.min_free_disk_space);
         return true;
     }
 
@@ -2680,8 +2681,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 
@@ -3131,8 +3131,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
     /// per-group key materialization below dead work. Account for the full output using the same
     /// conversion as the final result: a serialized multi-key table stores a length-prefixed arena
     /// blob, whose size is not the size of the materialized key columns (in particular, every String
-    /// key has an offset column). This conversion always emits its Top-K rows, so the statistics keep
-    /// sampling the chunk as they did before the meter existed, and it keeps no sample of its own.
+    /// key has an offset column). The kept rows are too few to carry the keys' compression ratio, so
+    /// the meter keeps a sample of the bucket's keys.
     std::optional<MaterializedKeyBytesMeter<Method>> key_bytes_meter;
     if (untruncated_keys)
         key_bytes_meter.emplace(
@@ -3141,7 +3141,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
                 params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, /*rows=*/1),
             key_sizes,
             params.serialize_string_with_zero_byte,
-            /*keep_sample=*/false);
+            /*keep_sample=*/true);
     const auto account_key_bytes = [&](const auto & key)
     {
         if (key_bytes_meter)
@@ -3234,7 +3234,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
     }
 
     if (untruncated_keys)
+    {
         untruncated_keys->bytes = key_bytes_meter->getBytes();
+        untruncated_keys->sample_columns = key_bytes_meter->detachSample();
+    }
 
     const size_t keep = top.size();
     auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, keep);
@@ -3329,7 +3332,7 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     /// Filled by a conversion that materializes only some of the bucket's groups - the Top-K one or
     /// the HAVING pre-filter - when the statistics ask for it (left zero otherwise): the untruncated
     /// key bytes to account in the dataflow statistics, because the chunk carries only the kept
-    /// groups, and a bounded sample of those keys for when it carries none at all.
+    /// groups, and a bounded sample of those keys, because the kept groups' keys compress differently.
     UntruncatedAggregationKeys untruncated_keys;
 
     if (false) {} // NOLINT
@@ -3433,7 +3436,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     return agg_chunk;
 }
 
-std::list<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
+ListWithMemoryTracking<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
 {
     std::lock_guard lk(tmp_files_mutex);
     return std::move(tmp_files);
@@ -6161,8 +6164,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         && reached_spill_floor
         && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+        writeToTemporaryFile(result, result.memoryUsage() + params.min_free_disk_space);
         reseedKeptKeysAfterSpill(result);
     }
 

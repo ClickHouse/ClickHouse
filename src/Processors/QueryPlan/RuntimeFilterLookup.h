@@ -465,7 +465,17 @@ struct RuntimeFilterIndexAnalysisDescriptor
     String filter_id;
     String key_column_name;
     DataTypePtr key_column_type;
+    /// The probe key is `_part_starting_offset + _part_offset` (the global row index of the read), not a column.
+    /// `key_column_name` is then only a display name.
+    bool is_global_row_index = false;
 };
+
+/// Display name of the `_part_starting_offset + _part_offset` key of a global row index descriptor.
+inline constexpr std::string_view runtime_filter_global_row_index_key_name = "_part_starting_offset + _part_offset";
+
+/// Name of the `_part_offset + _part_starting_offset` node of the pruning predicate of a global row index descriptor.
+/// The reader recognizes the key by this name, in a predicate on the global row index only.
+inline constexpr std::string_view runtime_filter_global_row_index_node_name = "plus(_part_offset, _part_starting_offset)";
 
 /// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.
 /// can produce a range predicate even after the exact value set overflows into a bloom filter.

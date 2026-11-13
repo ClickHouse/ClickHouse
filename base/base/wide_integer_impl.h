@@ -383,9 +383,50 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, const invariant
 /// remainder carried in from the previous step is below the divisor.
 constexpr uint64_t divide_by_single_limb(const uint64_t * numerator, unsigned m, uint64_t denominator, uint64_t * quotient)
 {
-    uint64_t remainder = 0;
-    for (unsigned i = m; i > 0; --i)
-        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
+#if defined(__x86_64__)
+    /// Keep the `divq` loop: a native first division adds operand-width selection branches.
+    if (!std::is_constant_evaluated())
+    {
+        uint64_t remainder = 0;
+        for (unsigned i = m; i > 0; --i)
+            quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
+        return remainder;
+    }
+#endif
+    if (m == 0)
+        return 0;
+
+    if (std::has_single_bit(denominator))
+    {
+        const unsigned shift = static_cast<unsigned>(std::countr_zero(denominator));
+        if (shift == 0)
+        {
+            for (unsigned i = 0; i < m; ++i)
+                quotient[i] = numerator[i];
+            return 0;
+        }
+
+        const uint64_t remainder = numerator[0] & (denominator - 1);
+        uint64_t carry = 0;
+        for (unsigned i = m; i > 0; --i)
+        {
+            const uint64_t limb = numerator[i - 1];
+            quotient[i - 1] = (limb >> shift) | carry;
+            carry = limb << (64 - shift);
+        }
+        return remainder;
+    }
+
+    /// The first step has no carried remainder, so a native 64-bit division suffices.
+    uint64_t remainder = numerator[m - 1] % denominator;
+    quotient[m - 1] = numerator[m - 1] / denominator;
+    if (m == 1)
+        return remainder;
+
+    /// Amortize reciprocal preparation over the remaining limbs on targets without `divq`.
+    const auto prepared = prepare_divisor(denominator);
+    for (unsigned i = m - 1; i > 0; --i)
+        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], prepared, remainder);
     return remainder;
 }
 
@@ -1468,7 +1509,12 @@ public:
             /// than `divide` below.
             integer<Bits, unsigned> numerator = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            integer<Bits, unsigned> quotient;
+            /// The signed operators are out of line, so `divide` is inlined into them: a narrow division then stays in registers.
+            if constexpr (std::is_same_v<Signed, signed>)
+                [[clang::always_inline]] quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            else
+                quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
@@ -1489,7 +1535,10 @@ public:
             /// See the note in operator_slash about _BitInt(256).
             integer<Bits, unsigned> remainder = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            if constexpr (std::is_same_v<Signed, signed>)
+                [[clang::always_inline]] integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            else
+                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);

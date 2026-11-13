@@ -22,6 +22,8 @@ macro(set_rust_target)
             set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-loongarch64")
             set(Rust_CARGO_TARGET "loongarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-s390x")
+            set(Rust_CARGO_TARGET "s390x-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         else()
             message(FATAL_ERROR "Unknown rust target for toolchain ${CMAKE_TOOLCHAIN_FILE}")
         endif()
@@ -151,7 +153,7 @@ if (CXX_PUBLIC_DEFS)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXX_PUBLIC_DEFS}")
 endif()
 
-if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
+if(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -252,6 +254,10 @@ message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
 message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
+
+# Every member of the workspace is imported with exactly this path: corrosion names the cargo target directory
+# after the manifest path string, so this is what makes them share one.
+set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contrib-workspace/Cargo.toml" CACHE INTERNAL "Rust config")
 
 # Sanitizer instrumentation combined with opt-level=3 and the default codegen-units=16
 # causes LLVM to use too much memory while compiling large crates like cranelift-codegen
@@ -368,8 +374,7 @@ function(clickhouse_config_crate_flags target_name)
     #
     # For workspace crates the .a may land in a parent directory rather than
     # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
-    # calling this function if the default path is wrong (see wasmtime for an
-    # example).
+    # calling this function if the default path is wrong.
     get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
     if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
         set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")

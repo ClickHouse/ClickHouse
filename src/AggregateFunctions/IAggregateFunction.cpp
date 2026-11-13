@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -11,6 +12,15 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+namespace
+{
+
+/// The choice of this number is arbitrary; it is the per-level limit of -Resample.
+constexpr size_t max_zero_sized_nested_states = 1048576;
+
 }
 
 DataTypePtr IAggregateFunction::getStateType() const
@@ -90,6 +100,39 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
         [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
 }
 
+thread_local constinit bool IAggregateFunction::NestedStatesScope::active = false;
+thread_local constinit size_t IAggregateFunction::NestedStatesScope::zero_sized_states = 0;
+
+void IAggregateFunction::NestedStatesScope::addZeroSizedStates(size_t count, const IAggregateFunction & function)
+{
+    if (common::addOverflow(zero_sized_states, count, zero_sized_states) || zero_sized_states > max_zero_sized_nested_states)
+        throw Exception(
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Too many states of aggregate function {} that occupy no memory would be created at once, the maximum is {}",
+            function.getName(),
+            max_zero_sized_nested_states);
+}
+
+void IAggregateFunction::createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const
+{
+    NestedStatesScope scope;
+    if (stride == 0)
+        scope.addZeroSizedStates(count, *this);
+
+    size_t i = 0;
+    try
+    {
+        for (; i < count; ++i)
+            create(place + i * stride);
+    }
+    catch (...)
+    {
+        for (size_t j = 0; j < i; ++j)
+            destroy(place + j * stride);
+        throw;
+    }
+}
+
 DataTypePtr IAggregateFunction::getReturnTypeToPredict() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prediction is not supported for {}", getName());
@@ -124,6 +167,11 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
+}
+
+void IAggregateFunction::setSumAndCount(AggregateDataPtr __restrict /*place*/, const Field & /*sum*/, UInt64 /*count*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setSumAndCount is not implemented for {}", getName());
 }
 
 void IAggregateFunction::mergeStateFromDifferentVariant(

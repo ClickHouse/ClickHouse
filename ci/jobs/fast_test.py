@@ -11,6 +11,7 @@ sys.path.append(str(repo_path / "ci"))
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -24,6 +25,10 @@ build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
 
 # Must match SQL_STACKTRACES_LOG and C_STACKTRACES_LOG in tests/clickhouse-test.
 STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
+
+# Run time limits of a test the PR adds; existing tests are not checked.
+NEW_TEST_MAX_RUN_TIME_IN_SECONDS = 15
+NEW_SEQUENTIAL_TEST_MAX_RUN_TIME_IN_SECONDS = NEW_TEST_MAX_RUN_TIME_IN_SECONDS / 2
 
 
 def clone_submodules():
@@ -131,6 +136,32 @@ def update_path_ch_config(config_file_path=""):
         print(f"ERROR: failed to update config, exception: {e}")
         return False
     return True
+
+
+def fail_slow_new_tests(test_results: Result, new_test_paths) -> None:
+    new_test_files = {Path(path).name for path in new_test_paths or []}
+    if not new_test_files:
+        return
+    slow_tests = []
+    for result in test_results.results:
+        if result.status != Result.Status.OK:
+            continue
+        test_file = Targeting.functional_test_source_file(result.name)
+        if test_file not in new_test_files:
+            continue
+        if Targeting.is_sequential_functional_test(test_file):
+            kind, limit = "no-parallel ", NEW_SEQUENTIAL_TEST_MAX_RUN_TIME_IN_SECONDS
+        else:
+            kind, limit = "", NEW_TEST_MAX_RUN_TIME_IN_SECONDS
+        if result.duration > limit:
+            result.set_failed().set_info(
+                f"New {kind}test runs too long (> {limit}s). Make it faster or tag it `no-fasttest`."
+            )
+            slow_tests.append(result.name)
+    if slow_tests:
+        if test_results.status == Result.Status.OK:
+            test_results.set_failed()
+        test_results.set_info(f"New tests run too long: {', '.join(slow_tests)}")
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -291,7 +322,6 @@ def main():
                 info_extractor=Result.cpp_build_info_extractor,
             )
         )
-        Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
         Shell.check("sccache --show-stats", verbose=True)
         res = results[-1].is_ok()
 
@@ -395,6 +425,7 @@ def main():
         test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
             runner_exit_code=test_exit_code,
         )
+        fail_slow_new_tests(test_results, info.get_kv_data("new_stateless_test_files"))
         if test_exit_code != 0:
             attach_debug = True
 

@@ -64,10 +64,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        if (in_frame)
-            return WindowFunctionRequirements{.frame = true};
-
-        return WindowFunctionRequirements{.partition = true};
+        return WindowFunctionRequirements{.frame = true};
     }
 
     std::optional<WindowFrame> getDefaultFrame() const override
@@ -81,9 +78,9 @@ public:
         return frame;
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 row = bounds.row[i];
             const Int64 offset = arguments.size() > 1 ? checkedOffset(getName(), arguments.at(1, row).getInt()) : 1;
@@ -95,6 +92,8 @@ public:
             else
                 result.insertDefault();
         }
+
+        return is_lead ? bounds.row.back() + 1 : bounds.frame_start.back();
     }
 
 private:

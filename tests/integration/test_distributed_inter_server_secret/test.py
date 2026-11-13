@@ -80,12 +80,6 @@ def bootstrap():
         )
         n.query(
             """
-        CREATE TABLE dist_secure_backward AS data
-        Engine=Distributed(secure_backward, currentDatabase(), data, key)
-        """
-        )
-        n.query(
-            """
         CREATE TABLE dist_secure_from_buffer AS data_from_buffer
         Engine=Distributed(secure, currentDatabase(), data_from_buffer, key)
         """

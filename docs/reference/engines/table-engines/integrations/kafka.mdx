@@ -304,7 +304,7 @@ The AWS region is automatically extracted from the broker endpoint using pattern
 
 **AWS Credentials:**
 
-Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS profile files) when present. To also enable EC2 instance profiles, environment variables (`AWS_ACCESS_KEY_ID`, etc.), ECS task roles, and other automatic credential sources, add to your server configuration:
+By default, the server does not resolve any AWS credentials for `AWS_MSK_IAM`, and authentication fails with `AWS credentials are empty or expired`. To let the server authenticate with its ambient AWS identity, add to your server configuration:
 
 ```xml
 <kafka>
@@ -312,7 +312,15 @@ Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS
 </kafka>
 ```
 
+The ambient credential sources are: environment variables (`AWS_ACCESS_KEY_ID`, etc.), EC2 instance profiles (IMDS), IAM roles for service accounts (IRSA), ECS task roles, SSO, and the `~/.aws/credentials` and `~/.aws/config` profile files.
+
 This setting can only be configured by server administrators. Default: `false`.
+
+<Warning>
+This setting is unsafe. When it is enabled, every user with the `KAFKA` source grant and `CREATE TABLE` can select the `AWS_MSK_IAM` mechanism, the broker list, and the AWS region in table settings. The server then signs a `kafka-cluster:Connect` token with its own AWS identity and sends the token to the user-chosen broker. The token contains the AWS access key ID and the full STS session token, and the receiving host can replay it against MSK clusters in that region as the server.
+
+Enable this setting only if you trust every user who can create Kafka tables with the server's AWS identity. Restrict the hosts that Kafka tables can connect to with [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts), which is empty (allow all hosts) by default.
+</Warning>
 
 **PrivateLink and Custom DNS:**
 

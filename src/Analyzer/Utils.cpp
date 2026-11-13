@@ -1,4 +1,5 @@
 #include <Analyzer/Utils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/Settings.h>
 

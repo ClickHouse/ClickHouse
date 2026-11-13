@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include <Formats/ColumnNameMaps.h>
 #include <memory>
 #include <mutex>
 
@@ -117,7 +118,19 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
-    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
+    /// The first Iceberg spec violation in `schema`, or nullopt: a field, list element, map key or value without the members
+    /// its type needs, or invalid geo type parameters. With `is_table_schema`, also a non-`struct` schema or an
+    /// `identifier-field-ids` entry that is not a required primitive field outside lists, maps and optional structs.
+    static std::optional<String> findSchemaViolation(const Poco::JSON::Object & schema, bool is_table_schema);
+
+    /// Throws ICEBERG_SPECIFICATION_VIOLATION for the first invalid schema of a metadata.json: an entry of `schemas`,
+    /// or the legacy `schema` when there is no `schemas`.
+    static void checkTableSchemas(const Poco::JSON::Object & metadata);
+
+    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema);
+
+    /// The largest field id in `schema`, nested ids included.
+    static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
     static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
@@ -135,11 +148,7 @@ public:
 
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
-    void updateLastColumnId(Int32 last_column_id_);
-
 private:
-    std::atomic<Int64> last_column_id{-1};
-
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
@@ -168,6 +177,10 @@ private:
         bool is_subfield_of_root = false);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+    /// Returns `new_holder[key]` in which every nested primitive changed by a legal promotion is replaced by the
+    /// type at the same place in `old_holder` (struct fields are matched by id). The arguments are not modified.
+    Poco::Dynamic::Var getTypeWithOldPrimitives(
+        const Poco::JSON::Object::Ptr & old_holder, const Poco::JSON::Object::Ptr & new_holder, const String & key);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
