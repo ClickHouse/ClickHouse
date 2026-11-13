@@ -512,7 +512,7 @@ The following features are available:
 | `remove_recursive`     | Support for `RemoveRecursive` request, which removes the node along with its subtree                                                                     | `1`     |
 | `persistent_watches`   | Support for ZooKeeper `addWatch` with `PERSISTENT` watches, and for `removeWatches` and `removeAllWatches`                                                | `1`     |
 | `create_with_stats`    | Support for ZooKeeper `create` that returns the `Stat` of the created node (the `Create2` request)                                                       | `0`     |
-| `create_ttl`           | Support for ZooKeeper `create` with `PERSISTENT_WITH_TTL` nodes                                                                                       | `0`     |
+| `create_ttl`           | Support for ZooKeeper `create` with `PERSISTENT_WITH_TTL` nodes. TTL nodes cannot have children.                                                       | `0`     |
 
 <Note>
 Some of the feature flags are enabled by default from version 25.7.
@@ -1481,5 +1481,6 @@ To get confident with the process, here's a [sandbox repository](https://github.
 
 While ClickHouse Keeper aims to be fully compatible with ZooKeeper, there are some features that aren't yet implemented (although development is ongoing):
 
+- Creating children under TTL nodes is not supported, even with `create_ttl` enabled. Unlike ZooKeeper, Keeper returns `ZBADARGUMENTS` for these requests.
 - Creating [`CONTAINER`](https://zookeeper.apache.org/doc/r3.5.1-alpha/api/org/apache/zookeeper/CreateMode.html) type znodes isn't supported
 - [`SASL authentication`](https://cwiki.apache.org/confluence/display/ZOOKEEPER/Zookeeper+and+SASL) isn't supported
