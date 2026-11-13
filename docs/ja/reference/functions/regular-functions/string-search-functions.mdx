@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **引数**
 
 * `s` — 抽出元の入力文字列。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
-* `regexp` — マッチに使用する正規表現。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
+* `regexp` — マッチに使用する正規表現。1～127 個のキャプチャグループを含む必要があります。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
 
 **戻り値**
 
@@ -396,7 +396,7 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 導入バージョン: v20.5.0
 
-正規表現に一致した最初の部分文字列からキャプチャリンググループを抽出します。すべての一致からグループを抽出するには、[`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) または [`extractAllGroupsVertical`](/ja/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical) を使用します。
+正規表現に一致した最初の部分文字列からキャプチャグループを抽出します。すべての一致からグループを抽出するには、[`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) または [`extractAllGroupsVertical`](/ja/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical) を使用します。
 
 **構文**
 
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **引数**
 
 * `s` — 抽出元の入力文字列。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
-* `regexp` — 正規表現。少なくとも 1 つのキャプチャグループを含む必要があります。定数。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
+* `regexp` — 正規表現。1 個以上 127 個以下のキャプチャグループを含む必要があります。定数。[`const String`](/ja/reference/data-types/string) または [`const FixedString`](/ja/reference/data-types/fixedstring)
 
 **戻り値**
 
@@ -449,15 +449,14 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   カラムにテキスト索引が定義されていない場合は、代わりに `splitByNonAlpha` トークナイザーが使用されます。
   `needle` 引数の型が [Array(String)](/ja/reference/data-types/array) の場合、配列の各要素はトークンとして扱われ、追加のトークン化は行われません。
   テキスト索引に [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 式が設定されている場合、`needle` (`String` として指定された場合) にはトークン化の前にプリプロセッサが適用されます。
-  テキスト索引に [ポストプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 式が設定されている場合、needle のトークンと input のトークンの両方 (つまり、どちらもトークン化後) にポストプロセッサが適用されます。
+  テキスト索引に [ポストプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 式が設定されている場合、検索文字列 のトークンと input のトークンの両方 (つまり、どちらもトークン化後) にポストプロセッサが適用されます。
 
 重複するトークンは無視されます。
 例えば、needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] は [&#39;ClickHouse&#39;] と同じように扱われます。
 
 <Note>
   テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasAllTokens` はそれを `input` に適用し、`needles` が [String](/ja/reference/data-types/string) の場合はトークン化の前に `needles` にも適用します。`needles` が [Array(String)](/ja/reference/data-types/array) の場合、その要素はそのまま渡され、プリプロセッサは適用されません。
-  プリプロセッサはテキスト索引の経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (例: `SETTINGS use_skip_indexes = 0`) では結果が異なることがあります。
-  この不一致は、全文検索の使い勝手を向上させるために許容されています。
+  プリプロセッサは索引定義の一部であるため、関数が評価される場所を問わず適用されます。つまり、`WHERE`/`PREWHERE` フィルタ内でも `SELECT` リスト内でも適用され、索引が読み取られるかどうか (例: `SETTINGS use_skip_indexes = 0`) にも左右されません。
 </Note>
 
 **構文**
@@ -476,11 +475,11 @@ hasAllTokens(input, needles[, tokenizer])
 
 **戻り値**
 
-すべてのneedleが一致する場合は1を返します。そうでない場合は0を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+すべての検索文字列が一致する場合は1を返します。そうでない場合は0を返します。[`UInt8`](/ja/reference/data-types/int-uint)
 
 **例**
 
-**文字列のニードルを使った基本的な使い方**
+**文字列の検索文字列を使った基本的な使い方**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -698,8 +697,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasAnyTokens` はそれを `input` に適用し、`needles` が [String](/ja/reference/data-types/string) の場合はトークン化の前に `needles` にも適用します。`needles` が [Array(String)](/ja/reference/data-types/array) の場合、その要素はそのまま渡され、プリプロセッサは適用されません。
-  プリプロセッサはテキスト索引の経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (例: `SETTINGS use_skip_indexes = 0`) では結果が異なる場合があります。
-  この不整合は、全文検索の使い勝手を向上させるために許容されています。
+  プリプロセッサは索引定義の一部であるため、関数が評価される箇所であればどこでも適用されます。`WHERE`/`PREWHERE` フィルタ内でも `SELECT` リスト内でも適用され、索引が読み込まれるかどうか (例: `SETTINGS use_skip_indexes = 0`) にも左右されません。
 </Note>
 
 **構文**
@@ -722,7 +720,7 @@ hasAnyTokens(input, needles[, tokenizer])
 
 **例**
 
-**文字列のneedleを使った基本的な使い方**
+**文字列の検索文字列を使った基本的な使い方**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -746,7 +744,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**配列内でAS-IS (トークン化なし) として検索する検索語を指定する**
+**配列で、AS-IS (トークン化なし) で検索する 検索文字列 を指定する**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -770,7 +768,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**`tokens` 関数で needle を生成する**
+**`tokens` 関数で 検索文字列 を生成する**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -923,8 +921,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasPhrase` はトークン化の前にそれを `input` と `phrase` の両方に適用します。
-  プリプロセッサはテキスト索引の経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (たとえば `SETTINGS use_skip_indexes = 0`) では結果が異なる場合があります。
-  この不整合は、全文検索の使い勝手を向上させるために許容されています。
+  プリプロセッサは索引定義の一部であるため、関数がどこで評価されても適用されます。`WHERE`/`PREWHERE` フィルタ内でも `SELECT` リスト内でも適用され、索引が読み取られるかどうか (たとえば `SETTINGS use_skip_indexes = 0`) にも左右されません。
 </Note>
 
 [`hasToken`](#hasToken)、[`hasAnyTokens`](#hasAnyTokens)、[`hasAllTokens`](#hasAllTokens) とは異なり、`hasPhrase` では トークン が同じ順序で現れ、
@@ -1549,7 +1546,7 @@ RE2 のデフォルトの動作とは異なり、`.` は改行にも一致しま
 match(haystack, pattern)
 ```
 
-**別名**: `REGEXP_MATCHES`
+**別名**: `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **引数**
 

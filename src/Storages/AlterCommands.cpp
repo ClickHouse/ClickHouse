@@ -222,7 +222,8 @@ DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
     if (!type_ast || !type_ast->as<ASTExpressionList>())
          return {};
 
-    return createEnumAdd(type_ast, is_enum16);
+    /// A copy, because `createEnumAdd` numbers the implicit elements in place and `prepare` can run again on this command.
+    return createEnumAdd(type_ast->clone(), is_enum16);
 }
 
 /// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
