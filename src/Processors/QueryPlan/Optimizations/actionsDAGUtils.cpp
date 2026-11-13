@@ -10,6 +10,7 @@
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -239,6 +240,16 @@ MatchedTrees::Matches matchTrees(
                                             else
                                             {
                                                 all_children_matched = inner_col->getField() == outer_col->getField();
+
+                                                /// `Field` leaves out the type a `Dynamic` value holds, time zone included.
+                                                if (all_children_matched
+                                                    && anyInTypeTree(*children[i]->result_type, [](const IDataType & nested) { return isDynamic(nested); }))
+                                                {
+                                                    const auto & inner_data = inner_col->getDataColumn();
+                                                    const auto & outer_data = outer_col->getDataColumn();
+                                                    all_children_matched = typeid(inner_data) == typeid(outer_data)
+                                                        && inner_data.compareAt(0, 0, outer_data, /* nan_direction_hint */ 1) == 0;
+                                                }
                                             }
                                         }
                                         else

@@ -200,6 +200,38 @@ SETTINGS optimize_use_projections = 1, session_timezone = 'UTC';
 
 DROP TABLE tz_projection;
 
+-- A `Dynamic` value holds its own type, time zone included, which projection matching and reading in
+-- order compare as well. Hours 0 and 20 in UTC are hours 9 and 5 in Asia/Tokyo.
+DROP TABLE IF EXISTS tz_dynamic;
+CREATE TABLE tz_dynamic (x UInt32,
+    PROJECTION pr_utc_hour (SELECT toHour(toDateTime(0, 'UTC')::Dynamic + x), count()
+                            GROUP BY toHour(toDateTime(0, 'UTC')::Dynamic + x)))
+ENGINE = MergeTree ORDER BY toHour(toDateTime(0, 'UTC')::Dynamic + x)
+SETTINGS allow_nullable_key = 1;
+INSERT INTO tz_dynamic VALUES (0), (72000);
+
+SELECT 'Dynamic aggregate projection in another zone', toHour(toDateTime(0, 'Asia/Tokyo')::Dynamic + x) AS h, count()
+FROM tz_dynamic GROUP BY h ORDER BY h
+SETTINGS optimize_use_projections = 1;
+
+SELECT 'Dynamic aggregate projection is still read in its own zone', count() FROM (
+    EXPLAIN
+    SELECT toHour(toDateTime(0, 'UTC')::Dynamic + x) AS h, count() FROM tz_dynamic GROUP BY h
+    SETTINGS optimize_use_projections = 1
+) WHERE explain ILIKE '%ReadFromMergeTree (pr_utc_hour)%';
+
+SELECT 'Dynamic sorting key read in another zone', toHour(toDateTime(0, 'Asia/Tokyo')::Dynamic + x) AS h
+FROM tz_dynamic ORDER BY h LIMIT 1
+SETTINGS optimize_read_in_order = 1;
+
+SELECT 'Dynamic sorting key is still read in order in its own zone', count() FROM (
+    EXPLAIN actions = 1
+    SELECT toHour(toDateTime(0, 'UTC')::Dynamic + x) AS h FROM tz_dynamic ORDER BY h LIMIT 1
+    SETTINGS optimize_read_in_order = 1
+) WHERE explain ILIKE '%Read type: InOrder%';
+
+DROP TABLE tz_dynamic;
+
 -- A time zone left out of the type means the session time zone, so leaving it out and spelling it out
 -- are one expression. Alias, `GROUP BY` and `GROUPING` analysis report a difference here as an error
 -- rather than as a slower plan, so these are the arms where telling the two apart would reject valid
@@ -318,6 +350,11 @@ WHERE number IN (SELECT toUInt64(toHour(materialize(toDateTime(0, 'UTC')::Dynami
 SELECT 'two zones inside Array(Dynamic) keep their own IN sets', count() FROM numbers(10)
 WHERE number IN (SELECT arrayJoin(arrayMap(x -> toUInt64(toHour(x)), materialize([toDateTime(0, 'UTC')::Dynamic]))) AS v)
     OR number IN (SELECT arrayJoin(arrayMap(x -> toUInt64(toHour(x)), materialize([toDateTime(0, 'Asia/Tokyo')::Dynamic]))) AS v);
+
+-- The paths of a `JSON` value are part of it as well.
+SELECT 'two JSON paths keep their own IN sets', count() FROM (SELECT arrayJoin(['a', 'b']) AS str)
+WHERE str IN (SELECT arrayJoin(JSONAllPaths(materialize('{"a":1}'::JSON))) AS v)
+    OR str IN (SELECT arrayJoin(JSONAllPaths(materialize('{"b":1}'::JSON))) AS v);
 
 -- A declared name is compared at its own position, so one sitting elsewhere in the type does not
 -- decide for a zone: these two differ only in a zone left out and are one expression.

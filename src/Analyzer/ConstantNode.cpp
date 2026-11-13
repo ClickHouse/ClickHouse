@@ -181,8 +181,9 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
     constant_value.getType()->updateHash(hash_state);
     updateExpressionIdentityHash(*constant_value.getType(), hash_state);
 
-    /// The fast hash of a `Dynamic` value leaves out the type it holds, time zone included.
-    if (anyInTypeTree(*constant_value.getType(), [](const IDataType & nested) { return isDynamic(nested); }))
+    /// The fast hash of a `Dynamic` value leaves out the type it holds, time zone included, and the fast
+    /// hash of a `JSON` value leaves out its paths.
+    if (anyInTypeTree(*constant_value.getType(), [](const IDataType & nested) { return isDynamic(nested) || isObject(nested); }))
         constant_value.getColumn()->updateHashWithValue(0, hash_state);
 }
 
