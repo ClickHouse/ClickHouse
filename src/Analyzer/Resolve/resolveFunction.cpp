@@ -1255,6 +1255,36 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
                 "Setting 'in_null_as_unknown' does not support a Tuple left operand in function {}",
                 is_not_in ? "notIn" : "in");
 
+        /// Keep the source array for the NULL-presence check: a failed element conversion
+        /// also becomes NULL, but only a source NULL makes an unmatched result unknown.
+        auto source_array = array_arg;
+        const auto * source_array_type = typeid_cast<const DataTypeArray *>(removeNullable(source_array->getResultType()).get());
+        if (source_array_type)
+        {
+            const auto target_type = removeNullable(recursiveRemoveLowCardinality(element_arg->getResultType()));
+            const auto source_element_type = source_array_type->getNestedType();
+            const bool both_numeric = isNumber(removeNullable(removeLowCardinality(target_type)))
+                && isNumber(removeNullable(removeLowCardinality(source_element_type)));
+            if (!target_type->onlyNull()
+                && target_type->canBeInsideNullable()
+                && !both_numeric
+                && !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_element_type}))
+            {
+                const String lambda_argument_name = "__in_array_element_to_cast";
+                auto cast = std::make_shared<FunctionNode>("accurateCastOrNull");
+                cast->getArguments().getNodes() = {
+                    std::make_shared<IdentifierNode>(Identifier{lambda_argument_name}),
+                    std::make_shared<ConstantNode>(target_type->getName(), std::make_shared<DataTypeString>())};
+
+                auto lambda = std::make_shared<LambdaNode>(
+                    std::make_shared<LambdaArgumentsNode>(Names{lambda_argument_name}), std::move(cast), false /*is_operator*/);
+                auto array_map = std::make_shared<FunctionNode>("arrayMap");
+                array_map->getArguments().getNodes() = {std::move(lambda), array_arg};
+                array_arg = std::move(array_map);
+                resolveFunction(array_arg, scope);
+            }
+        }
+
         auto has_fn = std::make_shared<FunctionNode>("has");
         has_fn->getArguments().getNodes() = {array_arg->clone(), element_arg};
         QueryTreeNodePtr match_result = has_fn;
@@ -1271,8 +1301,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             no_match_result = std::move(null_if_present);
             resolveFunction(no_match_result, scope);
         }
-        const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(array_arg->getResultType()).get());
-        if (!source_is_empty && array_type && canContainNull(*array_type->getNestedType()))
+        if (!source_is_empty && source_array_type && canContainNull(*source_array_type->getNestedType()))
         {
             const String lambda_argument_name = "__in_array_element";
             auto is_null_fn = std::make_shared<FunctionNode>("isNull");
@@ -1284,7 +1313,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
                 std::move(lambda_arguments), std::move(is_null_fn), false /*is_operator*/);
 
             auto has_null_fn = std::make_shared<FunctionNode>("arrayExists");
-            has_null_fn->getArguments().getNodes() = {std::move(is_null_lambda), array_arg->clone()};
+            has_null_fn->getArguments().getNodes() = {std::move(is_null_lambda), source_array->clone()};
             QueryTreeNodePtr has_null = std::move(has_null_fn);
             resolveFunction(has_null, scope);
 
