@@ -52,6 +52,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
+#include <Storages/FileLog/DirectoryWatchReactor.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
@@ -834,6 +835,13 @@ struct ContextSharedPart : boost::noncopyable
     OnceFlag streaming_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs streaming background jobs
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    OnceFlag directory_watch_reactor_initialized;
+    mutable std::mutex directory_watch_reactor_mutex;
+    /// The thread that watches the directories of all `FileLog` tables
+    mutable std::shared_ptr<DirectoryWatchReactor> directory_watch_reactor TSA_GUARDED_BY(directory_watch_reactor_mutex);
+#endif
+
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
@@ -1330,6 +1338,9 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
         BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
         BackgroundSchedulePoolPtr delete_streaming_schedule_pool;
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        std::shared_ptr<DirectoryWatchReactor> delete_directory_watch_reactor;
+#endif
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1465,6 +1476,13 @@ struct ContextSharedPart : boost::noncopyable
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        {
+            std::lock_guard lock(directory_watch_reactor_mutex);
+            delete_directory_watch_reactor = std::move(directory_watch_reactor);
+        }
+#endif
+
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
         /// - before storage startup (because of some streaming of, i.e. Kafka, to
@@ -1500,6 +1518,11 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_message_broker_schedule_pool));
         join_background_pool(std::move(delete_iceberg_schedule_pool));
         join_background_pool(std::move(delete_streaming_schedule_pool));
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// The tables are shut down by now, so this is normally the last reference and stops the reactor thread.
+        delete_directory_watch_reactor.reset();
+#endif
 
         delete_access_control.reset();
 
@@ -1705,8 +1728,10 @@ ContextData::ContextData(const ContextData &o) :
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
+    totals_without_storage_access(o.totals_without_storage_access),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
+    is_metadata_query(o.is_metadata_query),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
@@ -3053,6 +3078,20 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
+namespace
+{
+    /// Maps every resource to an empty ResourceLink, so a query using it is exempt from all workload
+    /// scheduling (query-slot and memory-reservation admission, CPU and IO) and never throws on an
+    /// unknown workload. Stateless, so a single shared instance serves every exempt query.
+    class ExemptClassifier : public IClassifier
+    {
+    public:
+        bool has(const String &) override { return false; }
+        ResourceLink get(const String &) override { return {}; }
+        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+    };
+}
+
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     const auto & query_settings = getSettingsRef();
@@ -3071,8 +3110,22 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    {
+        if (is_metadata_query)
+        {
+            static const ClassifierPtr metadata_exempt_classifier = std::make_shared<ExemptClassifier>();
+            classifier = metadata_exempt_classifier;
+        }
+        else
+            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    }
     return classifier;
+}
+
+void Context::setMetadataQuery()
+{
+    std::lock_guard lock(mutex);
+    is_metadata_query = true;
 }
 
 void Context::releaseQuerySlot() const
@@ -6661,6 +6714,21 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
     SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->distributed_schedule_pool;
 }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::shared_ptr<DirectoryWatchReactor> Context::getDirectoryWatchReactor() const
+{
+    callOnce(shared->directory_watch_reactor_initialized, [&]
+    {
+        auto created_reactor = std::make_shared<DirectoryWatchReactor>();
+        std::lock_guard lock(shared->directory_watch_reactor_mutex);
+        shared->directory_watch_reactor = std::move(created_reactor);
+    });
+
+    std::lock_guard lock(shared->directory_watch_reactor_mutex);
+    return shared->directory_watch_reactor;
+}
+#endif
 
 BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
 {
