@@ -29,13 +29,13 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionInitializeAggregation final : public IFunction, private WithContext
+class FunctionInitializeAggregation final : public IFunction
 {
 public:
     static constexpr auto name = "initializeAggregation";
 
-    FunctionInitializeAggregation(ContextPtr context_, AggregateFunctionPtr aggregate_function_)
-        : WithContext(context_), aggregate_function(std::move(aggregate_function_)) {}
+    explicit FunctionInitializeAggregation(AggregateFunctionPtr aggregate_function_)
+        : aggregate_function(std::move(aggregate_function_)) {}
 
     String getName() const override { return name; }
 
@@ -183,7 +183,7 @@ public:
             arg.column = recursiveRemoveLowCardinality(arg.column);
         }
         auto aggregate_function = resolveAggregateFunction(args);
-        auto function = std::make_shared<FunctionInitializeAggregation>(getContext(), std::move(aggregate_function));
+        auto function = std::make_shared<FunctionInitializeAggregation>(std::move(aggregate_function));
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -194,6 +194,7 @@ public:
 
 private:
     const bool cast_fixed_string_to_string_strip_trailing_zeros;
+    CachedAggregateFunctionNameAndParameters parsed_aggregate_function_name;
 
     AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
     {
@@ -213,8 +214,9 @@ private:
 
         String aggregate_function_name;
         Array params_row;
-        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+        parsed_aggregate_function_name.get(
+            aggregate_function_name_with_params, aggregate_function_name, params_row, "function " + getName(),
+            [this] { return getContext(); });
 
         auto action = NullsAction::EMPTY; /// It is already embedded in the function name itself
         AggregateFunctionProperties properties;

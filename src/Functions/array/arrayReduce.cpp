@@ -250,6 +250,7 @@ public:
 
 private:
     const bool cast_fixed_string_to_string_strip_trailing_zeros;
+    CachedAggregateFunctionNameAndParameters parsed_aggregate_function_name;
 
     AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
     {
@@ -282,8 +283,9 @@ private:
 
         String aggregate_function_name;
         Array params_row;
-        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+        parsed_aggregate_function_name.get(
+            aggregate_function_name_with_params, aggregate_function_name, params_row, "function " + getName(),
+            [this] { return getContext(); });
 
         auto action = NullsAction::EMPTY;
         AggregateFunctionProperties properties;
