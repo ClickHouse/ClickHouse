@@ -50,19 +50,33 @@ StoragePtr lockKey(const StoragePtr & table)
 
 /// Forwarding storages return the action locks of the storage they resolve to, so the lock
 /// belongs to that storage rather than to the one it was requested from.
-StoragePtr resolveActionLockOwner(StoragePtr table)
+/// Each target is checked with `may_resolve` (when set) before it is looked up, and the walk stops at the
+/// first one that is not allowed: the lookup runs with the forwarding storage's own context, and may load
+/// the target or reach an external database, which the caller is not allowed to make it do.
+StoragePtr resolveActionLockOwner(StoragePtr table, const ActionLocksManager::OwnerReleaseCheck & may_resolve)
 {
     /// Bound the walk in case of a cycle of aliases.
     for (size_t depth = 0; depth < 16 && table; ++depth)
     {
-        StoragePtr next;
-        if (const auto * alias = typeid_cast<const StorageAlias *>(table.get()))
-            next = alias->tryGetTargetTable();
-        else if (const auto * view = typeid_cast<const StorageMaterializedView *>(table.get()); view && view->hasInnerTable())
-            next = view->tryGetTargetTable();
+        const auto * alias = typeid_cast<const StorageAlias *>(table.get());
+        const auto * view = alias ? nullptr : typeid_cast<const StorageMaterializedView *>(table.get());
+        if (!alias && !(view && view->hasInnerTable()))
+            break;
 
+        const StorageID target_id = alias ? alias->getTargetTableId() : view->getTargetTableId();
+        if (may_resolve && !may_resolve(target_id))
+            break;
+
+        StoragePtr next = alias ? alias->tryGetTargetTable() : view->tryGetTargetTable();
         if (!next)
             break;
+
+        /// The target of a materialized view follows its renames, so the lookup may see another target than
+        /// the one checked above.
+        const auto next_id = next->getStorageID();
+        if (next_id.database_name != target_id.database_name || next_id.table_name != target_id.table_name)
+            break;
+
         table = std::move(next);
     }
     return table;
@@ -166,7 +180,7 @@ void ActionLocksManager::remove(
     if (auto recorded_owner = tryGetRecordedOwner(table.get(), action_type))
         owner = std::move(*recorded_owner);
     else if (resolve_forwarding_target)
-        owner = lockKey(resolveActionLockOwner(table));
+        owner = lockKey(resolveActionLockOwner(table, may_release_owner));
 
     if (owner == table)
         owner.reset();
@@ -174,7 +188,7 @@ void ActionLocksManager::remove(
     /// Releasing the locks of another storage needs the caller's permission on that storage too: having
     /// the access to an `Alias` must not be enough to release a `SYSTEM STOP` taken on its target.
     /// The check runs outside of `mutex`, and the owner it approved is compared with the recorded one below.
-    if (owner && may_release_owner && !may_release_owner(owner))
+    if (owner && may_release_owner && !may_release_owner(owner->getStorageID()))
         owner.reset();
 
     bool owner_released = false;

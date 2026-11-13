@@ -330,9 +330,8 @@ constexpr std::string_view table_is_not_replicated = "Table {} is not replicated
 /// it there needs the same access on that storage as a `SYSTEM START` naming it directly.
 ActionLocksManager::OwnerReleaseCheck mayReleaseActionLockOwner(const std::shared_ptr<const ContextAccessWrapper> & access, AccessType required_access_type)
 {
-    return [access, required_access_type](const StoragePtr & owner)
+    return [access, required_access_type](const StorageID & owner_id)
     {
-        auto owner_id = owner->getStorageID();
         return access->isGranted(required_access_type, owner_id.database_name, owner_id.table_name);
     };
 }

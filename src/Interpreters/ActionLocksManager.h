@@ -36,8 +36,10 @@ public:
     /// to its current target, whose locks are removed as well. This reaches the target's database, so it is
     /// meant for a `SYSTEM START` of one explicitly named table, not for the loop over all tables.
     /// The locks of a storage other than the specified one are removed only if `may_release_owner` (when set)
-    /// allows it for that storage: the caller checks its access there.
-    using OwnerReleaseCheck = std::function<bool(const StoragePtr & owner)>;
+    /// allows it for that storage: the caller checks its access there. When a forwarding storage is resolved,
+    /// each target it names is checked before it is looked up, and the resolution stops at the first target
+    /// that is not allowed: the lookup may reach an external database on behalf of the user.
+    using OwnerReleaseCheck = std::function<bool(const StorageID & owner_id)>;
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(
         const StoragePtr & requested_table,
