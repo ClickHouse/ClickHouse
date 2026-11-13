@@ -105,4 +105,24 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
 ORDER BY
     event_time_microseconds;
 
+SELECT '--- a Dynamic constant stored in its own variant or in the shared one';
+
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+SELECT count() FROM qcc_tz WHERE isDynamicElementInSharedData(materialize('a'::Dynamic(max_types = 1))) != x SETTINGS use_query_condition_cache = true;
+
+SELECT count() FROM qcc_tz WHERE isDynamicElementInSharedData(materialize(arrayElement([1, 'a']::Array(Dynamic(max_types = 1)), 2))) != x SETTINGS use_query_condition_cache = true;
+
+SELECT count() FROM qcc_tz WHERE isDynamicElementInSharedData(materialize('a'::Dynamic(max_types = 1))) != x SETTINGS use_query_condition_cache = true;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+    type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND query = 'SELECT count() FROM qcc_tz WHERE isDynamicElementInSharedData(materialize(''a''::Dynamic(max_types = 1))) != x SETTINGS use_query_condition_cache = true;'
+ORDER BY
+    event_time_microseconds;
+
 DROP TABLE qcc_tz;

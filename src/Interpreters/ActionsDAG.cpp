@@ -510,7 +510,13 @@ void ActionsDAG::Node::updateOwnHash(
         /// plan builds matching without dropping any other constant's value (it still serializes
         /// normally for distributed propagation).
         if (!is_runtime_filter_id && (with_variable_size_constant_values || isConstantValueInCacheKey(*this)))
-            column->updateHashWithValue(0, hash_state);
+        {
+            /// `updateHashWithValue` leaves out how such a value is stored.
+            if (result_type && holdsATypeOfItsOwn(*result_type))
+                updateStoredValueHash(*result_type, column->getDataColumn(), hash_state);
+            else
+                column->updateHashWithValue(0, hash_state);
+        }
 
         /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
         /// column, so the call above hashes nothing for it, and in build-independent mode its
