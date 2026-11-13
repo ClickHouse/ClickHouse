@@ -1,5 +1,6 @@
 #pragma once
 #include <Columns/FilterDescription.h>
+#include <Common/PODArray.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Processors/ISimpleTransform.h>
