@@ -3503,9 +3503,21 @@ static bool hasORCElements(const ORC::Type & orc_type)
     return kind == ORC::STRUCT || kind == ORC::LIST || kind == ORC::MAP || kind == ORC::UNION;
 }
 
-/// The element of the struct `path` that the subcolumn path `subpath` below it starts with, and the rest of `subpath`. Of the
-/// prefixes of `subpath` (and all of it) that are fields of the struct, it is the shortest one that the file has and that can hold
-/// the rest, else the shortest one the file lacks and whose `initial-default` is not a scalar, else the longest (a scalar's `null`).
+static bool hasORCTypeWithIcebergId(const ORC::Type & orc_type, Int64 field_id)
+{
+    checkStackSize();
+    Int64 id = 0;
+    if (orc_type.hasAttributeKey("iceberg.id") && tryParse(id, orc_type.getAttributeValue("iceberg.id")) && id == field_id)
+        return true;
+    for (uint64_t i = 0; i < orc_type.getSubtypeCount(); ++i)
+        if (hasORCTypeWithIcebergId(*orc_type.getSubtype(i), field_id))
+            return true;
+    return false;
+}
+
+/// The element of the struct `path` that the subcolumn path `subpath` starts with, and the rest: of the prefixes of `subpath` that are
+/// fields of the struct, the one whose field in the file is or has below it the longest one's field id, else the shortest one the file
+/// has that can hold the rest, else the shortest one it lacks whose `initial-default` is not a scalar, else the longest.
 static std::pair<String, String> splitStructElementName(
     const String & path,
     const String & subpath,
@@ -3527,15 +3539,19 @@ static std::pair<String, String> splitStructElementName(
     auto split = [&](size_t end) -> std::pair<String, String>
     { return {subpath.substr(0, end), end == subpath.size() ? String{} : subpath.substr(end + 1)}; };
 
+    const Int64 longest_field_id = encoding.at(path + "." + subpath.substr(0, ends.back()));
     VectorWithMemoryTracking<const ORC::Type *> element_orc_types;
     for (size_t end : ends)
     {
         const auto * element_orc_type
             = findStructElementORCType(path, subpath.substr(0, end), orc_type, column_mapper, ignore_case, field_ids_cache);
-        if (element_orc_type && (end == subpath.size() || hasORCElements(*element_orc_type)))
+        if (element_orc_type && hasORCTypeWithIcebergId(*element_orc_type, longest_field_id))
             return split(end);
         element_orc_types.push_back(element_orc_type);
     }
+    for (size_t i = 0; i < ends.size(); ++i)
+        if (element_orc_types[i] && (ends[i] == subpath.size() || hasORCElements(*element_orc_types[i])))
+            return split(ends[i]);
     for (size_t i = 0; i < ends.size(); ++i)
     {
         if (element_orc_types[i])

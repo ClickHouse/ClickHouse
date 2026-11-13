@@ -117,6 +117,9 @@ dotted element	0	(5)	5
 dotted sibling	(11,100,7)
 dotted sibling	100	7
 dotted sibling	1
+dotted struct sibling	((11),100,7)
+dotted struct sibling	100	7
+dotted struct sibling	1
 dotted prefix	(100,7,11)
 dotted prefix	100	7
 ORC
@@ -170,6 +173,9 @@ dotted element	0	(5)	5
 dotted sibling	(11,100,7)
 dotted sibling	100	7
 dotted sibling	1
+dotted struct sibling	((11),100,7)
+dotted struct sibling	100	7
+dotted struct sibling	1
 dotted prefix	(100,7,11)
 dotted prefix	100	7
 Avro

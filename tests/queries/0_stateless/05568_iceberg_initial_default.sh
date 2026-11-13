@@ -468,7 +468,7 @@ for format in Parquet ORC Avro; do
                 SELECT 'dotted element', ${optimize}, tupleElement(t, 'd.e'), t.\`d.e\`.f FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = ${optimize};"
         done
 
-        # Neither is an element `s.j` next to a scalar `s`, in the file or added after it.
+        # Neither is an element `s.j` next to a scalar or struct `s`, in the file or added after it.
         table="${format}_dotted_sibling"
         create+="
             CREATE TABLE t_dotted_sibling (t Tuple(s Nullable(Int32), \`s.j\` Nullable(Int32), k Nullable(Int32)))
@@ -478,6 +478,15 @@ for format in Parquet ORC Avro; do
             SELECT 'dotted sibling', t FROM icebergLocal('${table}/');
             SELECT 'dotted sibling', t.\`s.j\`, t.k FROM icebergLocal('${table}/');
             SELECT 'dotted sibling', count() FROM icebergLocal('${table}/') WHERE t.\`s.j\` = 100;"
+        table="${format}_dotted_struct_sibling"
+        create+="
+            CREATE TABLE t_dotted_struct_sibling (t Tuple(s Tuple(x Nullable(Int32)), \`s.j\` Nullable(Int32), k Nullable(Int32)))
+            ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t_dotted_struct_sibling VALUES (((11), 100, 7));"
+        after+="
+            SELECT 'dotted struct sibling', t FROM icebergLocal('${table}/');
+            SELECT 'dotted struct sibling', t.\`s.j\`, t.k FROM icebergLocal('${table}/');
+            SELECT 'dotted struct sibling', count() FROM icebergLocal('${table}/') WHERE t.\`s.j\` = 100;"
         table="${format}_dotted_prefix"
         create+="
             CREATE TABLE t_dotted_prefix (t Tuple(\`s.j\` Nullable(Int32), k Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
