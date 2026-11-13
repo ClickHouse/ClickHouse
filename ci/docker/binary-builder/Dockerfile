@@ -50,6 +50,8 @@ ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
 # has changed it, so the location is pinned next to the commit instead of being
 # spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
 ARG TOOLCHAIN_S3_DIR=REFs/master/${TOOLCHAIN_COMMIT}
+# Extract only the toolchain members CI uses; the apt LLVM of the base image provides the other
+# tools under versioned names (`opt-22`, ...). A tool newly run from /usr/local/bin must be added here.
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
@@ -57,7 +59,16 @@ RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
         arm64) tarch=aarch64 ;; \
     esac && \
     curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/${TOOLCHAIN_S3_DIR}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
-      | zstd -d | tar -xf - -C /usr/local/ && \
+      | zstd -d | tar -xf - -C /usr/local/ ./lib/clang ./lib/libbolt_rt_instr.a ./lib/libbolt_rt_hugify.a ./share \
+        $(printf './bin/%s ' \
+          clang clang++ clang-${LLVM_VERSION} clang++-${LLVM_VERSION} clang-cpp ld.lld lld ld64.lld lld-link wasm-ld \
+          llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip llvm-install-name-tool llvm-bitcode-strip \
+          llvm-objdump llvm-otool llvm-readobj llvm-readelf llvm-size llvm-strings llvm-cxxfilt \
+          llvm-symbolizer llvm-addr2line llvm-profdata llvm-cov llvm-dwarfdump llvm-dwp llvm-config \
+          llvm-lipo llvm-libtool-darwin llvm-lib llvm-dlltool llvm-ml llvm-rc llvm-windres llvm-mt \
+          llvm-bolt merge-fdata perf2bolt llvm-boltdiff \
+          clang-tidy clang-apply-replacements clang-include-cleaner clang-scan-deps clang-format run-clang-tidy \
+          ninja) && \
     echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
     ; fi
 
