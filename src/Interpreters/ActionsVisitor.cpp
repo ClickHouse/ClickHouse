@@ -423,6 +423,70 @@ ASTPtr makeScalarNonConstantInReplacement(
     return result;
 }
 
+/// Compare each numeric candidate before an array can narrow it. Only a source
+/// `NULL`, not a failed string-to-number conversion, makes a nonmatch unknown.
+ASTPtr makeNumericNonConstantInReplacement(
+    const ASTFunction & node,
+    const DataTypePtr & left_operand_type,
+    const DataTypePtr & right_operand_type,
+    const DataTypes & element_types,
+    bool right_operand_tuple_function_is_set)
+{
+    const auto & left_operand = node.arguments->children.at(0);
+    const auto & right_operand = node.arguments->children.at(1);
+    ASTs elements;
+    if (const auto * function = right_operand->as<ASTFunction>();
+        function && function->name == "tuple" && right_operand_tuple_function_is_set)
+    {
+        for (const auto & child : function->arguments->children)
+            elements.push_back(child->clone());
+    }
+    else if (right_operand_type && isTuple(removeNullable(right_operand_type)))
+    {
+        for (size_t i = 0; i < element_types.size(); ++i)
+            elements.push_back(makeASTFunction(
+                "tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1))));
+    }
+    else
+    {
+        elements.push_back(right_operand->clone());
+    }
+
+    ASTPtr any_match;
+    ASTPtr source_has_null;
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        const auto & element_type = element_types.at(i);
+        auto source_is_null = makeASTFunction("isNull", elements[i]->clone());
+        source_has_null = source_has_null
+            ? makeASTFunction("or", std::move(source_has_null), std::move(source_is_null))
+            : std::move(source_is_null);
+        if (element_type->onlyNull())
+            continue;
+
+        ASTPtr candidate = elements[i]->clone();
+        if (isStringOrFixedString(removeNullable(removeLowCardinality(element_type))))
+            candidate = makeASTFunction(
+                "accurateCastOrNull", std::move(candidate),
+                make_intrusive<ASTLiteral>(removeNullable(removeLowCardinality(left_operand_type))->getName()));
+        auto equals = makeASTFunction("equals", left_operand->clone(), std::move(candidate));
+        auto match = makeASTFunction("ifNull", std::move(equals), make_intrusive<ASTLiteral>(0u));
+        any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
+    }
+
+    if (!any_match)
+        any_match = make_intrusive<ASTLiteral>(0u);
+    if (!source_has_null)
+        source_has_null = make_intrusive<ASTLiteral>(0u);
+    auto result = makeASTFunction(
+        "if", std::move(any_match), make_intrusive<ASTLiteral>(1u),
+        makeASTFunction("if", std::move(source_has_null), make_intrusive<ASTLiteral>(Field{}), make_intrusive<ASTLiteral>(0u)));
+    result = makeASTFunction("if", makeASTFunction("isNull", left_operand->clone()), make_intrusive<ASTLiteral>(Field{}), std::move(result));
+    if (isNegativeInFunctionName(node.name))
+        result = makeASTFunction("not", std::move(result));
+    return result;
+}
+
 ASTPtr makeNonConstantInReplacement(
     const ASTFunction & node,
     bool right_operand_is_array,
@@ -1294,10 +1358,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     /// `NULL`, mirroring how the constant `Set` path skips unrepresentable elements).
                     /// Mirror that fallback here to keep both analyzers in agreement.
                     DataTypePtr cast_elements_to;
+                    DataTypes element_types;
+                    bool element_types_known = false;
                     if (!right_argument_is_array && left_argument_type && !left_argument_type->onlyNull())
                     {
-                        DataTypes element_types;
-                        bool element_types_known = true;
+                        element_types_known = true;
                         bool rhs_has_null_element = false;
 
                         if (right_argument_function && right_argument_function->name == "tuple"
@@ -1367,17 +1432,32 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         }
                     }
 
-                    replacement = makeNonConstantInReplacement(
-                        node,
-                        right_argument_is_array,
-                        right_argument_tuple_function_is_set,
-                        include_right_argument_tuple_value,
-                        right_argument_type,
-                        left_argument_is_tuple,
-                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
-                        left_argument_type && left_argument_type->onlyNull(),
-                        cast_elements_to,
-                        use_standard_null_semantics);
+                    const bool compare_numeric_sources = use_standard_null_semantics
+                        && left_argument_type
+                        && isNumber(removeNullable(removeLowCardinality(left_argument_type)))
+                        && !isDecimal(removeNullable(removeLowCardinality(left_argument_type)))
+                        && element_types_known
+                        && !element_types.empty()
+                        && std::all_of(element_types.begin(), element_types.end(), [](const auto & type)
+                        {
+                            const auto bare_type = removeNullable(removeLowCardinality(type));
+                            return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type);
+                        });
+                    if (compare_numeric_sources)
+                        replacement = makeNumericNonConstantInReplacement(
+                            node, left_argument_type, right_argument_type, element_types, right_argument_tuple_function_is_set);
+                    else
+                        replacement = makeNonConstantInReplacement(
+                            node,
+                            right_argument_is_array,
+                            right_argument_tuple_function_is_set,
+                            include_right_argument_tuple_value,
+                            right_argument_type,
+                            left_argument_is_tuple,
+                            getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
+                            left_argument_type && left_argument_type->onlyNull(),
+                            cast_elements_to,
+                            use_standard_null_semantics);
                 }
 
                 visit(replacement, data);

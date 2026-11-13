@@ -26,3 +26,22 @@ WHERE a IN (materialize(v));
 
 SELECT m IN (map('a', 1), v), m NOT IN (map('a', 1), v)
 FROM values('m Map(String, UInt8), v Nullable(String)', (map('a', 1), NULL), (map('b', 2), NULL));
+
+SELECT m IN (s), m NOT IN (s)
+FROM (SELECT map('a', toUInt8(1)) AS m, materialize(toNullable(toString(m))) AS s);
+
+SELECT m IN (s), m NOT IN (s)
+FROM (SELECT map('a', toUInt8(1)) AS m,
+             materialize(toNullable(toString(map('b', toUInt8(1))))) AS s);
+
+SELECT m IN (map('b', toUInt8(1)), s, NULL),
+       m NOT IN (map('b', toUInt8(1)), s, NULL)
+FROM (SELECT map('a', toUInt8(1)) AS m, materialize(toNullable(toString(m))) AS s);
+
+SELECT count()
+FROM (SELECT map('a', toUInt8(1)) AS m, materialize(toNullable(toString(m))) AS s)
+WHERE m IN (s);
+
+SELECT m IN (s), m NOT IN (s)
+FROM (SELECT map('a', toUInt8(1)) AS m,
+             materialize(toNullable(replaceAll(toString(m), ':', ' : '))) AS s);

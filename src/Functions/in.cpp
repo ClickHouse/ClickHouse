@@ -7,6 +7,8 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
@@ -17,6 +19,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/convertFieldToType.h>
 
 
 namespace DB
@@ -37,6 +40,50 @@ namespace Setting
 
 namespace
 {
+
+class FunctionMapStringEqualsForIn final : public IFunction
+{
+public:
+    static constexpr auto name = "__mapStringEqualsForIn";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapStringEqualsForIn>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isMap(removeNullable(removeLowCardinality(arguments[0]))))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Map", getName());
+        if (!isStringOrFixedString(removeNullable(removeLowCardinality(arguments[1]))))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be a String", getName());
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(*removeNullable(removeLowCardinality(arguments[0].type)));
+        auto maps = arguments[0].column->convertToFullColumnIfConst();
+        auto strings = arguments[1].column->convertToFullColumnIfConst();
+        auto result = ColumnUInt8::create(input_rows_count);
+        auto & values = result->getData();
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const Field source{String(strings->getDataAt(row))};
+            const Field converted = convertFieldToType(source, map_type, nullptr, {}, true);
+            if (converted.isNull())
+                continue;
+
+            auto candidate = map_type.createColumn();
+            candidate->insert(converted);
+            values[row] = maps->compareAt(row, 0, *candidate, 1) == 0;
+        }
+        return result;
+    }
+};
 
 template <typename ColumnType>
 ColumnPtr flipFloatZeroSign(const ColumnPtr & column)
@@ -580,6 +627,7 @@ REGISTER_FUNCTION(In)
 {
     registerFunctionsInImpl(factory, false);
     registerFunctionsInImpl(factory, true);
+    factory.registerFunction<FunctionMapStringEqualsForIn>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

@@ -196,7 +196,8 @@ private:
         const ProjectionNames & parameters_projection_names,
         IdentifierResolveScope & scope,
         std::optional<bool> source_is_empty,
-        QueryTreeNodePtr source_null_predicate);
+        QueryTreeNodePtr source_null_predicate,
+        QueryTreeNodePtr extra_match_predicate = nullptr);
 
     QueryTreeNodePtr convertTupleToArray(
         const QueryTreeNodes & array_elements,
