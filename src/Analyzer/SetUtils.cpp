@@ -114,7 +114,9 @@ std::optional<ColumnPtr> convertColumnToTypeCheckEnum(
     }
     catch (const Exception & e)
     {
-        if (!forbid_unknown_enum_values && isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
+        if (!forbid_unknown_enum_values
+            && isEnum(removeNullable(removeLowCardinality(to_type)))
+            && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
             return std::nullopt;
         throw;
     }
