@@ -25,18 +25,9 @@ namespace DB
 namespace
 {
 
-/** Sorting by several fixed-width integer columns at once.
-  *
-  * The multi-column sort orders the rows by the first column, finds the ranges of equal values and sorts each
-  * range by the next column, reading the values through the permutation every time. When the value ranges of
-  * the leading columns in a block fit together into 64 bits, these columns can be replaced by one unsigned key:
-  * every value is reduced by the column's minimum (or subtracted from its maximum for a descending column), and
-  * the reduced values are concatenated, the first column taking the most significant bits. Packed keys compare
-  * exactly like the rows on these columns, so one stable radix sort of the packed keys orders the block by all
-  * of them in a few passes.
-  *
-  * The values are read as the unsigned integers of `callWithOrderedBits`, which compare like the values.
-  */
+/// A packed key concatenates the leading integer columns, each reduced by its minimum (or subtracted from its maximum
+/// for a descending column), the first one in the most significant bits. Packed keys compare like the rows on these
+/// columns, so one stable radix sort of them orders the block by all of them.
 struct PackedSortColumn
 {
     /// Appends the reduced values of the column to the packed keys: key = (key << bits) | reduced.
@@ -49,8 +40,7 @@ struct PackedSortColumn
     size_t bits = 0;
     /// The width of the column's values.
     size_t value_bits = 0;
-    /// The work of the radix sort of this column by the column sort, in bytes moved per row and pass (see
-    /// `packedSortWork`), or 0 if the column sort compares its values instead.
+    /// Bytes moved per row and pass by the column sort's radix sort of this column, 0 if it compares the values.
     size_t column_sort_work = 0;
 };
 
@@ -78,7 +68,6 @@ PackedSortType getPackedSortType(const IColumn & column)
     return PackedSortType::None;
 }
 
-/// The unsigned integer that `GetBits` maps a value to.
 template <typename GetBits>
 using OrderedBits = std::invoke_result_t<GetBits, const char *>;
 
@@ -94,8 +83,7 @@ struct LoadRank
     UInt32 operator()(const char * value) const { return unalignedLoad<UInt32>(value); }
 };
 
-/// Calls `f` with the `GetBits` of a column of a packable type. The ordered bits of the other types, and of
-/// `FixedString`, are never requested.
+/// Calls `f` with the `GetBits` of a column of a packable type; other types never reach it.
 template <typename F>
 void callWithPackableOrderedBits(const IColumn & column, F && f)
 {
@@ -116,8 +104,7 @@ constexpr size_t columnRadixSortWork()
     return sizeof(T) * sizeof(ValueWithIndex<T>);
 }
 
-/// The key is shifted by the width of the column, which is less than 64: a column that wide is never packed with
-/// another one, and a single column only if it is much narrower than its values.
+/// `column.bits` is below 64, see the single-column check in `trySortByPackedKey`.
 template <typename GetBits, bool descending>
 void appendToPackedKey(const PackedSortColumn & column, UInt64 * __restrict keys, size_t rows)
 {
@@ -216,27 +203,23 @@ int strictOrder(const IColumn & column, size_t rows)
     return order;
 }
 
-/// Ranking pays off when the values repeat, so that the following columns are sorted within long ranges.
 constexpr size_t max_rank_bits = 16;
 constexpr size_t min_rows_per_rank = 16;
-/// The ranks are kept until the keys are built, so their number bounds the memory of the packed sort.
+/// Each ranked column keeps a `UInt32` per row until the keys are built.
 constexpr size_t max_ranked_columns = 2;
 
 template <typename T>
 using WideColumnHash = std::conditional_t<sizeof(T) == sizeof(UInt64), HashCRC32<T>, UInt128HashCRC32>;
 
-/// What a sample of rows tells about a wide column.
 struct WideColumnSample
 {
     /// The values repeat often enough to be ranked.
     bool few_distinct = true;
-    /// The width of the range of the sampled values. The range of the whole column is at least as wide.
+    /// The width of the range of the sampled values, a lower bound for the whole column.
     size_t range_bits = 0;
 };
 
-/// The position of the k-th sampled row. The positions follow a Weyl sequence rather than a fixed stride, which could
-/// align with a period of the data (e.g. series interleaved in the same order at every timestamp); they are distinct
-/// while the sample is much smaller than the block.
+/// A Weyl sequence, not a fixed stride that could align with a period of the data; distinct while k << rows.
 size_t sampledRow(size_t k, size_t rows)
 {
     const UInt64 weyl = static_cast<UInt64>(static_cast<UInt128>(k) * 0x9E3779B97F4A7C15ULL);
@@ -280,9 +263,7 @@ WideColumnSample sampleWideColumn(const char * data, size_t rows, size_t max_dis
     return result;
 }
 
-/// The sample cannot tell values that occur a few times in the block from unique ones, e.g. a tail of unique values
-/// beside frequent ones, so the distinct values of the whole column are counted approximately before ranking it. The
-/// estimate is within a few percent; the exact count of `rankWideColumn` decides for a column near the limit.
+/// An approximate count of the whole column; the exact count of `rankWideColumn` decides near the limit.
 template <typename GetBits>
 bool hasTooManyDistinct(const char * data, size_t rows, size_t max_distinct)
 {
@@ -362,9 +343,7 @@ enum class WidePacking : uint8_t
     Stop,     /// Cannot be packed into the bits left.
 };
 
-/// The values of a wide column (a hash, an identifier, a UUID) usually span all its bits even when the block holds
-/// few distinct values. Such a column is packed by the rank of each value among the distinct values of the block,
-/// if a sample of rows shows that the values repeat; a sample also shows early that a wide range will not fit.
+/// A wide column (a hash, an identifier, a UUID) is packed by the ranks of its values if a sample shows they repeat.
 template <typename GetBits>
 WidePacking packWideColumn(
     const char * data,
@@ -471,8 +450,7 @@ size_t packedSortWork(size_t total_bits, size_t index_bits)
 
 /// Whether the rows of the block are nearly distinct on the packed columns. Among s distinct rows sampled from rows
 /// that repeat r times on average, about s^2 (r - 1) / 2n pairs are equal: with s = 2 sqrt(n), fewer than
-/// s^2 / 2n = 2 equal pairs mean that most rows are distinct. Distinct rows give none; a wrong answer for r = 2..3
-/// only gives up a small gain.
+/// s^2 / 2n = 2 equal pairs mean that most rows are distinct.
 bool packedColumnsNearlyUnique(const std::vector<PackedSortColumn> & columns, size_t rows)
 {
     const size_t sample_size = std::min<size_t>(2 * static_cast<size_t>(std::sqrt(static_cast<double>(rows))), 16384);
@@ -491,10 +469,8 @@ bool packedColumnsNearlyUnique(const std::vector<PackedSortColumn> & columns, si
     return equal * 2 * rows < sample_size * sample_size;
 }
 
-/// Whether the column sort costs less than the packed one: when it is all radix sorts (of the first column over the
-/// block and of each next one within the ranges of the previous ones, if they hold at least 256 rows on average), and
-/// those move fewer bytes than the radix sort of the packed key. Shorter ranges are sorted by comparisons of values
-/// loaded through the permutation, which is what the packed key avoids.
+/// Whether the column sort is all radix sorts (ranges of at least 256 rows on average; shorter ones are sorted by
+/// comparisons through the permutation) that move fewer bytes than the radix sort of the packed key.
 bool columnSortIsCheaper(const std::vector<PackedSortColumn> & columns, size_t rows, size_t total_bits, size_t index_bits)
 {
     size_t work = 0;
@@ -582,7 +558,6 @@ void sortByPackedKey(
         return;
     }
 
-    /// Rows that already come in the order of the key (e.g. inserted in the order of the sorting key) keep it.
     if (std::is_sorted(keys.begin(), keys.end()))
     {
         iota(permutation.data(), rows, IColumn::Permutation::value_type(0));
@@ -591,8 +566,7 @@ void sortByPackedKey(
         return;
     }
 
-    /// Rows in the reverse order of the key (e.g. sorted ascending for a descending sort) are reversed: the runs of
-    /// equal keys are taken from the last one, each in its own order, as a stable sort requires.
+    /// Runs of equal keys are taken from the last one, each in its own order, as a stable sort requires.
     if (std::is_sorted(keys.begin(), keys.end(), std::greater<>()))
     {
         size_t position = 0;
@@ -610,7 +584,6 @@ void sortByPackedKey(
         return;
     }
 
-    /// Like the sort of a single column, an unstable sort first tries a fast path for almost sorted keys.
     const bool try_presorted = !stable;
     const size_t index_bits = std::bit_width(rows - 1);
     if (total_bits + index_bits <= 32)
@@ -662,8 +635,8 @@ size_t trySortByPackedKey(
         }
     }
 
-    /// A block whose first column strictly increases or decreases is ordered by that column alone, e.g. sequential
-    /// keys. An unstable sort leaves an almost sorted block to the column sort, which handles it in about linear time.
+    /// A strictly monotone first column orders the block alone; an unstable sort leaves an almost sorted one to the
+    /// column sort, which handles it in about linear time.
     if (first_non_const < columns.size() && columns[first_non_const].description.collator == nullptr)
     {
         const int order = strictOrder(*columns[first_non_const].column, rows);
@@ -686,8 +659,7 @@ size_t trySortByPackedKey(
     size_t total_bits = 0;
     const size_t index_bits = std::bit_width(rows - 1);
 
-    /// Once the packed columns nearly tell the rows apart, the following ones only order a few ties, which the sorts of
-    /// the equal ranges below handle cheaply. The answer for the packed columns is kept while they do not change.
+    /// Kept while the packed columns do not change.
     size_t columns_not_unique = 0;
     auto nearly_unique = [&]
     {
@@ -722,8 +694,7 @@ size_t trySortByPackedKey(
         if (!tryPackColumn(*column.column, type, rows, descending, i == last_non_const, bits_left, ranks, packed, ranked))
             break;
 
-        /// The following column is not worth a key that needs more radix passes or wider elements. E.g. a nearly unique
-        /// 32-bit identifier followed by a timestamp is sorted by itself.
+        /// After columns that nearly tell the rows apart, a column is not worth more radix passes or wider elements.
         if (packedSortWork(total_bits + packed.bits, index_bits) > packedSortWork(total_bits, index_bits) && nearly_unique())
         {
             if (ranked)
@@ -740,8 +711,7 @@ size_t trySortByPackedKey(
         if (total_bits > 64 - 8)
             break;
 
-        /// A first column too wide to be packed alone is better sorted by itself, before reading the next column, if it
-        /// nearly tells the rows apart.
+        /// A first column too wide to be packed alone is better sorted by itself if it nearly tells the rows apart.
         if (first_bits && i < last_non_const && packed.bits > packed.value_bits / 2 && nearly_unique())
             break;
     }
