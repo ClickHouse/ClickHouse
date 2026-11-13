@@ -194,6 +194,9 @@ enum class FileCategory : uint8_t
 
 FileCategory inspectFileCategory(const String & relative_path);
 
+/// The fields of the table's default sort order; null if it has none.
+Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object);
+
 /// If `sort_description` is set, it receives the order over the key columns `sortBlockByKeyDescription` appends, NULLs placed per `null-order`.
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description = nullptr);

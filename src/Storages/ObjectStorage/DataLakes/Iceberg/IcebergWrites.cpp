@@ -10,7 +10,6 @@
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -93,6 +92,7 @@ namespace Setting
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsUInt64 iceberg_insert_max_sort_buffer_bytes;
     extern const SettingsNonZeroUInt64 max_block_size;
 }
 
@@ -1285,6 +1285,49 @@ static Columns withoutSortColumns(Columns columns, size_t num_columns)
     return columns;
 }
 
+/// Whether ClickHouse orders every key of the default sort order as Iceberg does, so data files sorted by it can
+/// carry its `sort_order_id`. `bucket` and the time transforms give integers; for `identity` and `truncate` the
+/// source type decides; other transforms, such as `void`, are not tagged. ClickHouse orders floating-point numbers
+/// differently (NaN goes by the null order, -0.0 equals +0.0; Iceberg puts NaN last and -0.0 first) and UUIDs (it
+/// compares the second half first), and truncates `binary`, read as `String`, by UTF-8 characters rather than bytes.
+/// Requires a non-empty sorting key: the default sort order then exists and its transforms parse.
+static bool canTagSortOrder(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
+{
+    static const std::unordered_set<std::string_view> ordered_types{
+        Iceberg::f_boolean, Iceberg::f_int, Iceberg::f_long, Iceberg::f_bigint, Iceberg::f_date, Iceberg::f_time, Iceberg::f_timestamp,
+        Iceberg::f_timestamptz, Iceberg::f_timestamp_ns, Iceberg::f_timestamptz_ns, Iceberg::f_string};
+    const auto types = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
+    auto sort_fields = Iceberg::getDefaultSortOrderFields(metadata);
+    for (UInt32 i = 0; i < sort_fields->size(); ++i)
+    {
+        auto field = sort_fields->getObject(i);
+        /// Parsed rather than matched, as the transform name is case-insensitive.
+        auto transform = Iceberg::parseTransformAndArgument(field->getValue<String>(Iceberg::f_transform));
+        if (!transform)
+            return false;
+        const String & name = transform->transform_name;
+        if (name == "icebergBucket" || name == "icebergYear" || name == "icebergMonth" || name == "icebergDay" || name == "icebergHour")
+            continue;
+        const bool truncate = name == "icebergTruncate";
+        if (!truncate && name != "identity")
+            return false;
+
+        auto it = types.find(field->getValue<Int64>(Iceberg::f_source_id));
+        if (it == types.end())
+            return false;
+        const String & type = it->second;
+        if (type == Iceberg::f_binary)
+        {
+            if (truncate)
+                return false;
+            continue;
+        }
+        if (!ordered_types.contains(type) && !type.starts_with("decimal(") && !type.starts_with("fixed["))
+            return false;
+    }
+    return true;
+}
+
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -1357,16 +1400,8 @@ IcebergStorageSink::IcebergStorageSink(
     }
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description);
-    /// Files are tagged only if ClickHouse orders every key type as Iceberg does. It does not for
-    /// floating-point numbers (NaN goes by the null order, -0.0 equals +0.0; Iceberg puts NaN last and
-    /// -0.0 first) or UUIDs (ClickHouse compares the second half first). Such files are sorted but not tagged.
-    auto has_iceberg_order = [](const DataTypePtr & type)
-    {
-        WhichDataType which(removeLowCardinalityAndNullable(type));
-        return which.isIntegerOrDecimal() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which.isStringOrFixedString();
-    };
-    if (!sort_description.column_names.empty()
-        && std::all_of(sort_description.data_types.begin(), sort_description.data_types.end(), has_iceberg_order))
+    /// Files sorted by a key ClickHouse orders differently from Iceberg are sorted but not tagged.
+    if (!sort_description.column_names.empty() && canTagSortOrder(metadata, current_schema))
         data_file_sort_order_id = metadata->getValue<Int32>(Iceberg::f_default_sort_order_id);
 
     Block extended_block_for_sorting = *sample_block_;
@@ -1425,6 +1460,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
 
     const UInt64 max_rows_in_data_file = context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file];
     const UInt64 max_bytes_in_data_file = context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file];
+    const UInt64 max_sort_buffer_bytes = context->getSettingsRef()[Setting::iceberg_insert_max_sort_buffer_bytes];
     for (auto & [partition_key, part_chunk] : partition_result)
     {
         if (!sort_order_description.empty())
@@ -1437,8 +1473,17 @@ void IcebergStorageSink::consume(Chunk & chunk)
             if (pending_file.rows
                 && (pending_file.rows + part_chunk.getNumRows() > max_rows_in_data_file || pending_file.bytes + chunk_bytes > max_bytes_in_data_file))
                 writePendingFile(partition_key, pending_file);
+            /// Bounds memory across partitions: write the largest pending files, as smaller sorted files.
+            while (max_sort_buffer_bytes && pending_bytes && pending_bytes + chunk_bytes > max_sort_buffer_bytes)
+            {
+                auto largest = std::max_element(
+                    pending_file_per_partition_key.begin(), pending_file_per_partition_key.end(),
+                    [](const auto & lhs, const auto & rhs) { return lhs.second.bytes < rhs.second.bytes; });
+                writePendingFile(largest->first, largest->second);
+            }
             pending_file.rows += part_chunk.getNumRows();
             pending_file.bytes += chunk_bytes;
+            pending_bytes += chunk_bytes;
             pending_file.sorted_chunks.push_back(std::move(part_chunk));
             continue;
         }
@@ -1491,6 +1536,7 @@ void IcebergStorageSink::writePendingFile(const ChunkPartitioner::PartitionKey &
         while (Chunk merged = merger.read())
             write(std::move(merged));
     }
+    pending_bytes -= pending_file.bytes;
     pending_file = {};
 }
 
@@ -1503,7 +1549,8 @@ void IcebergStorageSink::onFinish()
     }
 
     for (auto & [partition_key, pending_file] : pending_file_per_partition_key)
-        writePendingFile(partition_key, pending_file);
+        if (pending_file.rows)
+            writePendingFile(partition_key, pending_file);
     finalizeBuffers();
     releaseBuffers();
 }

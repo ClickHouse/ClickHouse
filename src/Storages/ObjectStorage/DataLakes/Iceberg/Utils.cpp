@@ -2321,22 +2321,23 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
+Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object)
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
 
-    Poco::JSON::Array::Ptr fields;
     for (UInt32 i = 0; i < sort_orders->size(); ++i)
     {
         auto sort_order = sort_orders->getObject(i);
         if (sort_order->getValue<Int64>(f_order_id) == sort_order_id)
-        {
-            fields = sort_order->getArray(f_fields);
-            break;
-        }
+            return sort_order->getArray(f_fields);
     }
+    return nullptr;
+}
 
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
+{
+    auto fields = getDefaultSortOrderFields(metadata_object);
     if (!fields || fields->size() == 0)
         return KeyDescription{};
 

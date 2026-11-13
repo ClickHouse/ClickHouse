@@ -203,6 +203,8 @@ private:
         size_t bytes = 0;
     };
     std::unordered_map<ChunkPartitioner::PartitionKey, PendingFile, ChunkPartitioner::PartitionKeyHasher> pending_file_per_partition_key;
+    /// Bytes of all pending files; writing the largest early bounds it by `iceberg_insert_max_sort_buffer_bytes`.
+    size_t pending_bytes = 0;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Int64 current_schema_id;
