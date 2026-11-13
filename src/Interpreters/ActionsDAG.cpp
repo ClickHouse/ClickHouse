@@ -4025,6 +4025,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
     const NameSet & cross_type_equivalent_columns,
+    bool keep_runtime_filters_out_of_left_stream,
+    bool keep_runtime_filters_out_of_right_stream,
     bool filter_is_always_false)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
@@ -4159,10 +4161,17 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto conjunction_atoms = extractConjunctionAtoms(predicate);
     std::ranges::reverse(conjunction_atoms);
 
-    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions)
+    /// Two copies of a runtime filter may pass different rows, and a match removed from the side an OUTER or ANTI
+    /// join only matches against makes that join emit a row it would not, so no equivalent copy is pushed there.
+    auto is_runtime_filter = [](const Node * conjunct)
+    { return anyReachableNode({conjunct}, [](const Node * node) { return node->is_runtime_filter_id; }); };
+
+    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions, bool keep_runtime_filters_out)
     {
         std::unordered_set<const Node *> remaining(side_allowed_conjunctions.begin(), side_allowed_conjunctions.end());
-        remaining.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
+        for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
+            if (!keep_runtime_filters_out || !is_runtime_filter(conjunct))
+                remaining.insert(conjunct);
 
         NodeRawConstPtrs ordered;
         ordered.reserve(remaining.size());
@@ -4173,13 +4182,16 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         return ordered;
     };
 
-    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(left_stream_push_down_conjunctions.allowed);
-    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(right_stream_push_down_conjunctions.allowed);
+    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(
+        left_stream_push_down_conjunctions.allowed, keep_runtime_filters_out_of_left_stream);
+    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(
+        right_stream_push_down_conjunctions.allowed, keep_runtime_filters_out_of_right_stream);
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
     rejected_conjunctions_set.insert(right_stream_push_down_conjunctions.rejected.begin(), right_stream_push_down_conjunctions.rejected.end());
     rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.rejected.begin(), both_streams_push_down_conjunctions.rejected.end());
+    rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
 
     for (const auto & left_stream_allowed_conjunction : left_stream_allowed_conjunctions)
         rejected_conjunctions_set.erase(left_stream_allowed_conjunction);
