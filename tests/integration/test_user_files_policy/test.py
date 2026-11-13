@@ -1804,6 +1804,39 @@ def test_local_filelog_skips_child_symlink_outside_disk():
         )
 
 
+def test_local_filelog_checks_normalized_path():
+    """`..` after a symlink must not let the containment check see a different file than `FileLog` probes:
+    `a/../b/file.log` resolves inside the disk through `a`, but is read as `b/file.log`, outside of it."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /test_user_files_disk1/filelog_norm /tmp/filelog_norm_outside && "
+            "mkdir -p /test_user_files_disk1/filelog_norm/deep/sub /tmp/filelog_norm_outside && "
+            "echo secret > /tmp/filelog_norm_outside/present.log && "
+            "ln -snf /test_user_files_disk1/filelog_norm/deep/sub /test_user_files_disk1/filelog_norm/a && "
+            "ln -snf /tmp/filelog_norm_outside /test_user_files_disk1/filelog_norm/b",
+        ]
+    )
+    try:
+        # An existing and a missing outside target fail in the same way, without probing the target.
+        for name in ["present.log", "missing.log"]:
+            err = node_local.query_and_get_error(
+                "CREATE TABLE filelog_norm (line String) "
+                f"ENGINE = FileLog('filelog_norm/a/../b/{name}', 'LineAsString')"
+            )
+            assert "should be inside" in err, err
+    finally:
+        node_local.query("DROP TABLE IF EXISTS filelog_norm SYNC")
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /test_user_files_disk1/filelog_norm /tmp/filelog_norm_outside",
+            ]
+        )
+
+
 def test_local_filelog_rechecks_retargeted_symlink_before_opening():
     """A tracked file is opened only at the first read, so its symlink may have been retargeted
     outside the disk root after `CREATE TABLE` checked it: the path is checked again on opening."""

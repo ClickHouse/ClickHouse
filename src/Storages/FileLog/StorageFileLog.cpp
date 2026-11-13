@@ -197,7 +197,9 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
-    , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
+    /// Normalized once, so that the containment check below validates exactly the path that `loadFiles` probes:
+    /// removing `..` before and after a symlink is resolved can select different files.
+    , path(std::filesystem::absolute(resolveFileLogPath(path_, getContext()->getUserFilesPath())).lexically_normal())
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
@@ -353,8 +355,8 @@ bool StorageFileLog::isDataFileAllowed(const String & file_path, bool log_if_den
 
 void StorageFileLog::loadFiles()
 {
-    auto absolute_path = std::filesystem::absolute(path);
-    absolute_path = absolute_path.lexically_normal(); /// Normalize path.
+    /// Already absolute and normalized in the constructor.
+    const std::filesystem::path absolute_path = path;
 
     std::vector<String> matching_files;
     /// Files that the glob excludes but whose inode has a stored meta, with that inode.
