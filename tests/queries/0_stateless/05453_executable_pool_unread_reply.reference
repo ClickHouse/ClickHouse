@@ -1,0 +1,12 @@
+0: after LIMIT 0	[2,3]	1
+0: after WHERE 1 = 0	[2,3]	1
+0: reused limit worker	[4]	2
+0: reused where worker	[4]	2
+0: empty reply	0
+0: reused empty worker	[5]	2
+1: after LIMIT 0	[2,3]	1
+1: after WHERE 1 = 0	[2,3]	1
+1: reused limit worker	[4]	2
+1: reused where worker	[4]	2
+1: empty reply	0
+1: reused empty worker	[5]	2

@@ -20,6 +20,7 @@
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
+#include <Formats/FormatSettings.h>
 #include <Client/ConnectionParameters.h>
 #include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
@@ -1067,6 +1068,20 @@ void Connection::sendQuery(
             disconnect();
     });
 
+    /// Over the cluster secret a shard authenticates as `initial_user` without a password, so forward
+    /// only an `initial_user` equal to the authenticated `current_user`. Skip the check when
+    /// `current_user` is empty -- server-internal paths (async `Distributed` insert, buffer flush) have none.
+    if (!cluster_secret.empty() && client_info && !client_info->current_user.empty()
+        && client_info->initial_user != client_info->current_user)
+    {
+        /// A mismatch means a forged SECONDARY_QUERY impersonating another user -- including an empty
+        /// initial_user, which the shard would otherwise run with full access -- so refuse it.
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Refusing to forward a query over the cluster secret: its initial_user '{}' differs "
+            "from the authenticated user '{}'.",
+            client_info->initial_user, client_info->current_user);
+    }
+
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -1124,12 +1139,7 @@ void Connection::sendQuery(
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
         /// Hash
-        ///
-        /// Send correct hash only for !INITIAL_QUERY, due to:
-        /// - this will avoid extra protocol complexity for simplest cases
-        /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/non-secure changes)
-        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        if (client_info && !cluster_secret.empty())
         {
 #if USE_SSL
             if (!nonce.has_value())
@@ -1257,7 +1267,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), optionalFormatSettings());
     }
 
     if (scalar)
@@ -1731,7 +1741,7 @@ void Connection::initBlockInput()
         initMaybeCompressedInput();
         /// The server may send marshalled result blocks; their consumers convert them back.
         block_in = std::make_unique<NativeReader>(
-            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
+            *maybe_compressed_in, server_revision, optionalFormatSettings(), ISerialization::KindSet::all());
     }
 }
 
@@ -1748,7 +1758,7 @@ void Connection::initBlockLogsInput()
         }
 
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, optionalFormatSettings());
     }
 }
 
@@ -1764,7 +1774,7 @@ void Connection::initBlockProfileEventsInput()
             profile_events_buf = maybe_compressed_in.get();
         }
 
-        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, optionalFormatSettings());
     }
 }
 
@@ -1897,6 +1907,18 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
     }
 
     return connection;
+}
+
+void Connection::setFormatSettings(const FormatSettings & settings)
+{
+    format_settings = std::make_shared<const FormatSettings>(settings);
+}
+
+std::optional<FormatSettings> Connection::optionalFormatSettings() const
+{
+    if (format_settings)
+        return *format_settings;
+    return std::nullopt;
 }
 
 }

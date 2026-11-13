@@ -77,6 +77,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    /// Skip values no row uses (unused `LowCardinality` dictionary entries, values behind a NULL). Parsing them may throw.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
