@@ -2574,6 +2574,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
         return false;
 
+    return isPartitionKeyDerivedFromPrimaryKey();
+}
+
+bool ReadFromMergeTree::isPartitionKeyDerivedFromPrimaryKey() const
+{
     if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
         return false;
 

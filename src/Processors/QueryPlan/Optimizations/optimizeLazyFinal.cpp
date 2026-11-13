@@ -490,19 +490,25 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     const bool stops_reading_early = reading_in_order
         || (limit_above_reading && analyzed_result && limit_above_reading < analyzed_result->selected_rows);
 
+    /// FINAL keeps the newest row of a key in every partition, the set-based FINAL below only one per key.
+    /// The full non-intersecting replacement is still correct: no key is in two of its parts.
+    const bool final_keeps_row_per_partition = reading_step->doNotMergePartsAcrossPartitionsFinal()
+        && metadata_snapshot->hasPartitionKey() && !reading_step->isPartitionKeyDerivedFromPrimaryKey();
+
     /// Split parts into non-intersecting (unique key ranges, no FINAL needed) and
     /// intersecting (overlapping, need FINAL). This avoids running the expensive
     /// aggregation-based FINAL on parts that have no duplicates.
     /// When all parts are non-intersecting, replaceNodeWithPlan is called inside
     /// and fully_replaced is set — in that case we're done.
     auto split_result = trySplitNonIntersectingParts(
-        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
+        reading_step, analyzed_result, filter_step, read_node, query_plan,
+        /*allow_partial_split=*/ !stops_reading_early && !final_keeps_row_per_partition);
 
     if (split_result.fully_replaced)
         return;
 
     /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
-    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
+    if (stops_reading_early || final_keeps_row_per_partition || !reading_step->getIndexReadTasks().empty())
         return;
 
     const auto & context = reading_step->getContext();
