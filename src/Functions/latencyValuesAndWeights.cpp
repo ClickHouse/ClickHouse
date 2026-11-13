@@ -6,6 +6,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/writeJSONNumber.h>
 #include <Core/Types.h>
 
 #include "config.h"
