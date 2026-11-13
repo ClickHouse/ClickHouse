@@ -22,8 +22,9 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 ///   time >= toDateTime('2000-01-01 02:00:00', 'America/Mazatlan')
 ///
 /// This makes the timezone explicit so the background thread evaluates it correctly.
-/// The context gives the higher-order functions that bind the types of the parameters of a lambda in the expression. The
-/// types of the aliases in the command are those the analyzer gives them against the table.
+/// The expressions are analyzed against the table with the settings of the context, so that a literal is converted with the
+/// type of what the analyzer binds the identifier it is compared with to: a column, a subcolumn, an alias, or a parameter of a
+/// lambda, in its scope.
 /// Returns rewritten AST if any literals were wrapped, nullptr otherwise.
 ASTPtr rewriteDateTimeLiteralsWithTimezone(
     const ASTAlterCommand & alter_command,
@@ -32,8 +33,8 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
     const String & session_timezone,
     const ContextPtr & context);
 
-/// The same for one expression rewritten in place, such as a `TTL`, which is evaluated by background merges without the
-/// session either. Returns whether any literal was wrapped.
+/// The same for a `TTL` rewritten in place, which is evaluated by background merges without the session either. Its
+/// expressions are analyzed against a table with the columns `columns`. Returns whether any literal was wrapped.
 bool rewriteDateTimeLiteralsWithTimezone(
     const ASTPtr & expression, const ColumnsDescription & columns, const String & session_timezone, const ContextPtr & context);
 
