@@ -1,0 +1,14 @@
+-- the object is large enough to be split
+1
+-- written once for the whole object, then used by a split read
+1	1234567
+1	1234567
+-- no row group matches: written once, then the object is skipped
+0	0
+0	0
+-- runs 1 and 2
+0	1	1
+1	1	1
+-- runs 3 and 4
+0	0
+1	1

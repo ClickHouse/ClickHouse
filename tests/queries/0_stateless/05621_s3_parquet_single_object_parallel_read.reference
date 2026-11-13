@@ -56,11 +56,6 @@ ReadFromObjectStorage × 4 0 → 1
 ReadFromObjectStorage × 4 0 → 1
 S3_ERROR
 0
--- query condition cache: written once for the whole object, then used by a split read
-1	1234567
-1	1234567
-0	1	1
-1	1	1
 -- Azure
 1
 ReadFromObjectStorage × 4 0 → 1
@@ -68,3 +63,8 @@ Resize 1 → 4
 ReadFromObjectStorage 0 → 1
 2000000	1999999000000	2000001000000
 2000000	1999999000000	2000001000000
+-- objects opened: more than once for a split object (split, unpinned, glob, azure)
+1
+0
+0
+1

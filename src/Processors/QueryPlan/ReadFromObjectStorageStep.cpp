@@ -690,15 +690,14 @@ ObjectInfos DeferredObjectSplit::splitObject(const ObjectInfoPtr & object_info)
                 storage_id, *configuration, storage_snapshot, *format_filter_info, format_settings);
             auto matching_marks = query_condition_cache->read(
                 query_condition_cache_table_id, *query_condition_cache_key, *format_filter_info->condition_hash, /*increment_profile_events=*/ false);
-            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+            RowGroupIndices matching_row_groups;
+            VectorWithMemoryTracking<FileBucketInfoPtr> matching_buckets;
             if (matching_marks)
             {
-                RowGroupIndices matching_row_groups;
                 for (size_t i = 0; i < matching_marks->size(); ++i)
                     if ((*matching_marks)[i])
                         matching_row_groups.push_back(i);
 
-                VectorWithMemoryTracking<FileBucketInfoPtr> matching_buckets;
                 for (const auto & bucket : object_buckets)
                     if (auto matching_bucket = bucket->filterByMatchingRowGroups(matching_row_groups))
                         matching_buckets.push_back(std::move(matching_bucket));
@@ -706,7 +705,12 @@ ObjectInfos DeferredObjectSplit::splitObject(const ObjectInfoPtr & object_info)
                 /// No row group of the object can match: do not split it, its only source skips it by the same entry.
                 if (matching_buckets.empty())
                     return {};
+            }
 
+            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+
+            if (matching_marks)
+            {
                 ProfileEvents::increment(
                     ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, matching_marks->size() - matching_row_groups.size());
                 /// The readers of the buckets count as pruned only the row groups of their own buckets, while the only

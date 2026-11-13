@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query "
     EXPLAIN PIPELINE
     SELECT count(), sum(x) FROM test_s3_${CLICKHOUSE_DATABASE}
     GROUP BY y
-    SETTINGS max_threads = 4, enable_parallel_replicas = 0;
+    SETTINGS max_threads = 4, enable_parallel_replicas = 0, max_threads_min_free_memory_per_thread = 0;
 " | grep -o 'ReadFromObjectStorage × 4 0 → 1'
 
 # A read not pinned to the listed ETag is not split: the single source is resized to max_threads.
@@ -32,7 +32,7 @@ ${CLICKHOUSE_CLIENT} --query "
     EXPLAIN PIPELINE
     SELECT count(), sum(x) FROM test_s3_${CLICKHOUSE_DATABASE}
     GROUP BY y
-    SETTINGS max_threads = 4, enable_parallel_replicas = 0, s3_validate_etag_on_read = 0;
+    SETTINGS max_threads = 4, enable_parallel_replicas = 0, max_threads_min_free_memory_per_thread = 0, s3_validate_etag_on_read = 0;
 " | grep -o 'Resize 1 → 4'
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_s3_${CLICKHOUSE_DATABASE};"
