@@ -737,7 +737,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
 void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 {
-    if (columns_substreams_initialized)
+    if (columns_substreams.getTotalSubstreams())
         return;
 
     /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
@@ -751,13 +751,11 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 
     NullWriteBuffer buf;
     auto serialize_settings = getSerializationSettings();
-    bool has_map_bucket_indexes = false;
     for (const auto & name_and_type : columns_list)
     {
         columns_substreams.addColumn(name_and_type.name);
         serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            has_map_bucket_indexes |= std::ranges::any_of(substream_path, [](const auto & elem) { return elem.type == ISerialization::Substream::MapBucketIndexes; });
             columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
             return &buf;
         };
@@ -770,13 +768,6 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
-
-    /// The reader finds the `MapBucketIndexes` stream of a Compact part without substream marks only in this list.
-    if (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact
-        && !index_granularity_info.mark_type.with_substreams && !has_map_bucket_indexes)
-        columns_substreams = {};
-
-    columns_substreams_initialized = true;
 }
 
 CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
