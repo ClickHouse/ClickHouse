@@ -92,7 +92,7 @@ static void addImpliedIndexHintInputs(const ActionsDAG::Node & node, NameSet & r
         addImpliedIndexHintInputs(inner, res);
 }
 
-static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node, NameSet & implied_index_hint_inputs)
 {
     NameSet res;
     visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
@@ -101,7 +101,7 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
         if (cur->type == ActionsDAG::ActionType::INPUT)
             res.emplace(cur->result_name);
         else
-            addImpliedIndexHintInputs(*cur, res);
+            addImpliedIndexHintInputs(*cur, implied_index_hint_inputs);
         return VisitResult::Continue;
     });
     return res;
@@ -1242,6 +1242,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (aggregating || merging_aggregated)
     {
+        auto index_hints = ActionsDAG::PushDownIndexHints::Implied;
+
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
         /// of the grouping sets, we could not push the filter down.
         bool is_grouping_sets = aggregating ? aggregating->isGroupingSets() : merging_aggregated->isGroupingSets();
@@ -1254,7 +1256,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions.findInOutputs(filter->getFilterColumnName());
 
-            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
+            NameSet index_hint_inputs;
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node, index_hint_inputs);
 
             const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
             /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
@@ -1262,6 +1265,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 return 0;
             if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
+
+            /// A hint reading a column that some set lacks would prune rows that set aggregates.
+            if (!identifiersIsAmongAllGroupingSets(grouping_sets, index_hint_inputs))
+                index_hints = ActionsDAG::PushDownIndexHints::None;
         }
 
         const auto & params = aggregating ? aggregating->getParams() : merging_aggregated->getParams();
@@ -1276,7 +1283,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, ActionsDAG::PushDownIndexHints::Implied))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, index_hints))
             return updated_steps;
     }
 

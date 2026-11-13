@@ -262,7 +262,7 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
                                 "Cannot insert NULL value into a column type '{}' at index {}",
                                 data_types[*rem_column_index]->getName(),
                                 *rem_column_index);
-                        columns[*rem_column_index]->insertDefault();
+                        data_types[*rem_column_index]->insertDefaultInto(*columns[*rem_column_index]);
                     }
                     ++file_column;
                 }
@@ -320,7 +320,7 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
 
     format_reader->skipRowEndDelimiter();
 
-    column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+    column_mapping->insertDefaultsForNotSeenColumns(columns, data_types, ext.read_columns);
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
     if (!format_settings.defaults_for_omitted_fields)

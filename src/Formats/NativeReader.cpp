@@ -383,7 +383,15 @@ Block NativeReader::read()
             }
             else
             {
-                tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
+                MutableColumnPtr column;
+                if (col.type->isDefaultInsertTrivial())
+                    column = col.type->createColumn()->cloneResized(rows);
+                else
+                {
+                    column = col.type->createColumn();
+                    col.type->insertManyDefaultsInto(*column, rows);
+                }
+                tmp_res.insert({std::move(column), col.type, col.name});
                 if (block_missing_values)
                     block_missing_values->setBits(column_i, rows);
             }
