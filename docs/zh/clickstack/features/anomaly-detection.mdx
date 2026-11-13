@@ -1,0 +1,173 @@
+---
+slug: /use-cases/observability/clickstack/anomaly-detection
+title: '使用 ClickStack 配置异常检测告警'
+sidebarTitle: '异常检测'
+description: '借助 ClickStack 的异常检测功能，在指标偏离预期范围时触发告警，无需设定固定阈值。'
+doc_type: 'guide'
+keywords: ['ClickStack', '可观测性', '告警', '异常检测', 'z-score', '基线', '动态阈值', '标准差']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Info>
+  **Beta：仅限托管 ClickStack**
+
+  异常检测告警目前处于 Beta 阶段，仅在托管 ClickStack 中提供，ClickStack 开源版不支持此功能。在 Beta 阶段，该功能的行为和默认值可能会有所调整。
+</Info>
+
+异常检测告警会在某个值超出预期范围时通知您，而不是在其越过某个固定数值时才触发。ClickStack 会根据数据系列的近期历史记录自动学习预期范围，因此您无需预先确定每个服务的&quot;错误过多&quot;或&quot;过慢&quot;究竟意味着什么。
+
+以下场景适合使用异常检测：
+
+* 合适的阈值因服务、端点或客户而异，且您按该维度对告警进行分组。
+* 正常值会在一天之中发生漂移，导致任何固定阈值要么在高峰期频繁误报，要么在非高峰期漏报问题。
+* 相比绝对水平，您更关注突发变化，例如错误激增、延迟骤升或流量跌至零。
+
+如果存在需要始终强制执行的硬限制，例如&quot;p99 延迟超过 2 秒&quot;或&quot;出现任何支付失败&quot;，请使用[静态阈值告警](/zh/clickstack/features/alerts)。
+
+## 支持的告警 {#supported-alerts}
+
+异常检测是现有告警的一种检测模式，而非独立的告警类型。它适用于：
+
+* [搜索告警](/zh/clickstack/features/alerts#search-alerts)：对匹配事件的数量进行评分。
+* [仪表板图表告警](/zh/clickstack/features/alerts#dashboard-alerts)：适用于使用图表构建器创建的图表。
+
+异常检测不适用于[基于 SQL 的图表告警](/zh/clickstack/features/alerts#sql-based-alerts)。如果将配置了异常告警的图表切换到 SQL 模式，ClickStack 会将该告警转换为静态阈值告警。如需保留异常检测，请将图表切换回构建器。
+
+## 创建异常告警 {#creating-an-anomaly-alert}
+
+<Steps>
+  <Step title="打开告警编辑器" id="open-alert-editor">
+    按照[告警](/zh/clickstack/features/alerts#types-of-alerts)中的说明，为已保存的搜索或仪表盘图表打开告警编辑器。
+  </Step>
+
+  <Step title="选择异常检测" id="select-anomaly-detection">
+    在 **Alert type** 下选择 **异常检测**。默认值为 **Static threshold**。
+  </Step>
+
+  <Step title="配置条件" id="configure-condition">
+    条件以一句话的形式呈现：**Alert when z-score is at least** `3` **when value is** `outside expected range` **compared to the past** `2 hours` **checked every** `5 minute`。
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-alert-condition.webp" alt="告警类型选择为异常检测，显示 z-score、方向、基线和时间间隔控件、通俗易懂的摘要以及回测结果" size="lg" />
+
+    * **z-score is at least** (默认 `3`) ：某个值需偏离预期值多少个标准差才会被判定为异常。最小值为 0.5，可通过箭头按钮以 0.5 为步长调整。值越低越敏感，触发也越频繁。
+    * **When value is** (默认 `outside expected range`) ：告警的方向，可选 `above expected`、`below expected` 或 `outside expected range`。错误计数和延迟适合使用 `above expected`，吞吐量或注册量适合使用 `below expected`。
+    * **Compared to the past** (默认 2 小时) ：ClickStack 用于衡量正常波动的历史数据时长，可选 30 分钟，或 1、2、4、6、12、24 小时。基线越长，范围越稳定，但适应新常态也越慢。
+    * **Checked every** (默认 5 分钟) ：告警的评估频率，可选 5、15、30 分钟或 1 小时。异常告警不支持更短或更长的时间间隔。
+
+    条件下方会显示 ClickStack 生成的告警行为摘要，例如：&quot;Every 5 minutes, values are compared to their typical range from the past 2 hours. Notifies when values rise above the expected range, once per incident.&quot;
+
+    <Tip>
+      对于波动剧烈的数据系列，建议优先使用 `above expected` 或 `below expected`，而非 `outside expected range`。短暂尖峰过后，预期值会出现滞后，并在几分钟内维持在较高水平，因此数值回落到正常水平时也可能被判定为异常。若使用 `outside expected range`，单次尖峰就可能触发两次通知。
+    </Tip>
+  </Step>
+
+  <Step title="查看回测和预览" id="review-preview">
+    摘要下方的一行是回测结果：它会基于近期历史数据重放当前设置，并报告告警在此期间会发送多少次通知，例如 &quot;Would have notified 6 times in the past 24 hours, firing on 12 of 288 checks.&quot;。对于搜索告警，回测覆盖过去 24 小时；对于仪表板图表告警，回测覆盖图表所选的时间范围，最长 24 小时。如果告警每天的通知次数超过 10 次，该计数会显示为黄色。
+
+    表单下方的 **异常检测 chart** 会绘制同一范围内的数据：
+
+    * 实线表示数据系列。
+    * 虚线表示预期基线。
+    * 阴影区域为告警触发区。数值落入该区域 (即超出预期范围) 时就会触发告警。
+    * **Notify** 标记表示告警会在该处发送通知。
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-alert-preview.webp" alt="异常检测图表，显示 24 小时的数据系列、预期基线、阴影告警触发区，以及六个尖峰处各自的 Notify 标记" size="lg" />
+
+    如果告警已分组，回测会汇总所有数据系列。选择 **Show breakdown by series** 可查看哪些数据系列触发的通知最多。在下例中，一个稀疏数据系列就占了 40% 以上的通知，这说明应将其排除，或为其单独设置告警。
+
+    <Image img="/images/clickstack/anomaly-detection/anomaly-backtest-breakdown.webp" alt="分组异常告警的回测明细，列出每个服务的通知事件" size="md" />
+
+    反复调整 z-score、方向和基线，直到回测结果与您希望收到通知的情况相符。如果告警每天会发送多次通知，请提高 z-score 或收窄方向。
+  </Step>
+
+  <Step title="选择通知渠道并保存" id="save-anomaly-alert">
+    与其他告警一样，选择 Webhook 或其他渠道，详见[添加 Webhook](/zh/clickstack/features/alerts#add-webhook)。保存告警后，系统即开始对其进行评估。
+  </Step>
+</Steps>
+
+### 适用性警告 {#suitability-warnings}
+
+某些数据系列不太适合进行异常检测。保存前，预览图表下方会显示相应警告，但不会阻止保存：
+
+| 警告           | 原因                                        | 处理方法                          |
+| ------------ | ----------------------------------------- | ----------------------------- |
+| 历史记录尚不足以建立基线 | 该数据系列是新建的，或预览范围内大部分时间没有基线数据。              | 等待积累更多数据，或在积累足够历史记录之前先使用静态阈值。 |
+| 大多数时间桶为空     | 自该数据系列首次出现数据以来，超过一半的分钟内没有数据，即平均每分钟不到一个事件。 | 放宽搜索条件、移除某个 group-by，或使用静态阈值。 |
+| 该数据系列几乎没有起伏  | 该数据系列变化极小，因此微小的波动也会产生极端的 z-score。            | 使用静态阈值，或调高 z-score。              |
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-suitability-warning.webp" alt="稀疏数据系列的异常检测图表，显示大多数时间桶为空的警告" size="lg" />
+
+## 异常检测的工作原理 {#how-it-works}
+
+每次评估时，ClickStack 会逐桶为评估窗口打分。每个桶的时长为 60 秒。
+
+对于每个桶：
+
+1. **预期值。** ClickStack 取在早一个评估窗口处结束的 7 个桶的移动平均值。预期值始终不为负。
+2. **离散度。** ClickStack 在 ClickHouse 中基于您在 **Compared to the past** 中选择的基线，计算该数据系列的标准差。基线时长至少为一个评估窗口。
+3. **z-score。** z-score的计算公式为 `(value − expected) / standard deviation`。
+4. **判定。** 当 z-score在所配置的方向上超过所配置的阈值，且实际值与预期值之差不低于预期值的 5% (预期值为 0 时不低于 0.01) 时，该桶即触发。设置 5% 下限是为了避免近乎恒定的数据系列因细微波动而触发。
+
+预期范围为 `expected ± z-score × standard deviation`，并按 5% 下限相应放宽。在预览中，该范围之外的区域均以阴影标示为告警触发区域。
+
+只要评估窗口中任一桶触发，该评估窗口即触发。
+
+### 空桶 {#empty-buckets}
+
+ClickStack 如何处理某一分钟内没有数据的情况，取决于所用的聚合方式：
+
+* **计数与求和** (包括搜索告警) ：空桶按零计分。因此，方向为 `below expected` 或 `outside expected range` 的告警会在流量完全中断时触发。
+* **平均值、百分位数、最小值、最大值、比率以及指标数据源**：空桶意味着没有可度量的数据，因此会直接跳过，而不是按零计分。
+
+历史记录不足的桶不会被计分，因此全新的数据系列在建立基线之前不会触发告警。
+
+### 分组告警 {#grouped-alerts}
+
+当告警按某个字段 (例如 `ServiceName`) 分组时，每个分组都是一个独立的数据系列，拥有各自的预期范围和告警状态。ClickStack 对每个告警最多评估 100 个数据系列的评分，并优先选择数据量最多的数据系列。已处于告警状态的数据系列会持续参与评分，直至告警解除，即使它已跌出前 100 名。
+
+### 通知与恢复 {#notifications}
+
+异常告警对每个数据系列的每次事件只通知一次：
+
+* 当某个数据系列开始触发时，ClickStack 会发送一条通知，并将该数据系列标记为告警状态。
+* 在后续评估中，只要该数据系列仍持续触发，就不会再发送通知。
+* 当某个评估窗口内没有处于触发状态的桶时，该数据系列即恢复，ClickStack 会发送一条恢复通知。
+
+如果错过了若干次评估 (例如在服务中断期间) ，下一次评估会补上错过的窗口，且每个数据系列最多仍只发送一条触发通知。
+
+ClickStack 会在窗口结束 30 秒后才对其进行评估，以确保延迟到达的数据也能计入。
+
+通知描述的是异常本身，而非阈值。示例：
+
+* 标题：`Alert for "Checkout errors" - value 142 is above the expected range (z-score 4.4)`
+* 正文：`Value 142 is above the expected range — z-score 4.4 vs sensitivity 3; expected 120 ± 5 (expected range 105 to 135).`
+
+自定义告警名称和消息可以通过 `{{anomaly.value}}`、`{{anomaly.expectedValue}}`、`{{anomaly.expectedStddev}}`、`{{anomaly.lowerBound}}`、`{{anomaly.upperBound}}` 和 `{{anomaly.zScore}}` 引用触发该通知的桶。这些值仅在触发通知中才会设置，恢复通知中不包含它们；因此，如果触发通知和恢复通知共用同一名称或消息，请用 `{{#if anomaly}}...{{/if}}` 将其包裹起来。
+
+## 监控异常告警 {#monitoring}
+
+在 **告警** 页面上，将 **Filter by type** 设置为 **Anomaly**，即可仅显示异常告警。每一行都会描述告警条件，例如“If value is above expected with z-score at least 3”。
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alerts-list.webp" alt="已筛选为异常告警的 Alerts 页面，显示一条告警及其条件和近期评估历史记录" size="lg" />
+
+选择某条告警即可打开其详情页。条件摘要中包含时间间隔和基线，其下方会显示该告警在保留的历史记录范围内触发的次数，例如“Fired 2 times in the past 2 days.”。选择该范围后，图表和评估历史记录中将显示对应时间段的数据。
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-detail.webp" alt="异常告警详情页，显示条件摘要以及该告警在过去 2 天内触发的次数" size="lg" />
+
+**Evaluation History** 表列出了每次检查的状态、最新值以及处于告警状态的数据系列数量。带有通知耗时的行表示已发送通知；告警触发和告警解除时都会发送通知。
+
+<Image img="/images/clickstack/anomaly-detection/anomaly-alert-history.webp" alt="异常告警的评估历史记录，每 5 分钟检查一次，显示 Alert 和 Ok 状态" size="lg" />
+
+如果某条告警连续 20 个或更多窗口都处于告警状态，详情页会提示该数据系列可能已形成新的常态，而非出现了异常。此时可以调高 z-score，或修改该告警，使其与更合适的基线进行比较。
+
+## 使用 MCP 进行回测 {#backtesting-with-mcp}
+
+借助 [ClickStack MCP 服务器](/zh/clickstack/mcp)，AI 助手可以在您保存异常检测设置之前先对其进行回测。`clickstack_backtest_anomaly_alert` 工具会基于最多 24 小时的历史记录重放某项配置，并按数据系列列出本应发送的通知，同时给出数据质量警告。该工具为只读工具。
+
+## 调优技巧 {#tuning-tips}
+
+* **告警过于频繁：** 以 0.5 为步长逐步提高 z-score，或将方向从 `outside expected range` 改为您关注的那一侧。
+* **告警漏报了真实事件：** 降低 z-score，或缩短基线，使范围能够反映近期行为。
+* **部署后告警全天持续触发：** 该数据系列已形成新的常态，基线越长，适应所需的时间就越长。
+* **低流量数据系列：** 减少分组所用的维度，或基于范围更广的搜索设置告警，确保每个数据系列每分钟至少有一个事件。

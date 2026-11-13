@@ -1,0 +1,138 @@
+---
+title: 'GCP workload identity для ClickPipes'
+sidebarTitle: 'GCP workload identity'
+slug: /integrations/clickpipes/security/gcp-workload-identity
+description: 'Настройка доступа без ключей из ClickPipes к поддерживаемым источникам данных Google Cloud с помощью GCP workload identity.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', 'keyless authentication']
+---
+
+<Note>
+  Аутентификация через GCP workload identity находится в стадии бета-тестирования.
+</Note>
+
+GCP workload identity позволяет ClickPipes обращаться к поддерживаемым источникам Google Cloud без хранения ключа сервисного аккаунта клиента. В этом руководстве описано, как получить служебную учётную запись Google, управляемую ClickPipes, предоставить ей доступ к вашему источнику и создать ClickPipe, использующий краткосрочные учётные данные.
+
+## Перед началом работы {#before-you-begin}
+
+Вам потребуется:
+
+* Сервис ClickHouse Cloud, работающий в GCP. Его развертывание ClickPipes также должно работать в GCP.
+* Ключ API ClickHouse Cloud с разрешением на управление ClickPipes в этом сервисе.
+* Разрешение на назначение ролей IAM для исходных ресурсов Google Cloud.
+* Для Terraform — релиз провайдера ClickHouse, в котором есть источник данных `clickhouse_clickpipes_service_context`. Прежде чем выбрать версию, ознакомьтесь с [журналом изменений провайдера](https://github.com/ClickHouse/terraform-provider-clickhouse/releases).
+
+## Как это работает {#how-it-works}
+
+1. ClickPipes создаёт служебную учётную запись Google для вашего сервиса ClickHouse Cloud и управляет ею.
+2. Вы получаете эту служебную учётную запись из контекста сервиса ClickPipes.
+3. Вы предоставляете служебной учётной записи доступ к ресурсам-источникам в Google Cloud.
+4. С помощью workload identity ClickPipes получает краткосрочные учётные данные служебной учётной записи и обращается к источнику.
+
+Служебная учётная запись уникальна для каждого сервиса ClickHouse Cloud. Вы управляете её доступом к своим ресурсам через Google Cloud IAM и можете в любой момент отозвать этот доступ. Сетевое подключение, включая частное сетевое подключение, настраивается отдельно.
+
+## Получение служебной учётной записи ClickPipes {#retrieve-service-account}
+
+Получите контекст сервиса с помощью OpenAPI или Terraform. Не создавайте ClickPipe, пока контекст не сообщит, что workload identity поддерживается и готова к работе.
+
+<Tabs>
+  <Tab title="OpenAPI" id="openapi">
+    Задайте учётные данные API и идентификаторы ресурсов:
+
+    ```bash
+    export KEY_ID=<your_key_id>
+    export KEY_SECRET=<your_key_secret>
+    export ORG_ID=<your_organization_id>
+    export SERVICE_ID=<your_service_id>
+    ```
+
+    Получите контекст сервиса:
+
+    ```bash
+    curl -u "$KEY_ID:$KEY_SECRET" \
+      "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/context"
+    ```
+
+    Когда идентичность будет готова, ответ будет содержать управляемую служебную учётную запись в поле `principal`:
+
+    ```json
+    {
+      "result": {
+        "gcpWorkloadIdentity": {
+          "supported": true,
+          "ready": true,
+          "principal": "ch-example@clickpipes-production.iam.gserviceaccount.com"
+        }
+      }
+    }
+    ```
+
+    Если сервис ClickHouse ранее не использовал ClickPipes, ответ поначалу может содержать `ready: false` без `principal`. Повторяйте запрос, пока `ready` не примет значение `true`, а поле `principal` не будет заполнено.
+
+    Полное описание схемы ответа приведено в [справочнике API контекста сервиса](/ru/products/cloud/api-reference/clickpipes/click-pipes-service-context-get).
+  </Tab>
+
+  <Tab title="Terraform" id="terraform">
+    Используйте источник данных `clickhouse_clickpipes_service_context`:
+
+    ```hcl
+    data "clickhouse_clickpipes_service_context" "service" {
+      service_id    = var.service_id
+      ready_timeout = "2m"
+    }
+
+    output "clickpipes_gcp_service_account" {
+      value = data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal
+    }
+    ```
+
+    По умолчанию источник данных завершается с ошибкой, если workload identity не поддерживается. В течение `ready_timeout` он ожидает, пока идентичность станет готовой, а поле `principal` будет заполнено. Задавайте `wait_for_identity = false`, только если вам нужен снимок текущего состояния привилегий без ожидания.
+  </Tab>
+</Tabs>
+
+Значения полей контекста сервиса:
+
+| Поле        | Значение                                                                                                                                                                               |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supported` | Развертывание ClickPipes поддерживает GCP workload identity.                                                                                                                           |
+| `ready`     | Управляемая идентичность и её конфигурация олицетворения готовы. Это поле может отсутствовать, если workload identity не поддерживается.                                               |
+| `principal` | Адрес электронной почты служебной учётной записи Google, которой нужно предоставить доступ к вашим исходным ресурсам. Это поле может отсутствовать, пока идентичность не будет готова. |
+
+## Предоставление доступа к источнику {#grant-source-access}
+
+Укажите `serviceAccount:<principal>` в качестве участника IAM, где `<principal>` — адрес электронной почты, возвращаемый в контексте сервиса. Назначьте ему только те роли, которые нужны вашему источнику, — они перечислены в разделе о разрешениях для соответствующего источника:
+
+* [BigQuery](/ru/integrations/clickpipes/bigquery/overview#permissions)
+* [Cloud SQL for Postgres](/ru/integrations/clickpipes/postgres/source/google-cloudsql#iam-database-authentication)
+* [Cloud SQL for MySQL](/ru/integrations/clickpipes/mysql/source/gcp#iam-database-authentication)
+* [Google Managed Service for Apache Kafka](/ru/integrations/clickpipes/kafka/reference#gcp-workload-identity)
+* [Google Cloud Storage](/ru/integrations/clickpipes/object-storage/gcs/overview#permissions)
+* [Google Cloud Pub/Sub](/ru/integrations/clickpipes/pubsub/auth#use-workload-identity)
+
+ClickPipes не может создавать привязки IAM в вашем проекте Google Cloud. Поэтому назначьте привилегии до создания ClickPipe. Если привилегии и ClickPipe описаны в одной конфигурации Terraform, используйте `depends_on`, чтобы задать этот порядок.
+
+## Создание ClickPipe {#create-clickpipe}
+
+Выберите для источника метод аутентификации `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Не настраивайте вместе с Workload Identity ключ сервисного аккаунта, ключ доступа, строку подключения или роль IAM.
+
+Примеры программной настройки для каждого источника:
+
+* [Google Managed Kafka с использованием Terraform](/ru/integrations/clickpipes/programmatic-access/terraform#gcmk-workload-identity)
+* [Google Cloud Storage с использованием Terraform](/ru/integrations/clickpipes/programmatic-access/terraform#gcs-workload-identity)
+* [Google Cloud Pub/Sub с использованием Terraform](/ru/integrations/clickpipes/programmatic-access/terraform#pubsub)
+* [BigQuery с использованием Terraform](/ru/integrations/clickpipes/programmatic-access/terraform#bigquery-workload-identity)
+* [Примеры OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi#creating-clickpipes)
+
+## Устранение неполадок {#troubleshooting}
+
+<Accordion title="Workload Identity не поддерживается">
+  Убедитесь, что сервис ClickHouse Cloud и его развертывание ClickPipes работают в GCP. Если сервис соответствует этим требованиям, но `supported` имеет значение `false`, обратитесь в ClickHouse Support.
+</Accordion>
+
+<Accordion title="Идентичность не готова">
+  Возможно, подготовка идентичности еще не завершена. Повторите запрос контекста сервиса или, если вы используете Terraform, увеличьте `ready_timeout`. Не создавайте ClickPipe, пока `ready` не примет значение `true`, а поле `principal` не будет заполнено.
+</Accordion>
+
+<Accordion title="Источник отклоняет доступ">
+  Убедитесь, что участник IAM указан как `serviceAccount:<principal>`, где `<principal>` — точное значение субъекта из контекста сервиса. Проверьте, что роли выданы на нужном уровне: проекта, набора данных, бакета, подписки или кластера. Для Google Managed Kafka также проверьте ACL Kafka на стороне брокера и настройку TLS.
+</Accordion>
