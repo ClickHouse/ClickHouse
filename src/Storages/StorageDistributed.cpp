@@ -2072,11 +2072,25 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
+    /// `Address::operator==` does not compare the inter-server secret, but the connection pool of the queue
+    /// signs every request with it, so rotating only the secret (e.g. with `ALTER CLUSTER`) must recreate the queue.
+    auto addresses_changed = [](const Cluster::Addresses & lhs, const Cluster::Addresses & rhs)
+    {
+        if (lhs != rhs)
+            return true;
+        for (size_t i = 0; i < lhs.size(); ++i)
+        {
+            if (lhs[i].cluster != rhs[i].cluster || lhs[i].cluster_secret != rhs[i].cluster_secret)
+                return true;
+        }
+        return false;
+    };
+
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
     /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
     if (!node_data.directory_queue
-        || (node_data.clusters_version < getContext()->getClustersVersion() && node_data.addresses != parseAddresses(name)))
+        || (node_data.clusters_version < getContext()->getClustersVersion() && addresses_changed(node_data.addresses, parseAddresses(name))))
     {
         node_data.addresses = parseAddresses(name);
         node_data.clusters_version = getContext()->getClustersVersion();
