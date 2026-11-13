@@ -103,4 +103,24 @@ $CLICKHOUSE_CLIENT -q "REVOKE SELECT(nt) ON $db.ts FROM $definer; REVOKE SELECT(
 check "mv, definer REVOKE(nt), REVOKE(x)" "${reads_mv[@]}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"; check "mv, definer REVOKE(nt), REVOKE(x), source dropped" "${reads_mv[@]}"
 
+# A view column no revoke can apply to is read without resolving the source table, which may be unavailable.
+mvdb="${db}_mv"
+urldb="${db}_url"
+src_file="${CLICKHOUSE_USER_FILES_UNIQUE}/source.csv"
+mkdir -p "${CLICKHOUSE_USER_FILES_UNIQUE}"
+printf 'id\n1\n' > "$src_file"
+# An old mtime, so that the emptied file does not match the schema cached when the view is created.
+touch -d @1000000000 "$src_file"
+$CLICKHOUSE_CLIENT -m -q "
+CREATE DATABASE $urldb ENGINE = URL('file://');
+CREATE DATABASE $mvdb ENGINE = Atomic;
+CREATE MATERIALIZED VIEW $mvdb.mv ENGINE = MergeTree ORDER BY tuple() SQL SECURITY DEFINER AS SELECT id FROM $urldb.\`$src_file\`;
+INSERT INTO $mvdb.mv VALUES (42);
+GRANT SELECT ON $mvdb.mv TO $user;
+"
+: > "$src_file"
+check "mv, source unreadable" "SELECT id FROM $mvdb.mv" "SELECT count() FROM $mvdb.mv"
+
+$CLICKHOUSE_CLIENT -q "DROP DATABASE $mvdb; DROP DATABASE $urldb;"
+rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"
 $CLICKHOUSE_CLIENT -q "DROP VIEW mv; DROP TABLE tgt; DROP USER $user, $definer; DROP ROLE $role; DROP VIEW v; DROP TABLE al; DROP TABLE m; DROP TABLE s; DROP TABLE td; DROP TABLE tn; DROP TABLE t; DROP TABLE t0;"

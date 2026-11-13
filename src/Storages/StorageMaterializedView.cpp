@@ -560,13 +560,21 @@ void StorageMaterializedView::readImpl(
         /// Flattened `Nested` structures are the source table's, as the view may store their elements with another type.
         /// Without the source table no name is known to be its column, so any dotted name may be such an element.
         static const ColumnsDescription unknown_source_columns;
-        auto source_table = DatabaseCatalog::instance().tryGetTable(select_table_id, context);
-        auto source_metadata = source_table ? source_table->getInMemoryMetadataPtr(context, false) : nullptr;
+        std::optional<StorageMetadataHandle> source_metadata;
+        auto get_source_columns = [&]() -> const ColumnsDescription &
+        {
+            if (!source_metadata)
+            {
+                auto source_table = DatabaseCatalog::instance().tryGetTable(select_table_id, context);
+                source_metadata = source_table ? source_table->getInMemoryMetadataPtr(context, false) : nullptr;
+            }
+            return *source_metadata ? (*source_metadata)->getColumns() : unknown_source_columns;
+        };
         context->checkAccess(
             AccessType::SELECT,
             select_table_id,
             storage_snapshot->metadata->getColumns().getColumnNamesForSelectAccessCheck(
-                column_names, context, select_table_id, source_metadata ? &source_metadata->getColumns() : &unknown_source_columns));
+                column_names, context, select_table_id, get_source_columns));
     }
 
     auto storage_id = storage->getStorageID();
