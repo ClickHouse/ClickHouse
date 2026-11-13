@@ -26,6 +26,8 @@ SETTINGS
     index_granularity = 8192,
     index_granularity_bytes = 0,
     min_index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0,
+    min_bytes_for_wide_part = 0,
     use_const_adaptive_granularity = 1,
     max_bytes_to_merge_at_max_space_in_pool = 1;
 

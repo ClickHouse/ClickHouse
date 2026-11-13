@@ -1228,14 +1228,20 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// The parent step is no longer in the plan, and EXPLAIN only visits steps that are.
     /// Part-pruning records stay on the surviving projection read, with the parent part and
     /// granule counts kept out of that read's own funnel.
+    /// Skip the covering projection that *is* this read: its analysis belongs on the parent, and
+    /// copying it here made `EXPLAIN indexes` / `EXPLAIN projections` describe the replacement
+    /// read as if it were still a parent-level filter.
     if (!has_parent_parts)
     {
         if (auto * surviving_reading = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
         {
             auto surviving = surviving_reading->getOrCreateAnalyzedResult();
+            const String & applied_name = best_candidate->projection->name;
             for (const auto & stat : parent_reading_select_result->index_stats)
             {
                 if (stat.type != ReadFromMergeTree::IndexType::Projection)
+                    continue;
+                if (stat.name == applied_name)
                     continue;
 
                 surviving->part_level_projection_index_stats.push_back(stat);
