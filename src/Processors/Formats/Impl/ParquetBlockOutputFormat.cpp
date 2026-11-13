@@ -7,16 +7,12 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
 
+#include <optional>
 
-namespace CurrentMetrics
-{
-    extern const Metric ParquetEncoderThreads;
-    extern const Metric ParquetEncoderThreadsActive;
-    extern const Metric ParquetEncoderThreadsScheduled;
-}
 
 namespace DB
 {
@@ -32,11 +28,10 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
     if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
-        pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::ParquetEncoderThreads,
-            CurrentMetrics::ParquetEncoderThreadsActive,
-            CurrentMetrics::ParquetEncoderThreadsScheduled,
-            format_settings.max_threads);
+    {
+        getParquetEncoderThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        pool = &getParquetEncoderThreadPool().get();
+    }
 
     using C = FormatSettings::ParquetCompression;
     switch (format_settings.parquet.output_compression_method)
@@ -91,10 +86,14 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
 {
     if (pool)
-    {
-        is_stopped = true;
-        pool->wait();
-    }
+        stopThreads();
+}
+
+void ParquetBlockOutputFormat::stopThreads()
+{
+    is_stopped = true;
+    std::unique_lock lock(mutex);
+    condvar.wait(lock, [this] { return threads_running == 0; });
 }
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
@@ -241,7 +240,7 @@ static size_t countSchemaLeaves(const SchemaElements & schema, size_t & index)
 
 void ParquetBlockOutputFormat::collectColumnSizesOnDisk(const Block & header)
 {
-    std::vector<size_t> leaves_per_column;
+    VectorWithMemoryTracking<size_t> leaves_per_column;
     leaves_per_column.reserve(header.columns());
     size_t schema_index = 1;
     size_t num_leaves = 0;
@@ -280,8 +279,7 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
 {
     if (pool)
     {
-        is_stopped = true;
-        pool->wait();
+        stopThreads();
         is_stopped = false;
     }
 
@@ -302,7 +300,7 @@ void ParquetBlockOutputFormat::onCancel() noexcept
     is_stopped = true;
 }
 
-void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroup(Chunks chunks)
 {
     if (pool)
     {
@@ -354,7 +352,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     finalizeRowGroup(file_state, chunk.getNumRows(), options, out);
 }
 
-void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks)
+void ParquetBlockOutputFormat::writeRowGroupInParallel(Chunks chunks)
 {
     std::unique_lock lock(mutex);
 
@@ -364,7 +362,7 @@ void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks
     r.column_chunks.resize(header.columns());
     r.tasks_in_flight = r.column_chunks.size();
 
-    std::vector<Columns> columnses;
+    VectorWithMemoryTracking<Columns> columnses;
     for (auto & chunk : chunks)
     {
         chassert(header.columns() == chunk.getNumColumns());
@@ -433,17 +431,16 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     size_t to_add = std::min(task_queue.size(), format_settings.max_threads - threads_running);
     for (size_t i = 0; i < to_add; ++i)
     {
-        auto job = [this, thread_group = CurrentThread::getGroup()]()
+        auto job = [this, thread_group = CurrentThread::getGroup()]() mutable
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_ENCODER);
-
-                threadFunction();
+                threadFunction(thread_group);
             }
             catch (...)
             {
                 std::lock_guard lock(mutex);
+                thread_group.reset();
                 background_exception = std::current_exception();
                 condvar.notify_all();
                 --threads_running;
@@ -467,8 +464,11 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     }
 }
 
-void ParquetBlockOutputFormat::threadFunction()
+void ParquetBlockOutputFormat::threadFunction(ThreadGroupPtr & thread_group)
 {
+    std::optional<ThreadGroupSwitcher> switcher;
+    switcher.emplace(thread_group, ThreadName::PARQUET_ENCODER);
+
     std::unique_lock lock(mutex);
 
     while (true)
@@ -477,7 +477,12 @@ void ParquetBlockOutputFormat::threadFunction()
         {
             /// The check and the decrement need to be in the same critical section, to make sure
             /// we never get stuck with tasks but no threads.
+            /// Leave the query's thread group before stopThreads() can see the decrement.
+            switcher.reset();
+            thread_group.reset();
             --threads_running;
+            if (threads_running == 0)
+                condvar.notify_all();
             return;
         }
 
@@ -497,7 +502,7 @@ void ParquetBlockOutputFormat::threadFunction()
             }
             task.column_pieces.clear();
 
-            std::vector<ColumnChunkWriteState> subcolumns;
+            VectorWithMemoryTracking<ColumnChunkWriteState> subcolumns;
             prepareColumnForWrite(
                 std::move(concatenated), task.column_type, task.column_name, options, &subcolumns,
                 /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);

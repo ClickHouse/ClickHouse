@@ -42,7 +42,7 @@ for payload_type in string array; do
                     max_memory_usage = 134217728, max_untracked_memory = 0,
                     max_bytes_ratio_before_external_distinct = 0,
                     max_bytes_before_external_distinct = ${threshold},
-                    optimize_distinct_in_order = 0, count_distinct_optimization = 0;
+                    optimize_distinct_in_order = 0;
 
                 SELECT sumIf(value, event = 'ExternalDistinctWritePart') > 0,
                        sumIf(value, event = 'ExternalDistinctMerge') > 0
@@ -64,7 +64,7 @@ ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
         max_memory_usage = 134217728, max_untracked_memory = 0,
         max_bytes_ratio_before_external_distinct = 0,
         max_bytes_before_external_distinct = 50331648,
-        optimize_distinct_in_order = 0, count_distinct_optimization = 0;
+        optimize_distinct_in_order = 0;
 
     SELECT sumIf(value, event = 'ExternalDistinctWritePart') > 0,
            sumIf(value, event = 'ExternalDistinctMerge') > 0

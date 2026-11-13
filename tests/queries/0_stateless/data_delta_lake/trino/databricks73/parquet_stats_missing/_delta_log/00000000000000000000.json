@@ -1,0 +1,3 @@
+{"commitInfo":{"timestamp":1607959647229,"userId":"1720949127822865","userName":"alex.jo@starburstdata.com","operation":"CREATE TABLE","operationParameters":{"isManaged":"false","description":null,"partitionBy":"[]","properties":"{}"},"notebook":{"notebookId":"459365628743742"},"clusterId":"1103-105745-dial507","isolationLevel":"SnapshotIsolation","isBlindAppend":true,"operationMetrics":{}}}
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"a61b3095-0356-4aef-ba7a-ceb669d08e32","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"i\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1607959646914}}

@@ -232,7 +232,20 @@ ClusterDiscovery::ClusterDiscovery(
         String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
         String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
-        bool secure = config.getBool(cluster_config_prefix + ".secure", false);
+        /// Advertise the port peers must actually dial: with `secure` enabled that is `tcp_port_secure`, not `tcp_port`.
+        /// Observers do not register themselves, so they only need client-side TLS and no local secure listener.
+        /// Either way it is the port the server actually bound, i.e. shifted by `port_offset`.
+        bool is_secure_connection = config.getBool(cluster_config_prefix + ".secure", false);
+        UInt16 advertised_port = context->getBoundTCPPort();
+        if (is_secure_connection && !is_observer)
+        {
+            auto secure_port = context->getBoundTCPPortSecure();
+            if (!secure_port)
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                    "Cluster '{}' has 'secure' enabled in its discovery config, but 'tcp_port_secure' is not set", key);
+            advertised_port = *secure_port;
+        }
+
         clusters_info.emplace(
             key,
             ClusterInfo(
@@ -243,8 +256,8 @@ ClusterDiscovery::ClusterDiscovery(
                 /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
                 /* password= */ password,
                 /* cluster_secret= */ cluster_secret,
-                /* port= */ getAdvertisedPort(secure),
-                /* secure= */ secure,
+                /* port= */ advertised_port,
+                /* secure= */ is_secure_connection,
                 /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
                 /* observer_mode= */ is_observer,
                 /* invisible= */ ConfigHelper::getBool(config, cluster_config_prefix + ".invisible")
@@ -419,13 +432,16 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     }
 
     bool secure = cluster_info.current_node.secure;
+    /// The port is used to decide which members are this server itself. Without a local secure listener
+    /// (possible for an observer) no member can be this server, so use 0, which never matches: falling back to
+    /// the default secure port would mark another server on the same host listening on it as local.
     ClusterConnectionParameters params{
         /* username= */ cluster_info.username,
         /* password= */ cluster_info.password,
         /// The addresses come from Keeper, where every node registered itself on the port it actually
-        /// bound (see `getAdvertisedPort`), so locality detection must compare against the bound
-        /// port as well - otherwise a node with a non-zero `port_offset` would not recognize itself.
-        /* clickhouse_port= */ getAdvertisedPort(secure),
+        /// bound, so locality detection must compare against the bound port as well - otherwise a node
+        /// with a non-zero `port_offset` would not recognize itself.
+        /* clickhouse_port= */ secure ? context->getBoundTCPPortSecure().value_or(0) : context->getBoundTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,

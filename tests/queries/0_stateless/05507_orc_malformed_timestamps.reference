@@ -1,0 +1,16 @@
+nanoseconds local push_down=0 lazy=0: (INCORRECT_DATA)
+nanoseconds local push_down=0 lazy=1: (INCORRECT_DATA)
+nanoseconds local push_down=1 lazy=0: (INCORRECT_DATA)
+nanoseconds local push_down=1 lazy=1: (INCORRECT_DATA)
+nanoseconds remote push_down=0 lazy=0: (INCORRECT_DATA)
+nanoseconds remote push_down=0 lazy=1: (INCORRECT_DATA)
+nanoseconds remote push_down=1 lazy=0: (INCORRECT_DATA)
+nanoseconds remote push_down=1 lazy=1: (INCORRECT_DATA)
+statistics local push_down=0 lazy=0: 3
+statistics local push_down=0 lazy=1: 3
+statistics local push_down=1 lazy=0: 3
+statistics local push_down=1 lazy=1: 3
+statistics remote push_down=0 lazy=0: 3
+statistics remote push_down=0 lazy=1: 3
+statistics remote push_down=1 lazy=0: 3
+statistics remote push_down=1 lazy=1: 3

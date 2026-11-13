@@ -167,6 +167,7 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
+add_headers_and_sources(clickhouse_compression Compression/Adaptive)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 if (TARGET ch_contrib::sz3)
@@ -402,6 +403,7 @@ add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
+add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
@@ -428,6 +430,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Sto
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
+add_object_library(clickhouse_storages_mergetree_whatif Storages/MergeTree/WhatIf)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
@@ -454,6 +457,9 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
     "${CMAKE_SOURCE_DIR}/programs/server/play.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/uplot.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/leaflet.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/leaflet.css;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
@@ -523,6 +529,7 @@ add_object_library(clickhouse_processors_transforms_window Processors/Transforms
 add_object_library(clickhouse_window_functions WindowFunctions)
 add_object_library(clickhouse_window_functions_common WindowFunctions/Common)
 add_object_library(clickhouse_window_functions_general WindowFunctions/General)
+add_object_library(clickhouse_window_functions_aggregate WindowFunctions/Aggregate)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
@@ -563,6 +570,7 @@ set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp                        # window functions
     Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
+    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
     Processors/Transforms/Window/Partition.cpp                       # window functions
     Processors/Transforms/Window/Peers.cpp                           # window functions
@@ -579,12 +587,19 @@ set_property(SOURCE
     WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
     WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
     WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
+    WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
+    WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
+    WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
+elseif (USE_AVRO)
+    # The Avro input format reads Iceberg variants with the Parquet variant decoder.
+    list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
+    list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()
 
 # Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
@@ -666,6 +681,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
+            ch_contrib::gdeflate
             ch_contrib::zxc
             ch_contrib::roaring
 )
@@ -834,6 +850,10 @@ endif ()
 
 if (TARGET ch_contrib::capnp)
     target_link_libraries(dbms PRIVATE ch_contrib::capnp)
+endif ()
+
+if (TARGET ch_contrib::parquet_format)
+    target_link_libraries(dbms PRIVATE ch_contrib::parquet_format)
 endif ()
 
 if (TARGET ch_contrib::parquet)
@@ -1122,6 +1142,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::hdfs)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::hdfs)
+    endif()
+
+    if (TARGET ch_contrib::parquet_format)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet_format)
     endif()
 
     if (TARGET ch_contrib::parquet)

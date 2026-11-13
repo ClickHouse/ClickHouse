@@ -414,8 +414,8 @@ API를 통해 UDF를 생성하고 배포하는 일반적인 워크플로는 다�
 
 공식 [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)에는 Infrastructure as Code 방식으로 UDF를 관리할 수 있는 2개의 리소스가 포함되어 있습니다.
 
-* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)는 FUNCTION 자체를 관리합니다. FUNCTION 소스 코드가 포함된 ZIP 아카이브를 사용하며, 아카이브 hash가 변경될 때마다 새 버전을 publish하고 빌드가 완료될 때까지 기다립니다.
-* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md)는 UDF 버전을 서비스에 ATTACH합니다. 서비스에는 한 번에 FUNCTION의 버전을 최대 1개만 ATTACH할 수 있습니다. 고정 버전 번호를 지정하거나 `clickhouse_udf.<name>.version`을 참조하여 서비스를 최신 버전으로 자동 업데이트할 수 있습니다.
+* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)는 함수 자체를 관리합니다. 함수 소스 코드가 포함된 ZIP 아카이브를 사용하며, 아카이브 hash가 변경될 때마다 새 버전을 publish하고 빌드가 완료될 때까지 기다립니다.
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md)는 UDF 버전을 서비스에 ATTACH합니다. 서비스에는 한 번에 함수의 버전을 최대 1개만 ATTACH할 수 있습니다. 고정 버전 번호를 지정하거나 `clickhouse_udf.<name>.version`을 참조하여 서비스를 최신 버전으로 자동 업데이트할 수 있습니다.
 
 <Note>
   이 리소스는 프로바이더 버전 3.24.0 이상에서 사용할 수 있습니다. 베타 상태이므로 향후 프로바이더 버전에서 동작이 변경될 수 있습니다.
@@ -445,9 +445,9 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-위에 표시된 필수 속성 외에도 `clickhouse_udf` 리소스는 `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `sandbox_version`, `return_name`, `fail_on_build_error`를 지원합니다. 전체 스키마는 [리소스 문서](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)를 참조하십시오.
+위에 표시된 필수 속성 외에도 `clickhouse_udf` 리소스는 `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `return_name`, `fail_on_build_error`를 지원합니다. 전체 스키마는 [리소스 문서](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md)를 참조하십시오.
 
-새 버전을 프로덕션에 반영하기 전에 개발 서비스에서 먼저 테스트하려면, attachment 하나는 최신 버전을 추적하도록 하고 다른 하나는 변수로 버전을 고정하십시오. 개발 attachment는 새 빌드가 나올 때마다 자동으로 해당 버전을 따라가고, 프로덕션 attachment는 `var.prod_udf_version`을 변경할 때만 업데이트됩니다.
+새 버전을 프로덕션에 반영하기 전에 개발 서비스에서 먼저 테스트하려면, ATTACH 하나는 최신 버전을 추적하도록 하고 다른 하나는 변수로 버전을 고정하십시오. 개발 ATTACH는 새 빌드가 나올 때마다 자동으로 해당 버전을 따라가고, 프로덕션 ATTACH는 `var.prod_udf_version`을 변경할 때만 업데이트됩니다.
 
 ```terraform
 resource "clickhouse_udf_attachment" "dev" {
@@ -467,4 +467,4 @@ resource "clickhouse_udf_attachment" "prod" {
   프로바이더는 아직 `deterministic` 및 메모리 제한 설정을 지원하지 않습니다. 두 항목 모두 버전을 생성할 때 설정되므로, 프로바이더를 통해 publish된 버전에는 이 항목을 지정할 수 없습니다. 이 항목을 사용하려면 콘솔 또는 API를 통해 해당 버전을 생성하세요.
 </Note>
 
-ATTACH는 준비된 상태인 버전에서만 성공하며, 완료하는 데 몇 분이 걸릴 수 있습니다. 유휴 상태의 서비스는 자동으로 시작됩니다. 또한 프로바이더는 풀을 다시 로드하지 않습니다. `executable_pool` UDF는 ATTACH된 버전이 변경된 후 해당 서비스에서 `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>`을 실행하세요. `clickhouse_udf` 리소스를 삭제하면 해당 FUNCTION의 모든 버전이 제거되고 모든 서비스에서 분리됩니다.
+ATTACH는 준비된 상태인 버전에서만 성공하며, 완료하는 데 몇 분이 걸릴 수 있습니다. 유휴 상태의 서비스는 자동으로 시작됩니다. 또한 프로바이더는 풀을 다시 로드하지 않습니다. `executable_pool` UDF는 ATTACH된 버전이 변경된 후 해당 서비스에서 `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>`을 실행하세요. `clickhouse_udf` 리소스를 삭제하면 해당 함수의 모든 버전이 제거되고 모든 서비스에서 분리됩니다.

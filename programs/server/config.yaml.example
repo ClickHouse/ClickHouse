@@ -182,9 +182,6 @@ grpc:
     max_send_message_size: -1
     max_receive_message_size: -1
 
-    # Enable if you want very detailed logs
-    verbose_logs: false
-
 # Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71
 openSSL:
     server:
@@ -215,9 +212,9 @@ openSSL:
             # Use for self-signed: name: AcceptCertificateHandler
             name: RejectCertificateHandler
 
-# Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123
+# Default root page on http[s] server. For example open the built-in Web UI when opening http://localhost:8123
 # http_server_default_response: |-
-#     <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>
+#     <html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>
 
 # Maximum number of concurrent queries.
 max_concurrent_queries: 100
