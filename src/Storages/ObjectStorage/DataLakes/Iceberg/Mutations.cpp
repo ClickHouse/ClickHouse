@@ -200,8 +200,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         auto delete_commands = commands;
         delete_commands[0].type = MutationCommand::DELETE;
 
-        /// The positions of each data file are written in the order of this read,
-        /// and `IcebergStreamingPositionDeleteTransform` requires them increasing.
+        /// Delete positions are written in the order of this read and must be increasing.
         auto read_context = Context::createCopy(context);
         read_context->setSetting("input_format_parquet_preserve_order", Field(true));
 

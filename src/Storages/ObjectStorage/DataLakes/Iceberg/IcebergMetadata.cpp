@@ -2058,8 +2058,7 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
-    /// The format settings of an engine table are not taken from the query, so a query that asks for the order
-    /// (the read of a mutation that writes position delete files does) gets it here.
+    /// The format settings of an engine table are not taken from the query, so a query's request for order is applied here.
     if (local_context.getSettingsRef()[Setting::input_format_parquet_preserve_order])
         format_settings.parquet.preserve_order = true;
 }

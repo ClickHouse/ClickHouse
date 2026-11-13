@@ -2034,8 +2034,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         std::optional<FormatSettings> ordered_format_settings;
 #if USE_AVRO
-        /// `IcebergStreamingPositionDeleteTransform` requires increasing row numbers from the reader of the
-        /// data file and from the readers of its delete files, so such a file is read in order.
         if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
             iceberg_object && iceberg_object->usesStreamingPositionDeletes(context_))
         {
