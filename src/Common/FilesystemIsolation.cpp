@@ -562,6 +562,29 @@ void bindMount(const std::string & path, unsigned long add_flags) // NOLINT(goog
         addMountFlags(path, add_flags);
 }
 
+/// The global controls in `/proc` that are writable by the user ID rather than by a capability, as `kernel.core_pattern`
+/// with a pipe handler that the kernel runs as root in the initial namespaces, outside of the isolation, and
+/// `/proc/sysrq-trigger`: they are made read-only, as in the containers of Docker. The server only reads them.
+constexpr std::array proc_global_controls = {"/proc/sys", "/proc/sysrq-trigger", "/proc/bus", "/proc/fs", "/proc/irq"};
+
+/// Bind-mounts `path` over itself, read-only. A path that does not exist is skipped. Recursively, because a user
+/// namespace cannot bind a mount without its locked children, but only the new top mount is made read-only: a
+/// mount inside, such as the `autofs` of `/proc/sys/fs/binfmt_misc`, is not touched, because `statvfs` of it would
+/// trigger the automount, which the service outside of this mount namespace never completes here.
+void remountReadOnly(const std::string & path)
+{
+    struct stat st{};
+    if (0 != ::lstat(path.c_str(), &st))
+        return;
+    if (0 != ::mount(path.c_str(), path.c_str(), nullptr, MS_BIND | MS_REC, nullptr))
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot bind-mount {} over itself", path);
+
+    /// Every flag that a mount of a more privileged user namespace can lock is set, so none is cleared, and the flags
+    /// of the access time are kept by a remount without them.
+    if (0 != ::mount(nullptr, path.c_str(), nullptr, MS_REMOUNT | MS_BIND | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr))
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot remount {} read-only", path);
+}
+
 void mountTmpfs(const std::string & path, unsigned long flags, const char * options) // NOLINT(google-runtime-int)
 {
     if (0 != ::mount("tmpfs", path.c_str(), "tmpfs", flags, options))
@@ -626,6 +649,8 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
             const std::string pts = std::string(staging_directory) + "/pts";
             createDirectories(pts);
             mountDevpts(pts);
+            /// In its own mount namespace, so the original one is untouched.
+            remountReadOnly("/proc/sys");
         }
         catch (const Exception & e)
         {
@@ -1080,7 +1105,9 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     /// A new `proc` cannot be mounted without a new PID namespace, so the original one is mounted, with its mounts
     /// inside, which a user namespace requires. It goes first, because the other mounts read `/proc/self/mountinfo`.
     bindMount("/proc", 0);
-    status.visible_paths.push_back("/proc");
+    for (const auto * control : proc_global_controls)
+        remountReadOnly(control);
+    status.visible_paths.push_back("/proc (with /proc/sys, /proc/sysrq-trigger, /proc/bus, /proc/fs, /proc/irq read-only)");
 
     /// A private `/tmp`, empty and not shared with anything outside. Mounted first, so that the paths inside `/tmp`
     /// are mounted on top of it.
