@@ -100,6 +100,7 @@ namespace ErrorCodes
     extern const int GCP_ERROR;
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int S3_ERROR;
 }
 
 namespace S3
@@ -825,7 +826,6 @@ Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Ge
     if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return credentials;
 
-    Silk::ThreadModeScope thread_mode;
     Reload();
     return credentials;
 }
@@ -849,20 +849,39 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials have expired, attempting to renew from STS.");
 
-    std::ifstream token_stream(token_file.data());
-    if (token_stream)
+    /// In a fiber a failed refresh without usable credentials is reported, as for `AssumeRole`: an unsigned request
+    /// would be answered with `AccessDenied`, which hides the real cause.
+    auto throw_in_fiber_without_usable_credentials = [&](std::string_view reason)
     {
-        String token_string((std::istreambuf_iterator<char>(token_stream)), std::istreambuf_iterator<char>());
-        token = token_string;
-    }
-    else
+        if (Silk::isInsideFiber() && (IsSetNeedRefresh() || areCredentialsEmptyOrExpired(credentials, 0)))
+            throw DB::Exception(ErrorCodes::S3_ERROR, "Failed to get credentials using AssumeRoleWithWebIdentity: {}", reason);
+    };
+
     {
-        LOG_INFO(logger, "Can't open token file: {}", token_file);
-        return;
+        Silk::ThreadModeScope thread_mode;
+        std::ifstream token_stream(token_file.data());
+        if (token_stream)
+        {
+            String token_string((std::istreambuf_iterator<char>(token_stream)), std::istreambuf_iterator<char>());
+            token = token_string;
+        }
+        else
+        {
+            throw_in_fiber_without_usable_credentials(fmt::format("can't open token file {}", token_file));
+            LOG_INFO(logger, "Can't open token file: {}", token_file);
+            return;
+        }
     }
     Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
     auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
+    if (result.creds.IsEmpty() && Silk::isInsideFiber())
+    {
+        throw_in_fiber_without_usable_credentials("STS returned no credentials");
+        /// Keep the base refresh state and cached `credentials` so the next call retries STS.
+        LOG_WARNING(logger, "Failed to get credentials from STS, keeping the cached credentials");
+        return;
+    }
     last_loaded_ms.store(Aws::Utils::DateTime::Now().Millis(), std::memory_order_relaxed);
 
     LOG_INFO(logger, "Got {}credentials from STS",
@@ -1395,22 +1414,19 @@ AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleCredentialsProvider::GetAWSCredentials()
 {
-    if (Silk::isInsideFiber())
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "STS AssumeRole credentials are not implemented for fibers");
-    /// Honor `SetNeedRefresh()` like sibling providers (Web-Identity, SSO) do.
-    /// Without this, external callers (e.g. `S3::Client` on auth retries, or the
-    /// delta-kernel `ExpiredToken` retry path) can't force a re-AssumeRole even
-    /// after explicitly signalling the cached token is stale.
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    std::lock_guard lock(get_aws_credentials_mutex);
     if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
-        return credentials;
-
-    guard.UpgradeToWriterLock();
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return credentials;
 
     Reload();
     return credentials;
+}
+
+void AwsAuthSTSAssumeRoleCredentialsProvider::SetNeedRefresh()
+{
+    /// Wait for an ongoing refresh so its completion cannot clear this invalidation.
+    std::lock_guard lock(get_aws_credentials_mutex);
+    AWSCredentialsProvider::SetNeedRefresh();
 }
 
 void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
@@ -1421,8 +1437,15 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
-        /// Keep `m_needsRefresh` and cached `credentials` so the next call retries STS.
-        LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", outcome.GetError().GetMessage());
+        /// Keep the base refresh state and cached `credentials` so the next call retries STS.
+        const auto & error = outcome.GetError();
+        if (Silk::isInsideFiber() && (IsSetNeedRefresh() || areCredentialsEmptyOrExpired(credentials, 0)))
+            throw DB::Exception(
+                ErrorCodes::S3_ERROR,
+                "Failed to get credentials using AssumeRole. Error: {} ({}): {}",
+                error.GetExceptionName(), static_cast<int>(error.GetErrorType()), error.GetMessage());
+
+        LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", error.GetMessage());
         return;
     }
 
@@ -1432,7 +1455,6 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     credentials.SetSessionToken(result.getSessionToken());
     credentials.SetExpiration(result.getExpiration());
 
-    /// Clear `m_needsRefresh` so an external `SetNeedRefresh()` isn't latched.
     AWSCredentialsProvider::Reload();
 
     LOG_TRACE(logger, "Successfully retrieved credentials");
