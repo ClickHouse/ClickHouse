@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
@@ -240,6 +241,60 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
+static FutureSetPtr tryGetSet(const ActionsDAG::Node & node)
+{
+    const auto * column_set = node.column ? typeid_cast<const ColumnSet *>(&node.column->getDataColumn()) : nullptr;
+    return column_set ? column_set->getData() : nullptr;
+}
+
+/// Whether the shard gets the results of the subqueries of the `IN`s instead of their texts, if `distributed_product_mode` asks for
+/// that: `DistributedProductModeRewriteInJoinVisitor` has not seen an `IN` that was pushed down into a subquery or a view.
+/// Either of all `IN`s of the condition or of none: a mix of both can be more wrong than the texts.
+static bool areSetsSent(
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const ActionsDAG & pushed_down_filters,
+    const Tables & external_tables,
+    const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    /// `EXPLAIN` does not run the subqueries. Replicas of a shard would apply a custom key to the sent tables too.
+    if (!areInAndJoinMadeGlobal(settings) || shard.query->as<ASTExplainQuery>() || context->canUseParallelReplicasCustomKey())
+        return false;
+
+    /// The text of the pushed down subquery decides whether the replicas of a shard read in parallel, without it each of them may
+    /// read all rows.
+    if (context->canUseTaskBasedParallelReplicas() && settings[Setting::parallel_replicas_filter_pushdown]
+        && !settings[Setting::parallel_replicas_allow_in_with_subquery])
+        return false;
+
+    bool has_set_to_send = false;
+    for (const auto & node : pushed_down_filters.getNodes())
+    {
+        const auto name = node.type == ActionsDAG::ActionType::FUNCTION ? node.function_base->getName() : "";
+        /// An `IgnoreSet` call has no set operand.
+        if (!isNameOfInFunction(name) || name.ends_with("IgnoreSet"))
+            continue;
+
+        const auto set = tryGetSet(*node.children.at(1));
+        if (typeid_cast<const FutureSetFromTuple *>(set.get()))
+            continue;
+
+        const auto * set_from_subquery = typeid_cast<const FutureSetFromSubquery *>(set.get());
+        if (!set_from_subquery || isNameOfGlobalInFunction(name) || !set_from_subquery->canFillTableForLocalIn(context))
+            return false;
+
+        /// A temporary table is sent already.
+        const auto source_ast = set_from_subquery->getSourceAST();
+        const auto * table_identifier = source_ast ? source_ast->as<ASTTableIdentifier>() : nullptr;
+        if (table_identifier && external_tables.contains(table_identifier->name()))
+            return false;
+
+        has_set_to_send = true;
+    }
+
+    return has_set_to_send;
+}
+
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
@@ -248,7 +303,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts)
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts,
+    bool send_sets)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -444,6 +500,17 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (is_function_and && arguments.size() == 1)
             arguments.push_back(make_intrusive<ASTLiteral>(Field(1)));
 
+        if (send_sets && isNameOfLocalInFunction(func_name))
+        {
+            const auto set = tryGetSet(*node->children.at(1));
+            if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
+            {
+                const auto [name, table] = set_from_subquery->getTableForLocalIn(context);
+                external_tables->emplace(name, table);
+                arguments[1] = make_intrusive<ASTIdentifier>(name);
+            }
+        }
+
         /// Support for GLOBAL IN.
         if (external_tables && isNameOfGlobalInFunction(func_name))
         {
@@ -530,7 +597,8 @@ static bool addFilters(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters,
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr,
+    bool send_sets = false)
 {
     if (!query_tree || !planner_context)
         return false;
@@ -555,7 +623,8 @@ static bool addFilters(
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts,
+        send_sets);
     if (!predicate)
         return false;
 
@@ -722,12 +791,7 @@ void ReadFromRemote::addLazyPipe(
 
     /// The temporary table of a GLOBAL IN must be attached to its set before the set is built, which happens
     /// before the lambda runs. So splice the filter now, as addPipe does; the local fallback keeps shard.query.
-    ASTPtr remote_query = shard.query;
-    if (filter_actions_dag)
-    {
-        remote_query = shard.query->clone();
-        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
-    }
+    const auto [remote_query, tables] = addFiltersToQuery(shard, /*clone_query=*/ true);
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
@@ -735,7 +799,7 @@ void ReadFromRemote::addLazyPipe(
             query = shard.query, remote_query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
-            my_scalars = scalars, my_external_tables = external_tables,
+            my_scalars = scalars, my_external_tables = tables,
             my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             parallel_marshalling_threads]() mutable
@@ -856,6 +920,21 @@ void ReadFromRemote::addLazyPipe(
     addConvertingActions(pipes.back(), *out_header, context);
 }
 
+std::pair<ASTPtr, Tables> ReadFromRemote::addFiltersToQuery(const ClusterProxy::SelectStreamFactory::Shard & shard, bool clone_query)
+{
+    if (!filter_actions_dag)
+        return {shard.query, external_tables};
+
+    /// `EXPLAIN PIPELINE` takes `shard.query` and `external_tables` after this, and must not send the sets.
+    const bool send_sets = areSetsSent(shard, *filter_actions_dag, external_tables, context);
+    const auto query = clone_query || send_sets ? shard.query->clone() : shard.query;
+    auto tables_with_sets = send_sets ? external_tables : Tables{};
+    auto & tables = send_sets ? tables_with_sets : external_tables;
+    addFilters(&tables, context, context, query, shard.query_tree, shard.planner_context, *filter_actions_dag,
+        /*dropped_conjuncts=*/ nullptr, send_sets);
+    return {query, tables};
+}
+
 void ReadFromRemote::addPipe(
     Pipes & pipes,
     const ClusterProxy::SelectStreamFactory::Shard & shard,
@@ -950,10 +1029,9 @@ void ReadFromRemote::addPipe(
     }
     else
     {
-        if (filter_actions_dag)
-            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+        const auto [query, tables] = addFiltersToQuery(shard, /*clone_query=*/ false);
 
-        const String query_string = formattedAST(shard.query);
+        const String query_string = formattedAST(query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -963,7 +1041,7 @@ void ReadFromRemote::addPipe(
             context,
             throttler,
             scalars,
-            external_tables,
+            tables,
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);

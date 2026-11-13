@@ -915,9 +915,13 @@ TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tr
 
 bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
 {
+    return join_node.getLocality() == JoinLocality::Global || areInAndJoinMadeGlobal(settings);
+}
+
+bool areInAndJoinMadeGlobal(const Settings & settings)
+{
     const auto distributed_product_mode = settings[Setting::distributed_product_mode];
-    return join_node.getLocality() == JoinLocality::Global
-        || distributed_product_mode == DistributedProductMode::GLOBAL
+    return distributed_product_mode == DistributedProductMode::GLOBAL
         || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
 }
 

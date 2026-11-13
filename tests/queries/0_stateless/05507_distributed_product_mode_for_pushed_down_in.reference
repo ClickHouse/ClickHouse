@@ -1,0 +1,94 @@
+subquery	10
+view	10
+cte	10
+right side is a cte	10
+right side reads a cte	10
+right side is a view	9
+right side is a recursive cte	10
+right side is cached	10
+right side was cached	10
+right side has another mode	10
+right side reads a merge table, by a primary key	3
+right side is a merge()	10
+right side is a buffer	10
+right side is a view, not in table	11
+in table	10
+not in	12
+not in table	10
+tuple	10
+tuple not in	20
+tuple of one column twice	10
+expression on the left	9
+nullable	8
+nullable not in	8
+nullable, transform_null_in	12
+empty right side	0
+not in empty right side	20
+set on disk	10
+set on disk, not in	10
+right side is limited	3
+right side is aggregated	4
+right side is aliased	10
+right side is a union all	10
+right side is a union distinct	10
+right side joins	3
+right side is local	3
+right side is local, nested in	10
+right side is local, nested in by a primary key	3
+right side has a global in	10
+right side has a global join	3
+right side has its own mode, global	10
+and	8
+and, three	6
+or	13
+two, or	13
+two, equal	11
+or with an and inside	11
+not	10
+not and	12
+not or	5
+if	13
+xor	11
+comparison	10
+same right side twice	8
+union all	20
+union distinct	10
+merge over distributed	10
+prewhere	7
+limit below	8
+limit by below	5
+distinct below	10
+group by below	10
+group by expression below	9
+window below	15
+join below	3
+join above	3
+row policy	10
+row policy with a global in	10
+view with a definer	10
+view without sql security	10
+group by above	10
+limit above	[1,2,3,4,5,11,12]
+order by above	[15,14,13,12,11,5,4,3,2,1]
+distinct above	4
+window above	80
+without merging	10
+distributed_product_mode = 'global': same
+distributed_product_mode = 'deny', prefer_global_in_and_join = 1: same
+-- settings of a scope
+outer local, inner global	10
+outer deny, inner prefer global	10
+-- as before
+same right side, global and local	10
+same right side, local and global	10
+same right side, global or local	11
+row policy with a global in, and an in	10
+set built for a virtual column	8
+set built for a virtual column, not in	20
+-- directly over the Distributed table
+global	10
+local	0
+-- lazily
+10
+sent with an explain	0
+10

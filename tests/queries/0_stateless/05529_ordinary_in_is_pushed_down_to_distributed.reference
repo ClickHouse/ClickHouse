@@ -1,0 +1,92 @@
+constants	in(`id`, _CAST((1, 2, 12), \'Tuple(UInt8, UInt8, UInt8)\'))
+constants, not in	notIn(`id`, _CAST((1, 2, 12), \'Tuple(UInt8, UInt8, UInt8)\'))
+a tuple of constants	in(tuple(`id`, `g`), _CAST(((1, 1), (12, 0)), \'Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8))\'))
+local table	in(`id`, `_data_`)
+local table, deny	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some` AS `__table1`))
+local table, not in	notIn(`id`, `_data_`)
+local table, global in	globalIn(`id`, `_data_`)
+temporary table	in(`id`, `temp`)
+Distributed, and a temporary table	and(in(`id`, `temp`), in(plus(`id`, _CAST(1, \'UInt8\')), (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`)))
+Distributed, and a temporary table, global	and(globalIn(`id`, `temp`), in(plus(`id`, _CAST(1, \'UInt8\')), (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`)))
+Distributed, and a temporary table in a subquery	and(in(`id`, `_data_`), in(plus(`id`, _CAST(1, \'UInt8\')), `_data_`))
+local table in an or	or(equals(`g`, _CAST(3, \'UInt8\')), in(`id`, `_data_`))
+in table, local	in(`id`, `_data_`)
+view over a local table	in(`id`, `_data_`)
+view over numbers()	in(`id`, `_data_`)
+numbers()	in(`id`, `_data_`)
+remote()	in(`id`, `_data_`)
+Distributed over one shard	in(`id`, `_data_`)
+Distributed, global in	globalIn(`id`, `_data_`)
+Distributed	in(`id`, `_data_`)
+Distributed, in a view	in(`id`, `_data_`)
+Distributed, in a view of a view	in(`id`, `_data_`)
+Distributed, in table	in(`id`, `_data_`)
+Distributed, in merge()	in(`id`, `_data_`)
+view()	in(`id`, `_data_`)
+Distributed, deny	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, deny, prefer global	in(`id`, `_data_`)
+Distributed, local	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, not in	notIn(`id`, `_data_`)
+Distributed, in an or	or(equals(`g`, _CAST(3, \'UInt8\')), in(`id`, `_data_`))
+Distributed, under a not	`not`(and(notEquals(`g`, _CAST(3, \'UInt8\')), in(`id`, `_data_`)))
+Distributed, and another conjunct	and(notEquals(`g`, _CAST(3, \'UInt8\')), in(`id`, `_data_`))
+Distributed, and a local one	and(in(`id`, `_data_`), in(plus(`id`, _CAST(1, \'UInt8\')), `_data_`))
+Distributed, global and local	and(globalIn(`id`, `_data_`), in(plus(`id`, _CAST(1, \'UInt8\')), `_data_`))
+Distributed, set built for a virtual column	in(`p`, (SELECT toString(`__table1`.`id`) AS `toString(id)` FROM `db`.`some_dist` AS `__table1`))
+Distributed, read to build another set first	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, allow	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, allow, prefer global	in(`id`, `_data_`)
+Distributed, local, prefer global	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, allow in the right side	in(`id`, `_data_`)
+Distributed, global in the right side only	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1` SETTINGS distributed_product_mode = \'global\'))
+Distributed, global in the left side only	in(`id`, `_data_`)
+Distributed, allow in the left side only	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, the left side has a global in	in(`id`, `_data_`)
+Set	in(`id`, `db`.`some_set`)
+Distributed, and global in constants	and(globalIn(`id`, _CAST((1, 2), \'Tuple(UInt8, UInt8)\')), in(plus(`id`, _CAST(1, \'UInt8\')), `_data_`))
+Distributed, and one that is not deterministic	and(in(`id`, `_data_`), 1)
+Distributed, the same set is global elsewhere	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, and an in without a set	and(in(`id`, `_data_`), 1)
+Distributed, and a Set	and(in(`id`, `db`.`some_set`), in(plus(`id`, _CAST(1, \'UInt8\')), (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`)))
+Distributed, and a constant	and(in(`id`, _CAST((1, 2), \'Tuple(UInt8, UInt8)\')), in(plus(`id`, _CAST(1, \'UInt8\')), `_data_`))
+Distributed, and one over one shard	and(in(`id`, `_data_`), in(plus(`id`, _CAST(1, \'UInt8\')), `_data_`))
+Distributed, or one that is allowed	or(in(`id`, `_data_`), in(plus(`id`, _CAST(1, \'UInt8\')), `_data_`))
+Distributed, all is limited	in(`id`, `_data_`)
+Distributed, set may be cut	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, set is cut, not on the shards	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, set may be cut on the shards	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, table may be cut	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, table may not be cut, the set is built	in(`id`, `_data_`)
+Distributed, the set is built, with too many rows	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, the set is built, with too many bytes	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, the set is built, with as many bytes of other types	in(`id`, `_data_`)
+Distributed, the set is built, with too many bytes of other types	in(`id`, (SELECT toNullable(`__table1`.`id`) AS `toNullable(id)` FROM `db`.`some_dist` AS `__table1`))
+Distributed, reading may be cut	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, reading may be cut on the shards	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, time may be cut	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, time may be cut only here	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, time may be cut on the shards	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, other nulls on the shards	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, custom key	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, parallel replicas	in(`id`, `_data_`)
+Distributed, parallel replicas without in	in(`id`, (SELECT `__table1`.`id` AS `id` FROM `db`.`some_dist` AS `__table1`))
+Distributed, parallel replicas without in, not pushed down	in(`id`, `_data_`)
+Distributed, no parallel replicas, without in	in(`id`, `_data_`)
+global inside, allow	in(`id`, (SELECT `__table1`.`number` AS `number` FROM numbers(5) AS `__table1` WHERE (`__table1`.`number` GLOBAL IN (SELECT `__table1`.`id` AS `id` FROM `db`.`some` AS `__table1`))))
+4
+2
+2
+1
+sent	1
+sent, deduplicated	0
+sent, if the filter is not	0
+sent with an explain, deny	0
+sent with an explain, deny	0
+sent with an explain, deny	0
+sent with an explain, global	0
+sent with an explain, global	0
+sent with an explain, global	0
+text	-
+text	-
+prewhere	1
+explain	1
