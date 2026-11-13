@@ -1578,7 +1578,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null && JoinCommon::canBecomeNullable(elem.type))
-        elem.type = makeNullable(elem.type);
+        elem.type = JoinCommon::convertTypeToNullable(elem.type);
     return elem.type;
 }
 

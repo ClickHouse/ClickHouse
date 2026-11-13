@@ -378,9 +378,6 @@ void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_setti
 
 void DistinctStep::serialize(Serialization & ctx) const
 {
-    /// Let's not serialize limit_hint.
-    /// Ideally, we can get if from a query plan optimization on the follower.
-
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         ctx.writeColumnName(column);
@@ -388,7 +385,11 @@ void DistinctStep::serialize(Serialization & ctx) const
     if (ctx.step_version >= 1 && !ctx.for_cache_key)
         writeBinary(preserve_input_order, ctx.out);
 
+    /// A shipped plan fragment may not contain the LIMIT the hint comes from, so it cannot be derived there again.
     if (ctx.step_version >= 2 && !ctx.for_cache_key)
+        writeVarUInt(limit_hint, ctx.out);
+
+    if (ctx.step_version >= 3 && !ctx.for_cache_key)
     {
         writeBinary(skip_deduplication, ctx.out);
         writeBinary(deduplicates_except_join, ctx.out);
@@ -410,16 +411,20 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     if (ctx.step_version >= 1)
         readBinary(preserve_input_order, ctx.in);
 
+    UInt64 limit_hint = 0;
+    if (ctx.step_version >= 2)
+        readVarUInt(limit_hint, ctx.in);
+
     bool skip_deduplication = false;
     bool deduplicates_except_join = false;
-    if (ctx.step_version >= 2)
+    if (ctx.step_version >= 3)
     {
         readBinary(skip_deduplication, ctx.in);
         readBinary(deduplicates_except_join, ctx.in);
     }
 
     auto step = std::make_unique<DistinctStep>(
-        ctx.input_headers.front(), Settings(ctx.settings), 0, column_names, pre_distinct_);
+        ctx.input_headers.front(), Settings(ctx.settings), limit_hint, column_names, pre_distinct_);
     if (preserve_input_order)
         step->preserveInputOrder();
     if (skip_deduplication)
@@ -451,7 +456,8 @@ void registerDistinctStep(QueryPlanStepRegistry & registry)
     const QueryPlanStepRegistry::StepVersions versions{
         {0, 0},
         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT},
-        {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN}};
+        {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT},
+        {3, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN}};
     registry.registerStep("Distinct", DistinctStep::deserializeNormal, versions);
     registry.registerStep("PreDistinct", DistinctStep::deserializePre, versions);
 }

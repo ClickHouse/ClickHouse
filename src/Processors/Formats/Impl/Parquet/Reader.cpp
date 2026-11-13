@@ -25,7 +25,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -631,12 +631,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
         /// for NaN values, min and max should be ignored"), while `ORDER BY` sorts `nan` together
         /// with the NULLs. So, exactly like a chunk that may contain nulls, a floating-point chunk
         /// that may contain a `nan` is not bounded by its statistics and cannot be skipped by them.
-        /// (`tryTopKForFormatSource` keeps floating-point sort keys off this path entirely for now,
-        /// because the per-row filter is not `nan`-aware either - see
-        /// https://github.com/ClickHouse/ClickHouse/issues/116705 - but the statistics shortcut is
-        /// unsound on its own and stays unsound after that is fixed.)
-        bool can_contain_float = anyInTypeTree(*output_block_type_ptr, [](const IDataType & node) { return isFloat(node); });
-        if (can_contain_float)
+        if (hasTypeThatCanContainFloat(output_block_type_ptr))
             return std::nullopt;
 
         /// Parquet orders `UUID` statistics bytewise (parquet.thrift gives the `UUID` logical type
@@ -3832,6 +3827,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     chassert(subchunk.column->getDataType() == column_info.output_type->getColumnType());
 
+    if (column_info.levels_only_arrays)
+    {
+        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        subchunk.column.reset();
+        subchunk.null_map.reset();
+        subchunk.arrays_offsets.resize(column_info.levels_only_arrays);
+    }
+
     OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
     chassert(!state.column);
     size_t prev_count = state.primitive_columns_remaining.fetch_sub(1);
@@ -4703,6 +4706,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
+    if (output_info.report_as_missing && output_info.idx_in_output_block.has_value()
+        && *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
+        row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
+
     /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
     /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
     /// the group null map. Every leaf shares the same def-level null map (the subtree is
@@ -5004,7 +5011,7 @@ void Reader::initColumnsCache()
         if (!output_idx.has_value())
             continue;
         const OutputColumnInfo & info = output_columns.at(*output_idx);
-        if (info.is_missing_column || info.primitive_start == info.primitive_end)
+        if (info.is_missing_column || info.report_as_missing || info.primitive_start == info.primitive_end)
             continue;
 
         SipHash hash;
@@ -5024,6 +5031,7 @@ void Reader::initColumnsCache()
             hash.update(primitive.output_type->getName());
             hash.update(primitive.output_nullable);
             hash.update(primitive.group_nullable);
+            hash.update(primitive.levels_only_arrays);
         }
         if (!decoded)
             continue;
