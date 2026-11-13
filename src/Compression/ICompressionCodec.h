@@ -18,9 +18,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_DECOMPRESS;
-    extern const int CORRUPTED_DATA;
+extern const int CANNOT_DECOMPRESS;
+extern const int CORRUPTED_DATA;
 }
+
+/// What a codec keeps between the blocks of one stream. One codec object serves any number of streams at once, each with its own state.
+struct CompressionState
+{
+    virtual ~CompressionState() = default;
+};
+
+using CompressionStatePtr = std::unique_ptr<CompressionState>;
 
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
@@ -44,8 +52,17 @@ public:
     virtual void updateHash(SipHash & hash) const = 0;
     UInt64 getHash() const;
 
+    /// Stateful compression from uncompressed source to dest. Dest should preallocate memory
+    virtual UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const;
+
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
-    virtual UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
+    UInt32 compress(const char * source, UInt32 source_size, char * dest) const
+    {
+        return compress(source, source_size, dest, createCompressionState().get());
+    }
+
+    /// Fresh state for one stream, nullptr when this codec is stateless.
+    virtual CompressionStatePtr createCompressionState() const { return nullptr; }
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
