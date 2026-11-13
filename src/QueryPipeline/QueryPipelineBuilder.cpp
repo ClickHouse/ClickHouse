@@ -1090,6 +1090,7 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     res.setConcurrencyControl(builder.getConcurrencyControl());
     res.setProcessListElement(builder.process_list_element);
     res.setProgressCallback(builder.progress_callback);
+    res.setStepProfiler(std::move(builder.step_profiler));
     return res;
 }
 

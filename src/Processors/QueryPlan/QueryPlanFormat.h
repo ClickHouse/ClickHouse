@@ -97,7 +97,10 @@ namespace QueryPlanFormat
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
+    /// `only_built_child_plans` keeps the walk from asking a step to build child plans it does not
+    /// already hold, which would make precomputing the names change the work the query does. Rendering
+    /// a whole plan wants those plans -- `explainPlan` descends into them -- and so passes false.
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool only_built_child_plans);
     /// For the fragments of a cut plan, starting with the fragment that produces the result. The walk follows every
     /// receive step in `fragment_inputs` into the fragment that sends to it, so the fragments share one column naming
     /// scope (their child plans keep their own) and get the same names as the plan before the cut in plain `EXPLAIN`.

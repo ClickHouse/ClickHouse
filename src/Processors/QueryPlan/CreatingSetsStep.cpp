@@ -163,6 +163,13 @@ void CreatingSetStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(Block{});
 }
 
+StepAnalyzer CreatingSetStep::makeAnalyzer() const
+{
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
+    analyzer.is_creating_set = true;
+    return analyzer;
+}
+
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
     if (!set_and_key->set)

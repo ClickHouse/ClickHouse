@@ -36,7 +36,8 @@ PreparedFragmentGraph::PreparedFragmentGraph(const FragmentGraph & graph_, const
     if (single_node)
     {
         if (options.pretty)
-            pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(getPlan(graph.fragments.front()));
+            pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(
+                getPlan(graph.fragments.front()), /*only_built_child_plans=*/ false);
         return;
     }
 

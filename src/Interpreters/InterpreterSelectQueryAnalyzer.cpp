@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -73,6 +74,7 @@ extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
 extern const SettingsBool make_distributed_plan;
+extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace
@@ -629,13 +631,19 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
+    /// Cutting the descriptions to length makes every step resize its own, so it is done only when
+    /// something is going to read them.
+    if (plan_log_capture)
+        optimization_settings.max_step_description_length = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+
     /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
     /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
     /// would double-count the optimization phase.
     query_plan.optimize(optimization_settings);
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
+    return std::move(*query_plan.buildQueryPipeline(
+        optimization_settings, build_pipeline_settings, /*do_optimize=*/false, plan_log_capture.get()));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)

@@ -27,6 +27,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/copyData.h>
 
 #include <Processors/ProcessorsProfileLogInfo.h>
@@ -84,6 +85,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
@@ -205,6 +208,7 @@ namespace Setting
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 log_query_plans_max_size;
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
@@ -755,7 +759,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline, const ContextPtr & context)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -779,6 +783,9 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
+
+    if (auto plan_log_capture = context->getPlanLogCapture())
+        plan_log_capture->captureStatistics(query_pipeline);
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
@@ -906,6 +913,74 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 }
 
 
+/// The document is written into a buffer that grows from here up to the limit, rather than
+/// starting at `DBMS_DEFAULT_BUFFER_SIZE`, which every plan would then allocate in full.
+static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
+
+/// A row whose plan could not be written says why, in place of the plan.
+static void writeQueryPlanError(String & query_plan, const String & reason)
+{
+    query_plan.clear();
+    try
+    {
+        WriteBufferFromString out(query_plan);
+        FlatJSONPlanRenderer::renderError(reason, out);
+        out.finalize();
+    }
+    catch (...)
+    {
+        /// Ok to swallow: writing the error itself failed. An empty column takes its default of an
+        /// empty JSON object; a half-written document would not be valid JSON.
+        query_plan.clear();
+    }
+}
+
+static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
+{
+    auto plan_log_capture = context->getPlanLogCapture();
+    if (!plan_log_capture)
+        return;
+
+    const auto & captured = plan_log_capture->getCapturedPlan();
+    if (!captured)
+        return;
+
+    /// Runs on the logging path of a query that has already returned its result, so failing to
+    /// write the plan must not fail the query. Producing the document is also the one part of
+    /// profiling that allocates in proportion to the plan, hence the blocker.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
+
+    try
+    {
+        /// A query decides how much text its own plan contains, so the document is written into a
+        /// buffer that cannot grow past the limit rather than measured once it already has.
+        /// `MemoryWriteBuffer` throws rather than allocate the chunk that would cross it.
+        MemoryWriteBuffer plan_buffer(max_size, PLAN_RENDER_INITIAL_CHUNK_SIZE);
+        FlatJSONPlanRenderer renderer;
+        renderer.render(*captured, plan_buffer);
+        plan_buffer.finalize();
+
+        WriteBufferFromString out(elem.query_plan);
+        copyData(*plan_buffer.tryGetReadBuffer(), out);
+        out.finalize();
+    }
+    catch (const WriteBuffer::CurrentBufferExhausted &)
+    {
+        /// Not logged: a plan over the limit is a query's own doing, not a fault of the server,
+        /// and the row carries the reason. The exception says only that a buffer ran out, naming
+        /// neither the plan nor the setting, so the message is written here instead.
+        writeQueryPlanError(
+            elem.query_plan,
+            fmt::format("The query plan does not fit in {} bytes, the limit set by log_query_plans_max_size", max_size));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+    }
+}
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -987,7 +1062,10 @@ static void logQueryFinishImpl(
                 elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (auto query_log = context->getQueryLog())
+            {
+                attachQueryPlan(context, elem);
                 query_log->add([&](QueryLogElement & e) { e = elem; });
+            }
         }
 
         /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
@@ -1041,7 +1119,7 @@ void logQueryFinish(
     bool log_as_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
 
     /// The queries finished here (the deferred flush of asynchronous inserts, the tasks of a distributed
@@ -1165,6 +1243,7 @@ void logQueryException(
         if (settings[Setting::log_query_settings] && !elem.query_settings)
             elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
+        attachQueryPlan(context, elem);
         query_log->add([&](QueryLogElement & e) { e = elem; });
     }
 
@@ -1333,6 +1412,7 @@ void logExceptionBeforeStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
+            attachQueryPlan(context, elem);
             query_log->add([&](QueryLogElement & e) { e = elem; });
         }
         else if (!settings[Setting::log_queries])
@@ -3497,6 +3577,11 @@ static BlockIO executeQueryImpl(
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
+                        /// A cache hit builds no plan and runs no pipeline, so there is nothing to
+                        /// capture.
+                        QueryPlanLogCapture::declineCapture(
+                            context, "the result came from the query result cache, so no plan was executed");
+
                         return true;
                     }
                 }
@@ -3532,6 +3617,9 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                    context->enablePlanLogCapture();
+
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(
                         out_ast,
@@ -3540,6 +3628,12 @@ static BlockIO executeQueryImpl(
                             .setInternal(internal)
                             .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
                             .secondaryQueryRoot(!internal && is_secondary_query));
+
+                /// This assignment is done here instead of using the `context` that is available inside the Interpreters
+                /// to avoid situations where Interpreters are created inside the other interpreter and end up overwriting
+                /// the captured plan. For example: recursive CTEs
+                if (interpreter)
+                    interpreter->setPlanLogCapture(context->getPlanLogCapture());
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -3773,11 +3867,12 @@ static BlockIO executeQueryImpl(
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
-                                     query_result_cache_usage,
-                                     // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+                query_result_cache_usage,
+                context,
+                // Need to be cached, since will be changed after complete()
+                pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
             };
 
             /// The finish callback logs the query result

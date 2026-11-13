@@ -333,6 +333,7 @@ public:
     String getName() const override { return "JoinStepLogicalLookup"; }
 
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getBuiltChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 
