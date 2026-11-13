@@ -1418,6 +1418,9 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
     QueryTreeNodePtr result;
     if (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
     {
+        const bool tuple_has_container_semantics = inside_container
+            || isNullableOrLowCardinalityNullable(left_argument->getResultType())
+            || isNullableOrLowCardinalityNullable(right_argument->getResultType());
         QueryTreeNodes element_comparisons;
         element_comparisons.reserve(left_tuple->getElements().size());
         for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
@@ -1425,7 +1428,7 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
             auto index = std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1));
             auto left_element = buildResolvedFunction("tupleElement", {left_argument, index}, context);
             auto right_element = buildResolvedFunction("tupleElement", {right_argument, std::move(index)}, context);
-            element_comparisons.push_back(buildPortableNullSafeEquals(left_element, right_element, context, true));
+            element_comparisons.push_back(buildPortableNullSafeEquals(left_element, right_element, context, tuple_has_container_semantics));
         }
         if (element_comparisons.empty())
             result = std::make_shared<ConstantNode>(Field{1u}, std::make_shared<DataTypeUInt8>());
