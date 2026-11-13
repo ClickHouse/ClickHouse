@@ -15,8 +15,9 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- `USE` only so that the queries below can say `currentDatabase()`.
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- Nothing has touched the table yet, so it is still only a proxy.
-SELECT 'cold engine', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+-- Nothing has touched the table yet, so it is still only a proxy. The proxy reports the engine from the
+-- `CREATE` query, so `is_loaded` tells it apart.
+SELECT 'cold engine', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 -- Reading the table loads it, and the database then replaces the proxy with the loaded storage.
 SELECT 'select', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t;
@@ -94,6 +95,6 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SYSTEM START MERGES {CLICKHOUSE_DATABASE_1:Identifier}.t2;
-SELECT 'engine after start merges', engine FROM system.tables WHERE database = currentDatabase() AND name = 't2';
+SELECT 'engine after start merges', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't2';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

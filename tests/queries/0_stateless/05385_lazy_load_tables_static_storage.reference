@@ -1,2 +1,2 @@
-cold engine	TableProxy
-loaded engine	MergeTree
+cold engine	MergeTree	0
+loaded engine	MergeTree	1
