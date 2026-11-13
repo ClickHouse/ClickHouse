@@ -36,3 +36,10 @@ a	String
 2	3
 
 0	7
+-- Join split by primary key ranges with nullable column.
+2	\N
+4	\N
+1	a
+3	c
+1	a
+3	c

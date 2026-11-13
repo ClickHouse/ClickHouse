@@ -54,6 +54,8 @@ public:
     {
         Names left_columns;
         Names right_columns;
+        /// The right columns kept only for the totals. The join neither stores nor outputs them.
+        NameSet totals_only_right_columns;
         bool prefer_left_totals = true;
         bool output_from_left = true;
     };

@@ -2524,6 +2524,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         table_join->setSetOperationTotals({
             .left_columns = child_input_names[0],
             .right_columns = child_input_names[1],
+            .totals_only_right_columns = totals_only_build_columns,
             .prefer_left_totals = prefer_left_totals,
             .output_from_left = output_from_left,
         });

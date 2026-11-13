@@ -969,7 +969,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     VectorWithMemoryTracking<JoinPtr> joins;
     right->addSimpleTransform([&](const SharedHeader & header)
     {
-        joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
+        SharedHeader right_sample_block = header;
+        if (const auto & set_operation_totals = join->getTableJoin().setOperationTotals())
+        {
+            auto filtered = std::make_shared<Block>();
+            for (const auto & column : *header)
+                if (!set_operation_totals->totals_only_right_columns.contains(column.name))
+                    filtered->insert(column);
+            right_sample_block = filtered;
+        }
+        joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), right_sample_block));
         auto finish_counter = std::make_shared<FinishCounter>(1);
         return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter, JoinBuildContext::serial());
     });

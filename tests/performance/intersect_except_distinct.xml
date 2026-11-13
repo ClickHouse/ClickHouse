@@ -2,26 +2,26 @@
     <!-- Test INTERSECT DISTINCT and EXCEPT DISTINCT to join rewrite. -->
 
     <!-- Unique rows on both sides, half of them shared. -->
-    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) INTERSECT DISTINCT SELECT number + 5000000 FROM numbers_mt(10000000))</query>
-    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) EXCEPT DISTINCT SELECT number + 5000000 FROM numbers_mt(10000000))</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(50000000) INTERSECT DISTINCT SELECT number + 25000000 FROM numbers_mt(50000000))</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(50000000) EXCEPT DISTINCT SELECT number + 25000000 FROM numbers_mt(50000000))</query>
 
     <!-- Arms of different sizes. -->
-    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) INTERSECT DISTINCT SELECT number * 10 FROM numbers_mt(1000000))</query>
-    <query>SELECT count() FROM (SELECT number * 10 FROM numbers_mt(1000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(10000000))</query>
-    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) EXCEPT DISTINCT SELECT number * 10 FROM numbers_mt(1000000))</query>
-    <query>SELECT count() FROM (SELECT number * 10 FROM numbers_mt(1000000) EXCEPT DISTINCT SELECT number FROM numbers_mt(10000000))</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(50000000) INTERSECT DISTINCT SELECT number * 10 FROM numbers_mt(5000000))</query>
+    <query>SELECT count() FROM (SELECT number * 10 FROM numbers_mt(5000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(50000000))</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(50000000) EXCEPT DISTINCT SELECT number * 10 FROM numbers_mt(5000000))</query>
+    <query>SELECT count() FROM (SELECT number * 10 FROM numbers_mt(5000000) EXCEPT DISTINCT SELECT number FROM numbers_mt(50000000))</query>
 
     <!-- Many duplicates of each row. -->
-    <query>SELECT count() FROM (SELECT number % 500000 FROM numbers_mt(10000000) INTERSECT DISTINCT SELECT number % 300000 + 200000 FROM numbers_mt(10000000))</query>
-    <query>SELECT count() FROM (SELECT number % 500000 FROM numbers_mt(10000000) EXCEPT DISTINCT SELECT number % 300000 + 200000 FROM numbers_mt(10000000))</query>
+    <query>SELECT count() FROM (SELECT number % 500000 FROM numbers_mt(50000000) INTERSECT DISTINCT SELECT number % 300000 + 200000 FROM numbers_mt(50000000))</query>
+    <query>SELECT count() FROM (SELECT number % 500000 FROM numbers_mt(50000000) EXCEPT DISTINCT SELECT number % 300000 + 200000 FROM numbers_mt(50000000))</query>
 
     <!-- Two columns. -->
-    <query>SELECT count() FROM (SELECT number % 1000000 AS a, number % 7 AS b FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number, number % 5 FROM numbers_mt(2000000))</query>
-    <query>SELECT count() FROM (SELECT number % 1000000 AS a, number % 7 AS b FROM numbers_mt(3000000) EXCEPT DISTINCT SELECT number, number % 5 FROM numbers_mt(2000000))</query>
+    <query>SELECT count() FROM (SELECT number % 25000000 AS a, number % 7 AS b FROM numbers_mt(50000000) INTERSECT DISTINCT SELECT number, number % 5 FROM numbers_mt(50000000))</query>
+    <query>SELECT count() FROM (SELECT number % 25000000 AS a, number % 7 AS b FROM numbers_mt(50000000) EXCEPT DISTINCT SELECT number, number % 5 FROM numbers_mt(50000000))</query>
 
     <!-- String rows. -->
-    <query>SELECT count() FROM (SELECT toString(number) FROM numbers_mt(5000000) EXCEPT DISTINCT SELECT toString(number + 2500000) FROM numbers_mt(5000000))</query>
+    <query>SELECT count() FROM (SELECT toString(number) FROM numbers_mt(50000000) EXCEPT DISTINCT SELECT toString(number + 25000000) FROM numbers_mt(50000000))</query>
     
     <!-- Rows with NULLs. -->
-    <query>SELECT count() FROM (SELECT if(number % 10 = 0, NULL, number % 100000) AS a, toString(number % 1000) AS b FROM numbers_mt(10000000) INTERSECT DISTINCT SELECT if(number % 7 = 0, NULL, (number + 50000) % 100000), toString((number + 500) % 1000) FROM numbers_mt(10000000))</query>
+    <query>SELECT count() FROM (SELECT if(number % 10 = 0, NULL, number % 100000) AS a, toString(number % 1000) AS b FROM numbers_mt(50000000) INTERSECT DISTINCT SELECT if(number % 7 = 0, NULL, (number + 50000) % 100000), toString((number + 500) % 1000) FROM numbers_mt(50000000))</query>
 </test>

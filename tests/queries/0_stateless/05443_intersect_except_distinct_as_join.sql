@@ -85,5 +85,27 @@ SETTINGS query_plan_join_swap_table = 'true';
 SELECT '-- Only the second branch has totals.';
 SELECT * FROM (SELECT number % 3 AS k, count() AS c FROM numbers(9) GROUP BY k EXCEPT DISTINCT SELECT number % 2 AS k2, toUInt64(count() - 1) AS c2 FROM numbers(8) GROUP BY k2 WITH TOTALS) ORDER BY k;
 
+-- Join split by primary key ranges with nullable column.
+
+SET query_plan_join_shard_by_pk_ranges = 1;
+SET max_bytes_ratio_before_external_join = 0;
+SET max_bytes_before_external_join = 0;
+SET query_plan_join_swap_table = 'false';
+
+DROP TABLE IF EXISTS t_pk_left;
+DROP TABLE IF EXISTS t_pk_right;
+CREATE TABLE t_pk_left (a UInt64, b Nullable(String)) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_pk_right (a UInt64, b Nullable(String)) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_pk_left VALUES (1, 'a'), (2, NULL), (3, 'c'), (4, NULL);
+INSERT INTO t_pk_right VALUES (2, NULL), (3, 'x'), (4, NULL), (5, 'e');
+
+SELECT '-- Join split by primary key ranges with nullable column.';
+SELECT * FROM (SELECT * FROM t_pk_left INTERSECT DISTINCT SELECT * FROM t_pk_right) ORDER BY ALL;
+SELECT * FROM (SELECT * FROM t_pk_left EXCEPT DISTINCT SELECT * FROM t_pk_right) ORDER BY ALL;
+SELECT * FROM (SELECT * FROM t_pk_left EXCEPT DISTINCT SELECT * FROM t_pk_right) ORDER BY ALL
+SETTINGS query_plan_join_swap_table = 'true';
+
 DROP TABLE t_left;
 DROP TABLE t_right;
+DROP TABLE t_pk_left;
+DROP TABLE t_pk_right;
