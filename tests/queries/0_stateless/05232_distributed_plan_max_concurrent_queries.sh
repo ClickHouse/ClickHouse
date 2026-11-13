@@ -87,71 +87,75 @@ for locally in 1 0; do
 done
 
 # Parallel replicas read the table the same way, on several replicas of this server at once, and they
-# are one query too, so the statement must not reject itself against a limit of one.
+# are one query too, so the statement must not reject itself against a limit of one. A client may also
+# send the statement as a secondary query, with no initial query id, and its replicas must share one slot.
 echo "parallel replicas"
-table="t_pr_limit"
-${CLICKHOUSE_CLIENT} --multiline --query "
-DROP TABLE IF EXISTS $table;
+for kind in initial_query secondary_query; do
+    table="t_pr_limit_$kind"
+    ${CLICKHOUSE_CLIENT} --multiline --query "
+    DROP TABLE IF EXISTS $table;
 
-CREATE TABLE $table (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
+    CREATE TABLE $table (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 1024, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
 
-SYSTEM STOP MERGES $table;
-INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
-INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
-"
+    SYSTEM STOP MERGES $table;
+    INSERT INTO $table SELECT number, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+    INSERT INTO $table SELECT number + 100000, number FROM numbers(100000) SETTINGS max_insert_threads = 1;
+    "
 
-query_id="05232_pr_$run_id"
-# Once every mark range is assigned the coordinator cancels the replicas that have not connected yet, and one
-# request takes more marks than this table has, so the replica that announces first can be left reading alone.
-${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
-${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
-    SELECT count() FROM $table WHERE k < 150000
-    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
-        cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
-        automatic_parallel_replicas_mode = 0, use_query_condition_cache = 0, make_distributed_plan = 0
-    FORMAT Null"
-CODE=$?
-# One-shot and server-global, so disarm it as soon as its statement returns, not at the end of the test.
-cleanup
-[ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
+    query_id="05232_pr_${kind}_$run_id"
+    # Once every mark range is assigned the coordinator cancels the replicas that have not connected yet, and one
+    # request takes more marks than this table has, so the replica that announces first can be left reading alone.
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
+    ${CLICKHOUSE_CLIENT} --query_kind "$kind" --query_id "$query_id" --query "
+        SELECT count() FROM $table WHERE k < 150000
+        SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+            cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+            parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
+            automatic_parallel_replicas_mode = 0, use_query_condition_cache = 0, make_distributed_plan = 0
+        FORMAT Null"
+    CODE=$?
+    # One-shot and server-global, so disarm it as soon as its statement returns, not at the end of the test.
+    cleanup
+    [ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
 
-# A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
-# replica it later cancels held the slot all the same, and one the limit refuses reports its parts too.
-# Each replica logs one terminal row, on a connection the statement above does not wait for, so a row can
-# be queued after the statement's own flush: read the counts once every replica it read from has logged one.
-TIMELIMIT=$((SECONDS + 30))
-while [ $SECONDS -lt "$TIMELIMIT" ]; do
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    read -r used replicas refused reported <<< "$(${CLICKHOUSE_CLIENT} --query "
-        SELECT maxIf(ProfileEvents['ParallelReplicasAvailableCount'], is_initial_query),
-               uniqExactIf(query_id, NOT is_initial_query AND exception_code != 202 AND ProfileEvents['SelectedParts'] > 0),
-               countIf(NOT is_initial_query AND exception_code = 202 AND ProfileEvents['SelectedParts'] > 0),
-               uniqExactIf(query_id, NOT is_initial_query AND type != 'QueryStart')
+    # A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
+    # replica it later cancels held the slot all the same, and one the limit refuses reports its parts too.
+    # Each replica logs one terminal row, on a connection the statement above does not wait for, so a row can
+    # be queued after the statement's own flush: read the counts once every replica it read from has logged one.
+    # The replicas are found through the statement's id, so for a secondary query this also asserts they carry it.
+    TIMELIMIT=$((SECONDS + 30))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+        ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+        read -r used replicas refused reported <<< "$(${CLICKHOUSE_CLIENT} --query "
+            SELECT maxIf(ProfileEvents['ParallelReplicasAvailableCount'], query_id = '$query_id'),
+                   uniqExactIf(query_id, query_id != '$query_id' AND exception_code != 202 AND ProfileEvents['SelectedParts'] > 0),
+                   countIf(query_id != '$query_id' AND exception_code = 202 AND ProfileEvents['SelectedParts'] > 0),
+                   uniqExactIf(query_id, query_id != '$query_id' AND type != 'QueryStart')
+            FROM system.query_log
+            WHERE event_date >= yesterday() AND event_time >= now() - 600
+              AND (initial_query_id = '$query_id' OR query_id = '$query_id')
+            SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
+        [ "$used" -gt 0 ] && [ "$reported" -ge "$used" ] && break
+        sleep 0.2
+    done
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
+    [ "$refused" -ne "0" ] && echo "the table's limit refused $refused replicas of the statement" && exit 1
+    [ "$used" -eq "0" ] && echo "the statement did not read the table through any replica" && exit 1
+    # A statement the coordinator served from a single replica has no shared slot to show.
+    [ "$used" -ge 2 ] && [ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement took the table's slot: $replicas" && exit 1
+
+    # A replica's read carries the default database rather than this test's, which is why the rows above are
+    # found through the statement's id; this anchors that id to a statement this test ran.
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT throwIf(count() = 0, 'the rows counted above do not belong to a statement of this test')
         FROM system.query_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
-          AND initial_query_id = '$query_id'
-        SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0")"
-    [ "$used" -gt 0 ] && [ "$reported" -ge "$used" ] && break
-    sleep 0.2
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+          AND current_database = currentDatabase() AND query_id = '$query_id'
+        SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
+        FORMAT Null"
+    echo "$kind: one statement holding the table's only slot on several replicas is served"
 done
-${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
-[ "$refused" -ne "0" ] && echo "the table's limit refused $refused replicas of the statement" && exit 1
-[ "$used" -eq "0" ] && echo "the statement did not read the table through any replica" && exit 1
-# A statement the coordinator served from a single replica has no shared slot to show.
-[ "$used" -ge 2 ] && [ "$replicas" -lt 2 ] && echo "fewer than two replicas of the statement took the table's slot: $replicas" && exit 1
-
-# A replica's read carries the default database rather than this test's, which is why the rows above are
-# found through the initiator's id; this anchors that id to a statement this test ran.
-${CLICKHOUSE_CLIENT} --query "
-    SELECT throwIf(count() = 0, 'the rows counted above do not belong to a statement of this test')
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-      AND current_database = currentDatabase() AND query_id = '$query_id'
-    SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
-    FORMAT Null"
-echo "one statement holding the table's only slot on several replicas is served"
 
 # A client may send the statement itself as a secondary query, which carries no initial query id. The
 # plan's fragments belong to it all the same, so they must share its slot rather than take one each.

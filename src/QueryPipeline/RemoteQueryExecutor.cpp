@@ -644,6 +644,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
+    /// A secondary query sent by a client has no initial query id: give every query it sends this query's id.
+    if (modified_client_info.initial_query_id.empty())
+        modified_client_info.initial_query_id = modified_client_info.current_query_id;
+
     /// A distributed query must carry a known initiator version: the receiving server uses it for
     /// version-gated compatibility decisions.
     /// A zero version means the initiating query context was not populated as an initial query
