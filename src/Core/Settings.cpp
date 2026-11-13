@@ -6064,7 +6064,7 @@ For `DELETE FROM ... ON CLUSTER`, each executing host derives the mode from its 
 hosts whose profiles set different defaults can run the delete in different modes. A replicated
 shard executes on one replica, so there it is that replica's settings that decide. Setting it in
 the session of the initiating query overrides this, because the distributed DDL entry carries
-session changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies.
+session changes.
 A host that constrains the setting clamps the value back.
 )", 0, \
         {"25.5", "alter_update", "alter_update", "A new setting"}) \
@@ -7830,7 +7830,16 @@ Possible values:
 Cloud default value: `none_only_active`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
-Compatibility version of distributed DDL (ON CLUSTER) queries
+Compatibility version of distributed DDL (ON CLUSTER) queries. Use a lower value to keep older servers in the
+cluster able to execute the queries.
+
+Possible values:
+- `3` — The entry carries the settings changed in the session, and `CREATE` queries are normalized on the initiator.
+- `4` — Also carries the OpenTelemetry tracing context.
+- `5` — Also preserves the `initial_query_id` of the query.
+- `6` — Also carries whether the query is a part of `BACKUP` or `RESTORE`.
+- `7` — Also carries the UUID of the parent table, which a `Replicated` database uses to execute the query only if the table exists.
+- `8` — Also carries the user and the roles of the initiator, which the hosts use with the server setting `distributed_ddl_use_initial_user_and_roles`.
 
 Cloud default value: `6`.
 )", 0) \

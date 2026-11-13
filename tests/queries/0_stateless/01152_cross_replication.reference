@@ -1,5 +1,3 @@
-localhost	9000	0		0	0
-localhost	9000	0		0	0
 demo_loan_01568
 demo_loan_01568
 CREATE TABLE shard_0.demo_loan_01568\n(\n    `id` Int64 COMMENT \'id\',\n    `date_stat` Date COMMENT \'date of stat\',\n    `customer_no` String COMMENT \'customer no\',\n    `loan_principal` Float64 COMMENT \'loan principal\'\n)\nENGINE = ReplacingMergeTree\nPARTITION BY toYYYYMM(date_stat)\nORDER BY id\nSETTINGS index_granularity = 8192

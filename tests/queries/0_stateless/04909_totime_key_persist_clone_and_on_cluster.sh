@@ -24,28 +24,26 @@ CREATE TABLE t_clone_key CLONE AS t_clone_source;
 SELECT 'clone', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_clone_key';
 "
 
-# The oldest DDL entry format ships the query text as written and carries no settings, so the
-# spelling a worker receives has to be unambiguous already.
-OLDEST_VERSION=1
+# The spelling a worker receives has to be unambiguous already.
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 \
-    --distributed_ddl_entry_format_version $OLDEST_VERSION --distributed_ddl_output_mode none --multiquery -q "
+    --distributed_ddl_output_mode none --multiquery -q "
 CREATE TABLE t_on_cluster_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
-SELECT 'on_cluster_oldest_entry', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_key';
+SELECT 'on_cluster', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_key';
 
 -- The same, with the key expression carried by a SQL UDF body.
 CREATE TABLE t_on_cluster_udf_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY ${UDF}(c0);
-SELECT 'on_cluster_oldest_entry_udf', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_udf_key';
+SELECT 'on_cluster_udf', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_udf_key';
 
 -- A materialized view keeps its inner table's key outside the top-level storage definition.
 CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src (c0 DateTime) ENGINE = MergeTree() ORDER BY tuple();
 CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.t_on_cluster_mv ON CLUSTER test_shard_localhost
 ENGINE = MergeTree() ORDER BY toTime(c0) AS SELECT c0 FROM ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src;
-SELECT 'on_cluster_oldest_entry_mv', extract(create_table_query, 'ORDER BY [^ ]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_mv';
+SELECT 'on_cluster_mv', extract(create_table_query, 'ORDER BY [^ ]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_mv';
 
 -- A projection carries its own physical sorting key, declared inside the column list.
 CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster_projection_key ON CLUSTER test_shard_localhost
 (c0 DateTime, v UInt32, PROJECTION pr (SELECT c0, v ORDER BY toTime(c0))) ENGINE = MergeTree() ORDER BY tuple();
-SELECT 'on_cluster_oldest_entry_projection', extract(create_table_query, 'ORDER BY toTime[A-Za-z]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_projection_key';
+SELECT 'on_cluster_projection', extract(create_table_query, 'ORDER BY toTime[A-Za-z]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_projection_key';
 "
 
 ${CLICKHOUSE_CLIENT} --multiquery -q "
