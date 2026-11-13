@@ -3,6 +3,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
+#include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
@@ -100,6 +101,31 @@ StorageType parseStorageTypeFromString(const std::string & type)
     }
 
     return *storage_type;
+}
+
+std::string encodeLocationForURI(std::string_view location)
+{
+    /// `S3::URI` reads every `%` of a URL with a raw `?` literally, see `URI::URI`.
+    const bool keep_escapes = !location.contains('?');
+    std::string result;
+    result.reserve(location.size());
+    for (size_t i = 0; i < location.size(); ++i)
+    {
+        const char c = location[i];
+        const auto byte = static_cast<UInt8>(c);
+        const bool is_escape = keep_escapes && c == '%' && i + 2 < location.size()
+            && isHexDigit(location[i + 1]) && isHexDigit(location[i + 2]);
+        if (byte <= 0x20 || byte >= 0x7F || c == '?' || c == '#' || (c == '%' && !is_escape))
+        {
+            char hex[2];
+            writeHexByteUppercase(byte, hex);
+            result += '%';
+            result.append(hex, 2);
+        }
+        else
+            result += c;
+    }
+    return result;
 }
 
 void TableMetadata::setLocation(const std::string & location_)
@@ -303,6 +329,11 @@ StorageType TableMetadata::getStorageType() const
     return parseStorageTypeFromLocation(location_without_path);
 }
 
+bool TableMetadata::isS3Location() const
+{
+    return tryParseStorageTypeFromString(storage_type_str) == StorageType::S3;
+}
+
 bool TableMetadata::hasLocation() const
 {
     return !location_without_path.empty();
@@ -460,7 +491,7 @@ void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) con
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
 
-bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr /*new_snapshot*/, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
@@ -469,6 +500,7 @@ bool ICatalog::updateSchema(
     const String & /*namespace_name*/,
     const String & /*table_name*/,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr /*new_schema*/,
     Int32 /*previous_schema_id*/) const
 {

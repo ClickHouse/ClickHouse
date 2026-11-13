@@ -8,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
@@ -216,7 +217,7 @@ public:
 
     ~AliasSink() override
     {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// On cancellation without an exception (e.g. `KILL QUERY`) neither
         /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
         /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
         if (executor)
@@ -305,6 +306,13 @@ public:
 
         block_io.onFinish();
         block_io = {};
+    }
+
+    void onPipelineFinished() override
+    {
+        /// Stopped by `timeout_overflow_mode = 'break'`: the nested INSERT finishes as if the input had ended.
+        if (isCancelled() && stage != Stage::Exception && executor)
+            onFinish();
     }
 
     void onException(std::exception_ptr) override
@@ -446,7 +454,17 @@ void StorageAlias::alter(
     }
 
     auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
+    /// The query cached the target's metadata before this lock, a concurrent ALTER of the target may have changed it since.
+    if (auto metadata_cache = local_context->getQueryMetadataCache())
+        metadata_cache->clear();
+
+    /// The commands were prepared before this lock, and `ADD ENUM VALUES` stores a type merged from the column's
+    /// type at that time, so prepare them again against the target's current metadata.
+    AlterCommands commands = params;
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ true);
+    commands.prepare(*target_metadata);
+    target_storage->checkAlterIsPossible(commands, local_context);
+    target_storage->alter(commands, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(

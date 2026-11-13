@@ -50,7 +50,6 @@
 #include <Poco/JSON/Array.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/isValidUTF8.h>
@@ -107,6 +106,7 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -147,6 +147,10 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
             return true;
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+            /// The Iceberg spec excludes NaN from bounds.
+            return !isNaN(field.safeGet<Float64>());
         default:
             return false;
     }
@@ -322,7 +326,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Float64:
             return dumpValue(field.safeGet<Float64>());
         case TypeIndex::Float32:
-            return dumpValue(field.safeGet<Float32>());
+            /// `Field` stores `Float32` as `Float64`: narrow it, or 8 bytes would be written instead of 4.
+            return dumpValue(static_cast<Float32>(field.safeGet<Float64>()));
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not dump such stats");
@@ -517,9 +522,9 @@ void ManifestPartitionSummary::add(const Row & partition_value)
             field.bounds_unavailable = true;
         else
         {
-            if (!field.lower_bound || accurateLess(value, *field.lower_bound))
+            if (!field.lower_bound || icebergBoundLess(value, *field.lower_bound))
                 field.lower_bound = value;
-            if (!field.upper_bound || accurateLess(*field.upper_bound, value))
+            if (!field.upper_bound || icebergBoundLess(*field.upper_bound, value))
                 field.upper_bound = value;
         }
     }
@@ -716,8 +721,12 @@ void generateManifestFile(
             if (!column_sizes.empty())
                 set_fields(column_sizes, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
-            auto statistics = effective_statistics->getNullCounts();
-            set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
+            auto null_counts = effective_statistics->getNullCounts();
+            set_fields(null_counts, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
+
+            auto nan_counts = effective_statistics->getNanCounts();
+            if (!nan_counts.empty())
+                set_fields(nan_counts, Iceberg::f_nan_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = effective_statistics->getFieldIds();
@@ -802,7 +811,17 @@ void generateManifestFile(
                     case Field::Types::UInt64:
                         return avro::GenericDatum(partition_values[i].safeGet<Int64>());
                     case Field::Types::String:
-                        return avro::GenericDatum(partition_values[i].safeGet<String>());
+                    {
+                        const auto & value = partition_values[i].safeGet<String>();
+                        /// Avro strings must be UTF-8.
+                        if (value_schema->type() == avro::AVRO_STRING
+                            && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+                            throw Exception(
+                                ErrorCodes::INCORRECT_DATA,
+                                "Cannot write a partition value that is not valid UTF-8 into Iceberg partition column '{}'",
+                                partition_columns[i]);
+                        return avro::GenericDatum(value);
+                    }
                     case Field::Types::Float64:
                         return avro::GenericDatum(partition_values[i].safeGet<Float64>());
                     case Field::Types::Decimal32:
@@ -942,7 +961,7 @@ void generateManifestList(
                 contains_nan.selectBranch(1);
                 contains_nan.value<bool>() = true;
             }
-            /// A type whose bounds we cannot serialize (e.g. `Float`) leaves the bounds null, matching the data-file statistics path.
+            /// A type whose bounds we cannot serialize (e.g. `UUID`) leaves the bounds null, matching the data-file statistics path.
             if (!field_summary.bounds_unavailable && field_summary.lower_bound && field_summary.upper_bound)
             {
                 auto & lower = summary_record.field(Iceberg::f_lower_bound);
@@ -1307,7 +1326,7 @@ IcebergInsertCommitter::IcebergInsertCommitter(
     /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
     /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
     /// rather than let the first commit build on a file the table never committed.
-    auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_id.getTableName(),
@@ -1319,6 +1338,7 @@ IcebergInsertCommitter::IcebergInsertCommitter(
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
+    base_catalog_metadata_location = std::move(catalog_metadata_location);
 
     metadata = deepCopy(getMetadataJSONObject(
         metadata_path,
@@ -1709,7 +1729,7 @@ bool IcebergInsertCommitter::initializeMetadata()
             /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
             /// loop must still discover the real latest version to advance past it.
             /// Otherwise the loop keeps regenerating the same target version and fails.
-            auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+            auto [last_version, metadata_path, compression_method, catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
                 object_storage,
                 catalog,
                 table_id.getTableName(),
@@ -1721,6 +1741,7 @@ bool IcebergInsertCommitter::initializeMetadata()
                 persistent_table_components.table_uuid,
                 persistent_table_components.metadata_compression_method,
                 /* ignore_metadata_pointer_overrides */ true);
+            base_catalog_metadata_location = std::move(catalog_metadata_location);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
@@ -1933,8 +1954,10 @@ bool IcebergInsertCommitter::initializeMetadata()
                 auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
                 {
+                    if (!catalog_writes_metadata_file)
+                        removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
                     cleanup(true);
                     return false;
                 }

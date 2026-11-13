@@ -1,0 +1,17 @@
+play 1
+dashboard 1
+binary 1
+jemalloc 1
+docs 1
+merges 1
+schema 1
+processors-profile 1
+"/js/leaflet.css"
+"/js/leaflet.js"
+"/js/uplot.min.css"
+"/js/uplot.js"
+"/js/uplot.js"
+"/js/lz-string.js"
+Leaflet 1.9.4
+.leaflet-container
+.uplot

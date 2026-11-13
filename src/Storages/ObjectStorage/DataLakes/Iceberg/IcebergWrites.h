@@ -268,6 +268,8 @@ private:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
+    /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
+    String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;
     /// Shared with the data file writers, which may outlive the sink.
     const std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
