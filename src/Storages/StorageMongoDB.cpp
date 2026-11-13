@@ -18,6 +18,7 @@
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -442,6 +443,91 @@ static bool isWideInteger(const DataTypePtr & type)
     return which.isInteger() && !which.isNativeInteger();
 }
 
+/// The members of an `IN` list. A list of one member arrives as a plain constant.
+static Array listMembers(const Field & value)
+{
+    Array members;
+    if (value.getType() == Field::Types::Tuple)
+    {
+        const auto & value_tuple = value.safeGet<Tuple>();
+        members.assign(value_tuple.begin(), value_tuple.end());
+    }
+    else if (value.getType() == Field::Types::Array)
+        members = value.safeGet<Array>();
+    else
+        members.push_back(value);
+    return members;
+}
+
+/// Whether `value`, read from a BSON bool, satisfies the comparison with a constant, or nothing if that is not known.
+static std::optional<bool> boolSatisfies(bool value, const std::string & func_name, const Field & bound)
+{
+    switch (bound.getType())
+    {
+        case Field::Types::Bool:
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+        case Field::Types::Float64:
+            break;
+        default:
+            return {};
+    }
+
+    const Field read_value = static_cast<UInt64>(value);
+    if (func_name == "$eq")
+        return accurateEquals(read_value, bound);
+    if (func_name == "$ne")
+        return !accurateEquals(read_value, bound);
+    if (func_name == "$lt")
+        return accurateLess(read_value, bound);
+    if (func_name == "$lte")
+        return accurateLessOrEqual(read_value, bound);
+    if (func_name == "$gt")
+        return accurateLess(bound, read_value);
+    if (func_name == "$gte")
+        return accurateLessOrEqual(bound, read_value);
+    return {};
+}
+
+/// The BSON bools that cannot satisfy a comparison of a `Bool` column. The reader takes any other BSON value too, and
+/// converts it in ways that a MongoDB comparison cannot express, so the filter keeps every other document.
+static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, const Field & const_value)
+{
+    auto bools = bsoncxx::builder::basic::array{};
+    for (bool value : {false, true})
+    {
+        std::optional<bool> satisfies;
+        if (func_name == "$in" || func_name == "$nin")
+        {
+            /// A member equal to the value decides the membership; a member that is not known to differ keeps the value.
+            bool has_equal_member = false;
+            bool has_unknown_member = false;
+            for (const auto & member : listMembers(const_value))
+            {
+                auto is_equal = boolSatisfies(value, "$eq", member);
+                if (!is_equal.has_value())
+                    has_unknown_member = true;
+                else if (*is_equal)
+                    has_equal_member = true;
+            }
+            if (has_equal_member)
+                satisfies = func_name == "$in";
+            else if (!has_unknown_member)
+                satisfies = func_name == "$nin";
+        }
+        else
+            satisfies = boolSatisfies(value, func_name, const_value);
+
+        if (satisfies.has_value() && !*satisfies)
+            bools.append(value);
+    }
+    return bools.extract();
+}
+
 static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const JoinNode * join_node, const StorageID & storage_id)
 {
     const auto * column = node->as<ColumnNode>();
@@ -468,12 +554,13 @@ static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const Joi
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereConstant(
     const ContextPtr & context,
     const ConstantNode * const_node,
-    const JoinNode * join_node)
+    const JoinNode * join_node,
+    bool & is_superset)
 {
     if (const_node->hasSourceExpression())
     {
         if (const auto * func_node = const_node->getSourceExpression()->as<FunctionNode>())
-            return visitWhereFunction(context, func_node, join_node);
+            return visitWhereFunction(context, func_node, join_node, is_superset);
     }
     return {};
 }
@@ -482,7 +569,8 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     const ColumnNode * column_node,
     const ConstantNode * const_node,
     const FunctionNode * func,
-    bool invert_comparison)
+    bool invert_comparison,
+    bool & is_superset)
 {
     auto func_name = mongoFuncName(func->getFunctionName());
 
@@ -503,10 +591,11 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     /// The reader wraps BSON numbers to `UInt8`, and set membership probes their truth value.
     /// Comparing the original BSON value cannot express either conversion, even for an ordinary bound.
+    /// A BSON bool is read as 0 or 1, so the filter drops the bools that cannot match and the `WHERE` decides the rest.
     if (isBool(removeNullable(column_type)))
     {
-        LOG_DEBUG(log, "Cannot push down Boolean comparison for column {}", column_node->getColumnName());
-        return {};
+        is_superset = true;
+        return make_document(kvp(column_node->getColumnName(), make_document(kvp("$nin", unsatisfiableBools(func_name, const_value)))));
     }
 
     bool is_const_number = WhichDataType(const_type).isNumber() && !isBool(const_type);
@@ -518,17 +607,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     if (func_name == "$in" || func_name == "$nin")
     {
-        /// A list of one member arrives as a plain constant.
-        Array elements;
-        if (const_value.getType() == Field::Types::Tuple)
-        {
-            const auto & value_tuple = const_value.safeGet<Tuple>();
-            elements.assign(value_tuple.begin(), value_tuple.end());
-        }
-        else if (const_value.getType() == Field::Types::Array)
-            elements = const_value.safeGet<Array>();
-        else
-            elements.push_back(const_value);
+        Array elements = listMembers(const_value);
 
         /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
         /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
@@ -596,15 +675,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
+    /// `fieldAsBSONValue` writes no wide integer, so a bound of a wide integer column is written as an `Int64`.
+    const DataTypePtr bound_type = isWideInteger(column_type) ? std::make_shared<DataTypeInt64>() : column_type;
     if ((!const_type->equals(*column_type) || boolDiffers(const_type, column_type)) && (!is_const_number || !is_column_number))
     {
-        /// `fieldAsBSONValue` writes no wide integer, but a `Bool` bound converts to 0 or 1, which is written as an `Int64`.
-        DataTypePtr bound_type = column_type;
-        if (isBool(removeNullable(const_type)) && isWideInteger(column_type))
-            bound_type = std::make_shared<DataTypeInt64>();
-
         /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
-        auto converted_value = tryConvertFieldToTypeExact(const_value, *bound_type, conversionHint(const_type, bound_type));
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, conversionHint(const_type, column_type));
+        if (!converted_value.isNull() && bound_type != column_type)
+            converted_value = tryConvertFieldToTypeExact(converted_value, *bound_type, nullptr);
         if (converted_value.isNull())
         {
             auto value_string = applyVisitor(FieldVisitorToString(), const_value);
@@ -615,6 +693,20 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         if (isBoolNumberComparison(const_type, bound_type))
             other_encodings.emplace_back(const_value, const_type);
         const_type = bound_type;
+        const_value = std::move(converted_value);
+    }
+    else if (isWideInteger(const_type))
+    {
+        /// A number compares with any numeric column as it is, but a wide integer is written as an `Int64` too.
+        const DataTypePtr int64_type = std::make_shared<DataTypeInt64>();
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *int64_type, nullptr);
+        if (converted_value.isNull())
+        {
+            auto value_string = applyVisitor(FieldVisitorToString(), const_value);
+            LOG_DEBUG(log, "Cannot write constant value {} as a BSON value of column type {}", value_string, column_type->getName());
+            return {};
+        }
+        const_type = int64_type;
         const_value = std::move(converted_value);
     }
 
@@ -658,7 +750,8 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
     const ContextPtr & context,
     const FunctionNode * func,
-    const JoinNode * join_node)
+    const JoinNode * join_node,
+    bool & is_superset)
 {
     const auto & argumnet_nodes = func->getArguments().getNodes();
     if (func->getArguments().getNodes().empty())
@@ -689,7 +782,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
         const auto * right_const = func->getArguments().getNodes().at(1)->as<ConstantNode>();
 
         if (left_column && right_const)
-            return visitWhereFunctionArguments(left_column, right_const, func, false);
+            return visitWhereFunctionArguments(left_column, right_const, func, false, is_superset);
 
         /// We cannot invert "in" and "notIn" functions.
         if (func->getFunctionName() == "in" || func->getFunctionName() == "notIn")
@@ -699,7 +792,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
         const auto * right_column = getColumnNode(func->getArguments().getNodes().at(1), join_node, getStorageID());
 
         if (left_const && right_column)
-            return visitWhereFunctionArguments(right_column, left_const, func, true);
+            return visitWhereFunctionArguments(right_column, left_const, func, true, is_superset);
     }
 
     auto func_name = mongoFuncName(func->getFunctionName());
@@ -710,7 +803,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
 
     for (const auto & elem : func->getArguments().getNodes())
     {
-        auto res_value = visitWhereNode(context, elem, join_node);
+        auto res_value = visitWhereNode(context, elem, join_node, is_superset);
         if (!res_value)
             return {};
 
@@ -723,13 +816,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereNode(
     const ContextPtr & context,
     const QueryTreeNodePtr & where_node,
-    const JoinNode * join_node)
+    const JoinNode * join_node,
+    bool & is_superset)
 {
     if (const auto * func = where_node->as<FunctionNode>())
-        return visitWhereFunction(context, func, join_node);
+        return visitWhereFunction(context, func, join_node, is_superset);
 
     if (const auto * const_expr = where_node->as<ConstantNode>())
-        return visitWhereConstant(context, const_expr, join_node);
+        return visitWhereConstant(context, const_expr, join_node, is_superset);
 
     return {};
 }
@@ -863,13 +957,18 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         }
 
         const auto & where_node = query_tree.getWhere();
-        auto filter = visitWhereNode(context, query_tree.getWhere(), join_node);
+        bool is_superset = false;
+        auto filter = visitWhereNode(context, query_tree.getWhere(), join_node, is_superset);
 
         if (!filter)
         {
             on_error(where_node.get());
             return make_document();
         }
+
+        /// The limit must not discard rows before the `WHERE` drops the extra ones.
+        if (is_superset)
+            options.limit(0);
 
         LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
         return std::move(*filter);
