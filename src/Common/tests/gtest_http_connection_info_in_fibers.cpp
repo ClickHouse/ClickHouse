@@ -59,23 +59,34 @@ TEST(HTTPConnectionInfo, ScopesOfConcurrentFibersDoNotMix)
     std::vector<DB::HTTPConnectionInfo> results(fiber_count);
     std::vector<silk::FiberFuture> futures(fiber_count);
 
+    /// The started fibers use the locals above, so they finish before the test returns, also when a spawn throws.
     size_t spawned = 0;
-    while (spawned < fiber_count && Silk::spawn([&, i = spawned]
-        {
-            DB::HTTPConnectionInfoScope scope(/* enabled = */ true);
-            DB::beginHTTPConnectionInfoRequest();
-            DB::setCurrentHTTPConnectionInfo({.id = i + 1, .has_value = true});
-            published.arriveAndWait();
-            results[i] = DB::takeCurrentHTTPConnectionInfo();
-            /// A scope that ends restores the previous state, so no scope ends before every fiber has taken its connection.
-            taken.arriveAndWait();
-            return 0;
-        }, futures[spawned]) == 0)
-        ++spawned;
+    try
+    {
+        while (spawned < fiber_count && Silk::spawn([&, i = spawned]
+            {
+                DB::HTTPConnectionInfoScope scope(/* enabled = */ true);
+                DB::beginHTTPConnectionInfoRequest();
+                DB::setCurrentHTTPConnectionInfo({.id = i + 1, .has_value = true});
+                published.arriveAndWait();
+                results[i] = DB::takeCurrentHTTPConnectionInfo();
+                /// A scope that ends restores the previous state, so no scope ends before every fiber has taken its connection.
+                taken.arriveAndWait();
+                return 0;
+            }, futures[spawned]) == 0)
+            ++spawned;
+    }
+    catch (...)
+    {
+        published.dropParticipants(fiber_count - spawned);
+        taken.dropParticipants(fiber_count - spawned);
+        for (size_t i = 0; i < spawned; ++i)
+            futures[i].wait();
+        throw;
+    }
 
     published.dropParticipants(fiber_count - spawned);
     taken.dropParticipants(fiber_count - spawned);
-    /// The started fibers use the locals above, so they finish before the test returns.
     for (size_t i = 0; i < spawned; ++i)
         EXPECT_EQ(futures[i].wait(), 0);
     ASSERT_EQ(spawned, fiber_count);
