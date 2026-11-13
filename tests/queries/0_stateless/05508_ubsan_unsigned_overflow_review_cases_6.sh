@@ -44,7 +44,8 @@ SETTINGS index_granularity = 1, min_rows_for_wide_part = 0, min_bytes_for_wide_p
 INSERT INTO t_stripe_overflow SELECT number FROM numbers(256);
 SELECT sum(x) FROM t_stripe_overflow
 SETTINGS max_threads = 1, max_block_size = 9223372036854775808, preferred_block_size_bytes = 1,
-    preferred_max_column_in_block_size_bytes = 0, use_columns_cache = 1, use_reader_executor = 0, enable_parallel_replicas = 0;
+    preferred_max_column_in_block_size_bytes = 0, use_columns_cache = 1, use_reader_executor = 0, enable_parallel_replicas = 0,
+    use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE t_stripe_overflow;"
 
 # A huge lookahead of the userspace page cache saturates instead of wrapping around.

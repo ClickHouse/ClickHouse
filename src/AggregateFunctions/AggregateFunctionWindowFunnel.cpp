@@ -33,6 +33,15 @@ namespace ErrorCodes
 namespace
 {
 
+/// Whether `timestamp` is at most `window` after `first_timestamp`, as `timestamp <= first_timestamp + window`, but
+/// without wrapping around for a window close to the maximum of `UInt64`. The timestamps keep their types, which can
+/// be wider than `UInt64`.
+template <typename First, typename Timestamp>
+bool isInWindow(First first_timestamp, Timestamp timestamp, UInt64 window)
+{
+    return timestamp <= first_timestamp || timestamp - first_timestamp <= window;
+}
+
 constexpr size_t MAX_EVENTS = 32;
 
 
@@ -351,7 +360,7 @@ private:
             else if (events_timestamp[event_idx - 1].has_value())
             {
                 auto first_timestamp = events_timestamp[event_idx - 1]->first;
-                bool time_matched = timestamp <= first_timestamp + window;
+                bool time_matched = isInWindow(first_timestamp, timestamp, window);
                 if (strict_increase)
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
@@ -445,7 +454,7 @@ private:
                 for (auto it = prev_level.begin(); it != prev_level.end();)
                 {
                     auto first_ts = it->first_timestamp;
-                    bool time_matched = timestamp <= first_ts + window;
+                    bool time_matched = isInWindow(first_ts, timestamp, window);
                     if (!time_matched && prev_level.size() > 1)
                     {
                         // Remove old events that are out of the window, but keep at least one

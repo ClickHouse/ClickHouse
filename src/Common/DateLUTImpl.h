@@ -459,6 +459,18 @@ private:
         return res;
     }
 
+    /// `date` plus `x - date` rounded down to a multiple of `divisor`, in `Time`: an unsigned divisor would make the
+    /// arithmetic unsigned, and wrap for a date before the epoch. A divisor that does not fit in `Time` is larger than
+    /// any `x - date`, so the result is `date` then.
+    template <typename Divisor>
+    static Time roundDownFromDate(Time date, Time x, Divisor divisor)
+    {
+        if (static_cast<UInt64>(divisor) > static_cast<UInt64>(std::numeric_limits<Time>::max()))
+            return date;
+        const Time signed_divisor = static_cast<Time>(divisor);
+        return date + (x - date) / signed_divisor * signed_divisor;
+    }
+
     template <typename DateOrTime, typename Divisor>
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
@@ -472,7 +484,7 @@ private:
             if (unlikely(isOutOfLUTRange(x)))
             {
                 const Time date = outOfRangeValues(x).date;
-                return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
+                return static_cast<DateOrTime>(roundDownFromDate(date, static_cast<Time>(x), divisor));
             }
 
         /// The property is computed over the epoch onward, so a value before it may sit in a period whose
@@ -482,7 +494,7 @@ private:
             return roundDownToMultiple(x, divisor);
 
         const Time date = find(x).date;
-        Time res = date + (x - date) / divisor * divisor;
+        Time res = roundDownFromDate(date, static_cast<Time>(x), divisor);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
             if (unlikely(res < 0))

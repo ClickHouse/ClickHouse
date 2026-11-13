@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <Processors/Formats/Impl/NpyRowInputFormat.h>
@@ -391,11 +392,8 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Par
 
 size_t NpyRowInputFormat::countRows(size_t max_block_size)
 {
-    size_t count = 0;
-    if (counted_rows + max_block_size <= size_t(header.shape[0]))
-        count = max_block_size;
-    else
-        count = header.shape[0] - counted_rows;
+    /// From the remaining rows: `counted_rows + max_block_size` can overflow for a huge `max_block_size`.
+    size_t count = std::min(max_block_size, size_t(header.shape[0]) - counted_rows);
     counted_rows += count;
     return count;
 }

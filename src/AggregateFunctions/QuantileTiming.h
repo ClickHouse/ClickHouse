@@ -175,6 +175,9 @@ namespace detail
             readBinaryLittleEndian(size, buf);
             if (size > 10'000)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The number of elements {} for the 'medium' kind of quantileTiming is too large", size);
+            /// The 'medium' kind is created only when the 'tiny' one is full, and the state is then treated as nonempty.
+            if (size == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The 'medium' kind of quantileTiming is empty");
 
             elems.resize(size);
             buf.readStrict(reinterpret_cast<char *>(elems.data()), size * sizeof(elems[0]));

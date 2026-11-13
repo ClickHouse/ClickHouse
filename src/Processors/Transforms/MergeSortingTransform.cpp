@@ -155,9 +155,10 @@ ProcessorMemoryStats MergeSortingTransform::getMemoryStats() const
 
     ProcessorMemoryStats res;
     res.spillable_memory_bytes = sum_bytes_in_blocks;
-    /// One merged block is alive while it is being written
+    /// One merged block is alive while it is being written. It has no more rows than are held, which also keeps the
+    /// estimate from overflowing for a huge `max_block_size`.
     if (sum_rows_in_blocks)
-        res.need_reserved_memory_bytes = sum_bytes_in_blocks / sum_rows_in_blocks * max_merged_block_size;
+        res.need_reserved_memory_bytes = sum_bytes_in_blocks / sum_rows_in_blocks * std::min<size_t>(max_merged_block_size, sum_rows_in_blocks);
     return res;
 }
 
