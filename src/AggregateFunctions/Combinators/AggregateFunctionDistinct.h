@@ -478,6 +478,8 @@ public:
         return true;
     }
 
+    bool ignoresRepeatedValues() const override { return true; }
+
     bool isState() const override
     {
         return nested_func->isState();
