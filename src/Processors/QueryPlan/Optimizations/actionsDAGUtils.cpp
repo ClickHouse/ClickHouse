@@ -24,6 +24,12 @@ extern const int LOGICAL_ERROR;
 
 namespace DB
 {
+/// A NULL constant argument makes the default implementation for NULLs return a constant NULL, which is not strictly monotonic.
+static bool hasNullConstantArgument(const ActionsDAG::Node & node)
+{
+    return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
+}
+
 MatchedTrees::Matches matchTrees(
     const ActionsDAG::NodeRawConstPtrs & inner_dag,
     const ActionsDAG & outer_dag,
@@ -271,7 +277,7 @@ MatchedTrees::Matches matchTrees(
                             {
                                 MatchedTrees::Monotonicity monotonicity;
                                 monotonicity.direction *= info.is_positive ? 1 : -1;
-                                monotonicity.strict = info.is_strict;
+                                monotonicity.strict = info.is_strict && !hasNullConstantArgument(*frame.node);
                                 monotonicity.child_match = &child_match;
                                 monotonicity.child_node = monotonic_child;
 
@@ -384,7 +390,7 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
         if (!monotonicity.is_positive)
             chain.changes_order = !chain.changes_order;
 
-        chain.is_strict = chain.is_strict && monotonicity.is_strict;
+        chain.is_strict = chain.is_strict && monotonicity.is_strict && !hasNullConstantArgument(*node);
 
         node = node->children[pos];
     }
@@ -398,9 +404,6 @@ void applyActionsToSortDescription(
     const ActionsDAG::Node * output_to_skip)
 {
     if (description.empty())
-        return;
-
-    if (dag.hasArrayJoin())
         return;
 
     const size_t descr_size = description.size();
@@ -661,6 +664,15 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     return result;
 }
 
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto & child : node.children)
+        arguments.push_back({child->column, child->result_type, child->result_name});
+    return arguments;
+}
+
 HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
     /// Input positions are pushed in reverse so that the front-most one is taken first, which pairs the
@@ -692,35 +704,9 @@ HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtr
     return result;
 }
 
-NodeSet findReachableNodes(
-    const ActionsDAG::NodeRawConstPtrs & roots,
-    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
-{
-    NodeSet visited;
-    std::stack<const ActionsDAG::Node *> stack;
-    for (const auto * root : roots)
-        if (visited.insert(root).second)
-            stack.push(root);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (is_barrier && is_barrier(current))
-            continue;
-
-        for (const auto * child : current->children)
-            if (visited.insert(child).second)
-                stack.push(child);
-    }
-
-    return visited;
-}
-
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    if (node->function_base->isInjective({}))
+    if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
         return true;
 
     const auto & name = node->function_base->getName();
@@ -806,7 +792,9 @@ bool allOutputsDependsOnlyOnAllowedNodes(
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:
-                UNREACHABLE();
+                /// An exploded array element is not a per-row function of its source row, so the key
+                /// value it feeds is not determined by the allowed nodes.
+                break;
             case ActionsDAG::ActionType::COLUMN:
                 /// Constants doesn't matter, so let's always consider them matched.
                 res = true;
@@ -837,6 +825,111 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     for (const auto * node : key_nodes)
         res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
     return res;
+}
+
+
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
+{
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
+    if (!predicate)
+        return res;
+
+    /// Decompose the AND chain of the predicate: only a top-level conjunct is guaranteed to
+    /// be applied to every row. An `__applyFilter` sitting elsewhere in the DAG — under an
+    /// OR or a NOT, or in an unrelated expression computed alongside the filter — must not
+    /// be used for pruning.
+    std::vector<const ActionsDAG::Node *> conjuncts = {predicate};
+    while (!conjuncts.empty())
+    {
+        const auto * node = conjuncts.back();
+        conjuncts.pop_back();
+
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            continue;
+
+        if (node->function_base->getName() == "and")
+        {
+            conjuncts.insert(conjuncts.end(), node->children.begin(), node->children.end());
+            continue;
+        }
+
+        if (node->function_base->getName() != "__applyFilter" || node->children.size() != 2)
+            continue;
+
+        /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
+        const auto * label = node->children[0];
+        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type))
+            continue;
+        String filter_id(label->column->getDataAt(0));
+
+        /// Argument 1: the probe key column, possibly wrapped in at most one CAST and/or aliases
+        /// (composing the filter through expression steps turns a renamed key into an alias
+        /// of the physical column - looking through it reports the physical name).
+        /// A key under nested casts, e.g. `_CAST(CAST(k, 'UInt8'), 'UInt64')`, is not reported: the pruning
+        /// predicate re-applies only the cast to the filter type, so the inner cast would be lost.
+        const auto * key_arg = node->children[1];
+        size_t casts = 0;
+        while (!key_arg->children.empty())
+        {
+            if (key_arg->type == ActionsDAG::ActionType::ALIAS)
+                key_arg = key_arg->children.front();
+            else if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                     && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST"))
+            {
+                ++casts;
+                key_arg = key_arg->children.front();
+            }
+            else
+                break;
+        }
+
+        /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
+        /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
+        /// IN-set / range predicate derived from it would prune exactly the granules the join must keep.
+        /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
+        /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
+        /// the negating filter exposes neither recorded key values nor a key range.)
+        if (casts > 1)
+            continue;
+
+        /// The global row index of the read, `_part_starting_offset + _part_offset` in either order, is reported
+        /// as a global row index key: it is not a column, but granules can be skipped easily using that.
+        if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+            && key_arg->function_base->getName() == "plus" && key_arg->children.size() == 2)
+        {
+            auto input_name = [](const ActionsDAG::Node * arg) -> std::optional<String>
+            {
+                while (arg->type == ActionsDAG::ActionType::ALIAS)
+                    arg = arg->children.front();
+                if (arg->type != ActionsDAG::ActionType::INPUT)
+                    return std::nullopt;
+                return arg->result_name;
+            };
+            auto lhs = input_name(key_arg->children[0]);
+            auto rhs = input_name(key_arg->children[1]);
+            if (lhs && rhs
+                && ((*lhs == "_part_offset" && *rhs == "_part_starting_offset") || (*lhs == "_part_starting_offset" && *rhs == "_part_offset")))
+            {
+                res.push_back({std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true});
+            }
+            continue;
+        }
+
+        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
+    }
+
+    return res;
+}
+
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+{
+    return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }
 
 }

@@ -1,7 +1,7 @@
 -- KQL scalar semantics that differ from the ClickHouse function they most resemble.
 -- Every expected value here is the one Microsoft's documentation gives for Kusto.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- integer division truncates --';

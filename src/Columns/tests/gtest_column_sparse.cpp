@@ -167,6 +167,17 @@ TEST(ColumnSparse, Filter)
             DUMP_COLUMN(full_dst);
             throw Exception(error_code, "Columns are unequal");
         }
+
+        sparse_src->filter(filt);
+
+        if (!checkEquals(*sparse_src->convertToFullColumnIfSparse(), *full_dst))
+        {
+            DUMP_COLUMN(sparse_src);
+            DUMP_COLUMN(full_src);
+            DUMP_COLUMN(sparse_dst);
+            DUMP_COLUMN(full_dst);
+            throw Exception(error_code, "Columns are unequal");
+        }
     };
 
     try
@@ -179,6 +190,51 @@ TEST(ColumnSparse, Filter)
 
             test_case(n, k, m);
         }
+    }
+    catch (const Exception & e)
+    {
+        FAIL() << e.displayText();
+    }
+}
+
+TEST(ColumnSparse, Expand)
+{
+    auto test_case = [&](size_t n, size_t k, bool inverted)
+    {
+        auto [sparse_src, full_src] = createColumns(n, k);
+
+        /// A mask of twice the size with exactly n bytes set, one for each row, at random positions.
+        IColumn::Filter mask(n * 2, 0);
+        std::vector<size_t> positions(n * 2);
+        std::iota(positions.begin(), positions.end(), 0);
+        std::shuffle(positions.begin(), positions.end(), rng);
+        positions.resize(n);
+        for (size_t position : positions)
+            mask[position] = 1;
+
+        if (inverted)
+            for (auto & byte : mask)
+                byte = !byte;
+
+        auto sparse = IColumn::mutate(std::move(sparse_src));
+        auto full = IColumn::mutate(std::move(full_src));
+        sparse->expand(mask, inverted);
+        full->expand(mask, inverted);
+
+        if (!checkEquals(*sparse, *full))
+        {
+            DUMP_COLUMN(sparse);
+            DUMP_COLUMN(full);
+            throw Exception(error_code, "Expanded columns are unequal");
+        }
+    };
+
+    try
+    {
+        for (size_t n = 0; n < MAX_ROWS; n += 1 + n / 2)
+            for (size_t ratio : sparse_ratios)
+                for (bool inverted : {false, true})
+                    test_case(n, ratio, inverted);
     }
     catch (const Exception & e)
     {
@@ -375,6 +431,95 @@ TEST(ColumnSparse, Index)
 
     /// Exercise the linear path with repeated and unique rows.
     test_case({4, 4, 4, 1, 0, 6, 6, 2}, 8);
+
+    /// The column's own non-default rows, also with a limit below the number of indexes.
+    test_case({1, 4, 6}, 3);
+    test_case({1, 4, 6, 0}, 3);
+
+    /// As many indexes as non-default rows, but not the same rows.
+    test_case({1, 4, 7}, 3);
+    test_case({0, 1, 4}, 3);
+
+    auto own_rows = ColumnUInt64::create();
+    for (UInt64 index : {1, 4, 6})
+        own_rows->insertValue(index);
+
+    const ColumnSparse & sparse_ref = *sparse;
+    auto shared_result = sparse_ref.index(*own_rows, 0);
+    const auto * shared_sparse = typeid_cast<const ColumnSparse *>(shared_result.get());
+    ASSERT_NE(shared_sparse, nullptr);
+    ASSERT_EQ(&shared_sparse->getValuesColumn(), &sparse_ref.getValuesColumn());
+}
+
+TEST(ColumnSparse, IndexSortedRows)
+{
+    auto test_case = [&](size_t n, size_t k)
+    {
+        auto [sparse_src, full_src] = createColumns(n, k);
+        const auto & sparse = assert_cast<const ColumnSparse &>(*sparse_src);
+
+        /// A copy of the column's own offsets: equal values in a distinct object.
+        auto own_rows = ColumnUInt64::create();
+        own_rows->getData().assign(sparse.getOffsetsData());
+
+        auto sparse_dst = sparse.index(*own_rows, 0);
+        auto full_dst = full_src->index(*own_rows, 0);
+
+        if (!checkEquals(*sparse_dst->convertToFullColumnIfSparse(), *full_dst))
+        {
+            DUMP_COLUMN(sparse_src);
+            DUMP_COLUMN(full_src);
+            DUMP_COLUMN(sparse_dst);
+            DUMP_COLUMN(full_dst);
+            throw Exception(error_code, "Columns are unequal");
+        }
+
+        if (own_rows->empty())
+            return;
+
+        if (&assert_cast<const ColumnSparse &>(*sparse_dst).getValuesColumn() != &sparse.getValuesColumn())
+            throw Exception(error_code, "Values column is not shared");
+
+        /// Mutating the result must leave the source untouched.
+        auto mutated = IColumn::mutate(std::move(sparse_dst));
+        mutated->insertDefault();
+        mutated->insertManyDefaults(3);
+
+        auto expected = IColumn::mutate(std::move(full_dst));
+        expected->insertManyDefaults(4);
+
+        if (&assert_cast<const ColumnSparse &>(*mutated).getValuesColumn() == &sparse.getValuesColumn())
+            throw Exception(error_code, "Values column of the mutated result is still shared");
+
+        if (!checkEquals(*mutated->convertToFullColumnIfSparse(), *expected))
+        {
+            DUMP_COLUMN(mutated);
+            DUMP_COLUMN(expected);
+            throw Exception(error_code, "Mutated result is wrong");
+        }
+
+        if (!checkEquals(*sparse_src->convertToFullColumnIfSparse(), *full_src))
+        {
+            DUMP_COLUMN(sparse_src);
+            DUMP_COLUMN(full_src);
+            throw Exception(error_code, "Source column changed");
+        }
+    };
+
+    try
+    {
+        for (size_t i = 0; i < T; ++i)
+        {
+            size_t n = rng() % MAX_ROWS + 1;
+            size_t k = sparse_ratios[rng() % K];
+
+            test_case(n, k);
+        }
+    }
+    catch (const Exception & e)
+    {
+        FAIL() << e.displayText();
+    }
 }
 
 #undef DUMP_COLUMN

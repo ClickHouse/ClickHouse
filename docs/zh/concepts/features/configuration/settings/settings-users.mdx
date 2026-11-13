@@ -125,6 +125,7 @@ doc_type: 'reference'
 
 使用 TOTP 进行身份验证时，用户必须提供主密码，以及由其 TOTP 应用生成的一次性密码；可以通过 `--one-time-password` 命令行选项提供，也可以使用 &#39;+&#39; 字符将其拼接到主密码后。
 例如，如果主密码为 `some_password`，生成的 TOTP 代码为 `345123`，则用户在连接到 ClickHouse 时可以指定 `--password some_password+345123` 或 `--password some_password --one-time-password 345123`。如果未指定密码，`clickhouse-client` 会以交互方式提示输入。
+对于启用了 TOTP 的账户，如果未提供验证码，无论密码是否正确，服务器都会返回错误 `REQUIRED_SECOND_FACTOR`，随后 `clickhouse-client` 会提示输入验证码；密码只有在与验证码一并提交时才会被校验。
 
 按照 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2) 的要求，每个验证码最多只能被接受一次，因此用户在每个 `period` 内最多只能成功完成一次身份验证。
 对于在每次请求或连接时都进行身份验证的客户端 (例如使用 HTTP 接口的脚本)，请务必注意这一点：每次身份验证都需要一个新的验证码。
@@ -319,7 +320,9 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 
 此设置用于为用户启用或禁用 `SHOW NAMED COLLECTIONS SECRETS` 特权，该特权允许用户查看存储在 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 中的值，例如通过 [`system.named_collections`](/zh/reference/system-tables/named_collections) 表查看。
 
-该设置默认禁用：能够管理命名集合并不意味着可以读取其中已存储的 credentials。
+在使用命名集合时，若要覆盖集合中已存储的某个键，同样需要此特权，例如 `s3(my_collection, url = '...')` 中的 `url`、表引擎的 `SETTINGS` 子句，或字典源中的某个键。添加集合中未存储的键则无需此特权。
+
+该设置默认禁用：能够管理命名集合并不意味着可以读取其中已存储的 凭证。
 
 此设置只有与 `named_collection_control` 配合使用才会生效，因为一旦禁用 `named_collection_control`，所有命名集合特权 (包括 `SHOW NAMED COLLECTIONS SECRETS`) 都会被撤销。
 

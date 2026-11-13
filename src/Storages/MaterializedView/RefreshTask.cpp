@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <limits>
 #include <thread>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -13,6 +15,7 @@
 
 #include <Core/Streaming/CursorTree.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -221,56 +224,39 @@ RefreshTask::RefreshTask(
         coordination.path = macros->expand(server_settings[ServerSetting::default_replica_path], info);
         coordination.replica_name = context->getMacros()->expand(server_settings[ServerSetting::default_replica_name], info);
 
-        auto zookeeper = context->getZooKeeper();
-        String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
-        bool replica_path_existed = zookeeper->exists(replica_path);
-
-        /// Coordination needs these Keeper feature flags on every path: readZnodesIfNeeded uses
-        /// multi-read on the scheduling thread, where a throw aborts the whole server.
-        /// (It would be possible to avoid using these features, if needed.)
-        bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
-        /// The flags are read once per Keeper connection, when the connection is established. Right
-        /// after a (re)start the freshly-attached view may read them before the connection settles
-        /// on the current Keeper, so this up-front check is not authoritative: doScheduling
-        /// re-checks before touching Keeper and stops the view gracefully if they turn out missing.
-        fiu_do_on(FailPoints::refresh_mv_skip_attach_feature_flag_check, { feature_flags_missing = false; });
-        if (feature_flags_missing)
+        try
         {
-            /// Fresh CREATE rejects. ATTACH/restore must not throw (it would fail server startup),
-            /// so enter a permanent non-resumable "coordination unavailable" state instead.
-            if (!attach && !is_restore_from_backup)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
+            auto zookeeper = context->getZooKeeper();
 
-            markCoordinationUnavailable();
-            return;
+            /// Coordination needs these Keeper feature flags on every path: readZnodesIfNeeded uses
+            /// multi-read on the scheduling thread, where a throw aborts the whole server.
+            /// (It would be possible to avoid using these features, if needed.)
+            bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
+            /// The flags are read once per Keeper connection, when the connection is established. Right
+            /// after a (re)start the freshly-attached view may read them before the connection settles
+            /// on the current Keeper, so this up-front check is not authoritative: doScheduling
+            /// re-checks before touching Keeper and stops the view gracefully if they turn out missing.
+            fiu_do_on(FailPoints::refresh_mv_skip_attach_feature_flag_check, { feature_flags_missing = false; });
+            if (feature_flags_missing)
+            {
+                /// Fresh CREATE rejects. ATTACH/restore must not throw (it would fail server startup),
+                /// so enter a permanent non-resumable "coordination unavailable" state instead.
+                if (!attach && !is_restore_from_backup)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
+
+                markCoordinationUnavailable();
+                return;
+            }
+
+            createCoordinationZnodesIfNeeded(*zookeeper, coordination.root_znode.toString(), is_restore_from_backup);
         }
-
-        /// Create znodes even if it's ATTACH query. This seems weird, possibly incorrect, but
-        /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
-        if (!replica_path_existed)
+        catch (const Coordination::Exception & e)
         {
-            zookeeper->createAncestors(coordination.path);
-            Coordination::Requests ops;
-            ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
-            ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/replicas", "", zkutil::CreateMode::Persistent, true));
-            ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
-
-            /// When restoring multiple tables from backup (e.g. a RESTORE DATABASE), the restored
-            /// refreshable materialized views shouldn't start refreshing on any replica until all
-            /// tables and their data is restored on all replicas. Otherwise things break:
-            ///  * Refresh may EXCHANGE+DROP a table before its data is restored. The restore will
-            ///    then fail when trying to write to a dropped table.
-            ///  * Refresh may see empty source table before they're restored, producing empty
-            ///    refresh result.
-            ///
-            /// Note that with replicated catalog a replicated database may be restored
-            /// by a RESTORE running on just one replica, so one replica needs to be able to unpause
-            /// refreshes on all replicas. This is the only reason why "paused" znode is a thing,
-            /// otherwise we could just use stop_requested.
-            if (is_restore_from_backup)
-                ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/paused", "restored from backup", zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
-
-            zookeeper->multi(ops);
+            /// Server startup must not depend on Keeper being reachable; `doScheduling` retries.
+            if (!attach || is_restore_from_backup || !Coordination::isHardwareError(e.code))
+                throw;
+            LOG_WARNING(getLogger(), "Keeper is unavailable, will set up refresh coordination when it is reachable: {}", e.message());
+            coordination.znodes_setup_pending = true;
         }
 
         if (server_settings[ServerSetting::disable_insertion_and_mutation])
@@ -293,6 +279,38 @@ void RefreshTask::markCoordinationUnavailable()
     coordination.unavailable = true;
     scheduling.stop_requested = true;
     scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
+}
+
+void RefreshTask::createCoordinationZnodesIfNeeded(zkutil::ZooKeeper & zookeeper, const String & root_znode_data, bool is_restore_from_backup) const
+{
+    String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
+    if (zookeeper.exists(replica_path))
+        return;
+
+    /// Create znodes even if it's ATTACH query. This seems weird, possibly incorrect, but
+    /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
+    zookeeper.createAncestors(coordination.path);
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(coordination.path, root_znode_data, zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
+    ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/replicas", "", zkutil::CreateMode::Persistent, true));
+    ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
+
+    /// When restoring multiple tables from backup (e.g. a RESTORE DATABASE), the restored
+    /// refreshable materialized views shouldn't start refreshing on any replica until all
+    /// tables and their data is restored on all replicas. Otherwise things break:
+    ///  * Refresh may EXCHANGE+DROP a table before its data is restored. The restore will
+    ///    then fail when trying to write to a dropped table.
+    ///  * Refresh may see empty source table before they're restored, producing empty
+    ///    refresh result.
+    ///
+    /// Note that with replicated catalog a replicated database may be restored
+    /// by a RESTORE running on just one replica, so one replica needs to be able to unpause
+    /// refreshes on all replicas. This is the only reason why "paused" znode is a thing,
+    /// otherwise we could just use stop_requested.
+    if (is_restore_from_backup)
+        ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/paused", "restored from backup", zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
+
+    zookeeper.multi(ops);
 }
 
 void RefreshTask::createLogger(const StorageID & storage_id)
@@ -1055,6 +1073,15 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 setState(RefreshState::Disabled, lock);
                 return;
             }
+
+            if (coordination.znodes_setup_pending)
+            {
+                String root_znode_data = coordination.root_znode.toString();
+                lock.unlock();
+                createCoordinationZnodesIfNeeded(*zookeeper, root_znode_data, /*is_restore_from_backup=*/ false);
+                lock.lock();
+                coordination.znodes_setup_pending = false;
+            }
         }
         readZnodesIfNeeded(zookeeper, lock);
         chassert(lock.owns_lock());
@@ -1514,7 +1541,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             });
 
             /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
-            /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
+            /// the refresh write (`WRITTEN_ROWS`/`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
             /// pattern's bucket instead of the shared hash-0 bucket.
             refresh_context->setNormalizedQueryHash(normalized_query_hash);
             refresh_context->setProgressCallback([this](const Progress & prog)
@@ -1729,6 +1756,15 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
     }
 }
 
+/// The retry instant is widened s -> ms -> us -> ns, so it must fit every unit. 9e11 s (year ~30489)
+/// also keeps CalendarTimeInterval::floor within std::chrono::year, which holds a short.
+static constexpr std::chrono::seconds::rep max_last_attempt_seconds = 900'000'000'000;
+static constexpr std::chrono::milliseconds::rep max_delay_ms = 3'000'000'000'000;
+static constexpr std::chrono::milliseconds::rep max_when_ms = max_last_attempt_seconds * 1000 + max_delay_ms;
+static_assert(max_when_ms <= std::numeric_limits<std::chrono::milliseconds::rep>::max() / 1000);
+static_assert(max_when_ms * 1000 <= std::numeric_limits<std::chrono::system_clock::rep>::max());
+static_assert(max_delay_ms * 1'000'000 <= std::numeric_limits<std::chrono::nanoseconds::rep>::max());
+
 bool RefreshTask::retriesExhausted(const CoordinationZnode & znode) const
 {
     Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
@@ -1744,7 +1780,8 @@ static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings 
         delay_ms = refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] * multiplier;
     else
         delay_ms = refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms];
-    return std::chrono::milliseconds(delay_ms);
+    /// Either branch can return an arbitrary setting value; clamp while it is still unsigned.
+    return std::chrono::milliseconds(std::min(delay_ms, UInt64(max_delay_ms)));
 }
 
 std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, RefreshTask::CoordinationZnode>
@@ -1752,6 +1789,9 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 {
     chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
+    /// last_attempt_time comes from Keeper unvalidated.
+    znode.last_attempt_time = std::chrono::sys_seconds(std::chrono::seconds(std::clamp(
+        znode.last_attempt_time.time_since_epoch().count(), -max_last_attempt_seconds, max_last_attempt_seconds)));
     if (retriesExhausted(znode))
     {
         /// Skip to the next scheduled refresh, as if a refresh succeeded.

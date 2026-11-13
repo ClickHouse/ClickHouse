@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Documentation.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -17,6 +18,12 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
+class AccessRightsElements;
+class SettingsChanges;
 struct StorageID;
 struct ConstraintsDescription;
 
@@ -33,6 +40,10 @@ public:
     /// Helper function to validate if a specific storage supports a setting
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
+
+    /// The grants needed by settings that make a table send its data to another place, e.g. the move destination of a queue.
+    /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
+    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
 
     struct Arguments
     {
@@ -55,6 +66,11 @@ public:
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
+
+        /// A disk or a storage policy the table definition names. Refused, unless loading from existing metadata, when the
+        /// query may not use it (see `DiskFromAST::ensureDiskIsAllowed`).
+        DiskPtr getDisk(const String & name) const;
+        StoragePolicyPtr getStoragePolicy(const String & name) const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -82,6 +98,12 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
+        GetExportAccessFn * get_export_access_fn = nullptr;
+
+        /// Static over-approximation of IStorage::storesDataOnDisk(): set if the engine can ever store data locally.
+        bool stores_data_on_disk = false;
+        /// Whether the engine may back a temporary table (opt-in).
+        bool supports_temporary = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -90,6 +112,7 @@ public:
         CreatorFn creator_fn;
         StorageFeatures features;
         Documentation documentation;
+        SecretArgumentsSpec secret_arguments;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -104,9 +127,13 @@ public:
         LoadingStrictnessLevel mode,
         bool is_restore_from_backup = false) const;
 
+    /// Throw if the CREATE query uses a clause that the table engine does not support. `get` runs the same checks.
+    void checkEngineFeatures(
+        const ASTCreateQuery & query, const ColumnsDescription & columns, LoadingStrictnessLevel mode, const ContextPtr & local_context) const;
+
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
-    void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
+    void registerStorage(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features = StorageFeatures{
         .supports_settings = false,
         .supports_skipping_indices = false,
         .supports_projections = false,
@@ -120,11 +147,20 @@ public:
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
+        .get_export_access_fn = nullptr,
+        .stores_data_on_disk = false,
+        .supports_temporary = false,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
     {
         return storages;
+    }
+
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
+    {
+        auto it = storages.find(name);
+        return it == storages.end() ? nullptr : &it->second.secret_arguments;
     }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override
@@ -149,6 +185,16 @@ public:
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
+    /// Throws if storage cannot be temporary
+    void checkTemporaryTableEngine(const String & storage_name, const ContextPtr & context) const;
+
+    /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
+    /// table. An unknown engine needs nothing here: creating it fails later.
+    AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
+    /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
+    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+
 private:
     Storages storages;
 };
@@ -161,5 +207,11 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args);
 /// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
+
+/// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
+/// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`
+/// (see `IStorage::hasUnreplicatedTableDataOnDisk`), for engines that must check it before the storage is constructed, because
+/// the construction itself has effects or can fail for an unrelated reason (e.g. schema inference opens the source).
+void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args);
 
 }

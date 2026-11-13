@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -36,6 +37,8 @@ namespace
                     return false;
                 }
                 auto inner_uuid = parseFromString<UUID>(ast->as<ASTLiteral>()->value.safeGet<String>());
+                if (inner_uuid == UUIDHelpers::Nil)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} INNER UUID cannot use a Nil UUID", toStringView(keyword));
                 if (!res)
                     res = make_intrusive<ASTViewTargets>();
                 res->setInnerUUID(kind, inner_uuid);
@@ -69,7 +72,7 @@ namespace
         if (!res || !res->getInnerEngine(kind))
         {
             /// Skip optional INNER before ENGINE.
-            /// We support both syntaxes: `SAMPLES/TAGS/METRIC FAMILIES ENGINE` and `SAMPLES/TAGS/METRIC FAMILIES INNER ENGINE`.
+            /// We support both syntaxes, e.g. `TAGS ENGINE` and `TAGS INNER ENGINE`.
             ParserKeyword{Keyword::INNER}.ignore(pos, expected);
 
             if (ParserStorage{ParserStorage::TABLE_ENGINE}.parse(pos, ast, expected))
@@ -83,7 +86,7 @@ namespace
 
         if (!res || !res->getTableID(kind))
         {
-            ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
+            ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ false);
             if (table_name_p.parse(pos, ast, expected))
             {
                 auto table_id = ast->as<ASTTableIdentifier>()->getTableId();
@@ -132,6 +135,12 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 case ViewTarget::Tags:
                 {
                     parsed |= tryParseViewTarget(kind, Keyword::TAGS, pos, expected, res);
+                    break;
+                }
+
+                case ViewTarget::TimeRanges:
+                {
+                    parsed |= tryParseViewTarget(kind, Keyword::TIME_RANGES, pos, expected, res);
                     break;
                 }
 

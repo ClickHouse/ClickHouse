@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <optimize_row_order>0</optimize_row_order>
+    </merge_tree>
+</clickhouse>

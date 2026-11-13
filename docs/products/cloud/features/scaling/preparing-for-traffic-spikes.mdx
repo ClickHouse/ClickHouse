@@ -1,0 +1,55 @@
+---
+title: 'Preparing for traffic spikes'
+sidebarTitle: 'Preparing for traffic spikes'
+slug: /cloud/features/scaling/preparing-for-traffic-spikes
+description: 'Prepare ClickHouse Cloud services for an expected traffic spike by scaling up in advance and reviewing autoscaling settings.'
+keywords: ['traffic spikes', 'peak traffic', 'scaling', 'autoscaling', 'capacity', 'Black Friday']
+doc_type: 'guide'
+---
+
+<Note>
+**This page applies to Scale and Enterprise services.**
+
+- **Basic Tier:** Basic services have a fixed size and can't scale. If you use a Basic service and expect a traffic spike, upgrade your [Cloud tier](/products/cloud/features/cloud-tiers).
+- **Bring Your Own Cloud (BYOC):** The steps below apply, but your services run in your own cloud account, so make sure your account has adequate quotas and capacity for the expected peak.
+</Note>
+
+Many workloads have predictable periods of higher demand. Examples include retail and shopping events, product launches, end-of-quarter reporting, and marketing campaigns. Autoscaling responds to load as it happens, but for a peak you know is coming, it's usually better to scale up in advance.
+
+During periods of high overall demand, capacity across cloud providers can be tighter than usual, especially for larger instance sizes and in some regions. Scaling up early gives you the opportunity to secure the capacity you need, and time to confirm your services are ready before the peak arrives.
+
+<Note>
+**Upcoming peak: Black Friday and Cyber Monday 2026**
+
+If you expect higher traffic around November 27 - 30, 2026, we recommend scaling up by **November 20** and staying scaled up until **December 1**. If you're planning to scale beyond the allowed number of replicas for a service, contact us by **November 13** (see step 3 below).
+</Note>
+
+## Before the peak {#before-the-peak}
+
+1. Set up monitoring and alerts to quickly detect any changes during the peak. Configure email and/or Slack [notifications](/products/cloud/features/monitoring/notifications) for scaling events, errors, and billing. If you use an external monitoring tool, connect it using the [Prometheus endpoint](/products/cloud/features/monitoring/prometheus) and set alerts on CPU and memory utilization.
+2. Estimate your expected load: Look at how your services behaved during previous peaks, and estimate how much query and insert volume may increase. To see historical CPU and memory utilization for each replica, visit your service's Infrastructure dashboard (**Monitoring > Infrastructure**) or see [Handling spikes in workload](/products/cloud/features/autoscaling/scheduled-scaling#handling-bursty-workloads).
+3. Let us know about large scale-ups: If you plan to scale beyond the allowed number of replicas for a service, contact your account team or ClickHouse support at least two weeks before the peak. This helps us plan capacity with our cloud providers ahead of time. In your request, please include:
+   1. Service name and region
+   2. Target size (memory per replica and number of replicas)
+   3. Start and end dates
+
+   <Note>
+   Capacity is subject to availability from our cloud providers, so we can't guarantee that a specific size will be available at a given time. Letting us know early gives us the best opportunity to secure it for you.
+   </Note>
+4. Scale up in advance: Scale up several days before the peak, not on the day it starts. This gives you time to confirm your service is running at the new size and to adjust if needed. You can change your service's scaling settings in the ClickHouse Cloud console under **Settings > Scaling**, or with the [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview).
+5. Review your autoscaling settings: If autoscaling is enabled for your service (vertical or horizontal), check your limits before the peak:
+   1. **Raise the minimum** to keep capacity in place throughout the peak, instead of waiting for autoscaling to react.
+   2. **Raise the maximum** so autoscaling has room to grow if load exceeds your estimate.
+   3. **Review idling.** For latency-sensitive services, consider disabling idling during the peak so the service doesn't need to wake up when traffic arrives.
+   4. **Review any scaling schedules.** Scaling schedules take precedence over your autoscaling settings when they trigger. Pause or adjust any schedules that would scale your service(s) down during the peak, such as weekend or overnight scale-downs.
+6. Test at the new size: Once your service(s) are scaled up, run a load test where possible that simulates peak traffic. This helps confirm the new size is sufficient to handle the expected surge and allows for corrective action if needed.
+
+## After the peak {#after-the-peak}
+
+Once demand returns to normal, return your service to its usual scaling settings in the console or through the API. Set a reminder for the end date so your service doesn't stay scaled up longer than needed.
+
+For workloads with regular daily or weekly patterns, such as overnight batch jobs or business-hours traffic, use [Scheduled scaling](/products/cloud/features/autoscaling/scheduled-scaling) to scale up and down automatically.
+
+## Billing {#billing}
+
+Services are billed at their scaled-up size for as long as they run at that size. Scaling up for a peak will increase your bill for that period.

@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 
 from ci.jobs.scripts.log_cluster import LogCluster
-from ci.praktika import Secret
+from ci.praktika import Secret, SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell, Utils
 
@@ -110,11 +110,25 @@ def create_config(config_dir, host, password, users_dir=""):
         )
     )
     if users_dir:
-        return Shell.check(
+        Shell.check(
             f"mkdir -p {users_dir} && cp {CI_LOGS_SENDER_USER_CONFIG} {users_dir}/",
             verbose=True,
+            strict=True,
         )
-    return True
+
+
+def configure(config_dir, users_dir=""):
+    """Write the CI Logs cluster config; return `(host, password)`, or `None`
+    with a workflow warning when the secret fetch failed and the export is
+    skipped. A failed write raises."""
+    try:
+        host, password = get_credentials()
+    except SecretFetchFailed as e:
+        print(f"WARNING: Failed to configure log export: {e}")
+        Info().add_workflow_warning(f"Failed to configure log export: {e}")
+        return None
+    create_config(config_dir, host, password, users_dir=users_dir)
+    return host, password
 
 
 def _set_server_port(port):
@@ -233,3 +247,24 @@ def stop_distributed_sends(port=None):
 def start_distributed_sends(port=None):
     """Undo `stop_distributed_sends`."""
     return _switch_distributed_sends(True, port)
+
+
+def flush_held_rows(port=None):
+    """Send the rows held back by `stop_distributed_sends` and hold the sends
+    back again, so that the backlog stays bounded.
+
+    The flush is bounded by the same 5 minutes as the one in `stop`; what it
+    does not manage to send stays in the local files. Returns whether the sends
+    are held back again - when not, the caller has to tear the export down.
+    """
+    port_arg = _set_server_port(port)
+    for query in ("SYSTEM FLUSH LOGS", "SYSTEM FLUSH ASYNC INSERT QUEUE"):
+        Shell.check(f'clickhouse-client {port_arg} --query "{query}"', verbose=True)
+    start_distributed_sends(port)
+    Shell.check(
+        f'clickhouse-client {port_arg} --query "{SENDER_TABLES_QUERY}" | '
+        "timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m "
+        f'xargs -n1 -P10 -r -i clickhouse-client {port_arg} --query "SYSTEM FLUSH DISTRIBUTED {{}}"',
+        verbose=True,
+    )
+    return stop_distributed_sends(port)

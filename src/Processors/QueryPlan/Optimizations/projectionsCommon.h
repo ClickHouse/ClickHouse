@@ -11,6 +11,8 @@
 namespace DB
 {
 
+struct HypotheticalProjection;
+
 struct ProjectionDescription;
 class MergeTreeDataSelectExecutor;
 
@@ -41,6 +43,9 @@ struct QueryDAG
 {
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * filter_node = nullptr;
+    /// The combined value of `optimize_constant_columns_after_filter` of the collected filters,
+    /// to be set on a `FilterStep` that replaces them.
+    std::optional<bool> optimize_constant_columns_after_filter;
 
     bool build(QueryPlan::Node & node);
 
@@ -75,7 +80,25 @@ struct ProjectionCandidate
 
     /// Parent parts that need to be read due to missing this projection
     std::unordered_set<const IMergeTreeDataPart *> parent_parts;
+    /// Rows of the parent parts that need to be read due to missing this projection
+    size_t parent_rows = 0;
 };
+
+struct UseProjectionsResult;
+
+/// the candidate of the projection, or nullptr if the optimizer did not analyze it
+template <typename Candidates>
+const ProjectionCandidate * findCandidate(const Candidates & candidates, const ProjectionDescription * projection)
+{
+    for (const auto & candidate : candidates)
+        if (candidate.projection == projection)
+            return &candidate;
+    return nullptr;
+}
+
+/// fills the outcome of the hypothetical projection from its candidate, or only the reject reason with no candidate
+void recordHypotheticalOutcome(
+    HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen);
 
 /// Removes parts not in valid_parts from reading_select_result and updates related counters.
 /// Returns the number of parts removed.
@@ -84,12 +107,15 @@ size_t filterPartsByProjection(
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
+/// `parent_mutations_snapshot` is the snapshot of the parent read: a part with a pending
+/// `RENAME COLUMN` / `DROP COLUMN` mutation is read from the parent part, not from its projection part.
 /// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
 /// that the query condition cache consult inside the candidate analysis observes the same TopK
 /// gating and key salting as the read itself.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
+    const MergeTreeData::MutationsSnapshotPtr & parent_mutations_snapshot,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
     const StorageMetadataPtr & parent_metadata,
@@ -98,7 +124,8 @@ bool analyzeProjectionCandidate(
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const HypotheticalProjection * hypothetical_projection = nullptr);
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.

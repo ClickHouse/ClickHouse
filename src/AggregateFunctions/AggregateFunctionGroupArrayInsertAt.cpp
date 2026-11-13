@@ -175,6 +175,10 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
 
+        if (length_to_resize && size > length_to_resize)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", length_to_resize);
+
         Array & arr = data(place).value;
         arr.resize(size);
 
@@ -299,7 +303,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = {.is_order_dependent = true};
+    AggregateFunctionProperties properties = {.is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst};
     factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation, properties});
 }
 

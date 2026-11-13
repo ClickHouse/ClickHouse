@@ -1,0 +1,21 @@
+t_full_string	n	['Default']
+t_full_string	s	['Default']
+t_sparse_string	n	['Sparse']
+t_sparse_string	s	['Sparse']
+0	0x		
+1	x		NULL
+7	77777777x		NULL
+55	x		
+998	x		NULL
+999	9999999999999999999999999999999999999999x	999999999999999999999	nnnn
+1000	x		NULL
+read	1
+concat	1
+concat3	1
+substring	1
+upper	1
+nullable	1
+nullable_ifnull	1
+nullable_assume	1
+group_by	1
+join	1500

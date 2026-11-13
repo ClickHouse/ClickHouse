@@ -6,32 +6,19 @@ title: '클러스터 디스커버리'
 doc_type: 'guide'
 ---
 
-<div id="overview">
-  ## 개요
-</div>
+## 개요 {#overview}
 
 ClickHouse의 클러스터 디스커버리 기능을 사용하면 설정 파일에 각 노드를 명시적으로 정의하지 않아도 노드가 자동으로 서로를 발견하고 스스로 등록할 수 있어 클러스터 구성이 간소화됩니다. 특히 각 노드를 수동으로 정의해야 해 번거로운 경우에 유용합니다.
 
 <Note>
-  클러스터 디스커버리는 실험적 기능이므로 향후 버전에서 변경되거나 제거될 수 있습니다.
-  활성화하려면 설정 파일에 `allow_experimental_cluster_discovery` 설정을 추가하십시오:
-
-  ```xml
-  <clickhouse>
-      <!-- ... -->
-      <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
-      <!-- ... -->
-  </clickhouse>
-  ```
+  클러스터 디스커버리를 사용하려면 [ClickHouse Keeper](/ko/guides/sre/keeper/clickhouse-keeper) 또는 ZooKeeper가 구성되어 있어야 합니다.
+  이전 버전에서는 실험적 기능이었으므로 설정 파일에서 `allow_experimental_cluster_discovery` 설정으로 활성화해야 했습니다.
+  이 설정은 이제 더 이상 사용되지 않으며 아무런 효과가 없습니다.
 </Note>
 
-<div id="remote-servers-configuration">
-  ## 원격 서버 구성
-</div>
+## 원격 서버 구성 {#remote-servers-configuration}
 
-<div id="traditional-manual-configuration">
-  ### 기존의 수동 구성
-</div>
+### 기존의 수동 구성 {#traditional-manual-configuration}
 
 기존에는 ClickHouse에서 클러스터의 각 세그먼트와 레플리카를 구성 파일에 수동으로 지정해야 했습니다:
 
@@ -63,9 +50,7 @@ ClickHouse의 클러스터 디스커버리 기능을 사용하면 설정 파일�
 
 ```
 
-<div id="using-cluster-discovery">
-  ### 클러스터 디스커버리 사용
-</div>
+### 클러스터 디스커버리 사용 {#using-cluster-discovery}
 
 클러스터 디스커버리를 사용하면 각 노드를 명시적으로 정의하는 대신 ZooKeeper에 경로만 지정하면 됩니다. ZooKeeper에서 이 경로 아래에 등록된 모든 노드는 자동으로 감지되어 클러스터에 추가됩니다.
 
@@ -113,9 +98,7 @@ ClickHouse의 클러스터 디스커버리 기능을 사용하면 설정 파일�
 </discovery>
 ```
 
-<div id="observer-mode">
-  ### 옵저버 모드
-</div>
+### 옵저버 모드 {#observer-mode}
 
 옵저버 모드로 구성된 노드는 스스로를 레플리카로 등록하지 않습니다.
 이 노드들은 능동적으로 참여하지 않고 클러스터 내의 다른 활성 레플리카를 관찰하고 발견만 합니다.
@@ -128,9 +111,7 @@ ClickHouse의 클러스터 디스커버리 기능을 사용하면 설정 파일�
 </discovery>
 ```
 
-<div id="discovery-of-clusters">
-  ### 클러스터 디스커버리
-</div>
+### 클러스터 디스커버리 {#discovery-of-clusters}
 
 때로는 클러스터 내 호스트뿐 아니라 클러스터 자체를 추가하거나 제거해야 할 수도 있습니다. 이때 여러 클러스터의 루트 경로를 가리키는 `<multicluster_root_path>` 노드를 사용할 수 있습니다:
 
@@ -171,9 +152,7 @@ ClickHouse의 클러스터 디스커버리 기능을 사용하면 설정 파일�
 * `<multicluster_root_path>`는 `<observer/>`와 함께만 사용할 수 있습니다.
 * Keeper의 경로 마지막 부분은 클러스터 이름으로 사용되며, 등록 시 이름은 XML 태그에서 가져옵니다.
 
-<div id="use-cases-and-limitations">
-  ## 사용 사례 및 제한 사항
-</div>
+## 사용 사례 및 제한 사항 {#use-cases-and-limitations}
 
 지정된 ZooKeeper 경로에 노드가 추가되거나 제거되면, 구성 변경이나 서버 재시작 없이 클러스터에서 자동으로 감지되거나 제거됩니다.
 
