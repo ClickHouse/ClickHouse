@@ -2616,10 +2616,11 @@
 /// Trusted Types (see the `Content-Security-Policy` at the top of the head). They are enforced, so
 /// the HTML sinks (`innerHTML`) take only values made by this policy, `<script src>` takes only the
 /// scripts that ship with the server (see `_loadJS`), and the sinks that turn a string into code
-/// (`eval`, `new Function`, `setTimeout` with a string) are blocked. The policy does not sanitize: every caller of `trustedHTML` builds its
-/// HTML from static markup and escaped text (`escapeHTML`, `escapeAttr`). What it gives is that all
-/// the places writing HTML are calls of `trustedHTML` that can be found and reviewed, while any other
-/// write - a new one, or one in a third-party library - throws instead of injecting markup.
+/// (`eval`, `new Function`, `setTimeout` with a string) are blocked. The policy does not sanitize:
+/// every caller of `trustedHTML` builds its HTML from static markup and escaped text (`escapeHTML`,
+/// `escapeAttr`). What it gives is that all the places writing HTML are calls of `trustedHTML` that
+/// can be found and reviewed, while any other write - a new one, or one in a third-party library -
+/// throws instead of injecting markup.
 /// A browser without Trusted Types gets a pass-through stand-in with the same interface.
 const play_policy = (window.trustedTypes ?? { createPolicy: (name, rules) => rules }).createPolicy('play', {
     createHTML: html => html,
