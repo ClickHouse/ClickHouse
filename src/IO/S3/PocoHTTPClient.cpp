@@ -165,13 +165,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
 {
     /// This is used to identify configurations created by us.
     userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
-    if (retry_strategy.initial_delay_ms > retry_strategy.max_delay_ms)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
-    if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
-    {
-        LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
-        retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
-    }
+    validateRetryStrategy();
 
     /// NOTE: In some places AWS SDK expects it to be non-null.
     telemetryProvider = smithy::components::tracing::NoopTelemetryProvider::CreateProvider();
@@ -190,6 +184,17 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         request_throttler.disk_put_amount = ProfileEvents::DiskS3PutRequestThrottlerCount;
         request_throttler.disk_put_blocked = ProfileEvents::DiskS3PutRequestThrottlerBlocked;
         request_throttler.disk_put_sleep_us = ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds;
+    }
+}
+
+void PocoHTTPClientConfiguration::validateRetryStrategy()
+{
+    if (retry_strategy.initial_delay_ms > retry_strategy.max_delay_ms)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
+    if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
+    {
+        LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
+        retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
     }
 }
 

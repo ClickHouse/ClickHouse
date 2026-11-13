@@ -407,7 +407,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_,
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry_,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
+    std::shared_ptr<ThreadPool> shared_create_reader_pool_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -423,11 +424,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
     , read_from_format_info(info)
     , create_reader_pool(
-          std::make_shared<ThreadPool>(
-              CurrentMetrics::StorageObjectStorageThreads,
-              CurrentMetrics::StorageObjectStorageThreadsActive,
-              CurrentMetrics::StorageObjectStorageThreadsScheduled,
-              1 /* max_threads */))
+          shared_create_reader_pool_
+              ? shared_create_reader_pool_
+              : std::make_shared<ThreadPool>(
+                  CurrentMetrics::StorageObjectStorageThreads,
+                  CurrentMetrics::StorageObjectStorageThreadsActive,
+                  CurrentMetrics::StorageObjectStorageThreadsScheduled,
+                  1 /* max_threads */))
+    , owns_create_reader_pool(shared_create_reader_pool_ == nullptr)
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
@@ -446,7 +450,12 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     LOG_DEBUG(log, "Source finished: files_read={}", total_files_read);
-    create_reader_pool->wait();
+    /// An in-flight reader task captures `this`, so it must not outlive the source. A shared pool
+    /// also serves other sources, so wait on this source's own task instead.
+    if (owns_create_reader_pool)
+        create_reader_pool->wait();
+    else if (reader_future.valid())
+        reader_future.wait();
 
     try
     {
@@ -1241,10 +1250,12 @@ Chunk StorageObjectStorageSource::generate()
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
         /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read (unless statistics-only) not populate the cache at all.
+        /// The same holds for the row groups a JOIN runtime filter skipped.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
             && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows
                 && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
-            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
+            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied())
+            && !(reader.getInputFormat() && reader.getInputFormat()->isJoinRuntimeFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
@@ -1317,7 +1328,8 @@ Chunk StorageObjectStorageSource::generate()
         /// against the final threshold (see `writePendingTopKQueryConditionCacheEntries`). A cancelled
         /// read may stop before it has seen every row group, and the ones it has not read report no
         /// matching rows either, so it writes nothing.
-        if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled())
+        if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled()
+            && !reader.getInputFormat()->isJoinRuntimeFilterApplied())
         {
             const auto * input_format = reader.getInputFormat();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*reader.getObjectInfo(), configuration->isDataLakeConfiguration());
@@ -1332,6 +1344,7 @@ Chunk StorageObjectStorageSource::generate()
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->hasFilter()
+            && !reader.getInputFormat()->isJoinRuntimeFilterApplied()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->rows_to_read
             && !reader.getObjectInfo()->file_bucket_info)
@@ -1354,7 +1367,9 @@ Chunk StorageObjectStorageSource::generate()
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
-        create_reader_pool->wait();
+        /// Skipped for a shared pool: that would serialize the other sources using it.
+        if (owns_create_reader_pool)
+            create_reader_pool->wait();
         reader_future = createReaderAsync();
     }
 
@@ -1882,6 +1897,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         : format_filter_info->column_mapper;
                     if (top_k_filter_allowed)
                         result->top_k_filter = format_filter_info->top_k_filter;
+                    /// With a schema transform the reader sees the names of the file's schema, which the filters do not use.
+                    if (keep_in_reader)
+                        result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                     return result;
                 }
             }
@@ -1922,6 +1940,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
+                result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;
                 return result;
             }
 
@@ -1972,6 +1991,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info_with_row_numbers->condition_hash = filter_info->condition_hash;
                 filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
                 filter_info_with_row_numbers->top_k_filter = filter_info->top_k_filter;
+                filter_info_with_row_numbers->join_runtime_filter_predicate = filter_info->join_runtime_filter_predicate;
             }
             filter_info_with_row_numbers->need_row_numbers = true;
             filter_info = filter_info_with_row_numbers;

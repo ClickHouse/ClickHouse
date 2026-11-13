@@ -104,7 +104,11 @@ public:
         ManifestFile,
     };
 
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
+    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false, String timezone_for_timestamptz_ = "UTC")
+        : allow_geo_parser(allow_geo_parser_)
+        , timezone_for_timestamptz(std::move(timezone_for_timestamptz_))
+    {
+    }
 
     void addIcebergTableSchema(
         Poco::JSON::Object::Ptr schema_ptr,
@@ -120,7 +124,7 @@ public:
     bool hasClickHouseTableSchemaById(Int32 id) const;
     bool isSchemaRegisteredFromMetadata(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true, const String & timezone_for_timestamptz = "UTC");
 
     /// The first Iceberg spec violation in `schema`, or nullopt: a field, list element, map key or value without the members
     /// its type needs, or invalid geo type parameters. With `is_table_schema`, also a non-`struct` schema or an
@@ -195,6 +199,7 @@ private:
 
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;
+    String timezone_for_timestamptz = "UTC";
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;
