@@ -71,10 +71,10 @@ CREATE TABLE squality_matcher_defer_scalar (x UInt64) ENGINE = Memory;
 INSERT INTO squality_matcher_defer_scalar VALUES (1), (2), (3);
 
 -- A scalar subquery inside the alias keeps its own correlation state.
-WITH (SELECT tuple(s.x AS x)) AS q
+WITH (SELECT CAST(tuple(s.x AS x), 'Tuple(x UInt64)')) AS q
 SELECT x, q.* FROM squality_matcher_defer_scalar AS s ORDER BY x;
 
-WITH (SELECT tuple(s.x AS x)) AS q
+WITH (SELECT CAST(tuple(s.x AS x), 'Tuple(x UInt64)')) AS q
 SELECT x, q.* REPLACE (1 AS x) FROM squality_matcher_defer_scalar AS s ORDER BY x;
 
 DROP TABLE squality_matcher_defer_scalar;
