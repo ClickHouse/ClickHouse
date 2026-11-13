@@ -664,6 +664,11 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         return &node;
     }
 
+    /// The condition is computed on the values the index stores rather than on the rows, so it cannot use a
+    /// function that can return another value on each evaluation, such as `rand`.
+    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
+        return nullptr;
+
     RPNBuilderTreeNode tree_node(node_to_check, context);
 
     auto column_name = tree_node.getColumnName();
@@ -831,6 +836,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     {
         return !atomic && tryGetConstantCondition(node).value_or(true);
     }
+    if (node_to_check->type == ActionsDAG::ActionType::FUNCTION && !node_to_check->function_base->isDeterministicInScopeOfQuery())
+        return true;
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();

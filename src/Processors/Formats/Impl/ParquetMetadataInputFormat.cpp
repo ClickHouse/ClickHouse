@@ -1,7 +1,7 @@
 #include <span>
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
-#if USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
