@@ -1,0 +1,34 @@
+-- Wrong subcolumns
+-- Tuple element, vertical merge
+2	b	(1,0)
+2	c	(1,0)
+3	d	(1,0)
+11	y	(1,0)
+2	c
+3	d
+11	y
+2	c	(1,0)
+3	d	(1,0)
+10	x	(-1,0)
+11	y	(1,0)
+-- ALTER
+2	c	(1,0)
+3	d	(1,0)
+11	y	(1,0)
+2	c	(1,0)
+3	d	(1,0)
+11	y	(1,0)
+-- Tuple element, horizontal merge
+2	c	(1,0)
+-- JSON typed path
+2	{"data":"b","sign":1}
+2	{"data":"b","sign":1}
+-- Implicit sign constraint
+1	(1,0)
+2	(-1,0)
+-- MATERIALIZED column
+0
+-- Merge algorithms
+c_horizontal	['Horizontal']
+c_json	['Vertical']
+c_vertical	['Vertical']

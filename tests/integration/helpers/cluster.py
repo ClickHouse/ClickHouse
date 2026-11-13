@@ -248,6 +248,10 @@ DOLOR_KEEPER_CORE_DIR = "/var/log/clickhouse-keeper/cores"
 # A backtrace is also taken on restarts in the middle of a run, so it is bounded.
 GDB_BACKTRACE_TIMEOUT_SECONDS = 300
 
+# A sanitizer keeps its `llvm-symbolizer` alive as long as the server, so waiting for a report
+# to finish must be bounded: a server hung after a report would make the wait endless.
+SANITIZER_REPORT_WAIT_SECONDS = 300
+
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
@@ -2441,8 +2445,9 @@ class ClickHouseCluster:
         # lost or half-written by an exit-time dump interrupted by the kill.
         # Continuous mode releases the static counter section that per-module
         # coverage reads inside the server, so the two are mutually exclusive.
+        # Per-module coverage merges no profile, so it writes none.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
+            "/dev/null" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -5128,10 +5133,35 @@ class ClickHouseCluster:
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
 
+    def wait_integration_nodes_stopped(self, nodes, timeout: float = 30) -> None:
+        # Docker Engine before 28.3 returns from `stop` and `kill` before its container list shows the container
+        # stopped (moby/moby#50133), and `docker compose start` skips every container that list shows as running.
+        names = {"/" + self.get_instance_docker_id(node) for node in nodes}
+        deadline = time.monotonic() + timeout
+        while True:
+            running = sorted(
+                name
+                for container in self.docker_client.api.containers(
+                    all=True,
+                    filters={"label": f"com.docker.compose.project={self.project_name}"},
+                )
+                if container["State"] == "running"
+                for name in container["Names"]
+                if name in names
+            )
+            if not running:
+                return
+            if time.monotonic() > deadline:
+                raise Exception(
+                    f"Containers {running} are still listed as running {timeout}s after being stopped"
+                )
+            time.sleep(0.1)
+
     def stop_zookeeper_nodes(self, zk_nodes):
         for n in zk_nodes:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
+        self.wait_integration_nodes_stopped(zk_nodes)
 
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
@@ -5140,6 +5170,8 @@ class ClickHouseCluster:
         # action. compose parallelizes the services internally.
         logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
         subprocess_check_call(base_cmd + [action] + list(nodes))
+        if action in ("stop", "kill"):
+            self.wait_integration_nodes_stopped(nodes)
         logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
 
     # Faster than waiting for clean stop
@@ -6000,6 +6032,37 @@ class ClickHouseInstance:
             )
         )
 
+    def get_server_exec_exit_code(self):
+        """Exit code of the foreground server exec if it has finished, otherwise None.
+        Only with `with_dolor`, where the container's entrypoint does not run the server and the exec
+        id is always that of the current server: in other setups the container can be restarted
+        or recreated behind the harness's back, leaving a stale exec id."""
+        if not self.cluster.with_dolor or not self.clickhouse_exec_id:
+            return None
+        try:
+            info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
+        except Exception as e:
+            logging.warning(f"Could not inspect exec of {self.name}: {e}")
+            return None
+        if info["Running"]:
+            return None
+        # Docker fills in the exit code asynchronously; report the exit even before it does.
+        return info["ExitCode"] if info["ExitCode"] is not None else "unknown"
+
+    def tail_server_logs(self, lines=50):
+        """The last lines of the server's error log and stderr, to explain why it went away."""
+        result = ""
+        for filename in ("clickhouse-server.err.log", "stderr.log"):
+            path = os.path.join(self.logs_dir, filename)
+            try:
+                with open(path, "rb") as f:
+                    tail = f.read().decode("utf-8", errors="replace").splitlines()[-lines:]
+            except OSError:
+                continue
+            if tail:
+                result += f"Last lines of {filename}:\n" + "\n".join(tail) + "\n"
+        return result
+
     def capture_clickhouse_exit(self, timeout_sec=10):
         """Record the exit code of the server exec. Docker fills it in asynchronously, so the
         process can be gone while the exec still reads as running: wait for it, bounded."""
@@ -6096,8 +6159,13 @@ class ClickHouseInstance:
                 else:
                     time.sleep(1)
 
-            # Some sanitizer report in progress?
-            while self.get_process_pid("llvm-symbolizer") is not None:
+            # Some sanitizer report in progress? Bounded, see `SANITIZER_REPORT_WAIT_SECONDS`.
+            report_deadline = time.monotonic() + SANITIZER_REPORT_WAIT_SECONDS
+            while (
+                time.monotonic() < report_deadline
+                and self.get_process_pid("llvm-symbolizer") is not None
+                and self.get_process_pid("clickhouse") is not None
+            ):
                 time.sleep(1)
 
             pid = self.get_process_pid("clickhouse")
@@ -6724,6 +6792,16 @@ class ClickHouseInstance:
             if status == "exited":
                 raise Exception(
                     f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
+                )
+
+            # When the server runs as a foreground exec in a container that stays alive on its own
+            # (e.g. `with_dolor`), the container status does not change when the server dies.
+            # Without this check a server that exits on startup is waited for until the deadline.
+            server_exit_code = self.get_server_exec_exit_code()
+            if server_exit_code is not None:
+                raise Exception(
+                    f"Instance `{self.name}' failed to start: the server exited with code {server_exit_code}.\n"
+                    + self.tail_server_logs()
                 )
 
             deadline = start_time + timeout

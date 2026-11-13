@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -1266,12 +1267,14 @@ private:
     NameSet added_names;
 };
 
-/// Whether a step can produce a block of totals: `WITH TOTALS`, or a remote read, whose query can have it. Such a block
-/// goes through the joins up to the `LIMIT` with no rows to read lazily, so it would reach the expression above the
-/// `LIMIT` without the columns read lazily; and a value computed below a join is that join's default in it, which
-/// recomputing the value above the `LIMIT` would not give.
+/// Whether a step can produce a block of totals: `WITH TOTALS`, a remote read, whose query can have it, or a read of a
+/// cached result that has it. Such a block goes through the joins up to the `LIMIT` with no rows to read lazily, so it
+/// would reach the expression above the `LIMIT` without the columns read lazily; and a value computed below a join is
+/// that join's default in it, which recomputing the value above the `LIMIT` would not give.
 bool canProduceTotals(const IQueryPlanStep & step)
 {
+    if (const auto * cache_read = typeid_cast<const ReadFromQueryResultCacheStep *>(&step))
+        return cache_read->hasTotals();
     return typeid_cast<const TotalsHavingStep *>(&step) || typeid_cast<const ReadFromRemote *>(&step)
         || typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step);
 }

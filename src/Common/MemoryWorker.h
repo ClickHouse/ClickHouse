@@ -3,6 +3,7 @@
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryStatisticsOS.h>
 #include <Common/PageCache.h>
 #include <Common/IMemoryReleasableCache.h>
 #include <IO/ReadBufferFromFile.h>
@@ -140,7 +141,8 @@ public:
     {
         None,
         Cgroups,
-        Jemalloc
+        Jemalloc,
+        OS
     };
 
     MemoryUsageSource getSource();
@@ -257,6 +259,25 @@ private:
     std::vector<CgroupMemoryLevel> cgroup_memory_levels;
     [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
 
+#if defined(OS_LINUX)
+    std::vector<CgroupMemoryLevel> openCgroupsV2MemoryLevels(const std::string & cgroup_path);
+
+    /// The `memory` files of a cgroup v2 exist only while its parent enables the `memory` controller,
+    /// so the nearest cgroup with `memory.current` can change at runtime. Engaged only for a cgroup v2 source.
+    struct CgroupsV2Lookup
+    {
+        /// Where `cgroups_reader` and `cgroup_memory_levels` were opened; empty if no cgroup has `memory.current`.
+        std::optional<std::string> dir;
+        std::chrono::milliseconds time{0};
+        /// A tick failed: reopen even if `dir` did not change, its files may have been removed and created again.
+        bool reopen = false;
+    };
+    std::optional<CgroupsV2Lookup> cgroups_v2_lookup;
+
+    /// Returns true if `cgroups_reader` was replaced.
+    bool lookUpCgroupsV2MemoryFiles();
+#endif
+
     /// Total host RAM, captured at construction. Used to filter out the cgroup v1
     /// "no limit" sentinel (`PAGE_COUNTER_MAX`, ~2^63), which is far larger than any
     /// real RAM amount. Treating it as finite would pin the dynamic limit to the
@@ -280,6 +301,10 @@ private:
     MemoryUsageSource source{MemoryUsageSource::None};
 
     std::shared_ptr<ICgroupsReader> cgroups_reader;
+
+#if HAS_MEMORY_STATISTICS_OS
+    std::unique_ptr<MemoryStatisticsOS> os_memory_statistics;
+#endif
 
     std::shared_ptr<PageCache> page_cache;
 
