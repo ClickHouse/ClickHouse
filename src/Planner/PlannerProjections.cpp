@@ -62,44 +62,20 @@ private:
     Chunk chunk;
 };
 
-/// Remembers the names of the functions of `node` as they are written in the projection query.
-void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToName & result)
-{
-    if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
-    {
-        /// A subquery is named by the hash of its AST, which `toAST` does not reproduce.
-        if (node->hasOriginalAST())
-        {
-            result.emplace(node, node->getOriginalAST()->getColumnName());
-        }
-        else
-        {
-            ConvertToASTOptions ast_options;
-            ast_options.add_cast_for_constants = false;
-            ast_options.fully_qualified_identifiers = false;
-            result.emplace(node, node->toAST(ast_options)->getColumnName());
-        }
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectUnresolvedNodeNames(child, result);
-}
-
-/// collects the stored name of each expression in node
-void collectStoredNodeNames(const QueryTreeNodePtr & node, const QueryTreeNodeToName & unresolved_node_names, QueryTreeNodeToName & result)
+/// collects the name that the projection stores each expression of node under
+void collectStoredNodeNames(const QueryTreeNodePtr & node, QueryTreeNodeToName & result)
 {
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION)
     {
         /// a constant folded from an expression takes the name of that expression
-        const QueryTreeNodePtr * written_node = &node;
-        if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
-            written_node = &constant_node->getSourceExpression();
+        const auto * constant_node = node->as<ConstantNode>();
+        const auto & written_node = constant_node && constant_node->hasSourceExpression() ? constant_node->getSourceExpression() : node;
 
-        if (auto it = unresolved_node_names.find(*written_node); it != unresolved_node_names.end())
+        if (written_node->getNodeType() == QueryTreeNodeType::FUNCTION && written_node->hasOriginalAST())
         {
-            result.emplace(node, it->second);
+            /// the analysis renames some functions, the AST has the name that the query writes
+            result.emplace(node, written_node->getOriginalAST()->getColumnName());
         }
         else
         {
@@ -114,14 +90,12 @@ void collectStoredNodeNames(const QueryTreeNodePtr & node, const QueryTreeNodeTo
 
     for (const auto & child : node->getChildren())
         if (child)
-            collectStoredNodeNames(child, unresolved_node_names, result);
+            collectStoredNodeNames(child, result);
 }
 
-QueryTreeNodePtr buildProjectionQueryTreeImpl(
-    const ASTPtr & query_ast,
-    const StoragePtr & source,
-    const ContextPtr & context,
-    QueryTreeNodeToName * unresolved_node_names)
+}
+
+QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
 {
     auto query_tree = buildQueryTree(query_ast, context);
     auto & query_node = query_tree->as<QueryNode &>();
@@ -148,9 +122,6 @@ QueryTreeNodePtr buildProjectionQueryTreeImpl(
         }
     }
 
-    if (unresolved_node_names)
-        collectUnresolvedNodeNames(query_tree, *unresolved_node_names);
-
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
     /// Optimization passes are not applied because some of them are invalid for projections.
@@ -159,13 +130,6 @@ QueryTreeNodePtr buildProjectionQueryTreeImpl(
     query_tree_pass_manager.runOnlyResolve(query_tree);
 
     return query_tree;
-}
-
-}
-
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
-{
-    return buildProjectionQueryTreeImpl(query_ast, source, context, nullptr);
 }
 
 ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDescription & source_columns, const ContextPtr & context)
@@ -177,8 +141,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
 
     auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
-    QueryTreeNodeToName unresolved_node_names;
-    query_tree = buildProjectionQueryTreeImpl(query_ast, source, query_context, &unresolved_node_names);
+    query_tree = buildProjectionQueryTree(query_ast, source, query_context);
     auto & query_node = query_tree->as<QueryNode &>();
 
     /// the analysis resolved the tree with the context of the query node
@@ -187,7 +150,7 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
         std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}),
         SelectQueryOptions{});
     collectSets(query_tree, *planner_context);
-    collectStoredNodeNames(query_tree, unresolved_node_names, node_to_name);
+    collectStoredNodeNames(query_tree, node_to_name);
 
     NameSet unique_aggregation_keys;
     for (const auto & key_node : query_node.getGroupBy().getNodes())
