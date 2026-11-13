@@ -149,28 +149,33 @@ TEST(GCPOAuthInFibers, ConcurrentFibersWaitForOneTokenRefresh)
     std::vector<silk::FiberFuture> futures(fiber_count);
     std::vector<std::string> tokens(fiber_count);
 
+    /// The started fibers use the locals above, so they finish before the test returns, also when a spawn throws.
     size_t spawned = 0;
-    while (spawned < fiber_count && Silk::spawn([&, i = spawned]
-        {
-            if (++started == fiber_count)
-                all_started.set();
-            tokens[i] = client.getBearerToken();
-            return 0;
-        }, futures[spawned]) == 0)
-        ++spawned;
-    if (spawned != fiber_count)
+    try
     {
-        /// The started fibers use the locals above, so they finish before the test returns.
+        while (spawned < fiber_count && Silk::spawn([&, i = spawned]
+            {
+                if (++started == fiber_count)
+                    all_started.set();
+                tokens[i] = client.getBearerToken();
+                return 0;
+            }, futures[spawned]) == 0)
+            ++spawned;
+    }
+    catch (...)
+    {
         endpoint.release.set();
         for (size_t i = 0; i < spawned; ++i)
             futures[i].wait();
-        FAIL() << "Spawned " << spawned << " of " << fiber_count << " fibers";
+        throw;
     }
 
-    EXPECT_TRUE(all_started.tryWait(60'000));
+    if (spawned == fiber_count)
+        EXPECT_TRUE(all_started.tryWait(60'000));
     endpoint.release.set();
-    for (auto & future : futures)
-        EXPECT_EQ(future.wait(), 0);
+    for (size_t i = 0; i < spawned; ++i)
+        EXPECT_EQ(futures[i].wait(), 0);
+    ASSERT_EQ(spawned, fiber_count);
 
     EXPECT_EQ(endpoint.requests, 1);
     for (const auto & token : tokens)
