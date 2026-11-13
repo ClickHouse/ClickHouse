@@ -28,6 +28,10 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
 -- m2 (host5): 1, 4, 2, 8, 5, 7, 3, 9, 6, 10 every 20 seconds from 1699999820 to 1700000000.
 INSERT INTO ts (metric_name, tags, samples)
 SELECT 'm2', map('instance', 'host5'), arrayMap(i -> (toDateTime64(1699999820 + 20 * i, 3, 'UTC'), [1, 4, 2, 8, 5, 7, 3, 9, 6, 10][i + 1]), range(10));
+
+-- m3 (host6): 10, 20, 15, 25 every 40 seconds; with four samples the trend factor changes the result.
+INSERT INTO ts (metric_name, tags, samples)
+SELECT 'm3', map('instance', 'host6'), arrayMap(i -> (toDateTime64(1699999880 + 40 * i, 3, 'UTC'), [10, 20, 15, 25][i + 1]), range(4));
 "
 
 promql_client()
@@ -52,6 +56,11 @@ echo "-- double_exponential_smoothing(m[3m], 0.8, 0.3): different factors."
 echo "-- host1 -> 30, host2 -> 5, host3 (10,20,15) -> 18."
 promql_client -q "double_exponential_smoothing(m[3m], 0.8, 0.3)" | sort
 
+echo "-- Four samples (10,20,15,25) with sf = 0.5: the trend factor changes the result (Prometheus: 27.625 for tf = 0.3, 26.875 for tf = 0.5)."
+promql_client -q "double_exponential_smoothing(m3[3m], 0.5, 0.3)"
+promql_client -q "double_exponential_smoothing(m3[3m], 0.5, 0.5)"
+promql_client -q "double_exponential_smoothing(m3[3m], 0.5, scalar(sum(vector(0.3))))"
+
 echo "-- Invalid factors are rejected (must be in the open interval (0, 1))."
 promql_client -q "double_exponential_smoothing(m[3m], 1.5, 0.5)" 2>&1 | grep -o "expects smoothing factor in the open interval (0, 1)" | head -1
 promql_client -q "double_exponential_smoothing(m[3m], 0.5, 0)" 2>&1 | grep -o "expects trend factor in the open interval (0, 1)" | head -1
@@ -75,6 +84,10 @@ promql_client -q "double_exponential_smoothing(nothing[3m], 1.5, 0.5)" 2>&1
 
 echo "-- The factors are read at every step: sf = 0.2, 0.3, 0.4, 0.5 and tf = 0.8, 0.7, 0.6, 0.5 (Prometheus: 7.8, 2, 11.4, 6.5)."
 range_query "double_exponential_smoothing(m2[1m], (time() - 1699999900) / 200, (1700000100 - time()) / 200)" 1699999940 1700000000 20
+
+echo "-- Six samples per window, sf = 0.5 and tf = 0.2, 0.3, 0.4, 0.5 per step (Prometheus: 3.694, 9.7404375, 5.3275, 8.921875; tf = 0.5 at every step gives 4.84375, 8.2578125, 5.6796875, 8.921875)."
+range_query "double_exponential_smoothing(m2[2m], 0.5, (time() - 1699999900) / 200)" 1699999940 1700000000 20
+range_query "double_exponential_smoothing(m2[2m], 0.5, 0.5)" 1699999940 1700000000 20
 
 echo "-- sf = 0.4, 0.6, 0.8, 1: the last step has samples, so the query fails."
 range_query "double_exponential_smoothing(m2[1m], (time() - 1699999900) / 100, 0.5)" 1699999940 1700000000 20 2>&1 | grep -o "expects smoothing factor in the open interval (0, 1), got 1" | head -1

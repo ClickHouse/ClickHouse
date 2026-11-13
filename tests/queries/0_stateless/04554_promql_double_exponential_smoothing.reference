@@ -8,6 +8,10 @@
 [('instance','host1')]	2023-11-14 22:13:20.000	30
 [('instance','host2')]	2023-11-14 22:13:20.000	5
 [('instance','host3')]	2023-11-14 22:13:20.000	18
+-- Four samples (10,20,15,25) with sf = 0.5: the trend factor changes the result (Prometheus: 27.625 for tf = 0.3, 26.875 for tf = 0.5).
+[('instance','host6')]	2023-11-14 22:13:20.000	27.625
+[('instance','host6')]	2023-11-14 22:13:20.000	26.875
+[('instance','host6')]	2023-11-14 22:13:20.000	27.625
 -- Invalid factors are rejected (must be in the open interval (0, 1)).
 expects smoothing factor in the open interval (0, 1)
 expects trend factor in the open interval (0, 1)
@@ -37,6 +41,9 @@ expects trend factor in the open interval (0, 1)
 -- Like in Prometheus, the factors are checked only where a window has samples, so a selector without series is not an error.
 -- The factors are read at every step: sf = 0.2, 0.3, 0.4, 0.5 and tf = 0.8, 0.7, 0.6, 0.5 (Prometheus: 7.8, 2, 11.4, 6.5).
 [('instance','host5')]	[(1699999940,7.8000000000000025),(1699999960,1.9999999999999996),(1699999980,11.4),(1700000000,6.5)]
+-- Six samples per window, sf = 0.5 and tf = 0.2, 0.3, 0.4, 0.5 per step (Prometheus: 3.694, 9.7404375, 5.3275, 8.921875; tf = 0.5 at every step gives 4.84375, 8.2578125, 5.6796875, 8.921875).
+[('instance','host5')]	[(1699999940,3.694),(1699999960,9.740437499999999),(1699999980,5.327500000000001),(1700000000,8.921875)]
+[('instance','host5')]	[(1699999940,4.84375),(1699999960,8.2578125),(1699999980,5.6796875),(1700000000,8.921875)]
 -- sf = 0.4, 0.6, 0.8, 1: the last step has samples, so the query fails.
 expects smoothing factor in the open interval (0, 1), got 1
 -- sf = 0.5, 1.5, 2.5: the windows of the last two steps have no samples, so it is not an error.
