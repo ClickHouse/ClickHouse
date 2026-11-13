@@ -131,7 +131,11 @@ struct JoinSettings
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
+    bool enable_robin_hood_hash_for_joins;
     bool join_runtime_filter_from_fixed_hash_table;
+    /// A deserialized plan without these names compares `String` keys exactly.
+    bool enable_packed_string_keys_in_hash_join;
+    UInt64 min_rows_for_packed_string_keys_in_hash_join;
 
     /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;

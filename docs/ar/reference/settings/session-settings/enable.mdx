@@ -32,10 +32,10 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "إعداد جديد. تمكين تفريغ بيانات الذاكرة إلى التخزين الخارجي بشكل تكيّفي."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "إعداد جديد. تمكين كتابة بيانات الذاكرة إلى التخزين الخارجي بشكل تكيّفي."}]}]} />
 
-يحفّز المعالج على تفريغ البيانات إلى التخزين الخارجي بشكل تكيّفي. يتوفر حاليًا دعم عمليات hash join القابلة للتفريغ، سواء
-`grace_hash` أو المسار التكيّفي `hash` / `parallel_hash`.
+يكتب بشكل تكيّفي معالجات التجميع والفرز و`DISTINCT` والربط بالتجزئة المؤهلة إلى التخزين الخارجي عند تعرّض الاستعلام لضغط الذاكرة.
+تشمل عمليات الربط بالتجزئة المدعومة `grace_hash` والمسار التكيّفي `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -88,6 +88,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 تمكين تحسين الاستعلام، حيث نحلل نتائج الدوال والاستعلامات الفرعية ونعيد كتابة الاستعلام إذا كانت تتضمن ثوابت
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد للتحكم في تفعيل التكامل التجريبي مع Elasticsearch (محرك الجدول `Elasticsearch` ودالة الجدول `elasticsearch`)."}]}]} />
+
+يُمكّن التكامل التجريبي مع Elasticsearch، أي محرك الجدول `Elasticsearch` ودالة الجدول `elasticsearch`.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -160,6 +170,23 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 تمرير عبارات WITH إلى استعلامات UNION وجميع الاستعلامات الفرعية
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد: يُنشر الاستعلام `GROUP BY key [ORDER BY key] LIMIT n` حدود كومة top-K إلى خطوة القراءة في `MergeTree`، التي تستخدمها لتصفية الصفوف وتخطي حبيبات البيانات. ويُعطَّل هذا الإعداد عند ضبط `compatibility` على إصدار أقدم من 26.10."}]}]} />
+
+بالنسبة إلى [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ar/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): عندما يكون أول مفتاح ترتيب في `GROUP BY` عمودًا يُقرأ من جدول `MergeTree`، ينشر التجميع حدود كومة top-K الخاصة به إلى خطوة القراءة بمجرد أن تضم الكومة عددًا من المفاتيح يساوي `LIMIT`. عندئذٍ تحذف خطوة القراءة الصفوف التي يقع مفتاحها خارج هذه الحدود قبل قراءة الأعمدة الأخرى (`PREWHERE`)، وتتخطى حبيبات البيانات الواقعة بأكملها خارجها باستخدام المفتاح الأساسي أو فهرس تخطٍّ من نوع `minmax` على ذلك العمود.
+
+ينطبق ذلك على `GROUP BY key ORDER BY key LIMIT n`، وكذلك على `GROUP BY key LIMIT n` من دون `ORDER BY`، إذ تُعدّ أي `n` مجموعات إجابةً صحيحة في هذه الحالة.
+
+لا يُطبَّق ذلك عند القراءة باستخدام `FINAL` أو النسخ المتماثلة المتوازية؛ لأن `FINAL` يجب أن يطّلع على جميع إصدارات الصف، ولأن الحدود لا تُنقل إلى عمليات القراءة على النسخ المتماثلة البعيدة.
+
+القيم الممكنة:
+
+* 0 — معطّل.
+* 1 — مفعّل.
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -217,6 +244,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "إعداد جديد للتحكم في ذاكرة التخزين المؤقت الخاصة بحلّ المعرّفات في محلل الاستعلامات"}]}]} />
 
 يُمكّن ذاكرة التخزين المؤقت لحلّ المعرّفات في محلل الاستعلامات. تعيد ذاكرة التخزين المؤقت استخدام عُقد الأسماء المستعارة التي جرى حلّها لمنع تضخّم AST عند الرجوع إلى الاسم المستعار نفسه عدة مرات. اضبط القيمة على false لتعطيل التخزين المؤقت إذا كان هناك اشتباه في نتائج غير صحيحة.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين دوال تشفير عناوين IP التجريبية."}]}]} />
+
+فعّل دوال تشفير عناوين IP التجريبية (`ipcryptEncrypt` و`ipcryptDecrypt` و`ipcryptPrefixEncrypt` و`ipcryptPrefixDecrypt`).
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -417,6 +454,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 إذا كانت القيمة true، فيمكن تحليل البيانات مباشرةً إلى الأعمدة ذات التسلسل المخصّص (مثل Sparse) وفقًا لتلميحات التسلسل المستمدة من الجدول.
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد لتمكين مرمّز الضغط التجريبي `PCO`."}]}]} />
+
+يفعّل مرمّز الضغط `PCO`.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -543,6 +590,19 @@ WHERE (_part, _part_offset) IN (
 أثناء بناء الخطة. هذا هو مفتاح التحكم الرئيسي لميزة
 الاستعلامات المتدفقة؛ وقد تُقيَّد إمكانات إضافية بإعداداتها الخاصة.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد لتمكين التصريح بالمرمِّزات للأعمدة الفرعية."}]}]} />
+
+يتيح التصريح بمرمّزات الضغط للأعمدة الفرعية لعمود ما، مثل عناصر `Tuple` أو المفاتيح والقيم في `Map`،
+وذلك عبر إدخالات `CODEC name (...)` في `CREATE TABLE`، وعبر `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+تعمل الجداول التي تتضمن هذه التصريحات مسبقًا بصرف النظر عن قيمة هذا الإعداد، ويمكن إزالة هذه التصريحات في أي وقت.
+لا يمكن لخادم بإصدار أقدم إرفاق جدول يتضمن مرمِّزات للأعمدة الفرعية.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -592,11 +652,11 @@ WHERE (_part, _part_offset) IN (
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتمكين القيمة `trino` للإعداد `dialect`، الذي يترجم بناء جملة Trino SQL ويطابق أسماء دوال Trino مع مكافئاتها في ClickHouse."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتمكين القيمة `trino` للإعداد `dialect`، الذي يترجم بناء جملة Trino SQL ويطابق أسماء دوال Trino مع مكافئاتها في ClickHouse."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "نُقلت اللهجة `trino` إلى المرحلة التجريبية."}]}]} />
 
 فعّل القيمة `trino` للإعداد `dialect`.
 
@@ -679,6 +739,16 @@ ClickHouse. يظل استعلام `SET` محللًا بصيغة SQL عادية،
 
 * 0 - معطّل
 * 1 - مفعّل
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد جديد للتحكم في إتاحة التكامل التجريبي مع XGBoost (تخطيط القاموس `XGBOOST` والدالة `predictXGBoost`)."}]}]} />
+
+فعّل التكامل التجريبي مع XGBoost، أي تخطيط القاموس `XGBOOST` والدالة `predictXGBoost`.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 
