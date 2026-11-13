@@ -111,3 +111,9 @@ float precision	1	1	1.234	1.234	{"a":1.234}	{"a":1.234}
 float type markers	Float64	Double	Double	Double	Double	{"f":1}	{"f":1}	1	1
 negative zero	-inf	-inf	{"a":[-0,0]}	{"a":[-0,0]}
 escaped dot vs literal %2e						value	value
+float32 promotion	1	1	1
+complex result types	[1,2]	[1,2]	[1,2]	[1,2]	{'b':1}	{'b':1}	([1])
+complex result types, non-constant key	a	[1,2]	{}
+complex result types, non-constant key	m	[]	{'x':1}
+typed JSON object	{"Key":42}	42	42	42	1
+typed Tuple object	42	42	1

@@ -304,3 +304,28 @@ SELECT 'escaped dot vs literal %2e',
     JSONExtractRawCaseInsensitive('{"%2e": {"x": 1}}'::JSON, '.'), JSONExtractRawCaseInsensitive('{"%2e": {"x": 1}}', '.'),
     JSONExtractStringCaseInsensitive('{"A.b": "value"}'::JSON, 'a.B'), JSONExtractStringCaseInsensitive('{"A.b": "value"}', 'a.B');
 SET json_type_escape_dots_in_keys = 0;
+
+-- A `Float32` value read through the JSON text (an index path) is the stored value promoted to `Float64`,
+-- the same as when it is read as a subcolumn, not the shortest decimal that round-trips to `Float32`.
+SELECT 'float32 promotion',
+    JSONExtractFloat('{"f": 1234567808}'::JSON(f Float32), 'f') = JSONExtractFloat('{"f": 1234567808}'::JSON(f Float32), 1),
+    JSONExtractFloat('{"f": 1234567808}'::JSON(f Float32), 1) = toFloat64(toFloat32(1234567808)),
+    JSONExtractFloat('{"a": [1.2]}'::JSON(a Array(Float32)), 'a', 1) = toFloat64(toFloat32(1.2));
+
+-- Result types that cannot be inside `Nullable` are produced by the parser.
+SELECT 'complex result types',
+    JSONExtract('{"a": [1, 2]}'::JSON, 'a', 'Array(Int64)'), JSONExtract('{"a": [1, 2]}', 'a', 'Array(Int64)'),
+    JSONExtractCaseInsensitive('{"A": [1, 2]}'::JSON, 'a', 'Array(Int64)'), JSONExtractCaseInsensitive('{"A": [1, 2]}', 'a', 'Array(Int64)'),
+    JSONExtract('{"a": {"b": 1}}'::JSON, 'a', 'Map(String, Int64)'), JSONExtractCaseInsensitive('{"A": {"b": 1}}'::JSON, 'a', 'Map(String, Int64)'),
+    JSONExtract('{"a": {"b": [1]}}'::JSON, 'a', 'Tuple(b Array(Int64))');
+SELECT 'complex result types, non-constant key', k, JSONExtract(j, k, 'Array(Int64)'), JSONExtractCaseInsensitive(j, k, 'Map(String, Int64)')
+FROM (SELECT '{"a": [1, 2], "M": {"x": 1}}'::JSON AS j, arrayJoin(['a', 'm']) AS k) ORDER BY k;
+
+-- A key inside a typed path that holds a whole object is found, with and without case sensitivity.
+SELECT 'typed JSON object',
+    JSONExtractRawCaseInsensitive(j, 'obj'), JSONExtractIntCaseInsensitive(j, 'obj', 'key'), JSONExtractIntCaseInsensitive(j, 1, 'key'),
+    JSONExtractInt(j, 'Obj', 'Key'), JSONHas(j, 'Obj', 'Key')
+FROM (SELECT '{"Obj": {"Key": 42}}'::JSON(Obj JSON) AS j);
+SELECT 'typed Tuple object',
+    JSONExtractIntCaseInsensitive(j, 'obj', 'key'), JSONExtractInt(j, 'Obj', 'Key'), JSONHas(j, 'Obj', 'Key')
+FROM (SELECT '{"Obj": {"Key": 42}}'::JSON(Obj Tuple(Key Int64)) AS j);
