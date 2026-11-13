@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: parallel replicas require a cluster that is not configured in the fast test.
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS test_max_execution_time_leaf SYNC;
 CREATE TABLE test_max_execution_time_leaf
 (

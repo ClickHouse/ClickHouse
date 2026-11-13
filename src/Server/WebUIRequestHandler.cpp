@@ -33,6 +33,10 @@ constexpr unsigned char resource_uplot_js[] =
 {
 #embed "../../programs/server/js/uplot.js"
 };
+constexpr unsigned char resource_uplot_css[] =
+{
+#embed "../../programs/server/js/uplot.min.css"
+};
 constexpr unsigned char resource_lz_string_js[] =
 {
 #embed "../../programs/server/js/lz-string.js"
@@ -60,6 +64,14 @@ constexpr unsigned char resource_viz_standalone_js[] =
 constexpr unsigned char resource_binary_html[] =
 {
 #embed "../../programs/server/binary.html"
+};
+constexpr unsigned char resource_leaflet_js[] =
+{
+#embed "../../programs/server/js/leaflet.js"
+};
+constexpr unsigned char resource_leaflet_css[] =
+{
+#embed "../../programs/server/js/leaflet.css"
 };
 constexpr unsigned char resource_merges_html[] =
 {
@@ -196,6 +208,18 @@ String serverAssetURL(const HTTPServerRequest & request, std::string_view name)
     return relativeServerRootURL(request) + "js/" + String(name) + routingQueryOfRequest(request);
 }
 
+/// Replace a link to an external JavaScript or CSS file on a CDN with the embedded copy served under `/js/`
+/// (`local_url`, made by `serverAssetURL`).
+/// This allows to open the HTML without running a server (then the CDN links in the source are used)
+/// and to host it on the server without loading third-party code into the ClickHouse HTTP origin.
+/// The CDN links carry subresource integrity hashes of the CDN files, but the embedded copies may differ
+/// from them (e.g. they have license banners prepended), so the pattern matches the URL up to its closing
+/// quote together with the `integrity` attribute that follows it, and both are replaced.
+static void replaceExternalAsset(std::string & html, const re2::RE2 & pattern, const String & local_url)
+{
+    RE2::Replace(&html, pattern, local_url + '"');
+}
+
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
                    std::unordered_map<String, String> http_response_headers_override = {})
 {
@@ -254,25 +278,29 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
 {
     std::string html(reinterpret_cast<const char *>(resource_dashboard_html), std::size(resource_dashboard_html));
 
-    /// Replace a link to external JavaScript file to embedded file.
-    /// This allows to open the HTML without running a server and to host it on server.
     /// Note: we can embed the JavaScript file inline to the HTML,
     /// but we don't do it to keep the "view-source" perfectly readable.
 
-    /// The links are relative to the page and carry its routing parameters, so that they keep the path prefix
-    /// and the backend selection of a reverse proxy.
-    static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
-    RE2::Replace(&html, uplot_url, serverAssetURL(request, "uplot.js"));
+    static const re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, uplot_url, serverAssetURL(request, "uplot.js"));
 
-    static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
-    RE2::Replace(&html, lz_string_url, serverAssetURL(request, "lz-string.js"));
+    static const re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, lz_string_url, serverAssetURL(request, "lz-string.js"));
 
     handle(request, response, html, http_response_headers_override);
 }
 
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(resource_binary_html), std::size(resource_binary_html)}, http_response_headers_override);
+    std::string html(reinterpret_cast<const char *>(resource_binary_html), std::size(resource_binary_html));
+
+    static const re2::RE2 leaflet_js_url = R"(https://[^\s"'`]+leaflet[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, leaflet_js_url, serverAssetURL(request, "leaflet.js"));
+
+    static const re2::RE2 leaflet_css_url = R"(https://[^\s"'`]+leaflet[^\s"'`]*\.css"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, leaflet_css_url, serverAssetURL(request, "leaflet.css"));
+
+    handle(request, response, html, http_response_headers_override);
 }
 
 void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -285,6 +313,9 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
     struct Resource { const char * path; const unsigned char * data; size_t size; const char * content_type; };
     const Resource resources[] = {
         {"/js/uplot.js", resource_uplot_js, std::size(resource_uplot_js), "application/javascript; charset=UTF-8"},
+        {"/js/uplot.min.css", resource_uplot_css, std::size(resource_uplot_css), "text/css; charset=UTF-8"},
+        {"/js/leaflet.js", resource_leaflet_js, std::size(resource_leaflet_js), "application/javascript; charset=UTF-8"},
+        {"/js/leaflet.css", resource_leaflet_css, std::size(resource_leaflet_css), "text/css; charset=UTF-8"},
         {"/js/lz-string.js", resource_lz_string_js, std::size(resource_lz_string_js), "application/javascript; charset=UTF-8"},
         {"/js/xterm.min.js", resource_xterm_js, std::size(resource_xterm_js), "application/javascript; charset=UTF-8"},
         {"/js/xterm.min.css", resource_xterm_css, std::size(resource_xterm_css), "text/css; charset=UTF-8"},
@@ -318,7 +349,15 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
 
 void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(request, response, {reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html)}, http_response_headers_override);
+    std::string html(reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html));
+
+    static const re2::RE2 uplot_js_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, uplot_js_url, serverAssetURL(request, "uplot.js"));
+
+    static const re2::RE2 uplot_css_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.css"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, uplot_css_url, serverAssetURL(request, "uplot.min.css"));
+
+    handle(request, response, html, http_response_headers_override);
 }
 
 void SchemaWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -342,16 +381,14 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     /// The original CDN links are kept in the source so the page also works when opened as a
     /// local file (file://) against a remote server, mirroring the `dashboard.html` handling.
 
-    /// The links are relative to the page and carry its routing parameters, so that they keep the path prefix
-    /// and the backend selection of a reverse proxy.
-    static re2::RE2 marked_url = R"(https://[^\s"'`]+marked[^\s"'`]*\.js)";
-    RE2::Replace(&html, marked_url, serverAssetURL(request, "marked.min.js"));
+    static const re2::RE2 marked_url = R"(https://[^\s"'`]+marked[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, marked_url, serverAssetURL(request, "marked.min.js"));
 
-    static re2::RE2 katex_js_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.js)";
-    RE2::Replace(&html, katex_js_url, serverAssetURL(request, "katex.min.js"));
+    static const re2::RE2 katex_js_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, katex_js_url, serverAssetURL(request, "katex.min.js"));
 
-    static re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css)";
-    RE2::Replace(&html, katex_css_url, serverAssetURL(request, "katex.min.css"));
+    static const re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css"(?:\s+integrity="[^"]*")?)";
+    replaceExternalAsset(html, katex_css_url, serverAssetURL(request, "katex.min.css"));
 
     handle(request, response, html, http_response_headers_override);
 }

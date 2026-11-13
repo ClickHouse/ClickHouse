@@ -202,7 +202,16 @@ This reads every log group whose name starts with the prefix, up to `limit`, inc
 </Tab>
 </Tabs>
 
-The exporter name `otlphttp` matches what the tab gives you. Recent collector releases call it `otlp_http` and keep `otlphttp` as an alias, so both work, and the collector logs `"otlphttp" alias is deprecated` once at startup. That warning is harmless. If you rename the exporter, rename it in the pipeline too. Keep the endpoint as the base URL: do not append `/v1/logs`, because the exporter adds the signal path itself. The file now holds your API key, so keep it out of version control and readable only by the user that runs Docker, for example with `chmod 600 otel-collector-config.yaml`.
+The exporter name `otlphttp` matches what the tab gives you. Recent collector releases call it `otlp_http` and keep `otlphttp` as an alias, so both work, and the collector logs `"otlphttp" alias is deprecated` once at startup. That warning is harmless. If you rename the exporter, rename it in the pipeline too. Keep the endpoint as the base URL: do not append `/v1/logs`, because the exporter adds the signal path itself.
+
+The file now holds your API key, so keep it out of version control. The collector container runs as UID/GID `10001:10001`. On Linux, give that group read access while keeping the file editable by its host owner:
+
+```shell
+sudo chgrp 10001 otel-collector-config.yaml
+chmod 640 otel-collector-config.yaml
+```
+
+This allows the container to read the bind-mounted configuration without making the API key world-readable.
 
 Settings to adjust:
 
