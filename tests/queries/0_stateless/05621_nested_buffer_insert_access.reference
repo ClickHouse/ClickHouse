@@ -17,6 +17,7 @@ destinationless rows:   ['win_low','win_ok']
 real column denied:     OK
 absent column denied:   OK
 partial denied, no leak: OK
+two-alias chain denied: OK
 victim after Part E:    ['from_ok','legit_b','original']
 ## Part F: a cross-identity discard does not leak the buffering user to the triggering user
 discard diagnostic hides the buffering user: OK

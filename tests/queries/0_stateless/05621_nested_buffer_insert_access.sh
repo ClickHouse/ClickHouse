@@ -95,6 +95,15 @@ echo -n "absent column denied:   "; denied run_low --query "INSERT INTO ${db}.b_
 part=$(run_low --query "INSERT INTO ${db}.b_probe_partial VALUES ('a', 'b')" 2>&1)
 echo -n "partial denied, no leak:"
 if echo "$part" | grep -q "ACCESS_DENIED" && ! echo "$part" | grep -qi "columns"; then echo " OK"; else echo " UNEXPECTED"; fi
+# A second alias hop must be authorized too, or it reopens the oracle. An alias cannot be created pointing at an
+# existing alias, but a chain forms via creation order: al_chain -> al_mid (not yet existing), then al_mid ->
+# victim. low has INSERT on the db (both aliases and the buffer) but not on victim.
+${CH} --multiquery <<EOF
+CREATE TABLE ${db}.al_chain ENGINE = Alias('${db}', 'al_mid');
+CREATE TABLE ${db}.al_mid ENGINE = Alias('${victim_db}', 'victim');
+EOF
+run_low --query "CREATE TABLE ${db}.b_probe_chain (absent_col String) ENGINE = Buffer(${db}, al_chain, 1, 1, 1, 1, 1, 1, 1)"
+echo -n "two-alias chain denied: "; denied run_low --query "INSERT INTO ${db}.b_probe_chain VALUES ('probe')"
 echo -n "victim after Part E:    "; victim
 
 echo "## Part F: a cross-identity discard does not leak the buffering user to the triggering user"
