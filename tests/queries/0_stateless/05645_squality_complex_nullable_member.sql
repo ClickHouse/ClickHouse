@@ -11,3 +11,18 @@ FROM values('a Array(UInt8), v Nullable(UInt8)', ([1], NULL), ([2], 7));
 
 SELECT m IN (map('a', 1), v), m NOT IN (map('a', 1), v)
 FROM values('m Map(String, UInt8), v Nullable(UInt8)', (map('a', 1), NULL), (map('b', 2), NULL));
+
+SELECT a IN (v), a NOT IN (v)
+FROM values('a Array(UInt8), v Nullable(String)',
+    ([1], NULL), ([2], NULL), ([1], '[1]'), ([2], '[1]'), ([2], '[2]'));
+
+SELECT a IN ([1], v), a NOT IN ([1], v)
+FROM values('a Array(UInt8), v Nullable(String)',
+    ([1], NULL), ([2], NULL), ([1], '[1]'), ([2], '[1]'), ([2], '[2]'));
+
+SELECT count() FROM values('a Array(UInt8), v Nullable(String)',
+    ([1], NULL), ([2], NULL), ([1], '[1]'), ([2], '[1]'), ([2], '[2]'))
+WHERE a IN (materialize(v));
+
+SELECT m IN (map('a', 1), v), m NOT IN (map('a', 1), v)
+FROM values('m Map(String, UInt8), v Nullable(String)', (map('a', 1), NULL), (map('b', 2), NULL));

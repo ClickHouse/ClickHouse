@@ -1373,6 +1373,23 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         }
         resolveFunction(match_result, scope);
 
+        /// `has` can compare `BFloat16` keys by representation, while scalar
+        /// floating equality rejects `NaN`. Use the scalar result for every RHS form.
+        if (removeNullable(removeLowCardinality(element_arg->getResultType()))->getTypeId() == TypeIndex::BFloat16)
+        {
+            auto as_float64 = std::make_shared<FunctionNode>("toFloat64");
+            as_float64->getArguments().getNodes().push_back(element_arg);
+            auto is_nan = std::make_shared<FunctionNode>("isNaN");
+            is_nan->getArguments().getNodes().push_back(std::move(as_float64));
+            auto non_null_is_nan = std::make_shared<FunctionNode>("ifNull");
+            non_null_is_nan->getArguments().getNodes() = {std::move(is_nan), std::make_shared<ConstantNode>(Field{0u})};
+            auto no_nan_match = std::make_shared<FunctionNode>("if");
+            no_nan_match->getArguments().getNodes() = {
+                std::move(non_null_is_nan), std::make_shared<ConstantNode>(Field{0u}), std::move(match_result)};
+            match_result = std::move(no_nan_match);
+            resolveFunction(match_result, scope);
+        }
+
         QueryTreeNodePtr no_match_result = std::make_shared<ConstantNode>(Field{0u});
         if (source_null_predicate)
         {
@@ -3397,19 +3414,35 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
                     auto source_null_predicate = makeInSourceNullPredicate(source_elements, in_rhs_has_explicit_null);
                     QueryTreeNodes matchable_elements = source_elements;
+                    QueryTreeNodes nullable_string_elements;
+                    const auto left_complex_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
                     if (use_standard_null_semantics)
                     {
                         std::erase_if(matchable_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
-                        const auto left_complex_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
                         if (isArray(left_complex_type) || isMap(left_complex_type))
                         {
-                            /// A scalar numeric value cannot equal an `Array` or `Map`, but its
+                            /// An incompatible scalar cannot equal an `Array` or `Map`, but its
                             /// nullable carrier can still contribute a source `NULL`.
-                            std::erase_if(matchable_elements, [](const auto & arg)
+                            std::erase_if(matchable_elements, [&](const auto & arg)
                             {
                                 const auto source_type = removeNullable(removeLowCardinality(arg->getResultType()));
-                                return canContainNull(*arg->getResultType()) && (isNumber(source_type) || isBool(source_type));
+                                return canContainNull(*arg->getResultType())
+                                    && (isNumber(source_type) || isBool(source_type)
+                                        || (isMap(left_complex_type) && isStringOrFixedString(source_type)));
                             });
+                            if (isArray(left_complex_type))
+                            {
+                                std::erase_if(matchable_elements, [&](const auto & arg)
+                                {
+                                    const auto source_type = removeNullable(removeLowCardinality(arg->getResultType()));
+                                    if (canContainNull(*arg->getResultType()) && isStringOrFixedString(source_type))
+                                    {
+                                        nullable_string_elements.push_back(arg);
+                                        return true;
+                                    }
+                                    return false;
+                                });
+                            }
                         }
                     }
 
@@ -3417,6 +3450,37 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// match a non-null left value; a null left value is handled from
                     /// the original source count below.
                     QueryTreeNodePtr array_arg = convertTupleToArray(matchable_elements, in_first_argument, scope, compare_nulls);
+                    for (const auto & source_string : nullable_string_elements)
+                    {
+                        /// `Array` cannot be wrapped in `Nullable`. Give a null
+                        /// string a parseable placeholder, then omit its candidate row.
+                        auto non_null_string = std::make_shared<FunctionNode>("ifNull");
+                        non_null_string->getArguments().getNodes() = {
+                            source_string,
+                            std::make_shared<ConstantNode>("[]", std::make_shared<DataTypeString>())};
+                        QueryTreeNodePtr string_value = std::move(non_null_string);
+                        resolveFunction(string_value, scope);
+                        auto cast_value = castNodeToType(string_value, left_complex_type, scope);
+                        auto singleton = std::make_shared<FunctionNode>("array");
+                        singleton->getArguments().getNodes().push_back(std::move(cast_value));
+                        QueryTreeNodePtr singleton_array = std::move(singleton);
+                        resolveFunction(singleton_array, scope);
+
+                        auto empty_array = std::make_shared<FunctionNode>("arraySlice");
+                        empty_array->getArguments().getNodes() = {
+                            singleton_array->clone(), std::make_shared<ConstantNode>(Field{1u}), std::make_shared<ConstantNode>(Field{0u})};
+                        auto is_null = std::make_shared<FunctionNode>("isNull");
+                        is_null->getArguments().getNodes().push_back(source_string);
+                        auto candidate_array = std::make_shared<FunctionNode>("if");
+                        candidate_array->getArguments().getNodes() = {std::move(is_null), std::move(empty_array), singleton_array};
+                        QueryTreeNodePtr optional_candidate = std::move(candidate_array);
+                        resolveFunction(optional_candidate, scope);
+
+                        auto concat = std::make_shared<FunctionNode>("arrayConcat");
+                        concat->getArguments().getNodes() = {std::move(array_arg), std::move(optional_candidate)};
+                        array_arg = std::move(concat);
+                        resolveFunction(array_arg, scope);
+                    }
                     return buildHasExpression(
                         node,
                         array_arg,
@@ -3456,7 +3520,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (use_standard_null_semantics
                         && (isArray(left_bare_type) || isMap(left_bare_type))
                         && canContainNull(*non_const_set_candidate->getResultType())
-                        && (isNumber(right_bare_type) || isBool(right_bare_type)))
+                        && (isNumber(right_bare_type) || isBool(right_bare_type)
+                            || (isMap(left_bare_type) && isStringOrFixedString(right_bare_type))))
                     {
                         auto source_is_null = std::make_shared<FunctionNode>("isNull");
                         source_is_null->getArguments().getNodes().push_back(fn_args[1]);
@@ -3470,6 +3535,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
                     bool right_argument_was_cast = false;
+                    if (use_standard_null_semantics
+                        && isArray(left_bare_type)
+                        && canContainNull(*non_const_set_candidate->getResultType())
+                        && isStringOrFixedString(right_bare_type))
+                    {
+                        /// Replace only the source `NULL` with a parseable array before
+                        /// casting; the original source still determines the SQL result.
+                        auto non_null_string = std::make_shared<FunctionNode>("ifNull");
+                        non_null_string->getArguments().getNodes() = {
+                            right_argument, std::make_shared<ConstantNode>("[]", std::make_shared<DataTypeString>())};
+                        right_argument = std::move(non_null_string);
+                        resolveFunction(right_argument, scope);
+                    }
                     if (!left_type->onlyNull() && !isTuple(removeNullable(left_type)))
                     {
                         const auto & right_type = non_const_set_candidate->getResultType();
