@@ -801,6 +801,12 @@ private:
 
     void visitDDL(ASTPtr & /* parent */, ASTSystemQuery & query, ASTPtr &) const
     {
+        /// The `tables` of `FLUSH LOGS` are names of system logs.
+        if (query.type == ASTSystemQuery::Type::FLUSH_ASYNC_INSERT_QUEUE && !only_replace_current_database_function)
+            for (auto & table : query.tables)
+                if (table.first.empty())
+                    table.first = database_name;
+
         if (!query.table || query.database || only_replace_current_database_function)
             return;
 

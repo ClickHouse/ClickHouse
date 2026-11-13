@@ -73,6 +73,55 @@ def test_default_database(test_cluster):
     )
 
 
+def test_flush_async_insert_queue_default_database(test_cluster):
+    instance = test_cluster.instances["ch3"]
+    test_cluster.ddl_check_query(
+        instance, "CREATE DATABASE IF NOT EXISTS test2 ON CLUSTER 'cluster'"
+    )
+    for database in ["default", "test2"]:
+        test_cluster.ddl_check_query(
+            instance,
+            f"CREATE TABLE IF NOT EXISTS {database}.t_flush ON CLUSTER 'cluster' (x Int32) ENGINE = MergeTree ORDER BY x",
+        )
+
+    async_insert = {
+        "async_insert": 1,
+        "wait_for_async_insert": 0,
+        "async_insert_use_adaptive_busy_timeout": 0,
+        "async_insert_busy_timeout_max_ms": 600000,
+    }
+    for node in test_cluster.instances.values():
+        for database in ["default", "test2"]:
+            node.query(
+                f"INSERT INTO {database}.t_flush VALUES (1)", settings=async_insert
+            )
+
+    # A bare table name refers to the default_database of each host.
+    test_cluster.ddl_check_query(
+        instance, "SYSTEM FLUSH ASYNC INSERT QUEUE ON CLUSTER cluster2 t_flush"
+    )
+    for name, database, other in [
+        ("ch1", "default", "test2"),
+        ("ch2", "test2", "default"),
+        ("ch3", "default", "test2"),
+        ("ch4", "test2", "default"),
+    ]:
+        node = test_cluster.instances[name]
+        assert node.query(f"SELECT count() FROM {database}.t_flush") == "1\n"
+        assert node.query(f"SELECT count() FROM {other}.t_flush") == "0\n"
+
+    for node in test_cluster.instances.values():
+        node.query("SYSTEM FLUSH ASYNC INSERT QUEUE default.t_flush, test2.t_flush")
+    for database in ["default", "test2"]:
+        test_cluster.ddl_check_query(
+            instance,
+            f"DROP TABLE IF EXISTS {database}.t_flush ON CLUSTER 'cluster' SYNC",
+        )
+    test_cluster.ddl_check_query(
+        instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'"
+    )
+
+
 def test_create_view(test_cluster):
     instance = test_cluster.instances["ch3"]
     test_cluster.ddl_check_query(
