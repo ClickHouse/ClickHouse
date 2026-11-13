@@ -137,9 +137,13 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     for (const auto & [filter_type, filter] : query.filters)
         checkRowPolicyFilterExpression(filter);
 
+    /// Must be done before replication: a DDL worker resolves a bare table name in its own current database.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
+        required_access.replaceEmptyDatabase(getContext()->getCurrentDatabase());
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(updated_query_ptr, getContext(), params);
@@ -148,8 +152,6 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     chassert(query.names->cluster.empty());
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)

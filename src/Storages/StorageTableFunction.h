@@ -104,6 +104,12 @@ public:
         return storage ? storage->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{};
     }
 
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->tryGetColumnSizes(query_context) : ColumnSizeByName{};
+    }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
         auto storage = nestedIfResolved();

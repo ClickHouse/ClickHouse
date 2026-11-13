@@ -20,7 +20,7 @@
 #include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 #include <Interpreters/Context.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <fmt/ranges.h>
@@ -138,7 +138,8 @@ UnityV2Catalog::UnityV2Catalog(
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
     , base_url_str(base_url_)
@@ -146,6 +147,7 @@ UnityV2Catalog::UnityV2Catalog(
     , log(getLogger("UnityV2Catalog(" + catalog_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
     maybeSetAuthHeader(catalog_credential_, auth_header_);
     if (auth_header)
@@ -506,12 +508,14 @@ bool UnityV2Catalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr new_snapshot) const
+    const String & base_catalog_metadata_location,
+    Poco::JSON::Object::Ptr new_snapshot,
+    Poco::JSON::Object::Ptr new_metadata) const
 {
     /// `false` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot);
+        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_snapshot, new_metadata);
     });
 }
 
@@ -519,12 +523,13 @@ bool UnityV2Catalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_schema, previous_schema_id);
     });
 }
 
@@ -657,6 +662,12 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
             full_table_name));
     }
 
+#if !USE_DELTA_KERNEL_RS
+    if (result.isDefaultReadableTable())
+        result.setTableIsNotReadable(fmt::format(
+            "Cannot read Delta Lake table `{}` because the server is built without delta-kernel-rs", full_table_name));
+#endif
+
     LOG_DEBUG(log, "Processing Delta table {} is default readable {}", full_table_name, result.isDefaultReadableTable());
 
     if (result.requiresSchema())
@@ -680,14 +691,14 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
                     if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                     {
                         String type_name = type_json_str.substr(1, type_json_str.size() - 2);
-                        auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                        auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                         data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                     }
                     else
                     {
                         Poco::JSON::Parser parser;
                         auto parsed_json_type = parser.parse(type_json_str);
-                        data_type = DB::DeltaLakeMetadata::getFieldType(
+                        data_type = DB::getDeltaLakeFieldType(
                             parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                     }
                 }
@@ -877,7 +888,8 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         /* oauth_server_use_request_body= */ false,
         /// Unity namespaces are single-level schemas. Only matters for namespace listing, which this catalog never does.
         /* flat_namespaces= */ true,
-        getContext());
+        getContext(),
+        snapshot_loading_mode);
 
     std::lock_guard lock(token_mutex);
     /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.

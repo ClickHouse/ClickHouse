@@ -62,6 +62,7 @@ public:
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
@@ -107,6 +108,8 @@ public:
     /// `View`, `ObjectStorageCluster`, etc.) at the top level.
     bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
+    const String & getSourceDatabaseNameOrRegexp() const { return database_name_or_regexp.source_database_name_or_regexp; }
+
     /// The database of the source tables, or nullopt if a regular expression selects the databases
     std::optional<String> getSourceDatabase() const
     {
@@ -123,8 +126,10 @@ public:
         size_t max_tables_to_look);
 
 private:
-    /// (Database, Table, Lock, TableName)
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    /// (Database, Table, Lock, TableName, Metadata). The metadata is the snapshot the column-level access check
+    /// resolved subcolumns against, so the read uses it too and both see the same schema. It is null when the check
+    /// did not need it, then the read takes the snapshot itself.
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
     struct DatabaseNameOrRegexp
@@ -168,6 +173,9 @@ private:
     StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
+    StoragePtr traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const;
+
+    template <typename F>
     void forEachTable(F && func) const;
 
     template <typename F>
@@ -184,7 +192,7 @@ private:
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context, SourceMetadata * source_metadata) const;
 
@@ -193,7 +201,7 @@ private:
     bool tableSupportsPrewhere() const;
 
     template <typename F>
-    std::optional<UInt64> totalRowsOrBytes(F && func) const;
+    std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
 
     friend class ReadFromMerge;
 };
@@ -204,7 +212,7 @@ public:
     static constexpr auto name = "ReadFromMerge";
     String getName() const override { return name; }
 
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
@@ -225,8 +233,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts `order_info_`: every reading step of every child plan has to be a `ReadFromMergeTree`
-    /// that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`) and is sorted like its table on the prefix.
+    /// Whether `requestReadingInOrder` accepts `order_info_`: no child plan runs distributed, and every reading step of every
+    /// child plan has to be a `ReadFromMergeTree` that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`)
+    /// and is sorted like its table on the prefix.
     /// With `allow_shorter_read_key`, a read whose sorting key is shorter than the prefix passes: it refuses the request itself.
     /// Creates the child plans.
     bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
@@ -400,6 +409,9 @@ private:
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
+
+    /// The metadata snapshot of a child table to read with. It may refresh the metadata of a data lake child, which can be slow.
+    StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
 
 }

@@ -22,16 +22,24 @@ Instale el paquete oficial ClickHouse agent skills antes de usar el asistente de
 npx skills add clickhouse/agent-skills
 ```
 
+Si ya tiene [`clickhousectl`](/es/concepts/features/interfaces/cli), también puede instalar las mismas habilidades en los agentes de programación que detecte:
+
+```bash
+clickhousectl skills --detected-only
+```
+
+Para dirigirse a un solo agente, pase `--agent` (por ejemplo, `--agent claude`). Añada `--global` para instalar en su directorio personal en lugar de en el proyecto actual.
+
 <AgentPrompt
   prompt="Usa la skill clickstack-otel-collector para conectar un collector de OpenTelemetry a mi servicio de Managed ClickStack."
   description="Su agente configurará por usted el ClickStack collector de OpenTelemetry. Funciona con Claude Code, Cursor, Codex y otros agentes de programación."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"Instale clickhousectl si no está presente y autentíquelo (le pedirá una API key de ClickHouse Cloud — péguela en el chat o ejecute usted mismo el comando de inicio de sesión).",
+"Instale clickhousectl si no está presente y compruebe que esté autenticado con una clave de API (el inicio de sesión mediante el navegador es de solo lectura y no puede crear el usuario de ingestión). Si no lo está, le pedirá que ejecute usted mismo clickhousectl cloud auth login --interactive en una terminal aparte, desde el mismo directorio del proyecto (la clave se guarda allí en .clickhouse/credentials.json). Nunca pegue el secreto de la clave de API en el chat.",
 "Pídale el ID o el nombre del servicio de ClickHouse Cloud de destino y, después, obtenga su endpoint HTTPS.",
 "Cree un usuario SQL `hyperdx_ingest` en el servicio (genera una contraseña segura o usa una que usted proporcione).",
 "Ejecute localmente en Docker el ClickStack collector de OpenTelemetry, apuntando a su servicio.",
-"Envíe una breve ráfaga de logs, traces y metrics sintéticos a través del collector para demostrar que el pipeline funciona.",
+"Envíe una breve ráfaga de logs, trazas y métricas sintéticos a través del collector para demostrar que la canalización funciona.",
 "Verifique que los datos hayan llegado a la base de datos `otel` y proporciónele la URL de la UI de ClickStack donde podrá verlos."
 ]}
 />
@@ -403,9 +411,7 @@ Elija la pestaña que corresponda a su situación:
   </Tab>
 </Tabs>
 
-<div id="next-steps">
-  ## Siguientes pasos: envía tus propios datos
-</div>
+## Siguientes pasos: envía tus propios datos {#next-steps}
 
 La ráfaga sintética anterior solo demuestra que la pipeline funciona. Para empezar a enviar telemetría real, instrumenta tus propios servicios con los [ClickStack SDKs](/es/clickstack/ingesting-data/sdks/index), que ofrecen instrumentación para Node.js, Python, Go, Java y otros lenguajes que exportan OTLP al endpoint del collector que acabas de verificar. Para ver un ejemplo práctico completo, sigue [Instrumentar una aplicación](/es/clickstack/managed-onboarding/instrument-application).
 
@@ -414,9 +420,7 @@ Para recopilar datos de la infraestructura en lugar del código de la aplicació
 * [Monitorización de Kubernetes](/es/clickstack/managed-onboarding/monitoring-kubernetes): recopila logs, métricas de infraestructura y eventos de Kubernetes desde un clúster.
 * [Monitorización de logs de AWS CloudWatch](/es/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): reenvía logs de CloudWatch mediante el receiver de CloudWatch de OpenTelemetry.
 
-<div id="further-reading">
-  ## Más información
-</div>
+## Más información {#further-reading}
 
 Esta guía cubre una sola instancia del collector en su forma más simple. La [referencia del collector de OpenTelemetry](/es/clickstack/ingesting-data/collector) describe qué hacer a continuación:
 

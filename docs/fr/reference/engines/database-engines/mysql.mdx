@@ -23,9 +23,7 @@ Vous ne pouvez pas exécuter les requêtes suivantes :
 * `CREATE TABLE`
 * `ALTER`
 
-<div id="creating-a-database">
-  ## Création d’une base de données
-</div>
+## Création d’une base de données {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -42,9 +40,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Réglages**
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 Active la compression zlib pour la connexion via le protocole MySQL. Lorsqu’elle est définie sur `1`, ClickHouse demande au serveur MySQL une compression au niveau du protocole.
 
@@ -58,9 +54,13 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+### `connection_auto_close` {#connection-auto-close}
+
+Permet de fermer automatiquement la connexion après l&#39;exécution de la requête, c&#39;est-à-dire de désactiver la réutilisation des connexions. Lorsque ce paramètre est défini à `0`, chaque table de la base de données conserve ses connexions dans son propre pool en vue de la requête suivante.
+
+Valeur par défaut : `1`.
+
+## TLS/SSL {#tls-ssl}
 
 Les identifiants d&#39;une connexion chiffrée à MySQL sont transmis sous forme de clés de [collection nommée](/fr/concepts/features/configuration/server-config/named-collections) (ou d&#39;arguments clé-valeur) :
 
@@ -76,9 +76,7 @@ Les mêmes identifiants peuvent également être fournis sous forme de chemins v
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## Prise en charge des types de données
-</div>
+## Prise en charge des types de données {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -107,9 +105,7 @@ La conversion des types spatiaux (à l’exception de `POINT`, qui est toujours 
 
 [Nullable](/fr/reference/data-types/nullable) est pris en charge. Une colonne spatiale est mappée à `String` (`Nullable(String)` si elle accepte les valeurs nulles) au lieu d’un type géométrique dans trois cas : elle est déclarée `GEOMETRYCOLLECTION` ; l’option `geometry` est désactivée et le type n’est pas `POINT` ; ou la colonne accepte les valeurs nulles et le type n’est pas `POINT`, car `Point` est le seul type géométrique qui peut être imbriqué dans `Nullable`. Dans les trois cas, la chaîne contient la valeur exactement telle que MySQL la renvoie : un préfixe SRID de 4 octets suivi du payload WKB. Supprimez donc ces 4 octets initiaux avant de la transmettre à un décodeur WKB.
 
-<div id="global-variables-support">
-  ## Prise en charge des variables globales
-</div>
+## Prise en charge des variables globales {#global-variables-support}
 
 Pour une meilleure compatibilité, vous pouvez référencer les variables globales dans le style MySQL, sous la forme `@@identifier`.
 
@@ -128,9 +124,7 @@ Exemple :
 SELECT @@version;
 ```
 
-<div id="examples-of-use">
-  ## Exemples d’utilisation
-</div>
+## Exemples d’utilisation {#examples-of-use}
 
 Table dans MySQL :
 
