@@ -25,7 +25,7 @@
 
 #include "config.h" // USE_JEMALLOC
 
-#if defined(_LIBCPP_HAS_THREAD_API_EXTERNAL)
+#if USE_SILK
 #include <StdMutexHooks.h>
 #endif
 
@@ -489,7 +489,7 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 
 #endif
 
-#if THREAD_FUZZER_WRAP_PTHREAD && defined(_LIBCPP_HAS_THREAD_API_EXTERNAL)
+#if THREAD_FUZZER_WRAP_PTHREAD && USE_SILK
 static void beforeStdMutexLock()
 {
     INJECTION_BEFORE(pthread_mutex_lock)
