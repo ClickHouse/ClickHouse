@@ -212,6 +212,15 @@
 1
 -- A bare backslash is a literal when a custom escape character is used
 1
+-- ESCAPE preserves negated bracket expressions
+^	1	1
+a	0	0
+b	1	1
+1	0	0
+1
+1
+1
+1
 -- ESCAPE is inert inside a bracket expression (POSIX/PostgreSQL)
 1
 1
