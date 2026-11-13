@@ -2207,6 +2207,65 @@ def test_delete_takes_the_version_a_random_access_read_saw(started_cluster):
     assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 200000
 
 
+def test_delete_takes_the_version_the_one_format_consumed(started_cluster):
+    """The `One` format does not read the object. The delete must still remove only the version
+    that was consumed, so a same-byte re-upload after the consumption stays the object."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"delete_one_format_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    data = b"1,2,3\n"
+    ingested = client.put_object(Bucket=bucket, Key=source_key, Body=data)["VersionId"]
+
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format="column1 UInt8",
+        file_format="One",
+        after_processing="delete",
+        bucket=bucket,
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst", format="column1 UInt8")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # The row is inserted; the same bytes are uploaded again before the delete.
+        reuploaded = client.put_object(Bucket=bucket, Key=source_key, Body=data)[
+            "VersionId"
+        ]
+        assert reuploaded != ingested
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+
+    # Only the consumed version is deleted; no delete marker hides the newer one.
+    wait_until(lambda: source_versions() == {reuploaded})
+    assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
+    assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1
+
+
 @pytest.mark.parametrize(
     "read_settings",
     [

@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
 #include <IO/IReadBufferMetadataProvider.h>
+#include <IO/EmptyReadBuffer.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -29,6 +30,9 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -1462,6 +1466,45 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 progress->processed_files -= 1;
                 continue;
             }
+
+#if USE_AWS_S3
+            /// A format that does not read the object (`One`) never learns the S3 version it consumed, so post-processing
+            /// would act on the whole key: a delete would hide, and a move would take, a same-byte upload that came later.
+            /// Claim the current version with a `HEAD` instead, as a zero-byte pinned read would.
+            if (object_storage->getType() == ObjectStorageType::S3
+                && afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
+                && dynamic_cast<const EmptyReadBuffer *>(reader.readBuffer()))
+            {
+                const auto * s3_storage_ptr = dynamic_cast<const S3ObjectStorage *>(object_storage.get());
+                if (!s3_storage_ptr)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Object storage of type S3 is not an `S3ObjectStorage`");
+                const auto & s3_storage = *s3_storage_ptr;
+                /// A version selected by the URL is immutable and is the one consumed. Its `ETag` differs from the listed
+                /// one, which describes the latest version.
+                const auto selected_version_id = s3_storage.getURI().version_id;
+                const auto current = s3_storage.tryGetObjectVersionMetadata(file_metadata->getPath(), selected_version_id, /*with_tags=*/false);
+                if (!current || (selected_version_id.empty() && current->etag != processed_files.back().etag))
+                {
+                    const auto message = fmt::format(
+                        "The object {} was rewritten or removed after it was listed (listed `ETag`: {}, current `ETag`: {})",
+                        file_metadata->getPath(), processed_files.back().etag, current ? current->etag : "none");
+                    LOG_DEBUG(log, "{}. Will reset the file", message);
+
+                    processed_files.back().state = FileState::ErrorOnRead;
+                    processed_files.back().exception_during_read = message;
+                    processed_files.back().exception_during_read_code = ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+
+                    if (mode == ObjectStorageQueueMode::ORDERED)
+                        return {};
+
+                    reader = {};
+                    progress->processed_files -= 1;
+                    continue;
+                }
+                processed_files.back().etag = current->etag;
+                processed_files.back().version_id = current->version_id;
+            }
+#endif
 
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
             /// them on demand here, once per file, only when _tags is requested. Must run after
