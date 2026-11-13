@@ -43,3 +43,5 @@ k4	2
 2
 --- tables of earlier versions have no caches and cannot set them ---
 2
+--- an external tags table has no cache, because it can lose rows the cache cannot see ---
+1
