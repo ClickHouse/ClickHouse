@@ -1281,6 +1281,12 @@ static bool isMapValueDefault(std::string_view value, const Block & header)
     return value.empty() || (isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos);
 }
 
+static bool hasLambda(const ActionsDAG::Node * node)
+{
+    return WhichDataType(node->result_type).isFunction()
+        || std::ranges::any_of(node->children, [](const auto * child) { return hasLambda(child); });
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & argument_node,
@@ -1975,7 +1981,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return rewrite_only();
 
         /// Direct read returns UInt8 and loses a NULL result, which `NOT` would turn into true.
-        const auto pattern_read_mode = affix_patterns_allowed ? direct_read_mode : TextIndexDirectReadMode::None;
+        /// Its row fallback cannot rebuild a lambda, so an expression with one is not read directly.
+        const auto pattern_read_mode = affix_patterns_allowed && !hasLambda(index_column_dag_node) ? direct_read_mode : TextIndexDirectReadMode::None;
 
         out.function = RPNElement::FUNCTION_LIKE;
         out.text_search_queries.emplace_back(

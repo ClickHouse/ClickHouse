@@ -4,6 +4,8 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -2369,24 +2371,63 @@ void normalizeColumnExpression(ASTPtr & ast)
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
 }
 
-/// Replaces the subexpressions that the index expression folded to constants with literals named like `KeyCondition`
-/// names the folded constants of a query, e.g. `concat(s, toString(1))` becomes `concat(s, '1')`.
+/// Returns the DAG of the body of a lambda node, or nullptr.
+const ActionsDAG * tryGetLambdaBodyDAG(const ActionsDAG::Node & node)
+{
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+        return &capture->getAcionsDAG();
+
+    const IColumn * column = node.column.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        column = &column_const->getDataColumn();
+    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+        if (const auto * expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+            return &expression->getAcionsDAG();
+    return nullptr;
+}
+
+/// Names folded constants like `KeyCondition` names a query's, e.g. `concat(s, toString(1))` becomes `concat(s, '1')`.
+/// Drops `materialize`, as `KeyCondition` does for a query.
 void foldConstantSubexpressions(ASTPtr & ast, const ActionsDAG & index_dag)
 {
-    const auto * function = ast->as<ASTFunction>();
+    auto * function = ast->as<ASTFunction>();
     if (function && function->name == "lambda")
         return;
+
+    if (function && function->name == "materialize" && function->arguments && function->arguments->children.size() == 1)
+    {
+        ASTPtr argument = function->arguments->children[0];
+        ast = argument;
+        foldConstantSubexpressions(ast, index_dag);
+        return;
+    }
 
     if (function)
     {
         const auto name = ast->getColumnName();
         for (const auto & node : index_dag.getNodes())
         {
-            if (node.result_name == name && node.column && isColumnConst(*node.column) && node.column->getDataType() != TypeIndex::Function)
+            if (node.result_name != name)
+                continue;
+
+            if (node.column && isColumnConst(*node.column) && node.column->getDataType() != TypeIndex::Function)
             {
                 ast = make_intrusive<ASTLiteral>((*node.column)[0]);
                 return;
             }
+
+            /// The body of a lambda argument is folded in the lambda's own DAG.
+            if (!function->arguments)
+                break;
+            auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size() && i < node.children.size(); ++i)
+            {
+                auto * lambda = arguments[i]->as<ASTFunction>();
+                const auto * body_dag = tryGetLambdaBodyDAG(*node.children[i]);
+                if (lambda && lambda->name == "lambda" && lambda->arguments && lambda->arguments->children.size() == 2 && body_dag)
+                    foldConstantSubexpressions(lambda->arguments->children[1], *body_dag);
+            }
+            break;
         }
     }
 

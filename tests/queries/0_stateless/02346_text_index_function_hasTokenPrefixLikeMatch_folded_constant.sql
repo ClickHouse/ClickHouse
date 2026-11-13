@@ -36,5 +36,34 @@ INSERT INTO tab_folded_constant SELECT number, 'env:prod-eu' FROM numbers(64);
 
 OPTIMIZE TABLE tab_folded_constant FINAL;
 SELECT 'not folded after merge', count() FROM tab_folded_constant;
+SELECT 'materialize hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, materialize('1')), 'env:prod') SETTINGS use_skip_indexes = 1;
+SELECT 'materialize hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(concat(tag, materialize('1')), 'env:prod') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;
+
+-- Constants are folded inside a lambda body too.
+CREATE TABLE tab_folded_constant (id UInt64, tags Array(String), INDEX idx(arrayMap(x -> concat(x, toString(1)), tags)) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, ['env:prod-eu'] FROM numbers(64);
+
+SELECT 'lambda hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, toString(1)), tags), 'env:prod') SETTINGS use_skip_indexes = 1;
+SELECT 'lambda hasTokenPrefix, no index', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> concat(x, toString(1)), tags), 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'lambda hasTokenLike', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, toString(1)), tags), 'env:prod%') SETTINGS use_skip_indexes = 1;
+SELECT 'lambda hasTokenLike, no index', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> concat(x, toString(1)), tags), 'env:prod%') SETTINGS use_skip_indexes = 0;
+SELECT 'lambda hasTokenMatch', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, toString(1)), tags), '^env:prod-eu1$') SETTINGS use_skip_indexes = 1;
+SELECT 'lambda hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> concat(x, toString(1)), tags), '^env:prod-eu1$') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_folded_constant;
+
+-- A lambda without captured columns is read through the index without the direct read rewrite.
+CREATE TABLE tab_folded_constant (id UInt64, tags Array(String), INDEX idx(arrayMap(x -> lower(x), tags)) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_folded_constant SELECT number, ['ENV:PROD-EU'] FROM numbers(64);
+
+SELECT 'lower lambda hasTokenPrefix', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> lower(x), tags), 'env:prod', 'array');
+SELECT 'lower lambda hasTokenPrefix, no direct read', count() FROM tab_folded_constant WHERE hasTokenPrefix(arrayMap(x -> lower(x), tags), 'env:prod', 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'lower lambda hasTokenLike', count() FROM tab_folded_constant WHERE hasTokenLike(arrayMap(x -> lower(x), tags), 'env:prod%');
+SELECT 'lower lambda hasTokenMatch', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> lower(x), tags), '^env:prod');
+SELECT 'lower lambda hasTokenMatch, no index', count() FROM tab_folded_constant WHERE hasTokenMatch(arrayMap(x -> lower(x), tags), '^env:prod') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_folded_constant;

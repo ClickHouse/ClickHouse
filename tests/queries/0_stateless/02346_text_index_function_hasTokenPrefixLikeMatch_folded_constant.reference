@@ -10,3 +10,16 @@ numeric hasTokenPrefix, array	64
 numeric hasAnyTokens	64
 numeric hasAnyTokens, no index	64
 not folded after merge	64
+materialize hasTokenPrefix	64
+materialize hasTokenPrefix, no index	64
+lambda hasTokenPrefix	64
+lambda hasTokenPrefix, no index	64
+lambda hasTokenLike	64
+lambda hasTokenLike, no index	64
+lambda hasTokenMatch	64
+lambda hasTokenMatch, no index	64
+lower lambda hasTokenPrefix	64
+lower lambda hasTokenPrefix, no direct read	64
+lower lambda hasTokenLike	64
+lower lambda hasTokenMatch	64
+lower lambda hasTokenMatch, no index	64
