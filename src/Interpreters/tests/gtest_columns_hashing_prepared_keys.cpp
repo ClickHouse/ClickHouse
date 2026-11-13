@@ -28,7 +28,7 @@ namespace
 using WholeBlockState = SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>>::State;
 /// The state DISTINCT in order builds per equal-range of the sorting prefix (`SetVariants.h` keys128).
 using PreparedState = ColumnsHashing::SubRangeState<WholeBlockState>;
-/// Three of them need 24 bytes, which leaves that class: they are packed per row, in the sub-range variant too.
+/// Three of them need 24 bytes, which leaves that class; the sub-range variant packs them per row.
 using UnpreparedState = ColumnsHashing::SubRangeState<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State>;
 
 static_assert(!std::is_same_v<PreparedState, WholeBlockState>);
@@ -358,17 +358,6 @@ TEST(ColumnsHashingPreparedKeys, SubRangeShorterThanTheThresholdIsNotBatched)
     }
 }
 
-/// The discriminator: without it the cases above could pass on a constant.
-TEST(ColumnsHashingPreparedKeys, WiderKeyIsNotBatched)
-{
-    const KeyColumns keys(3);
-
-    UnpreparedState state(keys.columns, keys.sizes, nullptr);
-
-    EXPECT_TRUE(state.prepared_keys.empty());
-    EXPECT_FALSE(state.covers_sub_range);
-}
-
 /// A nullable whole block is batch-packed, and the bitmap bit of a NULL row is in the array itself.
 TEST(ColumnsHashingPreparedKeys, NullableWholeBlockIsBatched)
 {
@@ -640,8 +629,6 @@ TEST(ColumnsHashingPreparedKeys, OtherWidthKeysArePackedPerBlock)
     checkPackedPerBlock<WholeBlockState64, UInt64>({"FixedString(3), UInt8, UInt32", {3, 1, 4}, false, num_long_rows});
     checkPackedPerBlock<WholeBlockState, UInt128>({"FixedString(5), UInt64", {5, 8}, false, num_long_rows});
     checkPackedPerBlock<NullableWholeBlockState128, UInt128>({"Nullable(FixedString(3)), UInt32", {3, 4}, true, num_long_rows});
-    checkPackedPerBlock<WholeBlockState256, UInt256>({"FixedString(20), UInt16", {20, 2}, false, num_long_rows});
-    checkPackedPerBlock<WholeBlockState256, UInt256>({"UInt256", {32}, false, num_long_rows});
 }
 
 TEST(ColumnsHashingPreparedKeys, OtherWidthKeysArePackedPerRunInClauseOrder)
@@ -662,7 +649,6 @@ TEST(ColumnsHashingPreparedKeys, OtherWidthKeysArePackedPerRowForAPartialReader)
     checkPackedPerRowForAPartialReader<WholeBlockState64, UInt64>({"FixedString(3), UInt8, UInt32", {3, 1, 4}, false, num_long_rows});
     checkPackedPerRowForAPartialReader<NullableWholeBlockState128, UInt128>(
         {"Nullable(FixedString(3)), UInt32", {3, 4}, true, num_long_rows});
-    checkPackedPerRowForAPartialReader<WholeBlockState256, UInt256>({"FixedString(20), UInt16", {20, 2}, false, num_long_rows});
 
     const NullableKeyColumns keys;
     Arena arena;
@@ -850,4 +836,68 @@ TEST(ColumnsHashingPreparedKeys, NullableSparseStateTypes)
 
     checkSparseState<NullableWholeBlockState256, UInt256>({"Nullable(FixedString(20)), UInt16", {20, 2}, true, num_long_rows}, false);
     checkSparseState<NullableWholeBlockState256, UInt256>({"Nullable(UInt32), UInt64, UInt64", {4, 8, 8}, true, num_long_rows}, true);
+}
+
+/// Non-nullable keys256 sets with and without a key narrower than 8 bytes or of another width are packed in chunks in
+/// the whole-block state, while the sub-range variant packs a set of widths 1, 2, 4, 8 and 16 bytes per row. Their
+/// clause order differs from longest first, so a key packed longest first would not equal the oracle.
+TEST(ColumnsHashingPreparedKeys, Keys256ArePackedInChunks)
+{
+    {
+        const KeyColumns keys(3);
+        UnpreparedState state(keys.columns, keys.sizes, nullptr);
+        EXPECT_TRUE(WholeBlockState256::useOrderedPreparedKeys(keys.sizes));
+        EXPECT_FALSE(UnpreparedState::useOrderedPreparedKeys(keys.sizes));
+        EXPECT_FALSE(UnpreparedState::usePreparedKeys(keys.sizes));
+        EXPECT_TRUE(state.prepared_keys.empty());
+        EXPECT_FALSE(state.covers_sub_range);
+    }
+
+    for (const auto & [widths, name] : std::vector<std::pair<std::vector<size_t>, std::string>>{
+             {{4, 8, 8}, "UInt32, UInt64, UInt64"},
+             {{2, 8, 1, 16}, "UInt16, UInt64, UInt8, UInt128"},
+             {{8, 8, 8}, "UInt64, UInt64, UInt64"},
+             {{20, 2}, "FixedString(20), UInt16"},
+             {{32}, "UInt256"}})
+    {
+        checkChunks<WholeBlockState256, UInt256>(widths, /*nullable=*/ false, name);
+        if (widths.size() > 1 && widths[0] != widths[1])
+        {
+            const FixedWidthKeyColumns keys(name, widths, /*nullable=*/ false, 100);
+            for (size_t row = 0; row < keys.rows; ++row)
+                ASSERT_NE(keys.expected<UInt256>(row), packFixedLongestFirst<UInt256>(row, widths.size(), keys.columns, keys.sizes));
+        }
+    }
+}
+
+/// A caller that skips rows gets chunks too.
+TEST(ColumnsHashingPreparedKeys, KeysArePackedInChunksWhenRowsAreSkipped)
+{
+    auto check = [&]<typename State, typename Key>(const FixedWidthKeyColumns & keys)
+    {
+        static_assert(State::packs_in_chunks);
+        SCOPED_TRACE(keys.name);
+        Arena arena;
+        State state(keys.columns, keys.sizes, nullptr, {.skips_rows = true});
+        for (size_t row = 0; row < keys.rows; row += 3)
+            ASSERT_EQ(state.getKeyHolder(row, arena), keys.template expected<Key>(row)) << "row " << row;
+        ASSERT_GT(state.prepared_keys.size(), 0);
+    };
+
+    check.template operator()<WholeBlockState256, UInt256>({"UInt64, UInt64, UInt64", {8, 8, 8}, /*nullable=*/ false, num_long_rows});
+    check.template operator()<WholeBlockState256, UInt256>({"FixedString(20), UInt16", {20, 2}, /*nullable=*/ false, num_long_rows});
+    check.template operator()<NullableWholeBlockState256, UInt256>(
+        {"Nullable(UInt32), UInt64, UInt64", {4, 8, 8}, /*nullable=*/ true, num_long_rows});
+}
+
+TEST(ColumnsHashingPreparedKeys, SparseStateTypes)
+{
+    using AggregationState256 = AggregationMethodKeysFixed<AggregatedDataWithKeys256>::State;
+    static_assert(std::is_same_v<ColumnsHashing::SparseState<WholeBlockState256>, ColumnsHashing::SubRangeState<WholeBlockState256>>);
+    static_assert(std::is_same_v<ColumnsHashing::SparseState<AggregationState256>, ColumnsHashing::SubRangeState<AggregationState256>>);
+    static_assert(std::is_same_v<ColumnsHashing::SparseState<WholeBlockState>, WholeBlockState>);
+    static_assert(std::is_same_v<ColumnsHashing::SparseState<WholeBlockState64>, WholeBlockState64>);
+
+    checkSparseState<WholeBlockState256, UInt256>({"UInt64, UInt64, UInt64", {8, 8, 8}, false, num_long_rows}, false);
+    checkSparseState<WholeBlockState256, UInt256>({"FixedString(20), UInt16", {20, 2}, false, num_long_rows}, false);
 }

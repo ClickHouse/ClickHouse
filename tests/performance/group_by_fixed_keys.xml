@@ -47,6 +47,13 @@
     <!-- nullable_keys256 -->
     <query>select a, b, cn from group_by_fk_chunks group by a, b, cn format Null</query>
     <query>select count() from (select distinct a, b, cn from group_by_fk_chunks)</query>
+    <!-- keys256: about 91K groups with a key narrower than 8 bytes, keys256_two_level with one, and 100100 groups -->
+    <query>WITH toUInt32(number % 9091) AS k1, toUInt64(number % 10) AS k2, toUInt64(number % 5) AS k3 SELECT k1, k2, k3, count() FROM numbers_mt(100000000) GROUP BY k1, k2, k3 FORMAT Null</query>
+    <query>select a, e, f from group_by_fk group by a, e, f format Null</query>
+    <query>select a, b, c from group_by_fk_chunks group by a, b, c format Null</query>
+    <query>select count() from (select distinct a, b, c from group_by_fk_chunks)</query>
+    <!-- keys256 IN over a Nullable key with 10% NULLs: the set skips the rows with NULLs -->
+    <query>select count() from group_by_fk_chunks where (a, b, cnn) in (select a, b, c from group_by_fk_chunks where a % 3 = 0 and q = 1 limit 50000)</query>
 
     <drop_query>drop table group_by_fk</drop_query>
     <drop_query>drop table group_by_fk_chunks</drop_query>

@@ -482,7 +482,7 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
     /// Keys wider than 16 bytes are packed one cache-sized chunk at a time; a block of narrower keys fits in the cache, so
     /// it is packed at once and read as a plain array.
-    static constexpr bool packs_in_chunks = sizeof(Key) > 16 && has_nullable_keys && !has_low_cardinality && !for_sub_range;
+    static constexpr bool packs_in_chunks = sizeof(Key) > 16 && !has_low_cardinality && !for_sub_range;
 
     static constexpr bool has_cheap_key_calculation = true;
     /// `packFixed` copies a few fixed-width fields into the key; no allocation.
@@ -549,8 +549,8 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    /// Nullable keys, and keys with a column of another width than 1, 2, 4, 8 or 16 bytes, are batch-packed in clause
-    /// order, the layout of the per-row `packFixed`, so `packedKeysOrder` stays empty for them.
+    /// Nullable keys, keys that are packed in chunks, and keys with a column of another width than 1, 2, 4, 8 or 16 bytes
+    /// are batch-packed in clause order, the layout of the per-row `packFixed`, so `packedKeysOrder` stays empty for them.
     static bool useOrderedPreparedKeys(const Sizes & key_sizes)
     {
         if constexpr (has_low_cardinality)
@@ -560,7 +560,7 @@ struct HashMethodKeysFixed
             size_t packed_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
             for (auto size : key_sizes)
                 packed_size += size;
-            return (has_nullable_keys || hasOtherKeyWidth(key_sizes)) && packed_size <= sizeof(Key);
+            return (has_nullable_keys || packs_in_chunks || hasOtherKeyWidth(key_sizes)) && packed_size <= sizeof(Key);
         }
     }
 
