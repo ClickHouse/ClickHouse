@@ -636,9 +636,10 @@ void StorageBuffer::read(
         buffers_select_query_options.view_source_in_subqueries
             = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
+        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
+                storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
