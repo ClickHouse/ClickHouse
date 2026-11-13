@@ -40,6 +40,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/tryGetLiteralAlternatives.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -1233,6 +1234,7 @@ void StorageTimeSeriesSelector::readImpl(
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    checkTimeSeriesSelectorSource(config.time_series_storage_id, context);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;

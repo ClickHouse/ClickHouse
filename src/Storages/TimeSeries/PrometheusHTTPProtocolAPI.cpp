@@ -272,9 +272,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
     StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
-    /// The shards must get the query text: a serialized plan would resolve the shard-local table on this server.
     if (distributed_target)
-        query_context->setSetting("serialize_query_plan", false);
+        applyPrometheusQueryDistributedSettings(*query_context, *distributed_target);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 

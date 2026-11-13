@@ -103,35 +103,75 @@ namespace
         bool value = false;
         return !(tryGetLiteralBool(ast.get(), value) && value);
     }
+
+    bool hasRowPolicy(const StorageID & storage_id, const ContextPtr & context)
+    {
+        auto row_policy_filter
+            = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    }
+
+    /// Matched by the names the planner matches on: the short name in the current database, or the full name.
+    bool hasRestrictiveAdditionalFilter(const StorageID & storage_id, const ContextPtr & context)
+    {
+        for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+        {
+            const auto & name_and_filter = filter_entry.safeGet<Tuple>();
+            const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
+            bool matches = (filtered_table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+                || filtered_table == storage_id.getFullNameNotQuoted();
+            if (matches && isRestrictiveFilter(name_and_filter.at(1).safeGet<String>(), context))
+                return true;
+        }
+        return false;
+    }
 }
 
 void checkPrometheusQueryDistributedRead(const StorageID & storage_id, const ContextPtr & context)
 {
     context->checkAccess(AccessType::SELECT, storage_id);
 
-    auto row_policy_filter
-        = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    if (hasRowPolicy(storage_id, context))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "A prometheus query is not supported on Distributed table {} while a row policy applies to it: "
             "the query reads the shard-local TimeSeries tables and the policy would not be applied",
             storage_id.getNameForLogs());
 
-    /// Matched by the names the planner matches on: the short name in the current database, or the full name.
-    for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
-    {
-        const auto & name_and_filter = filter_entry.safeGet<Tuple>();
-        const auto & filtered_table = name_and_filter.at(0).safeGet<String>();
-        bool matches = (filtered_table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
-            || filtered_table == storage_id.getFullNameNotQuoted();
-        if (matches && isRestrictiveFilter(name_and_filter.at(1).safeGet<String>(), context))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "A prometheus query is not supported on Distributed table {} with an additional_table_filters entry for it: "
-                "the query reads the shard-local TimeSeries tables and the filter would not be applied",
-                storage_id.getNameForLogs());
-    }
+    if (hasRestrictiveAdditionalFilter(storage_id, context))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "A prometheus query is not supported on Distributed table {} with an additional_table_filters entry for it: "
+            "the query reads the shard-local TimeSeries tables and the filter would not be applied",
+            storage_id.getNameForLogs());
+}
+
+void checkTimeSeriesSelectorSource(const StorageID & storage_id, const ContextPtr & context)
+{
+    if (hasRowPolicy(storage_id, context))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Selecting time series is not supported from TimeSeries table {} while a row policy applies to it: "
+            "the selector reads its inner tables and the policy would not be applied",
+            storage_id.getNameForLogs());
+
+    if (hasRestrictiveAdditionalFilter(storage_id, context))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Selecting time series is not supported from TimeSeries table {} with an additional_table_filters entry for it: "
+            "the selector reads its inner tables and the filter would not be applied",
+            storage_id.getNameForLogs());
+}
+
+void applyPrometheusQueryDistributedSettings(Context & query_context, const PrometheusQueryDistributedTarget & target)
+{
+    query_context.setSetting("serialize_query_plan", false);
+    if (!query_context.getSettingsRef().isChanged("skip_unavailable_shards"))
+        query_context.setSetting("skip_unavailable_shards", target.skip_unavailable_shards);
+    if (!query_context.getSettingsRef().isChanged("skip_unavailable_shards_mode"))
+        query_context.setSetting("skip_unavailable_shards_mode", target.skip_unavailable_shards_mode);
+}
+
 }
 
 }

@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
@@ -69,17 +68,10 @@ namespace
         cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
         cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
 
-        /// The table's declared settings go on the cluster() call, so the caller's own settings still override them.
-        auto cluster_settings = make_intrusive<ASTSetQuery>();
-        cluster_settings->is_standalone = false;
-        cluster_settings->changes.emplace_back("skip_unavailable_shards", context.distributed->skip_unavailable_shards);
-        cluster_settings->changes.emplace_back("skip_unavailable_shards_mode", context.distributed->skip_unavailable_shards_mode);
-
         cluster_builder.from_table_function = makeASTFunction(
             "cluster",
             make_intrusive<ASTLiteral>(context.distributed->cluster_name),
-            makeASTFunction("view", shard_builder.getSelectQuery()),
-            std::move(cluster_settings));
+            makeASTFunction("view", shard_builder.getSelectQuery()));
 
         /// SELECT timeSeriesTagsToGroup(tags) AS group, timestamp, value FROM view(<cluster query>)
         /// Groups are node-local: without the view() the whole query goes to the shards, which each restart their own counter.

@@ -9,6 +9,7 @@
 
 namespace DB
 {
+class Context;
 class IStorage;
 struct StorageInMemoryMetadata;
 
@@ -17,7 +18,7 @@ struct PrometheusQueryDistributedTarget
 {
     String cluster_name;
     StorageID remote_time_series_storage_id = StorageID::createEmpty();
-    /// The table's declared shard-skip settings, restated on the generated cluster() call.
+    /// The table's declared shard-skip settings, see applyPrometheusQueryDistributedSettings().
     bool skip_unavailable_shards = false;
     String skip_unavailable_shards_mode;
 };
@@ -33,5 +34,14 @@ UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetada
 /// The query reads the shard-local tables, not the Distributed table itself. So this checks the SELECT grant on it
 /// and refuses a row policy or an additional_table_filters entry on it, which would not be applied.
 void checkPrometheusQueryDistributedRead(const StorageID & storage_id, const ContextPtr & context);
+
+/// The selector reads the inner tables of a TimeSeries table directly, so a row policy or an additional_table_filters entry
+/// on that table would not be applied: refuses them.
+void checkTimeSeriesSelectorSource(const StorageID & storage_id, const ContextPtr & context);
+
+/// Prepares the context of the generated query of a Distributed target: the shards get the query text, not a serialized plan
+/// that would resolve the shard-local table here, and the table's shard-skip settings apply to the schema discovery
+/// of the shards too, unless the query sets them itself.
+void applyPrometheusQueryDistributedSettings(Context & query_context, const PrometheusQueryDistributedTarget & target);
 
 }
