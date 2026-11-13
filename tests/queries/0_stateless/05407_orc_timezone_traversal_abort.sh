@@ -8,7 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 # A malformed ORC timezone name used to reach an empty TZif file outside TZDIR and abort
-# inside libc++. Keep each attempt in a child clickhouse-local process and disable core dumps.
+# inside libc++. The time zones are now resolved only from the embedded time zone database,
+# so such a name must be rejected without touching the file system. Keep each attempt in a child clickhouse-local process and disable core dumps.
 ulimit -c 0
 
 WORK_DIR="${CLICKHOUSE_TMP}/orc_timezone_traversal_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -116,8 +117,8 @@ for label, result in (("writer", writer), ("reader", reader), ("reader file", re
     elif result.returncode == 0:
         print(f"{label}: malformed timezone unexpectedly succeeded")
         failed = True
-    elif b"Invalid time zone name" in result.stdout + result.stderr:
-        print(f"{label}: Invalid time zone name")
+    elif b"is not supported. Use a name from `system.time_zones`" in result.stdout + result.stderr:
+        print(f"{label}: time zone is rejected")
     else:
         diagnostic = (result.stderr + result.stdout).decode(errors="replace")
         first_line = next((line for line in diagnostic.splitlines() if line), "no diagnostic")

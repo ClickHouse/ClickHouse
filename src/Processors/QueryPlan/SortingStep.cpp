@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -378,16 +379,37 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
     }
 }
 
+static TopKThresholdCollectorPtr createThresholdCollector(
+    const TopKThresholdTrackerPtr & threshold_tracker, const Block & header, const SortDescription & sort_description, UInt64 limit)
+{
+    if (!threshold_tracker || !limit || limit > TopKThresholdCollector::max_limit)
+        return nullptr;
+
+    const auto & sort_column_description = sort_description.front();
+    const auto * sort_column = header.findByName(sort_column_description.column_name);
+    if (!sort_column || !TopKThresholdCollector::isSupportedType(*sort_column->type))
+        return nullptr;
+
+    /// Buffered chunks keep the source block's LowCardinality dictionaries, and a tighter threshold makes the sort buffer more of them.
+    for (const auto & column : header)
+        if (anyInTypeTree(*column.type, [](const IDataType & type) { return type.lowCardinality() || isDynamic(type) || isObject(type); }))
+            return nullptr;
+
+    return std::make_shared<TopKThresholdCollector>(threshold_tracker, sort_column_description, limit);
+}
+
 void SortingStep::finishSorting(
     QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
+    auto threshold_collector = createThresholdCollector(threshold_tracker, pipeline.getHeader(), result_sort_desc, limit_);
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
+            return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker, threshold_collector);
         });
 
     bool increase_sort_description_compile_attempts = true;
@@ -521,13 +543,15 @@ void SortingStep::fullSortStreams(
 
     if (!skip_partial_sort || limit_)
     {
+        auto threshold_collector = createThresholdCollector(threshold_tracker, pipeline.getHeader(), result_sort_desc, limit_);
+
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
                 if (stream_type != sorted_stream_type)
                     return nullptr;
 
-                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
+                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker, threshold_collector);
             });
 
         StreamLocalLimits limits;
@@ -570,8 +594,11 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
+    /// A fixed-shard-count scatter must keep one sorted stream per shard: the join above pairs the shards
+    /// of its two sides positionally, and the thread count is a per-side budget, not a shared contract.
     /// If there are several streams, then we merge them into one
-    const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
+    const bool merge_needed = scatter_partitions == 0 && pipeline.getNumStreams() > 1
+        && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
     if (merge_needed && !allConstantMergeCanStall(pipeline, result_sort_desc))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
@@ -868,11 +895,18 @@ QueryPlanStepPtr SortingStep::clone() const
     /// Reconstructing another type as Full would silently drop its ordered-input contract.
     if (type != Type::Full)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of SortingStep is implemented only for Full sorting");
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
+    /// The merge-join scattered sort carries extra state (`scatter_partitions`, the skip
+    /// flag) this reconstruction would drop.
+    if (!partition_by_description.empty() && (is_sorting_for_merge_join || scatter_partitions > 0 || skip_scatter_by_partition))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of a partitioned sorting with scatter state is not implemented for SortingStep");
 
-    auto cloned = std::make_unique<SortingStep>(
-        input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    std::unique_ptr<SortingStep> cloned;
+    if (partition_by_description.empty())
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    else
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, partition_by_description, limit, sort_settings);
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
     cloned->use_buffering = use_buffering;

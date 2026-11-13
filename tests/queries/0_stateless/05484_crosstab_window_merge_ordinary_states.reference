@@ -1,0 +1,9 @@
+-- each row: window layout equals ordinary layout
+60	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+-- whole partition: window merge, then the plain aggregate
+0	0.158611	0.158611
+1	0.158611	0.158611
+2	0.163199	0.163199
+0	0.158611	0.158611
+1	0.158611	0.158611
+2	0.163199	0.163199

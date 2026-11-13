@@ -37,7 +37,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.peers = true, .partition = true};
+        return WindowFunctionRequirements{.peers_end = true, .partition_end = true};
     }
 
     std::optional<WindowFrame> getDefaultFrame() const override
@@ -51,11 +51,12 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be '{}', '{}' given", getName(), wholePartitionRangeFrame().toString(), window.frame.toString());
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
             data.push_back(static_cast<Float64>(bounds.peers_end[i]) / static_cast<Float64>(bounds.partition_end[i]));
+        return bounds.row.back() + 1;
     }
 };
 

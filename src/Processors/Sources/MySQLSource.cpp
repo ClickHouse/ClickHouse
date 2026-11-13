@@ -1,4 +1,5 @@
 #include <Common/VectorWithMemoryTracking.h>
+#include <Formats/FormatSettings.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include "config.h"
 
