@@ -43,26 +43,69 @@ private:
     uint8_t empty_input_lg_k = 0;
     datasketches::target_hll_type empty_input_type = DEFAULT_HLL_TYPE;
 
-    datasketches::hll_sketch * getHLLUpdate()
+    /// Smallest lg_k among the non-empty input sketches (only meaningful when lg_k was not given
+    /// explicitly). An `hll_union` adapts downward to the input lg_k only for dense (`HLL` mode)
+    /// inputs: sparse (`LIST` / `SET` mode) inputs are streamed coupon by coupon into the union's
+    /// own sketch, which starts at `MAX_LG_K`. The result is therefore downsampled to this lg_k,
+    /// so that merging many small sketches does not inflate their precision (and size).
+    uint8_t min_input_lg_k = MAX_LG_K;
+
+    /// Invariant: at most one of `sk_update` and `sk_union` is non-null, so there is a single
+    /// authoritative state. Once a union exists, raw values are inserted into it directly.
+    template <typename... Args>
+    void updateWith(Args &&... args)
     {
-        if (!sk_update)
-            sk_update = std::make_unique<datasketches::hll_sketch>(datasketches::hll_sketch(lg_k, type));
-        return sk_update.get();
+        if (sk_union)
+            sk_union->update(std::forward<Args>(args)...);
+        else
+        {
+            if (!sk_update)
+                sk_update = std::make_unique<datasketches::hll_sketch>(datasketches::hll_sketch(lg_k, type));
+            sk_update->update(std::forward<Args>(args)...);
+        }
     }
 
     datasketches::hll_union * getHLLUnion()
     {
         if (!sk_union)
+        {
             sk_union = std::make_unique<datasketches::hll_union>(datasketches::hll_union(lg_k_explicit ? lg_k : MAX_LG_K));
+            if (sk_update)
+            {
+                noteInputLgK(*sk_update);
+                sk_union->update(*sk_update);
+                sk_update.reset();
+            }
+        }
         return sk_union.get();
+    }
+
+    void noteInputLgK(const datasketches::hll_sketch & sk)
+    {
+        if (!lg_k_explicit && !sk.is_empty())
+            min_input_lg_k = std::min(min_input_lg_k, sk.get_lg_config_k());
     }
 
     void adoptTypeFrom(const datasketches::hll_sketch & sk)
     {
         if (!type_explicit && !sk.is_empty())
             type = std::max(type, sk.get_target_type());
+        noteInputLgK(sk);
         if (sk.is_empty())
             noteEmptyInput(sk.get_lg_config_k(), sk.get_target_type());
+    }
+
+    /// Result of the union with the target type, downsampled to the smallest input lg_k
+    /// when lg_k was not given explicitly.
+    datasketches::hll_sketch getUnionResult(datasketches::target_hll_type result_type) const
+    {
+        if (!lg_k_explicit && sk_union->get_lg_config_k() > min_input_lg_k)
+        {
+            datasketches::hll_union downsampled(min_input_lg_k);
+            downsampled.update(sk_union->get_result(result_type));
+            return downsampled.get_result(result_type);
+        }
+        return sk_union->get_result(result_type);
     }
 
     void noteEmptyInput(uint8_t input_lg_k, datasketches::target_hll_type input_type)
@@ -93,7 +136,7 @@ private:
                 type_explicit ? type : std::max(type, empty_input_type));
             return empty.serialize_compact();
         }
-        return sk_union->get_result(type).serialize_compact();
+        return getUnionResult(type).serialize_compact();
     }
 
 public:
@@ -114,7 +157,7 @@ public:
         /// incompatible with native DataSketches string producers.
         if (value.empty())
             return;
-        getHLLUpdate()->update(value.data(), value.size());
+        updateWith(value.data(), value.size());
     }
 
     template <typename Value>
@@ -126,11 +169,11 @@ public:
         /// template instantiations that are never reached from interoperable sketches.
         if constexpr (std::is_same_v<Value, BFloat16>)
         {
-            getHLLUpdate()->update(static_cast<float>(value));
+            updateWith(static_cast<float>(value));
         }
         else if constexpr (std::is_floating_point_v<Value>)
         {
-            getHLLUpdate()->update(static_cast<double>(value));
+            updateWith(static_cast<double>(value));
         }
         else if constexpr (std::is_integral_v<Value> && sizeof(Value) <= sizeof(UInt64))
         {
@@ -140,26 +183,26 @@ public:
             /// sketches incompatible with native DataSketches producers for values above the
             /// signed range of the type.
             if constexpr (std::is_signed_v<Value>)
-                getHLLUpdate()->update(static_cast<Int64>(value));
+                updateWith(static_cast<Int64>(value));
             else if constexpr (sizeof(Value) == 1)
-                getHLLUpdate()->update(static_cast<uint8_t>(value));
+                updateWith(static_cast<uint8_t>(value));
             else if constexpr (sizeof(Value) == 2)
-                getHLLUpdate()->update(static_cast<uint16_t>(value));
+                updateWith(static_cast<uint16_t>(value));
             else if constexpr (sizeof(Value) == 4)
-                getHLLUpdate()->update(static_cast<uint32_t>(value));
+                updateWith(static_cast<uint32_t>(value));
             else
-                getHLLUpdate()->update(static_cast<uint64_t>(value));
+                updateWith(static_cast<uint64_t>(value));
         }
         else
         {
-            getHLLUpdate()->update(&value, sizeof(value));
+            updateWith(&value, sizeof(value));
         }
     }
 
     UInt64 size() const
     {
         if (sk_union)
-            return static_cast<UInt64>(sk_union->get_result().get_estimate());
+            return static_cast<UInt64>(getUnionResult(type).get_estimate());
         if (sk_update)
             return static_cast<UInt64>(sk_update->get_estimate());
         return 0;
@@ -209,6 +252,8 @@ public:
             type = std::max(type, rhs.type);
         if (rhs.has_empty_input)
             noteEmptyInput(rhs.empty_input_lg_k, rhs.empty_input_type);
+        if (!lg_k_explicit)
+            min_input_lg_k = std::min(min_input_lg_k, rhs.min_input_lg_k);
 
         /// Do not materialize a union when the other state holds no data. Otherwise a group
         /// consisting only of logically empty states would return a serialized empty sketch
@@ -219,14 +264,11 @@ public:
 
         datasketches::hll_union * u = getHLLUnion();
 
-        if (sk_update)
-        {
-            u->update(*sk_update);
-            sk_update.reset(nullptr);
-        }
-
         if (rhs.sk_update)
+        {
+            noteInputLgK(*rhs.sk_update);
             u->update(*rhs.sk_update);
+        }
         else if (rhs.sk_union)
             u->update(rhs.sk_union->get_result());
     }
