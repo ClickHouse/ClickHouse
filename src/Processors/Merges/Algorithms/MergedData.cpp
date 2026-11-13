@@ -40,7 +40,7 @@ bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
     return result;
 }
 
-/// An upper bound of how much inserting a row of `src` grows `dst` beyond `src.byteSizeAt(row)`, or nullopt.
+/// How much inserting a row of `src` grows `dst` beyond `src.byteSizeAt(row)` when the values keep their place, or nullopt.
 /// A merge fixes the dynamic structure of `dst`, so a row whose paths and variants are all in `dst` is copied as is,
 /// and `dst` only adds a default (a discriminator and an offset) to each dynamic path that `src` does not have.
 std::optional<size_t> extraBytesPerInsertedRow(const IColumn & dst, const IColumn & src)
@@ -89,19 +89,18 @@ std::optional<size_t> extraBytesPerInsertedRow(const IColumn & dst, const IColum
         if (dst_info.variant_names != src_info.variant_names && !src_dynamic->getSharedVariant().empty())
             return std::nullopt;
 
-        size_t extra = 0;
         for (size_t src_discr = 0; src_discr != src_info.variant_names.size(); ++src_discr)
         {
             auto it = dst_info.variant_name_to_discriminator.find(src_info.variant_names[src_discr]);
-            auto variant_extra = it == dst_info.variant_name_to_discriminator.end() ? std::nullopt
-                : extraBytesPerInsertedRow(
-                    dst_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(it->second),
-                    src_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(src_discr));
-            if (!variant_extra)
+            /// A row fills one variant, so a non-zero bound of one variant would be charged to the rows of the others.
+            if (it == dst_info.variant_name_to_discriminator.end()
+                || extraBytesPerInsertedRow(
+                       dst_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(it->second),
+                       src_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(src_discr))
+                    != 0uz)
                 return std::nullopt;
-            extra = std::max(extra, *variant_extra);
         }
-        return extra;
+        return 0;
     }
 
     const auto * dst_array = typeid_cast<const ColumnArray *>(&dst);

@@ -377,6 +377,49 @@ TEST(MergedDataHasEnoughRows, DynamicValuesMovedBetweenStoragesAreInsertedOneByO
     }
 }
 
+/// A row of a `Dynamic` column fills one variant, so a variant that grows by more than its `byteSizeAt` cannot be
+/// charged to every row: such rows are inserted one by one, and a source whose variants all keep their size batches.
+TEST(MergedDataHasEnoughRows, DynamicVariantsThatGrowDifferentlyAreInsertedOneByOne)
+{
+    constexpr UInt64 max_block_size_bytes = 1024;
+    const auto header = headerOf("Dynamic");
+    auto make_parts = [](bool second_part_has_all_paths)
+    {
+        std::vector<Field> second_part;
+        for (size_t row = 0; row != 400; ++row)
+        {
+            const auto value = Int64(row);
+            if (row % 2 == 0)
+                second_part.push_back(Field(value));
+            else if (second_part_has_all_paths)
+                second_part.push_back(Field(Object{{"a", Field(value)}, {"b", Field(value)}}));
+            else
+                second_part.push_back(Field(Object{{"a", Field(value)}}));
+        }
+        return makeParts(
+            {makeColumn("Dynamic", std::vector<Field>(4, Field(Object{{"a", Field(Int64(1))}, {"b", Field(Int64(2))}}))),
+             makeColumn("Dynamic", second_part)});
+    };
+
+    {
+        SCOPED_TRACE("the JSON variant lacks a path");
+        const auto parts = make_parts(false);
+        auto [growth, source_bytes] = growthAndSourceBytes(header, parts, 1);
+        ASSERT_EQ(growth, source_bytes + 200 * 9);
+        EXPECT_GT(rowByRowRows(header, parts, 1, max_block_size_bytes), 1u);
+        EXPECT_EQ(batchRows(header, parts, 1, max_block_size_bytes), 1u);
+    }
+
+    {
+        SCOPED_TRACE("the JSON variant has all paths");
+        const auto parts = make_parts(true);
+        const size_t row_by_row_rows = rowByRowRows(header, parts, 1, max_block_size_bytes);
+        EXPECT_GT(row_by_row_rows, 1u);
+        EXPECT_LT(row_by_row_rows, 400u);
+        EXPECT_EQ(batchRows(header, parts, 1, max_block_size_bytes), row_by_row_rows);
+    }
+}
+
 /// Repeated `LowCardinality` values far below the byte limit must be inserted as one batch,
 /// not row by row: per-row insertion is what the batch queue avoids.
 TEST(MergedDataHasEnoughRows, RepeatedLowCardinalityValuesKeepTheFullBatch)
