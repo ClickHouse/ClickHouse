@@ -679,6 +679,19 @@ def main():
         )
         res = results[-1].is_ok()
 
+        # The executables link jemalloc statically, and its license must ship with them
+        if res:
+            results.append(
+                Result.from_commands_run(
+                    name="Install jemalloc license",
+                    command=(
+                        f"install -D -m 644 /usr/share/doc/libjemalloc-dev/copyright"
+                        f" {STAGE2_INSTALL_DIR}/share/doc/jemalloc/copyright"
+                    ),
+                )
+            )
+            res = results[-1].is_ok()
+
         if res:
             output_path = f"{OUTPUT_DIR}/clang-pgo-bolt.tar.zst"
             results.append(
