@@ -8,6 +8,8 @@
 #include <Core/Settings.h>
 #include <Core/SettingsFieldsConversionHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ParserSQLClusterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -608,6 +610,11 @@ void SQLClusterFactory::reloadFromStorage()
                 cluster_name, Cluster::formatSourceIdForSystemTable(existing->getSourceId()));
             continue;
         }
+        if (isReplicatedDatabaseClusterName(cluster_name))
+        {
+            LOG_ERROR(log, "Not loading SQL cluster `{}`: a `Replicated` database owns the name", cluster_name);
+            continue;
+        }
 
         auto create_statement = create_query.formatWithSecretsOneLine();
         materialized.emplace_back(cluster_name, materializeCluster(create_query, context, std::move(create_statement)));
@@ -624,7 +631,7 @@ void SQLClusterFactory::reloadFromStorage()
         /// loaded SQL cluster with the same name is still there and must be removed. `CONFIG` clusters
         /// share that map and must survive (`removeSQLCluster` also refuses them).
         auto existing = context->tryGetCluster(cluster_name);
-        if (!existing || existing->getSourceId() == Cluster::SourceId::CONFIG)
+        if ((!existing && !isReplicatedDatabaseClusterName(cluster_name)) || (existing && existing->getSourceId() == Cluster::SourceId::CONFIG))
             continue;
 
         context->removeSQLCluster(cluster_name);
@@ -673,6 +680,12 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
 
         throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cluster `{}` already exists (cluster discovery)", query.cluster_name);
     }
+
+    /// A `Replicated` database owns its name even if it cannot build its cluster at the moment, so `tryGetCluster`
+    /// above returns nothing. `RENAME DATABASE` and `CREATE DATABASE` take this guard, so the check is not racy.
+    auto database_guard = DatabaseCatalog::instance().getDDLGuard(query.cluster_name, "", nullptr);
+    if (isReplicatedDatabaseClusterName(query.cluster_name))
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cluster `{}` already exists (`Replicated` database)", query.cluster_name);
 
     FailPointInjection::pauseFailPoint(FailPoints::sql_cluster_create_pause_after_namespace_check);
 
@@ -723,6 +736,9 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
     if (auto existing = context->tryGetCluster(query.cluster_name); existing && existing->getSourceId() != Cluster::SourceId::SQL)
         throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cannot alter SQL cluster `{}`: a cluster with the same name already exists (source: {})",
             query.cluster_name, Cluster::formatSourceIdForSystemTable(existing->getSourceId()));
+    if (isReplicatedDatabaseClusterName(query.cluster_name))
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cannot alter SQL cluster `{}`: a `Replicated` database owns the name",
+            query.cluster_name);
 
     ASTCreateSQLClusterQuery create_query;
     create_query.cluster_name = query.cluster_name;

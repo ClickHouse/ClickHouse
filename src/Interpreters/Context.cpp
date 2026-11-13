@@ -48,6 +48,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
@@ -8037,6 +8038,27 @@ bool Context::resolveWriteThroughDistributedCache() const
     return getSettingsRef()[Setting::force_write_through_distributed_cache].valueOr(getWriteThroughDistributedCache());
 }
 
+namespace
+{
+
+/// `sql_cluster` was found by a name that may contain macros, while a `Replicated` database is looked up by the literal
+/// name. Check the database by the canonical (expanded) name of the SQL cluster, so that `cluster('c_{replica}')` and
+/// `cluster('c_r1')` resolve to the same cluster. A `Replicated` database owns its name even if its cluster is
+/// unavailable (e.g. Keeper was unreachable at startup): never fall back to the SQL cluster in this case.
+ClusterPtr resolveSQLClusterAgainstReplicatedDatabase(ClusterPtr sql_cluster)
+{
+    if (!sql_cluster)
+        return nullptr;
+
+    const String & name = sql_cluster->getName();
+    if (isReplicatedDatabaseClusterName(name))
+        return tryGetReplicatedDatabaseCluster(name);
+
+    return sql_cluster;
+}
+
+}
+
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     if (auto res = tryGetCluster(cluster_name))
@@ -8081,8 +8103,8 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
     if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
         return res;
 
-    if (sql_cluster)
-        return sql_cluster;
+    if (auto res = resolveSQLClusterAgainstReplicatedDatabase(std::move(sql_cluster)))
+        return res;
 
     throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 }
@@ -8109,7 +8131,7 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
         res = tryGetReplicatedDatabaseCluster(cluster_name);
 
     if (res == nullptr)
-        res = std::move(sql_cluster);
+        res = resolveSQLClusterAgainstReplicatedDatabase(std::move(sql_cluster));
 
     return res;
 }
@@ -8390,6 +8412,28 @@ bool Context::trySetSQLCluster(const String & cluster_name, const std::shared_pt
     }
     notifyDDLWorkerAfterClustersChange();
     return true;
+}
+
+void Context::checkReplicatedDatabaseNameIsNotSQLCluster(const String & database_name) const
+{
+    /// `tryGetReplicatedDatabaseCluster` resolves both the database name and the name with the all-groups prefix.
+    /// Look the names up in the map directly: `Clusters::getCluster` would expand macros in the database name.
+    const std::array<String, 2> names{database_name, DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + database_name};
+
+    std::lock_guard lock(shared->clusters_mutex);
+    if (!shared->clusters)
+        return;
+
+    const auto clusters = shared->clusters->getContainer();
+    for (const auto & name : names)
+    {
+        auto it = clusters.find(name);
+        if (it != clusters.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+            throw Exception(
+                ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                "Cannot use name `{}` for a `Replicated` database: it would replace the topology of SQL cluster `{}`",
+                database_name, name);
+    }
 }
 
 bool Context::removeSQLCluster(const String & cluster_name)

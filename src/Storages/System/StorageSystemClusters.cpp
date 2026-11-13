@@ -285,11 +285,12 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
         if (!selected_names.contains(name))
             continue;
 
-        /// A SQL-managed cluster shadowed by a `Replicated` database cluster with the same name is not reachable, skip it.
+        /// A SQL-managed cluster shadowed by a cluster of another source with the same name is not reachable, skip it.
+        /// This includes a `Replicated` database which cannot build its cluster at the moment, as it still owns the name.
         if (cluster->getSourceId() == Cluster::SourceId::SQL)
         {
             auto resolved = context->tryGetCluster(name);
-            if (resolved && resolved->getSourceId() != Cluster::SourceId::SQL)
+            if (!resolved || resolved->getSourceId() != Cluster::SourceId::SQL)
                 continue;
         }
 

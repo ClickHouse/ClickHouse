@@ -317,4 +317,8 @@ bool isSecondaryDDLReplay(const ContextPtr & context);
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 
+/// Whether `cluster_name` belongs to a `Replicated` database, i.e. `tryGetReplicatedDatabaseCluster` would look it up
+/// in an existing database. True even if the database cannot build its cluster at the moment (e.g. Keeper is unavailable).
+bool isReplicatedDatabaseClusterName(const String & cluster_name);
+
 }

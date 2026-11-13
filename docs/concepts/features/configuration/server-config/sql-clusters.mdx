@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 SQL-managed clusters let you define cluster topologies with SQL instead of editing the server configuration file. They can be used anywhere config-defined clusters are used: [`Distributed`](/reference/engines/table-engines/special/distributed) tables, [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/reference/functions/table-functions/cluster) table functions, `ON CLUSTER` DDL, and other features that reference a cluster name.
 
-SQL-managed clusters share the same namespace as clusters defined in `<remote_servers>`. Both appear in [`system.clusters`](/reference/system-tables/clusters); SQL-managed clusters have `source = 'SQL'`. Cluster names must be unique across both sources: defining the same name twice fails with `CLUSTER_ALREADY_EXISTS`.
+SQL-managed clusters share the same namespace as clusters defined in `<remote_servers>`. Both appear in [`system.clusters`](/reference/system-tables/clusters); SQL-managed clusters have `source = 'SQL'`. Cluster names must be unique across both sources: defining the same name twice fails with `CLUSTER_ALREADY_EXISTS`. The names of cluster discovery clusters and of `Replicated` databases (which act as clusters) are reserved in the same way: `CREATE CLUSTER` fails for such a name, and creating, attaching or renaming a `Replicated` database to the name of an existing SQL-managed cluster fails with `CLUSTER_ALREADY_EXISTS` as well.
 
 ## Syntax overview {#syntax-overview}
 

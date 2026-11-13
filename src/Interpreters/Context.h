@@ -1963,6 +1963,10 @@ public:
     bool trySetSQLCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     /// Removes the cluster only if it is SQL-managed. Returns whether it was removed.
     bool removeSQLCluster(const String & cluster_name);
+    /// Throws `CLUSTER_ALREADY_EXISTS` if a `Replicated` database named `database_name` would take over the name of
+    /// a SQL-managed cluster. Lookups prefer the database cluster, so creating, attaching or renaming such a database
+    /// would replace the topology of the SQL cluster without the `SQL CLUSTER ADMIN` privilege.
+    void checkReplicatedDatabaseNameIsNotSQLCluster(const String & database_name) const;
     void reloadClusterConfig() const;
 
     bool isDistributedCacheServer() const;

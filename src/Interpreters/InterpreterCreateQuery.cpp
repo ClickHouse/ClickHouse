@@ -438,6 +438,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
+    /// Loading the databases at startup is internal: a database that already owns the name is kept.
+    if (create.storage->engine->name == "Replicated" && (!internal || is_restore_from_backup))
+        getContext()->checkReplicatedDatabaseNameIsNotSQLCluster(database_name);
+
     DatabasePtr database = DatabaseFactory::instance().get(
         create, metadata_path / "", getContext(), mode, internal, is_metadata_replay, is_restore_from_backup);
 

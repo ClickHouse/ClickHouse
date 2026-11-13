@@ -945,4 +945,16 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     return {};
 }
 
+bool isReplicatedDatabaseClusterName(const String & cluster_name)
+{
+    std::string_view name = cluster_name;
+    if (name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
+        name.remove_prefix(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
+
+    if (name.empty())
+        return false;
+
+    return dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(String(name)).get()) != nullptr;
+}
+
 }
