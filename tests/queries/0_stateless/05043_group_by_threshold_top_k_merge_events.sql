@@ -22,8 +22,8 @@ SET group_by_two_level_threshold_bytes = 1;
 -- randomization sets both external-group-by settings to 0 otherwise.
 SET max_bytes_before_external_group_by = 10737418240;
 SET max_bytes_ratio_before_external_group_by = 0;
--- The adaptive aggregator stands down for a single-stream scan anyway; pin it off so the shape
--- does not change if that rejection is ever lifted.
+-- The adaptive aggregator takes a single-stream scan too and would aggregate on its own path, so it
+-- is pinned off to keep the shapes on the ordinary path.
 SET enable_adaptive_aggregator = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
