@@ -401,7 +401,7 @@ export const PageWrapper = ({ children }) => {
         <FullWidthDivider style={{ margin: '40px 0 40px' }} />
         <div className="mt-10">
         <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Explore by use case</h2>
-        <div className="mt-6 grid border border-[#e5e7eb] bg-white dark:border-white/10 dark:bg-[#1c1c1c] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 xl:divide-x xl:divide-[#e5e7eb] dark:xl:divide-white/10">
+        <div className="ch-usecase-grid">
             <HeroCard
                 title="Real-time analytics"
                 galaxyEvent="docs.home.real-time-analytics"
@@ -409,7 +409,7 @@ export const PageWrapper = ({ children }) => {
                 href={localizeHref("/get-started/use-cases/real-time-analytics")}
                 square
                 icon={<img src="https://clickhouse.com/_next/static/immutable/media/realtime.3kgog9ob9hcgi.svg" alt="" className="ch-usecase-icon h-10 w-10" />}
-                extraClassName="!border-0 !bg-transparent !p-4 hover:!bg-gray-950/[0.05] dark:hover:!bg-white/5 [&>div:first-child]:!mb-1 [&>h3]:!text-base [&>h3]:!font-semibold [&>span]:!mt-3 [&>span]:!min-h-0 [&>span]:!text-base"
+                extraClassName="ch-usecase-card"
             />
             <HeroCard
                 title="Transactional apps"
@@ -418,7 +418,7 @@ export const PageWrapper = ({ children }) => {
                 href={localizeHref("/products/managed-postgres/overview")}
                 square
                 icon={<img src="https://clickhouse.com/_next/static/immutable/media/postgres.3x93yyrvuovvn.svg" alt="" className="ch-usecase-icon h-10 w-10" />}
-                extraClassName="!border-0 !bg-transparent !p-4 hover:!bg-gray-950/[0.05] dark:hover:!bg-white/5 [&>div:first-child]:!mb-1 [&>h3]:!text-base [&>h3]:!font-semibold [&>span]:!mt-3 [&>span]:!min-h-0 [&>span]:!text-base"
+                extraClassName="ch-usecase-card"
             />
             <HeroCard
                 title="Data warehousing"
@@ -427,7 +427,7 @@ export const PageWrapper = ({ children }) => {
                 href={localizeHref("/get-started/use-cases/data-warehousing")}
                 square
                 icon={<img src="https://clickhouse.com/_next/static/immutable/media/warehouse.1d6r5uje_xgw2.svg" alt="" className="ch-usecase-icon h-10 w-10" />}
-                extraClassName="!border-0 !bg-transparent !p-4 hover:!bg-gray-950/[0.05] dark:hover:!bg-white/5 [&>div:first-child]:!mb-1 [&>h3]:!text-base [&>h3]:!font-semibold [&>span]:!mt-3 [&>span]:!min-h-0 [&>span]:!text-base"
+                extraClassName="ch-usecase-card"
             />
             <HeroCard
                 title="Observability"
@@ -436,7 +436,7 @@ export const PageWrapper = ({ children }) => {
                 href={localizeHref("/clickstack/overview")}
                 square
                 icon={<img src="https://clickhouse.com/_next/static/immutable/media/observability.0zc0d1kv-yam5.svg" alt="" className="ch-usecase-icon ch-transparent h-10 w-10" />}
-                extraClassName="!border-0 !bg-transparent !p-4 hover:!bg-gray-950/[0.05] dark:hover:!bg-white/5 [&>div:first-child]:!mb-1 [&>h3]:!text-base [&>h3]:!font-semibold [&>span]:!mt-3 [&>span]:!min-h-0 [&>span]:!text-base"
+                extraClassName="ch-usecase-card"
             />
             <HeroCard
                 title="Security"
@@ -449,7 +449,7 @@ export const PageWrapper = ({ children }) => {
                     <span className="block mt-3 text-base leading-snug text-[#374151] dark:text-white">AI-powered detection and response</span>
                     <span className="block mt-3 text-xs text-gray-500 dark:text-neutral-300">Powered by RunReveal</span>
                 </>}
-                extraClassName="!flex !flex-col !border-0 !bg-transparent !p-4 hover:!bg-gray-950/[0.05] dark:hover:!bg-white/5 [&>div:first-child]:!mb-1 [&>h3]:!text-base [&>h3]:!font-semibold [&>span:last-child]:!mt-auto"
+                extraClassName="ch-usecase-card ch-usecase-partner"
             />
             <HeroCard
                 title="AI engineering"
@@ -462,7 +462,7 @@ export const PageWrapper = ({ children }) => {
                     <span className="block mt-3 text-base leading-snug text-[#374151] dark:text-white">Build, trace, and evaluate AI apps</span>
                     <span className="block mt-3 text-xs text-gray-500 dark:text-neutral-300">Powered by Langfuse</span>
                 </>}
-                extraClassName="!flex !flex-col !border-0 !bg-transparent !p-4 hover:!bg-gray-950/[0.05] dark:hover:!bg-white/5 [&>div:first-child]:!mb-1 [&>h3]:!text-base [&>h3]:!font-semibold [&>span:last-child]:!mt-auto"
+                extraClassName="ch-usecase-card ch-usecase-partner"
             />
         </div>
         </div>
