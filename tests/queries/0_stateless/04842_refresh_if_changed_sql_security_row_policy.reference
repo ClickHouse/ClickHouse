@@ -1,0 +1,3 @@
+row policy on the definer keeps refreshing: yes
+without the policy an unchanged source is skipped: yes
+changed source triggers a refresh: yes

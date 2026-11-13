@@ -1,0 +1,10 @@
+-- the hash is reported
+1
+-- a count-neutral replace changed the hash (A != B)
+1
+-- the restore changed the hash again (B != A_again)
+1
+-- loop-free: the round trip did NOT reproduce the earlier hash (A != A_again)
+1
+-- the data itself is unchanged across the round trip
+1	1

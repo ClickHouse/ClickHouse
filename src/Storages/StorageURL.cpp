@@ -2369,6 +2369,137 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     return buf->tryGetLastModificationTime();
 }
 
+std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
+{
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table: a DROP + CREATE can point at the same URL with the same strong `ETag` but a
+    /// different read-affecting configuration (format, format settings) and produce the same hash. The UUID
+    /// (folded into the hash below) is the per-incarnation identity that tells them apart, so without one
+    /// there is nothing to fold - fail closed, matching `MergeTree`/`Memory`/`Log`.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    const auto & settings = context->getSettingsRef();
+
+    /// The read path (`ReadFromURL::createIterator`) expands glob patterns
+    /// (`{a,b}`) and `|`-separated failover options into several concrete URLs
+    /// and reads those, while a failover table (`StorageURLWithFailover`) keeps
+    /// an empty `uri` and reads from `uri_options`. This probe only covers the
+    /// single, unexpanded `uri`. Probing the literal pattern string could miss
+    /// changes in the query-visible data: a server may return a stable strong
+    /// `ETag` for the literal `/{a,b}.csv` resource while `/a.csv` or `/b.csv`
+    /// change. We do not probe the exact URL set the read path uses, so we
+    /// cannot guarantee change detection here. Fail closed (return nullopt) so
+    /// the consistent query cache and `REFRESH ... IF CHANGED` never reuse stale
+    /// results for such tables.
+    if (uri.empty() || urlWithGlobs(uri))
+        return {};
+
+    /// Build the request exactly as the reader does (`StorageURLSource::getFirstAvailableURIAndReadBuffer`):
+    /// with URL encoding enabled, `http://host/test%2Fa.tsv` would be probed as `/test/a.tsv` while the
+    /// read requests `/test%2Fa.tsv`, and the two paths can be different resources.
+    const bool enable_url_encoding = settings[Setting::enable_url_encoding];
+    Poco::URI request_uri(uri, enable_url_encoding);
+    ReadWriteBufferFromHTTP::HTTPFileInfo file_info;
+    String resolved_uri;
+    try
+    {
+        /// Like the reader, refuse to send credentials from the URL that `http_forbid_headers` forbids.
+        /// Here it throws inside the `try`, so the probe is not sent and the hash fails closed.
+        Poco::Net::HTTPBasicCredentials credentials;
+        setCredentialsFromURL(credentials, request_uri, context->getHTTPHeaderFilter());
+
+        auto buf = BuilderRWBufferFromHTTP(request_uri)
+                       .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                       .withSettings(context->getReadSettings())
+                       .withTimeouts(getHTTPTimeouts(context))
+                       .withHostFilter(&context->getRemoteHostFilter())
+                       .withBufSize(settings[Setting::max_read_buffer_size])
+                       .withRedirects(settings[Setting::max_http_get_redirects])
+                       .withEnableUrlEncoding(enable_url_encoding)
+                       .withHeaders(headers)
+                       .create(credentials);
+
+        file_info = buf->getFileInfo();
+        /// `getFileInfo` follows redirects, and the validators below belong to the final resource.
+        resolved_uri = buf->getCurrentURI().toString();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not reach the server (or must not send its credentials), so we
+        /// conservatively assume the data may have changed.
+        return {};
+    }
+
+    /// A strong validator is required: size and modification time are weak (a server can rewrite
+    /// same-size content within the same second), so we only trust a non-weak `ETag`. Without it we
+    /// cannot guarantee detection of changes, so fail closed (return nullopt). A weak ETag (prefixed
+    /// with `W/`) is also insufficient.
+    if (file_info.etag.empty() || file_info.etag.starts_with("W/"))
+        return {};
+
+    SipHash hash;
+    /// Table identity distinguishes different incarnations of a same-named table (a DROP + CREATE in an
+    /// `Atomic` database gets a fresh UUID) that would otherwise share the same resource `ETag` and columns
+    /// under a different read-affecting configuration.
+    hash.update(getStorageID().uuid);
+    /// Loop-free metadata version: the column string below folds by value, so a metadata-only `ALTER` that
+    /// is reverted (e.g. an alias/default expression `A -> B -> A`) does not move it and the strong `ETag`
+    /// stays the same, yet the middle state B was query-visible. Folding the per-lifetime metadata version
+    /// keeps such a round trip from reproducing an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    hash.update(uri);
+    /// How the bytes of the resource are requested and decoded. A `DETACH` / `ATTACH` keeps the UUID and
+    /// can restart the metadata version, while the configuration is loaded anew (e.g. an
+    /// `ALTER NAMED COLLECTION` that changes `format` from `CSV` to `TSV`): the `ETag` stays the same,
+    /// but the rows read from it do not.
+    hash.update(format_name.size());
+    hash.update(format_name);
+    hash.update(static_cast<UInt64>(compression_method));
+    hash.update(http_method.size());
+    hash.update(http_method);
+    hash.update(headers.size());
+    for (const auto & header : headers)
+    {
+        hash.update(header.name.size());
+        hash.update(header.name);
+        hash.update(header.value.size());
+        hash.update(header.value);
+    }
+    /// The format settings captured by the table when it is loaded, or those of the reading context
+    /// otherwise. Without the hash of the settings they were derived from, they cannot be represented.
+    if (format_settings)
+    {
+        if (!format_settings->source_settings_hash)
+            return {};
+        hash.update(*format_settings->source_settings_hash);
+    }
+    else
+        hash.update(getFormatSettingsHash(settings));
+    /// Whether a declared column is read from the file or filled from the Hive partition in the path (and with
+    /// which type) is captured by the table when it is loaded (`use_hive_partitioning`), so a `DETACH` / `ATTACH`,
+    /// which keeps the UUID and can restart the metadata version, may change it while nothing else hashed here moves.
+    hash.update(hive_partition_columns_to_read_from_file_path.size());
+    for (const auto & column : hive_partition_columns_to_read_from_file_path)
+    {
+        hash.update(column.name.size());
+        hash.update(column.name);
+        const String type_name = column.type->getName();
+        hash.update(type_name.size());
+        hash.update(type_name);
+    }
+    /// A strong `ETag` identifies a representation of one resource only: different resources may share
+    /// it (RFC 9110, section 8.8.1). When `uri` redirects, switching the redirect target to another
+    /// resource with the same validators must still change the hash, so fold the final resource too.
+    hash.update(resolved_uri);
+    hash.update(file_info.etag);
+    /// Mix in size and modification time as well - they only strengthen the strong ETag.
+    hash.update(file_info.file_size.value_or(0));
+    hash.update(file_info.last_modified.value_or(0));
+    return hash.get128();
+}
+
 StorageURL::StorageURL(
     const String & uri_,
     const StorageID & table_id_,
@@ -3155,6 +3286,25 @@ public:
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
     {
         return nested->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    }
+
+    /// Forward the delegate's change-detection contract. `StorageProxy` does not forward
+    /// `getModificationHash`, so without this override the wrapper would fall back to the `IStorage`
+    /// default (nullopt) and a dispatched table (`URL('s3://...')`, `URL('az://...')`, ...) would opt out
+    /// of `system.tables.modification_hash` and the consistency features built on it
+    /// (`query_cache_use_only_when_data_was_not_changed`, `REFRESH ... IF CHANGED`) that the delegate
+    /// backends implement. Compute the hash on the delegate's own metadata snapshot: `alter` is forwarded
+    /// to the delegate, so the delegate's columns and per-lifetime metadata version (both folded into the
+    /// hash) track the table's current metadata, and the delegate was constructed with this table's
+    /// `StorageID`, so the identity folded into the hash and the consumed-object-set lookup key (see
+    /// `QueryConsumedObjectSets`) match the read path, which also goes through the delegate.
+    /// The delegate's metadata is refreshed first: a delegated object-storage backend resolves its
+    /// deferred Hive-partitioning sample path on first use, and `StorageProxy` does not forward
+    /// `updateExternalDynamicMetadataIfExists` either, so the hash taken before the first read would
+    /// otherwise differ from the one taken after it (see `getModificationHashWithRefreshedMetadata`).
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr context) const override
+    {
+        return getModificationHashWithRefreshedMetadata(nested, context);
     }
 
     /// Keep the persisted syntax as `URL(...)`, but materialize the `url_base`-resolved URL into the

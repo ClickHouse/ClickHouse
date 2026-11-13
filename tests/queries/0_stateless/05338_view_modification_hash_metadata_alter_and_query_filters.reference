@@ -1,0 +1,5 @@
+view has a hash: yes
+a comment keeps the hash: yes
+a filter for another table keeps the hash: yes
+a filter for the read table moves the hash: yes
+only the matching entries take part: yes

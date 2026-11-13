@@ -1,0 +1,6 @@
+filter different	2
+filter same	2
+reset different	2
+reset same	2
+SELECT \'filter same\'
+SELECT \'reset same\'

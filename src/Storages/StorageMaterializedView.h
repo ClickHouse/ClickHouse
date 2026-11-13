@@ -106,6 +106,8 @@ public:
     StoragePtr tryGetTargetTable() const;
     StorageID getTargetTableId() const;
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
+
     /// Throws if `table_id` is the source of an incremental refreshable view: the view's cursor would be applied to another table.
     /// With `is_drop_database`, views from the same database are ignored, because they are dropped first.
     static void checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & local_context, bool is_drop_database);
