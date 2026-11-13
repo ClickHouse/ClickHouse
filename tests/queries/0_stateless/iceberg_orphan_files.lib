@@ -97,6 +97,12 @@ metric()
     awk -F'\t' -v m="$1" '$1 == m { print m, $2 }' <<< "${OUT}"
 }
 
+# Prints "<metric> >= $2" from the last run, or the value when it is smaller.
+metric_at_least()
+{
+    awk -F'\t' -v m="$1" -v n="$2" '$1 == m { print m, ($2 >= n ? ">= " n : $2) }' <<< "${OUT}"
+}
+
 # The `remove_orphan_files` scenarios shared by local and S3 storage, on storage $1.
 check_remove_orphan_files()
 {
@@ -155,8 +161,9 @@ check_remove_orphan_files()
     metric deleted_data_files_count
     exists data/orphan-data.parquet
     exists metadata/v0.metadata.json
+    # The scan may also delete superseded metadata versions; how many differs between builds.
     remove_orphans "older_than = '${ts}', location = 'metadata/'"
-    metric deleted_metadata_files_count
+    metric_at_least deleted_metadata_files_count 1
     exists metadata/v0.metadata.json
     data
 

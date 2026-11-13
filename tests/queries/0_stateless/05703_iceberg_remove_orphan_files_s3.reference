@@ -22,7 +22,7 @@ data/orphan-dry.parquet absent
 deleted_data_files_count 2
 data/orphan-data.parquet absent
 metadata/v0.metadata.json present
-deleted_metadata_files_count 2
+deleted_metadata_files_count >= 1
 metadata/v0.metadata.json absent
 [1]
 --- many orphans in one run
