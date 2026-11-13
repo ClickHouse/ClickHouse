@@ -12,9 +12,9 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_paralle
 SET parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
 SET automatic_parallel_replicas_mode = 0, serialize_query_plan = 0, distributed_aggregation_memory_efficient = 0;
 SET query_plan_aggregation_bucket_top_k = 1, max_threads = 4, max_threads_min_free_memory_per_thread = 0;
--- The adaptive tables freeze at once, and neither a group limit, hash-table statistics nor spilling disarm the top-K
+-- The adaptive tables freeze at once, and neither hash-table statistics nor spilling disarm the top-K
 -- pruning.
-SET enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0, max_rows_to_group_by = 0;
+SET enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0;
 SET collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT arraySort(groupArray((k, c))) FROM (SELECT k, count() AS c FROM t_bucket_top_k_parallel_replicas GROUP BY k ORDER BY c DESC LIMIT 10);
