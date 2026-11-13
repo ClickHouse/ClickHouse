@@ -1473,6 +1473,10 @@ In CREATE TABLE statement allows specifying Variant type with similar variant ty
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
 )", 0, \
         {"24.3", true, false, "Forbid suspicious PRIMARY KEY/ORDER BY for MergeTree (i.e. SimpleAggregateFunction)"}) \
+    DECLARE(Bool, allow_reserved_column_names, false, R"(
+Allow a column of a `MergeTree`-family table to have the name of one of the table's virtual columns (for example `_part`, `_part_offset` or `_table`) in `CREATE TABLE`, `ATTACH TABLE` with a full definition, and `ALTER TABLE ... ADD COLUMN` and `RENAME COLUMN`. Such a column hides the virtual column. Tables that already have such a column are loaded regardless of this setting. Names of persistent virtual columns are always rejected.
+)", 0, \
+        {"26.11", true, false, "Reject columns named like a virtual column of a MergeTree table"}) \
     DECLARE(Bool, allow_suspicious_types_in_group_by, false, R"(
 Allows or restricts using [Variant](/reference/data-types/variant) and [Dynamic](/reference/data-types/dynamic) types in GROUP BY keys.
 )", 0, \
