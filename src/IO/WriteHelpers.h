@@ -1215,6 +1215,8 @@ inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf)
 inline void writeText(const IPv4 & x, WriteBuffer & buf) { writeIPv4Text(x, buf); }
 inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf); }
 
+[[noreturn]] void throwDecimalFractionalLengthOutOfBound(UInt32 scale, UInt32 fractional_length, size_t max_digits);
+
 template <typename T>
 void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
                             bool fixed_fractional_length, UInt32 fractional_length)
@@ -1254,8 +1256,10 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    chassert(scale <= max_digits);
-    chassert(fractional_length <= max_digits);
+    /// The digits are written into a buffer on the stack. The scale may come from deserialized data
+    /// (for example, a `DecimalField` decoded from binary), so check it in release builds as well.
+    if (unlikely(scale > max_digits || fractional_length > max_digits))
+        throwDecimalFractionalLengthOutOfBound(scale, fractional_length, max_digits);
     /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
