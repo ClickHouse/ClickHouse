@@ -333,7 +333,7 @@ GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
     {
         WriteBufferFromOwnString out;
         BaseSettingsHelpers::writeString("max_execution_time", out);
-        BaseSettingsHelpers::writeFlags(static_cast<BaseSettingsHelpers::Flags>(0), out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags{}, out);
         BaseSettingsHelpers::writeString(value, out);
         BaseSettingsHelpers::writeString("", out); /// end of settings
         return out.str();
