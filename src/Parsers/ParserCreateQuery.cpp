@@ -2909,14 +2909,14 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 ### ZXC {#zxc}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 `ZXC[(level)]` — asymmetric [`zxc` compression algorithm](https://github.com/hellobertrand/zxc) with configurable `level`. Possible levels: \[1, 7\]. Default level: 3.
 
 `ZXC` trades slow compression for very fast decompression, at a compression ratio between `LZ4` and `ZSTD`. It is a good fit for the compress-once, decompress-many pattern, and decompresses fastest on modern ARM cores. Higher levels mean better compression and slower compression, while decompression stays fast.
 
 <Note>
-This codec is experimental and requires `SET enable_zxc_codec = 1` to use.
+This codec is in beta and requires `SET enable_zxc_codec = 1` to use.
 </Note>
 
 ### GDeflate {#gdeflate}
