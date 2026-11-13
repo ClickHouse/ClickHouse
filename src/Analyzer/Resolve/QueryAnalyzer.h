@@ -374,10 +374,11 @@ private:
     /// Global resolve expression node to tree size
     std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
 
-    /// Global scalar subquery to scalar value map
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
+    /// Scalar results are cached per expression and the SETTINGS scope in which it was evaluated.
+    using ScalarSubqueryCache = std::unordered_map<String, std::unordered_map<QueryTreeNodePtrWithHash, Block>>;
+    ScalarSubqueryCache scalar_subquery_to_scalar_value_local;
+    ScalarSubqueryCache scalar_subquery_to_scalar_value_global;
+    ScalarSubqueryCache scalar_subquery_to_scalar_value_type_only;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 

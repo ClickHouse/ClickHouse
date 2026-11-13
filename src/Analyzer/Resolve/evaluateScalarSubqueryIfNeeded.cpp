@@ -31,6 +31,8 @@
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SipHash.h>
 
 namespace ProfileEvents
 {
@@ -80,6 +82,18 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
             return true;
 
     return false;
+}
+
+/// Scalar subqueries can be executed under different SETTINGS scopes in one query.
+String getScalarSubquerySettingsKey(const ContextPtr & context)
+{
+    SipHash hash;
+    for (const auto & change : context->getSettingsRef().changes())
+    {
+        hash.update(change.name);
+        applyVisitor(FieldVisitorHash(hash), change.value);
+    }
+    return DB::toString(hash.get128());
 }
 
 }
@@ -133,13 +147,15 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     node_without_alias->removeAlias();
 
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
-    auto str_hash = DB::toString(node_with_hash.hash);
+    const auto settings_key = getScalarSubquerySettingsKey(context);
+    const auto str_hash = DB::toString(node_with_hash.hash) + '/' + settings_key;
 
     bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
 
-    auto & scalars_cache = early_short_circuit_type_inference_in_process
+    auto & scalars_cache_by_settings = early_short_circuit_type_inference_in_process
         ? scalar_subquery_to_scalar_value_type_only
         : (can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local);
+    auto & scalars_cache = scalars_cache_by_settings[settings_key];
 
     if (scalars_cache.contains(node_with_hash))
     {
@@ -153,7 +169,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasComputedScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
-        scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
+        scalar_subquery_to_scalar_value_global[settings_key].emplace(node_with_hash, scalar_block);
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
     }
     else
@@ -453,7 +469,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
     auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze_subquery ? "_analyze" : "");
+    auto scalar_query_hash_string = str_hash + (only_analyze_subquery ? "_analyze" : "");
 
     if (mutable_context->hasQueryContext())
         mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
