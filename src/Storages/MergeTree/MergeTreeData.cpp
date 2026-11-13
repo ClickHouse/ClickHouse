@@ -12407,7 +12407,7 @@ void MergeTreeData::optimizeDryRun(
         merge_task->cancel();
         throw;
     }
-    auto new_part = merge_task->getFuture().get();
+    auto new_part = merge_task->takeResultPart();
 
     /// This commits a transcation on disk, but doesn't commit the data part.
     if (new_part->getDataPartStorage().hasActiveTransaction())

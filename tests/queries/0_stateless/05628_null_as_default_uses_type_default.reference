@@ -1,0 +1,15 @@
+JSONEachRow	a	m	(0,'a')
+JSONStringsEachRow	a
+CSV	a
+CSV at EOF	a
+TSV	a
+TSV at EOF	a
+TSVRaw	a
+TSKV	a
+CustomSeparated	a
+MySQLDump	a
+Values	(0,'a')
+BSONEachRow	a	['a']
+Nothing	Nothing	1
+1	a	b
+2	a	a
