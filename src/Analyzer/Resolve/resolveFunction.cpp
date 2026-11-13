@@ -1594,7 +1594,7 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
         const bool wide_integer = numeric_type_id == TypeIndex::Int128 || numeric_type_id == TypeIndex::UInt128
             || numeric_type_id == TypeIndex::Int256 || numeric_type_id == TypeIndex::UInt256;
 
-        if (!wide_integer)
+        auto build_cast_comparison = [&]() -> QueryTreeNodePtr
         {
             /// Convert floats to `Float64` first because `accurateCastOrNull` does
             /// not accept `BFloat16` directly. An out-of-range value becomes `NULL`.
@@ -1602,18 +1602,24 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                 ? buildResolvedFunction("toFloat64", {numeric_argument}, context) : numeric_argument;
             auto converted = buildResolvedFunction(
                 "accurateCastOrNull", {numeric_value, std::make_shared<ConstantNode>(decimal_type->getName())}, context);
-            result = buildResolvedFunction("equals", {decimal_argument, converted}, context);
+            QueryTreeNodePtr cast_result = buildResolvedFunction("equals", {decimal_argument, converted}, context);
             if (numeric_is_float)
             {
                 /// A rounded float-to-Decimal conversion cannot create a match.
                 auto decimal_as_float = buildResolvedFunction("toFloat64", {decimal_argument}, context);
                 auto float_matches = buildResolvedFunction("equals", {numeric_value, std::move(decimal_as_float)}, context);
-                result = buildResolvedFunction("and", {std::move(result), std::move(float_matches)}, context);
+                cast_result = buildResolvedFunction("and", {std::move(cast_result), std::move(float_matches)}, context);
             }
-        }
+            return cast_result;
+        };
+
+        const auto decimal_type_id = decimal_type->getTypeId();
+        if (!wide_integer && (decimal_type_id == TypeIndex::Decimal32 || decimal_type_id == TypeIndex::Decimal64))
+            result = build_cast_comparison();
         else
         {
-            /// `accurateCastOrNull` does not convert wide integers to `Decimal`.
+            /// Wide integers cannot use `accurateCastOrNull`. A floating-point
+            /// integer can also be rounded by conversion into a wide `Decimal`.
             /// Compare raw `Decimal` units after checking that the scale divides them.
             String reinterpret_name;
             String integer_cast_name;
@@ -1642,6 +1648,17 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
             result = buildResolvedFunction("equals", {std::move(decimal_integer), numeric_argument}, context);
             if (decimal_is_integral)
                 result = buildResolvedFunction("and", {std::move(decimal_is_integral), std::move(result)}, context);
+
+            if (numeric_is_float)
+            {
+                /// The raw-integer comparison handles integral floats exactly.
+                /// Fractional floats need the cast comparison to avoid matches
+                /// created by rounding the `Decimal` to `Float64`.
+                auto float_value = buildResolvedFunction("toFloat64", {numeric_argument}, context);
+                auto truncated = buildResolvedFunction("trunc", {float_value}, context);
+                auto is_integral = buildResolvedFunction("equals", {float_value, std::move(truncated)}, context);
+                result = buildResolvedFunction("if", {std::move(is_integral), std::move(result), build_cast_comparison()}, context);
+            }
         }
     }
     else if (compare_nulls)
