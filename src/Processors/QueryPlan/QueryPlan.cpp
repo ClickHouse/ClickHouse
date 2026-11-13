@@ -4,6 +4,7 @@
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <memory>
+#include <ranges>
 #include <stack>
 #include <unordered_map>
 
@@ -318,6 +319,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
             map.add("Node Hash", fmt::format("{}", it->second));
     }
 
+    if (options.exchange_ids)
+    {
+        if (auto it = options.exchange_ids->find(&step); it != options.exchange_ids->end())
+            map.add("Exchange Id", it->second);
+    }
+
     if (options.description)
     {
         const auto & description = step.getStepDescription();
@@ -369,6 +376,44 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
     if (options.projections)
         step.describeProjections(map);
+}
+
+JSONBuilder::ItemPtr QueryPlan::explainPlanSteps(const ExplainPlanOptions & options) const
+{
+    checkInitialized();
+
+    auto steps = std::make_unique<JSONBuilder::JSONArray>();
+
+    /// Pre-order: the inputs of a node and then its nested plans are pushed in reverse, so they are popped in order.
+    std::vector<const Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        auto child_plans = node->step->getChildPlans(/*for_explain=*/ true);
+
+        auto children = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto * child : node->children)
+            children->add(child->step->getUniqID());
+        for (const auto * child_plan : child_plans)
+        {
+            child_plan->checkInitialized();
+            children->add(child_plan->getRootNode()->step->getUniqID());
+        }
+
+        auto step_map = std::make_unique<JSONBuilder::JSONMap>();
+        explainStep(*node->step, *step_map, options);
+        step_map->add("Children", std::move(children));
+        steps->add(std::move(step_map));
+
+        for (const auto * child_plan : child_plans | std::views::reverse)
+            stack.push_back(child_plan->getRootNode());
+        for (const auto * child : node->children | std::views::reverse)
+            stack.push_back(child);
+    }
+
+    return steps;
 }
 
 JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const

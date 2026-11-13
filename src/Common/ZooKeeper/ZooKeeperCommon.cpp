@@ -12,6 +12,7 @@
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Interpreters/Context_fwd.h>
 #include <limits>
 

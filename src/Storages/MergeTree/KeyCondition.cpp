@@ -3550,6 +3550,27 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
     return result;
 }
 
+/// Whether the chain ends by rendering a native integer (or a `Date`) as text that the cast into `element_type` parses back to the
+/// same value, as an element renders. A custom serialization (`Bool`, also in `SimpleAggregateFunction`) breaks that.
+static bool isTextOfElementValues(const std::vector<FunctionBasePtr> & chain, const DataTypePtr & element_type)
+{
+    if (chain.empty())
+        return false;
+
+    const IFunctionBase & conversion = *chain.back();
+    const String name = conversion.getName();
+    if ((name != "toString" && name != "CAST" && name != "_CAST")
+        || (name == "toString" && conversion.getArgumentTypes().size() != 1)
+        || !isString(removeLowCardinalityAndNullable(conversion.getResultType())))
+        return false;
+
+    const DataTypePtr source_type = removeLowCardinalityAndNullable(getArgumentTypeOfMonotonicFunction(conversion));
+    if (source_type->getCustomSerialization() || element_type->getCustomSerialization())
+        return false;
+
+    return (isNativeInteger(source_type) && isNativeInteger(element_type)) || (isDate(source_type) && isDate(element_type));
+}
+
 bool KeyCondition::tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -3637,6 +3658,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// `JSON` accepts only objects, a `Variant` infers an alternative from the spelling (`CAST('42',
         /// 'Variant(Date)')` throws), and a `Dynamic` does so under `cast_string_to_dynamic_use_inference` -
         /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
+        /// A string the key chain computes as the text of an integer (or a `Date`) holds no other spelling, so such a set keeps the index.
         if (membership_compares_carriers)
         {
             const DataTypePtr predicate_column_type
@@ -3644,7 +3666,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             const DataTypePtr element_type = removeLowCardinalityAndNullable(set_element_type);
 
             if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
-                && !element_type->equals(*predicate_column_type))
+                && !element_type->equals(*predicate_column_type)
+                && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
         }
 
