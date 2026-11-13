@@ -27,6 +27,7 @@ URL_TABLE_HEADER = "nodump_url_table_header_6b1e4d8a2f9c3075"
 ELASTICSEARCH_API_KEY = "nodump_elasticsearch_api_key_3f7a1c9e5b2d8046"
 S3_PRESIGNED_URL_SIGNATURE = "nodump_s3_presigned_url_signature_7e3b9d1f5a2c4068"
 ARROWFLIGHT_PASSWORD = "nodump_arrowflight_password_2c8e4a6f1b9d3075"
+AVRO_SCHEMA_REGISTRY_PASSWORD = "nodump_avro_schema_registry_password_5b1d9e3f7a2c8064"
 SECRETS = [
     "nodump_interserver_password_4f1c2a9e7b3d5068",
     "nodump_cluster_password_8a2e6c4d1f0b9375",
@@ -49,6 +50,7 @@ SECRETS = [
     ELASTICSEARCH_API_KEY,
     S3_PRESIGNED_URL_SIGNATURE,
     ARROWFLIGHT_PASSWORD,
+    AVRO_SCHEMA_REGISTRY_PASSWORD,
 ]
 
 
@@ -141,6 +143,11 @@ def test_core_dump_has_no_secrets(started_cluster):
     _, bearer = client.authenticate_basic_token("arrowflight_user", ARROWFLIGHT_PASSWORD)
     client.close()
     arrowflight_token = bearer.decode().removeprefix("Bearer ")
+
+    node.query(
+        "SELECT * FROM format(AvroConfluent, 'x UInt64', '') FORMAT Null",
+        settings={"format_avro_schema_registry_url": f"http://user:{AVRO_SCHEMA_REGISTRY_PASSWORD}@localhost:1"},
+    )
 
     # Needed to force the configured disks to be actually created
     node.query("SELECT * FROM system.disks FORMAT Null")
