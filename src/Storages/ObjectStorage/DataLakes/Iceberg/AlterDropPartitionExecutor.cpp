@@ -251,8 +251,25 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = catalog
-            ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
+        std::optional<MetadataFileWithInfo> catalog_metadata_file;
+        if (catalog)
+        {
+            catalog_metadata_file = getLatestMetadataFileAndVersionWithCatalog(
+                object_storage,
+                catalog,
+                storage_id.getTableName(),
+                components.table_path,
+                data_lake_settings,
+                components.metadata_cache,
+                context,
+                log.get(),
+                components.table_uuid,
+                components.metadata_compression_method);
+            state.catalog_metadata_location = catalog_metadata_file->catalog_metadata_location;
+        }
+
+        auto [snapshot, table_state] = catalog_metadata_file
+            ? metadata.getRelevantState(context, *catalog_metadata_file)
             : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_metadata_pointer_overrides=*/true);
         if (!snapshot)
             return std::nullopt;
@@ -639,8 +656,12 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
     {
         auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, state.catalog_metadata_location, new_snapshot, state.metadata_object))
+        {
+            if (!catalog_writes_metadata_file)
+                removeRejectedMetadataFile(components.path_resolver, metadata_info, object_storage);
             return false;
+        }
     }
 
     return true;

@@ -842,7 +842,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 
 ## currentDatabase {#currentDatabase}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Renvoie le nom de la base de données courante.
 Utile dans les paramètres de moteur de table des requêtes `CREATE TABLE`, lorsque vous devez spécifier la base de données.
@@ -850,7 +850,7 @@ Utile dans les paramètres de moteur de table des requêtes `CREATE TABLE`, lors
 Voir aussi l’[instruction `SET`](/fr/reference/statements/use).
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -859,7 +859,7 @@ Voir aussi l’[instruction `SET`](/fr/reference/statements/use).
 currentDatabase()
 ```
 
-**Alias** : `current_database`, `DATABASE`, `SCHEMA`
+**Alias** : `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **Arguments**
 
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-Introduite dans : v26.6.0
+Introduite dans : v26.8.0
 
 Renvoie le nom du gestionnaire HTTP défini en SQL (créé avec `CREATE HANDLER`) qui a appelé la requête.
 Renvoie une chaîne vide si la requête n’a pas été appelée par un tel gestionnaire.
@@ -905,7 +905,7 @@ Renvoie une chaîne vide si la requête n’a pas été appelée par un tel gest
 Permet de personnaliser le comportement d’une requête selon le gestionnaire qui l’a appelée.
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-Introduite dans : v26.6.0
+Introduite dans : v26.8.0
 
 Renvoie l’URL de la requête HTTP (chemin et chaîne de requête) ayant déclenché la requête.
 Renvoie une chaîne vide si la requête n’a pas été effectuée via HTTP.
@@ -1017,7 +1017,7 @@ Utile, en combinaison avec les gestionnaires HTTP définis en SQL (`CREATE HANDL
 intégrés au chemin de la requête.
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+Introduit dans : v26.8.0
+
+Fonction de compatibilité PostgreSQL. Renvoie la valeur d&#39;un paramètre de configuration d&#39;exécution. Seul un petit ensemble de paramètres en lecture seule, utilisés pour l&#39;introspection par les clients, est émulé.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
+**Syntaxe**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**Arguments**
+
+* `name` — Le nom du paramètre de configuration. [`String`](/fr/reference/data-types/string)
+* `missing_ok` — Renvoie `NULL` au lieu de lever une exception si le paramètre est inconnu. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+La valeur du paramètre de configuration, ou `NULL` si le paramètre est inconnu et que `missing_ok` vaut true. [`Nullable(String)`](/fr/reference/data-types/nullable)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2348,6 +2385,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+Introduit dans : v26.8.0
+
+Fonction de compatibilité PostgreSQL. Renvoie le nom SQL d&#39;un type à partir de son OID. Pour `numeric`, le modificateur de type est décodé en precision et scale (`numeric(p, s)`) ; pour tous les autres types, le modificateur est ignoré. Un modificateur de type `NULL` signifie, comme `-1`, qu&#39;aucun modificateur n&#39;est connu, et un OID de type `NULL` renvoie `NULL`.
+
+**Syntaxe**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**Arguments**
+
+* `type_oid` — L&#39;OID du type. [`(U)Int*`](/fr/reference/data-types/int-uint)
+* `typemod` — Le modificateur de type, ou `NULL`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`NULL`](/fr/reference/syntax#null)
+
+**Valeur renvoyée**
+
+Le nom SQL du type. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4158,7 +4228,7 @@ SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
 
 ## minSampleSizeConversion {#minSampleSizeConversion}
 
-Introduit dans : v22.6.0
+Introduit dans : v22.6.0
 
 Calcule la taille d’échantillon minimale requise pour un test A/B comparant les conversions (proportions) entre deux échantillons.
 
@@ -4179,7 +4249,7 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **Valeur renvoyée**
 
-Renvoie un Tuple nommé avec 3 éléments : `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Il s’agit, respectivement, de la taille d’échantillon requise, de la borne inférieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline - mde`, et de la borne supérieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
+Renvoie un Tuple nommé avec 3 éléments : `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Il s’agit, respectivement, de la taille d’échantillon requise, de la borne inférieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline - mde`, et de la borne supérieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
 
 **Exemples**
 
@@ -4190,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -4997,11 +5067,12 @@ SELECT pg_get_userbyid(10)
 
 ## pgTableIsVisible {#pgTableIsVisible}
 
-Introduite dans : v26.8.0
+Introduite dans : v26.8.0
 
-Fonction de compatibilité avec le protocole filaire PostgreSQL, équivalente à `pg_catalog.pg_table_is_visible`.
+Fonction de compatibilité avec le protocole réseau PostgreSQL, équivalente à `pg_catalog.pg_table_is_visible`.
 Les clients PostgreSQL (par exemple, la commande `\d` dans `psql`) l’utilisent pour filtrer les tables visibles dans le chemin de recherche.
-Comme la vue `pg_class` émulée par ClickHouse n’expose que les tables de la base de données courante, qui sont toutes visibles, la fonction renvoie toujours `1`.
+En dehors d’une session utilisant le protocole réseau PostgreSQL, il n’existe aucun catalogue émulé permettant de résoudre l’oid : la fonction renvoie donc `1`.
+Au sein d’une telle session, le handler PostgreSQL réécrit l’appel sous la forme d’une vérification du chemin de recherche dans le catalogue émulé, car celui-ci expose chaque base de données en tant que schéma.
 
 **Syntaxe**
 
@@ -5009,7 +5080,7 @@ Comme la vue `pg_class` émulée par ClickHouse n’expose que les tables de la 
 pgTableIsVisible(oid)
 ```
 
-**Alias** : `pg_table_is_visible`
+**Alias** : `pg_table_is_visible`
 
 **Arguments**
 
@@ -6072,7 +6143,7 @@ ROLLBACK;
 
 ## transactionLatestSnapshot {#transactionLatestSnapshot}
 
-Introduit dans : v22.6.0
+Introduit dans : v22.6.0
 
 <ExperimentalBadge />
 
@@ -6081,7 +6152,7 @@ Introduit dans : v22.6.0
 Renvoie l’instantané le plus récent (Commit Sequence Number) d’une [transaction](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) disponible en lecture.
 
 <Note>
-  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
+  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
 
   ```xml
   <clickhouse>
@@ -6090,6 +6161,10 @@ Renvoie l’instantané le plus récent (Commit Sequence Number) d’une [transa
   ```
 
   Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -6124,7 +6199,7 @@ ROLLBACK;
 
 ## transactionOldestSnapshot {#transactionOldestSnapshot}
 
-Introduit dans : v22.6.0
+Introduit dans : v22.6.0
 
 <ExperimentalBadge />
 
@@ -6133,7 +6208,7 @@ Introduit dans : v22.6.0
 Renvoie l’instantané le plus ancien (Commit Sequence Number) visible pour une [transaction](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) en cours.
 
 <Note>
-  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
+  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
 
   ```xml
   <clickhouse>
@@ -6142,6 +6217,10 @@ Renvoie l’instantané le plus ancien (Commit Sequence Number) visible pour une
   ```
 
   Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**

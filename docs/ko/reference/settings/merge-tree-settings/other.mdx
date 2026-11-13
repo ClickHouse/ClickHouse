@@ -419,6 +419,31 @@ LZ4 또는 ZSTD의 압축률은 평균적으로 20-40% 향상됩니다.
 이 설정은 기본 키가 없거나 low-cardinality 기본 키를 가진 테이블, 즉 서로 다른 기본 키 값이 적은 테이블에서 가장 효과적입니다.
 예를 들어 `DateTime64` 타입의 timestamp 컬럼을 포함하는 high-cardinality 기본 키는 이 설정의 효과를 보기 어렵습니다.
 
+## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "정렬 키가 없는 일반 MergeTree 계열 테이블에 대해 행 순서 최적화를 자동으로 활성화하는 새로운 설정입니다."}]}]} />
+
+정렬 키가 비어 있는 테이블, 즉 `ORDER BY ()` 또는 `ORDER BY tuple()`로
+선언된 테이블에서 삽입 시 행 순서 최적화(`optimize_row_order` 참조)를
+자동으로 적용할지 여부를 제어합니다.
+
+기본값은 비활성화입니다. 삽입 순서 및 삽입 처리량을 유지하는 것보다
+LZ4 또는 ZSTD로 새로 삽입된 파트의 압축률을 높이는 것이 더 중요한 테이블에서 활성화하십시오.
+
+`optimize_row_order`와 마찬가지로, 삽입 시 새 데이터의 행 순서를 분석하고
+최적화하는 데 추가 CPU 비용이 발생합니다. 압축보다 행의 원래 삽입 순서를
+유지하거나 삽입 처리량을 극대화하는 것이 더 중요하다면 이 설정을 비활성화하십시오.
+
+`optimize_row_order = 0`을 명시적으로 설정하면 해당 값이 우선 적용됩니다. 이러한 테이블에는
+이 설정과 관계없이 행 순서 최적화가 적용되지 않습니다.
+
+`optimize_row_order`와 마찬가지로, 이 최적화는 `ReplicatedMergeTree`를 포함한
+일반 `MergeTree` 계열 테이블에만 적용됩니다. `ReplacingMergeTree`,
+`CollapsingMergeTree`, `AggregatingMergeTree` 등 이 계열의 특수 엔진에는
+행 순서 최적화가 적용되지 않으며, 삽입된 행의 순서가 그대로 유지됩니다.
+
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />

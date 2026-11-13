@@ -72,6 +72,9 @@
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).", ValueType::Bytes) \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).", ValueType::Number) \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).", ValueType::Bytes) \
+    M(CompressedWriteBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) written by `CompressedWriteBuffer` (files, network, temporary data).", ValueType::Number) \
+    M(CompressedWriteBufferBytes, "Number of uncompressed bytes (the number of bytes before compression) passed to compression codecs by `CompressedWriteBuffer`.", ValueType::Bytes) \
+    M(CompressedWriteBufferCompressMicroseconds, "Total time spent inside compression codecs in `CompressedWriteBuffer`.", ValueType::Microseconds) \
     M(CompressedReadBufferChecksumDoesntMatch, "Number of times the compressed block checksum did not match.", ValueType::Number) \
     M(CompressedReadBufferChecksumDoesntMatchSingleBitMismatch, "Number of times a compressed block checksum mismatch was caused by a single-bit difference.", ValueType::Number) \
     M(CompressedReadBufferChecksumDoesntMatchMicroseconds, "Total time spent detecting bit-flips due to compressed block checksum mismatches.", ValueType::Microseconds) \
@@ -594,6 +597,9 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
+    M(RowsSkippedByPrewhereReaders, "Number of rows rejected by PREWHERE: rows whose PREWHERE condition evaluated to false. This is a logical filter count and does not imply the main reader avoided reading these rows.", ValueType::Number) \
+    M(GranulesReadByPrewhereReaders, "Number of granules read by the prewhere readers (the granules on which PREWHERE was evaluated). Each granule is counted once even when it is split across several read blocks.", ValueType::Number) \
+    M(GranulesSkippedByPrewhereReaders, "Number of granules fully rejected by PREWHERE: every row of the granule was filtered out. A granule with at least one surviving row is not counted. Each granule is counted once even when it is split across several read blocks. This is a logical filter count and does not imply the main reader read nothing from the granule.", ValueType::Number) \
     M(StringValueFilterValuesChecked, "Number of string values checked during a scan against a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
     M(StringValueFilterValuesReplaced, "Number of non-matching string values replaced with empty strings during a scan by a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
     M(StringValueFilterBytesSkipped, "Number of bytes of non-matching string values that were not copied into a column during a scan due to a filter extracted from a substring search condition in PREWHERE.", ValueType::Bytes) \
@@ -648,6 +654,13 @@
     M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageTotalMilliseconds, "Total time spent for prewarm stage of background merges", ValueType::Milliseconds) \
     M(MergePrewarmStageExecuteMilliseconds, "Total busy time spent for execution of prewarm stage of background merges", ValueType::Milliseconds) \
+    M(MergeCheckpointsSaved, "Number of merge checkpoints saved.", ValueType::Number) \
+    M(MergeCheckpointSaveMicroseconds, "Total time spent saving merge checkpoints, including their commits.", ValueType::Microseconds) \
+    M(MergeCheckpointsResumed, "Number of merges resumed from a merge checkpoint.", ValueType::Number) \
+    M(MergeCheckpointsDiscarded, "Number of merge checkpoints removed because the merge could not resume from them.", ValueType::Number) \
+    M(MergeCheckpointsRemoved, "Number of merge checkpoints removed by their cleanup or by a drop of the table.", ValueType::Number) \
+    M(MergeCheckpointable, "Number of launched background merges with `enable_merge_checkpoints` that are checkpointed.", ValueType::Number) \
+    M(MergeNonCheckpointable, "Number of launched background merges with `enable_merge_checkpoints` that cannot be checkpointed, for example horizontal merges.", ValueType::Number) \
     \
     M(MergesRejectedByMemoryLimit, "Number of background merges rejected due to memory limit", ValueType::Number) \
     M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \
