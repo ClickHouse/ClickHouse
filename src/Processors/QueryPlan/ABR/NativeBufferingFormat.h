@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeWriter.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -21,8 +23,14 @@ public:
 
     String getName() const override { return "NativeBufferingFormat"; }
 
+    /// Values for `rows_before_limit_at_least` and `rows_before_aggregation`, if the pipeline applied a limit or an aggregation.
+    void setRowsBeforeLimit(size_t rows) override { rows_before_limit = rows; }
+    void setRowsBeforeAggregation(size_t rows) override { rows_before_aggregation = rows; }
+
     Block totals;
     Block extremes;
+    std::optional<size_t> rows_before_limit;
+    std::optional<size_t> rows_before_aggregation;
 
 protected:
     void consume(Chunk chunk) override

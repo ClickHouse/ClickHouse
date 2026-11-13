@@ -22,7 +22,6 @@
 #include <Processors/QueryPlan/ABR/NativeBufferingFormat.h>
 #include <Processors/QueryPlan/ABR/ReplaySource.h>
 #include <Processors/Sources/DelayedSource.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -154,12 +153,16 @@ ReadFromABR::BufferedResult ReadFromABR::executeAndBuffer(
         }
     }
 
-    std::shared_ptr<ISource> replay_source;
-    if (read_buffers.empty())
-        replay_source = std::make_shared<NullSource>(header);
-    else
-        replay_source = std::make_shared<ReplaySource>(
-            header, std::move(write_buffers), std::make_unique<ConcatReadBuffer>(std::move(read_buffers)), add_aggregation_info);
+    /// Also without blocks, so that `rows_before_limit_at_least` and `rows_before_aggregation` of the attempt are reported.
+    std::unique_ptr<ReadBuffer> read_buffer;
+    if (!read_buffers.empty())
+        read_buffer = std::make_unique<ConcatReadBuffer>(std::move(read_buffers));
+    auto replay_source = std::make_shared<ReplaySource>(
+        header,
+        std::move(write_buffers),
+        std::move(read_buffer),
+        add_aggregation_info,
+        ReplaySource::RowsBeforeSteps{.limit = format->rows_before_limit, .aggregation = format->rows_before_aggregation});
 
     return {
         .replay_source = std::move(replay_source),
