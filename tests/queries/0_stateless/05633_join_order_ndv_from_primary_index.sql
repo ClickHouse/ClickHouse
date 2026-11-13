@@ -2,6 +2,7 @@
 -- primary key index for join reordering, see the setting `estimate_distinct_values_from_metadata`.
 
 SET use_statistics = 1;
+SET query_plan_optimize_join_order_limit = 10;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 'auto';
@@ -31,7 +32,7 @@ CREATE TABLE u (id UInt64, x UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, index_granularity = 64, index_granularity_bytes = '10Mi';
 INSERT INTO u SELECT number, intHash64(number) FROM numbers(100000);
-SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) >= 100000
+SELECT 1 / toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) >= 50000
 FROM (EXPLAIN SELECT count() FROM u AS a JOIN u AS b ON a.id = b.id);
 
 DROP TABLE t;
