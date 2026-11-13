@@ -1,0 +1,4 @@
+A step without a Substrait representation
+step LimitBy: the step has no Substrait representation
+Every blocked branch is reported, left branch first
+step Expression: function cityHash64 is not mapped to Substrait; step Expression: function sipHash64 is not mapped to Substrait

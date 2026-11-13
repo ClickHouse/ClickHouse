@@ -354,9 +354,8 @@ std::vector<std::pair<const QueryPlan::Node *, String>> SubstraitPlanSerializer:
             continue;
         }
 
-        /// No reason means the step was never attempted because of a blocked child. Descend to find it.
-        for (const auto * child : node->children)
-            stack.push_back(child);
+        /// No reason means the step was never attempted because of a blocked child. Descend to find it, left child first.
+        stack.insert(stack.end(), node->children.rbegin(), node->children.rend());
     }
     return result;
 }
