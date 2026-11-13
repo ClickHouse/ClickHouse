@@ -162,8 +162,7 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
-    /// Called for the fields of the input data that are skipped because the header has no column for them
-    /// (`input_format_skip_unknown_fields`): once per name, for at most `max_reported_skipped_unknown_fields + 1` names.
+    /// Called once per name of a skipped unknown field, for at most `max_reported_skipped_unknown_fields + 1` names.
     using SkippedUnknownFieldCallback = std::function<void(std::string_view field_name)>;
     static constexpr size_t max_reported_skipped_unknown_fields = 10;
     /// Formats that match fields by name in every row check only this many skipped fields, see `needToCheckSkippedUnknownField`.
@@ -217,9 +216,7 @@ protected:
 
     InputFormatErrorsLoggerPtr errors_logger;
 
-    /// For the formats that match fields by name in every row: whether to pass the next skipped field to
-    /// `reportSkippedUnknownField`. True for the first `max_checked_skipped_unknown_fields` calls after
-    /// `setSkippedUnknownFieldCallback`, so the rest of the data pays one branch per skipped field.
+    /// For the formats that match fields by name in every row: whether to pass the next skipped field to `reportSkippedUnknownField`.
     bool needToCheckSkippedUnknownField()
     {
         if (skipped_unknown_fields_to_check == 0)
@@ -230,7 +227,7 @@ protected:
     void reportSkippedUnknownField(std::string_view field_name);
     /// For every field of the header of the input data that `column_mapping` maps to no column.
     void reportSkippedUnknownFieldsOfColumnMapping();
-    SkippedUnknownFieldCallback skipped_unknown_field_callback;   /// protected: ParallelParsingInputFormat passes it on
+    SkippedUnknownFieldCallback skipped_unknown_field_callback;
 
     bool need_only_count = false;
 

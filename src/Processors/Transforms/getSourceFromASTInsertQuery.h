@@ -26,9 +26,8 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     ContextPtr context,
     const ASTPtr & input_function);
 
-/// A callback that logs a warning for each field of the data of the INSERT query `query_id` that is skipped because there is
-/// no column for it, shared by all its copies (one warning per field, at most 10 fields). Empty if
-/// `input_format_warn_on_skipped_unknown_fields` is disabled.
+/// Logs a warning for each skipped unknown field of the INSERT query `query_id`, once per field across all copies, at most 10 fields.
+/// Empty if `input_format_warn_on_skipped_unknown_fields` is disabled.
 std::function<void(std::string_view)> makeSkippedUnknownFieldWarningCallback(const ContextPtr & context, const String & format_name, const String & query_id);
 
 /// Installs `makeSkippedUnknownFieldWarningCallback` on `format`.
