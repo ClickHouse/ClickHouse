@@ -1,0 +1,24 @@
+<test>
+    <!--
+        Query analysis of a tree of inlined CTEs whose WHERE clauses are AND-chains of comparisons
+        (https://github.com/ClickHouse/ClickHouse/issues/131134). Every operand is a column of a large
+        inlined subquery. EXPLAIN QUERY TREE isolates the analysis cost from execution.
+        `optimize_and_compare_chain_max_hash_work = 0` is what `compatibility` before 26.7 sets.
+    -->
+    <query><![CDATA[
+EXPLAIN QUERY TREE
+WITH
+    c0 AS (SELECT number AS a, number % 7 AS b FROM numbers(10) WHERE (a = b) AND (b != 5) AND (a > 1) AND (a < 100)),
+    c1 AS (SELECT x.a AS a, y.b AS b FROM c0 AS x INNER JOIN c0 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100)),
+    c2 AS (SELECT x.a AS a, y.b AS b FROM c1 AS x INNER JOIN c1 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100)),
+    c3 AS (SELECT x.a AS a, y.b AS b FROM c2 AS x INNER JOIN c2 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100)),
+    c4 AS (SELECT x.a AS a, y.b AS b FROM c3 AS x INNER JOIN c3 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100)),
+    c5 AS (SELECT x.a AS a, y.b AS b FROM c4 AS x INNER JOIN c4 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100)),
+    c6 AS (SELECT x.a AS a, y.b AS b FROM c5 AS x INNER JOIN c5 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100)),
+    c7 AS (SELECT x.a AS a, y.b AS b FROM c6 AS x INNER JOIN c6 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100)),
+    c8 AS (SELECT x.a AS a, y.b AS b FROM c7 AS x INNER JOIN c7 AS y ON x.a = y.a WHERE (x.a = y.b) AND (y.b != 5) AND (x.a > 1) AND (x.a < 100))
+SELECT count() FROM c8
+SETTINGS optimize_and_compare_chain = 1, optimize_and_compare_chain_max_hash_work = 0
+FORMAT Null
+    ]]></query>
+</test>
