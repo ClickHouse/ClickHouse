@@ -7,6 +7,7 @@ settings that are not a destination: allowed
 -- ALTER with WRITE on S3 limited by a URL filter
 -- ALTER with WRITE on S3
 destination with WRITE on S3: allowed
+after_processing = 'delete' with WRITE on S3: allowed
 empty destination without WRITE on S3: allowed
 -- ALTER with WRITE on S3, restricted by a row policy
 empty destination with a row policy: allowed
@@ -26,6 +27,7 @@ table without a destination: created
 0
 -- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3
 CREATE AS with WRITE on S3: created
+after_processing = 'delete' with WRITE on S3: created
 materialized view with WRITE on S3: created
 RESTORE with WRITE on S3: restored
 RESTORE ON CLUSTER with WRITE on S3: restored

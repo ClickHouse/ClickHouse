@@ -1,2 +1,11 @@
 2
 3
+2
+http://localhost:11111	test	05366_shared/*
+tq_a	delete
+tq_b	delete
+1
+keep
+1
+http://localhost:11111
+1

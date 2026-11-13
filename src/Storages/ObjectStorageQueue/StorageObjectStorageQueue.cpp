@@ -336,6 +336,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
+    ObjectStorageQueueTableMetadata::Source source,
+    bool strict_metadata_check,
     bool keep_data_in_keeper_)
     : IStreamingStorage(table_id_)
     , WithContext(context_)
@@ -492,6 +494,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         configuration_->format,
         context_,
         is_attach,
+        std::move(source),
+        strict_metadata_check,
         log);
 
     if (table_metadata.getMode() == ObjectStorageQueueMode::EXCLUSIVE)

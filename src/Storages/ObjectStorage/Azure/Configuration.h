@@ -112,6 +112,7 @@ public:
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     String getContainer() const { return connection_params.getContainer(); }
+    String getConnectionURLWithoutQuery() const { return connection_params.getConnectionURLWithoutQuery(); }
     String getAccountName() const { return connection_params.endpoint.account_name; }
     String getAccountKey() const { return connection_params.endpoint.account_key; }
     String getSasKey() const { return connection_params.endpoint.sas_auth; }

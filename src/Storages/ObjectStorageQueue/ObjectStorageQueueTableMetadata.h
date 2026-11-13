@@ -19,6 +19,18 @@ class ReadBuffer;
  */
 struct ObjectStorageQueueTableMetadata
 {
+    /// Where the queue reads files from, without credentials. Tables with the same `keeper_path` must have the same
+    /// source, because processed files are tracked only by their path.
+    struct Source
+    {
+        String endpoint;
+        String bucket;
+        String path_pattern;
+
+        bool empty() const { return endpoint.empty(); }
+        bool operator==(const Source &) const = default;
+    };
+
     /// Non-changeable settings.
     const String format_name;
     const String columns;
@@ -38,11 +50,13 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<UInt64> buckets;
 
     bool processing_threads_num_changed = false;
+    Source source;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
         const ColumnsDescription & columns_,
-        const std::string & format_);
+        const std::string & format_,
+        Source source_);
 
     ObjectStorageQueueTableMetadata(const ObjectStorageQueueTableMetadata & other)
         : format_name(other.format_name)
@@ -60,6 +74,7 @@ struct ObjectStorageQueueTableMetadata
         , tracked_files_limit(other.tracked_files_limit.load())
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
         , buckets(other.buckets.load())
+        , source(other.source)
     {
     }
 
@@ -85,7 +100,7 @@ struct ObjectStorageQueueTableMetadata
     ObjectStorageQueueBucketingMode getBucketingMode() const;
     ObjectStorageQueuePartitioningMode getPartitioningMode() const;
 
-    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
+    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk, bool strict);
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 

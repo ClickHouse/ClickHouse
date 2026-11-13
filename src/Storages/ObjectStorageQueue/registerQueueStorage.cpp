@@ -6,6 +6,7 @@
 #include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
@@ -21,10 +22,12 @@
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
+#include <Common/maskURIPassword.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
+#include <Poco/URI.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #endif
 
@@ -48,6 +51,35 @@ namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
+}
+
+namespace
+{
+
+/// The source is saved in Keeper, so it must not contain credentials.
+#if USE_AWS_S3
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configuration & configuration)
+{
+    /// `S3::URI` can put a part of the user info into the bucket name, so a URL with user info gets no source.
+    if (!configuration.url.uri.getUserInfo().empty())
+        return {};
+    ObjectStorageQueueTableMetadata::Source source{configuration.url.endpoint, configuration.url.bucket, configuration.getRawPath().path};
+    maskPresignedURLParameters(source.bucket);
+    maskPresignedURLParameters(source.path_pattern);
+    return source;
+}
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration)
+{
+    String endpoint = configuration.getConnectionURLWithoutQuery();
+    if ((!endpoint.starts_with("http://") && !endpoint.starts_with("https://")) || !Poco::URI(endpoint).getUserInfo().empty())
+        return {};
+    return {std::move(endpoint), configuration.getContainer(), configuration.getRawPath().path};
+}
+#endif
+
 }
 
 template <typename Configuration>
@@ -170,6 +202,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
     const bool allow_server_credentials_in_user_queries
         = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
+    auto source = getQueueSource(*configuration);
+    if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
+        source.path_pattern.clear();
+    const bool strict_metadata_check = (args.is_restore_from_backup && !isSecondaryDDLReplay(args.getLocalContext()))
+        || !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
@@ -183,6 +220,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         format_settings,
         args.storage_def,
         args.mode,
+        std::move(source),
+        strict_metadata_check,
         /* keep_data_in_keeper */ false);
 }
 

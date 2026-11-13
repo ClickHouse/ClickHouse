@@ -517,7 +517,12 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         }
     }
 
-    const auto new_metadata_str = new_table_metadata.toString();
+    /// This server's copy can be outdated, so keep `after_processing` and `source` as they are in Keeper.
+    auto metadata_for_keeper{new_table_metadata};
+    if (!changes.tryGet("after_processing"))
+        metadata_for_keeper.after_processing = metadata_from_zk.after_processing.load();
+    metadata_for_keeper.source = metadata_from_zk.source;
+    const auto new_metadata_str = metadata_for_keeper.toString();
     LOG_TRACE(log, "New metadata: {}", new_metadata_str);
 
     const fs::path table_metadata_path = zookeeper_path / "metadata";
@@ -552,9 +557,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const std::string & format,
     const ContextPtr & context,
     bool is_attach,
+    ObjectStorageQueueTableMetadata::Source source,
+    bool strict,
     LoggerPtr log)
 {
-    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
+    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format, std::move(source));
 
     std::vector<std::string> metadata_paths;
     size_t buckets_num = 0;
@@ -590,21 +597,28 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         Coordination::Requests requests;
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
+        std::optional<Coordination::Error> stamp_code;
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
             auto zk_client = getZooKeeper(log, zookeeper_name);
             std::optional<ObjectStorageQueueTableMetadata> metadata_from_zk;
+            Coordination::Stat stat;
             if (zk_client->exists(table_metadata_path))
             {
-                const auto metadata_str = zk_client->get(table_metadata_path);
+                const auto metadata_str = zk_client->get(table_metadata_path, &stat);
                 LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
                 metadata_from_zk.emplace(ObjectStorageQueueTableMetadata::parse(metadata_str));
             }
             if (metadata_from_zk.has_value())
             {
-                table_metadata.adjustFromKeeper(metadata_from_zk.value());
+                table_metadata.adjustFromKeeper(metadata_from_zk.value(), strict);
                 table_metadata.checkEquals(metadata_from_zk.value());
+                if (metadata_from_zk->source.empty() && !table_metadata.source.empty())
+                {
+                    metadata_from_zk->source = table_metadata.source;
+                    stamp_code = zk_client->trySet(table_metadata_path, metadata_from_zk->toString(), stat.version);
+                }
                 return;
             }
 
@@ -671,6 +685,8 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             code = zk_client->tryMulti(requests, responses);
         });
+        if (stamp_code.has_value() && *stamp_code != Coordination::Error::ZOK)
+            continue;
         if (code.has_value())
         {
             if (*code == Coordination::Error::ZNODEEXISTS)
