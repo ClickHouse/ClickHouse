@@ -2130,6 +2130,33 @@ def test_mv_false_cyclic_dependency(started_cluster):
     main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+def test_alter_column_read_by_view_of_other_replica(started_cluster):
+    # The view is outside the replicated database and exists only on dummy_node, which must apply the
+    # RENAME and DROP COLUMN that main_node committed, not refuse them until it recovers as a lost
+    # replica, which moves its table with the rows aside.
+    db_name = "test_alter_column_read_by_view"
+    view_name = f"default.{db_name}_mv"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP TABLE IF EXISTS {view_name} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+        node.query(f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')")
+
+    main_node.query(f"CREATE TABLE {db_name}.t (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a")
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+    dummy_node.query(f"CREATE MATERIALIZED VIEW {view_name} ENGINE = Memory AS SELECT b, c FROM {db_name}.t")
+    dummy_node.query(f"INSERT INTO {db_name}.t VALUES (1, 2, 3)")
+
+    main_node.query(f"ALTER TABLE {db_name}.t RENAME COLUMN b TO b2")
+    main_node.query(f"ALTER TABLE {db_name}.t DROP COLUMN c")
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+    assert dummy_node.query(f"SELECT * FROM {db_name}.t") == "1\t2\n"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP TABLE IF EXISTS {view_name} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
 def test_ignore_cluster_name_setting(started_cluster):
     db_name = "test_cluster_name"
 

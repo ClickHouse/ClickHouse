@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
@@ -435,10 +436,12 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         auto view_metadata = view->getInMemoryMetadataPtr(context, false);
         if (view_metadata->select.inner_query)
         {
+            /// With the rights the query of the view runs with, not necessarily those of the caller.
+            auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
             const auto & select_query = view_metadata->select.inner_query;
-            auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
+            auto interpreter = InterpreterSelectQueryAnalyzer(select_query, view_context, SelectQueryOptions{}.noModify());
             auto query_tree = interpreter.getQueryTree();
-            Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
+            Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, view_context);
 
             for (const auto & col_name : required_columns)
                 name_deps[col_name].push_back(view_id.table_name);
@@ -452,6 +455,10 @@ void IStorage::checkAlterKeepsDependentViews(
 {
     const bool is_drop = command.type == AlterCommand::DROP_COLUMN && !command.clear;
     if (!is_drop && command.type != AlterCommand::RENAME_COLUMN)
+        return;
+
+    /// A replica applies what the initiator committed, even if it has views the initiator does not.
+    if (isSecondaryDDLReplay(context))
         return;
 
     if (!name_deps)
