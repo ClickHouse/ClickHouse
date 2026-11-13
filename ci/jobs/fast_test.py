@@ -64,6 +64,8 @@ def clone_submodules():
         "contrib/xxHash",
         "contrib/simdjson",
         "contrib/liburing",
+        "contrib/librseq",
+        "contrib/silk",
         "contrib/libfiu",
         "contrib/yaml-cpp",
         "contrib/corrosion",
