@@ -1009,6 +1009,13 @@ std::optional<DataLake::TableMetadata> DatabaseDataLake::tryGetNewTableMetadata(
     if (!location)
         return std::nullopt;
 
+    /// A catalog can report a placeholder instead of a location, e.g. Databricks reports `not_used` for a schema of managed tables.
+    if (!location->contains("://"))
+    {
+        LOG_DEBUG(log, "Ignoring location {} reported by the catalog for new table {}: it is not a URI", *location, name);
+        return std::nullopt;
+    }
+
     LOG_DEBUG(log, "Location assigned by the catalog for new table {}: {}", name, *location);
 
     auto table_metadata = DataLake::TableMetadata().withLocation();
