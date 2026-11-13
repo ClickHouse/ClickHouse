@@ -509,8 +509,6 @@ namespace FailPoints
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
-    extern const char merge_tree_load_outdated_parts_cannot_schedule[];
-    extern const char merge_tree_load_unexpected_parts_cannot_schedule[];
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
@@ -4141,11 +4139,6 @@ try
 
         try
         {
-            fiu_do_on(FailPoints::merge_tree_load_unexpected_parts_cannot_schedule,
-            {
-                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected failure to schedule loading of unexpected part {}", load_state.loading_info->name);
-            });
-
             /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
             runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
             {
@@ -4334,11 +4327,6 @@ try
 
         try
         {
-            fiu_do_on(FailPoints::merge_tree_load_outdated_parts_cannot_schedule,
-            {
-                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected failure to schedule loading of outdated part {}", part->name);
-            });
-
             /// The captured locals will outlive runner, so capturing by reference is ok
             runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
                                         &retryable_exception, &has_retryable_exception, replicated, is_async]()
