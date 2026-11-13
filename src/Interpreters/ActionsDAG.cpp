@@ -4878,7 +4878,12 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputsImpl(
             if (frame.node->type == ActionsDAG::ActionType::INPUT)
                 can_compute[frame.node] = available_inputs.contains(frame.node->result_name);
             else
-                can_compute[frame.node] = frame.can_compute_all_children;
+            {
+                /// The filter is computed again on the table rows, so a function that can return another value on each
+                /// evaluation, such as `rand`, cannot be computed here.
+                can_compute[frame.node] = frame.can_compute_all_children
+                    && allNodeFunctions(*frame.node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+            }
 
             stack.pop();
         }
