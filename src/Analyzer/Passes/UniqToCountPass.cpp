@@ -1,5 +1,7 @@
 #include <Analyzer/Passes/UniqToCountPass.h>
 
+#include <vector>
+
 #include <DataTypes/DataTypeNullable.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -71,27 +73,32 @@ bool nodeListEquals(const QueryTreeNodes & query_columns, const NamesAndTypes & 
     if (query_columns.size() != subquery_columns.size())
         return false;
 
+    /// Match as multisets: every query column must consume a different subquery column.
+    std::vector<bool> matched(subquery_columns.size(), false);
     for (const auto & query_column : query_columns)
     {
-        auto find = std::find_if(
-            subquery_columns.begin(),
-            subquery_columns.end(),
-            [&](const auto & subquery_column) -> bool
-            {
-                if (auto * column_node = query_column->as<ColumnNode>())
-                {
-                    return subquery_column == column_node->getColumn();
-                }
-                return false;
-            });
+        const auto * column_node = query_column->as<ColumnNode>();
+        if (!column_node)
+            return false;
 
-        if (find == subquery_columns.end())
+        bool found = false;
+        for (size_t i = 0; i < subquery_columns.size(); ++i)
+        {
+            if (!matched[i] && subquery_columns[i] == column_node->getColumn())
+            {
+                matched[i] = true;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
             return false;
     }
     return true;
 }
 
-/// Whether subquery_columns contains all columns in subquery_columns.
+/// Whether subquery_columns contains all columns in query_columns.
 ///     query_columns: query columns from query
 ///     subquery_columns: projection columns from subquery
 bool nodeListContainsAll(const QueryTreeNodes & query_columns, const NamesAndTypes & subquery_columns)
