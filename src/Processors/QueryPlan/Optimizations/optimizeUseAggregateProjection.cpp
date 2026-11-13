@@ -552,6 +552,11 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
         }
     }
 
+    /// A projection row stands for a group of rows, so the keys and the filter are computed once per group.
+    for (const auto * node : query_key_nodes)
+        if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(node))
+            return {};
+
     /// Here we want to match query keys with projection keys.
     /// Query key can be any expression depending on projection keys.
     auto new_inputs = resolveMatchedInputs(matches, proj_key_nodes, query_key_nodes);

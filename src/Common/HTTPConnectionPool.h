@@ -59,6 +59,7 @@ enum class HTTPConnectionGroupType : uint8_t
     DISK,
     STORAGE,
     HTTP,
+    AMBER,
 };
 
 class HTTPConnectionPools
@@ -99,12 +100,12 @@ private:
 public:
     static HTTPConnectionPools & instance();
 
-    void setLimits(Limits disk, Limits storage, Limits http);
+    void setLimits(Limits disk, Limits storage, Limits http, Limits amber);
     /// Whether the group holds at least `soft_limit` connections, in use and idle together. Above
     /// the soft limit the pool economizes connections: idle ones expire sooner, and readers that
     /// consult this stop keeping a connection open between reads.
     [[nodiscard]] bool isSoftLimitReached(HTTPConnectionGroupType type) const;
-    void setSocketBufferSizes(SocketBufferSizes disk, SocketBufferSizes storage, SocketBufferSizes http);
+    void setSocketBufferSizes(SocketBufferSizes disk, SocketBufferSizes storage, SocketBufferSizes http, SocketBufferSizes amber);
     [[nodiscard]] SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const;
     void dropCache();
 
