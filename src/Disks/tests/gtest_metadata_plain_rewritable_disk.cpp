@@ -333,7 +333,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
 
 TEST_F(MetadataPlainRewritableDiskTest, ExplicitRefreshWaitsForReloadInFlight)
 {
-    /// Blocks the first listing after `block_next_listing` is set, until `release_listing` is ready.
+    /// Parks the first listing of the directories after `block_next_listing` is set, once it is taken,
+    /// until `release_listing` is ready.
     class BlockingStorage : public LocalObjectStorage
     {
     public:
@@ -344,12 +345,12 @@ TEST_F(MetadataPlainRewritableDiskTest, ExplicitRefreshWaitsForReloadInFlight)
 
         void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
         {
-            if (block_next_listing.exchange(false))
+            LocalObjectStorage::listObjects(path, children, max_keys);
+            if (path.ends_with("/" + PlainRewritableLayout::METADATA_DIRECTORY_TOKEN) && block_next_listing.exchange(false))
             {
                 listing_blocked.set_value();
                 release_listing.wait();
             }
-            LocalObjectStorage::listObjects(path, children, max_keys);
         }
     };
 
@@ -372,7 +373,7 @@ TEST_F(MetadataPlainRewritableDiskTest, ExplicitRefreshWaitsForReloadInFlight)
     auto blocked = object_storage->listing_blocked.get_future();
     object_storage->block_next_listing = true;
 
-    /// This reload holds the load mutex until its listing is released.
+    /// This reload holds the load mutex until its listing is released, and does not see what is created meanwhile.
     auto in_flight = std::async(std::launch::async, [&] { reader.refresh(0); });
     ASSERT_EQ(blocked.wait_for(std::chrono::seconds(60)), std::future_status::ready);
     create_directory("B");
