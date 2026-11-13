@@ -2,12 +2,8 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
-#include <functional>
 #include <limits>
 #include <memory>
-#include <mutex>
-#include <queue>
 #include <span>
 #include <vector>
 
@@ -92,11 +88,11 @@ private:
 /// too when the pruning pays for its buckets (see `Aggregator::mergePrunesByTopK`), and the merge reads the
 /// tables through their cell indexes. Summed over the producers, a bin bounds the count of every group in it from
 /// above: a row adds one to a group's count at most, and merging adds the counts of the merged groups for `count`, or at
-/// most adds them for the distinct count of `uniqExact`, as a union has no more elements than its parts together. The
-/// merge keeps the `limit` best exact counts of the groups it has converted; once there are `limit` of them, a group
-/// whose bin is bounded below the smallest one has `limit` groups ahead of it, so the merge skips the units, staged
-/// records and source cells of such bins without draining them. The merge takes the buckets with the largest bounds
-/// first, so the threshold rises early.
+/// most adds them for the distinct count of `uniqExact`, as a union has no more elements than its parts together. A
+/// group whose bin is bounded below the merge's threshold, the worst of the `n` best exact counts converted so far (see
+/// `AdaptiveTopKThreshold`), has `n` groups ahead of it, so the merge skips the units, staged records and source cells
+/// of such bins without draining them. The merge takes the buckets with the largest bounds first, so the threshold
+/// rises early.
 class AdaptiveTopKPruning
 {
 public:
@@ -123,11 +119,6 @@ public:
         /// Some bins can: the merge drains only the records and source cells of the bins marked alive.
         Filter,
     };
-
-    explicit AdaptiveTopKPruning(size_t limit_) : limit(limit_) { }
-
-    /// How many groups the top keeps.
-    size_t getLimit() const { return limit; }
 
     /// Takes a producer's bins at its finish and finds the largest bin of each bucket. Called before the producer takes
     /// the session's lock, so the scans of the finishing producers run in parallel.
@@ -186,21 +177,13 @@ public:
         bound = count > std::numeric_limits<UInt64>::max() - bound ? std::numeric_limits<UInt64>::max() : bound + count;
     }
 
-    /// The smallest of the `limit` best exact counts converted so far, or zero while there are fewer.
-    ALWAYS_INLINE UInt64 currentThreshold() const { return threshold.load(std::memory_order_relaxed); }
-
     /// Selects what the merge does with unit `unit` of the `units` that split the bucket, each a run of its partitions
-    /// and so of its bins, at the threshold of the moment: a bin can hold a group of the top while its bound in
-    /// `bounds` reaches the threshold. Marks the unit's bins that can in `alive`, which the merge reads for `Filter`.
-    UnitSelection selectUnit(const BucketBounds & bounds, size_t unit, size_t units, AliveBins & alive) const;
-
-    /// Offers the counts of a converted unit's groups to the best counts, and publishes the smallest of them as the
-    /// threshold once there are `limit`.
-    void offerCounts(std::span<const UInt64> counts);
+    /// and so of its bins, at the merge's threshold of the moment, `threshold`: a bin can hold a group of the
+    /// top while its bound in `bounds` reaches the threshold. Marks the unit's bins that can in `alive`,
+    /// which the merge reads for `Filter`.
+    UnitSelection selectUnit(const BucketBounds & bounds, size_t unit, size_t units, UInt64 threshold, AliveBins & alive) const;
 
 private:
-    const size_t limit;
-
     /// The finished bins of the producers that froze, which the bounds of the bins sum (see
     /// `boundsForBucket`).
     std::vector<AdaptiveTopKCountBins> producer_bins;
@@ -212,11 +195,6 @@ private:
     /// sum of the largest counts of the bucket in those tables.
     std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> count_bound_per_bucket{};
     std::array<UInt8, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_order{};
-
-    /// The `limit` best exact counts converted so far, and the smallest of them once there are `limit`.
-    std::mutex best_mutex;
-    std::priority_queue<UInt64, std::vector<UInt64>, std::greater<>> best;
-    std::atomic<UInt64> threshold{0};
 };
 
 }

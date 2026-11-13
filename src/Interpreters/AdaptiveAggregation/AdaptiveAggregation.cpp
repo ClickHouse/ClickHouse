@@ -182,7 +182,7 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
         producers,
         layout,
         std::move(spill_scope),
-        params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k) : nullptr);
+        params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>() : nullptr);
 }
 
 bool Aggregator::advanceAdaptiveProducer(
@@ -367,18 +367,35 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         shared.top_k_pruning->addMergeCountedTable(local_variants, max_count_per_bucket);
 }
 
-void Aggregator::prepareAdaptiveTopKPruning(
+void Aggregator::prepareAdaptiveTopK(
     AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const
 {
     shared.top_k_pruning_prepared = true;
     auto & pruning = shared.top_k_pruning;
-    if (!pruning)
+    if (pruning)
+    {
+        if (mergePrunesByTopK(shared, *pruning, producers, external_merge, collects_statistics))
+            pruning->orderBuckets();
+        else
+            pruning.reset();
+    }
+
+    /// Only the bucket merge reads the threshold. A top-K without the pruning, such as an ascending one, needs
+    /// it all the same.
+    if (!params.bucket_top_k || external_merge || !shared.mergesByBuckets())
         return;
 
-    if (mergePrunesByTopK(shared, *pruning, producers, external_merge, collects_statistics))
-        pruning->orderBuckets();
-    else
-        pruning.reset();
+    /// Settling skips units unread, whose groups the statistics need. A throw-mode group limit allows it,
+    /// as it allows the pruning: the merge checks the limit against the groups it builds (see
+    /// `checkMergedGroupLimit`). Settling also drops the groups tied with the output ones, which `LIMIT`
+    /// allows only because the order is by the rank alone and not `WITH TIES` (see
+    /// `tryPushBucketTopKIntoAggregation`). A descending order never settles, because a rank has no largest
+    /// possible value.
+    std::optional<UInt64> best_possible_rank;
+    if (params.bucket_top_k_ascending && !collects_statistics)
+        best_possible_rank = bucket_top_k_min_rank;
+    shared.top_k_threshold
+        = std::make_unique<AdaptiveTopKThreshold>(params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank);
 }
 
 bool Aggregator::mergePrunesByTopK(
@@ -406,7 +423,7 @@ bool Aggregator::mergePrunesByTopK(
     /// states (see `adaptiveTopKPrunesWithoutFreeze`), where it can read every table through its cell index,
     /// which the string table lacks, and where the top keeps a small part of the groups: the tables hold at
     /// least as many cells per bucket as the top keeps groups, and a merge unit's worth in all.
-    const size_t min_table_cells = std::max(adaptive_merge_unit_records, pruning.getLimit() * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+    const size_t min_table_cells = std::max(adaptive_merge_unit_records, params.bucket_top_k * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     return adaptiveTopKPrunesWithoutFreeze() && shared.unindexed_tables == 0 && shared.table_cells >= min_table_cells;
 }
 

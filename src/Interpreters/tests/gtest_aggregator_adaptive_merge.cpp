@@ -199,7 +199,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
             auto & table = sources.front()->key64->data;
             const auto bucket = static_cast<Int32>(
                 AggregatedDataWithUInt64KeyTwoLevel::getBucketFromHash(table.hash(UInt64{1})));
-            aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
+            aggregator.prepareAdaptiveTopK(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
             auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
             AdaptiveMergeTask task;
             std::atomic<bool> cancelled{false};
@@ -277,7 +277,7 @@ TEST(AggregatorAdaptiveStaging, ConstantSerializedKey)
         sources.push_back(std::move(source));
     }
 
-    aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
+    aggregator.prepareAdaptiveTopK(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
     auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
     AdaptiveMergeTask task;
     std::atomic<bool> cancelled{false};

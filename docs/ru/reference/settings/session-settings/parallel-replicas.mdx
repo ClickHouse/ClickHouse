@@ -111,13 +111,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Новая настройка"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Включено по умолчанию"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "новая настройка"}]}]} />
+Проталкивает условие, расположенное над частью запроса, которую выполняют параллельные реплики, в эту часть, а также в запрос, отправляемый репликам, чтобы они тоже фильтровали данные по этому условию.
 
-Разрешить pushdown фильтров в ту часть запроса, которую выполняют параллельные реплики
+Отключите настройку, чтобы условие оставалось над чтением на initiator, как в версиях до 26.10. Это запасной вариант на случай некорректной работы pushdown: результат запроса от этого не зависит — меняется лишь объём работы, выполняемой репликами, и то, на каком этапе они её выполняют.
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -153,6 +153,8 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Анализ индекса выполняется только на реплике-координаторе и не выполняется на других репликах. Действует только при включенном parallel&#95;replicas&#95;local&#95;plan
 
+Речь идёт об анализе индексов, который определяет диапазоны меток, объявляемые операцией чтения, — именно из них координатор и распределяет работу. Сюда не относится отсечение, выполняемое во время чтения данных, например отсечение гранул в `enable_join_runtime_filters_index_analysis`: фильтр времени выполнения JOIN появляется только после того, как прочитана сторона построения, поэтому каждая реплика вычисляет собственный фильтр и сама отсекает свою часть данных — никакой координатор не смог бы сделать это за неё.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -174,6 +176,8 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Ограничивает число реплик, используемых в запросе, значением (оценочное количество строк для чтения / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). Максимальное значение по-прежнему ограничено параметром &#39;max&#95;parallel&#95;replicas&#39;
+
+Игнорируется, если включён `automatic_parallel_replicas_mode`: в этом случае автоматический режим принимает решение на основе собственной стоимостной модели.
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 

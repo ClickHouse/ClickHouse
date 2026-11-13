@@ -167,10 +167,11 @@ namespace
         size_t skipped = 0;
     };
 
-    /// Walks the records of `ranges`, written in `format`, in order and calls `apply(record, hash)` for every record whose
-    /// routing hash `filter` takes. With `prefetch`, which the caller decides once for the walk, it prefetches the table
-    /// slot of the taken record `adaptive_drain_prefetch_look_ahead` positions ahead. The format, the filter and `apply`
-    /// run once per record, so all of them are inlined into the loop.
+    /// Walks the records of `ranges`, written in `format`, in order and calls `apply(record, hash)` for
+    /// every record whose routing hash `filter` takes. With `prefetch`, which the caller decides once for
+    /// the walk, it prefetches the table slot of the taken record `adaptive_drain_prefetch_look_ahead`
+    /// positions ahead. Either way, it requests every range into L2 one range ahead. The format, the filter
+    /// and `apply` run once per record, so all of them are inlined into the loop.
     template <typename Key, typename Format, typename Table, typename Filter, typename Apply>
     StagedRecordWalk ALWAYS_INLINE walkStagedRecords(
         Format format, Table & table, const DB::AdaptiveRecordRanges & ranges, const Filter & filter, bool prefetch, Apply && apply)
@@ -178,6 +179,19 @@ namespace
         StagedRecordWalk walk;
         const auto walk_ranges = [&]<bool with_prefetch>() ALWAYS_INLINE
         {
+            /// A range is cold until its records are read, and the hardware prefetchers start a new stream
+            /// only after its first misses. So whichever reader enters a range first, the prefetch cursor or
+            /// else the walk, requests the following range into L2, up to a page.
+            const auto request_range = [&](size_t range_index) ALWAYS_INLINE
+            {
+                if (range_index >= ranges.size())
+                    return;
+                const char * line = ranges[range_index].data();
+                const char * const end = line + std::min<size_t>(ranges[range_index].size(), DB::adaptive_drain_range_prefetch_bytes);
+                for (; line < end; line += CH_CACHE_LINE_SIZE)
+                    __builtin_prefetch(line, /*rw=*/0, /*locality=*/2);
+            };
+
             /// The prefetch cursor runs the look-ahead distance in front of the walk and crosses from one range to the
             /// next as the walk does: a partition's ranges are as small as a first chunk of a few kilobytes, so
             /// restarting the distance in every range would leave a good share of the records unprefetched.
@@ -193,17 +207,7 @@ namespace
                     ahead = ranges[ahead_range].data();
                     ahead_end = ahead + ranges[ahead_range].size();
                     ++ahead_range;
-                    /// A range is cold until the cursor reads its records, and the hardware prefetchers take up a new
-                    /// stream only after its first misses: the following range, up to a page, is requested into L2 as
-                    /// the cursor enters this one.
-                    if (ahead_range < ranges.size())
-                    {
-                        const char * next = ranges[ahead_range].data();
-                        const char * const next_end
-                            = next + std::min<size_t>(ranges[ahead_range].size(), DB::adaptive_drain_range_prefetch_bytes);
-                        for (; next < next_end; next += CH_CACHE_LINE_SIZE)
-                            __builtin_prefetch(next, /*rw=*/0, /*locality=*/2);
-                    }
+                    request_range(ahead_range);
                 }
                 const UInt64 hash = format.hash(table, ahead);
                 if (filter.takes(hash))
@@ -217,10 +221,12 @@ namespace
                 for (size_t i = 0; i < DB::adaptive_drain_prefetch_look_ahead; ++i)
                     prefetch_next();
 
-            for (const auto & range : ranges)
+            for (size_t range_index = 0; range_index < ranges.size(); ++range_index)
             {
-                const char * record = range.data();
-                const char * const end = range.data() + range.size();
+                if constexpr (!with_prefetch)
+                    request_range(range_index + 1);
+                const char * record = ranges[range_index].data();
+                const char * const end = record + ranges[range_index].size();
                 while (record < end)
                 {
                     if constexpr (with_prefetch)
@@ -757,7 +763,7 @@ size_t Aggregator::selectCountFirstBestGroups(
     const ForEachCell & for_each_cell,
     const bool * alive_bins,
     TopK * top_k,
-    const AdaptiveTopKPruning * pruning,
+    const AdaptiveTopKThreshold & threshold,
     const ForEachInMemoryPartition & for_each_in_memory_partition,
     const ForEachSpilledBlock & for_each_spilled_block,
     Arena * arena,
@@ -818,17 +824,18 @@ size_t Aggregator::selectCountFirstBestGroups(
     best_hashes.clear();
     if (top_k)
     {
-        /// With the pruning, which serves a descending order only, a group counted below the threshold cannot reach
-        /// the top.
-        const UInt64 threshold = pruning ? pruning->currentThreshold() : 0;
+        /// A group counted below the threshold, a floor, cannot reach the top.
+        const UInt64 min_count = threshold.current();
         for (const auto & group : top_k->getGroups())
-            if (group.count >= threshold)
+            if (group.count >= min_count)
                 best_hashes.push_back(group.hash);
     }
     else
     {
         /// The smallest counts, selected by a pass over the counted groups. Only the cells that enter the heap are
-        /// hashed; its front holds the largest count kept.
+        /// hashed; its front holds the largest count kept. A group counted above the threshold, a ceiling,
+        /// cannot reach the top.
+        const UInt64 max_count = threshold.current();
         auto & best = task.best_counts_and_hashes;
         best.clear();
         const auto by_count = [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; };
@@ -837,6 +844,8 @@ size_t Aggregator::selectCountFirstBestGroups(
             [&](AggregateDataPtr & mapped, const auto & hash_of)
             {
                 const UInt64 count = getInlineCountState(mapped);
+                if (count > max_count)
+                    return;
                 if (best.size() < params.bucket_top_k)
                 {
                     best.emplace_back(count, hash_of());
@@ -1117,9 +1126,16 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     const size_t partitions_per_unit = partitions_per_bucket / units;
     const AdaptiveUnitSourceCells<Method> unit_source_cells(data, layout, bucket, units);
 
+    /// The threshold of the top-K that the aggregation feeds, which every conversion of the merge reads and
+    /// tightens (see `AdaptiveTopKThreshold`). Only the external merge of a top-K goes without it, and that
+    /// merge outputs partial states.
+    AdaptiveTopKThreshold * const threshold = session.top_k_threshold.get();
+    chassert(threshold || !final || !params.bucket_top_k);
+
     /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`), completed with the
     /// groups of the tables of the producers that never froze.
     AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
+    chassert(!pruning || threshold);
     AdaptiveTopKPruning::BucketBounds bin_bounds{};
     if (pruning)
     {
@@ -1162,25 +1178,28 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             continue;
         const auto for_each_cell = [&](auto && callback) { unit_source_cells.forEach(unit, callback); };
 
-        /// The unit's bins that can still hold a group of the top, at the threshold of the moment (see
+        /// A settled threshold skips every unit left (see `AdaptiveTopKThreshold`). Otherwise the pruning
+        /// keeps the unit's bins that can still hold a group of the top, at the threshold of the moment (see
         /// `AdaptiveTopKPruning::selectUnit`): a unit with none is skipped, its source cells dropped and its records freed
         /// unread; a unit with some drains only theirs.
         const bool * alive_bins = nullptr;
-        if (pruning)
+        bool skip = threshold && threshold->settled();
+        if (pruning && !skip)
         {
-            const auto selection = pruning->selectUnit(bin_bounds, unit, units, alive);
-            if (selection == AdaptiveTopKPruning::UnitSelection::Skip)
-            {
-                if constexpr (MapAggregationMethod<Method>)
-                    for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
-                for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
-                    staged.release(sub);
-                pruned_records += unit_records;
-                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
-                continue;
-            }
+            const auto selection = pruning->selectUnit(bin_bounds, unit, units, threshold->current(), alive);
+            skip = selection == AdaptiveTopKPruning::UnitSelection::Skip;
             if (selection == AdaptiveTopKPruning::UnitSelection::Filter)
                 alive_bins = alive.data();
+        }
+        if (skip)
+        {
+            if constexpr (MapAggregationMethod<Method>)
+                for_each_cell([&](const auto &, AggregateDataPtr * mapped, size_t) { discardAdaptiveSourceState(*mapped); });
+            for (size_t sub = unit_first_sub; sub < unit_end_sub; ++sub)
+                staged.release(sub);
+            pruned_records += unit_records;
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
+            continue;
         }
 
         /// Calls `f` with the records in memory of each partition of the unit.
@@ -1249,7 +1268,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     for_each_cell,
                     alive_bins,
                     top_k ? &*top_k : nullptr,
-                    pruning,
+                    *threshold,
                     for_each_in_memory_partition,
                     for_each_spilled_block,
                     arena,
@@ -1278,7 +1297,17 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         /// pre-filter - when the statistics ask for it: the untruncated key bytes, because the chunk carries only the
         /// kept groups, and a bounded sample of those keys for when it carries none at all.
         UntruncatedAggregationKeys untruncated_keys;
-        auto chunk = convertOneBucketToChunk(dest, arena, final, bucket, updater ? &untruncated_keys : nullptr, /*keep_table_buffer=*/true);
+        /// A group ranked worse than the threshold has `bucket_top_k` groups ahead of it in the output of the
+        /// units converted so far, so the conversion drops it. Before the first selection the threshold is
+        /// the worst rank of the order, which drops nothing.
+        auto chunk = convertOneBucketToChunk(
+            dest,
+            arena,
+            final,
+            bucket,
+            updater ? &untruncated_keys : nullptr,
+            /*keep_table_buffer=*/true,
+            threshold ? std::optional(threshold->current()) : std::nullopt);
         if (updater)
         {
             if (untruncated_keys.bytes)
@@ -1287,9 +1316,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             else
                 updater->recordAggregationKeySizes(chunk.chunk, keys_positions, key_types);
         }
-        if (pruning)
-            pruning->offerCounts(
-                assert_cast<const ColumnUInt64 &>(*chunk.chunk.getColumns()[params.keys_size + params.bucket_top_k_rank_index]).getData());
+        /// The unit holds every record and source cell of its keys, so the ranks it output are exact, and no
+        /// other unit outputs its groups.
+        if (threshold)
+            threshold->offer(bucketTopKRanks(chunk.chunk));
         chunks.push_back(std::move(chunk));
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationMergeUnits);
 

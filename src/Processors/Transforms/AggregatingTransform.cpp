@@ -2010,7 +2010,7 @@ void AggregatingTransform::initGenerate()
 
     /// The pruning also serves an aggregation in which no producer froze: it takes the adaptive merge to prune.
     if (adaptive_context)
-        params->aggregator.prepareAdaptiveTopKPruning(
+        params->aggregator.prepareAdaptiveTopK(
             *adaptive_context->session,
             many_data->variants.size(),
             /*external_merge=*/aggregator_has_temporary_data(),
