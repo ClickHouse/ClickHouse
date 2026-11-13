@@ -28,10 +28,11 @@ SET param__internal_cascades_cluster_node_count = 4;
 DROP TABLE IF EXISTS t_coloc_month_left;
 DROP TABLE IF EXISTS t_coloc_month_right;
 
+-- The cost of a read by partition value counts marks, so the tables pin their granularity.
 CREATE TABLE t_coloc_month_left (date Date, id UInt64, v UInt64)
-ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_month_right (date Date, id UInt64, w UInt64)
-ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- A merge between planning and the read of a task would invalidate the planned part names.
 SYSTEM STOP MERGES t_coloc_month_left;

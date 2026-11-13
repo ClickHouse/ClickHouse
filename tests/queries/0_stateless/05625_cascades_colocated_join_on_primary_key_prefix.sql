@@ -32,11 +32,12 @@ SET param__internal_cascades_cluster_node_count = 4;
 DROP TABLE IF EXISTS t_coloc_pk_left;
 DROP TABLE IF EXISTS t_coloc_pk_right;
 
+-- The cost of a read by partition value counts marks, so the tables pin their granularity.
 -- The sorting key starts with the join key.
 CREATE TABLE t_coloc_pk_left (key UInt64, value UInt64)
-ENGINE = MergeTree PARTITION BY cityHash64(key) % 8 ORDER BY key SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY cityHash64(key) % 8 ORDER BY key SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_pk_right (key UInt64, weight UInt64)
-ENGINE = MergeTree PARTITION BY cityHash64(key) % 8 ORDER BY key SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY cityHash64(key) % 8 ORDER BY key SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- A merge between planning and the read of a task would invalidate the planned part names.
 SYSTEM STOP MERGES t_coloc_pk_left;

@@ -25,12 +25,13 @@ DROP TABLE IF EXISTS t_coloc_agg;
 DROP TABLE IF EXISTS t_coloc_agg_monthly;
 DROP TABLE IF EXISTS t_coloc_agg_replacing;
 
+-- The cost of a read by partition value counts marks, so the tables pin their granularity.
 CREATE TABLE t_coloc_agg (key UInt64, tag LowCardinality(String), value UInt64, day Date)
-ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY (tag, value) SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY (tag, value) SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_agg_monthly (day Date, value UInt64)
-ENGINE = MergeTree PARTITION BY toYYYYMM(day) ORDER BY value SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY toYYYYMM(day) ORDER BY value SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_agg_replacing (key UInt64, version UInt64, value UInt64)
-ENGINE = ReplacingMergeTree(version) PARTITION BY cityHash64(key) % 8 ORDER BY key SETTINGS auto_statistics_types = '';
+ENGINE = ReplacingMergeTree(version) PARTITION BY cityHash64(key) % 8 ORDER BY key SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- A merge between planning and the read of a task would invalidate the planned part names.
 SYSTEM STOP MERGES t_coloc_agg;
@@ -79,8 +80,11 @@ SELECT count(), sum(s) FROM (SELECT day, sum(value) AS s FROM t_coloc_agg_monthl
 SELECT count(), sum(s) FROM (SELECT day, sum(value) AS s FROM t_coloc_agg_monthly GROUP BY day) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- 7. FINAL: the read is not split by partition value';
-EXPLAIN SELECT count(), sum(s) FROM (SELECT key, sum(value) AS s FROM t_coloc_agg_replacing FINAL GROUP BY key);
-SELECT count(), sum(s) FROM (SELECT key, sum(value) AS s FROM t_coloc_agg_replacing FINAL GROUP BY key);
+-- Without this setting the `FINAL` read merges parts across partitions, and the plan stays on one node.
+EXPLAIN SELECT count(), sum(s) FROM (SELECT key, sum(value) AS s FROM t_coloc_agg_replacing FINAL GROUP BY key)
+SETTINGS enable_automatic_decision_for_merging_across_partitions_for_final = 1;
+SELECT count(), sum(s) FROM (SELECT key, sum(value) AS s FROM t_coloc_agg_replacing FINAL GROUP BY key)
+SETTINGS enable_automatic_decision_for_merging_across_partitions_for_final = 1;
 SELECT count(), sum(s) FROM (SELECT key, sum(value) AS s FROM t_coloc_agg_replacing FINAL GROUP BY key) SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_coloc_agg;

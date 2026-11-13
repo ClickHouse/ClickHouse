@@ -33,21 +33,22 @@ DROP TABLE IF EXISTS t_coloc_groups_u32;
 DROP TABLE IF EXISTS t_coloc_float_left;
 DROP TABLE IF EXISTS t_coloc_float_right;
 
+-- The cost of a read by partition value counts marks, so the tables pin their granularity.
 CREATE TABLE t_coloc_events (key UInt64, seq UInt32, parent_seq UInt32, tag LowCardinality(String), value UInt64, day Date)
-ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY (tag, seq) SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY (tag, seq) SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_groups (key UInt64, owner LowCardinality(String), day Date)
-ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY owner SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY owner SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_groups_renamed (id UInt64, owner LowCardinality(String), day Date)
-ENGINE = MergeTree PARTITION BY (day, cityHash64(id) % 8) ORDER BY owner SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY (day, cityHash64(id) % 8) ORDER BY owner SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_groups_mod4 (key UInt64, owner LowCardinality(String), day Date)
-ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 4) ORDER BY owner SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 4) ORDER BY owner SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_groups_u32 (key UInt32, owner LowCardinality(String), day Date)
-ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY owner SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY owner SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 CREATE TABLE t_coloc_float_left (f Float64, value UInt64)
-ENGINE = MergeTree PARTITION BY cityHash64(f) % 8 ORDER BY value SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY cityHash64(f) % 8 ORDER BY value SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_float_right (f Float64, value UInt64)
-ENGINE = MergeTree PARTITION BY cityHash64(f) % 8 ORDER BY value SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY cityHash64(f) % 8 ORDER BY value SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- A merge between planning and the read of a task would invalidate the planned part names.
 SYSTEM STOP MERGES t_coloc_events;

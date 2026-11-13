@@ -32,12 +32,13 @@ DROP TABLE IF EXISTS t_coloc_chain_events;
 DROP TABLE IF EXISTS t_coloc_chain_groups;
 DROP TABLE IF EXISTS t_coloc_chain_details;
 
+-- The cost of a read by partition value counts marks, so the tables pin their granularity.
 CREATE TABLE t_coloc_chain_events (key UInt64, tag LowCardinality(String), value UInt64, day Date)
-ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY (tag, value) SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY (day, cityHash64(key) % 8) ORDER BY (tag, value) SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_chain_groups (key UInt64, owner LowCardinality(String))
-ENGINE = MergeTree PARTITION BY cityHash64(key) % 8 ORDER BY owner SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY cityHash64(key) % 8 ORDER BY owner SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_coloc_chain_details (id UInt64, weight UInt64)
-ENGINE = MergeTree PARTITION BY cityHash64(id) % 8 ORDER BY weight SETTINGS auto_statistics_types = '';
+ENGINE = MergeTree PARTITION BY cityHash64(id) % 8 ORDER BY weight SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- A merge between planning and the read of a task would invalidate the planned part names.
 SYSTEM STOP MERGES t_coloc_chain_events;
