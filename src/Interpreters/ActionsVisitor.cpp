@@ -341,7 +341,13 @@ ASTPtr makeArrayForNonConstantInRightOperand(
     const DataTypePtr & cast_elements_to)
 {
     if (right_operand_is_array)
+    {
+        if (cast_elements_to)
+            return makeASTFunction(
+                "CAST", right_operand->clone(),
+                make_intrusive<ASTLiteral>("Array(" + cast_elements_to->getName() + ")"));
         return right_operand->clone();
+    }
 
     auto make_element = [&](ASTPtr element) -> ASTPtr
     {
@@ -1351,6 +1357,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 else if (right_argument_function && right_argument_function->name == "array")
                 {
                     right_argument_is_array = true;
+                    visit(right_argument, data);
+                    if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                        right_argument_type = name_and_type->type;
                 }
                 else
                 {
@@ -1402,6 +1411,22 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     DataTypePtr cast_elements_to;
                     DataTypes element_types;
                     bool element_types_known = false;
+                    const auto left_bare_type = left_argument_type
+                        ? removeNullable(removeLowCardinality(left_argument_type)) : nullptr;
+                    const auto * right_array_type = right_argument_type
+                        ? typeid_cast<const DataTypeArray *>(right_argument_type.get()) : nullptr;
+                    if (use_standard_null_semantics && right_argument_is_array && left_bare_type
+                        && (isDate(left_bare_type) || isDate32(left_bare_type)) && right_array_type)
+                    {
+                        const auto & right_element_type = right_array_type->getNestedType();
+                        const auto right_bare_type = removeNullable(removeLowCardinality(right_element_type));
+                        if (isDateTime(right_bare_type) || isDateTime64(right_bare_type))
+                        {
+                            cast_elements_to = left_bare_type;
+                            if (isNullableOrLowCardinalityNullable(right_element_type))
+                                cast_elements_to = makeNullable(cast_elements_to);
+                        }
+                    }
                     if (!right_argument_is_array && left_argument_type && !left_argument_type->onlyNull())
                     {
                         element_types_known = true;

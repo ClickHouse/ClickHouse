@@ -3439,7 +3439,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
                     auto source_null_predicate = makeInSourceNullPredicate(source_elements, in_rhs_has_explicit_null);
                     QueryTreeNodes matchable_elements = source_elements;
-                    QueryTreeNodes nullable_string_elements;
+                    QueryTreeNodes string_elements;
                     const auto left_complex_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
                     if (use_standard_null_semantics)
                     {
@@ -3457,9 +3457,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             std::erase_if(matchable_elements, [&](const auto & arg)
                             {
                                 const auto source_type = removeNullable(removeLowCardinality(arg->getResultType()));
-                                if (canContainNull(*arg->getResultType()) && isStringOrFixedString(source_type))
+                                if (isStringOrFixedString(source_type))
                                 {
-                                    nullable_string_elements.push_back(arg);
+                                    string_elements.push_back(arg);
                                     return true;
                                 }
                                 return false;
@@ -3472,7 +3472,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// the original source count below.
                     QueryTreeNodePtr array_arg = convertTupleToArray(matchable_elements, in_first_argument, scope, compare_nulls);
                     QueryTreeNodePtr extra_match_predicate;
-                    for (const auto & source_string : nullable_string_elements)
+                    for (const auto & source_string : string_elements)
                     {
                         if (isMap(left_complex_type))
                         {
