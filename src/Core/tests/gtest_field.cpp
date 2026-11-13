@@ -434,6 +434,9 @@ GTEST_TEST(Field, RestoreFromDumpRoundTripsNestedAndQuotedContainers)
     {
         Field state{AggregateFunctionStateData{.name = "quantiles(0.5, 0.9)", .data = "a)b,c'd\\e"}};
         ASSERT_EQ(round_trip(state), state);
+
+        Field states{Array{state, state}};
+        ASSERT_EQ(round_trip(states), states);
     }
 
     /// Empty containers.
@@ -443,9 +446,15 @@ GTEST_TEST(Field, RestoreFromDumpRoundTripsNestedAndQuotedContainers)
         ASSERT_EQ(round_trip(Field{Map{}}), Field{Map{}});
     }
 
-    /// An element that parses only partially is an error, not a silently truncated container: a
-    /// hand written users.xml value of Map_('k':'v') must not restore as Map(String 'k').
+    /// A value that parses only partially is an error, not a silently truncated one: a hand written
+    /// users.xml value of Map_('k':'v') must not restore as Map(String 'k').
     ASSERT_THROW(Field::restoreFromDump("Map_('k':'v')"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("Array_['k':'v']"), DB::Exception);
+    for (const char * dump : {"Decimal32_'1e0' x", "Decimal64_'1e0' x", "Decimal128_'1e0' x", "Decimal256_'1e0' x"})
+        ASSERT_THROW(Field::restoreFromDump(dump), DB::Exception) << dump;
+    ASSERT_THROW(Field::restoreFromDump("AggregateFunctionState_('sum' x, 'ab')"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("AggregateFunctionState_('sum', 'ab' x)"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("AggregateFunctionState_('sum', 'ab') x"), DB::Exception);
 
     /// A Map element is a key-value pair, so a dump that says otherwise must not restore: consumers
     /// index the element as a two element tuple.
