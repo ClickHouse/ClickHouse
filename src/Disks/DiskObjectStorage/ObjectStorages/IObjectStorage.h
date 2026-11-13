@@ -379,11 +379,6 @@ public:
         const StoredObjects & object,
         StoredObjects * successful_objects = nullptr) = 0;
 
-    /// Remove the objects written by a transaction whose commit failed. Unlike `removeObjectsIfExist`, a
-    /// caching wrapper removes them from the object storage it wraps as well: nothing references them, so the
-    /// removal queue of the wrapped disk, which removes the objects of committed metadata, never gets them.
-    virtual void removeObjectsOfFailedTransaction(const StoredObjects & objects) { removeObjectsIfExist(objects); }
-
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -423,6 +418,10 @@ public:
         /// server-internal table whose client was built restricted at metadata load) without detaching the table,
         /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
+
+        /// Request settings given as explicit arguments of the storage definition, by name. They take priority over the
+        /// server config and the endpoint settings, which are re-applied on every call.
+        std::map<String, String> explicit_request_settings = {};
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,

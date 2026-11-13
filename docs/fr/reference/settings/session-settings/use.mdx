@@ -14,6 +14,14 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "La conversion à deux niveaux de `GROUP BY` compare `group_by_two_level_threshold_bytes` uniquement à la mémoire occupée par l’état d’agrégation, mesurée par un composant de suivi de la mémoire dédié (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490). Avant la version 26.7, elle se fondait sur l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de choisir la manière dont la conversion à deux niveaux de `GROUP BY` mesure la mémoire d’agrégation. La modification qu’il conditionne a été livrée dans la version 26.7, et la régression de mémoire associée a été corrigée dans la version 26.9."}]}]} />
+
+Mesure la taille de l’état d’agrégation, comparée à `group_by_two_level_threshold_bytes`, à l’aide du composant de suivi de la mémoire dédié à l’agrégation. Lorsque ce paramètre est désactivé, la taille correspond à l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête depuis la création de l’agrégation : une agrégation dont l’état est de petite taille peut donc être convertie en agrégation à deux niveaux.
+
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -47,11 +55,13 @@ Utilise le fuseau horaire du client pour interpréter les valeurs de chaîne Dat
 Détermine si le cache de colonnes est utilisé. Accepte 0 ou 1. Valeur par défaut : 0 (désactivé).
 Le cache de colonnes stocke les colonnes désérialisées issues des tables `MergeTree`, ce qui évite de décompresser et de désérialiser à plusieurs reprises les données fréquemment consultées. Il peut ainsi réduire considérablement la latence des requêtes répétées sur les mêmes données. Le cache est indexé par l&#39;UUID de la table, le nom de la part, le nom de la colonne et un stripe de granules consécutifs d&#39;environ 65536 lignes.
 
-Les entrées étant indexées par l&#39;UUID de la table, le cache n&#39;est actif que pour les tables des bases de données qui attribuent des UUID, comme `Atomic`, `Replicated` et `Shared` (le moteur de base de données par défaut dans ClickHouse Cloud) ; les tables `MergeTree` des bases de données legacy `Ordinary` ont un UUID nul et ignorent silencieusement ce paramètre.
+Les entrées étant indexées par l&#39;UUID de la table, le cache n&#39;est actif que pour les tables des bases de données qui attribuent des UUID, comme `Atomic`, `Replicated` et `Shared` (le moteur de base de données par défaut dans ClickHouse Cloud) ; les tables `MergeTree` des bases de données legacy `Ordinary` ont un UUID nul et ignorent silencieusement ce paramètre.
 
-Pour l&#39;instant, le cache ne s&#39;applique qu&#39;aux parts wide : les données des parts compact ne sont ni lues depuis le cache de colonnes ni écrites dans celui-ci, si bien que l&#39;accélération d&#39;une lecture dépend du format de la part.
+Pour l&#39;instant, le cache ne s&#39;applique qu&#39;aux parts wide : les données des parts compact ne sont ni lues depuis le cache de colonnes ni écrites dans celui-ci, si bien que l&#39;accélération d&#39;une lecture dépend du format de la part.
 
-Une entrée contient une plage contiguë de granules d&#39;un même stripe : un granule n&#39;entre dans le cache qu&#39;une fois lu intégralement, de sa première à sa dernière ligne ; une lecture est servie depuis le cache granule par granule, et les plages écrites par des lectures distinctes sont fusionnées, de sorte que des lectures découpant une part en plages de marques différentes partagent les mêmes entrées.
+Une entrée contient une plage contiguë de granules d&#39;un même stripe : un granule n&#39;entre dans le cache qu&#39;une fois lu intégralement, de sa première à sa dernière ligne ; une lecture est servie depuis le cache granule par granule, et les plages écrites par des lectures distinctes sont fusionnées, de sorte que des lectures découpant une part en plages de marques différentes partagent les mêmes entrées.
+
+Le cache s&#39;applique également aux fichiers `Parquet` lus depuis le système de fichiers local (la fonction de table `file` et le moteur de table `File`) ou depuis des stockages d&#39;objets (`s3`, `azureBlobStorage` et leurs moteurs de table), ainsi qu&#39;à ceux lus par les tables de data lake. Dans ce cas, une entrée contient une colonne entière d&#39;un groupe de lignes, indexée par le chemin du fichier, sa version (l&#39;ETag d&#39;un objet, ou la date de modification, l&#39;inode et la taille d&#39;un fichier local), la colonne du fichier et le type sous lequel elle est lue. Une colonne d&#39;un groupe de lignes n&#39;est écrite dans le cache que si toutes les lignes du groupe sont lues, avant l&#39;application de tout filtre : avec `PREWHERE`, c&#39;est le cas des colonnes du filtre, tandis que les autres colonnes ne sont lues que pour les lignes qui le satisfont. Un fichier local n&#39;est mis en cache que s&#39;il n&#39;a pas été modifié depuis quelques secondes, afin que sa version identifie bien son contenu.
 
 ## use_concurrency_control {#use_concurrency_control}
 
@@ -60,6 +70,18 @@ Une entrée contient une plage contiguë de granules d&#39;un même stripe : u
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Activer le contrôle de la concurrence par défaut"}]}]} />
 
 Respecte le contrôle de la concurrence du serveur (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`). Si ce paramètre est désactivé, il permet d&#39;utiliser un plus grand nombre de threads même si le serveur est surchargé (non recommandé en usage normal, et surtout nécessaire pour les tests).
+
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de déterminer le parallélisme d’une requête à partir de la part équitable des créneaux CPU du contrôle de concurrence"}]}]} />
+
+Détermine le parallélisme d’une requête (le nombre de flux et de fils d’exécution prévus lors de sa planification) à partir de la part équitable des créneaux CPU du contrôle de concurrence du serveur, plutôt qu’à partir du nombre de cœurs CPU. La part équitable correspond à la limite de créneaux (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`) répartie à parts égales entre les pipelines en cours d’exécution et la nouvelle requête.
+
+Ainsi, lorsque de nombreuses requêtes s’exécutent simultanément, chacune est planifiée avec moins de flux : elle consomme moins de mémoire et moins de CPU pour fusionner les résultats partiels de ses fils d’exécution (par exemple, les états d’agrégation), ce qui augmente le débit global. Une requête planifiée alors que le serveur est inactif utilise tous les cœurs CPU, comme auparavant.
+
+Ce paramètre ne s’applique que si `max_threads` vaut `auto` (non défini explicitement) et si `use_concurrency_control` est activé.
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 

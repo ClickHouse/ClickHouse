@@ -24,6 +24,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStatus.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <base/defines.h>
 
@@ -750,25 +751,43 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
-    /// With random blob paths every written blob is a new object owned by this transaction, so a caching wrapper
-    /// may remove it from the storage it wraps as well. Otherwise a blob key can be the key of an existing object,
+    /// Keep the retries of this cleanup when the query or merge is cancelled: nothing removes orphaned blobs later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
+    /// With random blob paths every written blob is a new object owned by this transaction, so it is removed
+    /// through every layer down to the base object storage. Otherwise a blob key can be the key of an existing object,
     /// for example when an ordinary file of `plain_rewritable` is overwritten in place, and that object stays
-    /// referenced by the committed metadata: removing it physically would lose committed data.
+    /// referenced by the committed metadata: removing it physically would lose committed data, so only the
+    /// outermost layer (e.g. the cache entries of `CachedObjectStorage`) is cleaned up.
     const bool written_blobs_are_owned = metadata_storage->areBlobPathsRandom();
 
     for (const auto & [location, blobs] : written_blobs)
     {
+        /// A decorator such as `CachedObjectStorage` removes only its own state for the blobs (the cache entries),
+        /// so remove them through every layer down to the base object storage, which deletes them.
+        /// Each layer is tried separately, so that a failure in a decorator does not leave the blobs in the base storage.
+        ObjectStoragePtr object_storage;
         try
         {
-            auto object_storage = object_storages->takePointingTo(location);
-            if (written_blobs_are_owned)
-                object_storage->removeObjectsOfFailedTransaction(blobs);
-            else
-                object_storage->removeObjectsIfExist(blobs);
+            object_storage = object_storages->takePointingTo(location);
         }
         catch (...)
         {
             tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), fmt::format("An error occurred during transaction cleanup from location '{}'", location));
+        }
+
+        for (; object_storage; object_storage = written_blobs_are_owned ? object_storage->getUnderlying() : nullptr)
+        {
+            try
+            {
+                object_storage->removeObjectsIfExist(blobs);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("DiskObjectStorageTransaction"),
+                    fmt::format("An error occurred during transaction cleanup from location '{}' in `{}`", location, object_storage->getName()));
+            }
         }
     }
 

@@ -25,6 +25,10 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_storage_s3_queue/test_6.py",
     "test_named_collections_encrypted2/",
     "test_multiple_disks/",
+    # The YTsaurus backend container was OOM-killed under the memory pressure of a coverage
+    # shard (master, 2026-02-17). The module skips itself on ARM, so the `arm_binary` runs of a
+    # pull request skip it too, and without coverage rows the targeted amd jobs could never
+    # select it: the per-test coverage job keeps it, see `PER_TEST_COVERAGE_KEEP_PREFIXES`.
     "test_ytsaurus/",
     # Starts 20 server nodes. Under continuous-mode coverage (%c) every node
     # memory-maps its own ~178 MB profile, and the kernel's writeback of the
@@ -47,6 +51,19 @@ PER_TEST_COVERAGE_SKIP_PREFIXES = [
     # test times out.
     "test_keeper_memory_soft_limit/",
 ]
+
+# Entries of `LLVM_COVERAGE_SKIP_PREFIXES` that the per-test coverage job (`per_test_coverage`)
+# runs anyway. That job records the coverage per test module, and the targeted integration
+# jobs of a pull request select the modules covering the changed lines from these records. A
+# module that skips itself on ARM has no other run in a pull request (`Integration tests
+# (arm_binary, N/4)` skips it, the LLVM coverage family is opt-in), so without the records a
+# change to its code is tested only after the merge, by the `excluded_from_llvm` job of master.
+PER_TEST_COVERAGE_KEEP_PREFIXES = [
+    "test_ytsaurus/",
+]
+assert set(PER_TEST_COVERAGE_KEEP_PREFIXES) <= set(
+    LLVM_COVERAGE_SKIP_PREFIXES
+), "PER_TEST_COVERAGE_KEEP_PREFIXES must be a subset of LLVM_COVERAGE_SKIP_PREFIXES"
 
 TEST_CONFIGS = [
     TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),

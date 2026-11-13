@@ -1,119 +1,148 @@
 -- aggregation
-    ┌──────────────────────────────┐
-    │ Expression ((Project names + │
-    │ Projection))                 │
-    └───────────────▲──────────────┘
-                    │
-             ┌──────┴──────┐
-             │ Aggregating │
-             └──────▲──────┘
-                    │
-┌───────────────────┴───────────────────┐
-│ Expression ((Before GROUP BY + Change │
-│ column names to column identifiers))  │
-└───────────────────▲───────────────────┘
-                    │
- ┌──────────────────┴──────────────────┐
- │ ReadFromMergeTree (db_XXXXXXXX.big) │
- └─────────────────────────────────────┘
+Output: bid MOD 10, sum(bid)
+
+       ┌──────────────────────┐
+       │ Aggregating          │
+       ├──────────────────────┤
+       │ Keys: bid MOD 10     │
+       │ Aggregates: sum(bid) │
+       │ Skip merging: 0      │
+       └───────────▲──────────┘
+                   │
+┌──────────────────┴──────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.big) │
+├─────────────────────────────────────┤
+│ Read type: Default                  │
+│ Parts: 1 | Granules: 13             │
+│ Output: bid                         │
+└─────────────────────────────────────┘
 -- join
-                        ┌──────────────────────────────┐
-                        │ Expression ((Project names + │
-                        │ Projection))                 │
-                        └───────────────▲──────────────┘
+Output: count()
+
+                             ┌─────────────────────┐
+                             │ Aggregating         │
+                             ├─────────────────────┤
+                             │ Keys:               │
+                             │ Aggregates: count() │
+                             │ Skip merging: 0     │
+                             └──────────▲──────────┘
                                         │
-                                 ┌──────┴──────┐
-                                 │ Aggregating │
-                                 └──────▲──────┘
-                                        │
-                        ┌───────────────┴──────────────┐
-                        │ Expression (Before GROUP BY) │
-                        └───────────────▲──────────────┘
-                                        │
-                       ┌────────────────┴───────────────┐
-                       │ Expression (Post Join Actions) │
-                       └────────────────▲───────────────┘
-                                        │
-                         ┌──────────────┴─────────────┐
-                         │ Join (JOIN FillRightFirst) │
-                         └──────────────▲─────────────┘
+        ┌───────────────────────────────┴──────────────────────────────┐
+        │ Join (JOIN FillRightFirst)                                   │
+        ├──────────────────────────────────────────────────────────────┤
+        │ big[no_stats~100000] ⋈ small[no_stats~1000]                  │
+        │ Type: inner | Strictness: all | Algorithm: SpillingHashJoin… │
+        │ Cost: estimated 100.00 thousand                              │
+        │ Selectivity: estimated (NDV) 1e-05                           │
+        │ Output rows: estimated 100.00 thousand                       │
+        │ Left: rows estimated 100.00 thousand                         │
+        │ Right: rows estimated 1.00 thousand                          │
+        │ Join conditions: bid = sid                                   │
+        │ Input (left): bid, __join_result_dummy                       │
+        │ Input (right): sid                                           │
+        └───────────────────────────────▲──────────────────────────────┘
                                         │
                    ┌────────────────────┴─────────────────────┐
-┌──────────────────┴─────────────────┐     ┌──────────────────┴──────────────────┐
-│ Expression (Left Pre Join Actions) │     │ Expression (Right Pre Join Actions) │
-└──────────────────▲─────────────────┘     └──────────────────▲──────────────────┘
-                   │                                          │
-┌──────────────────┴─────────────────┐     ┌──────────────────┴─────────────────┐
-│ Expression (Change column names to │     │ Expression (Change column names to │
-│ column identifiers)                │     │ column identifiers)                │
-└──────────────────▲─────────────────┘     └──────────────────▲─────────────────┘
-                   │                                          │
 ┌──────────────────┴──────────────────┐   ┌───────────────────┴───────────────────┐
 │ ReadFromMergeTree (db_XXXXXXXX.big) │   │ ReadFromMergeTree (db_XXXXXXXX.small) │
+├─────────────────────────────────────┤   ├───────────────────────────────────────┤
+│ Read type: Default                  │   │ Read type: Default                    │
+│ Parts: 1 | Granules: 13             │   │ Parts: 1 | Granules: 1                │
+│ Output: bid                         │   │ Output: sid                           │
 └─────────────────────────────────────┘   └───────────────────────────────────────┘
 -- union all
-                                      ┌───────┐
-                                      │ Union │
-                                      └───▲───┘
-                                          │
-                    ┌─────────────────────┴─────────────────────┐
-┌───────────────────┴──────────────────┐   ┌────────────────────┴───────────────────┐
-│ Expression ((Project names +         │   │ Expression ((Conversion before UNION + │
-│ (Projection + Change column names to │   │ (Project names + (Projection + Change  │
-│ column identifiers)))                │   │ column names to column identifiers)))) │
-└───────────────────▲──────────────────┘   └────────────────────▲───────────────────┘
-                    │                                           │
- ┌──────────────────┴──────────────────┐    ┌───────────────────┴───────────────────┐
- │ ReadFromMergeTree (db_XXXXXXXX.big) │    │ ReadFromMergeTree (db_XXXXXXXX.small) │
- └─────────────────────────────────────┘    └───────────────────────────────────────┘
+Output: sid
+
+                                    ┌───────┐
+                                    │ Union │
+                                    └───▲───┘
+                                        │
+                   ┌────────────────────┴─────────────────────┐
+┌──────────────────┴──────────────────┐   ┌───────────────────┴───────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.big) │   │ ReadFromMergeTree (db_XXXXXXXX.small) │
+├─────────────────────────────────────┤   ├───────────────────────────────────────┤
+│ Read type: Default                  │   │ Read type: Default                    │
+│ Parts: 1 | Granules: 13             │   │ Parts: 1 | Granules: 1                │
+│ Output: sid                         │   │ Output: sid                           │
+└─────────────────────────────────────┘   └───────────────────────────────────────┘
+-- without actions
+Output: bid MOD 10, sum(bid)
+
+            ┌─────────────┐
+            │ Aggregating │
+            └──────▲──────┘
+                   │
+┌──────────────────┴──────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.big) │
+└─────────────────────────────────────┘
 -- without descriptions
-   ┌────────────┐
-   │ Expression │
-   └──────▲─────┘
-          │
-   ┌──────┴──────┐
-   │ Aggregating │
-   └──────▲──────┘
-          │
-   ┌──────┴─────┐
-   │ Expression │
-   └──────▲─────┘
-          │
-┌─────────┴─────────┐
-│ ReadFromMergeTree │
-└───────────────────┘
+Output: bid MOD 10, sum(bid)
+
+ ┌──────────────────────┐
+ │ Aggregating          │
+ ├──────────────────────┤
+ │ Keys: bid MOD 10     │
+ │ Aggregates: sum(bid) │
+ │ Skip merging: 0      │
+ └───────────▲──────────┘
+             │
+┌────────────┴────────────┐
+│ ReadFromMergeTree       │
+├─────────────────────────┤
+│ Read type: Default      │
+│ Parts: 1 | Granules: 13 │
+│ Output: bid             │
+└─────────────────────────┘
 -- nested plans
-┌──────────────────────────────────────┐
-│ Expression ((Project names +         │
-│ (Projection + Change column names to │
-│ column identifiers)))                │
-└───────────────────▲──────────────────┘
-                    │
- ┌──────────────────┴─────────────────┐
- │ ReadFromMerge (+2 nested plans not │
- │ drawn)                             │
- └────────────────────────────────────┘
+Output: x
+
+┌────────────────────────┐
+│ ReadFromMerge ← N1, N2 │
+├────────────────────────┤
+│ Output: x              │
+└────────────────────────┘
+
+N1 · nested plan of ReadFromMerge
+┌─────────────────────────────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.merge_a) │
+├─────────────────────────────────────────┤
+│ Read type: Default                      │
+│ Parts: 1 | Granules: 1                  │
+│ Output: materialize(x)                  │
+└─────────────────────────────────────────┘
+
+N2 · nested plan of ReadFromMerge
+┌─────────────────────────────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.merge_b) │
+├─────────────────────────────────────────┤
+│ Read type: Default                      │
+│ Parts: 1 | Granules: 1                  │
+│ Output: materialize(x)                  │
+└─────────────────────────────────────────┘
 -- fallback to local execution
-    ┌──────────────────────────────┐
-    │ Expression ((Project names + │
-    │ Projection))                 │
-    └───────────────▲──────────────┘
-                    │
-            ┌───────┴──────┐
-            │ TotalsHaving │
-            └───────▲──────┘
-                    │
-             ┌──────┴──────┐
-             │ Aggregating │
-             └──────▲──────┘
-                    │
-┌───────────────────┴───────────────────┐
-│ Expression ((Before GROUP BY + Change │
-│ column names to column identifiers))  │
-└───────────────────▲───────────────────┘
-                    │
- ┌──────────────────┴──────────────────┐
- │ ReadFromMergeTree (db_XXXXXXXX.big) │
- └─────────────────────────────────────┘
+Output: bid MOD 10, sum(bid)
+
+   ┌──────────────────────────────┐
+   │ TotalsHaving                 │
+   ├──────────────────────────────┤
+   │ Filter column:               │
+   │ Mode: after_having_exclusive │
+   └───────────────▲──────────────┘
+                   │
+       ┌───────────┴──────────┐
+       │ Aggregating          │
+       ├──────────────────────┤
+       │ Keys: bid MOD 10     │
+       │ Aggregates: sum(bid) │
+       │ Skip merging: 0      │
+       └───────────▲──────────┘
+                   │
+┌──────────────────┴──────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.big) │
+├─────────────────────────────────────┤
+│ Read type: Default                  │
+│ Parts: 1 | Granules: 13             │
+│ Output: bid                         │
+└─────────────────────────────────────┘
 
 Not distributed: make_distributed_plan does not support WITH TOTALS
