@@ -2230,6 +2230,10 @@ html.dark .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
     font-size: 0.875rem;
 }
 
+.betaBadge + .enterprisePlanFeatureContainer {
+    margin-top: 8px;
+}
+
 .enterprisePlanFeatureContainer p {
     margin: 0;
     padding: 0;
