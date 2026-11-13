@@ -1,0 +1,32 @@
+uid, ts	1
+uh, ts	1
+ih DESC, neg	1
+small, d	1
+i8, dc DESC	1
+e, b, dt	1
+ip, cat	1
+cat, uh, ts	1
+uid, uh, ts	1
+uid, uh, ih, ts	1
+spread, ts	1
+spread DESC, dc	1
+wide, cat	1
+c5, small	1
+inc, ts	1
+rev, ts	1
+n DESC, ts	1
+uid DESC, ts DESC	1
+cat, toString(n)	1
+INSERT uid, ts	1
+INSERT uid, cat	1
+INSERT uh, ts	1
+INSERT ih DESC, neg	1
+INSERT cat, uh	1
+INSERT cat, uh, ts	1
+INSERT i8, dc DESC	1
+INSERT spread, cat	1
+INSERT spread DESC, dc	1
+INSERT inc, ts	1
+INSERT rev, ts	1
+INSERT small, identity(1), d	1
+DISTINCT cat, uh	1
