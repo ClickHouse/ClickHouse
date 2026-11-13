@@ -40,7 +40,7 @@ run -q "
 "
 $CLICKHOUSE_CLIENT -q "SELECT table, name FROM system.data_skipping_indices WHERE database = currentDatabase() ORDER BY ALL"
 
-echo '2. An index copied by CREATE AS is refused, on every entry format.'
+echo '2. An index copied by CREATE AS is refused on the legacy entry format, where each host copies its own source.'
 for version in 2 8
 do
     run --distributed_ddl_entry_format_version $version -q "

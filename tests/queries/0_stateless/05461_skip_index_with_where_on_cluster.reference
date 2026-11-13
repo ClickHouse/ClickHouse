@@ -3,9 +3,10 @@ refused
 refused
 ok
 dst	i
-2. An index copied by CREATE AS is refused, on every entry format.
+2. An index copied by CREATE AS is refused on the legacy entry format, where each host copies its own source.
 refused
-refused
+ok
+copy_8	i
 3. A condition the user may not run is refused.
 refused
 refused
