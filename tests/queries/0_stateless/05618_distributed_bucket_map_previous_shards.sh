@@ -148,6 +148,13 @@ loaded_map
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist WHERE key = 5 SETTINGS $SKIP_SHARDS" 2>&1 \
     | grep -o -m1 'assigns buckets to shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards'
 
+echo '-- a query that does not skip shards does not need the map'
+$CLICKHOUSE_CLIENT -q "DETACH TABLE dist"
+set_map 'format version: 1\nbuckets: 4\n0 0 1\n'
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE dist"
+wait_for_map_exception 'The bucket ranges cover 1 of 4 buckets'
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM dist SETTINGS optimize_skip_unused_shards = 1"
+
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE dist;
     DROP DATABASE shard_0;

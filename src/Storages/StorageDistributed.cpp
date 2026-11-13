@@ -939,10 +939,11 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     /// The rows of a bucket with previous shards are on several shards, so no shard has all rows of a value of the sharding key.
+    /// Without a loaded map the optimization is off, so a query that does not skip shards never loads the map.
     if (optimize_sharding_key_aggregation && bucket_map_watcher)
     {
-        auto bucket_map = query_info.bucket_map ? query_info.bucket_map : bucket_map_watcher->get();
-        optimize_sharding_key_aggregation = !bucket_map->has_previous_shards;
+        auto bucket_map = query_info.bucket_map ? query_info.bucket_map : bucket_map_watcher->getStatus().map;
+        optimize_sharding_key_aggregation = bucket_map && !bucket_map->has_previous_shards;
     }
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
