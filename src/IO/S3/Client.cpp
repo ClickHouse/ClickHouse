@@ -1693,7 +1693,7 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
     for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
     {
         /// `PocoHTTPClient` picks the adaptive timeouts from the attempt number, as `AWSClient` sets it. Not part of the signature.
-        http_request->SetHeaderValue(Aws::Http::SDK_REQUEST_HEADER, fmt::format("attempt={}", retries + 1));
+        http_request->SetHeaderValue(Aws::Http::SDK_REQUEST_HEADER, awsFormat("attempt={}", retries + 1));
         auto response = GetHttpClient()->MakeRequest(http_request);
         Aws::Client::AWSError<Aws::Client::CoreErrors> error;
         if (!response)
