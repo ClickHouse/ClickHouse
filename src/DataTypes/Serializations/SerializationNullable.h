@@ -14,9 +14,13 @@ private:
     /// Used in Sparse columns where the null map is implicitly derived from sparse offsets.
     bool use_default_null_map;
 
+    /// Cached `nested->supportsPooling`, see `SerializationArray`.
+    bool nested_supports_pooling;
+
     explicit SerializationNullable(const SerializationPtr & nested_, bool use_default_null_map_ = false)
         : nested(nested_)
         , use_default_null_map(use_default_null_map_)
+        , nested_supports_pooling(nested->supportsPooling())
     {
     }
 
@@ -27,7 +31,7 @@ public:
     /// Whether a resolved subcolumn is really the null map, which its name alone cannot tell.
     static bool isNullMapSubcolumn(const SubstreamPath & path);
 
-    bool supportsPooling() const override { return nested->supportsPooling(); }
+    bool supportsPooling() const override { return nested_supports_pooling; }
 
     const SerializationPtr & getNested() const { return nested; }
 
@@ -104,12 +108,12 @@ public:
     void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
     /// If Check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
-    static bool deserializeNullAsDefaultOrNestedWholeText(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
-    static bool deserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
-    static bool deserializeNullAsDefaultOrNestedTextQuoted(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
-    static bool deserializeNullAsDefaultOrNestedTextCSV(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
-    static bool deserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
-    static bool deserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
+    static bool deserializeNullAsDefaultOrNestedWholeText(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, const IDataType * nested_type = nullptr);
+    static bool deserializeNullAsDefaultOrNestedTextEscaped(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, const IDataType * nested_type = nullptr);
+    static bool deserializeNullAsDefaultOrNestedTextQuoted(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization, const IDataType * nested_type = nullptr);
+    static bool deserializeNullAsDefaultOrNestedTextCSV(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, const IDataType * nested_type = nullptr);
+    static bool deserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization, const IDataType * nested_type = nullptr);
+    static bool deserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization, const IDataType * nested_type = nullptr);
 
     /// If Check for NULL and deserialize value into non-nullable column or insert default value of nested type.
     /// Return true if parsing was successful and false in case of any error.

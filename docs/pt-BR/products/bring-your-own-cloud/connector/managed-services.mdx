@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -41,7 +40,15 @@ Apenas o `prepare` precisa de credenciais AWS: é ele que cria os S3 buckets e o
 * O `prepare` precisa de uma cópia da configuração do connector (`--config`), de um `kubectl port-forward` para a API local do executor e de um `--output-dir` gravável. Ele valida o service name junto ao executor e se recusa a executar quando não consegue alcançá-lo.
 * Quando este host não possui os arquivos de credencial indicados na configuração, o `instances create` os lê a partir dos Secrets `clicklink-hmac` e `clicklink-mtls` e informa cada leitura. Adicione `--connector-namespace` quando o Espaço de nomes do connector não for `clicklink`. Somente o `instances create` conta com esse fallback.
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="Ciclo de vida do serviço do ClickHouse Connector no modo gerenciado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Ciclo de vida do serviço do ClickHouse Connector no modo gerenciado](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+
+</Frame>
+
+</div>
 
 <Steps>
   <Step title="Prepare o serviço" id="prepare">

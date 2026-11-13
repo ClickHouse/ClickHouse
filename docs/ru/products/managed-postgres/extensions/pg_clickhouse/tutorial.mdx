@@ -100,6 +100,7 @@ ORDER BY pickup_datetime;
 INSERT INTO taxi.trips
 SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+    'NOSIGN',
     'TabSeparatedWithNames', "
     trip_id UInt32,
     vendor_id Enum8(
@@ -174,14 +175,38 @@ quit
 таблицы ClickHouse. Нажмите **Подключить**, чтобы создать внешний сервер и
 импортировать схему.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Форма настройки pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Форма настройки pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+
+</Frame>
+
+</div>
 
 После завершения настройки консоль отобразит подтверждение, а внешний сервер
 появится в списке серверов.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Завершённая настройка pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Список внешних серверов с подключением pg_clickhouse для taxi" size="lg" border />
+<Frame>
+
+![Завершённая настройка pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Список внешних серверов с подключением pg_clickhouse для taxi](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+
+</Frame>
+
+</div>
 
 Теперь вы можете открыть **SQL консоль** Postgres и выполнять запросы к импортированным таблицам:
 

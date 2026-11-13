@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 
 create table hourly(
   hour datetime,

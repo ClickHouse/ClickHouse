@@ -12,9 +12,9 @@ integration:
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/es/clickpipes/_postgres_clickpipe_cli.mdx';
+
 import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.mdx';
 
 <Visibility for="agents">
@@ -27,7 +27,7 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
 
     Los ClickPipes de Postgres se pueden desplegar y administrar manualmente desde la ClickPipes UI, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
-## Requisitos previos
+## Requisitos previos {#prerequisites}
 
     Para empezar, primero debes asegurarte de que tu base de datos de Postgres esté configurada correctamente. Según tu instancia de Postgres de origen, puedes seguir cualquiera de las siguientes guías:
 
@@ -57,25 +57,49 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
 
     Una vez configurada tu base de datos de Postgres de origen, puedes continuar con la creación de tu ClickPipe.
 
-## Creación de tu ClickPipe
+## Creación de tu ClickPipe {#creating-your-clickpipe}
 
-    Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún no tienes una cuenta, puedes registrarte [aquí](https://cloud.clickhouse.com/).
+    Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún no tienes una cuenta, puedes registrarte [aquí](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-postgres).
 
     [//]: # "   TODO update image here"
 
     1. En la consola de ClickHouse Cloud, navega hasta tu servicio de ClickHouse Cloud.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Servicio de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+    </Frame>
+
+    </div>
 
     2. Selecciona el botón `Data Sources` en el menú de la izquierda y haz clic en &quot;Set up a ClickPipe&quot;
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </Frame>
+
+    </div>
 
     3. Selecciona el tile `Postgres CDC`
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Selecciona Postgres" size="lg" border />
+       <div className="ch-image-lg">
 
-### Añadir la conexión a la base de datos de Postgres de origen
+       <Frame>
+
+       ![Selecciona Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+
+       </Frame>
+
+       </div>
+
+### Añadir la conexión a la base de datos de Postgres de origen {#adding-your-source-postgres-database-connection}
 
     4. Completa los detalles de conexión de tu base de datos de Postgres de origen que configuraste en el paso de requisitos previos.
 
@@ -84,19 +108,27 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
       Para más información, consulta las guías de configuración de Postgres de origen enlazadas [al principio de esta página](#prerequisites).
     </Info>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="Introduce los detalles de conexión" size="lg" border />
+    <div className="ch-image-lg">
 
-#### (Opcional) Configuración de AWS Private Link
+    <Frame>
+
+    ![Introduce los detalles de conexión](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+
+    </Frame>
+
+    </div>
+
+#### (Opcional) Configuración de AWS Private Link {#optional-setting-up-aws-private-link}
 
     Puedes usar AWS Private Link para conectarte a tu base de datos de Postgres de origen si está alojada en AWS. Esto resulta útil si
     quieres mantener privada la transferencia de tus datos.
     Puedes seguir la [guía de configuración para establecer la conexión](/es/integrations/clickpipes/networking/aws-privatelink).
 
-#### (Opcional) Cambiar la configuración de TLS
+#### (Opcional) Cambiar la configuración de TLS {#optional-changing-tls-settings}
 
     <ChangingTLSSettings />
 
-#### (Opcional) Configurar SSH tunneling
+#### (Opcional) Configurar SSH tunneling {#optional-setting-up-ssh-tunneling}
 
     Puedes especificar los detalles de SSH tunneling si tu base de datos de Postgres de origen no es accesible públicamente.
 
@@ -104,7 +136,15 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
 
     2. Completa los detalles de conexión SSH.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border />
+       <div className="ch-image-lg">
+
+       <Frame>
+
+       ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+       </Frame>
+
+       </div>
 
     3. Para usar la autenticación basada en claves, haz clic en &quot;Revoke and generate key pair&quot; para generar un nuevo par de claves y copia la clave pública generada en tu servidor SSH en `~/.ssh/authorized_keys`.
 
@@ -116,13 +156,21 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
 
     Una vez completados los detalles de conexión, haz clic en &quot;Next&quot;.
 
-### Configurar los ajustes de replicación
+### Configurar los ajustes de replicación {#configuring-the-replication-settings}
 
     5. Asegúrate de seleccionar en la lista desplegable el replication slot que creaste en el paso de requisitos previos.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="Seleccionar replication slot" size="lg" border />
+       <div className="ch-image-lg">
 
-#### Configuración avanzada
+       <Frame>
+
+       ![Seleccionar replication slot](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+
+       </Frame>
+
+       </div>
+
+#### Configuración avanzada {#advanced-settings}
 
     Si lo necesitas, puedes configurar los ajustes avanzados. A continuación se ofrece una breve descripción de cada ajuste:
 
@@ -132,11 +180,19 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
     * **Snapshot number of rows per partition**: es la cantidad de filas que se obtendrán en cada partición durante el snapshot inicial. Resulta útil cuando tienes una gran cantidad de filas en tus tablas y quieres controlar el número de filas obtenidas en cada partición.
     * **Snapshot number of tables in parallel**: es la cantidad de tablas que se obtendrán en paralelo durante el snapshot inicial. Resulta útil cuando tienes una gran cantidad de tablas y quieres controlar el número de tablas obtenidas en paralelo.
 
-### Configuración de las tablas
+### Configuración de las tablas {#configuring-the-tables}
 
     6. Aquí puedes seleccionar la base de datos de destino para tu ClickPipe. Puedes elegir una base de datos existente o crear una nueva.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="Seleccionar la base de datos de destino" size="lg" border />
+       <div className="ch-image-lg">
+
+       <Frame>
+
+       ![Seleccionar la base de datos de destino](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+
+       </Frame>
+
+       </div>
 
     7. Puedes seleccionar las tablas que quieres replicar desde la base de datos de Postgres de origen. Al seleccionar las tablas, también puedes optar por renombrarlas en la base de datos en ClickHouse de destino, así como excluir columnas específicas.
 
@@ -146,13 +202,21 @@ import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.
 
     8. <SettingPartitionBy />
 
-### Revisa los permisos e inicia el ClickPipe
+### Revisa los permisos e inicia el ClickPipe {#review-permissions-and-start-the-clickpipe}
 
     9. Selecciona el rol &quot;Full access&quot; en el desplegable de permisos y haz clic en &quot;Complete Setup&quot;.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permisos" size="lg" border />
+       <div className="ch-image-lg">
 
-## ¿Qué sigue?
+       <Frame>
+
+       ![Revisar permisos](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+       </Frame>
+
+       </div>
+
+## ¿Qué sigue? {#whats-next}
 
     Una vez que hayas configurado tu ClickPipe para replicar datos de PostgreSQL a ClickHouse Cloud, puedes centrarte en cómo consultar y modelar tus datos para obtener un rendimiento óptimo. Consulta la [guía de migración](/es/get-started/migrate/postgres/overview) para evaluar qué estrategia se adapta mejor a tus necesidades, así como las páginas [Estrategias de deduplicación (con CDC)](/es/integrations/clickpipes/postgres/deduplication) y [Claves de ordenación](/es/integrations/clickpipes/postgres/ordering-keys) para conocer las buenas prácticas en cargas de trabajo de CDC.
 

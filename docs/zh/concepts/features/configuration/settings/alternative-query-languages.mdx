@@ -7,6 +7,7 @@ keywords: ['其他查询语言', '查询方言', 'MySQL 方言', 'PostgreSQL 方
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 除标准 SQL 外，ClickHouse 还支持多种可用于数据查询的其他查询语言。
@@ -16,6 +17,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * `clickhouse`：ClickHouse 默认的 [SQL 方言](/zh/chdb/reference/sql-reference)
 * `prql`：[管道式关系查询语言 (PRQL)](https://prql-lang.org/)
 * `kusto`：[Kusto 查询语言 (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `logsql`：[LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/)，即 VictoriaLogs 的查询语言
 * `trino`：[Trino SQL](https://trino.io/docs/current/language.html)
 
 使用哪种查询语言由 `dialect` 设置控制。
@@ -53,12 +55,12 @@ ClickHouse 在底层通过将 PRQL 转译为 SQL 来运行 PRQL 查询。
 
 ## Kusto 查询语言 (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 如需启用 KQL：
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- 此 SET 语句仅适用于 ClickHouse 版本 >= 25.1
+SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
 SET dialect = 'kusto'
 ```
 
@@ -83,9 +85,32 @@ numbers(10) | project number
 
 请注意，KQL 查询可能无法调用 ClickHouse 中定义的所有函数。
 
-## Trino SQL {#trino-sql}
+## LogsQL {#logsql}
 
 <ExperimentalBadge />
+
+LogsQL 是 [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/logsql/) 的查询语言。
+ClickHouse 会将 LogsQL 查询转换为对已配置日志表执行的 `SELECT` 查询。
+如需启用该功能，并将其指向一个包含时间列和消息列的表，请按如下方式配置：
+
+```sql
+SET enable_logsql_dialect = 1;
+SET logsql_database = 'default';
+SET logsql_table = 'logs';
+SET logsql_time_column = '_time';
+SET logsql_message_column = '_msg';
+SET dialect = 'logsql'
+```
+
+```text title="Query"
+_time:5m error | stats by (level) count() as hits | sort by (hits desc)
+```
+
+有关所支持的功能子集以及与 VictoriaLogs 的差异，请参阅 [LogsQL 方言指南](/zh/guides/clickhouse/logsql)。
+
+## Trino SQL {#trino-sql}
+
+<BetaBadge />
 
 要启用 Trino 方言：
 

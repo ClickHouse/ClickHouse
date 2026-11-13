@@ -82,6 +82,9 @@ class Labels:
 
     CI_BUILD = "ci-build"
     CI_FORCE_ALL = "ci-force-all"
+    # Exempts a bug fix PR from the requirement to add new tests in `new_tests_check.py`,
+    # e.g. a dependency bump that has no meaningful regression test.
+    CI_SKIP_NEW_TESTS_CHECK = "ci-skip-new-tests-check"
 
     CI_PERFORMANCE = "ci-performance"
 
@@ -92,8 +95,14 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
+    # Disables the unresolved-review-threads CI gate (see review_threads.py)
+    IGNORE_UNRESOLVED_THREADS = "ignore-unresolved-threads"
     # Pull requests run the LLVM coverage jobs only with this label.
     CI_COVERAGE = "ci-coverage"
+    # Runs the LLVM coverage jobs and the stateless flaky checks and nothing else, see
+    # `LLVM_COVERAGE_ONLY_JOBS` in `filter_job.py`. A pull request that changes only stateless
+    # tests can merge with it, see `can_be_merged.py`.
+    CI_LLVM_COVERAGE = "ci-llvm-coverage"
 
     # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"
@@ -237,12 +246,13 @@ def get_category(pr_body: str) -> Tuple[str, str]:
 # the repository, so this hook, which runs with the CI bot's rights, adds the labels
 # and the human owner. The owner answers reviewers; the agent never does.
 # Keyed by the GitHub login of the agent account; `branch_prefix` tells the agents
-# that share one account apart.
+# that share one account apart. The coverage agent only adds stateless tests, so its
+# pull requests run the LLVM coverage jobs and the flaky checks (`ci-llvm-coverage`).
 AGENT_PRS = {
     "clickgapai": [
         {
             "branch_prefix": "covgap/",  # the coverage agent
-            "labels": [Labels.CI_FORCE_ALL, Labels.CAN_BE_TESTED],
+            "labels": [Labels.CI_LLVM_COVERAGE, Labels.CAN_BE_TESTED],
             "assignees": ["alexbakharew"],
         },
     ],
@@ -324,6 +334,16 @@ def check_labels(category, info):
         info.add_pr_label(label)
     for label in pr_labels_to_remove:
         info.remove_pr_label(label)
+
+    if Labels.CI_FORCE_ALL in pr_labels_to_add:
+        # The `review_threads.py` pre-hook runs earlier and has already recorded
+        # the live `ci-force-all` state, which `ci/praktika/native_jobs.py`
+        # prefers over `info.pr_labels`. Update it, so that the label added
+        # here bypasses the filters, changed-file filtering and the cache
+        # lookup in this very run, consistently with `should_skip_job`.
+        from ci.jobs.scripts.workflow_hooks.review_threads import KV_FORCE_ALL
+
+        info.store_kv_data(KV_FORCE_ALL, True)
 
 
 BOT_AUTHORS = {"dependabot[bot]"}

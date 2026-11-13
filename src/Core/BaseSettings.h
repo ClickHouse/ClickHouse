@@ -5,6 +5,7 @@
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
+#include <IO/VarInt.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -29,6 +30,25 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/** A settings sequence on the wire is a list of name/value pairs, and both the number of pairs and
+  * the size of each name and value come from the peer. There are a few thousand declared settings
+  * and a handful of custom ones per query, so bound the number of pairs: otherwise a peer can keep
+  * the server allocating one pair at a time without a limit, and in interserver mode the settings of
+  * a query are read before its secret hash is checked.
+  */
+static constexpr size_t MAX_SETTINGS_IN_A_SEQUENCE = 65536;
+
+/** The name of a setting or of a query parameter is an identifier, so a name declared longer than
+  * this is rejected before any of it is read. The bound is the same as for the strings of the `Hello`
+  * packet.
+  *
+  * The value of a setting or of a parameter keeps the generic string bound: it is query-sized data
+  * (a parameter is substituted into the query), and the query text itself has to be read at that
+  * bound before the interserver hash that covers it can be checked, so a tighter bound here would
+  * only break large parameters without lowering what a peer can make the server allocate.
+  */
+static constexpr size_t MAX_SETTING_NAME_SIZE = 64 * 1024;
+
 /// Utility functions and types used by the BaseSettings template class.
 /// These are implementation details that handle serialization, error reporting,
 /// and metadata management for settings.
@@ -36,6 +56,7 @@ struct BaseSettingsHelpers
 {
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
+    [[noreturn]] static void throwTooManySettings(std::string_view what);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
@@ -51,6 +72,8 @@ struct BaseSettingsHelpers
     /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
+    /// The name of a setting or a query parameter, bounded by `MAX_SETTING_NAME_SIZE`.
+    static String readName(ReadBuffer & in);
 
     /// Setting metadata flags
     enum Flags : UInt64
@@ -303,7 +326,9 @@ public:
     /// Read settings from a buffer
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
 
-    /// Write only changed settings in binary format
+    /// Write only changed settings in binary format.
+    /// Used for serialization of object storage settings (`S3Settings`, `DataLakeStorageSettings`),
+    /// including by code outside of this repository, so do not remove it as unused.
     void writeChangedBinary(WriteBuffer & out) const;
 
     /// Read settings in binary format
@@ -514,17 +539,17 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 template <typename TTraits>
 void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) const
 {
-    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
-    /// setting. This is where the settings schema is known, so this is where it is checked.
+    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool*
+    /// settings. This is where the settings schema is known, so this is where it is checked.
     if (!change.shorthand)
         return;
 
-    if (std::string_view type = getTypeName(change.name); type != "Bool")
+    if (std::string_view type = getTypeName(change.name); !type.starts_with("Bool"))
         BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
 
-    /// The type alone is not enough. The parser writes Bool `true` for the valueless form, but a
+    /// The type alone is not enough. The parser writes `Bool` `true` for the valueless form, but a
     /// `SettingChange` can also arrive from the AST JSON dialect, which is free to pair the flag
-    /// with any other value - and for a `Bool` setting the check above lets that through. Such a
+    /// with any other value - and for a `Bool*` setting the check above lets that through. Such a
     /// change would execute with the carried value while `ASTSetQuery::formatImpl` renders the bare
     /// name, so `system.query_log` and every other formatter would under-report what ran. This is
     /// the first point after deserialization where an exception is logged with the AST masked
@@ -796,9 +821,12 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
     size_t num_settings = 0;
     readVarUInt(num_settings, in);
 
+    if (num_settings > MAX_SETTINGS_IN_A_SEQUENCE)
+        BaseSettingsHelpers::throwTooManySettings("settings");
+
     for (size_t i = 0; i < num_settings; ++i)
     {
-        String read_name = BaseSettingsHelpers::readString(in);
+        String read_name = BaseSettingsHelpers::readName(in);
         std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
 
@@ -816,11 +844,15 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
+    size_t num_settings = 0;
     while (true)
     {
-        String read_name = BaseSettingsHelpers::readString(in);
+        String read_name = BaseSettingsHelpers::readName(in);
         if (read_name.empty() /* empty string is a marker of the end of settings */)
             break;
+
+        if (++num_settings > MAX_SETTINGS_IN_A_SEQUENCE)
+            BaseSettingsHelpers::throwTooManySettings("settings");
 
         std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
@@ -1560,6 +1592,21 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         }
 
 
+/// Constant description of one setting. IMPLEMENT_SETTINGS_TRAITS_COMMON emits one entry per setting
+/// into a static table that the Accessor copies into its FieldInfo vector, so the per-setting part of
+/// the generated code is data, not a sequence of inlined `emplace_back` calls in one huge function.
+struct SettingFieldInfoInit
+{
+    std::string_view name;
+    std::string_view path;
+    std::string_view type;
+    std::string_view description;
+    UInt64 flags;
+    const SettingFieldOps & (*ops)();
+    size_t data_offset;
+};
+
+
 /// Skip this setting in the macro expansion (used for selective application)
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
@@ -1677,14 +1724,20 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             [[maybe_unused]] constexpr int AFFECTS_CLIENT = 0x20; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
-            Accessor res; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \
             _Pragma("clang diagnostic push") \
             _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
-            /* Populate field_infos with one entry per setting */ \
-            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
+            /* One constant entry per setting, emitted as data */ \
+            static constexpr std::initializer_list<SettingFieldInfoInit> field_info_inits = { \
+                LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
+                LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
+            }; \
             _Pragma("clang diagnostic pop") \
+            Accessor res; \
+            /* Populate field_infos with one entry per setting */ \
+            res.field_infos.reserve(field_info_inits.size()); \
+            for (const auto & init : field_info_inits) \
+                res.field_infos.push_back(FieldInfo{String(init.name), init.path, init.type, init.description, init.flags, &init.ops(), init.data_offset}); \
             /* Build name -> index and data offset -> index maps for fast lookups */ \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
@@ -1720,30 +1773,26 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 /// Uses typed-array offsets from the constexpr layout.
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    res.field_infos.emplace_back( \
-        FieldInfo\
-        { \
-            #NAME, \
-            "", \
-            #TYPE, \
-            DESCRIPTION, \
-            static_cast<UInt64>(FLAGS), \
-            &settingFieldOps<SettingField##TYPE>(), \
-            offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
-        });
+    SettingFieldInfoInit{ \
+        #NAME, \
+        "", \
+        #TYPE, \
+        DESCRIPTION, \
+        static_cast<UInt64>(FLAGS), \
+        &settingFieldOps<SettingField##TYPE>, \
+        offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
+    },
 
 /// Generate a FieldInfo entry for a setting with a config file path
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
-    res.field_infos.emplace_back( \
-        FieldInfo\
-        { \
-            #NAME, \
-            PATH, \
-            #TYPE, \
-            DESCRIPTION, \
-            static_cast<UInt64>(FLAGS), \
-            &settingFieldOps<SettingField##TYPE>(), \
-            offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
-        });
+    SettingFieldInfoInit{ \
+        #NAME, \
+        PATH, \
+        #TYPE, \
+        DESCRIPTION, \
+        static_cast<UInt64>(FLAGS), \
+        &settingFieldOps<SettingField##TYPE>, \
+        offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
+    },
 }

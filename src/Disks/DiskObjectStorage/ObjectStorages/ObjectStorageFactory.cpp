@@ -14,6 +14,8 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
+#include <Disks/getDiskConfigurationFromAST.h>
 #endif
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
@@ -21,14 +23,20 @@
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <Interpreters/Context.h>
+#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Macros.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <filesystem>
+#include <set>
 #include <utility>
+
+#include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
 
@@ -37,6 +45,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hdfs_replication;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -75,7 +88,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const ContextPtr & context,
     bool run_access_check,
     bool run_local_paths_check,
-    bool run_remote_host_filter_check) const
+    RemoteHostFilterCheck remote_host_filter_check) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -95,7 +108,33 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, run_remote_host_filter_check);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, remote_host_filter_check);
+}
+
+/// A custom disk with an endpoint that remote_url_allow_hosts does not allow: a log line per disk
+/// and one system.warnings entry that lists all such disks. `endpoint` is what `allow_list_entry`
+/// (an <s3_bucket> or <host> element) has to allow.
+[[maybe_unused]] static void warnAboutDiskNotAllowedByRemoteHostFilter(
+    const std::string & disk_name, const std::string & endpoint, const std::string & allow_list_entry, const ContextPtr & global_context)
+{
+    LOG_WARNING(
+        getLogger("ObjectStorageFactory"),
+        "Custom disk `{}` uses endpoint `{}` that is not allowed by `remote_url_allow_hosts`. The disk was created before "
+        "this check and is kept while loading existing metadata (server start or UNDROP). Add `{}` "
+        "to the list or recreate the tables that use it.",
+        disk_name, endpoint, allow_list_entry);
+
+    /// system.warnings keeps one message per type, so the message lists all disks seen so far.
+    /// No lock: disk creation runs under storage_policies_mutex in Context::getOrCreateDisk.
+    static std::set<std::string> disks;
+    disks.insert(fmt::format("`{}` -> `{}`", disk_name, endpoint));
+    global_context->addOrUpdateWarningMessage(
+        Context::WarningType::CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
+        PreformattedMessage::create(
+            "Custom disks with endpoints that are not allowed by `remote_url_allow_hosts` were kept while loading existing "
+            "metadata (server start or UNDROP): {}. Add `<s3_bucket>host/bucket</s3_bucket>` (S3) or `<host>host</host>` "
+            "(Azure) entries for them or recreate the tables that use them.",
+            fmt::join(disks, ", ")));
 }
 
 #if USE_AWS_S3
@@ -128,6 +167,16 @@ static std::string getEndpoint(
     return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 }
 
+/// host[:port]/bucket of an S3 endpoint, as in an <s3_bucket> entry.
+static std::string getS3BucketEntry(const S3::URI & uri)
+{
+    Poco::URI endpoint_uri(uri.endpoint);
+    std::string host_and_port = endpoint_uri.getAuthority();
+    if (auto at = host_and_port.rfind('@'); at != std::string::npos)
+        host_and_port.erase(0, at + 1);
+    return host_and_port + "/" + uri.bucket;
+}
+
 static void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
      auto creator = [](
@@ -137,7 +186,7 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        bool run_remote_host_filter_check) -> ObjectStoragePtr
+        RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
@@ -146,8 +195,17 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         /// The endpoint of a disk created in SQL is user input, so it is subject to `remote_url_allow_hosts`
         /// like the URL of an `s3` table; checked before the client is built, which already talks to the endpoint.
-        if (run_remote_host_filter_check)
-            uri.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
+        /// For a disk loaded from existing metadata a rejection is only reported: throwing here would fail
+        /// the table load, or the server start for a database metadata disk.
+        if (remote_host_filter_check != RemoteHostFilterCheck::None
+            && !uri.checkRemoteHostFilter(
+                context->getGlobalContext()->getRemoteHostFilter(),
+                /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
+        {
+            const auto s3_bucket_entry = getS3BucketEntry(uri);
+            warnAboutDiskNotAllowedByRemoteHostFilter(
+                name, s3_bucket_entry, fmt::format("<s3_bucket>{}</s3_bucket>", s3_bucket_entry), context->getGlobalContext());
+        }
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -173,7 +231,7 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* run_access_check */,
            bool /* run_local_paths_check */,
-        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -198,7 +256,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
+        RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -208,16 +266,60 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// We keep using empty prefix by default for compatibility, but allow to configure another one
         const String & common_key_prefix = config.getString(config_prefix + ".common_key_prefix_for_azure", "");
 
+        /// A custom disk is configured at the root, where `validateResolvedAzureDiskCredentials` has written the decision.
+        const bool server_credentials_allowed = hasAzureServerCredentialsMarker(config);
+
         AzureBlobStorage::ConnectionParams params
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
+            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            /// Only a custom disk, `disk(...)` in user SQL, is checked; a disk from the server config may use the server's identity.
+            .forbid_implicit_credentials = remote_host_filter_check != RemoteHostFilterCheck::None
+                && !server_credentials_allowed && context->shouldRestrictUserQueryS3Credentials(),
+            /// A custom disk loaded from existing metadata gets no credentials instead of failing the table load.
+            .anonymous_fallback_for_server_credentials = remote_host_filter_check == RemoteHostFilterCheck::Warn
+                && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted],
+            .follows_session_restriction = false,
+            /// A disk takes the workload identity from the environment (`use_workload_identity`).
+            .workload_identity_client_id = {},
+            .workload_identity_tenant_id = {},
         };
+
+        /// As for S3: a disk loaded from existing metadata is only reported, so that it fails neither
+        /// the table load nor the server start.
+        if (remote_host_filter_check != RemoteHostFilterCheck::None)
+        {
+            auto check_host = [&](const String & url)
+            {
+                Poco::URI uri(url);
+                /// The query can carry a SAS token, which the error must not quote.
+                uri.setPathEtc("");
+                if (!context->getRemoteHostFilter().checkURL(
+                        uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
+                    warnAboutDiskNotAllowedByRemoteHostFilter(
+                        name, uri.getAuthority(), fmt::format("<host>{}</host>", uri.getHost()), context->getGlobalContext());
+            };
+            check_host(params.getConnectionURL());
+            /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
+            if (isAdlsGen2Endpoint(params.endpoint))
+                check_host(getAdlsGen2Url(params.endpoint, params.auth_method));
+        }
+
+        const bool drop_credentials = params.checkOrDropServerManagedCredentials();
+        if (drop_credentials)
+            LOG_WARNING(
+                getLogger("ObjectStorageFactory"),
+                "Loading the dynamic Azure disk {} with a client that has no credentials: it uses the server's own "
+                "identity, which is restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). "
+                "The disk stays inaccessible; set s3_load_table_anonymously_if_credentials_restricted = 0 to fail "
+                "loading instead.",
+                name);
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            /// A client without credentials must not probe or create the container: the denied request would fail the load.
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ drop_credentials), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
@@ -238,7 +340,7 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -267,7 +369,7 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool run_local_paths_check,
-        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;

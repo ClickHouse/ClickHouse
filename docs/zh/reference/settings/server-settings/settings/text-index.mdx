@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse server，并根据 ClickHouse 源代码自动生成。
 
-<div id="text_index_header_cache_max_entries">
-  ## text_index_header_cache_max_entries
-</div>
+## text_index_header_cache_max_entries {#text_index_header_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />文本索引头部缓存可容纳的条目数。0 表示禁用。
 
-<div id="text_index_header_cache_policy">
-  ## text_index_header_cache_policy
-</div>
+## text_index_header_cache_policy {#text_index_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="否" />文本索引头部缓存策略的名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />文本索引头部缓存淘汰策略的名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="text_index_header_cache_size">
-  ## text_index_header_cache_size
-</div>
+## text_index_header_cache_size {#text_index_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />文本索引头部的缓存大小。设为 0 表示禁用。
 
@@ -34,27 +28,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   此设置可在运行时修改，并会立即生效。
 </Note>
 
-<div id="text_index_header_cache_size_ratio">
-  ## text_index_header_cache_size_ratio
-</div>
+## text_index_header_cache_size_ratio {#text_index_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />文本索引头部缓存中受保护队列 (在 SLRU 策略下) 的大小占缓存总大小的比例。
 
-<div id="text_index_postings_cache_max_entries">
-  ## text_index_postings_cache_max_entries
-</div>
+## text_index_postings_cache_max_entries {#text_index_postings_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />文本索引倒排列表缓存大小 (按条目数计) 。0 表示禁用。
 
-<div id="text_index_postings_cache_policy">
-  ## text_index_postings_cache_policy
-</div>
+## text_index_postings_cache_policy {#text_index_postings_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="No" />文本索引倒排列表缓存策略的名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />文本索引倒排列表缓存淘汰策略的名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="text_index_postings_cache_size">
-  ## text_index_postings_cache_size
-</div>
+## text_index_postings_cache_size {#text_index_postings_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />文本索引倒排列表缓存大小。零表示禁用。
 
@@ -62,27 +48,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   此设置可在运行时修改，并立即生效。
 </Note>
 
-<div id="text_index_postings_cache_size_ratio">
-  ## text_index_postings_cache_size_ratio
-</div>
+## text_index_postings_cache_size_ratio {#text_index_postings_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="否" />文本索引倒排列表缓存中受保护队列 (在 SLRU 策略下) 的大小占缓存总大小的比例。
 
-<div id="text_index_tokens_cache_max_entries">
-  ## text_index_tokens_cache_max_entries
-</div>
+## text_index_tokens_cache_max_entries {#text_index_tokens_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />按条目数计算的文本索引标记缓存大小。0 表示禁用。
 
-<div id="text_index_tokens_cache_policy">
-  ## text_index_tokens_cache_policy
-</div>
+## text_index_tokens_cache_policy {#text_index_tokens_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />文本索引标记缓存策略的名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />文本索引标记缓存淘汰策略的名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="text_index_tokens_cache_size">
-  ## text_index_tokens_cache_size
-</div>
+## text_index_tokens_cache_size {#text_index_tokens_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />文本索引标记的缓存大小。0 表示禁用。
 
@@ -90,9 +68,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   该设置可在运行时修改，并会立即生效。
 </Note>
 
-<div id="text_index_tokens_cache_size_ratio">
-  ## text_index_tokens_cache_size_ratio
-</div>
+## text_index_tokens_cache_size_ratio {#text_index_tokens_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />文本索引标记缓存中受保护队列 (在 SLRU 策略下) 的大小占缓存总大小的比率。
 

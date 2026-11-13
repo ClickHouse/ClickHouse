@@ -11,16 +11,22 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## query_plan_aggregation_bucket_top_k
+## query_plan_aggregation_bucket_top_k {#query_plan_aggregation_bucket_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка для включения и отключения оптимизации плана, при которой на этапе финального преобразования агрегации материализуются только n лучших групп из каждого двухуровневого бакета, если финальная агрегация передаёт результаты в ORDER BY с LIMIT n, а выборка в каждом бакете гарантированно точна."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для включения и отключения оптимизации плана, при которой на этапе финального преобразования агрегации материализуются только n лучших групп из каждого двухуровневого бакета, если финальная агрегация передаёт результаты в ORDER BY с LIMIT n, а выборка в каждом бакете гарантированно точна."}]}]} />
 
-Включает или отключает оптимизацию на уровне плана запроса: если финальная агрегация передаёт результаты в `ORDER BY` с `LIMIT n`, а план гарантирует точность выборки в каждом бакете, на этапе финального преобразования агрегации материализуются только n лучших групп из каждого двухуровневого бакета в этом порядке. Результат точен: у группы, не входящей в n лучших групп своего бакета, есть как минимум n групп, опережающих её в глобальном порядке, поэтому она не может войти в глобальный top n.
+Включает или отключает оптимизацию на уровне плана запроса: если финальная агрегация передаёт результаты в `ORDER BY` с `LIMIT n`, а план гарантирует точность выборки в каждом бакете, на этапе финального слияния или преобразования агрегации сохраняются только n лучших групп из каждого двухуровневого бакета. Результат точен: у группы, не входящей в n лучших групп своего бакета, есть как минимум n групп, опережающих её в глобальном порядке, поэтому она не может войти в глобальный top n.
+
+При сортировке по `count` оптимизация может отбирать лучшие группы на этапе финального преобразования. Для агрегатных функций, слитые значения которых можно ограничить по их частичным состояниям, вместо этого может применяться пороговое слияние (пороговый алгоритм Фейгина, Fagin&#39;s Threshold Algorithm), при котором пропускается слияние групп, не способных попасть в top n. Поддерживаются `count`, `sum` беззнаковых целых чисел с результатом `UInt64` (аргументы от `UInt8` до `UInt64`; широкие беззнаковые целые числа, такие как `UInt128`, не поддерживаются) и `uniqExact` в порядке убывания, а также `max` в порядке убывания и `min` в порядке возрастания для целочисленных типов, типов даты, даты и времени, десятичных типов и типов Enum (типы с плавающей запятой, `UUID`, `IPv4`, `IPv6`, `String`, `FixedString` и другие типы не поддерживаются). С комбинаторами `If` и `Null` пороговое слияние сохраняется только для `count`, беззнаковой `sum` и `uniqExact` и только если результат не допускает NULL (например, `countIf`, `sumIf` от аргумента не типа `Nullable` или `uniqExact` от аргумента типа `Nullable`); для `sum` и `sumIf` от аргумента типа `Nullable` (результат которых имеет тип `Nullable`), `maxIf`, `minIf`, а также `max` или `min` от аргумента типа `Nullable` используется обычное слияние. Алгоритм выбирается автоматически в зависимости от агрегатной функции, структуры запроса и распределения частичных состояний.
+
+Группа, не входящая в n лучших групп своего бакета, не проходит ни слияние, ни финализацию, поэтому эта настройка влияет не только на производительность: остальные агрегатные функции запроса больше не сливаются и не финализируются для групп, которые не могут попасть в top n. Запрос, который выбрасывал исключение при слиянии или финализации одной из этих агрегатных функций для такой группы, может вместо этого вернуть строки. Значение 0 сохраняет прежнее поведение.
+
 Действует только при значении 1 настройки [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations).
 
 Возможные значения:
@@ -28,25 +34,24 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_aggregation_in_order
+## query_plan_aggregation_having_prefilter {#query_plan_aggregation_having_prefilter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "Выполнен некоторый рефакторинг, связанный с планом запроса"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка для включения и отключения оптимизации плана, которая пропускает материализацию ключа группы при преобразовании двухуровневого бакета финальной агрегации, если ограничение HAVING на собственный count() без аргументов этой агрегации уже отбрасывает группу. Пропущенная группа не фильтруется и не финализируется, поэтому конъюнкт HAVING, записанный перед ограничением, и финализация соседней агрегатной функции больше не вычисляются для групп, отброшенных ограничением. Запрос, в котором одно из этих вычислений приводило к исключению, теперь может завершиться успешно; значение `compatibility` ниже 26.10 сохраняет прежнее поведение."}]}]} />
 
-Включает или отключает оптимизацию агрегации в порядке выполнения на уровне плана запроса.
-Действует только в том случае, если значение настройки [`query_plan_enable_optimizations`](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равно 1.
+Включает или отключает оптимизацию на уровне плана запроса для `HAVING count() <comparison> <constant>` поверх `GROUP BY`. При преобразовании двухуровневого бакета результата агрегации во фрагменты группа, количество строк в которой заведомо не удовлетворяет ограничению, пропускается ещё до материализации столбцов ключа, а не материализуется, чтобы затем быть отброшенной вышестоящим фильтром. Ускоряет запросы вида «группы выше порога» над `GROUP BY` с высокой мощностью, где отбрасывается большинство групп и именно на отброшенные ключи приходится основная часть работы по преобразованию.
 
-<Note>
-  Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем настройка может измениться обратно несовместимым образом или быть удалена.
-</Note>
+Пропущенная группа не фильтруется и не финализируется, поэтому эта настройка влияет не только на производительность: конъюнкт `HAVING`, записанный перед ограничением, и финализация соседней агрегатной функции больше не вычисляются для групп, отброшенных ограничением. Запрос, в котором одно из этих вычислений приводило к исключению, теперь может вместо этого вернуть строки — например, `HAVING throwIf(cnt = 3) = 0 AND count() > 3` поверх `count() AS cnt`. Чтобы сохранить прежнее поведение, установите эту настройку в 0 или задайте `compatibility` версию ниже `26.10`.
+
+Действует, только если настройка [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равна 1.
 
 Возможные значения:
 
-* 0 - Отключено
-* 1 - Включено
+* 0 — отключить
+* 1 — включить
 
-## query_plan_convert_any_join_to_semi_or_anti_join
+## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -54,7 +59,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает преобразовывать ANY JOIN в SEMI или ANTI JOIN, если фильтр после JOIN для совпавших или несовпавших строк всегда принимает значение false
 
-## query_plan_convert_join_to_in
+## query_plan_convert_join_to_in {#query_plan_convert_join_to_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -62,7 +67,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает преобразовывать `JOIN` в подзапрос с `IN`, если выходные столбцы относятся только к левой таблице. Может приводить к неверным результатам с JOIN, отличными от `ANY JOIN` (например, с `ALL JOIN`, который используется по умолчанию).
 
-## query_plan_convert_outer_join_to_inner_join
+## query_plan_convert_outer_join_to_inner_join {#query_plan_convert_outer_join_to_inner_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,7 +75,15 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает преобразовывать `OUTER JOIN` в `INNER JOIN`, если фильтр после `JOIN` всегда исключает значения по умолчанию
 
-## query_plan_direct_read_from_text_index
+## query_plan_convert_outer_join_to_inner_join_transitively {#query_plan_convert_outer_join_to_inner_join_transitively}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, расширяющая `query_plan_convert_outer_join_to_inner_join`: дополнительно учитываются фильтр, расположенный выше по плану, и условия внешнего `JOIN`. Действует только при включенной настройке `query_plan_convert_outer_join_to_inner_join`."}]}]} />
+
+Расширяет действие `query_plan_convert_outer_join_to_inner_join`: дополнительно учитываются фильтр, расположенный выше по плану запроса, и условия внешнего `JOIN`. Действует только при включенной настройке `query_plan_convert_outer_join_to_inner_join`.
+
+## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -78,7 +91,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Позволяет выполнять фильтрацию при полнотекстовом поиске, используя в плане запроса только инвертированный текстовый индекс.
 
-## query_plan_display_internal_aliases
+## query_plan_display_internal_aliases {#query_plan_display_internal_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -86,13 +99,13 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Показывать в EXPLAIN PLAN внутренние псевдонимы (например, &#95;&#95;table1) вместо псевдонимов, указанных в исходном запросе.
 
-## query_plan_enable_multithreading_after_window_functions
+## query_plan_enable_multithreading_after_window_functions {#query_plan_enable_multithreading_after_window_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает многопоточность после вычисления оконных функций, что позволяет выполнять потоковую обработку параллельно
 
-## query_plan_enable_optimizations
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -107,7 +120,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 — отключить все оптимизации на уровне плана запроса
 * 1 — включить оптимизации на уровне плана запроса (при этом отдельные оптимизации по-прежнему можно отключить их собственными настройками)
 
-## query_plan_execute_functions_after_sorting
+## query_plan_execute_functions_after_sorting {#query_plan_execute_functions_after_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -123,7 +136,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_filter_push_down
+## query_plan_filter_push_down {#query_plan_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -139,7 +152,26 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_fuse_filter_into_array_join
+## query_plan_filter_push_down_below_limit_by {#query_plan_filter_push_down_below_limit_by}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка, управляющая опусканием фильтра по столбцам ключа `LIMIT BY` ниже шага `LIMIT BY`. Установите значение false, чтобы фильтр оставался выше `LIMIT BY`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, управляющая опусканием фильтра по столбцам ключа `LIMIT BY` ниже шага `LIMIT BY`. Установите значение false, чтобы фильтр оставался выше `LIMIT BY`."}]}]} />
+
+Включает или отключает опускание фильтров по столбцам ключа `LIMIT BY` ниже шага `LIMIT BY`.
+Действует, только если настройка [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равна 1.
+Учитывается независимо от [query&#95;plan&#95;filter&#95;push&#95;down](/ru/reference/settings/session-settings/query-plan#query_plan_filter_push_down): проход опускания фильтров выполняется даже при отключённой настройке, если был добавлен runtime-фильтр `JOIN`.
+
+<Note>
+  Это настройка экспертного уровня, предназначенная только для отладки разработчиками. В будущем она может быть изменена без сохранения обратной совместимости или удалена.
+</Note>
+
+Возможные значения:
+
+* 0 — отключено
+* 1 — включено
+
+## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -152,15 +184,21 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем настройка может быть изменена обратно несовместимым образом или удалена.
 </Note>
 
-## query_plan_join_shard_by_pk_ranges
+## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Включено по умолчанию. JOIN типа `full_sorting_merge` или `parallel_full_sorting_merge` двух таблиц семейства MergeTree, ключи которого содержат префикс первичных ключей обеих таблиц, теперь выполняется не как одно однопоточное соединение слиянием, а как набор независимых соединений слиянием по диапазонам первичного ключа, работающих параллельно. На хеш-соединения это влияет, только если не действуют ни фильтры времени выполнения JOIN, ни сброс на диск."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
-Применять сегментирование для JOIN, если ключи JOIN в обеих таблицах содержат префикс PRIMARY KEY. Поддерживается для алгоритмов hash, parallel&#95;hash, full&#95;sorting&#95;merge и parallel&#95;full&#95;sorting&#95;merge. Обычно не ускоряет запросы, но может снизить потребление памяти.
+Выполняет JOIN двух таблиц семейства MergeTree как набор независимых соединений по диапазонам первичного ключа, если ключи соединения содержат префикс первичного ключа обеих таблиц. Обе таблицы разбиваются на одинаковые диапазоны по значениям этого префикса (так же, как `FINAL` разбивает части на непересекающиеся слои), поэтому равные ключи попадают в один и тот же диапазон, а каждый диапазон соединяется в отдельном потоке.
 
-## query_plan_join_swap_table
+Для `full_sorting_merge` и `parallel_full_sorting_merge` вместо одного однопоточного соединения слиянием по обеим таблицам выполняются параллельные потоковые соединения слиянием — по одному на каждый диапазон. Как правило, это в несколько раз быстрее и требует в несколько раз меньше памяти.
+
+Для `hash` и `parallel_hash` каждый диапазон получает собственную хеш-таблицу. Оптимизация применяется, только если не действуют ни фильтры времени выполнения JOIN (`enable_join_runtime_filters`), ни сброс на диск (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`), поскольку оба механизма делают JOIN непрозрачным для этой оптимизации. В этом случае она обычно не ускоряет запросы, но может снизить потребление памяти. Диапазоны распределяются между потоками статически, поэтому фильтр, селективный лишь в части диапазона первичного ключа, оставляет некоторые потоки без работы.
+
+Не применяется к `FINAL`, `ASOF`, соединениям с несколькими дизъюнктами в `ON`, а также при чтении с использованием параллельных реплик.
+
+## query_plan_join_swap_table {#query_plan_join_swap_table}
 
 <SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
@@ -172,7 +210,21 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * &#39;false&#39;: никогда не менять таблицы местами (build-таблицей является правая таблица).
 * &#39;true&#39;: всегда менять таблицы местами (build-таблицей является левая таблица).
 
-## query_plan_lift_up_array_join
+## query_plan_lazy_materialization_for_join {#query_plan_lazy_materialization_for_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка для использования ленивой материализации в запросах `LIMIT n` с соединениями."}]}]} />
+
+Использовать ленивую материализацию для запросов `LIMIT n` с соединениями — как с `ORDER BY`, так и без него: столбцы
+таблиц `MergeTree`, а также таблиц объектного хранилища (если
+включена настройка `query_plan_optimize_lazy_materialization_for_object_storage`) считываются только для `n` строк,
+прошедших через `LIMIT`, а не для всех строк, которые порождают соединения. Решение принимается на основе единого слитого
+`ActionsDAG` для всего поддерева ниже `LIMIT`, поэтому значение, которое нужно и фильтру, и результату,
+вычисляется дважды (это недорого) выше `LIMIT`, а не превращается в столбец, который передаётся через каждое промежуточное
+соединение. Действует, только если включена настройка `query_plan_optimize_lazy_materialization`.
+
+## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -188,7 +240,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_lift_up_union
+## query_plan_lift_up_union {#query_plan_lift_up_union}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -204,11 +256,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_lower_array_join_function
+## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая оптимизация, преобразующая функцию arrayJoin в полноценный шаг ARRAY JOIN; по умолчанию отключена."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая оптимизация, преобразующая функцию arrayJoin в полноценный шаг ARRAY JOIN; по умолчанию отключена."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "query_plan_lower_array_join_function включена по умолчанию."}]}]} />
 
 Включает или отключает оптимизацию на уровне плана запроса, которая преобразует функцию `arrayJoin` внутри выражения в полноценный шаг `ARRAY JOIN`, благодаря чему она обрабатывается тем же механизмом выполнения, что и предложение `ARRAY JOIN` (отложенная репликация и слияние фильтров).
 Действует только в том случае, если настройка [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равна 1.
@@ -217,7 +269,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   Это настройка экспертного уровня, предназначенная только для отладки разработчиками. В будущем настройка может измениться обратно несовместимым образом или быть удалена.
 </Note>
 
-## query_plan_max_limit_for_join_lazy_indexing
+## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -225,7 +277,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Управляет максимальным значением, при котором можно использовать план запроса для отложенной оптимизации индексирования в JOIN. Если значение равно нулю, ограничение отсутствует.
 
-## query_plan_max_limit_for_lazy_materialization
+## query_plan_max_limit_for_lazy_materialization {#query_plan_max_limit_for_lazy_materialization}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -233,7 +285,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Управляет максимальным значением LIMIT, при котором можно использовать план запроса для оптимизации отложенной материализации. Если равно нулю, ограничение отсутствует.
 
-## query_plan_max_limit_for_top_k_optimization
+## query_plan_max_limit_for_top_k_optimization {#query_plan_max_limit_for_top_k_optimization}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -243,7 +295,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эта настройка также управляет поведением [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ru/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
-## query_plan_max_optimizations_to_apply
+## query_plan_max_optimizations_to_apply {#query_plan_max_optimizations_to_apply}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -256,7 +308,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем она может измениться обратно несовместимым образом или быть удалена.
 </Note>
 
-## query_plan_max_set_size_for_projection_match
+## query_plan_max_set_size_for_projection_match {#query_plan_max_set_size_for_projection_match}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -266,7 +318,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Используется механизмом сопоставления aggregate projection (и любым будущим механизмом сопоставления проекций, которому потребуется сравнивать множества условия `IN`). Вычисление хеша содержимого имеет сложность `O(N log N)` по числу элементов множества; эта настройка ограничивает затраты на этапе планирования, когда в запросе или проекции присутствует много условий `IN`.
 
-## query_plan_max_step_description_length
+## query_plan_max_step_description_length {#query_plan_max_step_description_length}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -274,7 +326,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Максимальная длина описания шага в EXPLAIN PLAN.
 
-## query_plan_merge_expression_into_join
+## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -282,7 +334,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает объединять выражения в шаг JOIN при оптимизации порядка JOIN.
 
-## query_plan_merge_expressions
+## query_plan_merge_expressions {#query_plan_merge_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -298,7 +350,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключено
 * 1 - Включено
 
-## query_plan_merge_filter_into_join_condition
+## query_plan_merge_filter_into_join_condition {#query_plan_merge_filter_into_join_condition}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -306,7 +358,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Позволяет объединять фильтр с условием `JOIN` и преобразовывать `CROSS JOIN` в `INNER`.
 
-## query_plan_merge_filters
+## query_plan_merge_filters {#query_plan_merge_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -314,7 +366,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Позволяет объединять фильтры в плане запроса.
 
-## query_plan_min_columns_for_join_lazy_indexing
+## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -322,7 +374,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Управляет минимальным количеством столбцов полезной нагрузки из левой части, необходимым для включения оптимизации отложенной индексации в JOIN. 0 означает, что оптимизация отключена.
 
-## query_plan_optimize_count_from_text_index
+## query_plan_optimize_count_from_text_index {#query_plan_optimize_count_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -331,35 +383,38 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Позволяет выполнять `SELECT count() ... WHERE <text search predicate>` непосредственно по числу элементов в списках проводок текстового индекса, без материализации подходящих строк.
 Работает только при включённой настройке `query_plan_direct_read_from_text_index`.
 
-## query_plan_optimize_join_order_algorithm
+## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
+<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "новая экспериментальная настройка."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` теперь используется как алгоритм порядка соединений по умолчанию; для запросов с более чем 12 отношениями выполняется переключение на резервный вариант `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Новая экспериментальная настройка."}]}]} />
 
-Определяет, какие алгоритмы порядка JOIN следует применять при оптимизации плана запроса. Доступны следующие алгоритмы:
+Определяет, какие алгоритмы порядка соединений следует применять при оптимизации плана запроса. Доступны следующие алгоритмы:
 
-* &#39;greedy&#39; - базовый жадный алгоритм — работает быстро, но не всегда даёт наилучший порядок JOIN
-* &#39;dpsize&#39; - реализует алгоритм DPsize, который в настоящее время поддерживает только INNER JOIN, — перебирает все возможные порядки JOIN и находит оптимальный, но может работать медленно для запросов с большим количеством таблиц и предикатов JOIN.
-* &#39;dpsub&#39; - реализует алгоритм DPsub, который поддерживает как INNER JOIN, так и другие типы JOIN, — перебирает все возможные порядки JOIN и находит оптимальный, но может работать медленно для запросов с большим количеством таблиц и предикатов JOIN.
+* &#39;greedy&#39; - базовый жадный алгоритм — работает быстро, но не всегда даёт наилучший порядок соединений
+* &#39;dpsize&#39; - реализует алгоритм DPsize, который в настоящее время поддерживает только INNER JOIN, — перебирает все возможные порядки соединений и находит оптимальный, но может работать медленно для запросов с большим количеством таблиц и предикатов JOIN.
+* &#39;dpsub&#39; - реализует алгоритм DPsub, который поддерживает как INNER JOIN, так и другие типы JOIN, — перебирает все возможные порядки соединений и находит оптимальный. Применяется только к запросам, содержащим не более 12 отношений; если их больше, управление передаётся следующему алгоритму в списке.
 * &#39;dphyp&#39; - реализует алгоритм DPhyp (Dynamic Programming via Hypergraph Partitioning), который в настоящее время поддерживает только INNER JOIN, — исследует то же пространство поиска, что и `dpsize`, но перебирает только пары связанных подграфов, создавая меньше промежуточных JOIN в разреженных графах JOIN, ценой отказа от рассмотрения декартовых произведений
-  Можно указать несколько алгоритмов в виде списка, разделённого запятыми, например `dphyp,greedy`. Они применяются по порядку; если алгоритм не может обработать запрос (например, из-за OUTER JOIN или несвязанных компонентов), в качестве резервного варианта используется следующий.
+  Можно указать несколько алгоритмов в виде списка, разделённого запятыми, например `dphyp,greedy`. Они применяются по порядку; если алгоритм не может обработать запрос (например, из-за слишком большого количества отношений или несвязанных компонентов), в качестве резервного варианта используется следующий.
 
-## query_plan_optimize_join_order_conflict_detector
+## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Новая настройка, выбирающая детектор конфликтов, который определяет допустимость переупорядочивания JOIN в алгоритме порядка JOIN DPsub: `a` — (корректный, но неполный) CD-A, `c` — (корректный и полный) CD-C, пустое значение — без детектора."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Новая настройка, выбирающая детектор конфликтов, который определяет допустимость переупорядочивания JOIN в алгоритме порядка JOIN DPsub: `a` — (корректный, но неполный) CD-A, `c` — (корректный и полный) CD-C, пустое значение — без детектора."}]}]} />
+<SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-Влияет только на алгоритм порядка JOIN `dpsub`. Выбирает детектор конфликтов, с помощью которого DPsub определяет, какие переупорядочивания JOIN допустимы. Доступны следующие значения:
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Новая настройка, выбирающая детектор конфликтов, который определяет допустимость изменения порядка соединений в алгоритме порядка соединений DPsub: `a` — (корректный, но неполный) CD-A, `c` — (корректный и полный) CD-C, пустое значение — без детектора."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "Новая настройка, выбирающая детектор конфликтов, который определяет допустимость изменения порядка соединений в алгоритме порядка соединений DPsub: `a` — (корректный, но неполный) CD-A, `c` — (корректный и полный) CD-C, пустое значение — без детектора. По умолчанию используется CD-C в сочетании со значением `dpsub`, которое по умолчанию задано для `query_plan_optimize_join_order_algorithm`; это также позволяет полусоединениям и антисоединениям участвовать в изменении порядка соединений."}]}]} />
 
-* `''` (по умолчанию) — детектор конфликтов не используется, DPsub применяет ограничение `ON` clause для каждого отношения
+Влияет только на алгоритм порядка соединений `dpsub`. Выбирает детектор конфликтов, с помощью которого DPsub
+определяет, какие изменения порядка соединений допустимы. Доступны следующие значения:
+
+* `''` — детектор конфликтов не используется, DPsub применяет ограничение `ON` clause для каждого отношения
 * `'a'` — детектор конфликтов CD-A, корректный, но неполный
-* `'c'` — детектор конфликтов CD-C, корректный и полный
+* `'c'` (по умолчанию) — детектор конфликтов CD-C, корректный и полный
 
-## query_plan_optimize_join_order_limit
+## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -368,7 +423,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Оптимизирует порядок JOIN в рамках одного подзапроса. Пока поддерживается только в очень ограниченном числе случаев.
 Значение задаёт максимальное количество таблиц, для которых выполняется оптимизация.
 
-## query_plan_optimize_join_order_max_searched_plans
+## query_plan_optimize_join_order_max_searched_plans {#query_plan_optimize_join_order_max_searched_plans}
 
 <ExperimentalBadge />
 
@@ -380,7 +435,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Это детерминированно ограничивает время оптимизации (независимо от реального времени) на плотных графах JOIN, таких как клики или звёзды, где пространство поиска растёт экспоненциально.
 Установите 0, чтобы отключить ограничение. Не влияет на значение по умолчанию `query_plan_optimize_join_order_limit`, при котором поиск всегда остаётся значительно ниже этого предела.
 
-## query_plan_optimize_join_order_randomize
+## query_plan_optimize_join_order_randomize {#query_plan_optimize_join_order_randomize}
 
 <ExperimentalBadge />
 
@@ -392,7 +447,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Если задано значение 1, генерируется начальное значение генератора случайных чисел; если задано значение &gt; 1, это значение используется напрямую как начальное значение генератора случайных чисел.
 Это предназначено для тестирования и помогает выявлять ошибки, вызванные различным порядком JOIN.
 
-## query_plan_optimize_lazy_final
+## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -400,7 +455,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Оптимизирует чтение с FINAL в ReplacingMergeTree путем построения множества первичных ключей и его использования при анализе индекса.
 
-## query_plan_optimize_lazy_materialization
+## query_plan_optimize_lazy_materialization {#query_plan_optimize_lazy_materialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -408,7 +463,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Использовать план запроса для оптимизации отложенной материализации.
 
-## query_plan_optimize_lazy_materialization_for_file
+## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -416,23 +471,15 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Использовать оптимизацию отложенной материализации при чтении локальных файлов Parquet с помощью табличной функции `file` и движка таблицы `File`: в запросах `ORDER BY ... LIMIT n` столбцы, не требующиеся для сортировки и фильтрации, считываются только для `n` строк, оставшихся после применения `LIMIT`. Действует только при включенной настройке `query_plan_optimize_lazy_materialization`.
 
-## query_plan_optimize_lazy_materialization_for_object_storage
+## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}]} />
 
 Использовать оптимизацию отложенной материализации при чтении файлов Parquet из объектного хранилища (включая таблицы Iceberg): в запросах `ORDER BY ... LIMIT n` столбцы, не необходимые для сортировки и фильтрации, считываются только для `n` строк, оставшихся после применения `LIMIT`. Действует только при включенной настройке `query_plan_optimize_lazy_materialization`.
 
-## query_plan_optimize_prewhere
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Разрешает проталкивать фильтр в выражение PREWHERE для поддерживаемых хранилищ"}]}]} />
-
-Разрешает проталкивать фильтр в выражение PREWHERE для поддерживаемых хранилищ
-
-## query_plan_propagate_predicate_across_join
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -450,7 +497,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Действует только при `query_plan_enable_optimizations`, равном 1.
 
-## query_plan_push_down_limit
+## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -466,7 +513,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_push_down_volume_reducing_functions
+## query_plan_push_down_volume_reducing_functions {#query_plan_push_down_volume_reducing_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -482,7 +529,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 — Отключить
 * 1 — Включить
 
-## query_plan_push_limit_by_into_sort
+## query_plan_push_limit_by_into_sort {#query_plan_push_limit_by_into_sort}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -497,31 +544,17 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_read_in_order
+## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="BoolForce" default_value="1" />
 
-Включает или отключает оптимизацию чтения in-order на уровне плана запроса.
-Действует, только если значение настройки [`query_plan_enable_optimizations`](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равно 1.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Добавлено значение `force`: чтение по порядку сохраняется при JOIN, даже если части не объявляют виртуальные строки."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Новая настройка"}]}]} />
 
-<Note>
-  Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем эта настройка может измениться обратно несовместимым образом или быть удалена.
-</Note>
+Сохранять чтение по порядку из левой таблицы в операциях JOIN, чтобы этот порядок могли использовать последующие шаги.
 
-Возможные значения:
+Для JOIN, отличного от `LEFT`, чтение остаётся упорядоченным, только если каждая часть левой таблицы объявляет виртуальную строку (см. [`read_in_order_use_virtual_row`](/ru/reference/settings/session-settings/read-in#read_in_order_use_virtual_row)). Без виртуальных строк слияние после JOIN может прочитать гораздо больше данных, чем требуется для лимита. Значение `force` сохраняет чтение по порядку в любом случае.
 
-* 0 - Отключено
-* 1 - Включено
-
-## query_plan_read_in_order_through_join
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "новая настройка"}]}]} />
-
-Сохранять упорядоченное чтение из левой таблицы при выполнении операций JOIN, чтобы его можно было использовать на последующих этапах.
-
-## query_plan_remove_redundant_distinct
+## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -539,7 +572,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_remove_redundant_sorting
+## query_plan_remove_redundant_sorting {#query_plan_remove_redundant_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -557,7 +590,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключено
 * 1 - Включено
 
-## query_plan_remove_unused_columns
+## query_plan_remove_unused_columns {#query_plan_remove_unused_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -575,13 +608,21 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключено
 * 1 - Включено
 
-## query_plan_reuse_storage_ordering_for_window_functions
+## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка"}]}]} />
+
+Заменяет шаг фильтрации шагом вычисления выражения, если условие фильтрации всегда истинно, а столбец фильтра в запросе не используется. Такой шаг фильтрации не отбрасывает строки, но препятствует изменению порядка соединений.
+
+## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **Псевдонимы**: `optimize_read_in_window_order`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Эта логика по умолчанию отключена."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Эта логика по умолчанию отключена. Это также относится к псевдониму `optimize_read_in_window_order`."}]}]} />
 
 Включает или отключает оптимизацию на уровне плана запроса, которая использует порядок сортировки в хранилище при сортировке для оконных функций.
 Действует только если значение параметра [`query_plan_enable_optimizations`](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) равно 1.
@@ -595,7 +636,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключено
 * 1 - Включено
 
-## query_plan_short_circuit_constant_false_join
+## query_plan_short_circuit_constant_false_join {#query_plan_short_circuit_constant_false_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -603,7 +644,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Сокращает обработку `JOIN`, условие `ON` которого сворачивается в константу false, заменяя пустым источником каждую входную сторону, которая не может дать ни одной строки результата (обе стороны для `INNER`/`CROSS`/`SEMI`, непредохраняемую сторону для `LEFT`/`RIGHT`), чтобы не читать сторону, не участвующую в результате. Применяется к нераспределённым планам.
 
-## query_plan_split_filter
+## query_plan_split_filter {#query_plan_split_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -619,7 +660,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
-## query_plan_text_index_add_hint
+## query_plan_text_index_add_hint {#query_plan_text_index_add_hint}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -627,7 +668,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает добавлять подсказку (дополнительный предикат) для фильтрации, построенной на основе инвертированного текстового индекса, в плане запроса.
 
-## query_plan_top_k_through_join
+## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -641,7 +682,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключено
 * 1 - Включено
 
-## query_plan_try_use_vector_search
+## query_plan_try_use_vector_search {#query_plan_try_use_vector_search}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

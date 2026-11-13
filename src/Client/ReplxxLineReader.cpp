@@ -95,7 +95,7 @@ int executeCommand(char * const argv[])
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
@@ -329,12 +329,6 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 namespace DB
 {
 
-static bool replxx_last_is_delimiter = false;
-void ReplxxLineReader::setLastIsDelimiter(bool flag)
-{
-    replxx_last_is_delimiter = flag;
-}
-
 ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     : LineReader
     (
@@ -388,7 +382,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         }
     }
 
-    rx.install_window_change_handler();
+    /// Signals are process-wide: an embedded client must not take over `SIGWINCH` of the server.
+    /// Its terminal size is updated by the server, and replxx queries it on every refresh.
+    if (!options.embedded_mode)
+        rx.install_window_change_handler();
 
     /// `context` is the input up to the cursor, and `context_size` how much of its end the
     /// completion replaces - by default the last word, which the callback may extend (see the
@@ -441,7 +438,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_indent_multiline(false);
 
     if (highlighter)
-        rx.set_highlighter_callback(highlighter);
+    {
+        rx.set_highlighter_callback([this](const String & query, std::vector<Replxx::Color> & colors, int cursor_position)
+        {
+            highlighter(query, colors, cursor_position, last_is_delimiter);
+        });
+    }
 
     /// As-you-type autocompletion: show the matching suggestions as inline "ghost" hints, with
     /// the same priority ordering as Tab completion. replxx renders a single hint inline after
@@ -588,12 +590,38 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::PAGE_DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
     rx.bind_key(Replxx::KEY::control('G'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE_CURRENT, code); });
     rx.bind_key(Replxx::KEY::meta('g'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE, code); });
-    rx.bind_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
-    rx.bind_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
-    rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
+
+    /// Bind a shortcut that does not edit the text. With `--vim`, `replxx` dispatches only through
+    /// the keymap of the current mode, so the shortcut is bound in the vim normal mode as well.
+    auto bind_non_editing_key = [this, vim_mode = options.vim](char32_t key, Replxx::key_press_handler_t handler)
+    {
+        rx.bind_key(key, handler);
+        if (!vim_mode)
+            return;
+        rx.bind_key(
+            key,
+            [this, handler](char32_t code)
+            {
+                resetVim();
+                Replxx::ACTION_RESULT ret = handler(code);
+                /// Stay in normal mode with the cursor on a character of the (possibly recalled) line.
+                if (ret == Replxx::ACTION_RESULT::CONTINUE)
+                {
+                    rx.set_editing_mode(MODE_NORMAL);
+                    withVimState([this](int & pos, std::u32string & text) { resetVim(&pos, &text); });
+                }
+                return ret;
+            },
+            MODE_NORMAL);
+    };
+
+    bind_non_editing_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    bind_non_editing_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    bind_non_editing_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
-    if (options.ignore_shell_suspend)
+    /// In the embedded mode, it would stop the whole server process with `SIGSTOP`.
+    if (options.ignore_shell_suspend || options.embedded_mode)
         rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
@@ -613,9 +641,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// a newline into the edit buffer and does not use the lexer, so the paste stays under a
         /// single prompt even with `--highlight 0`. The explicit `--multiline` continuation still
         /// requires the highlighter, preserving the previous behavior.
-        if (!replxx_last_is_delimiter && ((highlighter && multiline) || hasInputData()))
+        if (!last_is_delimiter && ((highlighter && multiline) || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
-        replxx_last_is_delimiter = false;
+        last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
     /// bind C-j to ENTER action.
@@ -734,7 +762,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
-    rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
+    bind_non_editing_key(Replxx::KEY::meta('#'), insert_comment_action);
 
     char key_fuzzy = 'R';
     char key_regular = 'T';
@@ -786,7 +814,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             return result;
         };
 
-        rx.bind_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
+        bind_non_editing_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
     }
 #endif
 
@@ -794,7 +822,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     ///
     /// NOTE: C-T by default this is a binding to swap adjustent chars
     /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
-    rx.bind_key(Replxx::KEY::control(key_regular), [this](char32_t)
+    bind_non_editing_key(Replxx::KEY::control(key_regular), [this](char32_t)
     {
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
@@ -811,6 +839,14 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             rx.print("%s", "\033[0 q");
         return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
     });
+
+    if (options.vim)
+    {
+        vim = true;
+        rx.set_escdelay(10);
+        /// We don't want to allow opening EDITOR in the embedded mode.
+        setupVimKeybindings(/* allow_editor= */ !options.embedded_mode);
+    }
 }
 
 bool ReplxxLineReader::isCursorAtEndOfInput()
@@ -909,6 +945,10 @@ ReplxxLineReader::~ReplxxLineReader()
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 {
     input.clear();
+
+    /// Every input starts in insert mode without a pending vim command, however the previous one ended.
+    if (vim)
+        resetVimForNewInput();
 
     const char* cinput = rx.input(prompt);
     if (cinput == nullptr)

@@ -18,6 +18,10 @@
 #include <Common/MultiVersion.h>
 #include <unordered_set>
 #include <Common/DNSPTRResolverProvider.h>
+#include <Common/Silk/FiberMutex.h>
+#include <Common/Silk/FiberScheduler.h>
+
+#include "config.h"
 
 namespace ProfileEvents
 {
@@ -123,6 +127,7 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
 
         try
         {
+            Silk::ThreadModeScope thread_mode;
             addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
         }
         catch (const Poco::Net::DNSException & e)
@@ -227,7 +232,7 @@ struct DNSResolver::Impl
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
+    CacheBase<std::string, DNSResolver::CacheEntry, std::hash<std::string>, EqualWeightFunction<DNSResolver::CacheEntry>, Silk::FiberMutex> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
     CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{CurrentMetrics::DNSAddressesCacheBytes, CurrentMetrics::DNSAddressesCacheSize, 1024};
 
     std::mutex drop_mutex;
@@ -415,11 +420,11 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.clear();
-    impl->cache_address.clear();
-
+    /// Under `update_mutex`, so that an update in progress cannot put the entries back.
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
+    impl->cache_host.clear();
+    impl->cache_address.clear();
     impl->known_hosts.clear();
     impl->known_addresses.clear();
     impl->new_hosts.clear();
