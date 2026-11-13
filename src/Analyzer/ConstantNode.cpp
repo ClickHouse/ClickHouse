@@ -177,14 +177,15 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
-    constant_value.getColumn()->updateHashFast(hash_state);
-    constant_value.getType()->updateHash(hash_state);
-    updateExpressionIdentityHash(*constant_value.getType(), hash_state);
-
     /// The fast hash of a `Dynamic` value leaves out the type it holds, time zone included, and the fast
-    /// hash of a `JSON` value leaves out its paths.
+    /// hash of a `JSON` value leaves out its paths and depends on how they are stored.
     if (anyInTypeTree(*constant_value.getType(), [](const IDataType & nested) { return isDynamic(nested) || isObject(nested); }))
         constant_value.getColumn()->updateHashWithValue(0, hash_state);
+    else
+        constant_value.getColumn()->updateHashFast(hash_state);
+
+    constant_value.getType()->updateHash(hash_state);
+    updateExpressionIdentityHash(*constant_value.getType(), hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const

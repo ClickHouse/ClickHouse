@@ -399,6 +399,13 @@ SELECT 'reversed skip paths are one sort key', count() FROM (
 ) WHERE explain ILIKE '%SORT id%'
 SETTINGS session_timezone = 'UTC', allow_experimental_json_type = 1;
 
+-- The same paths written in the other order are one object value, so one sort key too.
+SELECT 'reversed object paths are one sort key', count() FROM (
+    EXPLAIN QUERY TREE
+    SELECT x FROM (SELECT materialize(0)::UInt32 AS x)
+    ORDER BY '{"a":1,"b":2}'::JSON, '{"b":2,"a":1}'::JSON
+) WHERE explain ILIKE '%SORT id%';
+
 -- A group key spelled differently from the selected expression passes name analysis and then has no
 -- column to read, which is how this shape behaves without this change too.
 SELECT 'implicit and explicit zone as a group key', toHour(toDateTime(0) + x)
