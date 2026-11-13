@@ -16,7 +16,6 @@ public:
     {
         ContextPtr context;
         AccessType access_type;
-        Names column_names = {};
     };
 
     StorageAlias(
@@ -27,11 +26,7 @@ public:
 
     std::string getName() const override { return "Alias"; }
 
-    bool isMergeTree() const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->isMergeTree();
-    }
+    bool isMergeTree() const override;
 
     bool readsFromOtherTables() const override { return true; }
     std::vector<StoragePtr> getUnderlyingStorages() const override
@@ -44,6 +39,14 @@ public:
     /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.
     /// Only the bulk paths consult this; an explicit `TRUNCATE TABLE <alias>` still truncates the target.
     bool supportsTruncate() const override { return false; }
+
+    /// The alias holds no metadata of its own, so the answer is the target's. Without this a
+    /// unique-key table read through an alias would look unconstrained to the planner.
+    bool hasUniqueKey() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->hasUniqueKey();
+    }
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
@@ -61,6 +64,17 @@ public:
     /// Returns the subset of `column_names` the current user has this access to on every table this
     /// alias resolves through. Resolves the chain once, whatever the grants look like.
     NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
+
+    /// Returns the subset of `column_names` the current user can read with `SELECT` through every table this alias
+    /// resolves through. Each name is decided separately at each table, as `read` decides it on each hop: a subcolumn is
+    /// checked against its column unless that table has a grant or revoke on the exact subcolumn name (see
+    /// `ColumnsDescription::getColumnNamesForSelectAccessCheck`). `columns` is the metadata of the chain's last table.
+    NameSet filterColumnsSelectableThroughChain(
+        ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const;
+
+    /// Returns the database and table names of every table this alias resolves through, in order, i.e. the whole
+    /// chain when the target is itself an Alias. The chain stops at a cycle or at a target that does not exist.
+    std::vector<std::pair<String, String>> getTargetChain() const;
 
     /// Read from target table
     void read(
@@ -83,7 +97,7 @@ public:
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override { getTargetTable()->checkAlterIsPossible(commands, local_context); }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     /// Alter target table
     void alter(
@@ -178,6 +192,11 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToTupleElementSubcolumns();
     }
+    bool hasBucketedMapSerialization() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->hasBucketedMapSerialization();
+    }
     bool supportsParallelInsert() const override
     {
         auto target = tryGetTargetTable();
@@ -194,6 +213,7 @@ public:
     bool prefersLargeBlocks() const override { return getTargetTable()->prefersLargeBlocks(); }
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
+    bool readRequiresAnalyzedQuery() const override { return getTargetTable()->readRequiresAnalyzedQuery(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
     bool supportsReplication() const override
     {
@@ -299,14 +319,7 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{}; }
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override
-    {
-        auto target = tryGetTargetTable();
-        if (!target)
-            return std::nullopt;
-
-        return target->getColumnSizes();
-    }
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
 

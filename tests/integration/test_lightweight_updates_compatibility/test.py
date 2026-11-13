@@ -241,10 +241,10 @@ def test_patch_parts_version_compatibility_boundary(
     started_cluster, compat_node, expected_columns, expected_modes
 ):
     """
-    `patch_parts_version` got the default `v2` in 26.8, and the entry in
-    `SettingsChangesHistory` has to live in the 26.8 block: a `26.8` pin must
+    `patch_parts_version` got the default `v2` in 26.8, and the history record
+    in its declaration has to carry version 26.8: a `26.8` pin must
     write v2 patches (the release shipped them) and a `26.7` pin v1 patches.
-    An entry recorded in the 26.9 block would make a `26.8` pin write v1.
+    A record under 26.9 would make a `26.8` pin write v1.
     """
     compat_node.query("DROP TABLE IF EXISTS t_lwu_compat SYNC")
 

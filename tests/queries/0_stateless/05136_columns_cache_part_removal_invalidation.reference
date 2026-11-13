@@ -1,0 +1,9 @@
+7998000	15996000	4000
+cached source parts before the merge: ['all_1_1_0','all_2_2_0']
+source part entries removed after the merge: 1
+7998000	15996000	4000
+7998000	15996000	4000
+only the merged part is cached: ['all_1_2_1']
+05136_merged_part_read_1	0	1
+05136_merged_part_read_2	1	0
+entries left after the drop: 0

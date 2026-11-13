@@ -93,9 +93,10 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     /// call fall through and be reparsed positionally, which can only misinterpret it.
     const auto * second_arg_function = args.size() >= 2 ? args[1]->as<ASTFunction>() : nullptr;
     const bool throw_unknown_collection = second_arg_function && second_arg_function->name == "equals";
-    if (!is_cluster_function
-        && (named_collection
-            = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id)))
+    if (!is_cluster_function)
+        named_collection = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id);
+
+    if (named_collection)
     {
         /// Simple literal overrides are already merged into `named_collection` by
         /// tryGetNamedCollectionWithOverrides; only the complex (non-literal) overrides arrive in

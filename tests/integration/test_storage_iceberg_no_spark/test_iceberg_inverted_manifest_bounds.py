@@ -1,11 +1,14 @@
 """A manifest whose bounds cannot be trusted must not prune the data file they describe, so a
 filtered read still returns every matching row: a lower bound above the upper bound, and a bound
 declared in fewer bytes than its column. The fallback is per column: a well-formed column in the
-same manifest entry must keep pruning."""
+same manifest entry must keep pruning. A read decodes the bounds of only the columns its filter
+uses, so those checks filter on the broken column as well."""
 
 import decimal
+import math
 import os
 import shutil
+import struct
 import tempfile
 
 import avro.datafile
@@ -14,7 +17,13 @@ import pyarrow as pa
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import DecimalType, FixedType, LongType
+from pyiceberg.types import (
+    DecimalType,
+    DoubleType,
+    FixedType,
+    FloatType,
+    LongType,
+)
 
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.iceberg_utils import (
@@ -266,7 +275,7 @@ def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
     # than a manifest-wide loss of min/max pruning.
     assert _swap_bounds_in_manifests(manifests, only_field_id=1) > 0
     assert pruned_files(id_expr) == 0
-    assert pruned_files(s_expr) == 3
+    assert pruned_files(select("s < '1' AND id < 10")) == 3
 
     # Invert `s` as well, so no column has usable bounds. The fallback holds whichever column is
     # inverted, and neither filter may prune.
@@ -329,11 +338,11 @@ def test_iceberg_narrow_manifest_bounds(started_cluster_iceberg_no_spark):
     # would prune every file the filter needs. `s` is still well formed in the same manifest entry
     # and must keep pruning, so the fallback is per column.
     assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
-    assert pruned_files("s < '100010'") == 3
+    assert pruned_files("s < '100010' AND n > 50000") == 3
 
     # A count cannot tell a bound that was dropped from one that decoded to an inverted pair, which
-    # the sibling guard above drops for the same count. This names the column whose bound was
-    # dropped, and the read above has already parsed every bound in the manifest entry.
+    # the sibling guard above drops for the same count. This names the column whose bound the read
+    # above dropped.
     assert instance.grep_in_log(
         f"usable range border for column id 1 of data file '.*{table_name}"
     )
@@ -436,7 +445,7 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
     assert _swap_bounds_in_manifests(manifests, only_field_id=2) > 0
     assert pruned_files(d_expr) == 0
-    assert pruned_files(id_expr) == 1
+    assert pruned_files(f"{id_expr} AND {d_expr}") == 1
 
     # `e` is a Decimal32, so its unscaled bound is an Int32. A bound out of the column's declared
     # precision is still a legal encoding, and nothing rejects one: the pair below is ordered as
@@ -446,7 +455,7 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     assert pruned_files(e_expr) == 1
     assert _set_bounds_in_manifests(manifests, 3, b"\x7f\xff\xff\xf0", b"\x7f\xff\xff\xfa") > 0
     assert pruned_files(e_expr) == 0
-    assert pruned_files(id_expr) == 1
+    assert pruned_files(f"{id_expr} AND {e_expr}") == 1
 
 
 def test_iceberg_narrow_fixed_manifest_bounds(started_cluster_iceberg_no_spark):
@@ -528,4 +537,119 @@ def test_iceberg_narrow_fixed_manifest_bounds(started_cluster_iceberg_no_spark):
     manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
     assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
     assert pruned_files("f > '190'") == 0
-    assert pruned_files("n < 15") == 3
+    assert pruned_files("n < 15 AND f > '190'") == 3
+
+
+def test_iceberg_nan_manifest_bounds(started_cluster_iceberg_no_spark):
+    """Iceberg float bounds leave NaN out, so a data file whose bounds are [3, 3] may still hold a
+    NaN, which satisfies `x != 3` and `NOT (x < 10)`. Such a file may be pruned on a predicate NaN
+    cannot satisfy, and on any predicate once its `nan_value_counts` says the column has no NaN.
+    A NaN bound itself bounds nothing, whatever `nan_value_counts` says."""
+    cluster = started_cluster_iceberg_no_spark
+    instance = cluster.instances["node1"]
+    table_name = "test_iceberg_nan_manifest_bounds_" + get_uuid_str()
+    key_prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+
+    catalog = load_catalog(
+        "demo",
+        **{
+            "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
+            "type": "rest",
+            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
+        },
+    )
+    namespace = f"clickhouse_{get_uuid_str()}"
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        f"{namespace}.{table_name}",
+        schema=Schema(
+            NestedField(1, "id", LongType(), required=False),
+            NestedField(2, "x", DoubleType(), required=False),
+            NestedField(3, "y", FloatType(), required=False),
+        ),
+        location=f"s3://{cluster.minio_bucket}/{key_prefix}",
+        partition_spec=PartitionSpec(),
+    )
+
+    # The field ids must reach the Parquet files for the Iceberg reader to match the columns.
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), True, metadata={b"PARQUET:field_id": b"1"}),
+            pa.field("x", pa.float64(), True, metadata={b"PARQUET:field_id": b"2"}),
+            pa.field("y", pa.float32(), True, metadata={b"PARQUET:field_id": b"3"}),
+        ]
+    )
+    # One data file per append, told apart by their row counts: 3 rows holding a NaN between two
+    # 3s, 4 rows of 3, and 5 rows from 100 to 104.
+    for values in ([3, math.nan, 3], [3] * 4, list(range(100, 105))):
+        table.append(
+            pa.Table.from_pylist(
+                [{"id": i, "x": v, "y": v} for i, v in enumerate(values)], schema=arrow_schema
+            )
+        )
+
+    manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
+
+    # The file holding the NaN must declare [3, 3] for both float columns and no NaN count, which is
+    # what the spec allows a writer to do. A writer that starts recording the count would leave the
+    # assertions below nothing to test.
+    data_files = []
+    _patch_manifests(manifests, lambda data_file: data_files.append(data_file))
+    nan_file = next(data_file for data_file in data_files if data_file["record_count"] == 3)
+    for field_id, fmt in ((2, "<d"), (3, "<f")):
+        for bounds in (nan_file["lower_bounds"], nan_file["upper_bounds"]):
+            raw = next(entry["value"] for entry in bounds if entry["key"] == field_id)
+            assert struct.unpack(fmt, raw)[0] == 3
+        assert all(entry["key"] != field_id for entry in nan_file["nan_value_counts"] or [])
+
+    source = (
+        f"icebergS3(s3, filename = '{key_prefix}/', format=Parquet, "
+        f"url = 'http://minio1:9001/{cluster.minio_bucket}/')"
+    )
+    assert instance.query(f"SELECT count() FROM {source}", settings=NOCACHE).strip() == "12"
+
+    def pruned_files(where):
+        return _pruned_files(
+            instance, table_name, f"SELECT id, x, y FROM {source} WHERE {where} ORDER BY ALL"
+        )
+
+    # Control: a NaN satisfies no ordering comparison, so the two files of 3s are pruned.
+    assert pruned_files("x > 50") == 2
+
+    # The NaN satisfies every negated comparison, so the file holding it may not be pruned on its
+    # bounds; with no NaN count recorded the file of 3s may hold one too.
+    assert pruned_files("x != 3") == 0
+    assert pruned_files("NOT (x < 10)") == 0
+    assert pruned_files("y != 3") == 0
+
+    # A NaN count of 0 lets the file of 3s be pruned again; a count of 1 keeps the other one.
+    def set_nan_count(data_file):
+        count = {3: 1, 4: 0}.get(data_file["record_count"])
+        if count is None:
+            return False
+        data_file["nan_value_counts"] = [{"key": 2, "value": count}]
+        return True
+
+    assert _patch_manifests(manifests, set_nan_count) == 2
+    assert pruned_files("x != 3") == 1
+
+    # A NaN bound orders above every value, so (5, NaN) and (NaN, NaN) describe ranges that do not
+    # hold the 3s the file stores. Its NaN count of 0 does not make the bounds usable.
+    for lower, upper in ((5.0, math.nan), (math.nan, math.nan)):
+        assert (
+            _patch_manifests(
+                manifests,
+                lambda data_file: data_file["record_count"] == 4
+                and _set_one_field(
+                    data_file["lower_bounds"],
+                    data_file["upper_bounds"],
+                    2,
+                    struct.pack("<d", lower),
+                    struct.pack("<d", upper),
+                ),
+            )
+            == 1
+        )
+        assert pruned_files("x = 3") == 1

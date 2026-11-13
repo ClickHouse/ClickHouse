@@ -24,10 +24,12 @@ release_branch_job = Job.Config(
 workflow = Workflow.Config(
     name="CreateReleaseBranch",
     event=Workflow.Event.DISPATCH,
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[release_branch_job],
     secrets=SECRETS + [robot_token_secret],
     # Join CreateRelease's group so a branch cut cannot overlap an in-flight patch and publish a stale `:latest`.
     concurrency_group="CreateRelease",
+    enable_concurrency_queue=True,
     # Cutting a branch mutates shared state (tag, branch, master bump PR); the
     # dispatch concurrency group serializes runs. It must never overlap a patch
     # release either - that flow lives in the separate CreateRelease workflow.

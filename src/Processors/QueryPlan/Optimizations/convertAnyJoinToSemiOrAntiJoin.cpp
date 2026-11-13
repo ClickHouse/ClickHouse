@@ -6,6 +6,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -30,6 +31,11 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     if (dagContainsNonDeterministicFunction(filter_dag) || dagContainsNonDeterministicFunction(pre_actions_dag))
         return FilterResult::UNKNOWN;
 
+    /// Pre-join constants reach the filter as full columns after the join, so a function reading representation cannot be probed.
+    if (const auto * filter = filter_dag.tryFindInOutputs(filter_column_name);
+        filter && !ActionsDAG::getInputsReadByRepresentation(*filter).empty())
+        return FilterResult::UNKNOWN;
+
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
 
@@ -37,12 +43,23 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     if (!filter_node)
         return FilterResult::UNKNOWN;
 
+    /// For the same reason `assumeNotNull` over a pre-join constant returns at runtime the value computed
+    /// under the null map, which the constant fold below never computes, so only conjuncts free of it decide.
+    ActionsDAG::NodeRawConstPtrs targets = {filter_node};
+    if (nodeReadsUnspecifiedValueUnderNull(filter_node))
+    {
+        targets = ActionsDAG::extractConjunctionAtoms(filter_node);
+        std::erase_if(targets, nodeReadsUnspecifiedValueUnderNull);
+        if (targets.empty())
+            return FilterResult::UNKNOWN;
+    }
+
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             combined_dag_input,
-            { filter_node },
+            targets,
             /*input_rows_count=*/1,
             { .skip_materialize = true });
     }
@@ -52,7 +69,14 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
         return FilterResult::UNKNOWN;
     }
 
-    return getFilterResult(filter_output[0]);
+    if (targets.front() == filter_node)
+        return getFilterResult(filter_output[0]);
+
+    /// A conjunct that is FALSE on its own makes the whole filter FALSE.
+    for (const auto & conjunct : filter_output)
+        if (getFilterResult(conjunct) == FilterResult::FALSE)
+            return FilterResult::FALSE;
+    return FilterResult::UNKNOWN;
 }
 
 namespace
@@ -152,7 +176,22 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!isLeftOrRight(join_operator.kind))
         return 0;
 
+    /// Both conversions below are only worth doing if the join can still be executed afterwards.
+    const auto & join_settings = join->getJoinSettings();
+    const bool semi_can_be_executed
+        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_operator.kind, JoinStrictness::Semi);
+    const bool anti_can_be_executed
+        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_operator.kind, JoinStrictness::Anti);
+
+    if (!semi_can_be_executed && !anti_can_be_executed)
+        return 0;
+
     const auto & filter_dag = filter->getExpression();
+
+    /// Not-built sets keep the join ANY: not every join algorithm can run SEMI.
+    if (dagContainsNonReadySet(filter_dag))
+        return 0;
+
     const auto & filter_column_name = filter->getFilterColumnName();
     const auto & left_stream_input_header = join->getInputHeaders().front();
     const auto & right_stream_input_header = join->getInputHeaders().back();
@@ -161,10 +200,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     {
         case JoinKind::Left:
         {
-            auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *right_stream_input_header);
+            auto result_for_not_matched_rows = filterResultForNotMatchedRows(
+                filter_dag, filter_column_name, *right_stream_input_header, /*allow_unknown_function_arguments=*/false, child_node->children.back());
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Right>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -176,7 +216,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
@@ -192,10 +232,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         }
         case JoinKind::Right:
         {
-            auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *left_stream_input_header);
+            auto result_for_not_matched_rows = filterResultForNotMatchedRows(
+                filter_dag, filter_column_name, *left_stream_input_header, /*allow_unknown_function_arguments=*/false, child_node->children.front());
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Left>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -207,7 +248,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;

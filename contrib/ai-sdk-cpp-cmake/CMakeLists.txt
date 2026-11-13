@@ -38,13 +38,16 @@ set(AI_SDK_ANTHROPIC_SOURCES
     "${AI_SDK_SOURCE_DIR}/src/providers/anthropic/anthropic_factory.cpp"
 )
 
-# Add nlohmann_json from submodule
-set(NLOHMANN_JSON_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/nlohmann_json_patched")
-add_library(_ai_sdk_nlohmann_json INTERFACE)
-target_include_directories(_ai_sdk_nlohmann_json SYSTEM INTERFACE
-    "${NLOHMANN_JSON_SOURCE_DIR}/include"
-)
-add_library(ai_sdk_nlohmann_json::ai_sdk_nlohmann_json ALIAS _ai_sdk_nlohmann_json)
+# `nlohmann::json` comes from `contrib/nlohmann-json`, not from the `third_party/nlohmann_json_patched`
+# copy this library vendors. Both are version 3.12.0, so both define the same
+# `nlohmann::json_abi_v3_12_0` symbols - and the two definitions differ: the `contrib` copy is the
+# ClickHouse fork that reads numbers without consulting the locale, whose `lexer` holds a
+# `number_buffer` member that the vendored copy has no field for. Linking both is an ODR violation
+# that the linker resolves by keeping one definition of each symbol, so a `parser` laid out by one
+# header ends up in a `parse` compiled from the other, which reads and destroys members past the
+# end of it: `AddressSanitizer` reports a stack-buffer-overflow and the client aborts on the first
+# response of the model. The vendored copy exists to keep the number parsing away from the locale,
+# which the fork does properly, so there is nothing left to keep it for.
 
 # Add httplib from submodule (header-only)
 set(HTTPLIB_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/httplib-header-only")
@@ -79,7 +82,7 @@ target_include_directories(_ai-sdk-cpp-core SYSTEM
 
 target_link_libraries(_ai-sdk-cpp-core
     PUBLIC
-        ai_sdk_nlohmann_json::ai_sdk_nlohmann_json
+        ch_contrib::nlohmann_json
     PRIVATE
         httplib::httplib
         concurrentqueue
@@ -105,7 +108,7 @@ target_include_directories(_ai-sdk-cpp-openai SYSTEM
 target_link_libraries(_ai-sdk-cpp-openai
     PUBLIC
         _ai-sdk-cpp-core
-        ai_sdk_nlohmann_json::ai_sdk_nlohmann_json
+        ch_contrib::nlohmann_json
     PRIVATE
         httplib::httplib
         concurrentqueue
@@ -133,7 +136,7 @@ target_include_directories(_ai-sdk-cpp-anthropic SYSTEM
 target_link_libraries(_ai-sdk-cpp-anthropic
     PUBLIC
         _ai-sdk-cpp-core
-        ai_sdk_nlohmann_json::ai_sdk_nlohmann_json
+        ch_contrib::nlohmann_json
     PRIVATE
         httplib::httplib
         concurrentqueue

@@ -1,4 +1,5 @@
 #include <IO/Operators.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/FractionalOffsetTransform.h>
@@ -57,6 +58,11 @@ void FractionalOffsetStep::describeActions(FormatSettings & settings) const
 void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Fractional Offset", fractional_offset);
+}
+
+QueryPlanStepPtr FractionalOffsetStep::clone() const
+{
+    return std::make_unique<FractionalOffsetStep>(*this);
 }
 
 void FractionalOffsetStep::serialize(Serialization & ctx) const

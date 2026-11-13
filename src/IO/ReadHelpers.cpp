@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
-#include <base/hex.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/Hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -43,6 +44,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
@@ -214,6 +216,11 @@ void throwNumberWithoutDigits()
     throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
 }
 
+void throwIntegerTextOverflow()
+{
+    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Integer is out of range of the destination type");
+}
+
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
@@ -345,6 +352,12 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
+template <typename Vector>
+void readStringUntilWhitespaceDelimiterInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<' ', '\t', '\n', '\f', '\v', '\r'>(s, buf);
+}
+
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
@@ -359,6 +372,12 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
+}
+
+void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilWhitespaceDelimiterInto(s, buf);
 }
 
 void skipStringUntilWhitespace(ReadBuffer & buf)
@@ -783,8 +802,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
-
-        if constexpr (support_crlf)
+        else if constexpr (support_crlf)
         {
             if (*buf.position() == '\r')
             {
@@ -2097,6 +2115,27 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
+template <typename Allocator>
+void readStringGrowing(std::basic_string<char, std::char_traits<char>, Allocator> & s, size_t size, ReadBuffer & buf)
+{
+    while (s.size() < size)
+    {
+        if (buf.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", s.size(), size);
+
+        const size_t bytes_to_copy = std::min(size - s.size(), buf.available());
+        if (s.capacity() < s.size() + bytes_to_copy)
+            s.reserve(std::min(size, std::max(s.size() + bytes_to_copy, 2 * s.capacity())));
+        s.append(buf.position(), bytes_to_copy);
+        buf.position() += bytes_to_copy;
+    }
+}
+
+template void readStringGrowing<std::allocator<char>>(String & s, size_t size, ReadBuffer & buf);
+template void readStringGrowing<AllocatorWithMemoryTracking<char>>(
+    std::basic_string<char, std::char_traits<char>, AllocatorWithMemoryTracking<char>> & s, size_t size, ReadBuffer & buf);
+
 void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size)
 {
     size_t size = 0;
@@ -2292,13 +2331,12 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// There are no new bytes to add to memory.
-    /// No need to do extra stuff.
-    if (new_bytes == 0)
+    /// Nothing to append, and `in.position()` may be null.
+    if (additional_bytes == 0)
         return;
 
     chassert(in.position() + additional_bytes <= in.buffer().end());
-    memory.resize(new_bytes);
+    memory.resizeAmortized(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }

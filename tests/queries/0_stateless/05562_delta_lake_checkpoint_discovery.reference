@@ -1,0 +1,49 @@
+-- deletion_vectors
+original: 112 8739
+checkpoints at versions: 3 6 
+without _last_checkpoint: 112 8739
+cleaned up log: 112 8739
+cleaned up log, without _last_checkpoint: 112 8739
+cleaned up log, version of the checkpoint: 1
+cleaned up log, version before the checkpoint: (DELTA_KERNEL_ERROR)
+-- multi_part_checkpoint
+original: 35 1120
+checkpoints at versions: 4 
+without _last_checkpoint: 35 1120
+cleaned up log: 35 1120
+cleaned up log, without _last_checkpoint: 35 1120
+cleaned up log, version of the checkpoint: 1
+cleaned up log, version before the checkpoint: (DELTA_KERNEL_ERROR)
+-- v2_checkpoint_json
+original: 49 1220
+checkpoints at versions: 3 6 
+without _last_checkpoint: 49 1220
+cleaned up log: 49 1220
+cleaned up log, without _last_checkpoint: 49 1220
+cleaned up log, version of the checkpoint: 1
+cleaned up log, version before the checkpoint: (DELTA_KERNEL_ERROR)
+-- v2_checkpoint_parquet
+original: 49 1220
+checkpoints at versions: 3 6 
+without _last_checkpoint: 49 1220
+cleaned up log: 49 1220
+cleaned up log, without _last_checkpoint: 49 1220
+cleaned up log, version of the checkpoint: 1
+cleaned up log, version before the checkpoint: (DELTA_KERNEL_ERROR)
+-- delta332_multi_part_checkpoint
+original: 35 1120
+checkpoints at versions: 4 
+without _last_checkpoint: 35 1120
+cleaned up log: 35 1120
+cleaned up log, without _last_checkpoint: 35 1120
+cleaned up log, version of the checkpoint: 1
+cleaned up log, version before the checkpoint: (DELTA_KERNEL_ERROR)
+-- delta332_v2_checkpoint_parquet
+original: 49 1220
+checkpoints at versions: 3 6 
+without _last_checkpoint: 49 1220
+cleaned up log: 49 1220
+cleaned up log, without _last_checkpoint: 49 1220
+cleaned up log, version of the checkpoint: 1
+cleaned up log, version before the checkpoint: (DELTA_KERNEL_ERROR)
+-- stale _last_checkpoint: 112 8739

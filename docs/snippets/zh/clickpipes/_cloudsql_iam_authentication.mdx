@@ -1,0 +1,94 @@
+---
+title: Cloud SQL IAM 身份验证
+---
+
+export const CloudSQLIAMAuthentication = ({ engine }) => {
+  const engines = {
+    postgres: {
+      docsPath: 'postgres',
+      flag: 'cloudsql.iam_authentication',
+      port: '5432',
+      createUserName: '<name>@<project>.iam',
+      userNameHint: <>对于 Postgres，用户名为<strong>不含</strong> <code>.gserviceaccount.com</code> 后缀的服务账号电子邮件地址：</>,
+      grantsStep: <>通过管理员用户连接，并完成<a href="/zh/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">创建 ClickPipes 用户并授予权限</a>中的步骤；由于用户已存在，可跳过第 1 步。使用 <code>{'"<name>@<project>.iam"'}</code> 替换 <code>clickpipes_user</code>，并保留双引号，因为该名称包含特殊字符。</>,
+      firewallAnchor: '/integrations/clickpipes/postgres/source/google-cloudsql#add-clickpipes-ips-to-firewall',
+    },
+    mysql: {
+      docsPath: 'mysql',
+      flag: 'cloudsql_iam_authentication',
+      port: '3306',
+      createUserName: 'SERVICE_ACCOUNT_EMAIL',
+      userNameHint: <>对于 MySQL，请传入完整的服务账号电子邮件地址。Cloud SQL 会根据电子邮件中 <code>@</code> <strong>之前</strong>的部分创建 MySQL 用户，下文授权中使用的就是这个较短的名称（<code>{'<name>'}</code>）：</>,
+      grantsStep: <>以 root 用户身份连接，并完成<a href="/zh/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">配置数据库用户</a>中的步骤；由于用户已存在，可跳过第 1 步。使用 <code>{"'<name>'@'%'"}</code> 替换 <code>'clickpipes_user'@'host'</code> 和 <code>'clickpipes_user'@'%'</code>。</>,
+      firewallAnchor: '/integrations/clickpipes/mysql/source/gcp#configure-network-access-gcp-mysql',
+      tlsSuffix: <>您可以跳过<a href="/zh/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">证书步骤</a>。</>,
+    },
+  };
+  const cfg = engines[String(engine).toLowerCase()];
+
+  if (!cfg)
+    throw new Error(`Unsupported Cloud SQL IAM authentication engine: ${engine}`);
+
+  const addBindingSql = (role) => `gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \\
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \\
+  --role="${role}"`;
+
+  const createUserSql = `gcloud sql users create "${cfg.createUserName}" \\
+  --instance=YOUR_INSTANCE \\
+  --type=cloud_iam_service_account`;
+
+  return (
+    <>
+      <p>
+        ClickPipes 可以不使用密码，而是借助<a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>自动 IAM 数据库身份验证</a>，通过您的 ClickHouse Cloud 服务所属的 Google 服务账号进行身份验证（请参阅 <a href="/zh/integrations/clickpipes/security/gcp-workload-identity">ClickPipes 的 GCP 工作负载身份</a>）。这样，ClickPipes 连接 Cloud SQL 实例时无需存储任何数据库凭据。
+      </p>
+
+      <Note>
+        IAM 数据库身份验证目前处于 <strong>Beta</strong> 阶段。
+      </Note>
+
+      <h3 id="get-the-clickhouse-service-account">获取 ClickHouse 服务账号</h3>
+
+      <p>
+        按照<a href="/zh/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">获取 ClickPipes 服务账号</a>中的说明，从 ClickPipes 服务上下文中获取您的 ClickHouse 服务的服务账号。电子邮件地址以 <code>principal</code> 返回，格式类似 <code>{'<name>@<project>.iam.gserviceaccount.com'}</code>。以下步骤中将其称为 <code>SERVICE_ACCOUNT_EMAIL</code>。
+      </p>
+
+      <h3 id="configure-cloud-sql-for-iam">配置 Cloud SQL</h3>
+
+      <ol>
+        <li>
+          <a href="https://console.cloud.google.com/apis/library/sqladmin.googleapis.com">在托管实例的项目中启用 Cloud SQL Admin API</a>。ClickPipes 使用该 API 查找实例并获取短期有效的客户端证书。
+        </li>
+        <li>
+          在实例上启用 <code>{cfg.flag}</code> 标志。更改此标志会导致实例重启。
+        </li>
+        <li>
+          <a href="/zh/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">授予对数据源的访问权限</a>：在托管实例的项目上为服务账号授予 <code>roles/cloudsql.client</code> 和 <code>roles/cloudsql.instanceUser</code> IAM 角色。请在创建 ClickPipe 之前完成授权。
+
+          <CodeBlock language="bash">{`${addBindingSql('roles/cloudsql.client')}
+
+${addBindingSql('roles/cloudsql.instanceUser')}`}</CodeBlock>
+        </li>
+        <li>
+          为服务账号创建数据库用户。{cfg.userNameHint}
+
+          <CodeBlock language="bash">{createUserSql}</CodeBlock>
+        </li>
+        <li>{cfg.grantsStep}</li>
+      </ol>
+
+      <h3 id="create-the-clickpipe-with-iam">创建 ClickPipe</h3>
+
+      <p>
+        创建 ClickPipe 时，请选择 Google Cloud 服务账号 (IAM) 身份验证，无需输入用户名或密码。
+      </p>
+
+      <ul>
+        <li>将 <strong>Host</strong> 设置为实例连接名称，格式为 <code>PROJECT:REGION:INSTANCE</code>。不接受 IP 地址。</li>
+        <li>ClickPipes 连接的是实例的服务端代理端口 <strong>3307</strong>，而不是端口 {cfg.port}。请确保该端口可访问。对于公网 IP，请<a href={cfg.firewallAnchor}>将 ClickPipes IP 添加到已授权网络</a>。</li>
+        <li>当您的服务具有可解析实例 PSC DNS 名称的<a href="/zh/integrations/clickpipes/networking/gcp-psc">反向私有端点</a>时，ClickPipes 会使用 Private Service Connect。否则，它会连接到实例的公网 IP；如果实例没有公网 IP，则连接到其私网 IP。</li>
+        <li>根 CA 等 TLS 设置不适用。连接会自动加密，服务器身份也会自动验证。{cfg.tlsSuffix}</li>
+      </ul>
+    </>
+  );
+};

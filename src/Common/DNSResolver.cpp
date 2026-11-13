@@ -18,6 +18,10 @@
 #include <Common/MultiVersion.h>
 #include <unordered_set>
 #include <Common/DNSPTRResolverProvider.h>
+#include <Common/Silk/FiberMutex.h>
+#include <Common/Silk/FiberScheduler.h>
+
+#include "config.h"
 
 namespace ProfileEvents
 {
@@ -64,8 +68,11 @@ namespace
 {
 
 /// Slightly altered implementation from https://github.com/pocoproject/poco/blob/poco-1.6.1/Net/src/SocketAddress.cpp#L86
-void splitHostAndPort(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
+void splitHostAndPortImpl(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
 {
+    if (host_and_port.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host and port");
+
     String port_str;
     out_host.clear();
 
@@ -120,6 +127,7 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
 
         try
         {
+            Silk::ThreadModeScope thread_mode;
             addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
         }
         catch (const Poco::Net::DNSException & e)
@@ -182,6 +190,12 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     {
         if (address.family() == Poco::Net::IPAddress::Family::IPv4)
             ptr_records = ptr_resolver->resolve(address.toString());
+        else if (address.isIPv4Mapped())
+        {
+            /// An IPv4-mapped address is an IPv4 peer of a dual-stack socket, so its PTR record is the IPv4 one.
+            Poco::Net::IPAddress ipv4(reinterpret_cast<const char *>(address.addr()) + 12, 4);
+            ptr_records = ptr_resolver->resolve(ipv4.toString());
+        }
         else
             ptr_records = ptr_resolver->resolve_v6(address.toString());
     }
@@ -218,7 +232,7 @@ struct DNSResolver::Impl
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
+    CacheBase<std::string, DNSResolver::CacheEntry, std::hash<std::string>, EqualWeightFunction<DNSResolver::CacheEntry>, Silk::FiberMutex> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
     CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{CurrentMetrics::DNSAddressesCacheBytes, CurrentMetrics::DNSAddressesCacheSize, 1024};
 
     std::mutex drop_mutex;
@@ -355,11 +369,17 @@ DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
     return addresses;
 }
 
-Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
+std::pair<std::string, UInt16> DNSResolver::splitHostAndPort(const std::string & host_and_port)
 {
     String host;
     UInt16 port = 0;
-    splitHostAndPort(host_and_port, host, port);
+    splitHostAndPortImpl(host_and_port, host, port);
+    return {std::move(host), port};
+}
+
+Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
+{
+    auto [host, port] = splitHostAndPort(host_and_port);
 
     if (impl->disable_cache)
         return Poco::Net::SocketAddress(pickAddress(getResolvedIPAddressesWithFiltering(host)), port);
@@ -400,11 +420,11 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.clear();
-    impl->cache_address.clear();
-
+    /// Under `update_mutex`, so that an update in progress cannot put the entries back.
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
+    impl->cache_host.clear();
+    impl->cache_address.clear();
     impl->known_hosts.clear();
     impl->known_addresses.clear();
     impl->new_hosts.clear();

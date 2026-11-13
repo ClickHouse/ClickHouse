@@ -6,12 +6,14 @@
 #include <DataTypes/IDataType.h>
 #include <Poco/Logger.h>
 #include <Common/HashTable/HashTableTraits.h>
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
     extern const Event AggregationConvertedToTwoLevel;
+    extern const Event AggregationIndexedTables;
 }
 
 namespace DB
@@ -56,6 +58,7 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
+    cell_index.reset();
     /// `init` also reinitializes a table after an external-aggregation flush, so preserve
     /// whether the heap rejected anything before the old method is replaced.
     top_k_heap_ever_rejected = topKHeapEverRejected();
@@ -116,9 +119,26 @@ bool AggregatedDataVariants::topKHeapEverRejected() const
     }
 }
 
+bool AggregatedDataVariants::topKHeapInactive() const
+{
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return false;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return (NAME)->top_k_heap.willBeInactive();
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
 void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 {
     chassert(!aggregator);
+    cell_index.reset();
     switch (type)
     {
         case Type::EMPTY:
@@ -137,28 +157,48 @@ void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
     aggregates_pool = nullptr;
     aggregator = nullptr;
     type = Type::EMPTY;
+    restricted_to_kept_keys = false;
+    kept_keys_seed = nullptr;
+    kept_keys_rebuild_in_progress = false;
 }
 
 size_t AggregatedDataVariants::allocatedBytes() const
 {
-    size_t res = 0;
+    size_t res = hashTableBufferBytes();
     for (const auto & pool : aggregates_pools)
         res += pool->allocatedBytes();
+    return res;
+}
 
+size_t AggregatedDataVariants::hashTableBufferBytes() const
+{
     switch (type)
     {
         case Type::EMPTY:
         case Type::without_key:
-            break;
+            return 0;
 
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
-            res += (NAME)->data.getBufferSizeInBytes(); \
-            break;
+            return (NAME)->data.getBufferSizeInBytes();
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
+}
+
+size_t AggregatedDataVariants::usedArenaBytes() const
+{
+    size_t res = 0;
+    for (const auto & pool : aggregates_pools)
+        res += pool->usedBytes();
     return res;
+}
+
+size_t AggregatedDataVariants::memoryUsage() const
+{
+    if (memory_tracker)
+        return std::max<Int64>(memory_tracker->get(), 0);
+    return allocatedBytes();
 }
 
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
@@ -233,9 +273,30 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
     }
 }
 
+void AggregatedDataVariants::resetToSingleLevel()
+{
+    chassert(!hasData());
+    switch (type)
+    {
+#define M(NAME) \
+        case Type::NAME ## _two_level: \
+            init(Type::NAME); \
+            (NAME ## _two_level).reset(); \
+            break;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
+    }
+}
+
 void AggregatedDataVariants::convertToTwoLevel()
 {
     ProfileEvents::increment(ProfileEvents::AggregationConvertedToTwoLevel);
+    cell_index.reset();
 
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
@@ -259,6 +320,33 @@ void AggregatedDataVariants::convertToTwoLevel()
     }
 }
 
+bool AggregatedDataVariants::canIndexCells() const
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            return IterableCells<decltype(NAME)::element_type::Data>;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+    #undef M
+        default:
+            return false;
+    }
+}
+
+void AggregatedDataVariants::setCellIndex(CellIndex && index)
+{
+    ProfileEvents::increment(ProfileEvents::AggregationIndexedTables);
+    cell_index = std::move(index);
+}
+
+void AggregatedDataVariants::throwCannotIndexCells() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot index the cells of aggregated data variant {}", getMethodName());
+}
+
 bool AggregatedDataVariants::isLowCardinality() const
 {
     switch (type)
@@ -269,6 +357,40 @@ bool AggregatedDataVariants::isLowCardinality() const
 
         APPLY_FOR_LOW_CARDINALITY_VARIANTS(M)
     #undef M
+        default:
+            return false;
+    }
+}
+
+bool AggregatedDataVariants::isSerialized() const
+{
+    switch (type)
+    {
+        case Type::serialized:
+        case Type::nullable_serialized:
+        case Type::prealloc_serialized:
+        case Type::nullable_prealloc_serialized:
+        case Type::serialized_two_level:
+        case Type::nullable_serialized_two_level:
+        case Type::prealloc_serialized_two_level:
+        case Type::nullable_prealloc_serialized_two_level:
+        case Type::serialized_hash64:
+        case Type::nullable_serialized_hash64:
+        case Type::prealloc_serialized_hash64:
+        case Type::nullable_prealloc_serialized_hash64:
+        case Type::serialized_void:
+        case Type::nullable_serialized_void:
+        case Type::prealloc_serialized_void:
+        case Type::nullable_prealloc_serialized_void:
+        case Type::serialized_void_two_level:
+        case Type::nullable_serialized_void_two_level:
+        case Type::prealloc_serialized_void_two_level:
+        case Type::nullable_prealloc_serialized_void_two_level:
+        case Type::serialized_void_hash64:
+        case Type::nullable_serialized_void_hash64:
+        case Type::prealloc_serialized_void_hash64:
+        case Type::nullable_prealloc_serialized_void_hash64:
+            return true;
         default:
             return false;
     }

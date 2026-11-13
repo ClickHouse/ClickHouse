@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import argparse
+import atexit
+import decimal
+import hashlib
 import itertools
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -83,6 +87,9 @@ SAMPLED_SPLITS = 10000
 # `ErrorCodes::TIMEOUT_EXCEEDED`, src/Common/ErrorCodes.cpp. Spelled out instead of
 # read from `clickhouse_driver.errors.ErrorCodes`, whose contents vary by version.
 TIMEOUT_EXCEEDED = 159
+UNKNOWN_TABLE = 60
+UNKNOWN_DATABASE = 81
+COVERAGE_SETUP_MAX_QUERY_SECONDS = 30 * 60
 
 
 def stat_threshold(left_times, right_times):
@@ -129,6 +136,15 @@ def stat_threshold(left_times, right_times):
 
 
 parser = argparse.ArgumentParser(description="Run performance test.")
+parser.add_argument(
+    "--coverage-output",
+    help="Collect per-query LLVM coverage into this directory instead of timings. "
+    "Requires a single dedicated instrumented server; clears its coverage tables.",
+)
+parser.add_argument(
+    "--coverage-warm-runs", type=int, default=1,
+    help="Executions after the first execution in coverage mode (default 1).",
+)
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument(
     "file",
@@ -308,6 +324,21 @@ parser.add_argument(
     "purges to do asymmetric work during measured queries.",
 )
 parser.add_argument(
+    "--table-engine",
+    choices=["iceberg_local", "iceberg_s3"],
+    default=None,
+    help="Create the plain MergeTree tables of the test as Iceberg tables of this "
+    "kind instead (see iceberg_engine.py). The rewrite formats each CREATE TABLE "
+    "with `clickhouse format` of the last --binary.",
+)
+parser.add_argument(
+    "--result-digest",
+    action="store_true",
+    help="Digest the result of every SQL query on its prewarm run and report the "
+    "queries whose results differ between the servers. Costs one more run of every "
+    "`FORMAT Null` query per server, so CI does not enable it.",
+)
+parser.add_argument(
     "--pr-number",
     type=int,
     default=0,
@@ -316,6 +347,21 @@ parser.add_argument(
     "server. With the default 0 no failure is tolerated.",
 )
 args = parser.parse_args()
+
+if args.coverage_output:
+    if max(len(args.host), len(args.port)) != 1:
+        parser.error("Coverage collection requires exactly one dedicated server")
+    if args.coverage_warm_runs < 1:
+        parser.error("--coverage-warm-runs must be positive")
+    if args.max_queries or args.queries_to_run or args.keep_created_tables or args.use_existing_tables:
+        parser.error("Coverage collection requires all queries and their setup/teardown")
+
+if args.table_engine:
+    # Imported only here: a `release_base` run replaces this directory with the
+    # reference vintage of the tests, which can predate the module. The directory
+    # of the script is not on `sys.path` when Python runs in safe-path mode.
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    import iceberg_engine
 
 if args.min_runs is not None:
     # An explicit --min-runs means the caller speaks the adaptive-policy
@@ -344,6 +390,38 @@ xml_dir = os.path.dirname(os.path.abspath(args.file[0].name))
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
+
+
+def expand_includes(parent, source_dir, stack):
+    """Inline <fragment> children in order, with paths relative to their source file."""
+    index = 0
+    while index < len(parent):
+        element = parent[index]
+        if element.tag != "include":
+            if element.tag in ("query", "settings") and element.get("file"):
+                path = os.path.join(source_dir, element.get("file"))
+                element.set("file", os.path.relpath(path, xml_dir))
+            expand_includes(element, source_dir, stack)
+            index += 1
+            continue
+
+        filename = element.get("file")
+        if not filename or len(element.attrib) != 1:
+            raise ValueError('<include> requires exactly one attribute: file="..."')
+        path = os.path.realpath(os.path.join(source_dir, filename))
+        if path in stack:
+            raise ValueError(f"Cyclic performance-test include: {' -> '.join((*stack, path))}")
+        fragment = et.parse(path).getroot()
+        if fragment.tag != "fragment":
+            raise ValueError(f"Performance-test include {path} must have a <fragment> root")
+        expand_includes(fragment, os.path.dirname(path), (*stack, path))
+        parent.remove(element)
+        children = list(fragment)
+        parent[index:index] = children
+        index += len(children)
+
+
+expand_includes(root, xml_dir, (os.path.realpath(args.file[0].name),))
 
 reportStageEnd("parse")
 
@@ -470,27 +548,188 @@ def first_keyword(sql):
     return ""
 
 
-def execute_query_group(connection, q_list, query_id, settings):
+def execute_query_group(connection, q_list, query_id, settings, results=None):
     """
     Execute a group of SQL statements sequentially and return the total server-side elapsed time.
     Some benchmark queries (e.g. TPC-DS Q14) consist of multiple SELECT statements in one file.
     We run them together and sum the elapsed time so that they appear as a single entry in the performance report.
+    The rows of each statement are appended to `results` when it is given.
     """
     total = 0
     for q in q_list:
-        connection.execute(q, query_id=query_id, settings=settings)
+        try:
+            rows = connection.execute(q, query_id=query_id, settings=settings)
+            if results is not None:
+                # A result too large to digest is not kept: it would stay in memory during the measured runs.
+                results.append(rows if not isinstance(rows, list) or len(rows) <= RESULT_DIGEST_MAX_ROWS else None)
+            del rows
+        except Exception as e:
+            # For the censored time of a query that timed out.
+            e.elapsed_before = total
+            raise
         total += connection.last_query.elapsed
     return total
 
 
+# The result of a query is compared between the servers by a digest of the rows
+# of its prewarm run: no extra query, and nothing added to the measured runs. A
+# larger result is not digested: the rows are hashed on the client.
+RESULT_DIGEST_MAX_ROWS = 200_000
+
+# Data generated by such a function differs between the servers.
+NONDETERMINISTIC_DATA = re.compile(
+    r"\b(rand\w*|random\w*|generate(UUID|ULID|Snowflake)\w*|fuzzBits|now\w*|today|yesterday"
+    r"|serverUUID|hostName)\s*\("
+    # The `GenerateRandom` engine picks a new seed unless its first argument is one.
+    r"|\bENGINE\s*=?\s*GenerateRandom\b(?!\s*\(\s*\d)",
+    re.IGNORECASE,
+)
+GENERATE_RANDOM_CALL = re.compile(r"\bgenerateRandom\s*\(", re.IGNORECASE)
+# `generateRandom('<structure>', <seed>`: a string literal with its escapes, then a literal number.
+SEEDED_GENERATE_RANDOM = re.compile(r"\s*'(?:[^'\\]|\\.|'')*'\s*,\s*-?\d+\b")
+
+
+def has_unseeded_generate_random(text):
+    """Whether `text` calls `generateRandom` without a seed, which picks a new
+    one on every call. Conservative: a seed that is not a literal number after
+    the structure literal counts as no seed."""
+    return any(
+        not SEEDED_GENERATE_RANDOM.match(text, m.end())
+        for m in GENERATE_RANDOM_CALL.finditer(text)
+        # The `GenerateRandom` engine, whose seed is the first argument, is in `NONDETERMINISTIC_DATA`.
+        if not re.search(r"\bENGINE\s*=?\s*$", text[: m.start()], re.IGNORECASE)
+    )
+
+
+def nondeterministic_data(text):
+    return bool(NONDETERMINISTIC_DATA.search(text)) or has_unseeded_generate_random(text)
+# The result of such a query can differ between two runs of the same server
+# (with `has_unseeded_generate_random`).
+NONDETERMINISTIC_QUERY = re.compile(
+    NONDETERMINISTIC_DATA.pattern
+    + r"|\b(uptime|queryID|initialQueryID|blockNumber|rowNumberIn\w+|runningDifference\w*"
+    r"|runningAccumulate|neighbor|any|anyLast|anyHeavy|groupArray\w*|groupUniqArray\w*|topK\w*"
+    r"|first_value|last_value|sleep\w*|_part\w*|_block_number|_row_number|_path|_file"
+    # Sampling and approximate aggregate functions, with their combinators.
+    r"|quantile\w*|median\w*|groupArraySample\w*|reservoirSample\w*|stochastic\w*|approx\w*)\s*\("
+    r"|\bsystem\.\w+|\bLIMIT\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_value(value):
+    """A value that compares equal across the representations of the same
+    result: floats rounded to 6 significant digits (parallel aggregation
+    changes the last bits), `Bool` as an integer and an integral `Decimal` as
+    an integer (the Iceberg configuration widens such columns)."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, float):
+        return "nan" if math.isnan(value) else format(value, ".6g")
+    if isinstance(value, decimal.Decimal):
+        return int(value) if value == value.to_integral_value() else str(value.normalize())
+    if isinstance(value, (list, tuple)):
+        return tuple(map(_normalize_value, value))
+    if isinstance(value, dict):
+        # Sorted by the representation: normalized keys can be of different types (an integral and a fractional `Decimal`).
+        return tuple(sorted(((_normalize_value(k), _normalize_value(v)) for k, v in value.items()), key=repr))
+    return value
+
+
+class ServerDigest:
+    """The (rows, hash) that the server computed for a statement, see `digest_statement`."""
+
+    def __init__(self, rows, digest):
+        self.rows = rows
+        self.digest = digest
+
+
+def result_digest(statement_results):
+    """(rows, digest) of the results of the statements of a query, or None when
+    a result is too large. The digest does not depend on the order of rows."""
+    rows = 0
+    digest = 0
+    for i, result in enumerate(statement_results):
+        if result is None:
+            return None
+        if isinstance(result, ServerDigest):
+            rows += result.rows
+            h = hashlib.blake2b(repr((i, result.digest)).encode(), digest_size=8)
+            digest = (digest + int.from_bytes(h.digest(), "little")) % 2**64
+            continue
+        if not isinstance(result, list):
+            continue
+        rows += len(result)
+        for row in result:
+            h = hashlib.blake2b(repr((i, _normalize_value(row))).encode(), digest_size=8)
+            digest = (digest + int.from_bytes(h.digest(), "little")) % 2**64
+    return rows, f"{digest:016x}"
+
+
+FORMAT_NULL = re.compile(r"\bFORMAT\s+Null\b", re.IGNORECASE)
+
+
+FLOAT_TYPE = re.compile(r"^(Nullable\()?(Float32|Float64|BFloat16)\)?$")
+
+
+def digest_statement(connection, statement, settings):
+    """For a `SELECT ... FORMAT Null`, whose rows the server does not send, a
+    statement that digests the rows on the server instead; else None. A float
+    column is rounded to 6 significant digits first, as `_normalize_value` does
+    on the client; floats nested in other types are not."""
+    if first_keyword(statement) not in ("SELECT", "WITH") or not FORMAT_NULL.search(statement):
+        return None
+    query = FORMAT_NULL.sub("", statement).strip().rstrip(";")
+    columns = connection.execute(f"DESCRIBE ({query})", settings=settings)
+    values = []
+    for name, column_type, *_ in columns:
+        column = "`" + name.replace("\\", "\\\\").replace("`", "\\`") + "`"
+        if FLOAT_TYPE.match(column_type):
+            # Both branches of `if` are evaluated for a constant: `log10` gets 1 for zero, NaN and infinity.
+            regular = f"isFinite({column}) AND {column} != 0"
+            column = f"if({regular}, round({column}, 5 - toInt32(floor(log10(if({regular}, abs({column}), 1))))), {column})"
+        values.append(column)
+    return f"SELECT count(), sum(cityHash64(toString(tuple({', '.join(values)})))) FROM ({query})"
+
+
+def query_digest(connection, q_item, query_id, settings, statement_results=None):
+    """(rows, digest) of the result of a query on one server, or None when it is
+    too large. The rows of a statement whose result the server sends are taken
+    from `statement_results` when given, else the statement is run again."""
+    results = []
+    for i, statement in enumerate(q_item["statements"]):
+        digest_query = digest_statement(connection, statement, settings)
+        if digest_query is not None:
+            ((count, server_hash),) = connection.execute(digest_query, query_id=f"{query_id}.digest{i}", settings=settings)
+            results.append(ServerDigest(count, server_hash))
+        elif statement_results is not None:
+            results.append(statement_results[i])
+        else:
+            execute_query_group(connection, [statement], f"{query_id}.digest{i}", settings, results)
+    return result_digest(results)
+
+
+def censored_elapsed(e, budget):
+    """With `--long`, a timeout's censored time (completed statements plus `budget`), else `None`."""
+    if args.long and (isinstance(e, subprocess.TimeoutExpired) or getattr(e, "code", None) == TIMEOUT_EXCEEDED):
+        return getattr(e, "elapsed_before", 0) + budget
+
+
 def load_settings_file(xml_root, base_dir):
-    """Load settings from a JSON file referenced by <settings file="..."/> attribute."""
-    elem = xml_root.find("settings")
-    if elem is None or "file" not in elem.attrib:
-        return {}
-    path = os.path.join(base_dir, elem.attrib["file"])
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)["settings"]
+    """Load and merge settings from every <settings file="..."/> element.
+
+    After include expansion a test can carry more than one file-backed <settings>
+    (e.g. one from the test and one from an included fragment); honor them all
+    instead of silently dropping every file but the first. Inline settings are
+    already merged across all <settings> blocks via findall("settings/*")."""
+    merged = {}
+    for elem in xml_root.findall("settings"):
+        if "file" not in elem.attrib:
+            continue
+        path = os.path.join(base_dir, elem.attrib["file"])
+        with open(path, "r", encoding="utf-8") as f:
+            merged.update(json.load(f)["settings"])
+    return merged
 
 
 # Build a list of test queries, substituting parameters to query templates.
@@ -507,6 +746,8 @@ extra_drop_queries = []
 #   {"kind": "shell", "script": "..."}      -- run as a bash script, see below.
 test_queries = []
 for e in root.findall("query"):
+    # A disabled query keeps its query_index, the key of the performance history, but is not run.
+    disabled = e.get("disabled", "0") not in ("0", "false", "")
     if e.get("type") == "shell":
         # A shell-script query: a snippet of bash executed for each server and
         # measured by its wall-clock time. This lets us benchmark things the
@@ -523,7 +764,7 @@ for e in root.findall("query"):
         # client arguments inside the script.
         if not e.text or not e.text.strip():
             raise Exception('Empty <query type="shell"> in the test file')
-        test_queries.append({"kind": "shell", "script": e.text})
+        test_queries.append({"kind": "shell", "script": e.text, "disabled": disabled})
         continue
 
     if "file" in e.attrib:
@@ -535,9 +776,11 @@ for e in root.findall("query"):
         for stmt in statements:
             keyword = first_keyword(stmt)
             if keyword in ("CREATE", "ALTER"):
-                extra_create_queries.append(stmt)
+                if not disabled:
+                    extra_create_queries.append(stmt)
             elif keyword in ("DROP", "TRUNCATE"):
-                extra_drop_queries.append(stmt)
+                if not disabled:
+                    extra_drop_queries.append(stmt)
             else:
                 select_stmts.append(stmt)
         # Some benchmark queries (e.g. TPC-DS Q14) have multiple SELECTs in one file.
@@ -549,10 +792,10 @@ for e in root.findall("query"):
         #   zip(*expanded) -> ("SELECT FROM a.x", "SELECT FROM a.y"), ("SELECT FROM b.x", "SELECT FROM b.y")
         expanded = [substitute_parameters([s]) for s in select_stmts]
         for group in zip(*expanded):
-            test_queries.append({"kind": "sql", "statements": list(group)})
+            test_queries.append({"kind": "sql", "statements": list(group), "disabled": disabled})
     else:
         test_queries += [
-            {"kind": "sql", "statements": [s]} for s in substitute_parameters([e.text])
+            {"kind": "sql", "statements": [s], "disabled": disabled} for s in substitute_parameters([e.text])
         ]
 
 
@@ -590,12 +833,30 @@ if args.print_settings:
 
     exit(0)
 
+for i in args.queries_to_run or []:
+    if test_queries[i]["disabled"]:
+        print(f"The query no. {i} is disabled in this test")
+        exit(1)
+
 # Skip long tests
 if not args.long:
     for tag in root.findall(".//tag"):
         if tag.text == "long":
             print("skipped\tTest is tagged as long.")
             sys.exit(0)
+else:
+    # Termination must reach the teardown, and prewarm re-raises this class.
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+if args.table_engine and root.get("iceberg", "1") in ("0", "false"):
+    print(f"skipped\tTest opts out of --table-engine {args.table_engine}.")
+    sys.exit(0)
+
+# The configuration measures the tables the test creates: a test without a
+# `create_query` would only repeat its MergeTree run.
+if args.table_engine and not root.findall("create_query"):
+    print(f"skipped\tTest has no create_query to run with --table-engine {args.table_engine}.")
+    sys.exit(0)
 
 # Shell-script queries do not yet carry the connection options that the SQL path
 # honours. SQL queries connect through `clickhouse_driver.Client` with `--user` /
@@ -608,7 +869,7 @@ if not args.long:
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+has_shell_queries = any(q["kind"] == "shell" and not q["disabled"] for q in test_queries)
 if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
@@ -632,6 +893,37 @@ if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_que
         "do_not_check_in_pr is not compatible with shell queries: a shell "
         "performance test must run on every server to be comparable"
     )
+
+# Failpoints are test-wide: enable before setup and disable after teardown.
+# Unlike do_not_check_in_pr, a build without failpoint support makes the
+# comparison inapplicable; an unknown name on the reference side does too,
+# but only if the new server accepted it. Other enable errors are fatal.
+failpoint_enables = []
+failpoint_disables = []
+declared_failpoints = set()
+disabled_failpoints = set()
+for e in root.findall("failpoint"):
+    name = (e.text or "").strip()
+    action = e.get("action")
+    if (
+        len(e.attrib) != 1
+        or action not in ("enable", "disable")
+        or len(e) != 0
+        or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name)
+    ):
+        raise ValueError(
+            '<failpoint> requires action="enable" or "disable" and a failpoint name'
+        )
+    if action == "enable":
+        if name in declared_failpoints:
+            raise ValueError(f"Failpoint {name} is enabled more than once")
+        declared_failpoints.add(name)
+        failpoint_enables.append(name)
+    else:
+        if name not in declared_failpoints or name in disabled_failpoints:
+            raise ValueError(f"Failpoint {name} is disabled without a matching enable")
+        disabled_failpoints.add(name)
+        failpoint_disables.append(name)
 
 # Setup queries paired with a flag. Tolerate query's failure on the reference server
 # only when do_not_check_in_pr matches --pr-number.
@@ -665,6 +957,11 @@ profile_all_queries = args.profile_all_queries or root.attrib.get(
 # Opt-in per test: run every query. Honored only with --soft-max-queries.
 run_all_queries = root.attrib.get("run_all_queries", "0") not in ("0", "false", "")
 
+# Per test: the time budget of each statement, in prewarm and in measured runs.
+if "max_query_seconds" in root.attrib:
+    args.max_query_seconds = int(root.attrib["max_query_seconds"])
+    args.prewarm_max_query_seconds = args.max_query_seconds
+
 # With --stop-merges, background merges are stopped on every server after the
 # setup queries, so the measured queries of both servers see the part layout the
 # setup left, and no merge competes with them for the CPU. A test whose measured
@@ -682,6 +979,7 @@ stop_merges = (
         q["kind"] == "sql"
         and not any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
         for q in test_queries
+        if not q["disabled"]
     )
 )
 
@@ -692,10 +990,129 @@ servers = [
     { "host": host or args.host[0], "port": port or args.port[0], "user": args.user, "password": args.password, "secure": args.secure }
     for (host, port) in itertools.zip_longest(args.host, args.port)
 ]
+# Setup statements like `OPTIMIZE ... FINAL` are silent for long; raise the 300 s default under `--long`.
+driver_options = {"send_receive_timeout": 30 * 60} if args.long else {}
+if args.coverage_output:
+    if has_shell_queries:
+        # Scripts can start other processes whose coverage is not collected.
+        print("skipped\tShell queries require subprocess coverage collection")
+        sys.exit(0)
+    # LLVM instrumentation makes large fills slower. Wait past the server's
+    # setup or query limit so it can return its timeout exception.
+    driver_options["send_receive_timeout"] = max(
+        COVERAGE_SETUP_MAX_QUERY_SECONDS, args.prewarm_max_query_seconds
+    ) + 60
 # Force settings_is_important to fail queries on unknown settings.
 all_connections = [
-    clickhouse_driver.Client(**server, settings_is_important=True) for server in servers
+    clickhouse_driver.Client(**server, settings_is_important=True, **driver_options) for server in servers
 ]
+# Connection 0 is the reference only in a comparison: a single server is the tested one.
+reference = 0 if len(all_connections) > 1 else None
+
+coverage = None
+if args.coverage_output:
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    from perf_coverage import CoverageCollector
+
+    # A separate control connection keeps XML query settings (e.g. readonly,
+    # output formats, time limits) away from the collector and its exports.
+    coverage = CoverageCollector(
+        clickhouse_driver.Client(
+            **servers[0], send_receive_timeout=1800,
+            settings={"max_execution_time": 0, "max_result_rows": 0, "max_result_bytes": 0},
+        ),
+        args.coverage_output, test_name, test_queries, args.coverage_warm_runs,
+    )
+    coverage.start("setup")
+
+drop_query_templates = [q.text for q in root.findall("drop_query")] + extra_drop_queries
+# The connections that run the setup queries, and so the drop queries.
+setup_connections = []
+threads = []
+teardown_done = False
+teardown_clean_result = False
+# Record an enable attempt BEFORE issuing it: a connection may lose its response
+# after the server applied the command. The exit hook handles failed setup,
+# failed queries, and tests without an explicit disable. Normal teardown also
+# calls this directly so cleanup errors are visible as test failures.
+enabled_failpoints = {}
+
+
+def report_clean():
+    """`CHServer.run_test` reuses the servers only after this marker."""
+    if teardown_clean_result and not enabled_failpoints:
+        print("teardown-complete")
+
+
+def teardown():
+    """Return True only if every drop query succeeded or found its object absent."""
+    global teardown_done, teardown_clean_result
+    if teardown_done:
+        return
+    teardown_done = True
+    if any(t.is_alive() for t in threads):
+        print("teardown-skipped\tsetup workers active")
+        return False
+    if coverage:
+        coverage.start("teardown")
+    # A drop query that waits for a mutation would hang while merges are stopped.
+    if stop_merges:
+        for c in (all_connections[i] for i in setup_connections):
+            c.execute("SYSTEM START MERGES")
+    clean = True
+    for conn_index in setup_connections:
+        c = all_connections[conn_index]
+        for q in substitute_parameters(drop_query_templates):
+            try:
+                c.execute(q)
+                print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
+            except Exception as e:
+                # The object is not there, so the server is clean.
+                if getattr(e, "code", None) in (UNKNOWN_TABLE, UNKNOWN_DATABASE):
+                    continue
+                print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
+                clean = False
+    teardown_clean_result = clean
+    if coverage:
+        coverage.stop()
+    return clean
+
+
+# Registered first so it runs last, after `teardown` and `disable_failpoints_on_exit`.
+atexit.register(report_clean)
+# Runs after an uncaught exception, `KeyboardInterrupt` and `sys.exit` too.
+if not args.keep_created_tables and not args.use_existing_tables:
+    atexit.register(teardown)
+
+def disable_enabled_failpoints(names=None):
+    first_error = None
+    for name in (names if names is not None else list(enabled_failpoints)):
+        indexes = enabled_failpoints.get(name)
+        if indexes is None:
+            continue
+        for index in list(indexes):
+            try:
+                all_connections[index].execute(f"SYSTEM DISABLE FAILPOINT {name}")
+                indexes.remove(index)
+            except Exception as e:
+                if first_error is None:
+                    first_error = e
+        if not indexes:
+            del enabled_failpoints[name]
+    if first_error is not None:
+        raise first_error
+
+
+def disable_failpoints_on_exit():
+    if enabled_failpoints:
+        try:
+            disable_enabled_failpoints()
+        except Exception:
+            # A cleanup failure must not hide the original exception.
+            logging.exception("Could not disable all performance-test failpoints")
+
+
+atexit.register(disable_failpoints_on_exit)
 
 # Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
 # etc.) in parallel so both servers see the same operation at the same wall
@@ -733,7 +1150,26 @@ def shell_env_for(conn_index):
     env["CLICKHOUSE_PORT_HTTP"] = http_port
     env["CLICKHOUSE_DATABASE"] = "default"
     env["CLICKHOUSE_CLIENT"] = f"{binary} client --host {host} --port {tcp_port}"
-    env["CLICKHOUSE_LOCAL"] = f"{binary} local"
+    # `--tmp` keeps the old behavior of a unique temporary directory per
+    # process: without it, `clickhouse-local` uses the persistent default
+    # directory in the home, and a benchmark starting several of them at once
+    # (e.g. tests/performance/insert_direct_parallel.xml) would fail with
+    # `Another server instance in same directory is already running`. The
+    # reference build of the comparison can be older than this option: it
+    # rejects `--tmp` as an unrecognized argument, but it already uses a unique
+    # temporary directory by default, so the option is passed only to a binary
+    # that lists it in `--help`.
+    local_help = subprocess.run(
+        [binary, "local", "--help"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    local_tmp_option = (
+        " --tmp" if re.search(r"^\s*--tmp\s", local_help, re.MULTILINE) else ""
+    )
+    env["CLICKHOUSE_LOCAL"] = f"{binary} local{local_tmp_option}"
     # `--fail` makes curl exit non-zero on an HTTP 4xx/5xx response, and `-S`
     # prints the error even under `-s`. Unlike tests/queries/shell_config.sh
     # (which omits `--fail` because some stateless tests inspect error bodies),
@@ -761,7 +1197,9 @@ def run_shell_query(conn_index, script, timeout):
     write it); standard error is captured for diagnostics. A non-zero exit code
     raises an exception, which the caller treats the same way as a failed SQL
     query."""
-    env = shell_envs.setdefault(conn_index, shell_env_for(conn_index))
+    env = shell_envs.get(conn_index)
+    if env is None:
+        env = shell_envs[conn_index] = shell_env_for(conn_index)
     start = time.perf_counter()
     proc = subprocess.Popen(
         ["bash", "-e", "-o", "pipefail", "-c", script],
@@ -773,7 +1211,7 @@ def run_shell_query(conn_index, script, timeout):
     )
     try:
         _, stderr_bytes = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
         # Kill the whole process group, not just `bash`, then reap it.
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -807,8 +1245,6 @@ if not args.use_existing_tables:
     # Run drop queries, ignoring errors. Do this before all other activity,
     # because clickhouse_driver disconnects on error (this is not configurable),
     # and the new connection loses the changes in settings.
-    drop_query_templates = [q.text for q in root.findall("drop_query")]
-    drop_query_templates += extra_drop_queries
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
         for q in drop_queries:
@@ -820,6 +1256,9 @@ if not args.use_existing_tables:
 
     reportStageEnd("drop-1")
 
+# One-line summary per connection whose tolerated setup query failed there.
+setup_error_on_connection = [None] * len(all_connections)
+
 # First apply JSON settings (<settings file="..."/>), then inline (<settings><key>value</key></settings>).
 # Inline settings override file settings.
 file_settings = load_settings_file(root, xml_dir)
@@ -829,15 +1268,70 @@ for conn_index, c in enumerate(all_connections):
         c.settings[key] = str(value)
     for s in inline_settings:
         c.settings[s.tag] = s.text
+    if args.table_engine:
+        c.settings.update(iceberg_engine.SETTINGS)
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
-    c.execute("select 1")
+    try:
+        c.execute("select 1")
+    except Exception:
+        # With `--long`, the reference may lack a setting: nothing more runs there.
+        if conn_index != reference or not args.long:
+            raise
+        setup_error_on_connection[conn_index] = "settings failed on the reference server, running the test on the new server only"
+        print(f"{setup_error_on_connection[conn_index]}\n{traceback.format_exc()}", file=sys.stderr)
 
 reportStageEnd("settings")
 
-# One-line summary per connection whose tolerated setup query failed there (the traceback goes to stderr).
-setup_error_on_connection = [None] * len(all_connections)
+setup_connections = [i for i, e in enumerate(setup_error_on_connection) if not e]
+for name in failpoint_enables:
+    enable_errors = {}
+    for conn_index in setup_connections:
+        c = all_connections[conn_index]
+        enabled_failpoints.setdefault(name, set()).add(conn_index)
+        try:
+            c.execute(f"SYSTEM ENABLE FAILPOINT {name}")
+        except Exception as error:
+            enable_errors[conn_index] = error
+    if enable_errors:
+        def can_skip(index, error):
+            if not isinstance(error, clickhouse_driver.errors.ServerException):
+                return False
+            if error.code == 344:  # `SUPPORT_IS_DISABLED`
+                return any(
+                    message in error.message
+                    for message in (
+                        "The server was compiled without FIU support",
+                        "Fail points are disabled because ClickHouse was built without libfiu",
+                    )
+                )
+            return (
+                index == 0
+                and len(all_connections) == 2
+                and 1 not in enable_errors
+                and error.code == 36  # `BAD_ARGUMENTS`
+                and f"Cannot find fail point {name}" in error.message
+            )
+
+        fatal_errors = [
+            error for index, error in enable_errors.items()
+            if not can_skip(index, error)
+        ]
+        if fatal_errors:
+            raise fatal_errors[0]
+        # A server that rejected the name or lacks FIU cannot have it enabled.
+        for index in enable_errors:
+            enabled_failpoints[name].discard(index)
+        disable_enabled_failpoints()
+        print(f"skipped\tfailpoint {name} not supported - skip")
+        sys.exit(0)
+
+# Diagnostics of setup queries tolerated on the reference server, reported
+# from the main thread below. They must not reach this test's stderr: a
+# persisted stderr becomes Run Errors rows, which are documented as requiring
+# action, and these rows would hide the error that actually failed the run.
+tolerated_setup_diagnostics = []
 
 if not args.use_existing_tables:
     # Run create and fill queries. We will run them simultaneously for both servers, to save time.
@@ -846,6 +1340,29 @@ if not args.use_existing_tables:
         create_queries += [
             (q, tolerate_on_reference) for q in substitute_parameters([template])
         ]
+
+    if args.table_engine:
+        # The same rewritten statements run on every server.
+        try:
+            rewritten, tables = iceberg_engine.rewrite_setup_queries(
+                [q for q, _ in create_queries], args.table_engine, test_name, args.binary[-1]
+            )
+        except iceberg_engine.IcebergRewriteError as e:
+            raise Exception(
+                f"{e}. If the test cannot run on Iceberg tables, add it with the reason to "
+                'tests/performance/iceberg_skip_list.txt, or mark it <test iceberg="0">'
+            ) from e
+        create_queries = [(q, tolerate) for q, (_, tolerate) in zip(rewritten, create_queries)]
+        print(f"table-engine\t{args.table_engine}\t{len(tables)}")
+        if not tables:
+            print(f"skipped\tTest creates no MergeTree or Memory table to run with --table-engine {args.table_engine}.")
+            sys.exit(0)
+        # The measured lightweight updates of the rewritten tables too.
+        for q_item in test_queries:
+            if q_item["kind"] == "sql" and not q_item["disabled"]:
+                q_item["statements"] = [
+                    iceberg_engine.rewrite_update(q, args.binary[-1], tables) for q in q_item["statements"]
+                ]
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
@@ -858,34 +1375,63 @@ if not args.use_existing_tables:
     def do_create(connection, index, queries):
         for q, tolerate_on_reference in queries:
             try:
-                connection.execute(q)
+                if coverage:
+                    # Override the normal profile's 300 s limit for setup only.
+                    connection.execute(q, settings={"max_execution_time": COVERAGE_SETUP_MAX_QUERY_SECONDS})
+                else:
+                    connection.execute(q)
                 print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
             except Exception:
                 # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
-                if index != 0 or not tolerate_on_reference:
+                if index != reference or not (tolerate_on_reference or args.long):
                     raise
 
                 message = (
                     "setup query failed on the reference server and is tolerated "
-                    f"by do_not_check_in_pr matching --pr-number {args.pr_number}, "
+                    f"by {'--long' if args.long else f'do_not_check_in_pr matching --pr-number {args.pr_number}'}, "
                     f"running the test on the new server only: {tsv_escape(q)[:200]}"
                 )
-                print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
+                tolerated_setup_diagnostics.append(f"{message}\n{traceback.format_exc()}")
                 setup_error_on_connection[index] = message
                 break
 
+    # Daemon threads with `--long` let a terminated process exit during setup.
     threads = [
-        SafeThread(target=do_create, args=(connection, index, create_queries))
-        for index, connection in enumerate(all_connections)
+        SafeThread(target=do_create, args=(all_connections[i], i, create_queries), daemon=args.long)
+        for i in setup_connections
     ]
 
     for t in threads:
         t.start()
 
+    # SafeThread.join() re-raises the worker's exception, so join every thread
+    # before reporting: a diagnostic queued by one thread must not be lost to
+    # another thread's failure, and the list must not be read while a thread
+    # can still append to it.
+    setup_exception = None
     for t in threads:
-        t.join()
+        try:
+            t.join()
+        except BaseException as e:
+            if setup_exception is None:
+                setup_exception = e
+
+    for diagnostic in tolerated_setup_diagnostics:
+        print(f"tolerated-setup-error\t{tsv_escape(diagnostic)}")
+
+    if setup_exception is not None:
+        # Flush before raising so the diagnostics reach the raw .tsv even though
+        # we are about to exit through an unhandled exception.
+        sys.stdout.flush()
+        raise setup_exception
 
     reportStageEnd("create")
+
+if coverage:
+    coverage.stop()
+
+# The servers hold the same data only when the setup generates it deterministically.
+compare_results = not any(nondeterministic_data(q or "") for q, _ in create_query_templates)
 
 
 def purge_jemalloc_on_all_connections(reason):
@@ -906,12 +1452,14 @@ def purge_jemalloc_on_all_connections(reason):
 if args.jemalloc_purge != "disabled":
     purge_jemalloc_on_all_connections("after-fill")
 
+# A connection whose settings failed replays them with every query (see
+# `setup_error_on_connection`), so the merge control skips it.
 if stop_merges:
-    for c in all_connections:
+    for c in (all_connections[i] for i in setup_connections):
         c.execute("SYSTEM STOP MERGES")
     # The stop only cancels the running merges, each of them notices it at its
     # next check, so wait until none is left before measuring anything.
-    for c in all_connections:
+    for c in (all_connections[i] for i in setup_connections):
         deadline = time.monotonic() + 300
         while c.execute("SELECT count() FROM system.merges")[0][0]:
             if time.monotonic() >= deadline:
@@ -924,13 +1472,13 @@ if stop_merges:
 os.system("sync")
 reportStageEnd("sync")
 
-# By default, test all queries.
-queries_to_run = range(0, len(test_queries))
+# By default, test all queries that are not disabled.
+queries_to_run = [i for i, q in enumerate(test_queries) if not q["disabled"]]
 
 if args.max_queries and not (args.soft_max_queries and run_all_queries):
     # If specified, test a limited number of queries chosen at random.
     queries_to_run = random.sample(
-        range(0, len(test_queries)), min(len(test_queries), args.max_queries)
+        queries_to_run, min(len(queries_to_run), args.max_queries)
     )
 
 if args.queries_to_run:
@@ -939,6 +1487,17 @@ if args.queries_to_run:
 
 # Run test queries.
 profile_total_seconds = 0
+# A failed query is reported by a `run-error` line and skipped; the test still exits non-zero.
+failed_queries = []
+
+
+def fail_query(query_index, server, e):
+    summary = getattr(e, "message", None) or str(e)
+    print(f"run-error\t{query_index}\t{server}\t{tsv_escape(summary.splitlines()[0])}")
+    sys.stdout.flush()
+    failed_queries.append(query_index)
+
+
 for query_index in queries_to_run:
     q_item = test_queries[query_index]
     query_prefix = f"{test_name}.query{query_index}"
@@ -951,6 +1510,18 @@ for query_index in queries_to_run:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
+
+    if coverage:
+        def execute_coverage_query(run):
+            execute_query_group(
+                all_connections[0], q_item["statements"],
+                f"{query_prefix}.coverage{run}",
+                {"max_execution_time": args.prewarm_max_query_seconds},
+            )
+
+        coverage.collect_query(query_index, execute_coverage_query)
+        print(f"coverage-query\t{query_index}\t{1 + args.coverage_warm_runs}")
+        continue
 
     if args.jemalloc_purge in ("before-each-query", "before-each-run"):
         purge_jemalloc_on_all_connections(f"before-query-{query_index}")
@@ -965,6 +1536,9 @@ for query_index in queries_to_run:
     # starts out already failed for every query, so the partial
     # ("backward-incompatible") machinery excludes it from the comparison.
     query_error_on_connection = list(setup_error_on_connection)
+    prewarm_exceptions = {}
+    # (rows, digest) of the prewarm result per server, see `result_digest`.
+    prewarm_digests = {}
     for conn_index, c in enumerate(all_connections):
         if query_error_on_connection[conn_index]:
             continue
@@ -979,6 +1553,7 @@ for query_index in queries_to_run:
                     conn_index, q_item["script"], args.prewarm_max_query_seconds
                 )
             else:
+                prewarm_results = [] if args.result_digest else None
                 try:
                     # During the warm-up runs, we will also:
                     # * detect queries that are exceedingly long, to fail fast,
@@ -996,6 +1571,7 @@ for query_index in queries_to_run:
                             "metrics_perf_events_enabled": 1,
                             "memory_profiler_step": "4Mi",
                         },
+                        prewarm_results,
                     )
                 except clickhouse_driver.errors.Error as e:
                     # Add query id to the exception to make debugging easier.
@@ -1006,24 +1582,53 @@ for query_index in queries_to_run:
             print(
                 f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{prewarm_elapsed}"
             )
+            if args.result_digest and q_item["kind"] == "sql":
+                # Outside of the prewarm time and before the measured runs.
+                digest_settings = {"max_execution_time": args.prewarm_max_query_seconds}
+                try:
+                    digest = query_digest(c, q_item, query_prefix, digest_settings, prewarm_results)
+                except Exception as e:
+                    # E.g. the query cannot be a subquery (two columns of the same name): it is not
+                    # compared, but it is measured. The reason is in the raw output.
+                    print(f"result-digest-skipped\t{query_index}\t{conn_index}\t{tsv_escape(str(e).splitlines()[0] if str(e) else type(e).__name__)}")
+                    digest = None
+                # Only the digest survives into the measured runs.
+                prewarm_results = None
+                if digest is not None:
+                    prewarm_digests[conn_index] = digest
+                    print(f"result-digest\t{query_index}\t{conn_index}\t{digest[0]}\t{digest[1]}")
         except KeyboardInterrupt:
             raise
-        except:
+        except BaseException as e:
             # FIXME the driver reconnects on error and we lose settings, so this
             # might lead to further errors or unexpected behavior.
             query_error_on_connection[conn_index] = traceback.format_exc()
+            prewarm_exceptions[conn_index] = e
             continue
 
+    prewarm_results = None
+
     # Report all errors that occurred during prewarm and decide what to do next.
-    # If prewarm fails for the query on all servers -- skip the query and
-    # continue testing the next query.
-    # If prewarm fails on one of the servers, run the query on the rest of them.
+    # A failure on a tested server fails the query; a failure on the reference
+    # only runs the query on the rest of them.
     no_errors = []
     for i, e in enumerate(query_error_on_connection):
         if e:
-            print(e, file=sys.stderr)
+            # A tolerated (do_not_check_in_pr) setup failure is inherited by
+            # every query of the test and was already reported once, above. It
+            # must not be repeated on this test's stderr, which the report stage
+            # turns into Run Errors rows. An error the query produced itself is
+            # still reported there.
+            if setup_error_on_connection[i] is None:
+                print(e, file=sys.stderr)
         else:
             no_errors.append(i)
+
+    # A failure (error or timeout) of a tested server fails the test, whatever the reference did.
+    tested_failure = next((i for i, e in enumerate(query_error_on_connection) if e and i != reference), None)
+    if tested_failure is not None:
+        fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
+        continue
 
     # A shell-script query is a benchmark we control end to end, so -- unlike an
     # SQL query that may legitimately use a function missing from the old server
@@ -1036,8 +1641,9 @@ for query_index in queries_to_run:
     # each failing server to stdout as a `run-error` line so it survives in the
     # archived per-test raw .tsv (the per-test stderr log is not uploaded).
     # compare.sh parses raw .tsv by known leading tag and ignores the rest, so
-    # adding this tag is safe.
-    if q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
+    # adding this tag is safe. The policy above already failed the test for a
+    # tested-side error; with `--long`, a reference-only error is `partial`.
+    if not args.long and q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
         failed = []
         for i, e in enumerate(query_error_on_connection):
             if e:
@@ -1056,6 +1662,28 @@ for query_index in queries_to_run:
         continue
     elif len(no_errors) < len(all_connections):
         print(f"partial\t{query_index}\t{no_errors}")
+    elif (
+        compare_results
+        and len(prewarm_digests) == len(all_connections) > 1
+        and len(set(prewarm_digests.values())) > 1
+        and not any(NONDETERMINISTIC_QUERY.search(s) or has_unseeded_generate_random(s) for s in q_item["statements"])
+    ):
+        # The servers returned different results. A difference is reported only
+        # when the old server repeats its own result: a query can be
+        # nondeterministic in a way the expression above does not recognize.
+        # Reported, not an error: a pull request that fixes a result changes it.
+        try:
+            repeated = query_digest(
+                all_connections[0], q_item, f"{query_prefix}.repeat", {"max_execution_time": args.prewarm_max_query_seconds}
+            )
+        except Exception as e:
+            repeated = None
+            print(f"result-digest-skipped\t{query_index}\t0\t{tsv_escape(str(e).splitlines()[0] if str(e) else type(e).__name__)}")
+        if repeated is not None and repeated != prewarm_digests[0]:
+            print(f"result-nondeterministic\t{query_index}")
+        elif repeated is not None:
+            rows = "\t".join(str(prewarm_digests[i][0]) for i in range(len(all_connections)))
+            print(f"result-mismatch\t{query_index}\t{rows}")
 
     this_query_connections = [all_connections[index] for index in no_errors]
 
@@ -1068,6 +1696,10 @@ for query_index in queries_to_run:
     profile_seconds = 0
     threshold_seconds = 0.0
     run = 0
+    failed_run = None
+    # With `--long`, the rows of a query that failed midway must not reach the analysis.
+    query_rows = []
+    emit_row = query_rows.append if args.long else print
 
     # Arrays of run times for each connection.
     all_server_times = []
@@ -1095,6 +1727,7 @@ for query_index in queries_to_run:
         if run % 2 == 1:
             conn_order = list(reversed(conn_order))
 
+        timeouts = []
         for conn_index, c in conn_order:
             # conn_index addresses this_query_connections (the servers that
             # survived prewarm); map it back to the real server to pick the right
@@ -1108,7 +1741,13 @@ for query_index in queries_to_run:
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
-                    raise Exception(f"{run_id}: {e}")
+                    elapsed = censored_elapsed(e, args.max_query_seconds)
+                    if elapsed is None:
+                        if args.long:
+                            failed_run = (server_index, e)
+                            break
+                        raise Exception(f"{run_id}: {e}")
+                    timeouts.append(server_index)
             else:
                 try:
                     elapsed = execute_query_group(
@@ -1118,15 +1757,21 @@ for query_index in queries_to_run:
                         {"max_execution_time": args.max_query_seconds},
                     )
                 except clickhouse_driver.errors.Error as e:
-                    # Add query id to the exception to make debugging easier.
-                    e.args = (run_id, *e.args)
-                    e.message = run_id + ": " + e.message
-                    raise
+                    elapsed = censored_elapsed(e, args.max_query_seconds)
+                    if elapsed is None:
+                        if args.long:
+                            failed_run = (server_index, e)
+                            break
+                        # Add query id to the exception to make debugging easier.
+                        e.args = (run_id, *e.args)
+                        e.message = run_id + ": " + e.message
+                        raise
+                    timeouts.append(server_index)
 
             all_server_times[conn_index].append(elapsed)
 
             server_seconds += elapsed
-            print(f"query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}")
+            emit_row(f"query\t{query_index}\t{run_id}\t{server_index}\t{elapsed}")
 
             if elapsed > args.max_query_seconds:
                 # Do not stop processing pathologically slow queries,
@@ -1135,6 +1780,12 @@ for query_index in queries_to_run:
                     f"The query no. {query_index} is taking too long to run ({elapsed} s)",
                     file=sys.stderr,
                 )
+
+        if failed_run:
+            break
+        if any(i != reference for i in timeouts):
+            failed_run = (next(i for i in timeouts if i != reference), "timed out on the tested server")
+            break
 
         # Be careful with the counter, after this line it's the next iteration
         # already.
@@ -1149,9 +1800,9 @@ for query_index in queries_to_run:
         # --cap runs normally, --cap-fast runs for fast queries (they are cheap
         # to rerun and, in relative terms, the noisiest). The escape from
         # pathologically slow queries — stop once the cumulative time per server
-        # reaches 30 seconds — takes precedence over the --min-runs floor, so a
+        # reaches 30 seconds (three budgets with `--long`) — takes precedence over the --min-runs floor, so a
         # e.g. 12 s query stops after 3 runs instead of burning 5 x 12 s x 2.
-        if avg_time_per_server >= 30:
+        if avg_time_per_server >= (3 * args.max_query_seconds if args.long else 30):
             break
 
         if run < args.min_runs:
@@ -1180,6 +1831,12 @@ for query_index in queries_to_run:
             )
         if not is_fast_query or run >= args.cap_fast:
             break
+
+    if failed_run:
+        fail_query(query_index, *failed_run)
+        continue
+    if query_rows:
+        print("\n".join(query_rows))
 
     client_seconds = time.perf_counter() - start_seconds - threshold_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
@@ -1276,22 +1933,26 @@ reportStageEnd("run")
 # Start merges before the teardown: a drop query such as `ALTER TABLE ... DROP INDEX`
 # creates a mutation and waits for it, and mutations do not run while merges are stopped.
 if stop_merges:
-    for c in all_connections:
+    for c in (all_connections[i] for i in setup_connections):
         c.execute("SYSTEM START MERGES")
 
 # Run drop queries
-if not args.keep_created_tables and not args.use_existing_tables:
-    drop_queries = substitute_parameters(drop_query_templates)
-    for conn_index, c in enumerate(all_connections):
-        # Best-effort teardown on a connection whose setup never completed: the objects may not exist there.
-        setup_failed = setup_error_on_connection[conn_index] is not None
-        for q in drop_queries:
-            try:
-                c.execute(q)
-            except Exception:
-                if setup_failed:
-                    continue
-                raise
-            print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
-
+teardown_clean = True
+if (not args.long or coverage) and not args.keep_created_tables and not args.use_existing_tables:
+    teardown_clean = teardown()
     reportStageEnd("drop-2")
+
+for name in failpoint_disables:
+    disable_enabled_failpoints([name])
+
+# Also disable any failpoints the XML did not explicitly disable.
+disable_enabled_failpoints()
+
+if failed_queries:
+    print(f"{len(failed_queries)} queries failed, see the 'run-error' lines", file=sys.stderr)
+    sys.exit(1)
+if not teardown_clean:
+    sys.exit(1)
+
+if coverage:
+    coverage.finish(all_connections[0].settings)

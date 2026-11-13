@@ -13,37 +13,29 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="max_postpone_time_for_failed_mutations_ms">
-  ## max_postpone_time_for_failed_mutations_ms
-</div>
+## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-الحد الأقصى لمدة تأجيل mutations التي حالتها Failed.
+الحد الأقصى لمدة الانتظار المتزايدة أُسّيًا، بالمللي ثانية، قبل إعادة محاولة تنفيذ تعديل فاشل على جزء البيانات نفسه. تزداد مدة التأخير مع تكرار الفشل، ولا تتجاوز هذه القيمة. اضبط القيمة على `0` لإعادة المحاولة دون تأجيل.
 
-<div id="max_postpone_time_for_failed_replicated_fetches_ms">
-  ## max_postpone_time_for_failed_replicated_fetches_ms
-</div>
+## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "أُضيف إعداد جديد لتمكين تأجيل مهام الجلب في قائمة انتظار النسخ المتماثل."}]}]} />
 
-الحد الأقصى لمدة تأجيل عمليات الجلب الفاشلة في النسخ المتماثل.
+الحد الأقصى لمدة الانتظار المتزايدة أُسّيًا، بالمللي ثانية، قبل إعادة محاولة تنفيذ مهمة `GET_PART` فاشلة في قائمة انتظار النسخ المتماثل لمحرك `ReplicatedMergeTree`. تزداد مدة الانتظار مع تكرار الإخفاقات، دون أن تتجاوز هذه القيمة. اضبط هذا الإعداد على `0` لتعطيل التأجيل.
 
-<div id="max_postpone_time_for_failed_replicated_merges_ms">
-  ## max_postpone_time_for_failed_replicated_merges_ms
-</div>
+## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "أُضيف إعداد جديد للسماح بتأجيل مهام الدمج في قائمة انتظار النسخ المتماثل."}]}]} />
 
-الحد الأقصى لزمن تأجيل عمليات الدمج الفاشلة في النسخ المتماثل.
+الحد الأقصى لمدة الانتظار المتزايدة أُسّياً، بالمللي ثانية، قبل إعادة محاولة تنفيذ مهمة `MERGE_PARTS` فاشلة في قائمة انتظار النسخ المتماثل لمحرك `ReplicatedMergeTree`. تزداد مدة الانتظار مع تكرار الإخفاقات، ولا تتجاوز هذه القيمة. اضبط هذا الإعداد على `0` لتعطيل التأجيل.
 
-<div id="max_postpone_time_for_failed_replicated_tasks_ms">
-  ## max_postpone_time_for_failed_replicated_tasks_ms
-</div>
+## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 

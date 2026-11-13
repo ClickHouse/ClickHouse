@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="min_chunk_bytes_for_parallel_parsing">
-  ## min_chunk_bytes_for_parallel_parsing
-</div>
+## min_chunk_bytes_for_parallel_parsing {#min_chunk_bytes_for_parallel_parsing}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 各スレッドが並列にパースする chunk の最小サイズを、バイト単位で指定します。
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
@@ -44,9 +40,7 @@ String 型の URL カラム (値 1 つあたりの平均サイズが 60 バイ�
   これは上級者向けの設定です。ClickHouse を使い始めたばかりであれば、変更しないでください。
 </Note>
 
-<div id="min_filtered_ratio_for_lazy_final">
-  ## min_filtered_ratio_for_lazy_final
-</div>
+## min_filtered_ratio_for_lazy_final {#min_filtered_ratio_for_lazy_final}
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
@@ -54,17 +48,13 @@ String 型の URL カラム (値 1 つあたりの平均サイズが 60 バイ�
 
 遅延実行 FINAL 最適化において、索引解析によってフィルタリングされる marks の最小比率です。フィルタリングされる marks の割合がこの値を下回る場合は、通常の FINAL にフォールバックします。値 0 を指定すると、このチェックは無効になります。
 
-<div id="min_hit_rate_to_use_consecutive_keys_optimization">
-  ## min_hit_rate_to_use_consecutive_keys_optimization
-</div>
+## min_hit_rate_to_use_consecutive_keys_optimization {#min_hit_rate_to_use_consecutive_keys_optimization}
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 集約における連続キー最適化で使用されるcacheを有効なままにするための最小ヒット率
 
-<div id="min_os_cpu_wait_time_ratio_to_throw">
-  ## min_os_cpu_wait_time_ratio_to_throw
-</div>
+## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -72,9 +62,7 @@ String 型の URL カラム (値 1 つあたりの平均サイズが 60 バイ�
 
 クエリを拒否対象とみなすための、OS の CPU 待機時間 (OSCPUWaitMicroseconds Metric) とビジー時間 (OSCPUVirtualTimeMicroseconds Metric) の最小比率です。確率は最小比率と最大比率の間で線形補間して計算され、この時点での確率は 0 です。
 
-<div id="min_outstreams_per_resize_after_split">
-  ## min_outstreams_per_resize_after_split
-</div>
+## min_outstreams_per_resize_after_split {#min_outstreams_per_resize_after_split}
 
 <SettingsInfoBlock type="UInt64" default_value="24" />
 
@@ -82,17 +70,13 @@ String 型の URL カラム (値 1 つあたりの平均サイズが 60 バイ�
 
 パイプライン生成時に分割が実行された後の、`Resize` または `StrictResize` プロセッサの出力ストリーム数の最小値を指定します。結果のストリーム数がこの値未満の場合、分割操作は実行されません。
 
-<div id="what-is-a-resize-node">
-  ### Resize ノードとは
-</div>
+### Resize ノードとは {#what-is-a-resize-node}
 
 `Resize` ノードは、クエリパイプライン内を流れるデータストリーム数を調整するプロセッサです。複数のスレッドやプロセッサ間でワークロードのバランスを取るために、ストリーム数を増減できます。たとえば、クエリでより高い並列度が必要な場合、`Resize` ノードは単一ストリームを複数のストリームに分割できます。逆に、複数のストリームをより少ない数のストリームにマージして、データ処理を集約することもできます。
 
 `Resize` ノードは、データブロックの構造を維持したまま、データが各ストリームに均等に分配されるようにします。これにより、リソース使用状況を最適化し、クエリパフォーマンスを向上させることができます。
 
-<div id="why-the-resize-node-needs-to-be-split">
-  ### Resize ノードを分割する必要がある理由
-</div>
+### Resize ノードを分割する必要がある理由 {#why-the-resize-node-needs-to-be-split}
 
 パイプラインの実行中、中央ハブとなる `Resize` ノードの ExecutingGraph::Node::status&#95;mutex では、特にコア数の多い環境で深刻な contention が発生し、この contention によって次のような問題が生じます。
 
@@ -100,45 +84,33 @@ String 型の URL カラム (値 1 つあたりの平均サイズが 60 バイ�
 2. スピンロックの contention (native&#95;queued&#95;spin&#95;lock&#95;slowpath) によって過剰な CPU サイクルが浪費され、効率が低下します。
 3. CPU 使用率が低下し、並列度とスループットが制限されます。
 
-<div id="how-the-resize-node-gets-split">
-  ### Resize ノードの分割方法
-</div>
+### Resize ノードの分割方法 {#how-the-resize-node-gets-split}
 
 1. まず出力ストリーム数を確認し、分割を実行可能かどうかを判定します。各分割 プロセッサ の出力ストリーム数は、`min_outstreams_per_resize_after_split` のしきい値以上である必要があります。
 2. `Resize` ノードは、同じ数のポートを持つ複数の小さな `Resize` ノードに分割され、それぞれが入力ストリームと出力ストリームの一部を処理します。
 3. 各グループは独立して処理されるため、ロック競合が軽減されます。
 
-<div id="splitting-resize-node-with-arbitrary-inputsoutputs">
-  ### 任意の入力/出力を持つ Resize ノードの分割
-</div>
+### 任意の入力/出力を持つ Resize ノードの分割 {#splitting-resize-node-with-arbitrary-inputsoutputs}
 
 入力/出力の数が分割された `Resize` ノードの数で割り切れない場合、一部の入力は `NullSource` に、一部の出力は `NullSink` に接続されます。これにより、全体のデータフローに影響を与えることなく分割できます。
 
-<div id="purpose-of-the-setting">
-  ### 設定の目的
-</div>
+### 設定の目的 {#purpose-of-the-setting}
 
 `min_outstreams_per_resize_after_split` 設定は、`Resize` ノードの分割が適切に機能するようにし、ストリーム数が少なすぎて並列処理の効率が低下するのを防ぎます。出力ストリームの最小数を確保することで、ストリームの分割やマージを伴うシナリオでも並列度とオーバーヘッドのバランスを維持し、クエリ実行を最適化します。
 
-<div id="disabling-the-setting">
-  ### 設定を無効にする
-</div>
+### 設定を無効にする {#disabling-the-setting}
 
 `Resize` ノードの分割を無効にするには、この設定を 0 に設定します。これにより、パイプライン生成時に `Resize` ノードが分割されなくなり、より小さなノードに分けられることなく、元の構造を維持できます。
 
-<div id="min_rows_ratio_for_hash_join_row_store">
-  ## min_rows_ratio_for_hash_join_row_store
-</div>
+## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
-<SettingsInfoBlock type="Double" default_value="5" />
+<SettingsInfoBlock type="Double" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "ハッシュ結合のペイロードを行優先形式に変換できるようにするための、結合出力行とビルド側行の推定比率の最小値を制御する新しい設定。0 は変換が常に許可されることを意味します。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "ハッシュ結合のペイロードを行優先形式に変換できるようにするための、結合出力行とビルド側行の推定比率の最小値を制御する新しい設定。0 は変換が常に許可されることを意味します。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "3"},{"label": "ハッシュ結合の行ストアが有効になる、結合出力行とビルド側行の推定比率の最小値を引き下げました。"}]}]} />
 
 ハッシュ結合のペイロードを行優先形式に変換できるようにするための、結合出力行とビルド側行の推定比率の最小値。0 は変換が常に許可されることを意味します。
 
-<div id="min_table_rows_to_use_projection_index">
-  ## min_table_rows_to_use_projection_index
-</div>
+## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
