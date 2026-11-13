@@ -1,0 +1,3 @@
+<clickhouse>
+    <prepare_system_log_tables_on_startup>true</prepare_system_log_tables_on_startup>
+</clickhouse>
