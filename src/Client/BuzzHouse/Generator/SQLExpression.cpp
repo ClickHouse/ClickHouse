@@ -795,46 +795,25 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 
 void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t nparams, LambdaExpr * lexpr)
 {
-    std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
-
     lexpr->set_paren(rg.nextMediumNumber() < (nparams == 1 ? 51 : 91));
-    for (const auto & [key, val] : this->levels)
-    {
-        levels_backup[key] = val;
-    }
-    for (const auto & [key, val] : this->ctes)
-    {
-        ctes_backup[key] = val;
-    }
-    this->levels.clear();
-    this->ctes.clear();
-
-    this->levels[this->current_level] = QueryLevel(this->current_level);
-    if (nparams > 0)
-    {
-        SQLRelation rel("");
-
-        for (uint32_t i = 0; i < nparams; i++)
+    withoutOuterScope(
+        [&]()
         {
-            const String buf = "p" + std::to_string(i);
-            lexpr->add_args()->set_column(buf);
-            rel.cols.emplace_back(SQLRelationCol("", {buf}));
-        }
-        this->levels[this->current_level].rels.emplace_back(rel);
-    }
-    this->generateExpression(rg, lexpr->mutable_expr());
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            if (nparams > 0)
+            {
+                SQLRelation rel("");
 
-    this->levels.clear();
-    this->ctes.clear();
-    for (const auto & [key, val] : levels_backup)
-    {
-        this->levels[key] = val;
-    }
-    for (const auto & [key, val] : ctes_backup)
-    {
-        this->ctes[key] = val;
-    }
+                for (uint32_t i = 0; i < nparams; i++)
+                {
+                    const String buf = "p" + std::to_string(i);
+                    lexpr->add_args()->set_column(buf);
+                    rel.cols.emplace_back(SQLRelationCol("", {buf}));
+                }
+                this->levels[this->current_level].rels.emplace_back(rel);
+            }
+            this->generateExpression(rg, lexpr->mutable_expr());
+        });
 }
 
 /// The function composition operator `f | g`: the first stage takes `nparams` arguments, each next one the result before it
@@ -1225,32 +1204,7 @@ void StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        std::unordered_map<uint32_t, QueryLevel> levels_backup;
-        std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
-
-        for (const auto & [key, val] : this->levels)
-        {
-            levels_backup[key] = val;
-        }
-        for (const auto & [key, val] : this->ctes)
-        {
-            ctes_backup[key] = val;
-        }
-        this->levels.clear();
-        this->ctes.clear();
-
-        this->generateExpression(rg, expr);
-
-        this->levels.clear();
-        this->ctes.clear();
-        for (const auto & [key, val] : levels_backup)
-        {
-            this->levels[key] = val;
-        }
-        for (const auto & [key, val] : ctes_backup)
-        {
-            this->ctes[key] = val;
-        }
+        withoutOuterScope([&]() { this->generateExpression(rg, expr); });
     }
 }
 

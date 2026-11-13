@@ -733,6 +733,20 @@ private:
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc);
+    /// Runs `fn` with the query levels and CTEs of the outer query out of scope, then restores them
+    void withoutOuterScope(const std::function<void()> & fn);
+    /// Names `func` `cluster_name` with its cluster clause for a table on a cluster, otherwise `plain_name`
+    template <typename T, typename N>
+    void setClusterOrPlainFunc(RandomGenerator & rg, const std::optional<String> & cluster, const N cluster_name, const N plain_name, T * func) const
+    {
+        const bool on_cluster = cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7);
+
+        func->set_fname(on_cluster ? cluster_name : plain_name);
+        if (on_cluster)
+        {
+            setClusterClause(rg, cluster, func->mutable_cluster(), true);
+        }
+    }
     void generateDerivedTable(
         RandomGenerator & rg,
         SQLRelation & rel,

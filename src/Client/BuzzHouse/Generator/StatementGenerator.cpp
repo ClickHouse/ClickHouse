@@ -1202,15 +1202,7 @@ bool StatementGenerator::tableOrFunctionRef(
                   ? read_back.value()
                   : rg.pickRandomly(fc.in_formats);
 
-              if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
-              {
-                  ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-                  setClusterClause(rg, cluster, ufunc->mutable_cluster(), true);
-              }
-              else
-              {
-                  ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
-              }
+              setClusterOrPlainFunc(rg, cluster, URLFunc_FName::URLFunc_FName_urlCluster, URLFunc_FName::URLFunc_FName_url, ufunc);
               String sql = "INSERT INTO `" + escapeSQLString(t.getDatabaseName(), '`') + "`.`" + escapeSQLString(t.name, '`') + "`";
               if (!this->entries.empty())
               {

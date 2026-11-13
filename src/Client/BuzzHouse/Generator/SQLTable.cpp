@@ -442,51 +442,33 @@ void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStat
 void StatementGenerator::generateTableExpression(
     RandomGenerator & rg, std::optional<SQLRelation> & rel, const bool use_global_agg, const bool pred, Expr * expr)
 {
-    std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
     const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
     const bool prev_allow_subqueries = this->allow_subqueries;
 
-    for (const auto & [key, val] : this->levels)
-    {
-        levels_backup[key] = val;
-    }
-    for (const auto & [key, val] : this->ctes)
-    {
-        ctes_backup[key] = val;
-    }
-    this->levels.clear();
-    this->ctes.clear();
-    this->levels[this->current_level] = QueryLevel(this->current_level);
-    this->levels[this->current_level].global_aggregate = use_global_agg && rg.nextSmallNumber() < 9;
-    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-    this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-    this->allow_subqueries = rg.nextMediumNumber() < 11;
-    if (rel.has_value() && !rel.value().cols.empty())
-    {
-        this->levels[this->current_level].rels.push_back(rel.value());
-    }
-    if (pred)
-    {
-        generatePredicate(rg, expr);
-    }
-    else
-    {
-        generateExpression(rg, expr);
-    }
+    withoutOuterScope(
+        [&]()
+        {
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            this->levels[this->current_level].global_aggregate = use_global_agg && rg.nextSmallNumber() < 9;
+            this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+            this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+            this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+            this->allow_subqueries = rg.nextMediumNumber() < 11;
+            if (rel.has_value() && !rel.value().cols.empty())
+            {
+                this->levels[this->current_level].rels.push_back(rel.value());
+            }
+            if (pred)
+            {
+                generatePredicate(rg, expr);
+            }
+            else
+            {
+                generateExpression(rg, expr);
+            }
+        });
     this->allow_in_expression_alias = prev_allow_in_expression_alias;
     this->allow_subqueries = prev_allow_subqueries;
-    this->levels.clear();
-    this->ctes.clear();
-    for (const auto & [key, val] : levels_backup)
-    {
-        this->levels[key] = val;
-    }
-    for (const auto & [key, val] : ctes_backup)
-    {
-        this->ctes[key] = val;
-    }
 }
 
 void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)

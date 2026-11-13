@@ -4,10 +4,20 @@
 namespace BuzzHouse
 {
 
-void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq)
+void StatementGenerator::withoutOuterScope(const std::function<void()> & fn)
 {
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
+
+    std::swap(levels_backup, this->levels);
+    std::swap(ctes_backup, this->ctes);
+    fn();
+    this->levels = std::move(levels_backup);
+    this->ctes = std::move(ctes_backup);
+}
+
+void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq)
+{
     std::vector<uint32_t> ids_backup;
     std::vector<ColumnPathChain> entries_backup;
     std::vector<ColumnPathChain> table_entries_backup;
@@ -22,77 +32,17 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     const PeerQuery prev_peer_query = this->peer_query;
 
     /// Backup everything
-    for (const auto & [key, val] : this->levels)
-    {
-        levels_backup[key] = val;
-    }
-    this->levels.clear();
-    for (const auto & [key, val] : this->ctes)
-    {
-        ctes_backup[key] = val;
-    }
-    this->ctes.clear();
-    ids_backup.reserve(this->ids.size());
-    for (const auto & entry : this->ids)
-    {
-        ids_backup.emplace_back(entry);
-    }
-    this->ids.clear();
-    entries_backup.reserve(this->entries.size());
-    for (const auto & entry : this->entries)
-    {
-        entries_backup.emplace_back(entry);
-    }
-    this->entries.clear();
-    table_entries_backup.reserve(this->table_entries.size());
-    for (const auto & entry : this->table_entries)
-    {
-        table_entries_backup.emplace_back(entry);
-    }
-    this->table_entries.clear();
-    remote_entries_backup.reserve(this->remote_entries.size());
-    for (const auto & entry : this->remote_entries)
-    {
-        remote_entries_backup.emplace_back(entry);
-    }
-    this->remote_entries.clear();
+    std::swap(ids_backup, this->ids);
+    std::swap(entries_backup, this->entries);
+    std::swap(table_entries_backup, this->table_entries);
+    std::swap(remote_entries_backup, this->remote_entries);
 
-    generateNextExplain(rg, false, eq);
+    withoutOuterScope([&]() { generateNextExplain(rg, false, eq); });
 
-    this->levels.clear();
-    for (const auto & [key, val] : levels_backup)
-    {
-        this->levels[key] = val;
-    }
-    this->ctes.clear();
-    for (const auto & [key, val] : ctes_backup)
-    {
-        this->ctes[key] = val;
-    }
-    this->ids.clear();
-    this->ids.reserve(ids_backup.size());
-    for (const auto & entry : ids_backup)
-    {
-        this->ids.emplace_back(entry);
-    }
-    this->entries.clear();
-    this->entries.reserve(entries_backup.size());
-    for (const auto & entry : entries_backup)
-    {
-        this->entries.emplace_back(entry);
-    }
-    this->table_entries.clear();
-    this->table_entries.reserve(table_entries_backup.size());
-    for (const auto & entry : table_entries_backup)
-    {
-        this->table_entries.emplace_back(entry);
-    }
-    this->remote_entries.clear();
-    this->remote_entries.reserve(remote_entries_backup.size());
-    for (const auto & entry : remote_entries_backup)
-    {
-        this->remote_entries.emplace_back(entry);
-    }
+    this->ids = std::move(ids_backup);
+    this->entries = std::move(entries_backup);
+    this->table_entries = std::move(table_entries_backup);
+    this->remote_entries = std::move(remote_entries_backup);
     this->in_transaction = prev_in_transaction;
     this->inside_projection = prev_inside_projection;
     this->allow_not_deterministic = prev_allow_not_deterministic;
@@ -185,40 +135,21 @@ void StatementGenerator::generateDerivedTable(
 {
     /// Built on the stack so an exception escaping `generateSelect` cannot leak it; `matchQueryAliases` swaps it into `sel`.
     Select osel;
-    std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
+    const auto generate = [&]()
+    {
+        this->current_level++;
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        generateSelect(rg, false, false, ncols, allowed_clauses, recursive, &osel);
+        this->current_level--;
+    };
 
     if (backup)
     {
-        for (const auto & [key, val] : this->levels)
-        {
-            levels_backup[key] = val;
-        }
-        for (const auto & [key, val] : this->ctes)
-        {
-            ctes_backup[key] = val;
-        }
-        this->levels.clear();
-        this->ctes.clear();
+        withoutOuterScope(generate);
     }
-
-    this->current_level++;
-    this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, &osel);
-    this->current_level--;
-
-    if (backup)
+    else
     {
-        this->levels.clear();
-        this->ctes.clear();
-        for (const auto & [key, val] : levels_backup)
-        {
-            this->levels[key] = val;
-        }
-        for (const auto & [key, val] : ctes_backup)
-        {
-            this->ctes[key] = val;
-        }
+        generate();
     }
 
     matchQueryAliases(ncols, osel, sel);
@@ -227,6 +158,33 @@ void StatementGenerator::generateDerivedTable(
     {
         rel.cols.emplace_back(SQLRelationCol(rel.name, {"c" + std::to_string(i)}));
     }
+}
+
+/// The named collection of the server, or its address and credentials
+template <typename T>
+static void setServerCredentials(const ServerCredentials & sc, const uint32_t port, T * func)
+{
+    if (!sc.named_collection.empty())
+    {
+        func->set_named_collection(sc.named_collection);
+    }
+    else
+    {
+        func->set_address(sc.server_hostname + ":" + std::to_string(port));
+        func->set_user(sc.user);
+        func->set_password(sc.password);
+    }
+}
+
+/// The seed and the size limits of a `generateRandom` call
+static void setGenerateRandomParams(RandomGenerator & rg, const FuzzConfig & fc, GenerateRandomFunc * grf)
+{
+    std::uniform_int_distribution<uint32_t> string_length_dist(fc.min_string_length, fc.max_string_length);
+    std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
+
+    grf->set_random_seed(rg.nextInFullRange());
+    grf->set_max_string_length(string_length_dist(rg.generator));
+    grf->set_max_array_length(nested_rows_dist(rg.generator));
 }
 
 void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc)
@@ -241,16 +199,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         myfunc = tfunc->mutable_mysql();
         myfunc->set_rdatabase(sc.database);
         myfunc->set_rtable(t.getBaseName());
-        if (!sc.named_collection.empty())
-        {
-            myfunc->set_named_collection(sc.named_collection);
-        }
-        else
-        {
-            myfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-            myfunc->set_user(sc.user);
-            myfunc->set_password(sc.password);
-        }
+        setServerCredentials(sc, sc.mysql_port ? sc.mysql_port : sc.port, myfunc);
     }
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isPostgreSQLEngine())
@@ -262,16 +211,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         pfunc->set_rdatabase(sc.database);
         pfunc->set_rschema("test");
         pfunc->set_rtable(t.getBaseName());
-        if (!sc.named_collection.empty())
-        {
-            pfunc->set_named_collection(sc.named_collection);
-        }
-        else
-        {
-            pfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-            pfunc->set_user(sc.user);
-            pfunc->set_password(sc.password);
-        }
+        setServerCredentials(sc, sc.port, pfunc);
     }
     else if (
         (usage == TableFunctionUsage::EngineReplace && t.isSQLiteEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasSQLitePeer()))
@@ -358,15 +298,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             FileFunc * ffunc = tfunc->mutable_file();
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
-            {
-                ffunc->set_fname(FileFunc_FName::FileFunc_FName_fileCluster);
-                setClusterClause(rg, cluster, ffunc->mutable_cluster(), true);
-            }
-            else
-            {
-                ffunc->set_fname(FileFunc_FName::FileFunc_FName_file);
-            }
+            setClusterOrPlainFunc(rg, cluster, FileFunc_FName::FileFunc_FName_fileCluster, FileFunc_FName::FileFunc_FName_file, ffunc);
             path = t.getTablePath(rg, this->allow_not_deterministic);
             ffunc->set_path(path);
             if (t.file_format.has_value())
@@ -383,15 +315,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             URLFunc * ufunc = tfunc->mutable_url();
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
-            {
-                ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-                setClusterClause(rg, cluster, ufunc->mutable_cluster(), true);
-            }
-            else
-            {
-                ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
-            }
+            setClusterOrPlainFunc(rg, cluster, URLFunc_FName::URLFunc_FName_urlCluster, URLFunc_FName::URLFunc_FName_url, ufunc);
             path = t.getTablePath(rg, this->allow_not_deterministic);
             ufunc->set_uurl(path);
             if (t.file_format.has_value())
@@ -437,16 +361,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                 const ServerCredentials & sc = fc.mongodb_server.value();
 
                 mfunc->set_database(sc.database);
-                if (!sc.named_collection.empty())
-                {
-                    mfunc->set_named_collection(sc.named_collection);
-                }
-                else
-                {
-                    mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-                    mfunc->set_user(sc.user);
-                    mfunc->set_password(sc.password);
-                }
+                setServerCredentials(sc, sc.port, mfunc);
             }
             structure = rg.nextMediumNumber() < 96 ? mfunc->mutable_structure() : nullptr;
         }
@@ -461,13 +376,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         else if (t.isGenerateRandomEngine())
         {
             GenerateRandomFunc * gfunc = tfunc->mutable_grandom();
-            std::uniform_int_distribution<uint32_t> string_length_dist(fc.min_string_length, fc.max_string_length);
-            std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             structure = gfunc->mutable_structure();
-            gfunc->set_random_seed(rg.nextInFullRange());
-            gfunc->set_max_string_length(string_length_dist(rg.generator));
-            gfunc->set_max_array_length(nested_rows_dist(rg.generator));
+            setGenerateRandomParams(rg, fc, gfunc);
         }
         else if (t.isArrowFlightEngine())
         {
@@ -519,16 +430,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
 
-            if (!sc.named_collection.empty())
-            {
-                rfunc->set_named_collection(sc.named_collection);
-            }
-            else
-            {
-                rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-                rfunc->set_user(sc.user);
-                rfunc->set_password(sc.password);
-            }
+            setServerCredentials(sc, sc.port, rfunc);
         }
         else
         {
@@ -729,7 +631,7 @@ String StatementGenerator::getNextHTTPURL(RandomGenerator & rg, const bool secur
     if (rg.nextSmallNumber() < 4)
     {
         /// Small buffer sizes stress intermediate flushes in WriteBufferDecorator
-        ret += "buffer_size=" + std::to_string(UINT32_C(1) << (rg.nextSmallNumber() % 14)) + "&";
+        ret += "buffer_size=" + std::to_string(UINT32_C(1) << rg.randomInt<uint32_t>(0, 13)) + "&";
     }
     if (rg.nextSmallNumber() < 4)
     {
@@ -860,100 +762,48 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
         break;
         case QueryOp::NumbersUDF: {
             SQLRelation rel(rel_name);
-            std::unordered_map<uint32_t, QueryLevel> levels_backup;
-            std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
             const uint32_t noption = rg.nextSmallNumber();
-            Expr * limit = nullptr;
             NumbersFunc * gsf = tof->mutable_tfunc()->mutable_numbers();
             std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(NumbersFunc_NumbersName_NumbersName_MAX));
             const NumbersFunc_NumbersName gname = static_cast<NumbersFunc_NumbersName>(gsf_range(rg.generator));
             std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(100000));
-
-            gsf->set_fname(gname);
-            for (const auto & [key, val] : this->levels)
+            /// `generate_series` takes 2 or 3 arguments, the others 1 to 3
+            const uint32_t nargs = gname > NumbersFunc_NumbersName::NumbersFunc_NumbersName_generateSeries
+                ? (noption < 4 ? 1 : (noption < 8 ? 2 : 3))
+                : (noption < 6 ? 2 : 3);
+            const auto lit_or_expr = [&](Expr * arg)
             {
-                levels_backup[key] = val;
-            }
-            for (const auto & [key, val] : this->ctes)
-            {
-                ctes_backup[key] = val;
-            }
-            this->levels.clear();
-            this->ctes.clear();
-
-            this->current_level++;
-            this->levels[this->current_level] = QueryLevel(this->current_level);
-            if (gname > NumbersFunc_NumbersName::NumbersFunc_NumbersName_generateSeries)
-            {
-                if (noption < 4)
-                {
-                    /// 1 arg
-                    limit = gsf->mutable_expr1();
-                }
-                else
-                {
-                    /// 2 args
-                    if (rg.nextBool())
-                    {
-                        gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
-                    }
-                    else
-                    {
-                        generateExpression(rg, gsf->mutable_expr1());
-                    }
-                    limit = gsf->mutable_expr2();
-                    if (noption >= 8)
-                    {
-                        /// 3 args
-                        if (rg.nextBool())
-                        {
-                            gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
-                        }
-                        else
-                        {
-                            generateExpression(rg, gsf->mutable_expr3());
-                        }
-                    }
-                }
-            }
-            else
-            {
-                /// 2 args
                 if (rg.nextBool())
                 {
-                    gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
+                    arg->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
                 }
                 else
                 {
-                    generateExpression(rg, gsf->mutable_expr1());
+                    generateExpression(rg, arg);
                 }
-                limit = gsf->mutable_expr2();
-                if (noption >= 6)
-                {
-                    /// 3 args
-                    if (rg.nextBool())
-                    {
-                        gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
-                    }
-                    else
-                    {
-                        generateExpression(rg, gsf->mutable_expr3());
-                    }
-                }
-            }
-            limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
-            this->current_level--;
+            };
 
-            this->levels.clear();
-            this->ctes.clear();
-            for (const auto & [key, val] : levels_backup)
-            {
-                this->levels[key] = val;
-            }
-            for (const auto & [key, val] : ctes_backup)
-            {
-                this->ctes[key] = val;
-            }
+            gsf->set_fname(gname);
+            withoutOuterScope(
+                [&]()
+                {
+                    this->current_level++;
+                    this->levels[this->current_level] = QueryLevel(this->current_level);
+                    if (nargs > 1)
+                    {
+                        lit_or_expr(gsf->mutable_expr1());
+                    }
+                    /// The count, or the end of `generate_series`, is the only argument or the second one
+                    (nargs == 1 ? gsf->mutable_expr1() : gsf->mutable_expr2())
+                        ->mutable_lit_val()
+                        ->mutable_int_lit()
+                        ->set_uint_lit(numbers_range(rg.generator));
+                    if (nargs > 2)
+                    {
+                        lit_or_expr(gsf->mutable_expr3());
+                    }
+                    this->current_level--;
+                });
 
             switch (gname)
             {
@@ -1043,50 +893,30 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
         break;
         case QueryOp::ValuesUDF: {
             SQLRelation rel(rel_name);
-            std::unordered_map<uint32_t, QueryLevel> levels_backup;
-            std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
             const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4)), UINT32_C(1));
             const uint32_t nrows = rg.randomInt<uint32_t>(1, 3);
             /// Half the time use SQL standard syntax: (VALUES (rows...)) AS alias(cols...)
             /// The other half use the existing values() table function form
             ValuesStatement * vs = rg.nextBool() ? tof->mutable_values_standard() : tof->mutable_tfunc()->mutable_values();
 
-            for (const auto & [key, val] : this->levels)
-            {
-                levels_backup[key] = val;
-            }
-            for (const auto & [key, val] : this->ctes)
-            {
-                ctes_backup[key] = val;
-            }
-            this->levels.clear();
-            this->ctes.clear();
-
-            this->current_level++;
-            this->levels[this->current_level] = QueryLevel(this->current_level);
-            for (uint32_t i = 0; i < nrows; i++)
-            {
-                ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
-
-                for (uint32_t j = 0; j < ncols; j++)
+            withoutOuterScope(
+                [&]()
                 {
-                    generateExpression(rg, j == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
-                    this->width++;
-                }
-                this->width -= ncols;
-            }
-            this->current_level--;
+                    this->current_level++;
+                    this->levels[this->current_level] = QueryLevel(this->current_level);
+                    for (uint32_t i = 0; i < nrows; i++)
+                    {
+                        ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
 
-            this->levels.clear();
-            this->ctes.clear();
-            for (const auto & [key, val] : levels_backup)
-            {
-                this->levels[key] = val;
-            }
-            for (const auto & [key, val] : ctes_backup)
-            {
-                this->ctes[key] = val;
-            }
+                        for (uint32_t j = 0; j < ncols; j++)
+                        {
+                            generateExpression(rg, j == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+                            this->width++;
+                        }
+                        this->width -= ncols;
+                    }
+                    this->current_level--;
+                });
 
             for (uint32_t i = 0; i < ncols; i++)
             {
@@ -1106,12 +936,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
                 grf ? grf->mutable_structure() : tf->mutable_nullf());
             if (grf)
             {
-                std::uniform_int_distribution<uint32_t> string_length_dist(fc.min_string_length, fc.max_string_length);
-                std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
-
-                grf->set_random_seed(rg.nextInFullRange());
-                grf->set_max_string_length(string_length_dist(rg.generator));
-                grf->set_max_array_length(nested_rows_dist(rg.generator));
+                setGenerateRandomParams(rg, fc, grf);
             }
         }
         break;
@@ -1134,15 +959,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             const std::optional<String> read_back = fc.formatToRead(outf);
             const String iinf = (read_back.has_value() && rg.nextBool()) ? read_back.value() : rg.pickRandomly(fc.in_formats);
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
-            {
-                ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
-                setClusterClause(rg, cluster, ufunc->mutable_cluster(), true);
-            }
-            else
-            {
-                ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
-            }
+            setClusterOrPlainFunc(rg, cluster, URLFunc_FName::URLFunc_FName_urlCluster, URLFunc_FName::URLFunc_FName_url, ufunc);
             String sql = "SELECT ";
             flatTableColumnPath(to_remote_entries, tt.cols, [](const SQLColumn &) { return true; });
             std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
@@ -1406,6 +1223,22 @@ static std::pair<Expr *, Expr *> addBinaryOperands(const BinaryOperator op, Expr
     return {bexpr->mutable_lhs(), bexpr->mutable_rhs()};
 }
 
+/// A comparison, rarely any binary operator. `==` and `<>` come only from the latter: they parse like `=` and `!=`
+static BinaryOperator randomComparison(RandomGenerator & rg)
+{
+    static const auto comparisons
+        = {BinaryOperator::BINOP_LE,
+           BinaryOperator::BINOP_LEQ,
+           BinaryOperator::BINOP_GR,
+           BinaryOperator::BINOP_GREQ,
+           BinaryOperator::BINOP_EQ,
+           BinaryOperator::BINOP_NOTEQ,
+           BinaryOperator::BINOP_LEEQGR};
+
+    return rg.nextMediumNumber() < 98 ? rg.pickRandomly(comparisons)
+                                      : static_cast<BinaryOperator>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(BinaryOperator_MAX)));
+}
+
 /// Writes `nclauses` clauses joined by AND/OR into `expr`, `fill` writes each one. With `op` set every connector is `op`
 /// and no clause is negated, so the optimizer can rewrite the chain as a whole
 static void addPredicateChain(
@@ -1447,14 +1280,11 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
     chassert(this->levels[this->current_level].rels.size() > 1);
     const SQLRelation * rel1 = &rg.pickRandomly(this->levels[this->current_level].rels);
     const SQLRelation * rel2 = &this->levels[this->current_level].rels.back();
-    std::uniform_int_distribution<uint32_t> op_range(
-        1, static_cast<uint32_t>(rg.nextMediumNumber() < 98 ? BinaryOperator::BINOP_LEEQGR : BinaryOperator_MAX));
     static const auto null_safe_ops
         = {BinaryOperator::BINOP_LEEQGR, BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, BinaryOperator::BINOP_IS_DISTINCT_FROM};
     const uint32_t nop = rg.nextSmallNumber();
-    /// The NULL-safe comparisons get their own weight, the range below reaches the last two only 2% of the time
-    const auto op = nop < 8 ? BinaryOperator::BINOP_EQ
-                            : (nop < 9 ? rg.pickRandomly(null_safe_ops) : static_cast<BinaryOperator>(op_range(rg.generator)));
+    /// The NULL-safe comparisons get their own weight, `randomComparison` reaches the last two only 2% of the time
+    const auto op = nop < 8 ? BinaryOperator::BINOP_EQ : (nop < 9 ? rg.pickRandomly(null_safe_ops) : randomComparison(rg));
 
     if (rel1->name == rel2->name)
     {
@@ -1479,54 +1309,56 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 
 void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstraint * jc)
 {
-    const uint32_t nopt = rg.nextSmallNumber();
+    uint32_t nopt = rg.nextSmallNumber();
+    std::vector<DB::Strings> intersect;
 
     if (nopt < 3)
     {
-        /// Using clause
-        UsingExpr * uexpr = jc->mutable_using_expr();
-        const SQLRelation & rel1 = rg.pickRandomly(this->levels[this->current_level].rels);
-        const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
+        /// USING resolves against every relation on the left, the right one is the last
+        const auto & rels = this->levels[this->current_level].rels;
         std::vector<DB::Strings> cols1;
         std::vector<DB::Strings> cols2;
-        std::vector<DB::Strings> intersect;
 
-        cols1.reserve(rel1.cols.size());
-        for (const auto & entry : rel1.cols)
+        for (size_t i = 0; i + 1 < rels.size(); i++)
         {
-            cols1.push_back(entry.path);
+            for (const auto & entry : rels[i].cols)
+            {
+                cols1.push_back(entry.path);
+            }
         }
-        cols2.reserve(rel2.cols.size());
-        for (const auto & entry : rel2.cols)
+        for (const auto & entry : rels.back().cols)
         {
             cols2.push_back(entry.path);
         }
         /// set_intersection requires sorted ranges
         std::sort(cols1.begin(), cols1.end());
+        cols1.erase(std::unique(cols1.begin(), cols1.end()), cols1.end());
         std::sort(cols2.begin(), cols2.end());
         std::set_intersection(cols1.begin(), cols1.end(), cols2.begin(), cols2.end(), std::back_inserter(intersect));
-
         if (intersect.empty())
         {
-            uexpr->mutable_column()->mutable_path()->mutable_col()->set_column("c0");
+            /// No common column, so an ON clause instead
+            nopt = 3;
         }
-        else
+    }
+    if (nopt < 3)
+    {
+        /// Using clause
+        UsingExpr * uexpr = jc->mutable_using_expr();
+        const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), (rg.nextLargeNumber() % static_cast<uint32_t>(intersect.size())) + 1);
+
+        std::shuffle(intersect.begin(), intersect.end(), rg.generator);
+        for (uint32_t i = 0; i < nclauses; i++)
         {
-            const uint32_t nclauses = std::min<uint32_t>(UINT32_C(3), (rg.nextLargeNumber() % static_cast<uint32_t>(intersect.size())) + 1);
+            ExprColumn * ecol = i == 0 ? uexpr->mutable_column() : uexpr->add_other_columns();
+            ColumnPath * cp = ecol->mutable_path();
+            const DB::Strings & npath = intersect[i];
 
-            std::shuffle(intersect.begin(), intersect.end(), rg.generator);
-            for (uint32_t i = 0; i < nclauses; i++)
+            for (size_t j = 0; j < npath.size(); j++)
             {
-                ExprColumn * ecol = i == 0 ? uexpr->mutable_column() : uexpr->add_other_columns();
-                ColumnPath * cp = ecol->mutable_path();
-                const DB::Strings & npath = intersect[i];
+                Column * col = j == 0 ? cp->mutable_col() : cp->add_sub_cols();
 
-                for (size_t j = 0; j < npath.size(); j++)
-                {
-                    Column * col = j == 0 ? cp->mutable_col() : cp->add_sub_cols();
-
-                    col->set_column(npath[j]);
-                }
+                col->set_column(npath[j]);
             }
         }
     }
@@ -1615,50 +1447,36 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     {
         case PredOp::BinaryExpr: {
             /// Binary expr
-            std::uniform_int_distribution<uint32_t> op_range(
-                1, static_cast<uint32_t>(rg.nextMediumNumber() < 98 ? BinaryOperator::BINOP_LEEQGR : BinaryOperator_MAX));
-            const auto op = rg.nextSmallNumber() < 7 ? BinaryOperator::BINOP_EQ : static_cast<BinaryOperator>(op_range(rg.generator));
-            const auto [lexpr, rexpr] = addBinaryOperands(op, expr);
+            const auto op = rg.nextSmallNumber() < 7 ? BinaryOperator::BINOP_EQ : randomComparison(rg);
+            auto [lexpr, rexpr] = addBinaryOperands(op, expr);
 
-            if (rg.nextSmallNumber() < 9)
+            /// The column is mostly on the left
+            if (rg.nextSmallNumber() > 8)
             {
-                refColumn(rg, gcol, lexpr);
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), rexpr);
+                std::swap(lexpr, rexpr);
             }
-            else
-            {
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), lexpr);
-                refColumn(rg, gcol, rexpr);
-            }
+            refColumn(rg, gcol, lexpr);
+            addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), rexpr);
         }
         break;
         case PredOp::BetweenExpr: {
-            /// Between expr
-            const uint32_t noption2 = rg.nextMediumNumber();
+            /// Between expr, with the column in any of the three positions
             ExprBetween * bexpr = expr->mutable_comp_expr()->mutable_expr_between();
-            Expr * expr1 = bexpr->mutable_expr1();
-            Expr * expr2 = bexpr->mutable_expr2();
-            Expr * expr3 = bexpr->mutable_expr3();
+            Expr * operands[] = {bexpr->mutable_expr1(), bexpr->mutable_expr2(), bexpr->mutable_expr3()};
+            const uint32_t col_pos = rg.randomInt<uint32_t>(0, 2);
 
             bexpr->set_paren(rg.nextMediumNumber() < 96);
             bexpr->set_not_(rg.nextBool());
-            if (noption2 < 34)
+            for (uint32_t i = 0; i < 3; i++)
             {
-                refColumn(rg, gcol, expr1);
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr2);
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr3);
-            }
-            else if (noption2 < 68)
-            {
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr1);
-                refColumn(rg, gcol, expr2);
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr3);
-            }
-            else
-            {
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr1);
-                addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), expr2);
-                refColumn(rg, gcol, expr3);
+                if (i == col_pos)
+                {
+                    refColumn(rg, gcol, operands[i]);
+                }
+                else
+                {
+                    addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), operands[i]);
+                }
             }
         }
         break;
@@ -1677,9 +1495,9 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             }
             else
             {
-                /// Sometimes do the function call instead
+                /// The functions `IS [NOT] NULL` doesn't parse to
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto nullFuncs = {"isNull", "isNullable", "isNotNull", "isZeroOrNull"};
+                static const auto nullFuncs = {"isNullable", "isZeroOrNull"};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
                 isexpr = sfc->add_args()->mutable_expr();
@@ -1708,20 +1526,13 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             }
             else
             {
-                /// Sometimes do the function call instead
+                /// The functions `ExprLike` can't write: there is no `NOT REGEXP`
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const std::vector<String> likeFuncs
-                    = {"like", "notLike", "ilike", "notILike", "similarTo", "notSimilarTo", "match"};
-                const String & fname = rg.pickRandomly(likeFuncs);
+                static const auto likeFuncs = {"notMatch", "matchCaseInsensitive", "notMatchCaseInsensitive"};
 
-                sfc->mutable_func()->set_catalog_func(fname);
+                sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
                 expr2 = sfc->add_args()->mutable_expr();
-                if (fname != "match" && rg.nextSmallNumber() < 3)
-                {
-                    /// The optional escape character argument
-                    sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(generateLikeEscape(rg));
-                }
             }
             refColumn(rg, gcol, expr1);
             if (rg.nextBool())
@@ -1772,10 +1583,9 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             }
             else
             {
-                /// Sometimes do the function call instead
+                /// The NULL-aware functions, `[GLOBAL] [NOT] IN` writes the others
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto inFuncs
-                    = {"in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn"};
+                static const auto inFuncs = {"nullIn", "notNullIn", "globalNullIn", "globalNotNullIn"};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
