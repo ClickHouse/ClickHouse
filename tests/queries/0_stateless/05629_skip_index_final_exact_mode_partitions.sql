@@ -75,3 +75,44 @@ ORDER BY rowNumberInAllBlocks() DESC
 LIMIT 1;
 
 DROP TABLE t_partition_in_key;
+
+-- FINAL of these engines combines rows, so partition 2 returns a matching row although none of its rows matches.
+DROP TABLE IF EXISTS t_summing;
+DROP TABLE IF EXISTS t_aggregating;
+DROP TABLE IF EXISTS t_coalescing;
+
+CREATE TABLE t_summing (k UInt64, p UInt8, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1)
+ENGINE = SummingMergeTree(v) PARTITION BY p ORDER BY k
+SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+CREATE TABLE t_aggregating (k UInt64, p UInt8, v SimpleAggregateFunction(sum, UInt64), INDEX idx_v v TYPE minmax GRANULARITY 1)
+ENGINE = AggregatingMergeTree PARTITION BY p ORDER BY k
+SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+CREATE TABLE t_coalescing (k UInt64, p UInt8, a Nullable(UInt64), b Nullable(UInt64), INDEX idx_a a TYPE minmax GRANULARITY 1, INDEX idx_b b TYPE minmax GRANULARITY 1)
+ENGINE = CoalescingMergeTree PARTITION BY p ORDER BY k
+SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES t_summing;
+SYSTEM STOP MERGES t_aggregating;
+SYSTEM STOP MERGES t_coalescing;
+
+INSERT INTO t_summing VALUES (1, 1, 2);
+INSERT INTO t_summing VALUES (1, 2, 1);
+INSERT INTO t_summing VALUES (1, 2, 1);
+INSERT INTO t_aggregating VALUES (1, 1, 2);
+INSERT INTO t_aggregating VALUES (1, 2, 1);
+INSERT INTO t_aggregating VALUES (1, 2, 1);
+INSERT INTO t_coalescing VALUES (1, 1, 5, 7);
+INSERT INTO t_coalescing VALUES (1, 2, 5, NULL);
+INSERT INTO t_coalescing VALUES (1, 2, NULL, 7);
+
+SELECT 'engines that combine rows';
+SELECT groupArray(p) FROM (SELECT p FROM t_summing FINAL WHERE v = 2 ORDER BY p SETTINGS do_not_merge_across_partitions_select_final = 1);
+SELECT groupArray(p) FROM (SELECT p FROM t_summing FINAL WHERE v = 2 ORDER BY p SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes = 0);
+SELECT groupArray(p) FROM (SELECT p FROM t_aggregating FINAL WHERE v = 2 ORDER BY p SETTINGS do_not_merge_across_partitions_select_final = 1);
+SELECT groupArray(p) FROM (SELECT p FROM t_aggregating FINAL WHERE v = 2 ORDER BY p SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes = 0);
+SELECT groupArray(p) FROM (SELECT p FROM t_coalescing FINAL WHERE a = 5 AND b = 7 ORDER BY p SETTINGS do_not_merge_across_partitions_select_final = 1);
+SELECT groupArray(p) FROM (SELECT p FROM t_coalescing FINAL WHERE a = 5 AND b = 7 ORDER BY p SETTINGS do_not_merge_across_partitions_select_final = 1, use_skip_indexes = 0);
+
+DROP TABLE t_summing;
+DROP TABLE t_aggregating;
+DROP TABLE t_coalescing;

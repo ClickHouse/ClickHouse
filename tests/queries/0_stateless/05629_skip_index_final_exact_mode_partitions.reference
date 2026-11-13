@@ -9,3 +9,10 @@ Granules: 4/3
 partition key in the primary key
 1
 Granules: 3/1
+engines that combine rows
+[1,2]
+[1,2]
+[1,2]
+[1,2]
+[1,2]
+[1,2]

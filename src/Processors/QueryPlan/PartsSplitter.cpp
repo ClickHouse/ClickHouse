@@ -1361,7 +1361,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
     RangesInDataParts & ranges_in_data_parts,
-    bool do_not_merge_across_partitions,
+    bool within_partition,
     const LoggerPtr & logger)
 {
     bool cannot_sort_primary_key = false;
@@ -1371,7 +1371,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
         cannot_sort_primary_key = true;
     }
 
-    if (!do_not_merge_across_partitions)
+    if (!within_partition)
         return findPKRangesForFinalAfterSkipIndexImpl(ranges_in_data_parts, cannot_sort_primary_key, logger);
 
     /// FINAL merges the parts of each partition separately, so only parts of the same partition can hold another version of a selected row.

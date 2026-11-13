@@ -2614,6 +2614,25 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     return doNotMergePartsAcrossPartitionsFinalImpl(context->getSettingsRef(), data, *storage_snapshot->metadata);
 }
 
+static bool expandSkipIndexGranulesWithinPartition(
+    const Settings & settings, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+{
+    /// Other engines combine rows in `FINAL`, so a partition can return a matching row built from rows the skip index rejected.
+    switch (data.merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Replacing:
+        case MergeTreeData::MergingParams::Collapsing:
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            return doNotMergePartsAcrossPartitionsFinalImpl(settings, data, metadata);
+        case MergeTreeData::MergingParams::Ordinary:
+        case MergeTreeData::MergingParams::Summing:
+        case MergeTreeData::MergingParams::Aggregating:
+        case MergeTreeData::MergingParams::Coalescing:
+        case MergeTreeData::MergingParams::Graphite:
+            return false;
+    }
+}
+
 std::optional<FilterDAGInfo> ReadFromMergeTree::getSamplingFilter() const
 {
     const auto & sampling = getAnalysisResult().sampling;
@@ -4083,7 +4102,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             {
                 result.parts_with_ranges
                     = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges,
-                        doNotMergePartsAcrossPartitionsFinalImpl(settings, data, *metadata_snapshot), log);
+                        expandSkipIndexGranulesWithinPartition(settings, data, *metadata_snapshot), log);
                 add_index_stat_row_for_pk_expand = true;
             }
         }
