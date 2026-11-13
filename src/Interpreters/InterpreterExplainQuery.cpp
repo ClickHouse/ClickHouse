@@ -99,6 +99,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool explain_syntax_single_record;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
@@ -986,6 +987,20 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
+/// Re-applying the explained query's own SETTINGS clause can reset a `make_distributed_plan` that
+/// executeQuery inferred; infer it again so EXPLAIN plans what executes. Only restores a plan that
+/// was already on - a nested EXPLAIN (e.g. viewExplain) never had executeQuery infer anything for
+/// it in the first place, and must keep not inferring one.
+static void reapplySettingsAndRestoreDistributedPlan(const ASTPtr & query, ContextMutablePtr context)
+{
+    const bool plan_was_on = context->getSettingsRef()[Setting::make_distributed_plan].value;
+
+    InterpreterSetQuery::applySettingsFromQuery(query, context);
+
+    if (plan_was_on && !context->getSettingsRef()[Setting::make_distributed_plan].changed)
+        applyDistributedPlanSettings(context);
+}
+
 struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
@@ -1037,7 +1052,7 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     auto planning_context = Context::createCopy(getContext());
     inner_options.max_step_description_length = planning_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
-    InterpreterSetQuery::applySettingsFromQuery(query, planning_context);
+    reapplySettingsAndRestoreDistributedPlan(query, planning_context);
 
     auto result = std::make_unique<AnalyzedInnerQuery>();
 
@@ -1114,12 +1129,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         explain_query_context->setSetting("use_query_condition_cache", false);
     }
 
-    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
-
-    /// Re-applying the clause can reset an inferred `make_distributed_plan`; infer it again so
-    /// EXPLAIN plans what executes.
-    if (explain_query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        applyDistributedPlanSettings(explain_query_context);
+    reapplySettingsAndRestoreDistributedPlan(query, explain_query_context);
 
     query_context = std::move(explain_query_context);
 
