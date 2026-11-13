@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -24,9 +25,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <IO/WriteBufferFromVector.h>
@@ -2347,23 +2346,6 @@ void normalizeColumnExpression(ASTPtr & ast)
         normalizeColumnExpression(child);
 
     const auto * function = ast->as<ASTFunction>();
-
-    /// Queries fold the calls of deterministic functions over literals, so `concat(s, toString(1))` is named `concat(s, '1')` there.
-    /// Only a `String` result is folded: its literal is named the same way in both.
-    if (function && function->arguments && !function->arguments->children.empty()
-        && std::ranges::all_of(function->arguments->children, [](const auto & argument) { return argument->template as<ASTLiteral>(); }))
-    {
-        const auto context = Context::getGlobalContextInstance();
-        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && resolver->isDeterministic())
-        {
-            if (auto result = tryEvaluateConstantExpression(ast, context); result && WhichDataType(result->second).isString())
-            {
-                ast = make_intrusive<ASTLiteral>(result->first);
-                return;
-            }
-        }
-    }
-
     if (!function || (function->name != "equals" && function->name != "notEquals")
         || !function->arguments || function->arguments->children.size() != 2)
         return;
@@ -2387,6 +2369,31 @@ void normalizeColumnExpression(ASTPtr & ast)
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
 }
 
+/// Replaces the subexpressions that the index expression folded to constants with literals named like `KeyCondition`
+/// names the folded constants of a query, e.g. `concat(s, toString(1))` becomes `concat(s, '1')`.
+void foldConstantSubexpressions(ASTPtr & ast, const ActionsDAG & index_dag)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (function && function->name == "lambda")
+        return;
+
+    if (function)
+    {
+        const auto name = ast->getColumnName();
+        for (const auto & node : index_dag.getNodes())
+        {
+            if (node.result_name == name && node.column && isColumnConst(*node.column) && node.column->getDataType() != TypeIndex::Function)
+            {
+                ast = make_intrusive<ASTLiteral>((*node.column)[0]);
+                return;
+            }
+        }
+    }
+
+    for (auto & child : ast->children)
+        foldConstantSubexpressions(child, index_dag);
+}
+
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
 /// expression after the same rewrite, or `std::nullopt` if it does not change.
@@ -2397,6 +2404,7 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
         return {};
 
     ASTPtr normalized = index.expression_list_ast->children.front()->clone();
+    foldConstantSubexpressions(normalized, index.expression->getActionsDAG());
     normalizeColumnExpression(normalized);
 
     String name = normalized->getColumnName();

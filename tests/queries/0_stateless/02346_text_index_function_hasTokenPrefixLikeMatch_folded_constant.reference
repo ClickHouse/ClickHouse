@@ -4,3 +4,9 @@ hasTokenLike	64
 hasTokenLike, no index	64
 hasTokenMatch	64
 hasTokenMatch, no index	64
+numeric hasTokenPrefix	64
+numeric hasTokenPrefix, no index	64
+numeric hasTokenPrefix, array	64
+numeric hasAnyTokens	64
+numeric hasAnyTokens, no index	64
+not folded after merge	64
