@@ -19,14 +19,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# `members` prints the member names of every list and map type of the latest metadata version. The other modes
-# publish the next version: `add-required` / `drop-required` add / remove a `required` member in every list type,
-# `flip` changes `element-required` of `arr`.
+# `members` prints the member names of every list and map type of the latest metadata version. Other modes are applied
+# in order and publish the next version: `add-members` / `drop-members` add / remove a non-spec member in every list
+# (`required`) and map (`element-required`); `flip-arr` / `flip-m` toggle `element-required` of `arr` / `value-required` of `m`.
 metadata() {
-    python3 - "$1" "${TABLE_PATH}metadata" <<'PY'
+    python3 - "${TABLE_PATH}metadata" "$@" <<'PY'
 import json, os, re, sys
 
-mode, metadata_dir = sys.argv[1], sys.argv[2]
+metadata_dir, modes = sys.argv[1], sys.argv[2:]
 versions = [int(m.group(1)) for f in os.listdir(metadata_dir) if (m := re.fullmatch(r"v(\d+)\.metadata\.json", f))]
 latest = max(versions)
 with open(os.path.join(metadata_dir, f"v{latest}.metadata.json")) as fh:
@@ -44,19 +44,23 @@ def types(t):
 
 
 nested = [t for schema in metadata["schemas"] for t in types(schema) if t["type"] in ("list", "map")]
-if mode == "members":
+if modes == ["members"]:
     print("\n".join(sorted({t["type"] + " " + ",".join(sorted(t)) for t in nested})))
     sys.exit(0)
 
-for t in nested:
-    if t["type"] == "list" and mode == "add-required":
-        t["required"] = False
-    elif t["type"] == "list" and mode == "drop-required":
-        t.pop("required", None)
-for schema in metadata["schemas"]:
-    for field in schema["fields"]:
-        if field["name"] == "arr" and mode == "flip":
-            field["type"]["element-required"] = True
+for mode in modes:
+    for t in nested:
+        member = "required" if t["type"] == "list" else "element-required"
+        if mode == "add-members":
+            t[member] = False
+        elif mode == "drop-members":
+            t.pop(member, None)
+    for schema in metadata["schemas"]:
+        for field in schema["fields"]:
+            if field["name"] == "arr" and mode == "flip-arr":
+                field["type"]["element-required"] = not field["type"]["element-required"]
+            elif field["name"] == "m" and mode == "flip-m":
+                field["type"]["value-required"] = not field["type"]["value-required"]
 
 metadata["last-updated-ms"] += 60000
 tmp = os.path.join(metadata_dir, ".tmp_next")
@@ -71,11 +75,13 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INS
 metadata members
 
 # What earlier versions wrote, then what PyIceberg writes back, for the same schema-id.
-metadata add-required
+metadata add-members
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT * FROM ${TABLE}"
-metadata drop-required
+metadata drop-members
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT * FROM ${TABLE}"
 
-# A change in a member the spec defines is still a different schema.
-metadata flip
+# A change in a member the spec defines is still a different schema, for a list and for a map.
+metadata flip-arr
+${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT * FROM ${TABLE}" 2>&1 | grep -o -m1 ICEBERG_SPECIFICATION_VIOLATION
+metadata flip-arr flip-m
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT * FROM ${TABLE}" 2>&1 | grep -o -m1 ICEBERG_SPECIFICATION_VIOLATION

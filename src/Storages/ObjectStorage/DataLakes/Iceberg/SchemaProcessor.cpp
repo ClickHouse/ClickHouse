@@ -343,10 +343,13 @@ bool typesAreStructurallyIdentical(
         if (first_obj->isArray(f_fields) || second_obj->isArray(f_fields))
             return schemasAreIdentical(*first_obj, *second_obj, type_mapping);
 
-        /// list / map: only the members the Iceberg spec defines; writers that rewrite a schema drop any other member.
-        static constexpr const char * list_and_map_members[]
-            = {f_type, f_element_id, f_element_required, f_element, f_key_id, f_key, f_value_id, f_value_required, f_value};
-        return membersAreStructurallyIdentical(*first_obj, *second_obj, list_and_map_members, type_mapping);
+        /// list / map: only the members the Iceberg spec defines for the kind; writers that rewrite a schema drop any other member.
+        static constexpr const char * list_members[] = {f_type, f_element_id, f_element_required, f_element};
+        static constexpr const char * map_members[] = {f_type, f_key_id, f_key, f_value_id, f_value_required, f_value};
+        const bool is_map = first_obj->optValue<String>(f_type, "") == f_map;
+        return membersAreStructurallyIdentical(
+            *first_obj, *second_obj, is_map ? std::span<const char * const>(map_members) : std::span<const char * const>(list_members),
+            type_mapping);
     }
 
     /// Mismatched shapes (string vs object) or scalar values: compare textually.
