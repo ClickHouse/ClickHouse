@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/TypeTree.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
