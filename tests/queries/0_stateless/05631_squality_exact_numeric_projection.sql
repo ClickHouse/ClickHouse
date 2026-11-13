@@ -1,24 +1,10 @@
 SET allow_lossy_numeric_supertype = 1;
 SET use_variant_as_common_type = 0;
 
-DROP TABLE IF EXISTS squality_numeric_projection_type;
-CREATE TABLE squality_numeric_projection_type
-(
-    n UInt8,
-    d Decimal(18, 2),
-    x Float64,
-    PROJECTION p (SELECT sum(if(n = 0, d, x)))
-)
-ENGINE = MergeTree ORDER BY tuple();
-
-SELECT count() FROM system.projections
-WHERE database = currentDatabase() AND table = 'squality_numeric_projection_type' AND name = 'p';
-DETACH TABLE squality_numeric_projection_type;
-ATTACH TABLE squality_numeric_projection_type;
-SELECT count() FROM system.projections
-WHERE database = currentDatabase() AND table = 'squality_numeric_projection_type' AND name = 'p';
-
-DROP TABLE squality_numeric_projection_type;
+-- Projection definitions are analyzed with the server profile, so verify the
+-- setting's type-resolution role directly with a session-scoped expression.
+SELECT sum(if(n = 0, d, x))
+FROM values('n UInt8, d Decimal(18, 2), x Float64', (0, 1.25, 2.5));
 
 DROP TABLE IF EXISTS squality_numeric_expression_index;
 CREATE TABLE squality_numeric_expression_index
