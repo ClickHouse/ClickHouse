@@ -2088,8 +2088,6 @@ once for the whole query, such as `currentUser()`, `now()` or the set of `IN (su
 optimization; the set of a `Set` table, which can change while the query runs, does. Floating-point columns
 or columns containing floating-point (such as `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
-`GraphiteMergeTree` rolls up rows with different times into one row, so for it only the path column counts, and only
-when it is the first `ORDER BY` column.
 
 On `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` and `GraphiteMergeTree` the row policy is always applied
 before FINAL, regardless of this setting: FINAL takes the values of the merged row from all the rows with the same sorting key,
