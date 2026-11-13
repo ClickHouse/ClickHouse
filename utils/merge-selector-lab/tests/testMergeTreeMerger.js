@@ -1,4 +1,4 @@
-import { assert } from 'https://cdn.jsdelivr.net/npm/chai/chai.js';
+import { assert } from '../vendor/chai.js';
 
 import { EventSimulator } from '../EventSimulator.js';
 import { WorkerPool } from '../WorkerPool.js';
