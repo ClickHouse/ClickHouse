@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -622,7 +623,9 @@ public:
                 /// key expression. Exceptions from that expression, such as an explicit user-supplied
                 /// cast or the `UInt64` conversion this pass inserts for a signed simple-key probe,
                 /// are therefore skipped together with the lookup.
-                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
+                /// A key with an aggregate function or `arrayJoin` changes the row count, so it is kept by the membership below.
+                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type)
+                    && !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin"))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
                     auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);

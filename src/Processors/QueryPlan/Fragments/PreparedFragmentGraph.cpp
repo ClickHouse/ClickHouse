@@ -32,9 +32,13 @@ PreparedFragmentGraph::PreparedFragmentGraph(const FragmentGraph & graph_, const
     if (graph.fragments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has no fragments");
 
-    /// A plan that was not cut is printed by `QueryPlan::explainPlan` alone, which builds its own names.
+    /// A plan that was not cut has its own naming scope, the one `QueryPlan::explainPlan` builds for it.
     if (single_node)
+    {
+        if (options.pretty)
+            pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(getPlan(graph.fragments.front()));
         return;
+    }
 
     print_order.reserve(graph.fragments.size());
     for (const auto & fragment : graph.fragments | std::views::reverse)
@@ -67,11 +71,13 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
             return fmt::format("hash({})", fmt::join(keys, ", "));
         }
         case FragmentExchange::Kind::Broadcast:
-            return "broadcast";
+        case FragmentExchange::Kind::Any:
+        case FragmentExchange::Kind::SetValues:
+            return toString(exchange.kind);
         case FragmentExchange::Kind::Gather:
         {
             if (!exchange.merge_sort)
-                return "gather";
+                return toString(exchange.kind);
             if (!column_names)
                 return "gather sorted by " + dumpSortDescription(*exchange.merge_sort);
             WriteBufferFromOwnString out;
@@ -80,10 +86,6 @@ String PreparedFragmentGraph::formatExchangeKind(const FragmentExchange & exchan
             dumpSortDescription(*exchange.merge_sort, settings);
             return "gather sorted by " + out.str();
         }
-        case FragmentExchange::Kind::Any:
-            return "any";
-        case FragmentExchange::Kind::SetValues:
-            return "set values";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.name);
 }
@@ -105,6 +107,17 @@ const QueryPlan & PreparedFragmentGraph::getPlan(const QueryFragment & fragment)
     if (!fragment.plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to explain", fragment.id);
     return *fragment.plan;
+}
+
+const PrettyNames & PreparedFragmentGraph::getPrettyNames(const QueryPlan & plan) const
+{
+    static const PrettyNames no_names;
+    if (!options.pretty)
+        return no_names;
+    auto it = pretty_names.names.find(&plan);
+    if (it == pretty_names.names.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan to explain has no pretty names");
+    return it->second;
 }
 
 const String * PreparedFragmentGraph::tryGetReceiveExchangeId(const IQueryPlanStep & step)
@@ -155,7 +168,9 @@ void writeSingleNode(const PreparedFragmentGraph & prepared, WriteBuffer & buf, 
 {
     chassert(prepared.single_node);
     const auto & fragment = prepared.graph.fragments.front();
-    PreparedFragmentGraph::getPlan(fragment).explainPlan(buf, prepared.options, 0, max_step_description_length);
+    PreparedFragmentGraph::getPlan(fragment).explainPlan(
+        buf, prepared.options, 0, max_step_description_length,
+        prepared.options.pretty ? &prepared.pretty_names : nullptr);
     if (fragment.fallback_reason)
         buf << "\nNot distributed: " << *fragment.fallback_reason << '\n';
 }

@@ -130,7 +130,7 @@ namespace
     };
 }
 
-static ActionsDAGReverseInfo getActionsDAGReverseInfo(const std::list<ActionsDAG::Node> & nodes, const ActionsDAG::NodeRawConstPtrs & index)
+static ActionsDAGReverseInfo getActionsDAGReverseInfo(const ActionsDAG::Nodes & nodes, const ActionsDAG::NodeRawConstPtrs & index)
 {
     ActionsDAGReverseInfo result_info;
     result_info.nodes_info.resize(nodes.size());

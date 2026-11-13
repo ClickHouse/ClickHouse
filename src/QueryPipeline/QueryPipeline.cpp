@@ -39,6 +39,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/RadixUniqExactTransform.h>
+#include <Processors/Transforms/ShuffleTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/Chain.h>
@@ -210,7 +211,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
         /// Set counter based on the following cases:
         ///   1. Remote: Set counter on Remote
-        ///   2. Limit ... PartialSorting: Set counter on PartialSorting
+        ///   2. `LimitTransform` ... `PartialSortingTransform`/`ReservoirSampleTransform`: Count before sorting/sampling
         ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
         ///   4. Limit ... MergingAggregated ... Remote: Set counter on the input port of Limit
         ///   5. Limit ... Remote: Set counter on Remote
@@ -264,7 +265,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
                 continue;
 
             /// Case 2.
-            if (typeid_cast<PartialSortingTransform *>(processor))
+            if (typeid_cast<PartialSortingTransform *>(processor) || typeid_cast<ReservoirSampleTransform *>(processor))
             {
                 processors.emplace(processor);
                 mark_limit_input_as_counted(limit_being_counted, limit_input_port);

@@ -13,7 +13,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/WhatIf/InterpreterHypotheticalObjectQuery.h>
 #include <IO/NullWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -39,6 +38,7 @@
 #include <Storages/MergeTree/WhatIf/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <algorithm>
 #include <array>
@@ -49,6 +49,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_DENIED;
+}
 
 namespace FailPoints
 {
@@ -320,7 +325,6 @@ Pipe makePartPipe(
         std::make_shared<std::atomic<size_t>>(0),
         false,
         false,
-        /*prefetch_begin_of_range=*/ false,
         /*allow_remote_fs_prefetch=*/ true);
 
     /// keep speed limits, the caller checks sizes
@@ -403,7 +407,7 @@ String buildProjectionPart(
     /// a projection part keeps only the rows that exist, `calculate` drops the deleted ones by this column
     Names columns_to_read = projection.required_columns;
     const bool has_delete_mask = part->hasLightweightDelete();
-    if (has_delete_mask)
+    if (has_delete_mask && std::ranges::find(columns_to_read, RowExistsColumn::name) == columns_to_read.end())
         columns_to_read.push_back(RowExistsColumn::name);
 
     Pipe pipe = makePartPipe(part, ranges, columns_to_read, read_step, context);
@@ -1301,37 +1305,38 @@ bool tryEstimateProjection(
 }
 
 std::optional<ProjectionDescription> refreshHypotheticalProjection(
-    const ProjectionDescription & stored,
+    const HypotheticalObjectStore::ProjectionEntry & hypothetical,
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata,
     const ContextPtr & context,
     String & reason)
 {
-    if (!stored.required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), stored.required_columns);
+    if (!hypothetical.projection.required_columns.empty())
+        context->checkAccess(
+            AccessType::SELECT,
+            data.getStorageID(),
+            metadata->getColumns().getColumnNamesForSelectAccessCheck(hypothetical.projection.required_columns, context, data.getStorageID()));
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
-    std::optional<ProjectionDescription> fresh;
-    try
+    /// the binding does not cover names, and the parts of a real projection would be read with this definition
+    if (metadata->projections.has(hypothetical.projection.name))
     {
-        checkHypotheticalProjectionIsAddable(data, metadata, stored.definition_ast, /* if_not_exists */ false, context);
-        fresh = ProjectionDescription::getProjectionFromAST(
-            stored.definition_ast, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
-    }
-    catch (const Exception &)
-    {
-        reason = "Hypothetical projection can no longer be added to this table: " + getCurrentExceptionMessage(false);
+        reason = "Hypothetical projection can no longer be added to this table: projection with this name already exists. "
+                 "Drop the real projection or use another name";
         return std::nullopt;
     }
 
-    /// an ALTER may retarget an ALIAS, so check the columns actually read
-    if (!fresh->required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
-    return fresh;
+    const auto change = hypothetical.binding.changeIn(*metadata, context, data.getStorageID());
+    if (!change.empty())
+    {
+        reason = "Hypothetical projection no longer matches the table: " + change + ". Run CREATE HYPOTHETICAL PROJECTION again";
+        return std::nullopt;
+    }
+    return hypothetical.projection.clone();
 }
 
 WhatIfCandidateResult evaluateProjection(
-    const ProjectionDescription & stored_projection,
+    const HypotheticalObjectStore::ProjectionEntry & hypothetical,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
@@ -1343,8 +1348,8 @@ WhatIfCandidateResult evaluateProjection(
 
     WhatIfCandidateResult result;
     result.kind = WhatIfCandidateResult::Projection;
-    result.name = stored_projection.name;
-    result.type = stored_projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
+    result.name = hypothetical.projection.name;
+    result.type = hypothetical.projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
     result.status = WhatIfCandidateResult::NotApplicable;
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
@@ -1358,10 +1363,17 @@ WhatIfCandidateResult evaluateProjection(
     }
 
     auto metadata = read_step->getStorageMetadata();
-    auto projection = refreshHypotheticalProjection(stored_projection, data, metadata, context, result.not_applicable_reason);
+    auto projection = refreshHypotheticalProjection(hypothetical, data, metadata, context, result.not_applicable_reason);
     if (!projection)
         return result;
     const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;
+
+    /// Same as for indexes: building the projection reads every row, including the rows a row policy hides
+    if (getEffectiveRowPolicyFilter(data, context))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use `EXPLAIN WHATIF` because a row policy is applied on table {}. "
+            "The projection estimate is derived from all rows, so it could violate the row policy",
+            data.getStorageID().getNameForLogs());
 
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
     {

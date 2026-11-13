@@ -69,13 +69,14 @@ ALTER TABLE t_sibling_cleared MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2
 ALTER TABLE t_sibling_cleared ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
 -- `CLEAR COLUMN` goes through `StorageMergeTree::alter` and queues a mutation entry of its own, so
 -- it shares a command set with `MATERIALIZE INDEX` only when both are pending when the executor picks
--- the part; the batching of case 33 guarantees that. A `CLEAR COLUMN` applied on its own used to
+-- the part; the batching of case 33 guarantees that. The executor ends a command set after a clear,
+-- so `MATERIALIZE INDEX` is queued first. A `CLEAR COLUMN` applied on its own used to
 -- record `c` as a side effect of the read-only stage that rebuilds `idx_old`, which let this case
 -- pass without reaching the shape it is about; a mutation now writes only the columns its write
 -- stages name.
 SYSTEM STOP MERGES t_sibling_cleared;
-ALTER TABLE t_sibling_cleared CLEAR COLUMN g SETTINGS mutations_sync = 0, alter_sync = 0;
 ALTER TABLE t_sibling_cleared MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_sibling_cleared CLEAR COLUMN g SETTINGS mutations_sync = 0, alter_sync = 0;
 -- Both entries are pending together, so the executor applies them to the part as one command set.
 SELECT count() = 2 FROM system.mutations WHERE database = currentDatabase()
     AND table = 't_sibling_cleared' AND NOT is_done;
@@ -113,9 +114,10 @@ ALTER TABLE t_sibling_cleared_shadowed MODIFY COLUMN c REMOVE TTL SETTINGS alter
 ALTER TABLE t_sibling_cleared_shadowed MODIFY COLUMN `a.size0` REMOVE TTL SETTINGS alter_sync = 2;
 ALTER TABLE t_sibling_cleared_shadowed MODIFY COLUMN c String DEFAULT 'new' SETTINGS alter_sync = 2;
 ALTER TABLE t_sibling_cleared_shadowed ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+-- Batched as in case 34, `MATERIALIZE INDEX` first.
 SYSTEM STOP MERGES t_sibling_cleared_shadowed;
-ALTER TABLE t_sibling_cleared_shadowed CLEAR COLUMN `a.size0` SETTINGS mutations_sync = 0, alter_sync = 0;
 ALTER TABLE t_sibling_cleared_shadowed MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_sibling_cleared_shadowed CLEAR COLUMN `a.size0` SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT count() = 2 FROM system.mutations WHERE database = currentDatabase()
     AND table = 't_sibling_cleared_shadowed' AND NOT is_done;
 SYSTEM START MERGES t_sibling_cleared_shadowed;

@@ -8,15 +8,21 @@ sidebarTitle: '마이그레이션 가이드'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="why-use-clickhouse-cloud-over-bigquery">
   ## BigQuery 대신 ClickHouse Cloud를 사용하는 이유
 </div>
 
 요약: 최신 데이터 분석에서는 ClickHouse가 BigQuery보다 더 빠르고, 더 저렴하며, 더 강력하기 때문입니다.
 
-<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse와 BigQuery 비교" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse와 BigQuery 비교](/images/migrations/bigquery-2.webp)
+
+</Frame>
+
+</div>
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
   ## BigQuery에서 ClickHouse Cloud로 데이터 가져오기
@@ -28,7 +34,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 BigQuery에서 ClickHouse Cloud로의 일반적인 마이그레이션을 보여주는 예시 데이터셋으로 [여기](/ko/get-started/sample-datasets/stackoverflow)에 문서화된 Stack Overflow 데이터셋을 사용합니다. 이 데이터셋에는 2008년부터 2024년 4월까지 Stack Overflow에서 생성된 모든 `post`, `vote`, `user`, `comment`, `badge`가 포함되어 있습니다. 이 데이터의 BigQuery 스키마는 아래와 같습니다.
 
-<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="스키마" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![스키마](/images/migrations/bigquery-3.webp)
+
+</Frame>
+
+</div>
 
 이 데이터셋을 BigQuery 인스턴스에 적재하여 마이그레이션 단계를 테스트하려는 사용자를 위해, 해당 테이블의 데이터를 Parquet 포맷으로 GCS 버킷에 제공하고 있습니다. 또한 BigQuery에서 테이블을 생성하고 로드하는 DDL 명령은 [여기](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==)에서 확인할 수 있습니다.
 
@@ -51,7 +65,15 @@ BigQuery는 데이터를 Google의 객체 스토리지(GCS)로 내보내는 기�
 
 2. 데이터를 ClickHouse Cloud로 가져오십시오. 이를 위해 [gcs 테이블 함수](/ko/reference/functions/table-functions/gcs)를 사용할 수 있습니다. DDL 및 가져오기 쿼리는 [여기](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)에서 확인할 수 있습니다. ClickHouse Cloud 인스턴스는 여러 컴퓨트 노드로 구성되므로 `gcs` 테이블 함수 대신 [s3Cluster 테이블 함수](/ko/reference/functions/table-functions/s3Cluster)를 사용합니다. 이 함수는 GCS 버킷에서도 사용할 수 있으며, 데이터를 병렬로 적재하기 위해 [ClickHouse Cloud 서비스의 모든 노드를 활용합니다](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers).
 
-<Image img="/images/migrations/bigquery-4.webp" size="md" alt="대량 적재" />
+<div className="ch-image-md">
+
+<Frame>
+
+![대량 적재](/images/migrations/bigquery-4.webp)
+
+</Frame>
+
+</div>
 
 이 접근 방식에는 여러 가지 장점이 있습니다:
 
@@ -161,7 +183,15 @@ BigQuery의 클러스터링과 유사하게 ClickHouse 테이블의 데이터는
 * ClickHouse가 주로 사용되는 규모에서는 메모리와 디스크 효율성이 매우 중요합니다. 데이터는 파트라고 하는 청크 단위로 ClickHouse 테이블에 기록되며, 백그라운드에서 이 파트들을 머지하는 규칙이 적용됩니다. ClickHouse에서는 각 파트가 자체 프라이머리 인덱스를 가집니다. 파트가 머지되면 병합된 파트의 프라이머리 인덱스도 함께 머지됩니다. 다만 이러한 인덱스는 각 행마다 생성되지 않습니다. 대신 파트의 프라이머리 인덱스에는 각 행 그룹마다 하나의 인덱스 엔트리가 있습니다. 이 기법을 희소 인덱싱이라고 합니다.
 * 희소 인덱싱이 가능한 이유는 ClickHouse가 파트의 행을 지정된 키 순서대로 정렬해 디스크에 저장하기 때문입니다. 희소 프라이머리 인덱스는 단일 행을 직접 찾는 대신(B-Tree 기반 인덱스처럼), 쿼리와 일치할 가능성이 있는 행 그룹을 빠르게 식별할 수 있게 해줍니다(인덱스 엔트리에 대해 이진 검색 수행). 이렇게 찾아낸 잠재적 일치 행 그룹은 실제 일치 항목을 찾기 위해 병렬로 ClickHouse engine에 순서대로 스트리밍됩니다. 이러한 인덱스 설계 덕분에 프라이머리 인덱스는 작게 유지할 수 있으며(전체가 main memory에 완전히 들어감), 동시에 쿼리 실행 시간을 크게 단축할 수 있습니다. 특히 데이터 분석 사용 사례에서 흔한 범위 쿼리에서 효과적입니다. 자세한 내용은 [이 심층 가이드](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 참조하십시오.
 
-<Image img="/images/migrations/bigquery-5.webp" size="md" alt="ClickHouse 프라이머리 키" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse 프라이머리 키](/images/migrations/bigquery-5.webp)
+
+</Frame>
+
+</div>
 
 ClickHouse에서 선택한 프라이머리 키는 인덱스뿐 아니라 데이터가 디스크에 기록되는 순서도 결정합니다. 따라서 이는 압축 수준에 큰 영향을 줄 수 있으며, 결과적으로 쿼리 성능에도 영향을 미칠 수 있습니다. 대부분의 컬럼 값이 연속된 순서로 기록되도록 하는 순서 지정 키(ordering key)를 선택하면, 선택한 압축 알고리즘(및 코덱)이 데이터를 더 효과적으로 압축할 수 있습니다.
 
@@ -189,7 +219,15 @@ BigQuery를 사용해 보았다면, 대규모 데이터베이스의 성능과 �
 
 ClickHouse에서는 테이블을 처음 정의할 때 [`PARTITION BY`](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 절로 파티셔닝을 지정합니다. 이 절에는 하나 이상의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 각 행이 어느 파티션으로 전송될지가 결정됩니다.
 
-<Image img="/images/migrations/bigquery-6.webp" size="md" alt="파티션" />
+<div className="ch-image-md">
+
+<Frame>
+
+![파티션](/images/migrations/bigquery-6.webp)
+
+</Frame>
+
+</div>
 
 데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며, 각각 독립적으로 쿼리할 수 있습니다. 아래 예시에서는 [`toYear(CreationDate)`](/ko/reference/functions/regular-functions/date-time-functions#toYear) 표현식을 사용해 `posts` 테이블을 연도별로 파티셔닝합니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되며, 이후 각 행은 해당 파티션에 속하는 새로운 데이터 파트 형태로 결과 파티션에 배치됩니다.
 
@@ -405,7 +443,15 @@ WHERE UserId = 8592047
 또한 쿼리를 단일 테이블로만 보내면 되며, 가능한 경우 프로젝션이 활용되어 응답
 시간을 단축할 수 있습니다.
 
-<Image img="/images/migrations/bigquery-7.webp" size="md" alt="프로젝션" />
+<div className="ch-image-md">
+
+<Frame>
+
+![프로젝션](/images/migrations/bigquery-7.webp)
+
+</Frame>
+
+</div>
 
 이는 materialized view와 대조적입니다. materialized view에서는 필터에 따라
 적절히 최적화된 대상 테이블을 선택하거나 쿼리를 재작성해야 합니다.
@@ -431,7 +477,15 @@ WHERE UserId = 8592047
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="BigQuery 쿼리 재작성하기" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![BigQuery 쿼리 재작성하기](/images/migrations/bigquery-8.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 
@@ -466,7 +520,15 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
-<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![BigQuery 1](/images/migrations/bigquery-9.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 
@@ -502,9 +564,25 @@ Peak memory usage: 567.41 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="집계 함수 1" />
+<div className="ch-image-sm">
 
-<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="집계 함수 2" />
+<Frame>
+
+![집계 함수 1](/images/migrations/bigquery-10.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-sm">
+
+<Frame>
+
+![집계 함수 2](/images/migrations/bigquery-11.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 
@@ -560,7 +638,15 @@ Peak memory usage: 377.26 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="조건식과 배열" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![조건식과 배열](/images/migrations/bigquery-12.webp)
+
+</Frame>
+
+</div>
 
 *ClickHouse*
 
