@@ -2,7 +2,7 @@
 -- - no-parallel - global failpoint `prepared_sets_build_ordered_set_inplace_fail`
 -- - no-fasttest - tests that run alone are kept out of the fast test
 
--- An `IN` subquery over a sealed view (`SQL SECURITY DEFINER` with a `WHERE`) whose body is a `JOIN`.
+-- An `IN` subquery over a sealed view (`SQL SECURITY NONE` with a `WHERE`) whose body is a `JOIN`.
 -- The view's plan is optimized in advance inside `ReadFromSealedViewStep`, so the source plan that
 -- `FutureSetFromSubquery::buildOrderedSetInplace` clones already holds a physical `JoinStep`: this is
 -- the path where `JoinStep::clone` is reached from SQL.
@@ -27,7 +27,9 @@ CREATE TABLE t_big_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_gr
 INSERT INTO t_big_sv SELECT number FROM numbers(1000);
 
 -- The `WHERE` makes the view sealed, so it is read through `ReadFromSealedView`. It keeps [0, 10).
-CREATE VIEW v_sealed_join DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
+-- Not `SQL SECURITY DEFINER` with `DEFINER = CURRENT_USER`: a view queried by its own definer is read
+-- transparently, and its source plan would hold a `JoinStepLogical` instead of a physical `JoinStep`.
+CREATE VIEW v_sealed_join SQL SECURITY NONE AS
     SELECT s.k AS k FROM t_small_sv AS s INNER JOIN t_big_sv AS b ON s.k = b.k WHERE s.k < 10;
 
 SET use_index_for_in_with_subqueries = 1;
