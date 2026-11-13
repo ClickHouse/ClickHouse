@@ -1,0 +1,4 @@
+stored type:	DateTime(\'UTC\')
+join rows:	100000
+join estimate:	estimated 100.00 thousand
+join estimate, filter:	estimated 100.00 thousand
