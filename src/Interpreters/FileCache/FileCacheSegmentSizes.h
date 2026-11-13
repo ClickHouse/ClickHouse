@@ -21,6 +21,7 @@ public:
     struct Class
     {
         UInt8 bucket = 0;
+        /// Large segments have size bigger than `boundary_alignment`
         bool large = false;
     };
 

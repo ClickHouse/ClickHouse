@@ -40,6 +40,7 @@ FileCacheEfficiency::Window FileCacheEfficiency::windowNow() const
 {
     if (!window_sec)
         return 0;
+    /// Signed: the testing shift can be negative.
     const Int64 elapsed_ms = static_cast<Int64>(watch.elapsedMilliseconds()) + time_shift_for_testing_ms.load();
     return static_cast<Window>(static_cast<UInt64>(std::max<Int64>(elapsed_ms, 0)) / (window_sec * 1000));
 }
@@ -63,6 +64,11 @@ void FileCacheEfficiency::rotateIfNeeded(Window now_window)
         return;
 
     std::lock_guard lock(rotation_mutex);
+    rotateLocked(now_window);
+}
+
+void FileCacheEfficiency::rotateLocked(Window now_window)
+{
     const Window old_window = window.load(std::memory_order_relaxed);
     if (now_window <= old_window)
         return;
@@ -123,8 +129,9 @@ FileCacheEfficiency::Snapshot FileCacheEfficiency::getSnapshot()
 {
     if (!window_sec)
         return {};
-    rotateIfNeeded(windowNow());
+    const Window now_window = windowNow();
     std::lock_guard lock(rotation_mutex);
+    rotateLocked(now_window);
     return snapshot;
 }
 

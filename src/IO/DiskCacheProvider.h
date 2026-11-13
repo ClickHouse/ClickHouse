@@ -71,8 +71,8 @@ public:
 
 private:
     bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);
-    /// Marks `range` (object-local) as cache hits, except `own_fill`.
-    void markReadExceptOwnFill(ByteRange range);
+    /// Marks `range` (object-local) as read from the cache, except `own_fill`: filling the cache is not a read from it.
+    void markReadFromCache(ByteRange range);
 
     /// Our holder always carries exactly one segment (see the constructor); assert it on each access.
     FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }

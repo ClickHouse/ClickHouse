@@ -327,11 +327,11 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     /// unthrottled, unanchored).
     const auto read_range = readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr);
-    markReadExceptOwnFill(read_range);
+    markReadFromCache(read_range);
     return result;
 }
 
-void DiskCacheWriter::markReadExceptOwnFill(ByteRange range)
+void DiskCacheWriter::markReadFromCache(ByteRange range)
 {
     const auto [before, after] = range.subtract(own_fill);
     segment().markRead(before.offset, before.size);

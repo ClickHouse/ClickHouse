@@ -303,6 +303,7 @@ private:
     void addReservedSize(Int64 delta);
 
     void onLoadedIntoCache();
+    /// Only the last holder removes a file segment, so nothing counts it after this.
     void onRemovedFromCache(const FileSegmentGuard::Lock &);
     /// Moves the file segment to the size class of its new range.
     void onRangeShrunk(size_t old_range_size);
@@ -399,8 +400,6 @@ private:
     std::atomic_flag increasing_priority;
     /// A leaf lock for the fields below: only the rotation mutex of `FileCacheEfficiency` is taken under it.
     mutable ByteMutex efficiency_mutex;
-    /// Not `download_state`: that changes later and under the segment lock, which `markRead` does not take.
-    bool removed_from_cache TSA_GUARDED_BY(efficiency_mutex) = false;
     /// Whether `reserved_size` is counted in `FileCacheSegmentSizes`.
     bool counted_in_segment_sizes TSA_GUARDED_BY(efficiency_mutex) = false;
     FileCacheSegmentSizes::Class size_class TSA_GUARDED_BY(efficiency_mutex);

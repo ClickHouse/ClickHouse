@@ -89,6 +89,8 @@ public:
 private:
     /// Lazy: the first call after the window ends freezes it. The asynchronous metrics bound the lag.
     void rotateIfNeeded(Window now_window);
+    /// `rotateIfNeeded` without its lock-free check.
+    void rotateLocked(Window now_window) TSA_REQUIRES(rotation_mutex);
 
     struct WindowStats
     {
@@ -105,6 +107,7 @@ private:
     std::atomic<Int64> time_shift_for_testing_ms = 0;
 
     std::atomic<Window> window = 0;
+    /// `stats` counts all file segments, `large_stats` only the large ones (range > `boundary_alignment`).
     WindowStats stats;
     WindowStats large_stats;
 
