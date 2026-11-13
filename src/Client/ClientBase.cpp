@@ -2189,6 +2189,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             onProfileEvents(packet.block);
             return true;
 
+        case Protocol::Server::ProfileTraces:
+            onProfileTraces(packet.block);
+            return true;
+
         case Protocol::Server::TimezoneUpdate:
             onTimezoneUpdate(packet.server_timezone);
             return true;
@@ -2288,6 +2292,26 @@ void ClientBase::onEndOfStream()
     }
 }
 
+
+void ClientBase::onProfileTraces(const Block & block)
+{
+    if (!block.rows() || !getClientConfiguration().getBool("print-profile-traces", false))
+        return;
+
+    initLogsOutputStream();
+    if (need_render_progress && tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.clearProgressOutput(*tty_buf, lock);
+    }
+    if (need_render_progress_table && tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
+    logs_out_stream->writeProfileTraces(block);
+    logs_out_stream->flush();
+}
 
 void ClientBase::onProfileEvents(Block & block)
 {
@@ -2523,6 +2547,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 columns_description = ColumnsDescription::parse(packet.columns_description);
                 return receiveSampleBlock(out, columns_description, parsed_query, wait_for_timezone_update);
 
+            case Protocol::Server::ProfileTraces:
+                onProfileTraces(packet.block);
+                break;
+
             case Protocol::Server::TimezoneUpdate:
                 onTimezoneUpdate(packet.server_timezone);
                 if (received_sample)
@@ -2542,7 +2570,7 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
+                    "Unexpected packet from server (expected Data, Exception, Log, ProfileTraces, TableColumns, TimezoneUpdate, "
                     "Progress or ProfileEvents, got {})",
                     Protocol::Server::toString(packet.type));
         }
@@ -2998,6 +3026,7 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 
     while (packet_type && (*packet_type == Protocol::Server::Log
             || *packet_type == Protocol::Server::ProfileEvents
+            || *packet_type == Protocol::Server::ProfileTraces
             || *packet_type == Protocol::Server::TimezoneUpdate
             || *packet_type == Protocol::Server::Data
             || *packet_type == Protocol::Server::Totals
@@ -3059,13 +3088,17 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
                 onProfileEvents(packet.block);
                 break;
 
+            case Protocol::Server::ProfileTraces:
+                onProfileTraces(packet.block);
+                break;
+
             case Protocol::Server::TimezoneUpdate:
                 onTimezoneUpdate(packet.server_timezone);
                 break;
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, Data, Totals, Extremes or ProfileInfo. Got {})",
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, ProfileTraces, Data, Totals, Extremes or ProfileInfo. Got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -4520,6 +4553,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                 case Protocol::Server::ProfileInfo:
                 case Protocol::Server::Log:
                 case Protocol::Server::ProfileEvents:
+                case Protocol::Server::ProfileTraces:
                 case Protocol::Server::TimezoneUpdate:
                     /// Ignore these packet types
                     break;
@@ -4593,6 +4627,7 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
             case Protocol::Server::ProfileEvents:
+            case Protocol::Server::ProfileTraces:
             case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
             case Protocol::Server::Log:
@@ -4847,6 +4882,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("stacktrace", "Print stack traces of exceptions")
         ("hardware-utilization", "Print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
+        ("print-profile-traces", "Print ProfileTraces packets as JSONEachRow to the server log output (requires send_profile_traces)")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
         ("processed-rows", "Print the number of locally processed rows")
 
@@ -4946,6 +4982,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("stacktrace", true);
     if (options.contains("print-profile-events"))
         getClientConfiguration().setBool("print-profile-events", true);
+    if (options.contains("print-profile-traces"))
+        getClientConfiguration().setBool("print-profile-traces", true);
     if (options.contains("profile-events-delay-ms") && !options["profile-events-delay-ms"].defaulted())
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.contains("chime") && !options["chime"].defaulted())
@@ -5126,23 +5164,25 @@ void ClientBase::validateClientConfiguration()
     /// would otherwise throw only after the query has started. The empty form
     /// (`<print-profile-events/>`) idiomatically means "enabled", but `Poco` cannot parse an
     /// empty string as a boolean, so normalize it here.
-    if (config.has("print-profile-events"))
+    for (const auto * key : {"print-profile-events", "print-profile-traces"})
     {
-        if (config.getString("print-profile-events").empty())
+        if (!config.has(key))
+            continue;
+        if (config.getString(key).empty())
         {
-            config.setBool("print-profile-events", true);
+            config.setBool(key, true);
         }
         else
         {
             try
             {
-                config.getBool("print-profile-events");
+                config.getBool(key);
             }
             catch (const Poco::Exception &)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid value '{}' for the 'print-profile-events' configuration key: expected a boolean",
-                    config.getString("print-profile-events"));
+                    "Invalid value '{}' for the '{}' configuration key: expected a boolean",
+                    config.getString(key), key);
             }
         }
     }

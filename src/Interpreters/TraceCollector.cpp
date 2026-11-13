@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/ProfileTraces.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
@@ -49,12 +51,15 @@ std::string formatTrace(const std::vector<UInt64> & trace)
     return result;
 }
 
-/// The first byte of a pipe message: 0 for a trace (`TraceSender::send`), 1 to stop the collector, 2 for a `flush` marker.
+/// The first byte of a pipe message: 0 for a trace (`TraceSender::send`), 1 to stop the collector, 2 for a `flush` marker,
+/// 3 for a `TraceSender::flushProfileTraces` marker followed by the subscription id.
 constexpr char FLUSH_MARKER = 2;
+constexpr char PROFILE_TRACES_FLUSH_MARKER = 3;
 
 }
 
 TraceCollector::TraceCollector()
+    : profile_traces_registry(InternalProfileTracesQueue::getRegistry())
 {
     /// The budget belongs to this collector's lifetime: a trace can only be delivered while one
     /// exists, and the server constructs exactly one, before any threshold can be published.
@@ -164,7 +169,7 @@ void TraceCollector::run()
 
     DB::setThreadName(ThreadName::TRACE_COLLECTOR);
 
-    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+    ProfileTracesBlocker untrack_lock;
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 
     try
@@ -180,8 +185,16 @@ void TraceCollector::run()
                 TraceSender::flush_cv.notify_all();
                 continue;
             }
-            if (message_type)
+            if (message_type == 1)
                 break;
+
+            UInt64 profile_traces_id = 0;
+            readPODBinary(profile_traces_id, in);
+            if (message_type == PROFILE_TRACES_FLUSH_MARKER)
+            {
+                InternalProfileTracesQueue::acknowledgeFlush(profile_traces_registry, profile_traces_id);
+                continue;
+            }
 
             std::string query_id;
             UInt8 query_id_size = 0;
@@ -206,7 +219,7 @@ void TraceCollector::run()
             TraceType trace_type = {};
             readPODBinary(trace_type, in);
 
-            UInt64 cpu_id = 0;
+            Int32 cpu_id = 0;
             readPODBinary(cpu_id, in);
 
             UInt64 thread_id = 0;
@@ -231,6 +244,15 @@ void TraceCollector::run()
 
             ProfileEvents::Count increment = 0;
             readPODBinary(increment, in);
+
+            if (profile_traces_id)
+            {
+                struct timespec ts{};
+                clock_gettime(CLOCK_REALTIME, &ts); /// NOLINT(cert-err33-c)
+                UInt64 timestamp_us = static_cast<UInt64>(ts.tv_sec) * 1000000 + ts.tv_nsec / 1000;
+                InternalProfileTracesQueue::collect(
+                    profile_traces_registry, profile_traces_id, trace_type, thread_id, timestamp_us, trace, size);
+            }
 
             /// Mirrored to the log before the trace_log insert below, because a server whose global
             /// tracker has run away fails every system-log flush while still writing its log file,
@@ -268,7 +290,7 @@ void TraceCollector::run()
                         .event_time_microseconds = time_in_microseconds,
                         .timestamp_ns = timestamp_ns,
                         .trace_type = trace_type,
-                        .cpu_id = cpu_id,
+                        .cpu_id = static_cast<UInt64>(cpu_id),
                         .thread_id = thread_id,
                         .thread_name = static_cast<ThreadName>(thread_name_id),
                         .query_id = query_id,

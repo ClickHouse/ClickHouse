@@ -6,6 +6,7 @@
 #include <string_view>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -62,6 +63,8 @@
 #include <Common/quoteString.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -117,6 +120,7 @@ namespace Setting
     extern const SettingsBool run_query_in_background;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsBool send_profile_events;
+    extern const SettingsBool send_profile_traces;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsSeconds send_timeout;
     extern const SettingsTimezone session_timezone;
@@ -715,6 +719,8 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
             }
 
+            updateProfileTracesQueue(*query_state);
+
             if (!is_interserver_mode)
                 session->checkIfUserIsStillValid();
 
@@ -774,6 +780,10 @@ void TCPHandler::runImpl()
                     checkIfQueryCanceled(*query_state);
 
                     query_state->need_receive_data_for_input = true;
+                    query_state->read_all_data = false;
+
+                    /// The client constructs its input formatter as soon as it receives the schema.
+                    sendTimezone(*query_state);
 
                     /// Send ColumnsDescription for input storage.
                     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
@@ -785,11 +795,7 @@ void TCPHandler::runImpl()
                     /// Send block to the client - input storage structure.
                     query_state->input_header = header;
                     sendData(*query_state, query_state->input_header);
-                    sendTimezone(*query_state);
                     out->sync();
-
-                    /// Update flag after reading external tables
-                    query_state->read_all_data = false;
                 });
 
                 query_state->query_context->setInputBlocksReaderCallback([this, &query_state] (ContextPtr context) -> Block
@@ -1020,7 +1026,13 @@ void TCPHandler::runImpl()
             SCOPE_EXIT(connection_handle.setIdle());
 
             /// Processing Query
-            std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
+            std::tie(query_state->parsed_query, query_state->io) = executeQuery(
+                query_state->query, query_state->query_context, QueryFlags{}, query_state->stage, nullptr,
+                [this, &query_state]
+                {
+                    updateProfileTracesQueue(*query_state);
+                });
+            updateProfileTracesQueue(*query_state);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -1281,11 +1293,15 @@ void TCPHandler::runImpl()
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 {
+                    cancelProfileTracesQueue(*query_state);
                     sendEndOfStream(*query_state);
                     out->sync();
                 }
                 else
+                {
+                    sendPendingProfileTraces(*query_state, true);
                     sendException(*exception, send_exception_with_stack_trace);
+                }
             }
             catch (...)
             {
@@ -1549,6 +1565,9 @@ void TCPHandler::startInsertQuery(QueryState & state)
 {
     std::lock_guard lock(*callback_mutex);
 
+    /// The client may start uploading as soon as the schema reaches it.
+    state.read_all_data = false;
+
     /// Send ColumnsDescription for insertion table
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
@@ -1563,9 +1582,6 @@ void TCPHandler::startInsertQuery(QueryState & state)
     sendData(state, state.io.pipeline.getHeader());
     sendLogs(state);
     out->sync();
-
-    /// Update flag after reading external tables
-    state.read_all_data = false;
 }
 
 
@@ -2107,6 +2123,8 @@ void TCPHandler::sendProfileEvents(QueryState & state)
 
 void TCPHandler::sendSelectProfileEvents(QueryState & state)
 {
+    sendPendingProfileTraces(state);
+
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
 
@@ -2116,18 +2134,137 @@ void TCPHandler::sendSelectProfileEvents(QueryState & state)
 
 void TCPHandler::sendInsertProfileEvents(QueryState & state, bool final_report)
 {
-    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
-        return;
     /// The initiator of a distributed `INSERT` (`RemoteInserter`) does not read the packets of the remote
     /// server while it sends the data, so the periodic reports could fill the socket buffers on both sides
     /// and deadlock. But it waits for the end of the query after sending all the data, and charges the
     /// final report to the quotas over profile events of the initiating user.
     /// Older initiators do not expect even the final report and fail on it.
+    /// Remote insert uploads also disable trace delivery for the same reason.
     if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY
         && (!final_report || client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT))
         return;
 
+    sendPendingProfileTraces(state);
+
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
+        return;
+
     sendProfileEvents(state);
+}
+
+void TCPHandler::cancelProfileTracesQueue(QueryState & state)
+{
+    if (!state.profile_traces_queue)
+        return;
+
+    state.profile_traces_queue->cancel();
+    CurrentThread::attachInternalProfileTracesQueue(nullptr);
+    state.profile_traces_queue.reset();
+}
+
+void TCPHandler::updateProfileTracesQueue(QueryState & state) const
+{
+    const bool enabled = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_PROFILE_TRACES
+        && state.query_context->getSettingsRef()[Setting::send_profile_traces];
+    /// SQL `SETTINGS` can revoke the access an existing subscription was created with,
+    /// for example by `allow_introspection_functions = 0`. Drop the queued samples and fail.
+    if (enabled && state.profile_traces_queue && !state.query_context->getAccess()->isGranted(AccessType::addressToSymbol))
+        cancelProfileTracesQueue(state);
+    if (enabled && !state.profile_traces_queue)
+    {
+        state.profile_traces_queue = InternalProfileTracesQueue::create(state.query_context);
+        CurrentThread::attachInternalProfileTracesQueue(state.profile_traces_queue);
+    }
+    else if (!enabled && state.profile_traces_queue)
+    {
+        cancelProfileTracesQueue(state);
+    }
+}
+
+void TCPHandler::sendPendingProfileTraces(QueryState & state, bool finish)
+{
+    if (!state.profile_traces_queue)
+        return;
+
+    if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
+    {
+        cancelProfileTracesQueue(state);
+        return;
+    }
+
+    /// Reading replies between upload blocks does not prevent opposing socket writes from blocking.
+    /// Keep samples in the bounded queue until the current input terminator has been received.
+    if (!state.read_all_data)
+    {
+        /// An early exception or detached completion must reach the client before `skipData`.
+        /// Neither a trace batch nor a loss-status packet is safe to send in this phase.
+        if (finish)
+            cancelProfileTracesQueue(state);
+        return;
+    }
+
+    if (!finish && state.after_send_profile_traces.elapsedMicroseconds()
+        < state.query_context->getSettingsRef()[Setting::interactive_delay])
+        return;
+
+    bool first_block = true;
+    do
+    {
+        Block block;
+        {
+            ProfileTracesBlocker blocker;
+            if (finish && first_block)
+                state.profile_traces_queue->finish();
+            block = state.profile_traces_queue->getBlock();
+            if (!block.rows())
+            {
+                block = {};
+                return;
+            }
+        }
+
+        /// Destroy trace buffers under suppression, including when either socket flush throws.
+        SCOPE_EXIT({
+            ProfileTracesBlocker blocker;
+            block = {};
+        });
+
+        /// Keep pending ordinary query output visible to the profiler. Only flush it early
+        /// when a trace batch is ready, so empty or throttled queues add no flushes.
+        if (first_block)
+            out->sync();
+
+        {
+            /// Writing to the socket may wait for a slow client, so only the lighter guard spans it.
+            ProfileTracesStreamBlocker blocker;
+            sendProfileTraces(state, block);
+        }
+        first_block = false;
+    }
+    while (finish);
+}
+
+void TCPHandler::sendProfileTraces(QueryState & state, const Block & block)
+{
+    /// The caller's guard also covers the function entry, socket flush and return.
+    chassert(ProfileTracesStreamBlocker::isBlocked());
+
+    if (!state.profile_traces_block_out)
+    {
+        initMaybeCompressedOut(state);
+        state.profile_traces_block_out = std::make_unique<NativeWriter>(
+            *state.maybe_compressed_out, client_tcp_protocol_version,
+            std::make_shared<const Block>(block.cloneEmpty()), getNativeWireFormatSettings(state.query_context));
+    }
+
+    writeVarUInt(Protocol::Server::ProfileTraces, *out);
+    writeStringBinary("", *out);
+    state.profile_traces_block_out->write(block);
+    if (state.maybe_compressed_out != out)
+        state.profile_traces_block_out->flush();
+    out->finishChunk();
+    out->sync();
+    state.after_send_profile_traces.restart();
 }
 
 
@@ -3571,6 +3708,8 @@ void TCPHandler::trySendExceptionWithoutConnectionBuffers(const Exception & e)
 
 void TCPHandler::sendEndOfStream(QueryState & state)
 {
+    sendPendingProfileTraces(state, true);
+
     state.sent_all_data = true;
     state.io.setAllDataSent();
 

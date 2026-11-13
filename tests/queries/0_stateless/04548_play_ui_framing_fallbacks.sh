@@ -282,7 +282,7 @@ echo "$page" | grep -q -F 'persistPinnedColumns(this._ownerCell);' && echo 'pins
 # target of the page and is allowed, which is what text cells document.
 echo "$page" | grep -q -F "if (scheme) return /^(https?|mailto)\$/i.test(scheme[1]) ? trimmed : '';" && echo 'markdown schemes restricted: OK'
 echo "$page" | grep -q -F "if (probe.startsWith('//')) return '';" && echo 'protocol-relative markdown URLs rejected: OK'
-echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' && echo 'toggles replayed per tab: OK'
+echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable, flameAvailable)' && echo 'toggles replayed per tab: OK'
 # The realtime resource meters are cell-owned too: CPU counters in `profile_events` packets are
 # per-packet increments, so a backgrounded cell's batches keep accumulating on the cell
 # (`accumulateResourceEvents`) instead of being dropped, and `syncActiveTabChrome` re-adopts the
