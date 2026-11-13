@@ -52,6 +52,7 @@
 #include <base/scope_guard.h>
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -114,6 +115,12 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int USER_EXPIRED;
     extern const int ACCESS_ENTITY_NOT_FOUND;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char storage_buffer_fail_capturing_flush_identity[];
 }
 
 /// Access identity captured from the context that initiated an INSERT into a Buffer. A buffered block is
@@ -1512,10 +1519,27 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_rows);
     CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_bytes);
 
+    /// The block is out of `buffer.data` now: put it back on any exit unless it was delivered or deliberately
+    /// discarded, so that no failure from here on (preparing the flush, writing, classifying a failure) loses an
+    /// accepted batch. Nothing above may throw.
+    bool block_settled = false;
+    SCOPE_EXIT(
+    {
+        if (!block_settled)
+        {
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+            buffer.data.swap(block_to_write);
+            if (!buffer.first_write_time)
+                buffer.first_write_time = current_time;
+        }
+    });
+
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
     if (!destination_id)
     {
+        block_settled = true;
         total_writes.rows -= block_rows;
         total_writes.bytes -= block_allocated_bytes_delta;
 
@@ -1537,26 +1561,18 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     /// records of rebuilding its access (its name, roles and grants are logged at trace level) or of the write, nor the
     /// exception, which is replaced below.
     const auto triggering_context = CurrentThread::tryGetQueryContext();
-    const bool flushed_for_other_identity = flushed_under_user_identity && triggering_context
-        && !buffer.write_identity->hasSameAccess(*captureWriteIdentity(triggering_context));
+    bool flushed_for_other_identity = false;
+    if (flushed_under_user_identity && triggering_context)
+    {
+        fiu_do_on(FailPoints::storage_buffer_fail_capturing_flush_identity,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while capturing the identity that triggered a flush");
+        });
+        flushed_for_other_identity = !buffer.write_identity->hasSameAccess(*captureWriteIdentity(triggering_context));
+    }
     std::optional<CurrentThread::HideLogsFromClientScope> hide_logs_from_client;
     if (flushed_for_other_identity)
         hide_logs_from_client.emplace();
-
-    /// The block is out of `buffer.data` now: put it back on any exit unless it was delivered or deliberately
-    /// discarded, so that no failure, including one while classifying a failure, loses an accepted batch.
-    bool block_settled = false;
-    SCOPE_EXIT(
-    {
-        if (!block_settled)
-        {
-            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
-            buffer.data.swap(block_to_write);
-            if (!buffer.first_write_time)
-                buffer.first_write_time = current_time;
-        }
-    });
 
     Stopwatch watch;
     /// Set once writeBlockToDestination has restored the captured identity, to classify a failure below: before
