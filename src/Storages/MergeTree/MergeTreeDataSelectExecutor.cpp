@@ -2593,6 +2593,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    /// It is released after `index_columns`, because its columns must not be held longer, see `makeIndex`.
+    const auto index = part.getIndexPtr();
     /// The columns are unnamed, because `KeyCondition` names the function results it caches in this block.
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
 
@@ -2600,7 +2602,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const KeyOrder & key_order = key_condition.getKeyOrder();
     chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
-    const auto index = part.getIndexPtr();
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 

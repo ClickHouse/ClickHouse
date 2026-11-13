@@ -151,6 +151,12 @@ public:
         return cells.contains(key);
     }
 
+    bool contains(const Key & key, const Mapped * mapped) const override
+    {
+        auto it = cells.find(key);
+        return it != cells.end() && it->second.value.get() == mapped;
+    }
+
     void set(const Key & key, const MappedPtr & mapped) override
     {
         const size_t old_size_in_bytes = current_size_in_bytes;

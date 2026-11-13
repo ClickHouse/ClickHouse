@@ -354,3 +354,25 @@ TEST(SLRUCache, noOnRemoveEntryCallback)
     value = slru_cache.get("key1");
     ASSERT_TRUE(value == nullptr);
 }
+
+TEST(SLRUCache, containsValue)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    auto cache = SimpleCacheBase("SLRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 0, /*size_ratio*/ 0.5);
+
+    const auto value = std::make_shared<int>(1);
+    const auto other = std::make_shared<int>(1);
+
+    cache.set(1, value);
+    EXPECT_EQ(cache.containsMany({1, 1, 2}, {value.get(), other.get(), value.get()}), std::vector<bool>({true, false, false}));
+
+    /// The same key with another value.
+    cache.remove(1);
+    EXPECT_EQ(cache.containsMany({1}, {value.get()}), std::vector<bool>({false}));
+    cache.set(1, other);
+    EXPECT_EQ(cache.containsMany({1, 1, 2}, {value.get(), other.get(), value.get()}), std::vector<bool>({false, true, false}));
+
+    /// Also if it is protected.
+    ASSERT_EQ(cache.get(1), other);
+    EXPECT_EQ(cache.containsMany({1, 1, 2}, {value.get(), other.get(), value.get()}), std::vector<bool>({false, true, false}));
+}

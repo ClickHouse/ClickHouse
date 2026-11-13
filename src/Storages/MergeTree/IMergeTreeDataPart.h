@@ -533,9 +533,15 @@ public:
     /// It doesn't check cache
     IndexPtr tryGetIndex() const;
 
+    UInt128 getIndexCacheKey() const;
+
+    /// Returns true if the part keeps this index itself. Can also return false if another thread uses the index of the part now.
+    bool keepsIndex(const IndexPtr & index_) const;
+
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
-    void setIndex(Columns index_columns);
+    /// `is_accounted` means that the columns are accounted as memory usage of the query.
+    void setIndex(Columns index_columns, bool is_accounted = false);
     void unloadIndex();
     bool isIndexLoaded() const;
 

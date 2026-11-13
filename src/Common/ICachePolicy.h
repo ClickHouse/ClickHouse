@@ -57,6 +57,9 @@ public:
     /// Not allowed to allocate memory (see PageCache::contains).
     virtual bool contains(const Key & key) const = 0;
 
+    /// Returns true if the key is in the cache, and its value is this very object. Doesn't consider it an "access" either.
+    virtual bool contains(const Key & key, const Mapped * mapped) const = 0;
+
     virtual void set(const Key & key, const MappedPtr & mapped) = 0;
 
     virtual void remove(const Key & key) = 0;

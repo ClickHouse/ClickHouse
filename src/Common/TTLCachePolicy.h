@@ -198,6 +198,12 @@ public:
         return cache.count(key) != 0;
     }
 
+    bool contains(const Key & key, const Mapped * mapped) const override
+    {
+        auto it = cache.find(key);
+        return it != cache.end() && it->second.get() == mapped;
+    }
+
     std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         auto it = cache.find(key);
