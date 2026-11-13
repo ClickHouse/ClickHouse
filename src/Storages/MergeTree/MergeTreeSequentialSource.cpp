@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
@@ -24,6 +25,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/FailPoint.h>
 #include <Common/ThrottlerArray.h>
+#include <Common/typeid_cast.h>
 #include <base/sleep.h>
 
 namespace DB
@@ -31,12 +33,14 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
 {
     extern const char merge_tree_sequential_source_sleep_before_read[];
+    extern const char merge_tree_sequential_source_throw_in_constructor[];
 }
 
 namespace Setting
@@ -69,7 +73,6 @@ public:
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
-        bool prefetch_begin_of_range,
         bool allow_remote_fs_prefetch);
 
     ~MergeTreeSequentialSource() override;
@@ -77,6 +80,8 @@ public:
     String getName() const override { return "MergeTreeSequentialSource"; }
 
     size_t getCurrentMark() const { return current_mark; }
+
+    void prefetchBeginOfRange();
 
 protected:
     Chunk generate() override;
@@ -119,7 +124,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
-    bool prefetch_begin_of_range,
     bool allow_remote_fs_prefetch)
     : ISource(std::move(result_header))
     , storage(storage_)
@@ -223,9 +227,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (!readers.prewhere.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sequential source doesn't support PREWHERE");
 
-    if (prefetch_begin_of_range && !data_part->isEmpty())
-        readers.main->prefetchBeginOfRange(Priority{});
-
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
 
     MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
@@ -235,6 +236,19 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (!mark_ranges.empty())
         current_mark = mark_ranges.front().begin;
     updateRowsToRead(current_mark);
+
+    /// Used in tests to fail building a pipeline that reads several parts after its first source was created.
+    fiu_do_on(FailPoints::merge_tree_sequential_source_throw_in_constructor,
+    {
+        if (read_task_info->part_index_in_query > 0)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in the constructor of the source of part {}", data_part->name);
+    });
+}
+
+void MergeTreeSequentialSource::prefetchBeginOfRange()
+{
+    if (!read_task_info->data_part_info->getDataPart()->isEmpty())
+        readers.main->prefetchBeginOfRange(Priority{});
 }
 
 void MergeTreeSequentialSource::updateRowsToRead(size_t mark_number)
@@ -337,7 +351,7 @@ try
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (!isRetryableException(std::current_exception()))
+    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
         read_task_info->data_part_info->reportBroken();
     throw;
 }
@@ -367,7 +381,6 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch_begin_of_range,
     bool allow_remote_fs_prefetch)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
@@ -428,7 +441,6 @@ Pipe createMergeTreeSequentialSource(
         std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
-        prefetch_begin_of_range,
         allow_remote_fs_prefetch);
 
     Pipe pipe(std::move(column_part_source));
@@ -466,7 +478,6 @@ public:
         bool apply_deleted_mask_,
         std::optional<ActionsDAG> filter_,
         bool read_with_direct_io_,
-        bool prefetch_begin_of_range_,
         bool allow_remote_fs_prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
@@ -482,7 +493,6 @@ public:
         , apply_deleted_mask(apply_deleted_mask_)
         , filter(std::move(filter_))
         , read_with_direct_io(read_with_direct_io_)
-        , prefetch_begin_of_range(prefetch_begin_of_range_)
         , allow_remote_fs_prefetch(allow_remote_fs_prefetch_)
         , context(std::move(context_))
         , log(log_)
@@ -533,7 +543,6 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            prefetch_begin_of_range,
             allow_remote_fs_prefetch);
 
         pipeline.init(Pipe(std::move(source)));
@@ -553,7 +562,6 @@ public:
             apply_deleted_mask,
             filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
             read_with_direct_io,
-            prefetch_begin_of_range,
             allow_remote_fs_prefetch,
             context,
             log);
@@ -571,7 +579,6 @@ private:
     const bool apply_deleted_mask;
     const std::optional<ActionsDAG> filter;
     const bool read_with_direct_io;
-    const bool prefetch_begin_of_range;
     const bool allow_remote_fs_prefetch;
     const ContextPtr context;
     const LoggerPtr log;
@@ -590,7 +597,6 @@ void createReadFromPartStep(
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
-    bool prefetch_begin_of_range,
     bool allow_remote_fs_prefetch,
     ContextPtr context,
     LoggerPtr log)
@@ -607,12 +613,18 @@ void createReadFromPartStep(
         apply_deleted_mask,
         std::move(filter),
         read_with_direct_io,
-        prefetch_begin_of_range,
         allow_remote_fs_prefetch,
         std::move(context),
         log);
 
     plan.addStep(std::move(reading));
+}
+
+void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline)
+{
+    for (const auto & processor : pipeline.getProcessors())
+        if (auto * source = typeid_cast<MergeTreeSequentialSource *>(processor.get()))
+            source->prefetchBeginOfRange();
 }
 
 bool canPrefetchInMergeOrMutation(

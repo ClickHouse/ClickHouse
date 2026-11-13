@@ -39,7 +39,9 @@ public:
     /// current_range_last_mark is the end mark of the contiguous mark range being read
     /// (<= the last mark of the current read task; equal to it when the task is one
     /// contiguous range). It bounds caching of deserialized columns, which must not
-    /// span the gaps between ranges of a multi-range task. 0 means unknown.
+    /// span the gaps between ranges of a multi-range task. 0 means unknown. A call with
+    /// `continue_reading == false` and the same `current_range_last_mark` seeks forward
+    /// within that range, after rows were skipped.
     /// `res_columns` are the columns the reader fills. `shared_columns`, of the same size, are the
     /// columns it shares with the columns cache instead, which must not be modified: for every
     /// position at most one of the two is set.

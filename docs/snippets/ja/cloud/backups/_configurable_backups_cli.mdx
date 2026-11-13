@@ -2,7 +2,7 @@
 title: 設定可能なバックアップ CLI
 ---
 
-このページでは、[ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) を使用して、コマンドラインから ClickHouse Cloud サービスのバックアップスケジュールを閲覧・変更する方法を説明します。コマンドは非対話型で、`--json` を指定すると `clickhousectl` は JSON を出力します。
+このページでは、[ClickHouse CLI](/ja/concepts/features/interfaces/cli) (`clickhousectl`) を使用して、コマンドラインから ClickHouse Cloud サービスのバックアップスケジュールを閲覧・変更する方法を説明します。任意で使用できる `--interactive` ログインを除き、コマンドは非対話型です。`clickhousectl` は `--json` を指定すると JSON を出力し、コーディングエージェントから実行された場合は自動的に JSON を出力します。
 
 設定可能なバックアップは、Scale および Enterprise プランで利用できます。
 
@@ -11,29 +11,30 @@ title: 設定可能なバックアップ CLI
 ClickHouse CLI をインストールします。
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-また、`jq` も必要です。
+このスクリプトは `~/.local/bin/clickhousectl` と、その別名である `chctl` をインストールします。`~/.local/bin` が `PATH` に含まれていることを確認してください。
 
-バックアップ設定の変更は書き込み操作であるため、[API キーによる認証](/ja/products/cloud/features/admin-features/api/openapi)が必要です。OAuth ログインは読み取り専用です:
+`jq` も必要です。
+
+バックアップ設定の変更は書き込み操作のため、[APIキー](/ja/products/cloud/features/admin-features/api/openapi)が必要です。ブラウザでのログイン (`clickhousectl cloud auth login`) では読み取り専用の権限しか得られません。APIキーを使用してログインしてください。`--interactive` を指定すると、キーとシークレットの入力を求めるプロンプトが表示されるため、シークレットがシェルの履歴に残りません。
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-または、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。`clickhousectl cloud auth status` を実行し、**active** な認証情報が scope `read/write` のものであることを確認してください。以前の `auth login` で保存された認証情報は環境変数よりも優先されます。その場合、`Env vars` の行に scope `read/write` と表示されていても非アクティブ (`Configured (inactive, outranked by credentials file)`) とマークされ、以下の書き込み系コマンドは保存済みの認証情報で実行されます。環境変数を使用したい場合は、先に `clickhousectl cloud auth logout` を実行してください。
+または、`--api-key` と `--api-secret` を指定するか、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。コーディングエージェントやスクリプトから利用する場合は、環境変数を使用してください。ログインするとキーが検証され、そのアイデンティティが表示されます。現在有効な認証情報は、`clickhousectl cloud auth whoami` でいつでも確認できます。以前に `auth login` で保存した認証情報は、環境変数よりも優先されます。`clickhousectl cloud auth status` で環境変数が無効と表示される場合は、保存済みの認証情報が使用されています。環境変数を使用するには、`clickhousectl cloud auth logout --api-keys` を実行してください。
 
 ## サービス ID を確認する {#find-the-service-id}
 
-Backup の設定はサービスごとに行います。サービス名から ID を検索します:
+バックアップ設定はサービスごとに行います。サービス名から ID を検索します:
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="<service-name>") | .id')
+CH_ID=$(clickhousectl cloud service get --name "<service-name>" --json | jq -r .id)
 ```
 
-複数の組織に所属している場合、組織を自動検出できないため、このコマンドは `Multiple organizations found. Specify --org-id to choose one.` というエラーで失敗します。`clickhousectl cloud org list` で所属する組織を一覧表示し、このコマンドおよび以降のすべての `backup-config` コマンドに `--org-id <org-id>` を指定してください。
+複数の組織に所属している場合、組織を自動検出できないため、このコマンドは ``Multiple organizations found. Specify --org-id or --org-name to choose one. Use `clickhousectl cloud org list` to see your organizations.`` というエラーで失敗します。`clickhousectl cloud org list` で所属する組織を一覧表示し、このコマンドおよび以降のすべての `backup-config` コマンドに `--org-id <org-id>`(または `--org-name <name>`)を指定してください。
 
 ## 現在のバックアップ設定を確認する {#read-the-current-backup-configuration}
 
@@ -54,7 +55,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## 保持期間と頻度の変更 {#change-retention-and-frequency}
 
-`backup-config update` は、コンソールのフォームと同じ設定 (保持期間 (`--backup-retention-period-hours`) 、頻度 (`--backup-period-hours`) 、開始時刻 (`--backup-start-time`) ) を受け取り、適用後の設定を出力します。省略したフラグの値は現在の設定のまま維持されます:
+`backup-config update` は、コンソールのフォームと同じ設定 (保持期間 (`--backup-retention-period-hours`) 、頻度 (`--backup-period-hours`) 、開始時刻 (`--backup-start-time`) ) を受け取り、適用後の設定を出力します。API で指定できる保持期間は 24～1080 時間で、日単位 (24 の倍数) で指定する必要があります。頻度は 6、8、12、16、20、24、36、48 時間のいずれかを指定できます。省略したフラグの値は現在の設定のまま維持されます:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -87,7 +88,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## バックアップ開始時刻を設定する {#set-a-backup-start-time}
 
-`--backup-start-time` は、UTC での 1 日の開始時刻を正時 (`HH:00`) で指定します。開始時刻を指定すると頻度に制約がかかり、バックアップの周期は `24` 時間または `48` 時間である必要があります。周期は同じコマンドで渡すか、あらかじめサービスに保存されていなければなりません。`clickhousectl 0.4.2` 以降では、フォーマットと周期のルールはいずれも API 呼び出しの前にクライアント側でチェックされます。正時でない時刻や、`2:00` のようにゼロ埋めされていない時刻は、引数パーサーに拒否され、終了コード `2` が返されます:
+`--backup-start-time` は、UTC での 1 日の開始時刻を正時 (`HH:00`) で指定します。開始時刻を指定すると頻度に制約がかかり、バックアップの周期は `24` 時間または `48` 時間である必要があります。周期は同じコマンドで渡すか、あらかじめサービスに保存されていなければなりません。clickhousectl は、更新を送信する前にフォーマットと周期のルールの両方をチェックします。正時でない時刻や、`2:00` のようにゼロ埋めされていない時刻は、引数パーサーに拒否され、終了コード `2` が返されます:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
@@ -103,7 +104,7 @@ error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': inva
 Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
 ```
 
-`--backup-period-hours` は省略できます。省略した場合、サービスは現在の period をそのまま維持しますが、その保存済みの period 自体が `24` または `48` である必要があります。デフォルトの schedule のままのサービスでは period が `24` のため、開始時刻の指定だけで十分です。上記のサービスは前の step で `12` に設定しているため、period を省略すると失敗します。`clickhousectl` はまず保存されている configuration を読み取り、終了コード `1` で拒否します。この場合も API は呼び出されません:
+`--backup-period-hours` は省略できます。省略した場合、サービスは現在の周期をそのまま維持しますが、その保存済みの周期自体が `24` または `48` である必要があります。デフォルトのスケジュールのままのサービスでは周期が `24` のため、開始時刻の指定だけで十分です。上記のサービスは前の step で `12` に設定しているため、周期を省略すると失敗します。`clickhousectl` はまず保存されている configuration を読み取り、終了コード `1` で拒否します。この場合も更新リクエストは送信されません:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json
@@ -113,7 +114,7 @@ clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03
 Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48. Pass --backup-period-hours 24 or --backup-period-hours 48 in the same call.
 ```
 
-period を明示的に指定するのが有効な組み合わせです。
+周期を明示的に指定するのが有効な組み合わせです。
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
