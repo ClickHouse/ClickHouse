@@ -1394,9 +1394,9 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->subBytes(data->allocated_size, data_allocated_bytes);
-                /// A set map references no block at all, and a count map none it reads, so every block is
-                /// dropped here even though its rows did take part in the join and must stay counted.
-                if (maps_kind != JoinMapsKind::Set && maps_kind != JoinMapsKind::Count)
+                /// A set map references no block at all, and a count map only the blocks with a row it outputs, so
+                /// blocks are dropped here even though their rows did take part in the join and must stay counted.
+                if (maps_kind != JoinMapsKind::Set && maps_kind != JoinMapsKind::Count && maps_kind != JoinMapsKind::CountWithRef)
                     data->rows_to_join.fetch_sub(rows, std::memory_order_relaxed);
                 /// Nothing was inserted, so no refs to this block exist; null the index entry so
                 /// that a stale ref trips the chassert in `StoredColumnsIndex::at` in debug builds
@@ -1639,9 +1639,10 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 class HashJoin::ContinuationResult final : public IJoinResult
 {
 public:
-    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_)
+    ContinuationResult(HashJoin & join_, JoinResultPtr current_result_, SetOperationProbeState * probe_state_)
         : join(join_)
         , current_result(std::move(current_result_))
+        , probe_state(probe_state_)
     {
     }
 
@@ -1654,7 +1655,7 @@ public:
             addMatchedRightRows(matched_right_rows, current_result->getMatchedRightRows());
 
             if (result.next_block)
-                current_result = join.runJoinDispatch(std::move(*result.next_block));
+                current_result = join.runJoinDispatch(std::move(*result.next_block), probe_state);
             else
                 current_result.reset();
         }
@@ -1670,10 +1671,26 @@ public:
 private:
     HashJoin & join;
     JoinResultPtr current_result;
+    SetOperationProbeState * probe_state;
     std::optional<size_t> matched_right_rows = 0;
 };
 
-JoinResultPtr HashJoin::joinBlock(Block block)
+SetOperationProbeState * HashJoin::getProbeState(JoinProbeContext context)
+{
+    if (!context.hasStream())
+        return nullptr;
+
+    std::call_once(init_probe_states_once, [&] { probe_states.resize(context.getNumStreams()); });
+    if (context.getNumStreams() != probe_states.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "HashJoin probe streams: {}, but the join was probed by {} streams",
+            context.getNumStreams(),
+            probe_states.size());
+    return &probe_states[context.getStream()];
+}
+
+JoinResultPtr HashJoin::joinBlock(Block block, JoinProbeContext context)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -1687,11 +1704,12 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    auto result = runJoinDispatch(ScatteredBlock(std::move(block)));
-    return std::make_unique<ContinuationResult>(*this, std::move(result));
+    auto * probe_state = getProbeState(context);
+    auto result = runJoinDispatch(ScatteredBlock(std::move(block)), probe_state);
+    return std::make_unique<ContinuationResult>(*this, std::move(result), probe_state);
 }
 
-JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
+JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block, SetOperationProbeState * probe_state)
 {
     std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
     maps_vector.reserve(table_join->getClauses().size());
@@ -1710,32 +1728,32 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
             if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /*is_join_get=*/false, probe_state);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /*is_join_get=*/false, probe_state);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /*is_join_get=*/false, probe_state);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsSet *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsSet>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /*is_join_get=*/false, probe_state);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsCount *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsCount>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /*is_join_get=*/false, probe_state);
             }
             else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsCountWithRef *>>)
             {
                 res = HashJoinMethods<kind_, strictness_, MapsCountWithRef>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_, /*is_join_get=*/false, probe_state);
             }
             else
             {

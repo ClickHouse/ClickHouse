@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
@@ -167,6 +169,8 @@ public:
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , enable_prefetch(join.enableSoftwarePrefetch())
+        , set_operation_bucket_locks(join.getJoinedData()->set_operation_bucket_locks.data())
+        , set_operation_pre_aggregation_skip_budget(&join.getJoinedData()->set_operation_pre_aggregation_skip_budget)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -264,12 +268,18 @@ public:
     size_t rows_to_add;
     bool need_filter = false;
     bool enable_prefetch = true;
+    /// What the probe streams of a count map share, and the state of this probe stream, if the caller passed one.
+    HashJoin::RightTableData::SetOperationBucketLock * set_operation_bucket_locks = nullptr;
+    RowsSkipBudget * set_operation_pre_aggregation_skip_budget = nullptr;
+    SetOperationProbeState * set_operation_probe_state = nullptr;
 
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
     /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
     IColumn::Offsets matched_rows;
+    /// Whether `matched_rows` lists a row more than once, which the probe of a count map does for the copies of a key.
+    bool matched_rows_have_repeats = false;
 
     /// for lazy
     // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,

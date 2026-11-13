@@ -139,7 +139,7 @@ public:
     }
 
     /// Used just to get result header
-    JoinResultPtr joinBlock(Block block) override
+    JoinResultPtr joinBlock(Block block, JoinProbeContext /*context*/) override
     {
         for (const auto & col : *right_sample_block)
             block.insert(col);

@@ -70,7 +70,7 @@ std::vector<std::pair<UInt64, UInt64>> runFullJoinWithStarvedTotals(
 
     auto left_source = keySource("lk", left_keys);
     auto joining = std::make_shared<JoiningTransform>(
-        left_header, shared_output_header, join, /*max_block_size_=*/0,
+        left_header, shared_output_header, join, JoinProbeContext::none(), /*max_block_size_=*/0,
         /*on_totals_=*/false, /*default_totals_=*/false, std::make_shared<FinishCounter>(1));
     connect(left_source->getPort(), joining->getInputs().front());
     connect(filling->getOutputs().front(), joining->getInputs().back());

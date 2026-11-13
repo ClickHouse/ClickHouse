@@ -498,12 +498,12 @@ void GraceHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
     output_sample_block = left_sample_block->cloneEmpty();
-    auto res = hash_join->joinBlock(output_sample_block)->next();
+    auto res = hash_join->joinBlock(output_sample_block, JoinProbeContext::none())->next();
     output_sample_block = std::move(res.block);
     initBuckets();
 }
 
-JoinResultPtr GraceHashJoin::joinBlock(Block block)
+JoinResultPtr GraceHashJoin::joinBlock(Block block, JoinProbeContext context)
 {
     /// Check if hash join post build optimizations could be performed.
     if (hash_join && getNumBuckets() <= 1)
@@ -513,7 +513,7 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
     }
 
     if (block.rows() == 0)
-        return hash_join->joinBlock(block);
+        return hash_join->joinBlock(block, context);
 
     materializeBlockInplace(block);
 
@@ -526,8 +526,7 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
     flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
     blocks.clear();
 
-    auto res = hash_join->joinBlock(std::move(block));
-    return res;
+    return hash_join->joinBlock(std::move(block), context);
 }
 
 void GraceHashJoin::setTotals(const Block & block)
@@ -753,7 +752,7 @@ public:
             }
         } while (block.rows() == 0);
 
-        auto res = hash_join->joinBlock(block);
+        auto res = hash_join->joinBlock(block, JoinProbeContext::none());
         auto next = res->next();
 
         chassert(!next.next_block);

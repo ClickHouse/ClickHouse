@@ -80,6 +80,7 @@ public:
         SharedHeader input_header,
         SharedHeader output_header,
         JoinPtr join_,
+        JoinProbeContext probe_context_,
         size_t max_block_size_,
         bool on_totals_ = false,
         bool default_totals_ = false,
@@ -132,6 +133,7 @@ private:
     bool delayed_blocks_checked = false;
 
     JoinPtr join;
+    const JoinProbeContext probe_context;
     SetSpillables set_spillables;
     bool on_totals;
     /// Whether this transform emits non-joined rows itself once all probe streams have drained.

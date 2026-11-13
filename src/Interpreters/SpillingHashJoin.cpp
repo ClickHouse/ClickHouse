@@ -460,14 +460,14 @@ void SpillingHashJoin::initialize(const Block & sample_block)
     hash_join->initialize(sample_block);
 }
 
-JoinResultPtr SpillingHashJoin::joinBlock(Block block)
+JoinResultPtr SpillingHashJoin::joinBlock(Block block, JoinProbeContext context)
 {
     /// During header computation (transformHeader), `joinBlock` is called with an empty block
     /// before any data is added. Delegate to the appropriate join in COLLECTING state.
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
-        return hash_join->joinBlock(std::move(block));
+        return hash_join->joinBlock(std::move(block), context);
 
-    return chosen_join->joinBlock(std::move(block));
+    return chosen_join->joinBlock(std::move(block), context);
 }
 
 void SpillingHashJoin::setTotals(const Block & block)

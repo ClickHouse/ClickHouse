@@ -37,7 +37,7 @@ Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
     LOG_TEST(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
-    header = join->joinBlock(std::move(header))->next().block;
+    header = join->joinBlock(std::move(header), JoinProbeContext::none())->next().block;
     materializeBlockInplace(header);
     LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
@@ -47,6 +47,7 @@ JoiningTransform::JoiningTransform(
     SharedHeader input_header,
     SharedHeader output_header,
     JoinPtr join_,
+    JoinProbeContext probe_context_,
     size_t max_block_size_,
     bool on_totals_,
     bool default_totals_,
@@ -55,6 +56,7 @@ JoiningTransform::JoiningTransform(
     bool emit_non_joined_)
     : IProcessor({input_header}, {output_header})
     , join(std::move(join_))
+    , probe_context(probe_context_)
     , on_totals(on_totals_)
     , emit_non_joined(emit_non_joined_)
     , default_totals(default_totals_)
@@ -324,7 +326,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     {
         Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
         ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
-        join_result = join->joinBlock(std::move(block));
+        join_result = join->joinBlock(std::move(block), probe_context);
     }
 
     auto data = join_result->next();

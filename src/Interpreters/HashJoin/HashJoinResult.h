@@ -26,6 +26,9 @@ public:
 
         bool enable_lazy_columns_replication = false;
         bool enable_lazy_columns_indexing = false;
+
+        /// Whether `matched_rows` lists a row more than once.
+        bool matched_rows_have_repeats = false;
     };
 
     HashJoinResult(
