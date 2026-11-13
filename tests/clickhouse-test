@@ -2086,6 +2086,8 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        # The mark ratio a normal projection must beat when the skip indexes apply at data read; plan choice only
+        "optimize_projection_skip_index_ratio": lambda: random.choice([0, 0.5, 1]),
         "use_indexes_refiner_in_read_pools": lambda: random.randint(0, 1),
         "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
@@ -2126,6 +2128,8 @@ class SettingsRandomizer:
         #"query_plan_optimize_join_order_conflict_detector": lambda: random.choice(["a", "c"]),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
+        # `parallel` sends the small joins of the tests through the parallel hash join, which `auto` rarely picks
+        "hash_join_layout": lambda: random.choice(["auto", "serial", "parallel"]),
         # The default thresholds (100000 rows, 8 MiB) are above most tests, so low values reach the
         # packed `String` keys and the `String` row store of the hash join.
         "enable_packed_string_keys_in_hash_join": lambda: random.random() > 0.05,
@@ -2232,6 +2236,8 @@ class SettingsRandomizer:
         # Answers min/max/count from per-part statistics instead of reading the parts, so a
         # stale or wrong statistic is a wrong answer. Gated on its own, not on use_statistics.
         "use_statistics_for_min_max_aggregation": lambda: random.randint(0, 1),
+        # The same for sum/avg/sumCount, over integer and `Decimal` columns only, so the answer is exact
+        "use_statistics_for_sum_avg_aggregation": lambda: random.randint(0, 1),
         "use_text_index_like_evaluation_by_dictionary_scan": lambda: random.random() > 0.05,
         "enable_join_fixed_hash_table_conversion": lambda: random.random() > 0.05,
         "optimize_rewrite_has_to_in": lambda: random.random() > 0.05,
@@ -2758,6 +2764,11 @@ class MergeTreeSettingsRandomizer:
         # "add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
         # "add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
         # "part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
+        # Durable merge checkpoints (experimental). The default thresholds (10 GiB, 60 s) are never reached by
+        # the tests, so low ones make the vertical merges into `Wide` parts save and resume checkpoints.
+        "enable_merge_checkpoints": lambda: random.random() < 0.3,
+        "merge_checkpoints_min_bytes": lambda: random.choice([0, 1048576]),
+        "merge_checkpoints_min_interval_seconds": lambda: random.choice([0, 60]),
     }
 
     # Settings that depend on previously randomized settings.
