@@ -488,8 +488,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     /// Account the granules this block read and dropped by PREWHERE. For each granule, feed three flags to the
     /// mark combiner: whether rows reached the user predicate (`read`), whether any survived it (`survived`),
-    /// and whether a synthesized dynamic filter removed rows from it (`contaminated`). `read` is `entering > 0`
-    /// -- the survivors reaching the first query-PREWHERE reader, or the raw rows read when PREWHERE is first --
+    /// and whether a synthesized dynamic filter removed rows from it or its rest was skipped unread
+    /// (`contaminated`). `read` is `entering > 0` -- the survivors reaching the first query-PREWHERE reader, or the raw rows read when PREWHERE is first --
     /// so marks pruned before PREWHERE and granules emptied by an earlier mutation/row-policy filter are not
     /// read. A granule is counted as dropped only when it was read, nothing survived the last user step
     /// (`prewhere_prev_surviving == 0`, measured before any later dynamic filter), and no dynamic filter
