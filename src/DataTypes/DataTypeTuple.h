@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 
@@ -70,6 +71,13 @@ public:
     size_t getPositionByName(std::string_view name, bool case_insensitive = false) const;
     std::optional<size_t> tryGetPositionByName(std::string_view name, bool case_insensitive = false) const;
     String getNameByPosition(size_t i) const;
+
+    /// The element of this tuple that each element of `to` takes by name: the one with the same name, else, with
+    /// `case_insensitive`, the first one whose name differs only by case and that no other element of `to` has taken.
+    /// Each element of this tuple is taken at most once.
+    VectorWithMemoryTracking<std::optional<size_t>> matchElementsByName(const DataTypeTuple & to, bool case_insensitive) const;
+    static VectorWithMemoryTracking<std::optional<size_t>> matchElementsByName(
+        const Strings & from_names, const Strings & to_names, bool case_insensitive);
 
     bool hasExplicitNames() const { return has_explicit_names; }
 

@@ -22,13 +22,24 @@ enum class CastType : uint8_t
     accurateOrNull
 };
 
+/// Internal, set only by `castColumnToRequestedType` for the input format readers: named tuples are matched by name
+/// even when they have no element name in common.
+enum class TupleElementsMatching : uint8_t
+{
+    Default,
+    ByName,
+    /// As `DataTypeTuple::matchElementsByName` with `case_insensitive`.
+    ByNameCaseInsensitive,
+};
+
 struct CastDiagnostic
 {
     std::string column_from;
     std::string column_to;
 };
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context);
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context, TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
 
 /// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
 /// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted

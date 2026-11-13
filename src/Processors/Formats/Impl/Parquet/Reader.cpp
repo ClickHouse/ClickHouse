@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -4661,8 +4662,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     if (output_info.is_missing_column)
     {
-        res = output_info.output_type->createColumn();
-        res->insertManyDefaults(num_rows);
+        res = createColumnWithDefaults(*output_info.output_type, num_rows);
 
         if (output_info.idx_in_output_block.has_value() &&
             /// If block_missing_values is enabled (not empty), and this column is not prewhere-only

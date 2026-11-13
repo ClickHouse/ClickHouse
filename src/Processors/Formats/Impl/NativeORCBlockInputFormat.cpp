@@ -35,7 +35,6 @@
 #include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
@@ -46,7 +45,6 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/setThreadName.h>
@@ -67,7 +65,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int UNKNOWN_TYPE;
 extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int TOO_DEEP_RECURSION;
@@ -1359,7 +1356,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
 
     /// A requested struct none of whose requested fields is in the file is still read, through its narrowest field,
-    /// for its presence and the sizes of the lists and maps around it; `matchORCTupleElementsByName` then fills the
+    /// for its presence and the sizes of the lists and maps around it; the cast to the requested type then fills the
     /// requested fields with defaults. Inner structs first, as a read inner one makes its parents read.
     std::ranges::sort(requested_structs, std::greater{}, &ORC::Type::getColumnId);
     UnorderedSetWithMemoryTracking<UInt64> count_only_fields;
@@ -1657,34 +1654,6 @@ static ColumnPtr readByteMapFromORCColumn(const ORC::ColumnVectorBatch * orc_col
     for (size_t i = 0; i < orc_column->numElements; ++i)
         bytemap_data[i] = 1 - orc_column->notNull[i];
     return nullmap_column;
-}
-
-
-/// A branch of an ORC union can be non-null at the union level yet select a null payload; ORC
-/// leaves a placeholder (a default value) at such positions. When the branch is later cast to an
-/// explicit Variant alternative, a value-checking cast (e.g. Int8 -> Enum8, or the same inside a
-/// Tuple field) would reject those placeholders even though the rows are never read (they become
-/// the Variant NULL discriminator). Overwrite every null-payload row with a copy of a non-null row
-/// before casting; the copied values are discarded downstream. If every row is a null payload there
-/// is nothing to read, so a null is returned and the caller uses a default-valued column instead.
-static ColumnPtr replaceNullPayloadRowsWithValidRow(const ColumnPtr & column, const NullMap & null_map)
-{
-    size_t valid_row = column->size();
-    for (size_t row = 0; row < column->size(); ++row)
-        if (!null_map[row])
-        {
-            valid_row = row;
-            break;
-        }
-
-    if (valid_row == column->size())
-        return nullptr;
-
-    auto result = column->cloneEmpty();
-    result->reserve(column->size());
-    for (size_t row = 0; row < column->size(); ++row)
-        result->insertFrom(*column, null_map[row] ? valid_row : row);
-    return result;
 }
 
 
@@ -2515,117 +2484,6 @@ static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const Da
     return branch_hints;
 }
 
-/// Matches the elements of the tuples in `column` to those of the named tuples in `requested_type` by name, through
-/// Nullable, Array and Map: a requested element that was not read is filled with defaults, and an element that is
-/// not requested is dropped. A CAST would match tuples with no common element names by position instead.
-static ColumnWithTypeAndName
-matchORCTupleElementsByName(const ColumnWithTypeAndName & column, const DataTypePtr & requested_type, bool case_insensitive)
-{
-    if (column.type->equals(*requested_type))
-        return column;
-
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(column.type.get()))
-    {
-        const auto & nullable_column = assert_cast<const ColumnNullable &>(*column.column);
-        auto nested = matchORCTupleElementsByName(
-            {nullable_column.getNestedColumnPtr(), nullable_type->getNestedType(), column.name},
-            removeNullable(requested_type),
-            case_insensitive);
-        return {
-            ColumnNullable::create(nested.column, nullable_column.getNullMapColumnPtr()),
-            std::make_shared<DataTypeNullable>(nested.type),
-            column.name};
-    }
-
-    const auto requested_non_nullable_type = removeNullable(requested_type);
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get()))
-    {
-        const auto * requested_array_type = typeid_cast<const DataTypeArray *>(requested_non_nullable_type.get());
-        if (!requested_array_type)
-            return column;
-        const auto & array_column = assert_cast<const ColumnArray &>(*column.column);
-        auto nested = matchORCTupleElementsByName(
-            {array_column.getDataPtr(), array_type->getNestedType(), column.name}, requested_array_type->getNestedType(), case_insensitive);
-        return {
-            ColumnArray::create(nested.column, array_column.getOffsetsPtr()), std::make_shared<DataTypeArray>(nested.type), column.name};
-    }
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(column.type.get()))
-    {
-        const auto * requested_map_type = typeid_cast<const DataTypeMap *>(requested_non_nullable_type.get());
-        if (!requested_map_type)
-            return column;
-        const auto & map_column = assert_cast<const ColumnMap &>(*column.column);
-        auto keys = matchORCTupleElementsByName(
-            {map_column.getNestedData().getColumnPtr(0), map_type->getKeyType(), "key"}, requested_map_type->getKeyType(), case_insensitive);
-        auto values = matchORCTupleElementsByName(
-            {map_column.getNestedData().getColumnPtr(1), map_type->getValueType(), "value"},
-            requested_map_type->getValueType(),
-            case_insensitive);
-        return {
-            ColumnMap::create(keys.column, values.column, map_column.getNestedColumn().getOffsetsPtr()),
-            std::make_shared<DataTypeMap>(keys.type, values.type),
-            column.name};
-    }
-
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column.type.get());
-    const auto * requested_tuple_type = typeid_cast<const DataTypeTuple *>(requested_non_nullable_type.get());
-    if (!tuple_type || !requested_tuple_type)
-        return column;
-
-    const auto & tuple_column = assert_cast<const ColumnTuple &>(*column.column);
-    const size_t num_rows = tuple_column.size();
-    Columns elements;
-    DataTypes types;
-    Strings names;
-
-    /// An unnamed tuple is matched by position and keeps its elements, so the CAST rejects a different number of them.
-    if (!requested_tuple_type->hasExplicitNames())
-    {
-        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-        {
-            ColumnWithTypeAndName element{tuple_column.getColumnPtr(i), tuple_type->getElement(i), tuple_type->getNameByPosition(i + 1)};
-            if (i < requested_tuple_type->getElements().size())
-                element = matchORCTupleElementsByName(element, requested_tuple_type->getElement(i), case_insensitive);
-            elements.push_back(std::move(element.column));
-            types.push_back(std::move(element.type));
-        }
-        auto result_column = elements.empty() ? ColumnTuple::create(num_rows) : ColumnTuple::create(std::move(elements));
-        return {std::move(result_column), std::make_shared<DataTypeTuple>(std::move(types)), column.name};
-    }
-
-    for (size_t i = 0; i < requested_tuple_type->getElements().size(); ++i)
-    {
-        const auto & requested_element_type = requested_tuple_type->getElement(i);
-        const auto & name = requested_tuple_type->getNameByPosition(i + 1);
-
-        auto pos = tuple_type->tryGetPositionByName(name, /*case_insensitive=*/false);
-        if (!pos && case_insensitive)
-            pos = tuple_type->tryGetPositionByName(name, /*case_insensitive=*/true);
-
-        if (pos)
-        {
-            auto element = matchORCTupleElementsByName(
-                {tuple_column.getColumnPtr(*pos), tuple_type->getElement(*pos), name}, requested_element_type, case_insensitive);
-            elements.push_back(std::move(element.column));
-            types.push_back(std::move(element.type));
-        }
-        else
-        {
-            auto element = requested_element_type->createColumn();
-            requested_element_type->insertManyDefaultsInto(*element, num_rows);
-            elements.push_back(std::move(element));
-            types.push_back(requested_element_type);
-        }
-        names.push_back(name);
-    }
-
-    auto result_type = std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
-    auto result_column = elements.empty() ? ColumnTuple::create(num_rows) : ColumnTuple::create(std::move(elements));
-    return {std::move(result_column), std::move(result_type), column.name};
-}
-
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const ORC::ColumnVectorBatch * orc_column,
     const ORC::Type * orc_type,
@@ -2733,27 +2591,13 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             /// skip the Bool -> UInt8 repair cast for a boolean branch hinted as UInt8.
             if (branch_hints[i] && branch_hints[i]->getName() != branch_non_nullable.type->getName())
             {
-                if (branch_null_map_columns[i])
-                {
-                    /// A value-checking cast (e.g. Int8 -> Enum8, or the same on a nested Tuple
-                    /// field) must not inspect the placeholder values ORC leaves at null-payload
-                    /// positions - those rows become the Variant NULL discriminator below and are
-                    /// never read. Replace them with a valid, castable row before casting.
-                    /// Wrapping the branch in Nullable is not enough: a Nullable(Tuple) cast would
-                    /// still descend into and reject a null nested field.
-                    if (auto safe = replaceNullPayloadRowsWithValidRow(branch_non_nullable.column, *branch_null_maps[i]))
-                        branch_non_nullable.column
-                            = castColumn({safe, branch_non_nullable.type, branch_non_nullable.name}, branch_hints[i]);
-                    else
-                        /// Every row is a null payload and none is read, so a default-valued column
-                        /// of the target type with the same number of rows is enough.
-                        branch_non_nullable.column
-                            = branch_hints[i]->createColumn()->cloneResized(branch_non_nullable.column->size());
-                }
+                /// A value-checking cast (e.g. Int8 -> Enum8) must not inspect the placeholder values ORC leaves at
+                /// null-payload positions: those rows become the Variant NULL discriminator below and are never read.
+                if (branch_null_maps[i])
+                    castColumnToRequestedType(
+                        branch_non_nullable, branch_hints[i], *branch_null_maps[i], {.case_insensitive = case_insensitive_matching});
                 else
-                {
-                    branch_non_nullable.column = castColumn(branch_non_nullable, branch_hints[i]);
-                }
+                    castColumnToRequestedType(branch_non_nullable, branch_hints[i], {.case_insensitive = case_insensitive_matching});
                 branch_non_nullable.type = branch_hints[i];
             }
 
@@ -2977,17 +2821,17 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_value_type = orc_type->getSubtype(1);
 
             auto key_column = readColumnFromORCColumn(orc_key_column, orc_key_type, "key", false, key_type_hint);
+            const bool key_type_requested = key_type_hint != nullptr;
             /// A map key cannot be Nullable.
             if (!key_type_hint && !DataTypeMap::isValidKeyType(key_column.type))
                 key_type_hint = removeNullableOrLowCardinalityNullable(key_column.type);
-            if (key_type_hint)
-                key_column = matchORCTupleElementsByName(key_column, key_type_hint, case_insensitive_matching);
             if (key_type_hint && !key_type_hint->equals(*key_column.type))
             {
                 /// Cast key column to target type, because it can happen
                 /// that parsed type cannot be ClickHouse Map key type.
-                key_column.column = castColumn(key_column, key_type_hint);
-                key_column.type = key_type_hint;
+                const RequestedTypeCastSettings cast_settings{
+                    .null_as_default = null_as_default && key_type_requested, .case_insensitive = case_insensitive_matching};
+                castColumnToRequestedType(key_column, key_type_hint, cast_settings);
             }
 
             auto value_column = readColumnFromORCColumn(orc_value_column, orc_value_type, "value", false, value_type_hint);
@@ -3018,7 +2862,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             /// are matched after a subcolumn is extracted, as a hint for one can name a path, such as `x.v`.
             const auto * read_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get());
             if (type_hint && isNested(type_hint) && read_tuple_type && read_tuple_type->getElements().empty())
-                nested_column = matchORCTupleElementsByName(nested_column, nested_type_hint, case_insensitive_matching);
+                matchTupleElementsByName(nested_column, nested_type_hint);
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_list_column);
             DataTypePtr array_type;
@@ -3179,15 +3023,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
 
             if (!read_from_nested)
             {
-                if (!allow_missing_columns)
-                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-
-                column.name = header_column.name;
-                column.type = header_column.type;
-                column.column = header_column.column->cloneResized(num_rows);
-                columns_list.push_back(std::move(column.column));
-                if (block_missing_values)
-                    block_missing_values->setBits(column_i, num_rows);
+                columns_list.push_back(createMissingColumn(header_column, num_rows, allow_missing_columns, column_i, block_missing_values));
                 continue;
             }
         }
@@ -3198,11 +3034,8 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                 orc_column_with_type.first, orc_column_with_type.second, header_column.name, false, header_column.type);
         }
 
-        column = matchORCTupleElementsByName(column, header_column.type, case_insensitive_matching);
-        if (null_as_default)
-            insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
-
-        castColumnToRequestedType(column, header_column.type);
+        const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+        castColumnToRequestedType(column, header_column.type, cast_settings, column_i, block_missing_values);
         columns_list.push_back(std::move(column.column));
     }
 

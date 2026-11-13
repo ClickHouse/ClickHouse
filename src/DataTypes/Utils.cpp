@@ -1,4 +1,5 @@
 #include <DataTypes/Utils.h>
+#include <Columns/IColumn.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -385,6 +386,18 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
         return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
 
     return false;
+}
+
+MutableColumnPtr createColumnWithDefaults(const IDataType & type, size_t size)
+{
+    auto column = type.createColumn();
+    if (size == 0 || type.isDefaultInsertTrivial())
+        return column->cloneResized(size);
+
+    auto default_value = type.createColumn();
+    type.insertDefaultInto(*default_value);
+    column->insertManyFrom(*default_value, 0, size);
+    return column;
 }
 
 }
