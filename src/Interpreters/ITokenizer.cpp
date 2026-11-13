@@ -770,7 +770,8 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
         });
 }
 
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
+ColumnPtr tokenizeToArray(
+    const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows, PaddedPODArray<UInt64> * element_token_offsets)
 {
     chassert(from + rows <= input.size());
 
@@ -807,7 +808,11 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
             {
                 if (data_is_nullable && data.isNullAt(j))
                     continue;
+
                 tokenize(data.getDataAt(j));
+
+                if (element_token_offsets)
+                    element_token_offsets->push_back(tokens_data->size());
             }
             tokens_offsets->getData().push_back(tokens_data->size());
         }

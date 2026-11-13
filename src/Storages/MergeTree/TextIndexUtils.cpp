@@ -570,6 +570,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         stream->seekToStart();
         /// Only the version and codecs are needed here, so skip deserializing the sparse index.
         auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
+        TextIndexSerialization::checkPositionIncrementGap(header, params);
         source_postings_serializations.emplace_back(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
     }
 }
@@ -1198,6 +1199,7 @@ void MergeTextIndexesTask::finalize()
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
         .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
+        .position_increment_gap = params.position_increment_gap,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
     };
 
