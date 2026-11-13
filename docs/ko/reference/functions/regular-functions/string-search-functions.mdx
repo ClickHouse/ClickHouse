@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **인수**
 
 * `s` — 추출 대상 입력 문자열입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
-* `regexp` — 매칭에 사용할 정규식입니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
+* `regexp` — 매칭에 사용할 정규식입니다. 1개 이상 127개 이하의 캡처 그룹을 포함해야 합니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
 
 **반환 값**
 
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **인수**
 
 * `s` — 추출할 대상 입력 문자열입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
-* `regexp` — 정규식입니다. 캡처 그룹을 하나 이상 포함해야 합니다. 상수여야 합니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
+* `regexp` — 정규식입니다. 캡처 그룹을 1개 이상 127개 이하로 포함해야 합니다. 상수여야 합니다. [`const String`](/ko/reference/data-types/string) 또는 [`const FixedString`](/ko/reference/data-types/fixedstring)
 
 **반환 값**
 
@@ -447,7 +447,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 * `needle` 인수([String](/ko/reference/data-types/string)로 지정된 경우)는
   텍스트 인덱스에 지정된 토크나이저를 사용해 처리됩니다.
   컬럼에 텍스트 인덱스가 정의되어 있지 않으면 대신 `splitByNonAlpha` 토크나이저가 사용됩니다.
-  `needle` 인수가 [Array(String)](/ko/reference/data-types/array) 타입이면 각 배열 요소가 토큰으로 간주되며, 추가 토큰화는 수행되지 않습니다.
+  `needle` 인수가 [Array(String)](/ko/reference/data-types/array) 타입이면 각 배열 원소가 토큰으로 간주되며, 추가 토큰화는 수행되지 않습니다.
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 표현식이 구성되어 있으면, `needle`이 `String`으로 지정된 경우 토큰화 전에 전처리기가 적용됩니다.
   텍스트 인덱스에 [후처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 표현식이 구성되어 있으면, 후처리기는 `needle` 토큰과 `input` 토큰 모두에 적용됩니다(즉, 둘 다 토큰화 이후에 적용됩니다).
 
@@ -455,9 +455,8 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 예: 검색 패턴 = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
 
 <Note>
-  텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAllTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우에는 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우에는 그 요소가 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
-  전처리기는 텍스트 인덱스 경로에서만 적용되므로, 텍스트 인덱스를 사용하는 쿼리와 사용하지 않는 쿼리(예: `SETTINGS use_skip_indexes = 0`) 사이에서 결과가 달라질 수 있습니다.
-  이러한 불일치는 전문 검색의 사용성을 높이기 위해 허용됩니다.
+  텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAllTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우에는 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우에는 그 원소가 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
+  전처리기는 인덱스 정의의 일부이므로, `WHERE`/`PREWHERE` 필터에서든 `SELECT` 목록에서든 함수가 평가되는 모든 곳에서 적용되며, 인덱스를 읽는지 여부(예: `SETTINGS use_skip_indexes = 0`)와도 관계없이 적용됩니다.
 </Note>
 
 **구문**
@@ -480,7 +479,7 @@ hasAllTokens(input, needles[, tokenizer])
 
 **예시**
 
-**문자열 니들(needle)을 사용한 기본 사용법**
+**문자열 검색 패턴을 사용한 기본 사용법**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -689,7 +688,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 * `needle` 인수([String](/ko/reference/data-types/string)로 지정된 경우)는
   텍스트 인덱스에 지정된 토크나이저를 사용해 처리합니다.
   컬럼에 텍스트 인덱스가 정의되어 있지 않으면 `splitByNonAlpha` 토크나이저를 대신 사용합니다.
-  `needle` 인수가 [Array(String)](/ko/reference/data-types/array) 타입이면 각 배열 요소를 토큰으로 간주하며, 추가 토큰화는 수행되지 않습니다.
+  `needle` 인수가 [Array(String)](/ko/reference/data-types/array) 타입이면 각 배열 원소를 토큰으로 간주하며, 추가 토큰화는 수행되지 않습니다.
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 표현식이 구성되어 있으면, 전처리기는 토큰화 전에 `needle`(`String`으로 지정된 경우)에 적용됩니다.
   텍스트 인덱스에 [후처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 표현식이 구성되어 있으면, 후처리기는 `needle` 토큰과 `input` 토큰 모두에 적용됩니다(즉, 둘 다 토큰화 후에 적용됨).
 
@@ -697,9 +696,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 예를 들어, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;]는 [&#39;ClickHouse&#39;]와 동일하게 처리됩니다.
 
 <Note>
-  텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAnyTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우 그 요소는 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
-  전처리기는 텍스트 인덱스 경로에서만 적용되므로, 텍스트 인덱스를 사용하는 쿼리와 사용하지 않는 쿼리(예: `SETTINGS use_skip_indexes = 0`) 간에 결과가 달라질 수 있습니다.
-  이러한 비일관성은 전문 검색의 사용성을 높이기 위해 허용됩니다.
+  텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)(예: `lowerUTF8`)가 정의되어 있으면, `hasAnyTokens`는 이를 `input`에 적용하고, `needles`가 [String](/ko/reference/data-types/string)인 경우 토큰화 전에 `needles`에도 적용합니다. `needles`가 [Array(String)](/ko/reference/data-types/array)인 경우 그 원소는 있는 그대로 전달되며 전처리기는 적용되지 않습니다.
+  전처리기는 인덱스 정의의 일부이므로 함수가 평가되는 모든 곳에서 적용됩니다. `WHERE`/`PREWHERE` 필터와 `SELECT` 목록 모두에서 적용되며, 인덱스를 실제로 읽는지 여부(예: `SETTINGS use_skip_indexes = 0`)와도 관계없습니다.
 </Note>
 
 **구문**
@@ -722,7 +720,7 @@ hasAnyTokens(input, needles[, tokenizer])
 
 **예시**
 
-**문자열 니들을 사용한 기본 사용법**
+**문자열 검색 패턴을 사용한 기본 사용법**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -746,7 +744,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**배열에서 토큰화 없이 있는 그대로 검색할 needle을 지정합니다**
+**배열에 검색 패턴을 토큰화 없이 있는 그대로 지정하기**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -923,8 +921,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)가 정의되어 있으면(예: `lowerUTF8`), `hasPhrase`는 토큰화 전에 이를 `input`과 `phrase` 모두에 적용합니다.
-  전처리기는 텍스트 인덱스 경로에서만 적용되므로 텍스트 인덱스를 사용하는 쿼리와 사용하지 않는 쿼리의 결과가 다를 수 있습니다(예: `SETTINGS use_skip_indexes = 0`).
-  이러한 불일치는 전문 검색의 사용성을 높이기 위해 허용됩니다.
+  전처리기는 인덱스 정의의 일부이므로 함수가 평가되는 모든 위치에서 적용됩니다. 즉, `WHERE`/`PREWHERE` 필터(filter)와 `SELECT` 목록 모두에서 적용되며, 인덱스를 읽는지 여부와도 관계없이 적용됩니다(예: `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens), [`hasAllTokens`](#hasAllTokens)와 달리 `hasPhrase`는 토큰이 같은 순서로 나타나야 하며,
@@ -1549,7 +1546,7 @@ re2의 기본 동작과 달리 `.`은 줄바꿈과도 일치합니다. 이를 �
 match(haystack, pattern)
 ```
 
-**별칭**: `REGEXP_MATCHES`
+**별칭**: `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **인수**
 
