@@ -319,7 +319,50 @@ GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
 
     /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
     ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("-1"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("9223372036854.775"), DB::Exception);
+    ASSERT_EQ(seconds.totalSeconds(), 300);
+
+    seconds.parseFromString("9223372036854");
+    ASSERT_GT(seconds.totalSeconds(), 0);
 }
+
+GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
+{
+    auto wire = [](const String & value)
+    {
+        WriteBufferFromOwnString out;
+        BaseSettingsHelpers::writeString("max_execution_time", out);
+        BaseSettingsHelpers::writeFlags(static_cast<BaseSettingsHelpers::Flags>(0), out);
+        BaseSettingsHelpers::writeString(value, out);
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    for (const String & value : {String("-1"), String("9223372036854.775")})
+    {
+        const String bytes = wire(value);
+        ReadBufferFromString in(bytes);
+        Settings settings;
+        try
+        {
+            settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            FAIL() << value << " was accepted";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    const String bytes = wire("60");
+    ReadBufferFromString in(bytes);
+    Settings settings;
+    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    ASSERT_TRUE(settings.isChanged("max_execution_time"));
+    ASSERT_EQ(settings.get("max_execution_time"), Field(Float64(60)));
+}
+
 GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheValues)
 {
     /// The client passes such a Settings object to `Connection::sendQuery`: the values that
