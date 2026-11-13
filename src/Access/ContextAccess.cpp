@@ -408,6 +408,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         roles_info = nullptr;
         enabled_row_policies = nullptr;
         row_policies_of_initial_user = nullptr;
+        unknown_current_roles_of_initial_user.clear();
         enabled_quota = nullptr;
         enabled_settings = nullptr;
         return;
@@ -515,7 +516,40 @@ void ContextAccess::calculateAccessRights() const
 
 void ContextAccess::findRowPoliciesOfInitialUser() const
 {
-    row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
+    row_policies_of_initial_user = nullptr;
+    unknown_current_roles_of_initial_user.clear();
+
+    if (!params.initial_user_id)
+        return;
+
+    if (!params.initial_user_current_roles)
+    {
+        row_policies_of_initial_user = access_control->tryGetDefaultRowPolicies(*params.initial_user_id);
+        return;
+    }
+
+    /// The initiator forwarded the roles its query runs with (after `SET ROLE`), so take the row policies of these roles
+    /// instead of the default roles. The roles are used as is, the same way as with the interserver secret
+    /// (see `Session::makeQueryContextImpl`): the initiator has already checked that they are granted to the user.
+    if (!access_control->tryRead<User>(*params.initial_user_id))
+        return;
+
+    std::vector<UUID> current_roles;
+    for (const auto & role_name : *params.initial_user_current_roles)
+    {
+        if (auto role_id = access_control->find<Role>(role_name))
+            current_roles.push_back(*role_id);
+        else
+            unknown_current_roles_of_initial_user.push_back(role_name);
+    }
+
+    /// Fail closed: a role unknown here cannot be honored, and dropping it could drop a restrictive policy.
+    /// `getRowPolicyFilter` throws in this case.
+    if (!unknown_current_roles_of_initial_user.empty())
+        return;
+
+    auto initial_user_enabled_roles = access_control->getEnabledRolesInfo(current_roles, {})->enabled_roles;
+    row_policies_of_initial_user = access_control->getEnabledRowPolicies(*params.initial_user_id, initial_user_enabled_roles);
 }
 
 
@@ -574,6 +608,11 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
 
         if (initialized && !user && !user_was_dropped)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
+
+        if (!unknown_current_roles_of_initial_user.empty())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not all of the current roles of the initial user are known on this node: [{}]",
+                boost::algorithm::join(unknown_current_roles_of_initial_user, ", "));
 
         if (enabled_row_policies)
             filter = enabled_row_policies->getFilter(database, table_name, filter_type);
