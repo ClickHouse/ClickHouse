@@ -7,8 +7,6 @@ score: 20
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Embora a [inferência de esquema](/pt-BR/guides/clickhouse/data-formats/json/inference) possa ser usada para definir um esquema inicial para dados JSON e consultar arquivos de dados JSON diretamente onde estão armazenados, por exemplo, no S3, você deve buscar definir um esquema versionado e otimizado para seus dados. A seguir, discutimos a abordagem recomendada para modelar estruturas JSON.
 
 <div id="static-vs-dynamic-json">
@@ -989,19 +987,43 @@ Como resultado, para conjuntos de dados que são em grande parte consistentes, m
 
 O ClickHouse armazena cada caminho JSON como uma subcoluna em um layout verdadeiramente colunar, o que oferece os mesmos benefícios de desempenho observados em colunas tradicionais, como compactação, processamento acelerado por SIMD e I/O mínimo de disco. Cada combinação única de caminho e tipo nos seus dados JSON pode se tornar seu próprio arquivo de coluna em disco.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="Uma coluna por caminho JSON" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Uma coluna por caminho JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+
+</Frame>
+
+</div>
 
 Por exemplo, quando dois caminhos JSON são inseridos com tipos diferentes, o ClickHouse armazena os valores de cada [tipo concreto em subcolunas distintas](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). Essas subcolunas podem ser acessadas de forma independente, minimizando I/O desnecessário. Observe que, ao consultar uma coluna com vários tipos, os valores ainda são retornados como uma única resposta colunar.
 
 Além disso, ao usar offsets, o ClickHouse garante que essas subcolunas permaneçam densas, sem armazenar valores padrão para caminhos JSON ausentes. Essa abordagem maximiza a compactação e reduz ainda mais o I/O.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="Offsets de JSON" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Offsets de JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+
+</Frame>
+
+</div>
 
 No entanto, em cenários com estruturas JSON de alta cardinalidade ou muito variáveis, como pipelines de telemetria, logs ou feature stores de machine learning, esse comportamento pode levar a uma explosão no número de arquivos de coluna. Cada novo caminho JSON único resulta em um novo arquivo de coluna, e cada variante de tipo nesse caminho resulta em um arquivo de coluna adicional. Embora isso seja ideal para o desempenho de leitura, também introduz desafios operacionais: esgotamento de descritores de arquivo, aumento do uso de memória e merges mais lentos devido ao grande número de arquivos pequenos.
 
 Para mitigar isso, o ClickHouse introduz o conceito de subcoluna de overflow: quando o número de caminhos JSON distintos ultrapassa um limite, os caminhos adicionais são armazenados em um único arquivo compartilhado usando um formato codificado compacto. Esse arquivo ainda pode ser consultado, mas não se beneficia das mesmas características de desempenho das subcolunas dedicadas.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Coluna JSON compartilhada" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coluna JSON compartilhada](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+
+</Frame>
+
+</div>
 
 Esse limite é controlado pelo parâmetro [`max_dynamic_paths`](/pt-BR/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) na declaração do tipo JSON.
 

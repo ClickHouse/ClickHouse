@@ -46,6 +46,7 @@ const std::vector<std::string> & allExperimentalSettingNames()
         "allow_simdjson",
         "allow_deprecated_syntax_for_merge_tree",
         "allow_suspicious_primary_key",
+        "allow_reserved_column_names",
         "allow_suspicious_ttl_expressions",
         "allow_suspicious_variant_types",
         "allow_create_index_without_type",

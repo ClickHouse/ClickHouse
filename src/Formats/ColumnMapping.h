@@ -4,6 +4,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/Block_fwd.h>
 #include <Core/BlockNameMap.h>
+#include <DataTypes/IDataType_fwd.h>
 
 namespace DB
 {
@@ -39,7 +40,7 @@ struct ColumnMapping
     void addColumns(
         std::span<const String> column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings);
 
-    void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::span<UInt8> read_columns);
+    void insertDefaultsForNotSeenColumns(MutableColumns & columns, const DataTypes & data_types, std::span<UInt8> read_columns);
 };
 
 }
