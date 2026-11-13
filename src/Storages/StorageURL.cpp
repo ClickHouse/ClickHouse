@@ -2400,13 +2400,15 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
     /// read requests `/test%2Fa.tsv`, and the two paths can be different resources.
     const bool enable_url_encoding = settings[Setting::enable_url_encoding];
     Poco::URI request_uri(uri, enable_url_encoding);
-    Poco::Net::HTTPBasicCredentials credentials;
-    StorageURLSource::setCredentials(credentials, request_uri);
-
     ReadWriteBufferFromHTTP::HTTPFileInfo file_info;
     String resolved_uri;
     try
     {
+        /// Like the reader, refuse to send credentials from the URL that `http_forbid_headers` forbids.
+        /// Here it throws inside the `try`, so the probe is not sent and the hash fails closed.
+        Poco::Net::HTTPBasicCredentials credentials;
+        setCredentialsFromURL(credentials, request_uri, context->getHTTPHeaderFilter());
+
         auto buf = BuilderRWBufferFromHTTP(request_uri)
                        .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                        .withSettings(context->getReadSettings())
@@ -2424,7 +2426,8 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
     }
     catch (...)
     {
-        /// Ok to ignore: we could not reach the server, so we conservatively assume the data may have changed.
+        /// Ok to ignore: we could not reach the server (or must not send its credentials), so we
+        /// conservatively assume the data may have changed.
         return {};
     }
 
