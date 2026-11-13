@@ -95,6 +95,7 @@ public:
         , config_file(absolute(config_path, startup_directory))
         , config_directory(config_file.parent_path())
         , data_path(absolute(config.getString("path", DBMS_DEFAULT_PATH), working_directory))
+        , runtime_directory(is_daemon ? coreDirectory() : working_directory)
     {
     }
 
@@ -139,6 +140,10 @@ private:
     const fs::path config_file;
     const fs::path config_directory;
     const fs::path data_path;
+    /// The working directory of `Server::main`, against which the paths that are used after the startup are resolved:
+    /// with `--daemon`, the directory of the core dumps, where `BaseDaemon::initialize` changes to at its end. Only
+    /// `path` is resolved against `working_directory`, the original working directory, in any case.
+    const fs::path runtime_directory;
     std::vector<FilesystemIsolationPath> paths;
 
     /// Without `.` and empty components, so that equal paths compare equal, but with `..`: after a symbolic link it
@@ -342,7 +347,8 @@ private:
         auto loaded = ConfigProcessor(file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false).loadConfig(/* allow_zk_includes = */ true);
         if (loaded.configuration->has("include_from"))
             if (const auto value = loaded.configuration->getString("include_from"); !value.empty())
-                addLocation(absolute(value, working_directory), Access::ReadOnly, fmt::format("`include_from` of {}", source));
+                for (const auto & base : configLoadDirectories())
+                    addLocation(absolute(value, base), Access::ReadOnly, fmt::format("`include_from` of {}", source));
     }
 
     void addConfigFiles()
@@ -350,7 +356,8 @@ private:
         /// The main configuration file, `config.d` and the other files next to it, watched for changes.
         add(config_directory, Access::ReadOnly, "the directory of the configuration file");
         addConfigFileWithMergeFiles(config_file, "the configuration file");
-        addKeyLocation("include_from", Access::ReadOnly, working_directory);
+        for (const auto & base : configLoadDirectories())
+            addKeyLocation("include_from", Access::ReadOnly, base);
 
         /// A relative path is looked up next to the configuration file first.
         auto add_users_config = [&](const std::string & key)
@@ -362,7 +369,7 @@ private:
                 return;
             const fs::path next_to_config = absolute(value, config_directory);
             std::error_code error;
-            addIndependentConfigFile(fs::exists(next_to_config, error) ? next_to_config : absolute(value, working_directory), fmt::format("`{}`", key));
+            addIndependentConfigFile(fs::exists(next_to_config, error) ? next_to_config : absolute(value, runtime_directory), fmt::format("`{}`", key));
         };
         add_users_config("users_config");
 
@@ -377,7 +384,7 @@ private:
             if (type == "users_xml" || type == "users.xml" || type == "users_config")
                 add_users_config(key);
             else if (type == "local_directory" || type == "local")
-                addKey(key, Access::ReadWrite, working_directory);
+                addKey(key, Access::ReadWrite, runtime_directory);
         }
 
         std::vector<std::string> definitions = {"dictionaries_config", "user_defined_executable_functions_config"};
@@ -401,7 +408,7 @@ private:
         std::set<std::string> files;
         Poco::Glob::glob(next_to_config.string(), files, 0);
         if (files.empty())
-            addIndependentConfigPattern(absolute(pattern, working_directory), source);
+            addIndependentConfigPattern(absolute(pattern, runtime_directory), source);
     }
 
     void addDataPaths()
@@ -412,16 +419,16 @@ private:
         addKey("format_schema_path", Access::ReadWrite, data_path);
         addKey("dynamic_user_defined_executable_functions_path", Access::ReadWrite, data_path);
         addKey("filesystem_caches_path", Access::ReadWrite, data_path);
-        addKey("custom_cached_disks_base_directory", Access::ReadWrite, working_directory);
-        addKey("custom_local_disks_base_directory", Access::ReadWrite, working_directory);
-        addKey("access_control_path", Access::ReadWrite, working_directory);
-        addKey("user_defined_path", Access::ReadWrite, working_directory);
-        addKey("workload_path", Access::ReadWrite, working_directory);
+        addKey("custom_cached_disks_base_directory", Access::ReadWrite, runtime_directory);
+        addKey("custom_local_disks_base_directory", Access::ReadWrite, runtime_directory);
+        addKey("access_control_path", Access::ReadWrite, runtime_directory);
+        addKey("user_defined_path", Access::ReadWrite, runtime_directory);
+        addKey("workload_path", Access::ReadWrite, runtime_directory);
         /// With `--daemon`, the directory of the core dumps is where `BaseDaemon::initialize` changes to at its end.
         if (is_daemon)
             add(coreDirectory(), Access::ReadWrite, "`core_path`");
         else
-            addKey("core_path", Access::ReadWrite, working_directory);
+            addKey("core_path", Access::ReadWrite, runtime_directory);
 
         /// They are inside `path` by default, which is not executable, and are mounted separately to be read-only and,
         /// for the scripts, executable.
@@ -432,12 +439,12 @@ private:
         if (config.getBool("allow_experimental_webassembly_udf", false))
             add(user_scripts_path / "wasm", Access::ReadWrite, "the WebAssembly modules in `user_scripts_path`");
         add(absolute(config.getString("top_level_domains_path", "top_level_domains"), data_path), Access::ReadOnly, "`top_level_domains_path`");
-        add(absolute(config.getString("google_protos_path", "/usr/share/clickhouse/protos/"), working_directory), Access::ReadOnly, "`google_protos_path`");
+        add(absolute(config.getString("google_protos_path", "/usr/share/clickhouse/protos/"), runtime_directory), Access::ReadOnly, "`google_protos_path`");
 
-        addKeyLocation("path_to_regions_hierarchy_file", Access::ReadOnly, working_directory);
-        addKeyLocation("path_to_regions_names_files", Access::ReadOnly, working_directory);
+        addKeyLocation("path_to_regions_hierarchy_file", Access::ReadOnly, runtime_directory);
+        addKeyLocation("path_to_regions_names_files", Access::ReadOnly, runtime_directory);
         addHdfsConfig();
-        addKeyLocation("nats.credential_file", Access::ReadOnly, working_directory);
+        addKeyLocation("nats.credential_file", Access::ReadOnly, runtime_directory);
 
         for (const auto & key : getMultipleKeys("backups", "allowed_path"))
             addKey(key, Access::ReadWrite, data_path);
@@ -445,7 +452,7 @@ private:
         /// The same default as in `NamedCollectionsMetadataStorage::create`; both `local` and `local_encrypted` keep the
         /// collections in this directory.
         if (config.getString("named_collections_storage.type", "local").starts_with("local"))
-            addKey("named_collections_storage.path", Access::ReadWrite, working_directory);
+            addKey("named_collections_storage.path", Access::ReadWrite, runtime_directory);
 
         Poco::Util::AbstractConfiguration::Keys caches;
         config.keys("filesystem_caches", caches);
@@ -474,13 +481,13 @@ private:
             /// The path of an encrypted disk is inside its underlying disk.
             if (type == "encrypted")
                 continue;
-            addKey(prefix + ".path", Access::ReadWrite, type == "cache" ? caches_base : working_directory);
+            addKey(prefix + ".path", Access::ReadWrite, type == "cache" ? caches_base : runtime_directory);
             /// A cache disk can take its settings, with the path, from a named collection, as in `getCache` in
             /// `RegisterDiskCache.cpp`. The collections of the configuration are in `named_collections`; the ones
             /// created with a query are not known before the server starts.
             if (type == "cache" && config.has(prefix + ".cache_name"))
                 addKey(fmt::format("named_collections.{}.path", config.getString(prefix + ".cache_name")), Access::ReadWrite, caches_base);
-            addKey(prefix + ".metadata_path", Access::ReadWrite, working_directory);
+            addKey(prefix + ".metadata_path", Access::ReadWrite, runtime_directory);
 
             /// An object storage disk with several locations, each of them a separate object storage, as in
             /// `registerDiskObjectStorage`. A local one keeps its objects in its own `path`.
@@ -492,7 +499,7 @@ private:
                 /// The same keys for the type as in `ObjectStorageFactory::create`.
                 const std::string location_type = config.getString(location_prefix + ".object_storage_type", config.getString(location_prefix + ".type", ""));
                 if (location_type.starts_with("local"))
-                    addKey(location_prefix + ".path", Access::ReadWrite, working_directory);
+                    addKey(location_prefix + ".path", Access::ReadWrite, runtime_directory);
             }
         }
     }
@@ -500,7 +507,7 @@ private:
     void addKeeper()
     {
         for (const auto * name : {"storage_path", "log_storage_path", "snapshot_storage_path", "data_storage_path"})
-            addKey(fmt::format("keeper_server.{}", name), Access::ReadWrite, working_directory);
+            addKey(fmt::format("keeper_server.{}", name), Access::ReadWrite, runtime_directory);
 
         /// The directory of the state file, with the same precedence as in `KeeperContext::getStatePathFromConfig`:
         /// without `storage_path` and `state_storage_disk`, it is the parent of `snapshot_storage_path` or, if that
@@ -512,7 +519,7 @@ private:
             const std::string key = fmt::format("keeper_server.{}", name);
             if (config.has(key))
             {
-                add(absolute(fs::path(config.getString(key)).parent_path().string(), working_directory), Access::ReadWrite,
+                add(absolute(fs::path(config.getString(key)).parent_path().string(), runtime_directory), Access::ReadWrite,
                     fmt::format("the state file of Keeper, next to `{}`", key));
                 return;
             }
@@ -531,6 +538,15 @@ private:
         /// With `--daemon`, `stderr.log` and `stdout.log` are created in the directory of the log by default.
         if (is_daemon && !config.getString("logger.log", "").empty())
             add(logDirectory(), Access::ReadWrite, "the directory of `logger.log`");
+    }
+
+    /// The directories a configuration file is loaded in: `startup_directory` at the startup, and `runtime_directory`
+    /// when it is reloaded.
+    std::vector<fs::path> configLoadDirectories() const
+    {
+        if (startup_directory == runtime_directory)
+            return {startup_directory};
+        return {startup_directory, runtime_directory};
     }
 
     /// The working directory after `BaseDaemon::initialize` has created the directory of the log: with `--daemon`, it
@@ -552,26 +568,20 @@ private:
         return core_path.empty() ? data_path / "cores" : absolute(core_path, logDirectory());
     }
 
-    /// The working directory of `Server::main`.
-    fs::path runtimeDirectory() const
-    {
-        return is_daemon ? coreDirectory() : working_directory;
-    }
-
     /// The same lookup as in `Server::main`: a relative path is relative to the working directory, or, if there is no
     /// such file, to the directory of the main configuration, if the file is there.
     void addHdfsConfig()
     {
         const std::string key = "hdfs.libhdfs3_conf";
-        const std::string value = config.getString(key, "");
-        if (value.empty())
-            return;
-        fs::path file = absolute(value, runtimeDirectory());
-        std::error_code error;
-        if (fs::path(value).is_relative() && !fs::exists(file, error))
-            if (const fs::path next_to_config = absolute(value, config_directory); fs::exists(next_to_config, error))
-                file = next_to_config;
-        addLocation(file, Access::ReadOnly, fmt::format("`{}`", key));
+        if (const std::string value = config.getString(key, ""); !value.empty())
+        {
+            fs::path file = absolute(value, runtime_directory);
+            std::error_code error;
+            if (fs::path(value).is_relative() && !fs::exists(file, error))
+                if (const fs::path next_to_config = absolute(value, config_directory); fs::exists(next_to_config, error))
+                    file = next_to_config;
+            addLocation(file, Access::ReadOnly, fmt::format("`{}`", key));
+        }
 
         /// The credentials of Kerberos, in `hdfs` and in the sections `hdfs_<user>` for the users of HDFS, as
         /// `HDFSBuilderWrapper::loadFromConfig` reads them. The cache of the tickets is written to, also as a new
@@ -584,13 +594,13 @@ private:
                 sections.push_back(top_level_key);
         for (const auto & section : sections)
         {
-            addKeyLocation(section + ".hadoop_kerberos_keytab", Access::ReadOnly, runtimeDirectory());
+            addKeyLocation(section + ".hadoop_kerberos_keytab", Access::ReadOnly, runtime_directory);
             std::string cache = config.getString(section + ".hadoop_security_kerberos_ticket_cache_path", "");
             for (const std::string_view type : {"FILE:", "DIR:"})
                 if (cache.starts_with(type))
                     cache = cache.substr(type.size());
             if (!cache.empty() && cache.find(':') == std::string::npos)
-                addLocation(absolute(cache, runtimeDirectory()), Access::ReadWrite, fmt::format("`{}.hadoop_security_kerberos_ticket_cache_path`", section));
+                addLocation(absolute(cache, runtime_directory), Access::ReadWrite, fmt::format("`{}.hadoop_security_kerberos_ticket_cache_path`", section));
         }
     }
 
@@ -598,23 +608,23 @@ private:
     {
         for (const auto * side : {"server", "client"})
             for (const auto * name : {"privateKeyFile", "certificateFile", "caConfig", "dhParamsFile"})
-                addKeyLocation(fmt::format("openSSL.{}.{}", side, name), Access::ReadOnly, working_directory);
+                addKeyLocation(fmt::format("openSSL.{}.{}", side, name), Access::ReadOnly, runtime_directory);
 
         Poco::Util::AbstractConfiguration::Keys protocols;
         config.keys("protocols", protocols);
         for (const auto & protocol : protocols)
             for (const auto * name : {"privateKeyFile", "certificateFile", "caConfig", "dhParamsFile"})
-                addKeyLocation(fmt::format("protocols.{}.{}", protocol, name), Access::ReadOnly, working_directory);
+                addKeyLocation(fmt::format("protocols.{}.{}", protocol, name), Access::ReadOnly, runtime_directory);
 
         for (const auto * key : {"grpc.ssl_key_file", "grpc.ssl_cert_file", "grpc.ssl_ca_cert_file", "arrowflight.ssl_cert_file", "arrowflight.ssl_key_file", "kerberos.keytab",
                                  "ssh_server.host_rsa_key", "ssh_server.host_ecdsa_key", "ssh_server.host_ed25519_key"})
-            addKeyLocation(key, Access::ReadOnly, working_directory);
+            addKeyLocation(key, Access::ReadOnly, runtime_directory);
 
         Poco::Util::AbstractConfiguration::Keys ldap_servers;
         config.keys("ldap_servers", ldap_servers);
         for (const auto & server : ldap_servers)
             for (const auto * name : {"tls_cert_file", "tls_key_file", "tls_ca_cert_file", "tls_ca_cert_dir"})
-                addKeyLocation(fmt::format("ldap_servers.{}.{}", server, name), Access::ReadOnly, working_directory);
+                addKeyLocation(fmt::format("ldap_servers.{}.{}", server, name), Access::ReadOnly, runtime_directory);
     }
 
     /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the
@@ -686,16 +696,16 @@ private:
             return;
         const fs::path prefix_path(prefix);
         if (prefix_path.has_parent_path())
-            add(absolute(prefix_path.parent_path().string(), working_directory), Access::ReadWrite, "the option `prof_prefix` of jemalloc");
+            add(absolute(prefix_path.parent_path().string(), runtime_directory), Access::ReadWrite, "the option `prof_prefix` of jemalloc");
 #endif
     }
 
     void addExtraPaths()
     {
         for (const auto & key : getMultipleKeys("filesystem_isolation_paths", "read_only"))
-            addKey(key, Access::ReadOnly, working_directory);
+            addKey(key, Access::ReadOnly, runtime_directory);
         for (const auto & key : getMultipleKeys("filesystem_isolation_paths", "read_write"))
-            addKey(key, Access::ReadWrite, working_directory);
+            addKey(key, Access::ReadWrite, runtime_directory);
     }
 };
 
