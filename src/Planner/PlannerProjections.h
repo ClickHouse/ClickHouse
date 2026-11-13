@@ -14,7 +14,7 @@ namespace DB
 {
 
 class ColumnsDescription;
-class Pipe;
+class QueryPlan;
 
 /// plans the SELECT of a projection
 /// names each expression as the query writes it, because a projection part stores its columns under these names
@@ -33,15 +33,21 @@ public:
     /// calculates the aggregation keys and the aggregate function arguments from the source columns
     ActionsDAG buildBeforeAggregationActions();
 
-    /// calculates the projection of a block of the source columns, keep the planner while the pipe runs
-    Pipe buildPipe(Block source);
+    /// the plan that calculates a normal projection with WHERE from a block of the source columns
+    QueryPlan buildPlanForNormalProjection(Block source);
+
+    /// the plan that calculates the aggregate states of an aggregate projection from a block of the source columns
+    QueryPlan buildPlanForAggregateProjection(Block source);
 
 private:
     /// calculates the expressions from the source columns, the outputs have the stored names
     ActionsDAG buildActions(const QueryTreeNodes & expressions);
 
-    /// a subquery of IN is an ordinary query: plans it and builds its set
-    void buildSubquerySets();
+    /// the first steps of both plans: reads the block and applies WHERE
+    QueryPlan buildPlanForSource(Block source);
+
+    /// the last step of both plans: a subquery of IN is an ordinary query, so the step plans it and builds its set
+    void addSubquerySetsStep(QueryPlan & plan);
 
     QueryTreeNodePtr query_tree;
     PlannerContextPtr planner_context;

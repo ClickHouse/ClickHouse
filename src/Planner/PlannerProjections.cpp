@@ -8,25 +8,34 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageDummy.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
+    extern const SettingsNonZeroUInt64 max_block_size;
+}
 
 namespace
 {
@@ -219,14 +228,17 @@ ActionsDAG ProjectionPlanner::buildBeforeAggregationActions()
     return buildActions(expressions);
 }
 
-Pipe ProjectionPlanner::buildPipe(Block source)
+QueryPlan ProjectionPlanner::buildPlanForSource(Block source)
 {
-    const auto & query_context = planner_context->getQueryContext();
+    QueryPlan plan;
+    /// the functions of the steps refer to the context of the analysis
+    plan.addInterpreterContext(planner_context->getQueryContext());
+
+    /// TODO: read the block from StorageValues, then the plan reads it as a table
+    plan.addStep(std::make_unique<ReadFromPreparedSource>(
+        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source))))));
+
     const auto & query_node = query_tree->as<QueryNode &>();
-
-    Pipe pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source))));
-    ExpressionActionsSettings actions_settings(query_context, CompileExpressions::yes);
-
     if (query_node.hasWhere())
     {
         auto filter_dag = buildActions({query_node.getWhere()});
@@ -236,40 +248,66 @@ Pipe ProjectionPlanner::buildPipe(Block source)
             if (input->result_name != filter_column_name)
                 filter_dag.getOutputs().push_back(input);
 
-        auto filter = std::make_shared<ExpressionActions>(std::move(filter_dag), actions_settings);
-        pipe.addSimpleTransform([&](const SharedHeader & header)
-        {
-            return std::make_shared<FilterTransform>(header, filter, filter_column_name, /*remove_filter_column=*/false);
-        });
+        plan.addStep(std::make_unique<FilterStep>(
+            plan.getCurrentHeader(), std::move(filter_dag), filter_column_name, /*remove_filter_column_=*/false));
     }
 
-    bool is_aggregate = query_node.hasGroupBy() || !aggregates.empty();
-    auto expression_dag = is_aggregate ? buildBeforeAggregationActions() : buildActions({query_node.getProjectionNode()});
-    /// a normal projection stores only the columns of its SELECT
-    if (!is_aggregate)
-        expression_dag.appendInputsForUnusedColumns(pipe.getHeader());
-
-    auto expression = std::make_shared<ExpressionActions>(std::move(expression_dag), actions_settings);
-    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, expression); });
-
-    if (is_aggregate)
-    {
-        auto params = std::make_shared<AggregatingTransformParams>(
-            pipe.getSharedHeader(), getAggregatorParams(query_context, aggregation_keys, aggregates), /*final=*/false);
-        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AggregatingTransform>(header, params, nullptr); });
-    }
-
-    /// only after the actions: this changes the trees of the subqueries, and the name of a set comes from its tree
-    buildSubquerySets();
-
-    return pipe;
+    return plan;
 }
 
-void ProjectionPlanner::buildSubquerySets()
+QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
 {
+    auto plan = buildPlanForSource(std::move(source));
+
+    auto projection_dag = buildActions({query_tree->as<QueryNode &>().getProjectionNode()});
+    /// the projection stores only the columns of its SELECT
+    projection_dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
+    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(projection_dag)));
+
+    addSubquerySetsStep(plan);
+    return plan;
+}
+
+QueryPlan ProjectionPlanner::buildPlanForAggregateProjection(Block source)
+{
+    auto plan = buildPlanForSource(std::move(source));
+
+    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), buildBeforeAggregationActions()));
+
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+    auto max_threads = getEffectiveMaxThreads(settings);
+    plan.addStep(std::make_unique<AggregatingStep>(
+        plan.getCurrentHeader(),
+        getAggregatorParams(query_context, aggregation_keys, aggregates),
+        GroupingSetsParamsList{},
+        /*final_=*/false,
+        settings[Setting::max_block_size],
+        settings[Setting::aggregation_in_order_max_block_bytes],
+        /*merge_threads_=*/max_threads,
+        /*temporary_data_merge_threads_=*/max_threads,
+        /*storage_has_evenly_distributed_read_=*/false,
+        /*group_by_use_nulls_=*/false,
+        SortDescription{},
+        SortDescription{},
+        /*should_produce_results_in_order_of_bucket_number_=*/false,
+        /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
+        /*explicit_sorting_required_for_aggregation_in_order_=*/false));
+
+    addSubquerySetsStep(plan);
+    return plan;
+}
+
+void ProjectionPlanner::addSubquerySetsStep(QueryPlan & plan)
+{
+    auto subqueries = planner_context->getPreparedSets().getSubqueries();
+    if (subqueries.empty())
+        return;
+
+    /// only after the actions: this changes the trees of the subqueries, and the name of a set comes from its tree
     const auto & query_context = planner_context->getQueryContext();
     auto subquery_options = SelectQueryOptions{}.subquery();
-    for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+    for (auto & subquery : subqueries)
     {
         auto subquery_tree = subquery->detachQueryTree();
         createUniqueAliasesIfNecessary(subquery_tree, query_context);
@@ -279,8 +317,9 @@ void ProjectionPlanner::buildSubquerySets()
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
-        subquery->buildSetInplace(query_context);
     }
+
+    addCreatingSetsStep(plan, std::move(subqueries), query_context);
 }
 
 }

@@ -32,6 +32,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISink.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
@@ -793,12 +795,17 @@ Block ProjectionDescription::calculateByQuery(
 
     /// `_part_offset` is added above, so it is an ordinary column of the source block.
     ProjectionPlanner planner(query_ast, ColumnsDescription(source_block.getNamesAndTypesList()), context);
-    auto pipe = planner.buildPipe(std::move(source_block));
+    auto plan = type == ProjectionDescription::Type::Aggregate
+        ? planner.buildPlanForAggregateProjection(std::move(source_block))
+        : planner.buildPlanForNormalProjection(std::move(source_block));
+
+    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    builder->resize(1);
 
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    auto sink = std::make_shared<ProjectionDataSink>(pipe.getSharedHeader(), block.rows());
-    QueryPipeline pipeline(std::move(pipe));
+    auto sink = std::make_shared<ProjectionDataSink>(builder->getSharedHeader(), block.rows());
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(sink);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
