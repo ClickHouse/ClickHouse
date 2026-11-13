@@ -5,3 +5,6 @@ UNION case
 true
 true
 distributed
+INTERSECT case
+true
+distributed
