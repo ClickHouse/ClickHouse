@@ -9,6 +9,7 @@
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
+#include <Common/Exception.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/LocalTime.h>
@@ -36,6 +37,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 class Exception;
 struct FormatSettings;
