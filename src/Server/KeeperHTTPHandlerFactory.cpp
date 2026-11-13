@@ -356,7 +356,6 @@ try
     String command;
     String cwd = "/";
     bool has_complete = false;
-    bool has_confirm_preview = false;
     String complete_prefix;
 
     const auto params = uri.getQueryParameters();
@@ -371,8 +370,6 @@ try
             has_complete = true;
             complete_prefix = value;
         }
-        else if (key == "confirm_preview")
-            has_confirm_preview = true;
     }
 
     if (has_complete)
@@ -401,50 +398,6 @@ try
                 completions_array.add(entry);
             response_json.set("completions", completions_array);
             response_json.set("replace_start", static_cast<UInt64>(completion.replace_start));
-        }
-
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        oss.exceptions(std::ios::failbit);
-        Poco::JSON::Stringifier::stringify(response_json, oss);
-
-        *response.send() << oss.str();
-        return;
-    }
-
-    if (has_confirm_preview)
-    {
-        setResponseDefaultHeaders(response);
-        response.setContentType("application/json");
-
-        Poco::JSON::Object response_json;
-
-        if (command.empty())
-        {
-            response_json.set("message", "Invalid command");
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid command");
-        }
-        else if (!cwd.empty() && !cwd.starts_with('/'))
-        {
-            response_json.set("message", "Invalid cwd: must be an absolute path starting with '/'.");
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid cwd");
-        }
-        else
-        {
-            std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            KeeperClientBase client(stream, stream);
-            client.zookeeper = keeper_client->get();
-            client.cwd = client.getAbsolutePath(cwd);
-            client.ask_confirmation = false;
-
-            const auto preview = client.previewDestructiveConfirmations(command);
-
-            Poco::JSON::Array prompts_array;
-            for (const auto & prompt : preview.prompts)
-                prompts_array.add(prompt);
-            response_json.set("prompts", prompts_array);
-            if (preview.rejection_reason.has_value())
-                response_json.set("rejection_reason", *preview.rejection_reason);
-            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         }
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM

@@ -178,8 +178,8 @@ String formatKeeperNodeName(const String & name)
 
     /// Name contains characters not safe for bare output (semicolons, parens,
     /// quotes, non-ASCII, etc.) — must use single-quoted form with \' and \\
-    /// escaping. Prefix matching may not work for partially-typed names, but
-    /// completing right after '/' still works.
+    /// escaping. Unquoted completion skips these names; they are offered only
+    /// after the user opens a quote (`ls /dir/'`).
     String result = "'";
     for (char c : name)
     {
@@ -363,8 +363,9 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
         /// and/or opening quote), then append the child name inside the quote.
         /// The opening quote may be in typed_parent_str (e.g. "'/path/" from
         /// ls '/path/child) or in typed_child_str (e.g. "'child" from ls /path/'child).
-        /// In unquoted mode: use formatKeeperNodeName which returns bare or single-quoted
-        /// form — always round-trippable through the parser.
+        /// In unquoted mode: `formatKeeperNodeName` returns a bare or backslash-escaped
+        /// name. Single-quoted names are skipped here so a bare prefix is never
+        /// rewritten shorter than what was typed. Quote mode still completes them.
         String full_completion;
         if (quote_char)
         {
@@ -386,7 +387,12 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
             }
         }
         else
-            full_completion = typed_parent_str + formatKeeperNodeName(child);
+        {
+            const String formatted = formatKeeperNodeName(child);
+            if (!formatted.empty() && formatted.front() == '\'')
+                continue;
+            full_completion = typed_parent_str + formatted;
+        }
 
         String full_path = parent_path;
         if (!full_path.ends_with('/'))
@@ -448,80 +454,6 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
 
     std::sort(result.completions.begin(), result.completions.end());
     return result;
-}
-
-KeeperDestructiveConfirmationPreview KeeperClientBase::previewDestructiveConfirmations(const String & text) const
-{
-    KeeperDestructiveConfirmationPreview preview;
-
-    const char * begin = text.data();
-    const char * end = begin + text.size();
-
-    Tokens tokens(begin, end, 0, false);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    size_t statement_count = 0;
-    size_t destructive_count = 0;
-
-    while (!pos->isEnd())
-    {
-        while (!pos->isEnd() && (pos->type == TokenType::Whitespace || pos->type == TokenType::Semicolon))
-            ++pos;
-
-        if (pos->isEnd())
-            break;
-
-        ++statement_count;
-
-        KeeperParser parser;
-        ASTPtr res;
-        Expected expected;
-        if (!parser.parse(pos, res, expected) || !res)
-        {
-            preview.rejection_reason = "Syntax error";
-            preview.prompts.clear();
-            return preview;
-        }
-
-        while (!pos->isEnd() && pos->type == TokenType::Whitespace)
-            ++pos;
-
-        if (!pos->isEnd() && pos->type != TokenType::Semicolon)
-        {
-            preview.rejection_reason = "Syntax error: unexpected trailing input";
-            preview.prompts.clear();
-            return preview;
-        }
-
-        const auto * query = res->as<ASTKeeperQuery>();
-        const String & command_name = query->command;
-        if (command_name == "rmr")
-        {
-            ++destructive_count;
-            if (!query->args.empty())
-            {
-                const String path = getAbsolutePath(query->args[0].safeGet<String>()).string();
-                preview.prompts.push_back("You are going to recursively delete path " + path);
-            }
-        }
-        else if (command_name == "delete_stale_backups")
-        {
-            ++destructive_count;
-            preview.prompts.push_back("You are going to delete all inactive backups in /clickhouse/backups.");
-        }
-    }
-
-    if (destructive_count == 0)
-        return preview;
-
-    if (destructive_count > 1 || statement_count > 1)
-    {
-        preview.rejection_reason
-            = "Destructive commands must be entered alone; split multi-statement input into separate commands.";
-        preview.prompts.clear();
-    }
-
-    return preview;
 }
 
 String KeeperClientBase::executeFourLetterCommand(const String & /* command */)

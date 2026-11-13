@@ -1957,43 +1957,6 @@
     let cli_cwd = "/";
 
     const COMPLETION_DISPLAY_LIMIT = 1000;
-    /// `rmr` / `delete_stale_backups` wait for y/n here. HTTP still runs with
-    /// `ask_confirmation=false` (stateless); the dashboard mirrors keeper-client.
-    let pending_command_confirm = null;
-
-    async function fetchDestructiveConfirmationPreview(command) {
-        const url = new URL(window.location);
-        url.pathname = "/api/v1/commands";
-        url.search = "?" + new URLSearchParams({
-            confirm_preview: "1",
-            command: command,
-            cwd: cli_cwd,
-        }).toString();
-        const response = await fetch(url.toString());
-        return await response.json();
-    }
-
-    function setPendingCommandConfirm(command) {
-        pending_command_confirm = command;
-        const cwd_el = document.getElementById("command-cwd");
-        const symbol = document.querySelector(".command-prompt-symbol");
-        if (command !== null) {
-            /// Same prompt as `keeper-client`: type `y` then Enter.
-            if (symbol)
-                symbol.textContent = "";
-            if (cwd_el)
-                cwd_el.textContent = "[y/n]";
-            const input = document.querySelector("#command");
-            if (input) {
-                input.value = "";
-                input.focus();
-            }
-        } else {
-            if (symbol)
-                symbol.textContent = "➜";
-            updateCwdDisplay();
-        }
-    }
     let pending_completion_display = null;
 
     function setPendingCompletionDisplay(matches) {
@@ -2096,7 +2059,9 @@
     async function handleTabCompletionImpl(input) {
         const requestValue = input.value;
         const requestCwd = cli_cwd;
-        const cursor = input.selectionStart ?? input.value.length;
+        const requestStart = input.selectionStart;
+        const requestEnd = input.selectionEnd;
+        const cursor = requestStart ?? input.value.length;
         const prefix = input.value.substring(0, cursor);
         const suffix = input.value.substring(cursor);
 
@@ -2110,8 +2075,10 @@
             const res = await fetch(url.toString());
             if (!res.ok) return;
             const data = await res.json();
-            // Discard if the user typed or changed cwd while the request was in flight.
-            if (input.value !== requestValue || cli_cwd !== requestCwd)
+            // Discard if the user typed, moved the caret, or changed cwd while the request was in flight.
+            if (input.value !== requestValue || cli_cwd !== requestCwd
+                || input.selectionStart !== requestStart
+                || input.selectionEnd !== requestEnd)
                 return;
 
             const matches = Array.isArray(data.completions) ? data.completions : [];
@@ -2141,7 +2108,6 @@
         /// Cancel any in-flight "Display all N possibilities? (y/n)" so Clear /
         /// Ctrl+L cannot leave the prompt hidden via .pending-completion.
         setPendingCompletionDisplay(null);
-        setPendingCommandConfirm(null);
     }
 
     function appendToOutput(text) {
@@ -2165,7 +2131,7 @@
         executeCommand(command);
     }
 
-    async function executeCommand(command, already_confirmed = false) {
+    async function executeCommand(command) {
         const command_input = document.querySelector("#command");
         const command_output = document.querySelector("#command-output");
 
@@ -2177,36 +2143,11 @@
         cli_history_index = cli_history.length;
 
         /// Mouse-triggered actions (quick-command buttons) bypass the keydown
-        /// handler that dismisses y/n; clear pending state so the prompt is not
-        /// left invisible under .pending-completion while the command runs.
+        /// handler that dismisses the large-completion prompt; clear it so the
+        /// prompt is not left hidden under .pending-completion while the command runs.
         setPendingCompletionDisplay(null);
 
-        if (!already_confirmed)
-            appendToOutput(`➜ ${cli_cwd} ${command}\n`);
-
-        if (!already_confirmed) {
-            try {
-                const preview = await fetchDestructiveConfirmationPreview(command);
-                if (preview.rejection_reason) {
-                    appendToOutput(preview.rejection_reason + "\n");
-                    scrollCommandOutputToBottom();
-                    return;
-                }
-                const prompts = Array.isArray(preview.prompts) ? preview.prompts : [];
-                if (prompts.length > 0) {
-                    appendToOutput(prompts[0] + " Continue?\n");
-                    setPendingCommandConfirm(command);
-                    scrollCommandOutputToBottom();
-                    return;
-                }
-            } catch (err) {
-                appendToOutput(`Unexpected error: ${err.message || err}\n`);
-                scrollCommandOutputToBottom();
-                return;
-            }
-        }
-
-        setPendingCommandConfirm(null);
+        appendToOutput(`➜ ${cli_cwd} ${command}\n`);
         scrollCommandOutputToBottom();
 
         /// `cd` is executed on the server so path resolution and existence
@@ -2260,42 +2201,6 @@
             }
         });
 
-        function handleCommandConfirmKeys(event) {
-            if (pending_command_confirm === null)
-                return false;
-
-            switch (event.code) {
-                case "Enter": {
-                    event.preventDefault();
-                    const answer = command_input.value;
-                    command_input.value = "";
-                    const command = pending_command_confirm;
-                    appendToOutput(answer + "\n");
-                    setPendingCommandConfirm(null);
-                    if (answer.length === 1 && (answer === "y" || answer === "Y"))
-                        executeCommand(command, /*already_confirmed=*/ true);
-                    scrollCommandOutputToBottom();
-                    return true;
-                }
-                case "KeyC":
-                    if (!event.ctrlKey)
-                        return false;
-                    event.preventDefault();
-                    appendToOutput("^C\n");
-                    command_input.value = "";
-                    setPendingCommandConfirm(null);
-                    scrollCommandOutputToBottom();
-                    return true;
-                case "Tab":
-                case "ArrowUp":
-                case "ArrowDown":
-                    event.preventDefault();
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
         function handleCompletionDisplayKeys(event) {
             if (pending_completion_display === null)
                 return false;
@@ -2343,7 +2248,7 @@
         }
 
         command_input.addEventListener("keydown", function (event) {
-            if (handleCommandConfirmKeys(event) || handleCompletionDisplayKeys(event))
+            if (handleCompletionDisplayKeys(event))
                 return;
 
             switch (event.code) {
