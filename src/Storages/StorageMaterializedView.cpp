@@ -557,33 +557,14 @@ void StorageMaterializedView::readImpl(
     const auto & select_table_id = view_metadata->select.select_table_id;
     if (!select_table_id.empty())
     {
-        /// Flattened `Nested` structures are the source table's, as the view may store their elements with another type.
-        /// Without the source table no name is known to be its column, so any dotted name may be such an element.
+        /// The view may store elements of the source's flattened `Nested` structures with another type, and the source is
+        /// not resolved here (that may need I/O before this check), so any dotted name may be such an element.
         static const ColumnsDescription unknown_source_columns;
-        std::optional<StorageMetadataHandle> source_metadata;
-        auto get_source_columns = [&]() -> const ColumnsDescription &
-        {
-            if (!source_metadata)
-            {
-                source_metadata.emplace();
-                try
-                {
-                    if (auto source_table = DatabaseCatalog::instance().tryGetTable(select_table_id, context))
-                        source_metadata = source_table->getInMemoryMetadataPtr(context, false);
-                }
-                catch (const Exception &) /// NOLINT(bugprone-empty-catch)
-                {
-                    /// Such a source counts as missing. The reader of the view, who may have no access to the source,
-                    /// gets neither its error nor a log of it.
-                }
-            }
-            return *source_metadata ? (*source_metadata)->getColumns() : unknown_source_columns;
-        };
         context->checkAccess(
             AccessType::SELECT,
             select_table_id,
             storage_snapshot->metadata->getColumns().getColumnNamesForSelectAccessCheck(
-                column_names, context, select_table_id, get_source_columns));
+                column_names, context, select_table_id, &unknown_source_columns));
     }
 
     auto storage_id = storage->getStorageID();

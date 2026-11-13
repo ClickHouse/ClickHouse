@@ -240,14 +240,14 @@ public:
     /// subcolumn is returned unchanged. Names that are not subcolumns (real columns, including columns literally
     /// containing a dot, or unknown names such as virtual columns) are returned unchanged. A column of a flattened
     /// `Nested` structure without a grant or revoke of its own is checked as the structure name when that name is
-    /// denied, so `REVOKE SELECT(n)` applies to its columns. The structures are those of `get_checked_columns()` (the
-    /// columns of `table_id` when they are not these), which is called only when a denied name may be such a structure.
-    /// The result is deduplicated while preserving the order of first appearance.
+    /// denied, so `REVOKE SELECT(n)` applies to its columns. The structures are those of `checked_columns`, the
+    /// columns of `table_id` when they are not these. The result is deduplicated while preserving the order of
+    /// first appearance.
     Names getColumnNamesForSelectAccessCheck(
         const Names & column_names,
         const ContextPtr & context,
         const StorageID & table_id,
-        const std::function<const ColumnsDescription &()> & get_checked_columns = {}) const;
+        const ColumnsDescription * checked_columns = nullptr) const;
 
     /// Returns the names `n` of the flattened `Nested` structures the column `n.x` may belong to: every prefix of its
     /// name ending before a dot that is not itself a column, as the name of a `Nested` column may contain a dot. None

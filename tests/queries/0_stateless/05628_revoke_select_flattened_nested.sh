@@ -88,8 +88,8 @@ reads_td=("SELECT id FROM td" "SELECT n.name.secret FROM td" "SELECT n FROM td")
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.td TO $user; REVOKE SELECT(\`n.name\`) ON $db.td FROM $user"; check "td GRANT table, REVOKE(n.name)" "${reads_td[@]}"
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $db.td TO $user; REVOKE SELECT(n) ON $db.td FROM $user"; check "td GRANT table, REVOKE(n)" "${reads_td[@]}"
 
-# A materialized view checks its definer's grants on the source-table columns named like the view's. The view may store
-# an element of the source's `Nested` structure with another type, and may outlive its source table.
+# A materialized view checks its definer's grants on the source-table columns named like the view's without resolving the
+# source table, so a revoke on a dotted prefix of such a name applies, whatever the source column is.
 $CLICKHOUSE_CLIENT --flatten_nested 1 -m -q "
 CREATE TABLE ts (id UInt8, nt Nested(secret String), \`x.y\` String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE tgt (id UInt8, \`nt.secret\` String, \`x.y\` String) ENGINE = MergeTree ORDER BY tuple();
@@ -103,34 +103,32 @@ $CLICKHOUSE_CLIENT -q "REVOKE SELECT(nt) ON $db.ts FROM $definer; REVOKE SELECT(
 check "mv, definer REVOKE(nt), REVOKE(x)" "${reads_mv[@]}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"; check "mv, definer REVOKE(nt), REVOKE(x), source dropped" "${reads_mv[@]}"
 
-# A view column no revoke can apply to is read without resolving the source table, which may be unavailable. A source
-# that has to be resolved but fails to counts as missing, so neither its errors nor its data reach the reader of the view.
+# Resolving the source table may need I/O, whose errors and logs would show the reader of the view source data. Here the
+# source is a URL table that reads the HTTP interface of this server.
 mvdb="${db}_mv"
 urldb="${db}_url"
-src_file="${CLICKHOUSE_USER_FILES_UNIQUE}/source.jsonl"
-mkdir -p "${CLICKHOUSE_USER_FILES_UNIQUE}"
-echo '{"id":1,"nt.secret":["s"]}' > "$src_file"
-# An old mtime, so that the rewritten file does not match the schema cached when the view is created.
-touch -d @1000000000 "$src_file"
+src_url="http://localhost:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+*+FROM+${db}.src+FORMAT+JSONEachRow"
 $CLICKHOUSE_CLIENT -m -q "
-CREATE DATABASE $urldb ENGINE = URL('file://');
+CREATE TABLE src (id UInt8, \`nt.secret\` Array(String)) ENGINE = Memory;
+INSERT INTO src VALUES (1, ['s']);
+CREATE DATABASE $urldb ENGINE = URL;
 CREATE DATABASE $mvdb ENGINE = Atomic;
 GRANT SELECT ON $urldb.* TO $definer;
-GRANT READ ON FILE TO $definer;
+GRANT READ ON URL TO $definer;
 CREATE MATERIALIZED VIEW $mvdb.mv ENGINE = MergeTree ORDER BY tuple() DEFINER = $definer SQL SECURITY DEFINER
-    AS SELECT id, \`nt.secret\` FROM $urldb.\`$src_file\`;
+    AS SELECT id, \`nt.secret\` FROM $urldb.\`$src_url\`;
 INSERT INTO $mvdb.mv VALUES (42, ['stored']);
 GRANT SELECT ON $mvdb.mv TO $user;
-REVOKE SELECT(nt) ON $urldb.\`$src_file\` FROM $definer;
+REVOKE SELECT(nt) ON $urldb.\`$src_url\` FROM $definer;
 "
 reads_url=("SELECT id FROM $mvdb.mv" "SELECT nt.secret FROM $mvdb.mv")
 check "mv over a URL source, definer REVOKE(nt)" "${reads_url[@]}"
-echo '{"id":1,"nt.secret":["s"],"x":LEAKED_SOURCE_BYTES}' > "$src_file"
-check "mv over a URL source, definer REVOKE(nt), source unreadable" "${reads_url[@]}"
-$CLICKHOUSE_CLIENT --user "$user" --send_logs_level debug -q "SELECT nt.secret FROM $mvdb.mv" 2>&1 | grep -c LEAKED_SOURCE_BYTES
+# The source now answers with an HTTP error whose body has a marker.
+$CLICKHOUSE_CLIENT -m -q "DROP TABLE src; CREATE VIEW src AS SELECT throwIf(1, concat('LEAKED_', 'SOURCE_BYTES'))::UInt8 AS id, ['s'] AS \`nt.secret\`;"
+check "mv over a URL source, definer REVOKE(nt), source failing" "${reads_url[@]}"
+$CLICKHOUSE_CLIENT --user "$user" --send_logs_level trace -q "SELECT nt.secret FROM $mvdb.mv SETTINGS schema_inference_use_cache_for_url = 0, http_max_tries = 1" 2>&1 | grep -c LEAKED_SOURCE_BYTES
 $CLICKHOUSE_CLIENT -q "REVOKE SELECT ON $urldb.* FROM $definer"
-check "mv over a URL source, definer REVOKE source, source unreadable" "${reads_url[@]}"
+check "mv over a URL source, definer REVOKE source, source failing" "${reads_url[@]}"
 
-$CLICKHOUSE_CLIENT -q "DROP DATABASE $mvdb; DROP DATABASE $urldb;"
-rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE $mvdb; DROP DATABASE $urldb; DROP VIEW src;"
 $CLICKHOUSE_CLIENT -q "DROP VIEW mv; DROP TABLE tgt; DROP USER $user, $definer; DROP ROLE $role; DROP VIEW v; DROP TABLE al; DROP TABLE m; DROP TABLE s; DROP TABLE td; DROP TABLE tn; DROP TABLE t; DROP TABLE t0;"

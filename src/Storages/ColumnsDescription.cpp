@@ -875,10 +875,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 }
 
 Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
-    const Names & column_names,
-    const ContextPtr & context,
-    const StorageID & table_id,
-    const std::function<const ColumnsDescription &()> & get_checked_columns) const
+    const Names & column_names, const ContextPtr & context, const StorageID & table_id, const ColumnsDescription * checked_columns) const
 {
     Names result;
     result.reserve(column_names.size());
@@ -926,18 +923,16 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
         }
 
         /// A `REVOKE` on the name of a flattened `Nested` structure applies to its columns that have no grant or revoke of their own.
-        if (name_to_check.contains('.'))
+        if (auto nested_names = (checked_columns ? *checked_columns : *this).getFlattenedNestedNames(name_to_check); !nested_names.empty())
         {
             init_access_rights();
-            auto is_denied = [&](std::string_view nested_name)
-            { return !access_rights->isGranted(AccessType::SELECT, database, table, nested_name); };
             if (access_rights->isGranted(AccessType::SELECT, database, table, name_to_check)
-                && access_rights->isGrantedInherited(AccessType::SELECT, database, table, name_to_check)
-                && std::ranges::any_of(
-                    Nested::getAllColumnAndSubcolumnPairs(name_to_check), [&](const auto & prefix) { return is_denied(prefix.first); }))
+                && access_rights->isGrantedInherited(AccessType::SELECT, database, table, name_to_check))
             {
-                auto nested_names = (get_checked_columns ? get_checked_columns() : *this).getFlattenedNestedNames(name_to_check);
-                if (auto denied = std::ranges::find_if(nested_names, is_denied); denied != nested_names.end())
+                auto denied = std::ranges::find_if(
+                    nested_names,
+                    [&](const String & nested_name) { return !access_rights->isGranted(AccessType::SELECT, database, table, nested_name); });
+                if (denied != nested_names.end())
                     name_to_check = std::move(*denied);
             }
         }
