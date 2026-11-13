@@ -57,20 +57,22 @@ UInt64 nextHTTPConnectionId()
 }
 
 HTTPConnectionInfoScope::HTTPConnectionInfoScope(bool enabled)
-    : previously_enabled(state->capture_connection_info)
-    , previous_requests_in_scope(state->requests_in_scope)
-    , previous_transport_attempt_pending(state->transport_attempt_pending)
-    , previous_transport_attempt_publishes(state->transport_attempt_publishes)
-    , previous_current_request_publishes(state->current_request_publishes)
-    , previous_helper_requests(state->helper_requests)
 {
-    state->capture_connection_info = enabled;
-    state->current_connection_info = {};
-    state->requests_in_scope = 0;
-    state->transport_attempt_pending = false;
-    state->transport_attempt_publishes = true;
-    state->current_request_publishes = true;
-    state->helper_requests = false;
+    State & local = state.get();
+    previously_enabled = local.capture_connection_info;
+    previous_requests_in_scope = local.requests_in_scope;
+    previous_transport_attempt_pending = local.transport_attempt_pending;
+    previous_transport_attempt_publishes = local.transport_attempt_publishes;
+    previous_current_request_publishes = local.current_request_publishes;
+    previous_helper_requests = local.helper_requests;
+
+    local.capture_connection_info = enabled;
+    local.current_connection_info = {};
+    local.requests_in_scope = 0;
+    local.transport_attempt_pending = false;
+    local.transport_attempt_publishes = true;
+    local.current_request_publishes = true;
+    local.helper_requests = false;
 }
 
 HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
@@ -78,19 +80,21 @@ HTTPConnectionInfoScope::~HTTPConnectionInfoScope()
     /// Whatever was published inside the scope and not taken is dropped here, so that the slot is
     /// never populated outside of a scope. Restoring the flag rather than clearing it keeps nested
     /// scopes correct, although nothing nests them today.
-    state->capture_connection_info = previously_enabled;
-    state->current_connection_info = {};
-    state->requests_in_scope = previous_requests_in_scope;
-    state->transport_attempt_pending = previous_transport_attempt_pending;
-    state->transport_attempt_publishes = previous_transport_attempt_publishes;
-    state->current_request_publishes = previous_current_request_publishes;
-    state->helper_requests = previous_helper_requests;
+    State & local = state.get();
+    local.capture_connection_info = previously_enabled;
+    local.current_connection_info = {};
+    local.requests_in_scope = previous_requests_in_scope;
+    local.transport_attempt_pending = previous_transport_attempt_pending;
+    local.transport_attempt_publishes = previous_transport_attempt_publishes;
+    local.current_request_publishes = previous_current_request_publishes;
+    local.helper_requests = previous_helper_requests;
 }
 
 HTTPConnectionInfoHelperRequests::HTTPConnectionInfoHelperRequests()
-    : previous_helper_requests(state->helper_requests)
 {
-    state->helper_requests = true;
+    State & local = state.get();
+    previous_helper_requests = local.helper_requests;
+    local.helper_requests = true;
 }
 
 HTTPConnectionInfoHelperRequests::~HTTPConnectionInfoHelperRequests()
@@ -105,59 +109,63 @@ bool isHTTPConnectionInfoCaptureEnabled()
 
 void beginHTTPConnectionInfoTransportAttempt(bool logged_request)
 {
-    if (!state->capture_connection_info)
+    State & local = state.get();
+    if (!local.capture_connection_info)
         return;
 
-    ++state->requests_in_scope;
-    state->current_connection_info = {};
-    state->transport_attempt_pending = true;
-    state->transport_attempt_publishes = logged_request && !state->helper_requests;
+    ++local.requests_in_scope;
+    local.current_connection_info = {};
+    local.transport_attempt_pending = true;
+    local.transport_attempt_publishes = logged_request && !local.helper_requests;
 }
 
 void beginHTTPConnectionInfoRequest()
 {
-    if (!state->capture_connection_info)
+    State & local = state.get();
+    if (!local.capture_connection_info)
         return;
 
-    state->current_connection_info = {};
+    local.current_connection_info = {};
 
     /// A helper request - such as a proxy lookup made by the S3 client after it counted its attempt -
     /// is a request of its own and must not take over the attempt counted for the logged one, unless
     /// that attempt is itself helper traffic.
-    if (state->transport_attempt_pending && (!state->helper_requests || !state->transport_attempt_publishes))
+    if (local.transport_attempt_pending && (!local.helper_requests || !local.transport_attempt_publishes))
     {
         /// Already counted by the transport before it set up the connection, which also decided
         /// whether the request may publish it.
-        state->transport_attempt_pending = false;
-        state->current_request_publishes = state->transport_attempt_publishes;
+        local.transport_attempt_pending = false;
+        local.current_request_publishes = local.transport_attempt_publishes;
         return;
     }
 
     /// Counted per request rather than per socket: a dead keep-alive socket replaced by a reconnect
     /// inside one `sendRequest` is still one request, and does not make the entry ambiguous.
-    ++state->requests_in_scope;
-    state->current_request_publishes = !state->helper_requests;
+    ++local.requests_in_scope;
+    local.current_request_publishes = !local.helper_requests;
 }
 
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info)
 {
-    if (!state->capture_connection_info || !state->current_request_publishes)
+    State & local = state.get();
+    if (!local.capture_connection_info || !local.current_request_publishes)
         return;
 
-    state->current_connection_info = info;
+    local.current_connection_info = info;
 }
 
 HTTPConnectionInfo takeCurrentHTTPConnectionInfo()
 {
-    HTTPConnectionInfo result = state->current_connection_info;
-    state->current_connection_info = {};
+    State & local = state.get();
+    HTTPConnectionInfo result = local.current_connection_info;
+    local.current_connection_info = {};
 
     /// Several requests under one entry: the entry's elapsed time covers all of them, so naming
     /// the socket of the last one would pair a whole retry sequence - including its backoff sleeps
     /// - with the identity and idle time of the attempt that finally succeeded. Report nothing
     /// instead; a connection column that is only sometimes about the request it sits next to is
     /// worse than an empty one.
-    if (state->requests_in_scope > 1)
+    if (local.requests_in_scope > 1)
         return {};
 
     return result;
