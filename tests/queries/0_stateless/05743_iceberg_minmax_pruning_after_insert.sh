@@ -5,7 +5,7 @@
 # The column statistics an INSERT writes into the manifest prune data files by min/max. Four
 # INSERTs write one data file each; a filter matching one file's values prunes the other three.
 # With `use_iceberg_partition_pruning = 0` nothing is pruned and the result is the same.
-# Both format versions, local and S3 storage.
+# Both format versions, local, S3 and Azure storage.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -55,14 +55,18 @@ run()
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
 }
 
-for storage in local s3; do
+AZURE_URL='http://localhost:10000/devstoreaccount1'
+AZURE_KEY='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='
+
+for storage in local s3 azure; do
     for fv in 1 2; do
         table="t_${storage}_v${fv}"
-        if [ "${storage}" = local ]; then
-            run "${table}" "IcebergLocal('${LAKE}/${table}/')" "${fv}"
-        else
-            run "${table}" "IcebergS3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}/${table}/')" "${fv}"
-        fi
+        case "${storage}" in
+            local) engine="IcebergLocal('${LAKE}/${table}/')" ;;
+            s3) engine="IcebergS3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}/${table}/')" ;;
+            azure) engine="IcebergAzure('${AZURE_URL}', 'cont', '${CLICKHOUSE_TEST_UNIQUE_NAME}/${table}/', 'devstoreaccount1', '${AZURE_KEY}')" ;;
+        esac
+        run "${table}" "${engine}" "${fv}"
     done
 done
 
