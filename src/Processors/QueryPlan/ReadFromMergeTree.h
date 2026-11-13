@@ -607,32 +607,45 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         bool skip_partition_pruning_ = false);
 
+    /// The filter the conditions of one `Indexes` share, with its folding mode.
+    struct IndexAnalysisFilter
+    {
+        std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
+        bool skip_constant_folding = true;
+    };
+
+    /// Builds the filter for the phases below, narrowed for `Graphite` FINAL.
+    static IndexAnalysisFilter prepareIndexAnalysisFilter(
+        const ActionsDAG * filter_actions_dag_,
+        const MergeTreeData::MergingParams & merging_params,
+        const StorageInMemoryMetadata & metadata,
+        bool is_final,
+        const ContextPtr & query_context,
+        bool skip_partition_pruning);
+
     /// Builds the primary-key condition and the RPN template of a filter into `indexes`.
     static void buildKeyConditions(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
-        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+        const IndexAnalysisFilter & filter,
         const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & query_context,
-        bool skip_constant_folding);
+        const ContextPtr & query_context);
 
     /// Builds the offset, skip-index conditions and derived flags into `indexes`; needs `buildKeyConditions` first (reads `key_condition_rpn_template`).
     static void buildOffsetAndSkipIndexConditions(
         ReadFromMergeTree::Indexes & indexes,
-        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+        const IndexAnalysisFilter & filter,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeSettings & data_settings,
         [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
         [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
         const ContextPtr & query_context,
-        bool is_final,
-        bool skip_constant_folding);
+        bool is_final);
 
     /// The primary-key condition of `buildIndexes`.
     static ConditionTemplate<KeyCondition>::Ptr buildPrimaryKeyCondition(
-        std::shared_ptr<ActionsDAGWithInversionPushDown> filter_dag,
+        const IndexAnalysisFilter & filter,
         const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & query_context,
-        bool skip_constant_folding);
+        const ContextPtr & query_context);
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
