@@ -29,13 +29,13 @@ bool ParserPRQLQuery::isIncompleteAtEOF(std::string_view query)
     static_cast<void>(query);
     return false;
 #else
-    uint8_t * error_ptr{nullptr};
-    uint64_t error_size{0};
+    uint8_t * output_ptr{nullptr};
+    uint64_t output_size{0};
     const auto res = prql_to_sql(
-        reinterpret_cast<const uint8_t *>(query.data()), static_cast<uint64_t>(query.size()), &error_ptr, &error_size);
-    SCOPE_EXIT({ prql_free_pointer(error_ptr); });
+        reinterpret_cast<const uint8_t *>(query.data()), static_cast<uint64_t>(query.size()), &output_ptr, &output_size);
+    SCOPE_EXIT({ prql_free_pointer(output_ptr); });
 
-    return res != 0 && std::string_view{reinterpret_cast<const char *>(error_ptr), error_size}.contains("unexpected end of input");
+    return res == PRQL_INCOMPLETE_AT_END_OF_INPUT;
 #endif
 }
 

@@ -4223,12 +4223,36 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                         return false;
             }
 
+            /// Match the brackets over all the tokens up to the end of the buffer, skipping lexer
+            /// errors (the lexer goes on after them) instead of stopping at the first one like
+            /// `checkUnmatchedParentheses` does: in `SELECT (1!)` the `)` closing the opener comes
+            /// after the invalid `!`, and the statement is complete, with a lexical error to report.
+            /// An error that runs to the end of the buffer, e.g. the unterminated string in
+            /// `SELECT ('abc`, leaves an opener before it unclosed, so that still folds.
+            std::vector<TokenType> openers;
             Tokens statement_tokens(statement_begin, end, 0, true);
-            const UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(statement_tokens));
-            for (const auto & token : unmatched)
-                if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
-                    return true;
-            return false;
+            for (TokenIterator it(statement_tokens); !it->isEnd(); ++it)
+            {
+                if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
+                {
+                    openers.push_back(it->type);
+                }
+                else if (it->type == TokenType::ClosingRoundBracket || it->type == TokenType::ClosingSquareBracket)
+                {
+                    /// An excess closing bracket is a real syntax error to submit; a closer that
+                    /// does not match the innermost opener ends the scan, so an opener before it
+                    /// still counts.
+                    if (openers.empty())
+                        return false;
+                    const TokenType expected_opener = it->type == TokenType::ClosingRoundBracket
+                        ? TokenType::OpeningRoundBracket
+                        : TokenType::OpeningSquareBracket;
+                    if (openers.back() != expected_opener)
+                        break;
+                    openers.pop_back();
+                }
+            }
+            return !openers.empty();
         };
 
         auto has_statement_terminator = [&](const char * statement_begin)
@@ -4246,6 +4270,12 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// True if the ClickHouse SQL statement in `[sql_begin, sql_end)` stops parsing because the
         /// input ends, i.e. it is still being typed. Probed on its own tokens, so the shared parse
         /// position is left alone.
+        ///
+        /// `ParserQuery` can succeed on a prefix of the statement after an optional suffix fails:
+        /// `SELECT 1 UNION ALL` parses as `SELECT 1` with `UNION ALL` left over. The executor
+        /// reports such leftover tokens as a syntax error at the furthest token the parser
+        /// reached, so the statement is still being typed exactly when that is the end of input,
+        /// like for a failed parse.
         ///
         /// With `implicit_select`, `ParserQuery` falls back to an implicit `SELECT` when the explicit
         /// statement fails, and that `SELECT` can succeed on a prefix of it: `SET max_threads =`
@@ -4266,7 +4296,10 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 if (!sql_parser.parse(sql_pos, sql_ast, sql_expected))
                     return sql_pos.max().type == TokenType::EndOfStream;
                 parsed_in_full = sql_pos->isEnd();
-                return false;
+                if (parsed_in_full || sql_pos->type == TokenType::Semicolon)
+                    return false;
+                /// A prefix parsed and tokens are left over (see above).
+                return sql_pos.max().type == TokenType::EndOfStream;
             };
 
             bool parsed_in_full = false;
@@ -4528,9 +4561,9 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             /// this statement is parsed, and the catch and the tail of the loop still need
             /// that after a `SET dialect = ...` has been applied.
             const bool kql_statement = effective_settings[Setting::dialect] == Dialect::kusto;
-            /// Likewise: whether this statement is parsed by `ParserQuery` with `implicit_select`.
-            const bool implicit_select_statement = effective_settings[Setting::implicit_select]
-                && dynamic_cast<const ParserQuery *>(parser.get()) != nullptr;
+            /// Likewise: whether this statement is parsed by `ParserQuery`, and with `implicit_select`.
+            const bool sql_statement = !kql_statement && dynamic_cast<const ParserQuery *>(parser.get()) != nullptr;
+            const bool implicit_select_statement = sql_statement && effective_settings[Setting::implicit_select];
             try
             {
                 if (kql_statement)
@@ -4572,8 +4605,8 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                     /// of failure -- "end of query" exactly when that is the end of input, and the
                     /// SQL `SET` fast path of `parseKQLQuery` says the same, e.g. for `SET x =` --
                     /// which substitutes for the `token_iterator.max()` signal of the SQL
-                    /// parser (the PRQL probe below recognizes end of input by the
-                    /// compiler's message the same way). The terminator scan is not
+                    /// parser (the PRQL compiler below has a result code of its own for
+                    /// it). The terminator scan is not
                     /// consulted first: a KQL statement contains `;` legitimately
                     /// (`let x = 1; print (` is one statement still being typed), and a `;`
                     /// the user really typed after the failing point makes the bracket scan
@@ -4686,10 +4719,11 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
                 /// PRQL validates its entire statement with an external compiler and
                 /// communicates syntax errors by throwing. Unlike the SQL parser's
-                /// `Expected`, its error positions are available only through a
-                /// dialect-specific probe. Preserve the general rule that exceptions
-                /// are submitted, except when that probe identifies EOF as the
-                /// missing input.
+                /// `Expected`, whether it failed at the end of input is available only
+                /// through a dialect-specific probe: the compiler returns a distinct
+                /// result code for it (see `ParserPRQLQuery::isIncompleteAtEOF`). Preserve
+                /// the general rule that exceptions are submitted, except when that probe
+                /// identifies EOF as the missing input.
                 const auto query = std::string_view{statement_begin, static_cast<size_t>(end - statement_begin)};
                 if (effective_settings[Setting::dialect] == Dialect::prql && ParserPRQLQuery::isIncompleteAtEOF(query))
                     return unless_terminated(true);
@@ -4742,9 +4776,16 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             /// loop resumes on.
             if (kql_statement)
                 continue;
-            /// Tokens remain after a parsed statement that are not a new statement. With
-            /// `implicit_select`, the parsed statement can be an implicit `SELECT` over a prefix
-            /// of an explicit statement that is still being typed, e.g. `SET max_threads =`
+            /// Tokens remain after a parsed statement that are not a new statement. `ParserQuery`
+            /// can succeed on a prefix of a statement after an optional suffix fails, e.g. on the
+            /// `SELECT 1` of `SELECT 1 UNION ALL`, and the executor reports the leftover tokens as
+            /// a syntax error at the furthest token the parser reached. When that is the end of
+            /// input, the suffix is still being typed, so keep the buffer open rather than
+            /// executing the statements before it.
+            if (sql_statement && token_iterator.max().type == TokenType::EndOfStream)
+                return unless_terminated(true);
+            /// With `implicit_select`, the parsed statement can also be an implicit `SELECT` over
+            /// a prefix of an explicit statement that is still being typed, e.g. `SET max_threads =`
             /// (see `sql_needs_more_input`); judge that statement without the fallback.
             if (implicit_select_statement && sql_needs_more_input(statement_begin, end, /*allow_implicit_select=*/ false))
                 return unless_terminated(true);

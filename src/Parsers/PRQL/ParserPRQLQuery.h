@@ -24,7 +24,8 @@ public:
 
     const char * getName() const override { return "PRQL Statement"; }
 
-    /// Returns true if the PRQL compiler reports an unexpected end of input.
+    /// Returns true if the PRQL compiler fails because the input ends where it expects more,
+    /// i.e. the statement is unfinished (`PRQL_INCOMPLETE_AT_END_OF_INPUT` of `prql_to_sql`).
     static bool isIncompleteAtEOF(std::string_view query);
 
 protected:

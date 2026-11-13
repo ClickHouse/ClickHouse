@@ -54,6 +54,11 @@ void LogsQLLexer::throwSyntaxError(const String & message) const
     throw Exception(ErrorCodes::SYNTAX_ERROR, "{}; context: [{}]", message, context());
 }
 
+void LogsQLLexer::throwUnexpectedEndOfInput(const String & message) const
+{
+    throw LogsQLUnexpectedEndOfInput(ErrorCodes::SYNTAX_ERROR, "{}; context: [{}]", message, context());
+}
+
 String LogsQLLexer::context() const
 {
     const char * context_end = token_begin < end ? token_begin : end;
@@ -241,7 +246,7 @@ String LogsQLLexer::decodeBacktickQuoted(const char *& pos) const
         if (pos == end)
         {
             checkTruncation(pos);
-            throwSyntaxError("unterminated backtick-quoted string");
+            throwUnexpectedEndOfInput("unterminated backtick-quoted string");
         }
         char c = *pos;
         ++pos;

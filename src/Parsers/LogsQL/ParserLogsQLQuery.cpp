@@ -44,6 +44,13 @@ bool ParserLogsQLQuery::isIncompleteAtEOF(
         parser->parse();
         return false;
     }
+    catch (const LogsQLUnexpectedEndOfInput &)
+    {
+        /// The input ends inside a quoted string, e.g. a multiline backtick string being typed.
+        /// The lexer reads the first token in the constructor, so this can come from there too,
+        /// with no parser to ask about the end of input.
+        return true;
+    }
     catch (const Exception & e)
     {
         /// Other errors, e.g. `NOT_IMPLEMENTED` for a valid query, are not about missing input.

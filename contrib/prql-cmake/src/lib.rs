@@ -44,18 +44,39 @@ unsafe fn prql_to_sql_impl(
         display: prqlc::DisplayOptions::Plain,
     };
 
-    if let Ok(sql_str) = prqlc::compile(&query_str, &opts) {
-        // NOTE: Over at PRQL we're considering to un-deprecate & re-enable the
-        // `color: false` option. If that happens, we can remove the `strip_str`
-        // here, which strips color codes from the output.
-        use anstream::adapter::strip_str;
-        let sql_str = strip_str(&sql_str).to_string();
-        set_output(sql_str, out, out_size);
-        0
-    } else {
-        set_output("PRQL compilation failed!".to_string(), out, out_size);
-        1
+    match prqlc::compile(&query_str, &opts) {
+        Ok(sql_str) => {
+            // NOTE: Over at PRQL we're considering to un-deprecate & re-enable the
+            // `color: false` option. If that happens, we can remove the `strip_str`
+            // here, which strips color codes from the output.
+            use anstream::adapter::strip_str;
+            let sql_str = strip_str(&sql_str).to_string();
+            set_output(sql_str, out, out_size);
+            0
+        }
+        Err(errors) => {
+            set_output("PRQL compilation failed!".to_string(), out, out_size);
+            if errors.inner.iter().any(|e| is_end_of_input_reason(&e.reason)) {
+                PRQL_INCOMPLETE_AT_END_OF_INPUT
+            } else {
+                1
+            }
+        }
     }
+}
+
+/// Returned by `prql_to_sql` instead of 1 when the query failed to compile because the input
+/// ended while the parser still expected more, i.e. the query is unfinished rather than wrong.
+/// Keep in sync with `include/prql.h`.
+const PRQL_INCOMPLETE_AT_END_OF_INPUT: i64 = 2;
+
+/// `prqlc` has no structured "end of input" flag in its error messages (their spans cover the
+/// whole query), so recognize the reasons that its parser and lexer give when they run out of
+/// input: chumsky's "found nothing" becomes "Expected ..., but didn't find anything before
+/// the end." or "unexpected end of input", and the lexer says "Unexpected end of input at ...".
+fn is_end_of_input_reason(reason: &str) -> bool {
+    reason.ends_with("but didn't find anything before the end.")
+        || reason.to_ascii_lowercase().starts_with("unexpected end of input")
 }
 
 #[no_mangle]
@@ -93,7 +114,7 @@ mod tests {
 
         unsafe {
             let success = prql_to_sql(query_ptr, query_size, &mut out, &mut out_size);
-            let output = CStr::from_ptr(out as *const i8)
+            let output = CStr::from_ptr(out as *const c_char)
                 .to_str()
                 .unwrap()
                 .to_string();
@@ -110,6 +131,16 @@ mod tests {
         // panic is caught. When we upgrade prqlc, it won't be a panic any
         // longer.
         assert!(run_compile("x -> y").1 == 1);
+    }
+
+    #[test]
+    fn test_prql_incomplete_at_end_of_input() {
+        assert!(run_compile("from employees | filter salary >").1 == PRQL_INCOMPLETE_AT_END_OF_INPUT);
+        assert!(run_compile("from employees | select {a").1 == PRQL_INCOMPLETE_AT_END_OF_INPUT);
+        assert!(run_compile("from t |").1 == PRQL_INCOMPLETE_AT_END_OF_INPUT);
+        // Errors that are not about the end of input.
+        assert!(run_compile("from t | foo").1 == 1);
+        assert!(run_compile("from t | select {a)}").1 == 1);
     }
 
     #[test]

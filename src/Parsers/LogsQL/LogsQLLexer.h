@@ -1,12 +1,25 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/Exception.h>
 
 #include <string_view>
 #include <vector>
 
 namespace DB
 {
+
+/// The syntax error that the LogsQL lexer throws when the input ends inside a backtick-quoted
+/// (raw, multiline) string: the query is unfinished rather than wrong, and the next lines can
+/// complete it. (A double- or single-quoted string cannot span lines, so a newline could not
+/// complete it, and it is an ordinary syntax error.) It is an ordinary `SYNTAX_ERROR` for everyone else; the interactive
+/// client catches it by type to keep such a statement open for the next line
+/// (see `ParserLogsQLQuery::isIncompleteAtEOF`).
+class LogsQLUnexpectedEndOfInput : public Exception
+{
+public:
+    using Exception::Exception;
+};
 
 /// Lexer for LogsQL - the query language of VictoriaLogs.
 /// https://docs.victoriametrics.com/victorialogs/logsql/
@@ -79,6 +92,10 @@ public:
 
     /// Throws SYNTAX_ERROR with the current context appended to the message.
     [[noreturn]] void throwSyntaxError(const String & message) const;
+
+    /// Like `throwSyntaxError`, for an input that ends where more of it is required and can
+    /// follow on the next line, i.e. inside a backtick-quoted string. Throws `LogsQLUnexpectedEndOfInput`.
+    [[noreturn]] void throwUnexpectedEndOfInput(const String & message) const;
 
     struct State
     {
