@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, long, no-flaky-check
+# Tag no-flaky-check: the 60000-element CREATE is too slow for the many parallel runs of the flaky check under sanitizers.
 
 # --dump-schema raises `max_ast_elements` for a stored CREATE bigger than its default, which the replay checks.
 

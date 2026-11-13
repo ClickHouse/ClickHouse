@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
+# Tag no-replicated-database: the dump of a `Replicated` database names macros that the replaying `clickhouse-local` does not have.
 
 # --dump-schema sets the typing settings that a constraint's scalar subquery, which CREATE and every ATTACH run, analyzes
 # with, and warns when it cannot probe that subquery without running another one or the view it reads.

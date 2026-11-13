@@ -3334,6 +3334,7 @@ struct ReplayGateNeeds
     bool throw_if_error_code = false; /// `throwIf` with an error code argument
     bool rank_arguments = false; /// `rank` or `dense_rank` with arguments
     bool streaming_query = false; /// a table expression read with `STREAM`
+    bool shuffle_query = false; /// a SELECT with `SHUFFLE`
     bool kafka_consumers_over_limit = false; /// `kafka_num_consumers` may be above the per-server limit
     bool dynamic_disk_from_env = false;
     bool dynamic_disk_from_zk = false;
@@ -4534,6 +4535,9 @@ ReplayGateNeeds collectReplayGateNeeds(
         /// CREATE runs the scalar subqueries of a constraint, which parse their table functions too.
         if (create->columns_list && create->columns_list->constraints)
             forEachNode(*create->columns_list->constraints, find_archive_path);
+        /// The query an `eval` call generates parses its table functions where the call is.
+        for (const auto & query : eval_queries)
+            forEachNode(*query, find_archive_path);
 
         /// A table, or a database, builds a `disk = disk(...)` of its SETTINGS at CREATE.
         if (create->storage && create->storage->settings)
@@ -4701,6 +4705,9 @@ ReplayGateNeeds collectReplayGateNeeds(
         {
             if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->stream_settings)
                 needs.streaming_query = true;
+            /// The query tree builder reads `allow_experimental_shuffle_query` for a SELECT with `SHUFFLE`.
+            if (const auto * select = node.as<ASTSelectQuery>(); select && select->shuffle)
+                needs.shuffle_query = true;
         };
         forEachNode(*create_ast, visit_streaming_table, unread_select);
         for (const auto & query : eval_queries)
@@ -4949,6 +4956,7 @@ String replaySettingsPrelude(
         {"enable_subcolumn_codecs", &ReplayGateNeeds::subcolumn_codecs},
         {"enable_elasticsearch", &ReplayGateNeeds::elasticsearch},
         {"enable_streaming_queries", &ReplayGateNeeds::streaming_query},
+        {"allow_experimental_shuffle_query", &ReplayGateNeeds::shuffle_query},
         {"allow_get_client_http_header", &ReplayGateNeeds::client_http_header_function},
         {"allow_introspection_functions", &ReplayGateNeeds::introspection_functions},
         {"allow_nonconst_timezone_arguments", &ReplayGateNeeds::nonconst_timezone_argument},

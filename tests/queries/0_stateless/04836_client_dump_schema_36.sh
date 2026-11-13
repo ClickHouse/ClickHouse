@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
+# Tag no-replicated-database: the other replicas cannot create the table, whose constraint reads a named collection only this server has.
 
 # --dump-schema reports a named collection that only a constraint subquery reads, which CREATE runs, also when the
 # dumping user cannot see the collection.

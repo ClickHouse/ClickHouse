@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
+# Tag no-replicated-database: the dump of a `Replicated` database names macros that the replaying `clickhouse-local` does not have.
 
 # --dump-schema keeps MergeTree parts, their transaction files and FileLog offsets as they were, and its dumps replay: the typing settings
 # of stored expressions, a computed sorting-key type, a constraint subquery and an `eval` construction setting.

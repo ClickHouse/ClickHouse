@@ -28,3 +28,5 @@ collection_masked: replay rc=0
 collection_masked: same definition: 1
 constraint: dump rc=0, archive gate: 1
 constraint: replay rc=0
+constraint_eval: dump rc=0, archive gate: 1
+constraint_eval: replay rc=0

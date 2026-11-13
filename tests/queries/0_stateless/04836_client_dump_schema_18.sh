@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-replicated-database
+# Tag no-replicated-database: the dump of a `Replicated` database names macros that the replaying `clickhouse-local` does not have.
 
 # --dump-schema emits `allow_archive_path_syntax` for an archive path (`a.tar :: data.csv`) in a table function that
 # CREATE parses: the one a table is created AS, and one in the SELECT of a materialized view. A plain view parses its
@@ -161,3 +162,14 @@ echo "constraint: dump rc=$?, archive gate: $(grep -c '^SET allow_archive_path_s
 $CLICKHOUSE_LOCAL --path "$work/constraint_dst" --allow_archive_path_syntax=0 -n --queries-file "$work/constraint.sql" 2>&1 \
     | grep -o 'Code: [0-9]*' | head -1
 echo "constraint: replay rc=${PIPESTATUS[0]}"
+
+# The same for the query an `eval` call in a constraint generates.
+$CLICKHOUSE_CLIENT -q "DROP TABLE constraint_archive"
+$CLICKHOUSE_CLIENT --allow_experimental_eval_table_function=1 -q "CREATE TABLE constraint_eval (x UInt64,
+    CONSTRAINT c CHECK x <= (SELECT max(v) FROM eval('SELECT v FROM file(''$archive_dir/a.tar :: data.tsv'', ''TSV'', ''v UInt64'')')))
+    ENGINE = Memory"
+$CLICKHOUSE_CLIENT --dump-schema "${CLICKHOUSE_DATABASE}" > "$work/constraint_eval.sql" 2>/dev/null
+echo "constraint_eval: dump rc=$?, archive gate: $(grep -c '^SET allow_archive_path_syntax = 1;' "$work/constraint_eval.sql")"
+$CLICKHOUSE_LOCAL --path "$work/constraint_eval_dst" --allow_archive_path_syntax=0 -n --queries-file "$work/constraint_eval.sql" 2>&1 \
+    | grep -o 'Code: [0-9]*' | head -1
+echo "constraint_eval: replay rc=${PIPESTATUS[0]}"
