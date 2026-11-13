@@ -12,7 +12,6 @@ integration:
 
 import MySQLCloudSetup from '/snippets/ru/_clickhouse_mysql_cloud_setup.mdx';
 import MySQLOnPremiseSetup from '/snippets/ru/_clickhouse_mysql_on_premise_setup.mdx';
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 Tableau Online может подключаться к ClickHouse Cloud или к ClickHouse в собственной инфраструктуре через интерфейс MySQL, используя официальный источник данных MySQL.
 
@@ -34,25 +33,57 @@ Tableau Online может подключаться к ClickHouse Cloud или к
 
 Войдите на свой сайт Tableau Cloud и добавьте новый Published Data Source.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="Интерфейс Tableau Online с кнопкой 'New' для создания опубликованного источника данных" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Интерфейс Tableau Online с кнопкой 'New' для создания опубликованного источника данных](/images/integrations/data-visualization/tableau_online_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Выберите &quot;MySQL&quot; из списка доступных коннекторов.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="Экран выбора коннектора в Tableau Online с выделенным вариантом MySQL" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Экран выбора коннектора в Tableau Online с выделенным вариантом MySQL](/images/integrations/data-visualization/tableau_online_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Укажите сведения о подключении, полученные при настройке ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="Экран настройки подключения MySQL в Tableau Online с полями сервера, порта, базы данных и учетных данных" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Экран настройки подключения MySQL в Tableau Online с полями сервера, порта, базы данных и учетных данных](/images/integrations/data-visualization/tableau_online_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Tableau Online проанализирует структуру базы данных и покажет список доступных таблиц. Перетащите нужную таблицу на холст справа. Кроме того, можно нажать &quot;Update Now&quot;, чтобы просмотреть данные, а также при необходимости скорректировать определённые системой типы или имена полей.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="Страница источника данных в Tableau Online с таблицами базы данных слева и холстом справа с поддержкой drag-and-drop" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Страница источника данных в Tableau Online с таблицами базы данных слева и холстом справа с поддержкой drag-and-drop](/images/integrations/data-visualization/tableau_online_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -72,7 +103,15 @@ Tableau Online проанализирует структуру базы данн
 Это можно сделать, следуя руководству по настройке, доступному [здесь](https://www.tableau.com/support/drivers), если выбрать MySQL в раскрывающемся списке Data Source.
 Если у вас Mac с M1, воспользуйтесь [этой веткой с устранением неполадок](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac), чтобы обойти проблему с установкой драйвера.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="Интерфейс Tableau Desktop с меню Connect, где выделен вариант MySQL" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Интерфейс Tableau Desktop с меню Connect, где выделен вариант MySQL](/images/integrations/data-visualization/tableau_desktop_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -84,26 +123,58 @@ Tableau Online проанализирует структуру базы данн
 
 Укажите учетные данные MySQL-пользователя вашего экземпляра ClickHouse Cloud и путь к скачанному корневому сертификату.
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="Диалог подключения MySQL в Tableau Desktop с включенной опцией SSL и полями для сервера, имени пользователя, пароля и сертификата" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Диалог подключения MySQL в Tableau Desktop с включенной опцией SSL и полями для сервера, имени пользователя, пароля и сертификата](/images/integrations/data-visualization/tableau_desktop_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Выберите нужные таблицы, как обычно (так же, как в Tableau Online),
 и выберите &quot;Server&quot; -&gt; &quot;Publish Data Source&quot; -&gt; Tableau Cloud.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Tableau Desktop с меню Server, где выделен параметр Publish Data Source" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Tableau Desktop с меню Server, где выделен параметр Publish Data Source](/images/integrations/data-visualization/tableau_desktop_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 ВАЖНО: в параметрах &quot;Authentication&quot; нужно выбрать &quot;Embedded password&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Диалог публикации Tableau Desktop, где в параметрах Authentication выбран вариант Embedded password" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Диалог публикации Tableau Desktop, где в параметрах Authentication выбран вариант Embedded password](/images/integrations/data-visualization/tableau_desktop_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Кроме того, выберите &quot;Update workbook to use the published data source&quot;.
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="Диалог публикации Tableau Desktop с отмеченной опцией 'Update workbook to use the published data source'" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Диалог публикации Tableau Desktop с отмеченной опцией 'Update workbook to use the published data source'](/images/integrations/data-visualization/tableau_desktop_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

@@ -397,7 +397,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             structure = rg.nextMediumNumber() < 96 ? ufunc->mutable_structure() : nullptr;
             if (structure)
             {
-                addRandomHTTPHeaders(rg, tfunc);
+                addRandomHTTPHeaders(rg, true, tfunc);
             }
         }
         else if (t.isRedisEngine())
@@ -486,7 +486,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             /// Custom HTTP headers only apply to HTTP-based (S3-family) object stores; forwarding them
             /// into the Azure SDK or local-file paths breaks the transport (e.g. Accept-Encoding).
             if (t.isOnS3())
-                addRandomHTTPHeaders(rg, tfunc);
+                addRandomHTTPHeaders(rg, true, tfunc);
         }
     }
     else if (usage == TableFunctionUsage::ClusterCall)
@@ -780,6 +780,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     /// `filesystem([path])` reads local files (metadata + optional content) — non-deterministic
     /// and needs FILE access. Don't emit it through `remote()` either.
     queryMask[static_cast<size_t>(QueryOp::FilesystemUDF)] = !under_remote && this->allow_not_deterministic && this->allow_engine_udf;
+    /// `obfuscate(SELECT ...)` trains on the result of its query and then repeats it forever with new values
+    queryMask[static_cast<size_t>(QueryOp::ObfuscateUDF)]
+        = fc.allow_infinite_tables && this->allow_not_deterministic && this->allow_engine_udf && can_recurse;
 
     queryGen.setEnabled(queryMask);
     /// If MV chaining is requested, force the next source to be a view (clears flag after use)
@@ -1123,7 +1126,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             URLFunc * ufunc = tf->mutable_url();
             const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
             const std::optional<String> & cluster = tt.getCluster();
-            const String outf = rg.pickRandomly((!this->allow_not_deterministic || rg.nextBool()) ? fc.in_out_formats : fc.out_formats);
+            const String outf = fc.pickFormat(rg, (!this->allow_not_deterministic || rg.nextBool()) ? fc.in_out_formats : fc.out_formats);
             const std::optional<String> read_back = fc.formatToRead(outf);
             const String iinf = (read_back.has_value() && rg.nextBool()) ? read_back.value() : rg.pickRandomly(fc.in_formats);
 
@@ -1158,7 +1161,7 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
                 ufunc->set_format(iinf);
             }
             ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-            addRandomHTTPHeaders(rg, tf);
+            addRandomHTTPHeaders(rg, false, tf);
             addTableRelation(rg, rg.nextMediumNumber() < 4, rel_name, tt);
         }
         break;
@@ -1326,6 +1329,16 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"depth"}, size_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"is_symlink"}, uint8_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"content"}, string_tp.get()));
+            this->levels[this->current_level].rels.emplace_back(rel);
+        }
+        break;
+        case QueryOp::ObfuscateUDF: {
+            /// The obfuscated rows keep the names and types of the query's columns
+            SQLRelation rel(rel_name);
+            const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
+
+            generateDerivedTable(
+                rg, rel, allowed_clauses, ncols, rg.nextMediumNumber() < 86, std::nullopt, tof->mutable_tfunc()->mutable_obfuscate());
             this->levels[this->current_level].rels.emplace_back(rel);
         }
         break;
@@ -2717,6 +2730,11 @@ void StatementGenerator::generateSelect(
                 generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
                 this->depth--;
             }
+            else if ((allowed_clauses & allow_orderby) && this->allow_not_deterministic && rg.nextMediumNumber() < 6)
+            {
+                /// The rows in random order, so never in an oracle query
+                ssc->set_shuffle(true);
+            }
             const bool order_safe = ssc->has_orderby() || this->levels[this->current_level].global_aggregate || this->allow_not_deterministic;
             if ((allowed_clauses & allow_limitby) && order_safe && rg.nextMediumNumber() < 23)
             {
@@ -2765,7 +2783,7 @@ void StatementGenerator::generateTopSelect(
         }
         else
         {
-            ts->set_format(rg.pickRandomly(fc.out_formats));
+            ts->set_format(fc.pickFormat(rg, fc.out_formats));
             if (rg.nextSmallNumber() < 10)
             {
                 std::uniform_int_distribution<uint32_t> step_range(

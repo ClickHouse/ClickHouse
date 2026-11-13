@@ -1,0 +1,223 @@
+databricks153/type_widening
+byte_to_short	Nullable(Int16)
+byte_to_int	Nullable(Int32)
+byte_to_long	Nullable(Int64)
+byte_to_decimal	Nullable(Decimal(10, 0))
+byte_to_double	Nullable(Float64)
+short_to_int	Nullable(Int32)
+short_to_long	Nullable(Int64)
+short_to_decimal	Nullable(Decimal(10, 0))
+short_to_double	Nullable(Float64)
+int_to_long	Nullable(Int64)
+int_to_decimal	Nullable(Decimal(10, 0))
+int_to_double	Nullable(Float64)
+long_to_decimal	Nullable(Decimal(20, 0))
+float_to_double	Nullable(Float64)
+decimal_to_decimal	Nullable(Decimal(12, 2))
+date_to_timestamp	Nullable(DateTime64(6))
+1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	2024-06-19 00:00:00.000000
+2	2	2	2	2	2	2	2	2	2	2	2	2	2	2.22	2021-07-01 08:43:28.123456
+databricks153/type_widening_nested
+s	Tuple(\n    field Nullable(Float64))
+sn	Tuple(\n    field Nullable(Int16),\n    field2 Tuple(\n        inner_field Nullable(Float64)))
+m	Map(Int32, Nullable(Float64))
+a	Array(Nullable(Float64))
+(-5555555555555555)	(32757,(-5555555555555555))	{200:-5555555555555555}	[-5555555555555555]
+(127)	(127,(15))	{-128:127}	[127]
+(32767)	(32767,(32767))	{-32768:32767}	[32767]
+deltalake/type_widening
+col	Nullable(Int32)
+127
+32767
+2147483647
+0
+127	Nullable(Int8)
+127	Nullable(Int16)
+127	Nullable(Int16)
+32767	Nullable(Int16)
+127	Nullable(Int32)
+32767	Nullable(Int32)
+2147483647
+deltalake/type_widening_nested
+s	Tuple(\n    field Nullable(Int32))
+m	Map(Int32, Nullable(Int32))
+a	Array(Nullable(Int32))
+(127)	{-128:127}	[127]
+(32767)	{-32768:32767}	[32767]
+(2147483647)	{-2147483648:2147483647}	[2147483647]
+(127)	{-128:127}	[127]
+databricks104/no_stats_column_mapping_id
+1	a
+2	b
+42	foo
+\N	\N
+foo
+databricks104/no_column_stats_mixed_case
+2	b
+11	a
+\N	\N
+a
+databricks104/json_stats_on_row_type
+(1)	(('test'))
+(NULL)	((NULL))
+1
+1
+databricks73/no_column_stats
+42	foo
+databricks73/parquet_stats_missing
+9	36	1
+7
+8
+deltalake/stats_with_minmax_nulls
+0	1
+1	2
+3	4
+3	7
+\N	\N
+\N	\N
+2
+4
+7
+0	3
+trino410/no_stats
+12	ab
+15	bar
+15	cd
+42	foo
+\N	\N
+bar
+cd
+trino410/no_stats_various_types
+false	37	32123	1274942432	312739231274942432	567.123	1234567890123.123	12.345	123456789012.345	1999-01-01	2020-02-12 14:03:00.000000	ab	de	�?
+true	127	32767	2147483647	9223372036854775807	1000000	9999999999999.998	99.999	999999999999.99	2028-10-04	2199-12-31 22:59:59.999000	zzz	zzz	����������
+\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+databricks73/uppercase_columns
+1	1
+1	2
+2	1
+1
+2
+databricks73/insert_nonlowercase_columns_partitioned
+databricks	DATABRICKS	DaTaBrIcKs
+databricks	DATABRICKS	\N
+\N	\N	DaTaBrIcKs
+\N	\N	\N
+databricks73/insert_nested_nonlowercase_columns
+1	('databricks','DATABRICKS','DaTaBrIcKs')
+2	('databricks','DATABRICKS',NULL)
+3	(NULL,NULL,'DaTaBrIcKs')
+4	(NULL,NULL,NULL)
+1
+2
+databricks73/default_partitions
+1	\N	brukselka
+\N	partition_a	jarmuz
+\N	\N	kalafior
+kalafior
+databricks133/parsed_stats_case_sensitive
+100	1	ala
+200	2	kota
+300	3	osla
+400	4	zulu
+osla
+databricks133/parsed_stats_struct
+100	1	(1,'ala')
+200	2	(2,'kota')
+300	3	(3,'osla')
+400	4	(4,'zulu')
+3
+databricks133/partition_values_parsed_case_sensitive
+100	1	ala
+200	2	kota
+300	3	osla
+200
+deltalake/partition_values_parsed
+1	10	part1
+2	20	part2
+3	\N	\N
+2
+3
+trino432/partition_values_parsed
+1	10	part1
+2	20	part2
+3	\N	\N
+1
+deltalake/uri
+a=equal	1
+a:colon	2
+a+plus	3
+a space	4
+a%percent	5
+a/forwardslash	6
+5
+6
+trino410/no_stats_partitions
+p?p	12	ab
+p?p	42	foo
+ppp	15	bar
+ppp	15	cd
+\N	\N	\N
+12
+42
+deltalake/partition_values_parsed_all_types
+Row 1:
+──────
+id:                 1
+part_boolean:       true
+part_tinyint:       1
+part_smallint:      10
+part_int:           100
+part_bigint:        1000
+part_short_decimal: 123.12
+part_double:        1.2
+part_float:         3.4
+part_varchar:       a
+part_date:          2020-08-21
+part_timestamp:     2020-10-21 01:00:00.123000
+part_timestamp_ntz: 2023-01-02 01:02:03.456000
+
+Row 2:
+──────
+id:                 2
+part_boolean:       false
+part_tinyint:       2
+part_smallint:      20
+part_int:           200
+part_bigint:        2000
+part_short_decimal: 223.12
+part_double:        10.2
+part_float:         30.4
+part_varchar:       b
+part_date:          2020-08-22
+part_timestamp:     2020-10-22 01:00:00.123000
+part_timestamp_ntz: 2023-01-03 01:02:03.456000
+
+Row 3:
+──────
+id:                 3
+part_boolean:       ᴺᵁᴸᴸ
+part_tinyint:       ᴺᵁᴸᴸ
+part_smallint:      ᴺᵁᴸᴸ
+part_int:           ᴺᵁᴸᴸ
+part_bigint:        ᴺᵁᴸᴸ
+part_short_decimal: ᴺᵁᴸᴸ
+part_double:        ᴺᵁᴸᴸ
+part_float:         ᴺᵁᴸᴸ
+part_varchar:       ᴺᵁᴸᴸ
+part_date:          ᴺᵁᴸᴸ
+part_timestamp:     ᴺᵁᴸᴸ
+part_timestamp_ntz: ᴺᵁᴸᴸ
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+3

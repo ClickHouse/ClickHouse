@@ -120,7 +120,8 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
         .skip_empty_files = settings[Setting::engine_url_skip_empty_files],
         .list_object_keys_size = settings[Setting::glob_expansion_max_elements],
         .throw_on_zero_files_match = false,
-        .ignore_non_existent_file = false};
+        .ignore_non_existent_file = false,
+        .skip_hidden_files = false};
 }
 
 std::string StorageWebConfiguration::getPathInArchive() const
@@ -234,7 +235,7 @@ void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArgu
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 
     setNamespaceFromURL(context);
-    paths = {path};
+    setPaths({path});
     setPathForRead(path);
 }
 

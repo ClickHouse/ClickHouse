@@ -40,6 +40,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool use_lsmt_storage;
     extern const CoordinationSettingsBool storage_memory_only;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
+    extern const CoordinationSettingsUInt64 write_log_entry_version;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
     extern const CoordinationSettingsMilliseconds container_gc_period_ms;
 }
@@ -109,6 +110,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    server_id = config.getInt("keeper_server.server_id", -1);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     remove_orphaned_nodes_on_startup = config.getBool("keeper_server.remove_orphaned_nodes_on_startup", false);
 
@@ -600,6 +602,7 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
     }
 
     validateWriteSnapshotVersion(getCoordinationSettings());
+    validateWriteLogEntryVersion(getCoordinationSettings());
 
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
     {
@@ -646,6 +649,16 @@ void KeeperContext::validateWriteSnapshotVersion(const CoordinationSettings & se
             static_cast<int>(SnapshotVersion::V9), write_version);
 }
 
+void KeeperContext::validateWriteLogEntryVersion(const CoordinationSettings & settings) const
+{
+    const uint64_t write_version = settings[CoordinationSetting::write_log_entry_version];
+
+    if (write_version > MAX_SUPPORTED_LOG_ENTRY_VERSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported write log entry version {} (must be between 0 and {})",
+            write_version, MAX_SUPPORTED_LOG_ENTRY_VERSION);
+}
+
 static UInt64 calculateMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
@@ -681,6 +694,7 @@ void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
     /// The exception propagates to the config reloader, which logs it and keeps the
     /// previously applied settings.
     validateWriteSnapshotVersion(*merged);
+    validateWriteLogEntryVersion(*merged);
 
     std::lock_guard lock(settings_mutex);
     merged->version = next_coordination_settings_version++;
