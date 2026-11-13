@@ -2424,7 +2424,8 @@ The following settings are supported:
 Namespace-aware name resolution is an experimental feature, disabled by default. Enable it
 with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
 `catalog_name.namespace.table` is shorthand for the quoted form
-`` catalog_name.`namespace.table` `` and works regardless of the setting.
+`` catalog_name.`namespace.table` `` and needs the setting; without it the path is
+rejected and the quoted form has to be used.
 :::
 
 Data lake catalogs organize tables into namespaces, which can be nested to
@@ -2438,9 +2439,9 @@ SELECT * FROM catalog_name.`namespace.table`;
 
 You can also spell out every part with dots:
 
-- `db.ns.table` (three or more parts) is parsed as the table path `ns.table`
-  inside database `db`; with `allow_experimental_table_namespaces` enabled it is
-  then subject to the same two-part rule as `a.b` below, with `a` = `db`.
+- `db.ns.table` (three or more parts) requires `allow_experimental_table_namespaces`
+  and is parsed as the table path `ns.table` inside database `db`; it is then
+  subject to the same two-part rule as `a.b` below, with `a` = `db`.
 - With `allow_experimental_table_namespaces` enabled, a two-part name `a.b` in a
   table expression is resolved as table `b` of database `a`, and also as table
   `a.b` of the current database if that database supports table namespaces
