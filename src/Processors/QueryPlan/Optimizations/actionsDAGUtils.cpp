@@ -242,12 +242,9 @@ MatchedTrees::Matches matchTrees(
 
                                                 /// `Field` can lose the type such a value holds.
                                                 if (all_children_matched && holdsATypeOfItsOwn(*children[i]->result_type))
-                                                {
-                                                    const auto & inner_data = inner_col->getDataColumn();
-                                                    const auto & outer_data = outer_col->getDataColumn();
-                                                    all_children_matched = typeid(inner_data) == typeid(outer_data)
-                                                        && inner_data.compareAt(0, 0, outer_data, /* nan_direction_hint */ 1) == 0;
-                                                }
+                                                    all_children_matched = haveSameStoredValue(
+                                                        *children[i]->result_type, inner_col->getDataColumn(),
+                                                        *frame.node->children[i]->result_type, outer_col->getDataColumn());
                                             }
                                         }
                                         else

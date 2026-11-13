@@ -627,6 +627,13 @@ void updateExpressionIdentityHash(const IDataType & type, SipHash & hash);
 /// the member a `Variant` value is, the paths of a `JSON` value. `Field` and `updateHashFast` can lose it.
 bool holdsATypeOfItsOwn(const IDataType & type);
 
+/// Whether the first rows hold the same value stored the same way. For such a type a function can see how a
+/// value is stored (`JSONDynamicPaths`), which `Field`, `compareAt` and `updateHashWithValue` leave out.
+bool haveSameStoredValue(const IDataType & lhs_type, const IColumn & lhs, const IDataType & rhs_type, const IColumn & rhs);
+
+/// A hash of what `haveSameStoredValue` compares.
+void updateStoredValueHash(const IDataType & type, const IColumn & column, SipHash & hash);
+
 // Same as isColumnedAsDecimal but also checks value type of underlyig column.
 template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)

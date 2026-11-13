@@ -176,9 +176,9 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
-    /// The fast hash can leave out the type such a value holds, and depends on how the column stores it.
+    /// The fast hash can leave out the type such a value holds.
     if (holdsATypeOfItsOwn(*constant_value.getType()))
-        constant_value.getColumn()->updateHashWithValue(0, hash_state);
+        updateStoredValueHash(*constant_value.getType(), constant_value.getColumn()->getDataColumn(), hash_state);
     else
         constant_value.getColumn()->updateHashFast(hash_state);
 

@@ -8,6 +8,11 @@
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 
+#include <Core/ProtocolDefines.h>
+
+#include <Formats/NativeWriter.h>
+
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
@@ -219,6 +224,33 @@ void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
 bool holdsATypeOfItsOwn(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & nested) { return isDynamic(nested) || isVariant(nested) || isObject(nested); });
+}
+
+namespace
+{
+
+/// The Native format reads back into the same column, so for one type equal bytes are one value stored one way.
+String serializeStoredValue(const IDataType & type, const IColumn & column)
+{
+    WriteBufferFromOwnString buf;
+    NativeWriter::writeData(
+        *type.getDefaultSerialization(), column.convertToFullIfWrapped(), buf,
+        /* format_settings */ nullptr, /* offset */ 0, /* limit */ 1, DBMS_TCP_PROTOCOL_VERSION);
+    return buf.str();
+}
+
+}
+
+bool haveSameStoredValue(const IDataType & lhs_type, const IColumn & lhs, const IDataType & rhs_type, const IColumn & rhs)
+{
+    return serializeStoredValue(lhs_type, lhs) == serializeStoredValue(rhs_type, rhs);
+}
+
+void updateStoredValueHash(const IDataType & type, const IColumn & column, SipHash & hash)
+{
+    const String value = serializeStoredValue(type, column);
+    hash.update(value.size());
+    hash.update(value);
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)

@@ -25,6 +25,7 @@ aggregate projection is not read in another zone	0
 aggregate projection is still read in its own zone	1
 omitted zone against a projection on another zone	9	1
 omitted zone against a projection on that same zone	0	1
+omitted zone is still read from the projection on that same zone	1
 Dynamic aggregate projection in another zone	5	1
 Dynamic aggregate projection in another zone	9	1
 Dynamic aggregate projection is still read in its own zone	1
@@ -44,6 +45,9 @@ JSON partition key is still read from the projection for its own type	1
 JSON sorting key holding other types	1
 JSON sorting key holding other types	2
 JSON sorting key is still read in order for its own types	1
+JSON partition key storing its paths the other way	1
+JSON partition key grouped by its paths stored the other way	b	1
+JSON partition key is still read from the projection for its own layout	1
 implicit and explicit zone under one alias	1970-01-01 00:00:00	1970-01-01 00:00:00
 implicit and explicit zone under one alias, non-UTC session	1970-01-01 09:00:00	1970-01-01 09:00:00
 an omitted zone and that zone spelled out are one sort key	1
@@ -62,6 +66,13 @@ two zones out of reach keep their own IN sets	2
 two zones inside Dynamic keep their own IN sets	2
 two zones inside Array(Dynamic) keep their own IN sets	2
 two JSON paths keep their own IN sets	2
+two JSON objects spelling the same bytes keep their own IN sets	2
+two JSON layouts keep their own IN sets	2
+two JSON layouts in one AND	1
+a Dynamic value in and out of the shared variant keeps its own IN sets	2
+two JSON layouts in merged filters	1
+a Dynamic value in and out of the shared variant in merged filters	1
+one Dynamic value from two columns under one alias	1	1
 two zones inside a widened Variant keep their own IN sets	2
 two members inside Tuple(Variant) keep their own IN sets	2
 a declared name beside an omitted zone under one alias	(true,'1970-01-01 00:00:00')	(true,'1970-01-01 00:00:00')

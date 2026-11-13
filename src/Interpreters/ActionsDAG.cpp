@@ -1492,7 +1492,11 @@ struct ConstantKeyEqual
         /// representative would render the value instead of `[HIDDEN]` in plan dumps
         return a.sample->is_masked_secret == b.sample->is_masked_secret
             && haveSameExpressionIdentity(*a.sample->result_type, *b.sample->result_type)
-            && constColumnsEqual(a.sample->column, b.sample->column);
+            && constColumnsEqual(a.sample->column, b.sample->column)
+            && (!holdsATypeOfItsOwn(*a.sample->result_type)
+                || haveSameStoredValue(
+                    *a.sample->result_type, a.sample->column->getDataColumn(),
+                    *b.sample->result_type, b.sample->column->getDataColumn()));
     }
 };
 

@@ -198,6 +198,15 @@ SELECT 'omitted zone against a projection on that same zone', toHour(toDateTime(
 FROM tz_projection GROUP BY toHour(toDateTime(0) + x)
 SETTINGS optimize_use_projections = 1, session_timezone = 'UTC';
 
+SELECT 'omitted zone is still read from the projection on that same zone', count() FROM (
+    EXPLAIN
+    SELECT toHour(toDateTime(0) + x), count()
+    FROM tz_projection
+    GROUP BY toHour(toDateTime(0) + x)
+    SETTINGS optimize_use_projections = 1
+) WHERE explain ILIKE '%ReadFromMergeTree (pr_utc_hour)%'
+SETTINGS optimize_use_projections = 1, session_timezone = 'UTC';
+
 DROP TABLE tz_projection;
 
 -- A `Dynamic` value holds its own type, time zone included, which projection matching and reading in
@@ -304,6 +313,31 @@ SELECT 'JSON sorting key is still read in order for its own types', count() FROM
 ) WHERE explain ILIKE '%Read type: InOrder%';
 
 DROP TABLE tz_json;
+
+-- Where a `JSON` value stores its paths is part of it too: with one dynamic path, the first key takes it.
+DROP TABLE IF EXISTS tz_json_layout;
+CREATE TABLE tz_json_layout (x UInt64) ENGINE = MergeTree
+PARTITION BY arrayElement(JSONDynamicPaths(arrayElement(['{"a":1,"b":2}'::JSON(max_dynamic_paths=1)], x)), 1)
+ORDER BY tuple();
+INSERT INTO tz_json_layout VALUES (1);
+
+SELECT 'JSON partition key storing its paths the other way', count() FROM tz_json_layout
+WHERE arrayElement(JSONDynamicPaths(arrayElement(['{"b":2,"a":1}'::JSON(max_dynamic_paths=1)], x)), 1) = 'b'
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+
+SELECT 'JSON partition key grouped by its paths stored the other way',
+    arrayElement(JSONDynamicPaths(arrayElement(['{"b":2,"a":1}'::JSON(max_dynamic_paths=1)], x)), 1) AS v, count()
+FROM tz_json_layout GROUP BY v
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+
+SELECT 'JSON partition key is still read from the projection for its own layout', count() FROM (
+    EXPLAIN
+    SELECT arrayElement(JSONDynamicPaths(arrayElement(['{"a":1,"b":2}'::JSON(max_dynamic_paths=1)], x)), 1) AS v, count()
+    FROM tz_json_layout GROUP BY v
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
+) WHERE explain ILIKE '%_minmax_count_projection%';
+
+DROP TABLE tz_json_layout;
 
 -- A time zone left out of the type means the session time zone, so leaving it out and spelling it out
 -- are one expression. Alias, `GROUP BY` and `GROUPING` analysis report a difference here as an error
@@ -428,6 +462,39 @@ WHERE number IN (SELECT arrayJoin(arrayMap(x -> toUInt64(toHour(x)), materialize
 SELECT 'two JSON paths keep their own IN sets', count() FROM (SELECT arrayJoin(['a', 'b']) AS str)
 WHERE str IN (SELECT arrayJoin(JSONAllPaths(materialize('{"a":1}'::JSON))) AS v)
     OR str IN (SELECT arrayJoin(JSONAllPaths(materialize('{"b":1}'::JSON))) AS v);
+
+-- The first object's paths, types and values, written one after the other, spell the second object's only path.
+SELECT 'two JSON objects spelling the same bytes keep their own IN sets', count() FROM numbers(5)
+WHERE number IN (SELECT length(JSONAllPaths(materialize('{"a":7161677110969590627,"b":2}'::JSON))) AS v)
+    OR number IN (SELECT length(JSONAllPaths(materialize('{"aInt64ccccccccb":2}'::JSON))) AS v);
+
+-- So is where a value is stored.
+SELECT 'two JSON layouts keep their own IN sets', count() FROM (SELECT arrayJoin(['a', 'b']) AS str)
+WHERE str IN (SELECT arrayJoin(JSONDynamicPaths(materialize('{"a":1,"b":2}'::JSON(max_dynamic_paths=1)))) AS v)
+    OR str IN (SELECT arrayJoin(JSONDynamicPaths(materialize('{"b":2,"a":1}'::JSON(max_dynamic_paths=1)))) AS v);
+
+SELECT 'two JSON layouts in one AND',
+    (JSONDynamicPaths(materialize('{"a":1,"b":2}'::JSON(max_dynamic_paths=1))) = ['a'])
+    AND (JSONDynamicPaths(materialize('{"b":2,"a":1}'::JSON(max_dynamic_paths=1))) = ['b']);
+
+SELECT 'a Dynamic value in and out of the shared variant keeps its own IN sets', count() FROM (SELECT arrayJoin([0, 1]) AS n)
+WHERE n IN (SELECT toUInt8(isDynamicElementInSharedData(materialize('a'::Dynamic(max_types=1)))) AS v)
+    OR n IN (SELECT toUInt8(isDynamicElementInSharedData(materialize(arrayElement([1, 'a']::Array(Dynamic(max_types=1)), 2)))) AS v);
+
+-- Merging the two filters into one DAG must not merge these constants either.
+SELECT 'two JSON layouts in merged filters', count() FROM (
+    SELECT number FROM numbers(1) WHERE JSONDynamicPaths(materialize('{"a":1,"b":2}'::JSON(max_dynamic_paths=1))) = ['a']
+) WHERE JSONDynamicPaths(materialize('{"b":2,"a":1}'::JSON(max_dynamic_paths=1))) = ['b']
+SETTINGS query_plan_merge_filters = 1, query_plan_merge_expressions = 1;
+
+SELECT 'a Dynamic value in and out of the shared variant in merged filters', count() FROM (
+    SELECT number FROM numbers(1) WHERE isDynamicElementInSharedData(materialize('a'::Dynamic(max_types=1))) = 0
+) WHERE isDynamicElementInSharedData(materialize(arrayElement([1, 'a']::Array(Dynamic(max_types=1)), 2))) = 1
+SETTINGS query_plan_merge_filters = 1, query_plan_merge_expressions = 1;
+
+-- A column that can also hold another type does not make the value it holds another expression.
+SELECT 'one Dynamic value from two columns under one alias',
+    arrayElement([toUInt8(1)::Dynamic, 'a'::Dynamic], 1) AS a, toUInt8(1)::Dynamic AS a;
 
 -- So is the member a `Variant` value is, also when the `CAST` that widened the `Variant` kept the
 -- members of the column in their old order.
