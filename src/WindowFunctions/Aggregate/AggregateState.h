@@ -1,10 +1,16 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+
+#include <Functions/CancellationBudget.h>
+
 #include <Columns/IColumn_fwd.h>
+
 #include <Common/AlignedBuffer.h>
+
 #include <base/types.h>
 
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -28,6 +34,8 @@ private:
     AlignedBuffer place;
     std::unique_ptr<Arena> arena;
     const bool is_state;
+    std::function<void()> check_cancellation;
+    CancellationBudget budget;
 };
 
 }
