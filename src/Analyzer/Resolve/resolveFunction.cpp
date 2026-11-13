@@ -1583,66 +1583,65 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     QueryTreeNodePtr result;
     if (left_is_decimal != right_is_decimal)
     {
-        /// Older shards do not know a new comparison function name. Compare the
-        /// raw Decimal integer to the numeric operand with existing accurate numeric
-        /// comparison functions. A fractional Decimal cannot equal an integer.
+        /// Older shards can evaluate this using existing conversion and comparison
+        /// functions. Keep both operands in the `Decimal` domain before checking a match.
         const auto & decimal_argument = left_is_decimal ? left_argument : right_argument;
         const auto & numeric_argument = left_is_decimal ? right_argument : left_argument;
         const auto & decimal_type = left_is_decimal ? left_type : right_type;
         const auto & numeric_type = left_is_decimal ? right_type : left_type;
         const bool numeric_is_float = isFloat(numeric_type);
+        const auto numeric_type_id = numeric_type->getTypeId();
+        const bool wide_integer = numeric_type_id == TypeIndex::Int128 || numeric_type_id == TypeIndex::UInt128
+            || numeric_type_id == TypeIndex::Int256 || numeric_type_id == TypeIndex::UInt256;
 
-        String reinterpret_name;
-        String integer_cast_name;
-        switch (decimal_type->getTypeId())
+        if (!wide_integer)
         {
-            case TypeIndex::Decimal32: reinterpret_name = "reinterpretAsInt32"; integer_cast_name = "toInt32"; break;
-            case TypeIndex::Decimal64: reinterpret_name = "reinterpretAsInt64"; integer_cast_name = "toInt64"; break;
-            case TypeIndex::Decimal128: reinterpret_name = "reinterpretAsInt128"; integer_cast_name = "toInt128"; break;
-            case TypeIndex::Decimal256: reinterpret_name = "reinterpretAsInt256"; integer_cast_name = "toInt256"; break;
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal type in numeric `IN` comparison");
+            /// Convert floats to `Float64` first because `accurateCastOrNull` does
+            /// not accept `BFloat16` directly. An out-of-range value becomes `NULL`.
+            auto numeric_value = numeric_is_float
+                ? buildResolvedFunction("toFloat64", {numeric_argument}, context) : numeric_argument;
+            auto converted = buildResolvedFunction(
+                "accurateCastOrNull", {numeric_value, std::make_shared<ConstantNode>(decimal_type->getName())}, context);
+            result = buildResolvedFunction("equals", {decimal_argument, converted}, context);
+            if (numeric_is_float)
+            {
+                /// A rounded float-to-Decimal conversion cannot create a match.
+                auto decimal_as_float = buildResolvedFunction("toFloat64", {decimal_argument}, context);
+                auto float_matches = buildResolvedFunction("equals", {numeric_value, std::move(decimal_as_float)}, context);
+                result = buildResolvedFunction("and", {std::move(result), std::move(float_matches)}, context);
+            }
         }
-
-        auto raw_decimal = buildResolvedFunction(reinterpret_name, {decimal_argument}, context);
-        const auto scale = getDecimalScale(*decimal_type);
-        QueryTreeNodePtr decimal_integer = raw_decimal;
-        QueryTreeNodePtr decimal_is_integral;
-        if (scale)
+        else
         {
-            auto multiplier = buildResolvedFunction(
-                integer_cast_name, {std::make_shared<ConstantNode>("1" + String(scale, '0'))}, context);
-            auto remainder = buildResolvedFunction("modulo", {raw_decimal, multiplier}, context);
-            decimal_is_integral = buildResolvedFunction("equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
-            decimal_integer = buildResolvedFunction("intDiv", {raw_decimal, std::move(multiplier)}, context);
-        }
+            /// `accurateCastOrNull` does not convert wide integers to `Decimal`.
+            /// Compare raw `Decimal` units after checking that the scale divides them.
+            String reinterpret_name;
+            String integer_cast_name;
+            switch (decimal_type->getTypeId())
+            {
+                case TypeIndex::Decimal32: reinterpret_name = "reinterpretAsInt32"; integer_cast_name = "toInt32"; break;
+                case TypeIndex::Decimal64: reinterpret_name = "reinterpretAsInt64"; integer_cast_name = "toInt64"; break;
+                case TypeIndex::Decimal128: reinterpret_name = "reinterpretAsInt128"; integer_cast_name = "toInt128"; break;
+                case TypeIndex::Decimal256: reinterpret_name = "reinterpretAsInt256"; integer_cast_name = "toInt256"; break;
+                default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal type in numeric `IN` comparison");
+            }
 
-        result = buildResolvedFunction("equals", {std::move(decimal_integer), numeric_argument}, context);
-        if (decimal_is_integral)
-            result = buildResolvedFunction("and", {std::move(decimal_is_integral), std::move(result)}, context);
+            auto raw_decimal = buildResolvedFunction(reinterpret_name, {decimal_argument}, context);
+            const auto scale = getDecimalScale(*decimal_type);
+            QueryTreeNodePtr decimal_integer = raw_decimal;
+            QueryTreeNodePtr decimal_is_integral;
+            if (scale)
+            {
+                auto multiplier = buildResolvedFunction(
+                    integer_cast_name, {std::make_shared<ConstantNode>("1" + String(scale, '0'))}, context);
+                auto remainder = buildResolvedFunction("modulo", {raw_decimal, multiplier}, context);
+                decimal_is_integral = buildResolvedFunction("equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
+                decimal_integer = buildResolvedFunction("intDiv", {raw_decimal, std::move(multiplier)}, context);
+            }
 
-        if (numeric_is_float)
-        {
-            /// Fractional floats retain the established Float64 comparison. Integral
-            /// floats use accurate integer/float comparison to avoid rounding above 2^53.
-            auto float_value = buildResolvedFunction("toFloat64", {numeric_argument}, context);
-            auto truncated = buildResolvedFunction("trunc", {float_value}, context);
-            auto is_integral = buildResolvedFunction("equals", {std::move(float_value), std::move(truncated)}, context);
-            auto fractional_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
-            result = buildResolvedFunction("if", {std::move(is_integral), std::move(result), std::move(fractional_equals)}, context);
-
-            /// Below half the float's exact-integer range divided by the Decimal
-            /// scale, distinct Decimal values cannot round onto the same float.
-            /// Test the float first so the common range avoids Decimal arithmetic.
-            Float64 safe_float_limit = numeric_type->getTypeId() == TypeIndex::BFloat16 ? (1ULL << 7)
-                : numeric_type->getTypeId() == TypeIndex::Float32 ? (1ULL << 23) : (1ULL << 52);
-            for (UInt32 i = 0; i < scale; ++i)
-                safe_float_limit /= 10.0;
-            auto magnitude = buildResolvedFunction("abs", {numeric_type->getTypeId() == TypeIndex::BFloat16
-                ? buildResolvedFunction("toFloat64", {numeric_argument}, context) : numeric_argument}, context);
-            auto within_exact_range = buildResolvedFunction(
-                "less", {std::move(magnitude), std::make_shared<ConstantNode>(Field{safe_float_limit})}, context);
-            auto common_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
-            result = buildResolvedFunction("if", {std::move(within_exact_range), std::move(common_equals), std::move(result)}, context);
+            result = buildResolvedFunction("equals", {std::move(decimal_integer), numeric_argument}, context);
+            if (decimal_is_integral)
+                result = buildResolvedFunction("and", {std::move(decimal_is_integral), std::move(result)}, context);
         }
     }
     else if (compare_nulls)
