@@ -56,11 +56,11 @@ How many threads stopped probing their frozen local table in the adaptive aggreg
 
 ### AdaptiveAggregationPrunedRecords {#adaptiveaggregationprunedrecords}
 
-How many staged records the adaptive aggregation's merge skipped, because their group could not reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.
+How many staged records the adaptive aggregation's merge skipped, because the top-K by `count`, `uniqExact` or `uniqExactIf` needed none of their groups.
 
 ### AdaptiveAggregationPrunedUnits {#adaptiveaggregationprunedunits}
 
-How many merge units the adaptive aggregation skipped without draining them, because no group in them could reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.
+How many merge units the adaptive aggregation skipped without draining them, because the top-K by `count`, `uniqExact` or `uniqExactIf` needed none of their groups: their count bins were bounded below the threshold of a descending top-K, or an ascending top-K had already found enough groups with the smallest possible rank.
 
 ### AdaptiveAggregationSpilledBytes {#adaptiveaggregationspilledbytes}
 
@@ -877,6 +877,18 @@ Total time spent detecting bit-flips due to compressed block checksum mismatches
 ### CompressedReadBufferChecksumDoesntMatchSingleBitMismatch {#compressedreadbufferchecksumdoesntmatchsinglebitmismatch}
 
 Number of times a compressed block checksum mismatch was caused by a single-bit difference.
+
+### CompressedWriteBufferBlocks {#compressedwritebufferblocks}
+
+Number of compressed blocks (the blocks of data that are compressed independent of each other) written by `CompressedWriteBuffer` (files, network, temporary data).
+
+### CompressedWriteBufferBytes {#compressedwritebufferbytes}
+
+Number of uncompressed bytes (the number of bytes before compression) passed to compression codecs by `CompressedWriteBuffer`.
+
+### CompressedWriteBufferCompressMicroseconds {#compressedwritebuffercompressmicroseconds}
+
+Total time spent inside compression codecs in `CompressedWriteBuffer`.
 
 ### ConcurrencyControlDownscales {#concurrencycontroldownscales}
 
@@ -2684,6 +2696,14 @@ Counts the total number of times the global thread pool has shrunk by removing t
 
 Total time spent waiting for new threads to start.
 
+### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
+
+Number of granules read by the prewhere readers (the granules on which PREWHERE was evaluated). Each granule is counted once even when it is split across several read blocks.
+
+### GranulesSkippedByPrewhereReaders {#granulesskippedbyprewherereaders}
+
+Number of granules fully rejected by PREWHERE: every row of the granule was filtered out. A granule with at least one surviving row is not counted. Each granule is counted once even when it is split across several read blocks. This is a logical filter count and does not imply the main reader read nothing from the granule.
+
 ### HardPageFaults {#hardpagefaults}
 
 The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.
@@ -3888,6 +3908,30 @@ Total time spent by MemoryWorker for background work
 
 Number of launched background merges.
 
+### MergeCheckpointable {#mergecheckpointable}
+
+Number of launched background merges with `enable_merge_checkpoints` that are checkpointed.
+
+### MergeCheckpointSaveMicroseconds {#mergecheckpointsavemicroseconds}
+
+Total time spent saving merge checkpoints, including their commits.
+
+### MergeCheckpointsDiscarded {#mergecheckpointsdiscarded}
+
+Number of merge checkpoints removed because the merge could not resume from them.
+
+### MergeCheckpointsRemoved {#mergecheckpointsremoved}
+
+Number of merge checkpoints removed by their cleanup or by a drop of the table.
+
+### MergeCheckpointsResumed {#mergecheckpointsresumed}
+
+Number of merges resumed from a merge checkpoint.
+
+### MergeCheckpointsSaved {#mergecheckpointssaved}
+
+Number of merge checkpoints saved.
+
 ### MergeCommitMilliseconds {#mergecommitmilliseconds}
 
 Total time spent for committing merge results (part renaming, checksum verification, ZooKeeper updates)
@@ -3943,6 +3987,10 @@ Time spent resetting task for MergeMutate executor.
 ### MergeMutateBackgroundExecutorWaitMicroseconds {#mergemutatebackgroundexecutorwaitmicroseconds}
 
 Time spent waiting for completion in MergeMutate executor.
+
+### MergeNonCheckpointable {#mergenoncheckpointable}
+
+Number of launched background merges with `enable_merge_checkpoints` that cannot be checkpointed, for example horizontal merges.
 
 ### MergePrewarmStageExecuteMilliseconds {#mergeprewarmstageexecutemilliseconds}
 
@@ -4776,6 +4824,10 @@ Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so 
 
 The total number of rows that were passed through filter
 
+### ParquetRuntimeFilterPrunedRowGroups {#parquetruntimefilterprunedrowgroups}
+
+Number of Parquet row groups skipped because their column statistics cannot contain a key of a JOIN runtime filter
+
 ### ParquetTopKRowGroupsBoundedByDictionary {#parquettopkrowgroupsboundedbydictionary}
 
 The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range was taken from the values of its dictionary that can pass the filter, because its min/max statistics could not bound it (see `use_top_k_dynamic_filtering`)
@@ -5487,6 +5539,10 @@ Number of rows read from MergeTree tables by the main reader (after PREWHERE ste
 ### RowsReadByPrewhereReaders {#rowsreadbyprewherereaders}
 
 Number of rows read from MergeTree tables (in total) by prewhere readers.
+
+### RowsSkippedByPrewhereReaders {#rowsskippedbyprewherereaders}
+
+Number of rows rejected by PREWHERE: rows whose PREWHERE condition evaluated to false. This is a logical filter count and does not imply the main reader avoided reading these rows.
 
 ### RuntimeDataflowStatisticsInputBytes {#runtimedataflowstatisticsinputbytes}
 

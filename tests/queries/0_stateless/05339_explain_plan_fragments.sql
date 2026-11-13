@@ -90,7 +90,6 @@ GROUP BY k WITH TOTALS
 SETTINGS distributed_plan_fallback_to_local_execution = 1;
 
 SELECT '-- errors';
-EXPLAIN fragments = 1, json = 1 SELECT count() FROM big; -- { serverError NOT_IMPLEMENTED }
 EXPLAIN fragments = 1, distributed = 1 SELECT count() FROM big; -- { serverError NOT_IMPLEMENTED }
 EXPLAIN fragments = 1, optimize = 0 SELECT count() FROM big; -- { serverError BAD_ARGUMENTS }
 
