@@ -60,7 +60,7 @@ public:
         else
             pos = find_first_symbols<'&', '#'>(pos, end);
 
-        if (pos + 1 >= end)
+        if (pos == end || pos + 1 >= end)
             return false;
         ++pos;
 
@@ -70,12 +70,17 @@ public:
 
             pos = find_first_symbols<'=', '&', '#', '?'>(pos, end);
             if (pos == end)
-                return false;
+            {
+                token_end = end;
+                return true;
+            }
             token_end = pos;
 
             if (*pos == '?')
             {
                 ++pos;
+                if (pos == end)
+                    return false;
                 continue;
             }
 
