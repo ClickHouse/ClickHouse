@@ -194,6 +194,17 @@ struct SettingAutoWrapper final
             base.parseFromString(str);
     }
 
+    void writeBinary(WriteBuffer & out) const
+    {
+        if (is_auto)
+            Base().writeBinary(out); /// serialize default value
+        else
+            base.writeBinary(out);
+    }
+
+    /// Settings are serialized only if changed, and a changed setting holds an explicit value instead of `auto`.
+    void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
+
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
     std::optional<Type> valueOrNullopt() const { return is_auto ? std::optional<Type>(std::nullopt) : base.value; }
 };
@@ -407,6 +418,9 @@ public:
 
     String toString() const { return String(&value, 1); }
     void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
 
 
@@ -436,6 +450,9 @@ struct SettingFieldURI final
 
     String toString() const { return value.toString(); }
     void parseFromString(const String & str) { *this = str; }
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 
     /// `Poco::URI` reports a malformed string with a `Poco::SyntaxException`, which is not a `DB::Exception`, so
     /// the name of the setting could not be added to it and the user would see a bare "Syntax error: ...".
@@ -611,6 +628,9 @@ struct SettingFieldTimezone final
 
     String toString() const { return value; }
     void parseFromString(const String & str) { *this = str; }
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 
 private:
     void validateTimezone(const std::string & tz_str);

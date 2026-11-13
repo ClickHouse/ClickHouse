@@ -429,6 +429,30 @@ void SettingFieldChar::parseFromString(const String & str)
     *this = stringToChar(str);
 }
 
+void SettingFieldChar::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(toString(), out);
+}
+
+void SettingFieldChar::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinaryGrowing(str, in);
+    *this = stringToChar(str);
+}
+
+
+void SettingFieldURI::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(value.toString(), out);
+}
+
+void SettingFieldURI::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinaryGrowing(str, in);
+    *this = parseURI(str);
+}
 
 Poco::URI SettingFieldURI::parseURI(const String & str)
 {
@@ -498,6 +522,18 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     String str;
     readStringBinaryGrowing(str, in);
     return str;
+}
+
+void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(value, out);
+}
+
+void SettingFieldTimezone::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinaryGrowing(str, in);
+    *this = std::move(str);
 }
 
 void SettingFieldTimezone::validateTimezone(const std::string & tz_str)

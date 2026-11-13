@@ -1607,6 +1607,14 @@ struct SettingFieldInfoInit
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
 
+/// Settings serialized with `BaseSettings::writeChangedBinary` must have only types with binary serialization.
+/// Expand the list of such settings with this macro for both arguments: LIST_OF_SETTINGS(ASSERT_..., ASSERT_...).
+/// NOLINTNEXTLINE
+#define ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION(TYPE, NAME, ...) \
+    static_assert( \
+        SettingFieldWithBinarySerialization<SettingField##TYPE>, \
+        "Setting `" #NAME "` is serialized with `writeChangedBinary`, so its type must implement `writeBinary` and `readBinary`");
+
 
 /// Generates one or two alias mapping entries. The arguments after ALIAS are the change history of the setting.
 /// NOLINTNEXTLINE
