@@ -10,6 +10,8 @@ optimize table data_01513 final;
 
 -- this is enough to trigger non-reusable Chunk in Arena.
 set max_memory_usage='500M';
+-- The adaptive spill scheduler would spill the aggregation instead of letting it hit the limit.
+set enable_adaptive_memory_spill_scheduler = 0;
 set max_threads=1;
 set max_block_size=500;
 set max_bytes_before_external_group_by=0;

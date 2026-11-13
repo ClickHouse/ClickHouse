@@ -9,6 +9,9 @@
 -- give a different answer when serialization dropped the skip degree (506014 instead of 492708).
 -- Spilling needs a two-level hash table, which a single group never reaches on its own, hence the
 -- explicit `group_by_two_level_threshold`.
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which keeps the
+-- states in memory so the spill round-trip this test checks never happens.
+SET min_bytes_before_external_group_by = 0;
 SELECT medianDeterministic(number, number)
 FROM numbers(1000000)
 GROUP BY intDiv(number, 1000000)

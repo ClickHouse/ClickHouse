@@ -15,6 +15,9 @@ SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
+-- Pinned (randomized in CI): case 7 checks that the aggregation above the window aggregates each
+-- partition stream on its own, which this setting allows.
+SET allow_aggregate_partitions_independently = 1;
 -- The window fan-out decides whether the window promises its output order, and with it the
 -- plan shape around the window, so the randomized default would flip the EXPLAIN results.
 SET query_plan_enable_multithreading_after_window_functions = 1;

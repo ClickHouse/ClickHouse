@@ -46,6 +46,8 @@ SET optimize_move_to_prewhere = 1;
 -- when they were given a serialized plan instead - the distributed-plan CI jobs set that in users.d.
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
+-- CI may inject 0, which keeps the condition above the initiator's read: the plans differ, the answer does not.
+SET parallel_replicas_filter_pushdown = 1;
 
 -- Without this the remote replicas may get no marks at all, and then they never send a read request
 -- for the coordinator to check the mode of.

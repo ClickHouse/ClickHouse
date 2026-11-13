@@ -4,6 +4,9 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/126494
 
 SET use_query_condition_cache = 0, use_statistics_for_part_pruning = 0;
+-- Pin to default: CI randomizes analyze_index_with_multiple_key_columns_per_condition off, which changes
+-- the key-condition pruning this test asserts.
+SET analyze_index_with_multiple_key_columns_per_condition = 1;
 
 DROP TABLE IF EXISTS t_decimal_float_key;
 DROP TABLE IF EXISTS t_decimal_float_minmax;

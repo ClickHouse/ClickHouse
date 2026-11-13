@@ -19,6 +19,8 @@ SET explain_query_plan_default = 'legacy';
 -- it the projection is never considered and every query falls back to the base table, which both
 -- flips the `EXPLAIN` result and trips the `max_rows_to_read` guards below.
 SET optimize_use_projections = 1;
+-- The test checks the cost-based choice; `prefer_optimize_projection` takes the projection even when it reads more.
+SET prefer_optimize_projection = 0;
 SET optimize_projection_skip_index_ratio = 0.5;
 -- `EXPLAIN` (without `ANALYZE`) turns `use_skip_indexes_on_data_read` off for the explained query,
 -- which applies the skip indexes during planning and hides what this test checks. The explained

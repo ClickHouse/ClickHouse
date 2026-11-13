@@ -8,6 +8,9 @@
 
 SET enable_adaptive_memory_spill_scheduler = 1;
 SET max_memory_usage = 400000000;
+-- No runtime filter: with a large `join_runtime_filter_exact_values_limit` its set of build keys fills
+-- the memory limit before the scheduler can ask the join to spill.
+SET enable_join_runtime_filters = 0;
 -- Put the join's own spill threshold out of reach so that only the scheduler can make it spill.
 SET max_bytes_before_external_join = '100Gi';
 SET max_bytes_ratio_before_external_join = 0;

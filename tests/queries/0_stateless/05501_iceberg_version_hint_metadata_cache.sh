@@ -10,6 +10,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The staleness window reuses only a cached metadata version, and the table takes the cache when its metadata
+# is created, so the cache must be on for every query (it is randomized in CI).
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=1"
+
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="05501_iceberg_version_hint_metadata_cache/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 

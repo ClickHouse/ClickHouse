@@ -6,6 +6,8 @@ SET max_bytes_before_external_group_by = 1000000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 100000;
+-- Pinned (randomized in CI): the first query measures with the aggregation memory tracker.
+SET use_aggregation_memory_tracker = 1;
 
 SELECT r.k AS g, groupArray(l.s)
 FROM (SELECT number AS id, leftPad(toString(number), 10, '0') AS s FROM numbers(1000)) AS l

@@ -1,4 +1,5 @@
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
+SET hash_join_layout = 'auto'; -- The test asserts parallel_hash_join_threshold decides the layout; 'serial'/'parallel' from the randomizer would force it
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
 create table lhs(a UInt64) Engine=MergeTree order by ();

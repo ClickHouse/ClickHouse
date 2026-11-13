@@ -8,6 +8,9 @@ SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_randomize = 0;
+-- Pinned to the default: a non-default join-order algorithm (the randomizer draws `greedy`) picks a
+-- different build/probe side, flipping the asserted join inputs. No wrong results.
+SET query_plan_optimize_join_order_algorithm = 'dpsub,greedy';
 SET query_plan_remove_unused_columns = 1;
 
 DROP TABLE IF EXISTS l;

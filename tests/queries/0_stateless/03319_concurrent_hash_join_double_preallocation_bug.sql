@@ -1,5 +1,9 @@
 -- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-parallel-replicas
 
+-- Pin hash_join_layout: the randomizer's 'serial' disables the parallel hash-join path whose double
+-- preallocation this test checks, so the layout must stay at the default 'auto'.
+SET hash_join_layout = 'auto';
+
 drop table if exists lhs;
 drop table if exists rhs;
 

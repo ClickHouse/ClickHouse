@@ -4,6 +4,9 @@
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
+-- Pinned (randomized in CI): an exact set of join keys is what index analysis prunes by; a bloom
+-- filter (tiny limit or byte budget) prunes nothing.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288;
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;

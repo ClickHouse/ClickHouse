@@ -1,5 +1,6 @@
 SET query_plan_join_swap_table = false;
 SET enable_parallel_replicas=0;
+SET hash_join_layout = 'auto'; -- The test checks the layout the planner picks
 SET query_plan_optimize_join_order_limit = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 

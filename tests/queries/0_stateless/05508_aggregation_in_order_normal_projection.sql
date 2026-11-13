@@ -8,7 +8,7 @@ ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128;
 INSERT INTO t_aggregation_in_order_projection SELECT number, (number * 7919) % 100000 FROM numbers(100000);
 OPTIMIZE TABLE t_aggregation_in_order_projection FINAL;
 
-SET optimize_aggregation_in_order = 1, optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0;
+SET optimize_aggregation_in_order = 1, optimize_use_projections = 1, force_optimize_projection = 1, enable_parallel_replicas = 0, prefer_optimize_projection = 0;
 
 SELECT x, count() FROM t_aggregation_in_order_projection WHERE y = 43700 GROUP BY x;
 

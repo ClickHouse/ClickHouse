@@ -19,6 +19,7 @@ trap cleanup EXIT
 # The adaptive aggregation stays enabled: its spill requests are served by writing the staged records.
 # Without spilling, the adaptive aggregation of these keys peaks at about 220 MiB and the ordinary one at about
 # 1 GiB. The soft limit of 100 MiB stays well below both, so both queries spill.
+# The freeze thresholds below are pinned to their defaults so CI setting randomization does not change the staging.
 settings=(
   --workload "$workload"
   --max_rows_to_read 0
@@ -26,6 +27,8 @@ settings=(
   --max_bytes_ratio_before_external_group_by 0
   --max_threads 4
   --min_bytes_to_spill 8Mi
+  --adaptive_aggregator_freeze_threshold 16384
+  --adaptive_aggregator_freeze_threshold_bytes 4194304
 )
 $CLICKHOUSE_CLIENT --enable_adaptive_aggregator 1 -nm "${settings[@]}" --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);
