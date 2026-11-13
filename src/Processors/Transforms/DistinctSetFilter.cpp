@@ -231,34 +231,48 @@ void buildDistinctFilter(
     SetVariants & variants,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
-
-    if (mask)
+    auto run = [&](auto & state) ALWAYS_INLINE
     {
-        for (size_t i = 0; i < rows; ++i)
+        if (mask)
         {
-            if (!(*mask)[i])
+            for (size_t i = 0; i < rows; ++i)
             {
-                /// The row is excluded from the deduplication, skip insertion.
-                filter[i] = 0;
-                continue;
+                if (!(*mask)[i])
+                {
+                    /// The row is excluded from the deduplication, skip insertion.
+                    filter[i] = 0;
+                    continue;
+                }
+
+                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+                filter[i] = emplace_result.isInserted();
             }
-
-            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-            filter[i] = emplace_result.isInserted();
         }
-    }
-    else
-    {
-        for (size_t i = 0; i < rows; ++i)
+        else
         {
-            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            for (size_t i = 0; i < rows; ++i)
+            {
+                auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
-            /// Emit the record if there is no such key in the current set yet.
-            /// Skip it otherwise.
-            filter[i] = emplace_result.isInserted();
+                /// Emit the record if there is no such key in the current set yet.
+                /// Skip it otherwise.
+                filter[i] = emplace_result.isInserted();
+            }
+        }
+    };
+
+    using State = typename Method::State;
+    if constexpr (!std::is_same_v<ColumnsHashing::SparseState<State>, State>)
+    {
+        if (mask && countBytesInFilter(*mask) < rows / State::max_rows_per_asked_row)
+        {
+            ColumnsHashing::SparseState<State> state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = true});
+            run(state);
+            return;
         }
     }
+    State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
+    run(state);
 }
 
 /// Keep checked insertion out of line to leave the bulk-insertion loop's generated code compact.

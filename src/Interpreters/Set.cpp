@@ -368,28 +368,42 @@ void NO_INLINE Set::insertFromBlockImplCase(
     [[maybe_unused]] ConstNullMapPtr null_map,
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
-
-    /// For all rows
-    for (size_t i = 0; i < rows; ++i)
+    auto run = [&](auto & state) ALWAYS_INLINE
     {
-        if constexpr (has_null_map)
+        /// For all rows
+        for (size_t i = 0; i < rows; ++i)
         {
-            if ((*null_map)[i])
+            if constexpr (has_null_map)
             {
-                if constexpr (build_filter)
+                if ((*null_map)[i])
                 {
-                    (*out_filter)[i] = false;
+                    if constexpr (build_filter)
+                    {
+                        (*out_filter)[i] = false;
+                    }
+                    continue;
                 }
-                continue;
             }
+
+            [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+            if constexpr (build_filter)
+                (*out_filter)[i] = emplace_result.isInserted();
         }
+    };
 
-        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-
-        if constexpr (build_filter)
-            (*out_filter)[i] = emplace_result.isInserted();
+    using State = typename Method::State;
+    if constexpr (has_null_map && !std::is_same_v<ColumnsHashing::SparseState<State>, State>)
+    {
+        if (rows - countBytesInFilter(null_map->data(), 0, rows) < rows / State::max_rows_per_asked_row)
+        {
+            ColumnsHashing::SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
+            run(state);
+            return;
+        }
     }
+    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
+    run(state);
 }
 
 
@@ -1002,25 +1016,40 @@ void NO_INLINE Set::executeImplCase(
     ConstNullMapPtr null_map) const
 {
     Arena pool;
-    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
-    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
-    /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
-    /// the last-element cache compares the key with the previous row's before probing the hash
-    /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
-    /// calculating the hash.
-    for (size_t i = 0; i < rows; ++i)
+    auto run = [&](auto & state) ALWAYS_INLINE
     {
-        if (has_null_map && (*null_map)[i])
+        /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
+        /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
+        /// the last-element cache compares the key with the previous row's before probing the hash
+        /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
+        /// calculating the hash.
+        for (size_t i = 0; i < rows; ++i)
         {
-            vec_res[i] = negative;
+            if (has_null_map && (*null_map)[i])
+            {
+                vec_res[i] = negative;
+            }
+            else
+            {
+                auto find_result = state.findKey(method.data, i, pool);
+                vec_res[i] = negative ^ find_result.isFound();
+            }
         }
-        else
+    };
+
+    using State = typename Method::State;
+    if constexpr (has_null_map && !std::is_same_v<ColumnsHashing::SparseState<State>, State>)
+    {
+        if (rows - countBytesInFilter(null_map->data(), 0, rows) < rows / State::max_rows_per_asked_row)
         {
-            auto find_result = state.findKey(method.data, i, pool);
-            vec_res[i] = negative ^ find_result.isFound();
+            ColumnsHashing::SparseState<State> state(key_columns, key_sizes, nullptr, {.skips_rows = true});
+            run(state);
+            return;
         }
     }
+    State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
+    run(state);
 }
 
 

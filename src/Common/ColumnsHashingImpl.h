@@ -85,6 +85,16 @@ struct SubRangeStateOf
 template <typename State>
 using SubRangeState = typename SubRangeStateOf<State>::Type;
 
+/// The state type for a caller that asks about few of the rows of its block.
+template <typename State>
+struct SparseStateOf
+{
+    using Type = State;
+};
+
+template <typename State>
+using SparseState = typename SparseStateOf<State>::Type;
+
 namespace columns_hashing_impl
 {
 

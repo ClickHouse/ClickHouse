@@ -44,6 +44,9 @@
     <query>select w, v, u, q from group_by_fk_chunks group by w, v, u, q format Null</query>
     <query>select f3, u from group_by_fk_chunks group by f3, u format Null</query>
     <query>select w, v, u from group_by_fk_chunks group by w, v, u format Null</query>
+    <!-- nullable_keys256 -->
+    <query>select a, b, cn from group_by_fk_chunks group by a, b, cn format Null</query>
+    <query>select count() from (select distinct a, b, cn from group_by_fk_chunks)</query>
 
     <drop_query>drop table group_by_fk</drop_query>
     <drop_query>drop table group_by_fk_chunks</drop_query>

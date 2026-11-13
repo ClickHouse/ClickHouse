@@ -105,6 +105,27 @@ SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT a, f3, u FROM t_keys_f
     SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1, max_threads = 1)
 WHERE explain ILIKE '%DistinctSortedStreamTransform%';
 
+-- Nullable keys.
+SELECT 'group by a, b, cn', count(), sum(cityHash64(toString((a, b, cn, n)))) FROM (SELECT a, b, cn, count() AS n FROM t_keys_fixed_chunks GROUP BY a, b, cn);
+SELECT 'group by c32, cn', count(), sum(cityHash64(toString((c32, cn, n)))) FROM (SELECT c32, cn, count() AS n FROM t_keys_fixed_chunks GROUP BY c32, cn);
+SELECT 'two-level external a, b, cn', count(), sum(cityHash64(toString((a, b, cn, n)))) FROM (SELECT a, b, cn, count() AS n FROM t_keys_fixed_chunks GROUP BY a, b, cn)
+SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
+SELECT 'top-k a, b, cn', groupArray((a, b, cn, n)) FROM
+(SELECT a, b, cn, count() AS n FROM t_keys_fixed_chunks GROUP BY a, b, cn ORDER BY a, b, cn LIMIT 10)
+SETTINGS enable_group_by_top_k_optimization = 1;
+SELECT 'distinct a, b, cn', count(), sum(cityHash64(toString((a, b, cn)))) FROM (SELECT DISTINCT a, b, cn FROM t_keys_fixed_chunks);
+SELECT 'distinct c32, cn', count(), sum(cityHash64(toString((c32, cn)))) FROM (SELECT DISTINCT c32, cn FROM t_keys_fixed_chunks);
+SELECT 'in a, b, cn', count(), sum(cityHash64(toString((a, q)))) FROM t_keys_fixed_chunks
+WHERE (a, b, cn) IN (SELECT a, b, cn FROM t_keys_fixed_chunks WHERE a % 3 = 0);
+SELECT 'in a, b, cn transform_null_in', count(), sum(cityHash64(toString((a, q)))) FROM t_keys_fixed_chunks
+WHERE (a, b, cn) IN (SELECT a, b, cn FROM t_keys_fixed_chunks WHERE a % 3 = 0) SETTINGS transform_null_in = 1;
+SELECT 'in order a, cn', count(), sum(cityHash64(toString((a, cn, n)))) FROM
+(SELECT a, cn, count() AS n FROM t_keys_fixed_chunks_in_order GROUP BY a, cn)
+SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, max_threads = 1;
+SELECT 'distinct in order a, cn', count(), sum(cityHash64(toString((a, cn)))) FROM
+(SELECT DISTINCT a, cn FROM t_keys_fixed_chunks_in_order)
+SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1, max_threads = 1;
+
 DROP TABLE t_keys_fixed_chunks_fan_out;
 DROP TABLE t_keys_fixed_chunks_in_order;
 DROP TABLE t_keys_fixed_chunks;

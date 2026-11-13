@@ -1215,17 +1215,30 @@ void NO_INLINE Aggregator::executeImpl(
     if constexpr (!for_sub_range)
         rows.skips_rows = params.top_k && !method.top_k_heap.frozen && method.top_k_heap.hasBoundary();
 
-    if (use_cache)
+    auto run = [&]<typename CacheState, typename NoCacheState>() ALWAYS_INLINE
     {
-        State state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
-        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
-    }
-    else
+        if (use_cache)
+        {
+            CacheState state(key_columns, key_sizes, aggregation_state_cache, rows);
+            executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+            consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
+        }
+        else
+        {
+            NoCacheState state(key_columns, key_sizes, aggregation_state_cache, rows);
+            executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        }
+    };
+
+    if constexpr (!for_sub_range && !std::is_same_v<ColumnsHashing::SparseState<State>, State>)
     {
-        StateNoCache state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        if (rows.skips_rows)
+        {
+            run.template operator()<ColumnsHashing::SparseState<State>, ColumnsHashing::SparseState<StateNoCache>>();
+            return;
+        }
     }
+    run.template operator()<State, StateNoCache>();
 }
 
 template <typename Method, typename State>
