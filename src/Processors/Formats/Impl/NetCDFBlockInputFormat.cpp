@@ -120,11 +120,11 @@ DataTypePtr getDataType(NetCDFType type)
 
 /// The `_Unsigned` attribute of the netCDF conventions changes the interpretation of the bits of
 /// the signed integer types: the three which classic NetCDF has and the 64-bit one of `CDF-5`. Its
-/// value is a `char` string, normally `true`.
+/// value is a `char` string, `true` or `True` (the reference decoder `netCDF4` accepts both).
 bool hasUnsignedAttribute(const NetCDFVariable & variable)
 {
     const auto * attribute = variable.tryGetAttribute("_Unsigned");
-    return attribute && attribute->type == NetCDFType::Char && attribute->data == "true";
+    return attribute && attribute->type == NetCDFType::Char && (attribute->data == "true" || attribute->data == "True");
 }
 
 DataTypePtr getDataType(const NetCDFVariable & variable)
