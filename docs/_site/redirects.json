@@ -39568,6 +39568,18 @@
     "source": "/sql-reference/aggregate-functions/reference/median"
   },
   {
+    "destination": "/reference/functions/aggregate-functions/mergeSerializedHLL",
+    "source": "/sql-reference/aggregate-functions/reference/mergeSerializedHLL"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/mergeSerializedQuantiles",
+    "source": "/sql-reference/aggregate-functions/reference/mergeSerializedQuantiles"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/mergeSerializedTDigest",
+    "source": "/sql-reference/aggregate-functions/reference/mergeSerializedTDigest"
+  },
+  {
     "destination": "/reference/functions/aggregate-functions/min",
     "source": "/sql-reference/aggregate-functions/reference/min"
   },
@@ -39670,6 +39682,18 @@
   {
     "destination": "/reference/functions/aggregate-functions/rankCorr",
     "source": "/sql-reference/aggregate-functions/reference/rankCorr"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/serializedHLL",
+    "source": "/sql-reference/aggregate-functions/reference/serializedHLL"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/serializedQuantiles",
+    "source": "/sql-reference/aggregate-functions/reference/serializedQuantiles"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/serializedTDigest",
+    "source": "/sql-reference/aggregate-functions/reference/serializedTDigest"
   },
   {
     "destination": "/reference/functions/aggregate-functions/simpleLinearRegression",
@@ -39818,6 +39842,10 @@
   {
     "destination": "/reference/functions/aggregate-functions/uniqExact",
     "source": "/sql-reference/aggregate-functions/reference/uniqexact"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/uniqHLL",
+    "source": "/sql-reference/aggregate-functions/reference/uniqHLL"
   },
   {
     "destination": "/reference/functions/aggregate-functions/uniqHLL12",
