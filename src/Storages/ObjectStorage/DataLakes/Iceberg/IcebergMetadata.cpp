@@ -151,7 +151,7 @@ extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
-extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
+extern const SettingsBool input_format_parquet_preserve_order;
 extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
@@ -2058,11 +2058,9 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
-    /// `vortex.preserve_order` is not forced as well: position deletes are only supported for
-    /// Parquet data and delete files, so a Vortex data file never reaches the streaming transform.
-    if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
-        /// data reader and the deletes reader.
+    /// The format settings of an engine table are not taken from the query, so a query that asks for the order
+    /// (the read of a mutation that writes position delete files does) gets it here.
+    if (local_context.getSettingsRef()[Setting::input_format_parquet_preserve_order])
         format_settings.parquet.preserve_order = true;
 }
 
