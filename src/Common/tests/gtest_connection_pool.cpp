@@ -1380,12 +1380,12 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
     }
     ASSERT_TRUE(queue_full);
 
-    /// Same resolver mock as in `RetriesNextAddressOnConnectFailure`: the second address appears once the first one fails.
+    /// Resolving the host again, which a failed connect asks for, would take 3 s.
     auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
     auto resolve_func = [resolve_calls, slow_ip, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
     {
-        if (resolve_calls->fetch_add(1) == 0)
-            return {slow_ip};
+        if (resolve_calls->fetch_add(1) > 0)
+            sleepForSeconds(3);
         return {slow_ip, good_ip};
     };
 
@@ -1397,8 +1397,21 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
         {}
     };
 
-    DB::HostResolversPool::instance().injectResolverForTest(
-        test_host, std::make_shared<ResolveMock>(test_host, Poco::Timespan(60 * 1000 * 1000), std::move(resolve_func)));
+    auto resolver = std::make_shared<ResolveMock>(test_host, Poco::Timespan(60 * 1000 * 1000), std::move(resolve_func));
+    DB::HostResolversPool::instance().injectResolverForTest(test_host, resolver);
+
+    /// Ban the good address, so that the pool tries the slow one first.
+    bool good_banned = false;
+    for (size_t i = 0; i < 64 && !good_banned; ++i)
+    {
+        auto entry = resolver->resolve();
+        good_banned = *entry == good_ip.toString();
+        if (good_banned)
+            entry.setFail(/*refresh=*/ false);
+        else
+            entry.setUnused();
+    }
+    ASSERT_TRUE(good_banned);
 
     auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(port));
     auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
@@ -1408,6 +1421,9 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
     ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(300)));
     ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
 
+    /// Once the slow address fails, both are banned, so both are selectable again: the good one is not tried after the
+    /// deadline, and the host is not resolved again.
+    ASSERT_EQ(1, resolve_calls->load());
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
 }

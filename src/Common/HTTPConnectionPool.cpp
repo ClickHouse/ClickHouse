@@ -1178,12 +1178,13 @@ private:
         size_t connect_attempts = 0;
 
         /// Pessimize the resolved address, swallowing any exception so we don't mask the original failure
-        /// or abort the retry across addresses.
-        auto pessimize = [](HostResolver::Entry & failed_address) noexcept
+        /// or abort the retry across addresses. The DNS refresh that comes with it is synchronous, so it is
+        /// skipped after the deadline.
+        auto pessimize = [&deadline](HostResolver::Entry & failed_address) noexcept
         {
             try
             {
-                failed_address.setFail();
+                failed_address.setFail(/*refresh=*/ !deadline || std::chrono::steady_clock::now() < *deadline);
             }
             catch (...)
             {

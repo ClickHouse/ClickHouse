@@ -77,12 +77,12 @@ HostResolver::~HostResolver()
     records.clear();
 }
 
-void HostResolver::Entry::setFail()
+void HostResolver::Entry::setFail(bool refresh)
 {
     skip_success_callback = true;
 
     if (auto lock = pool.lock())
-        lock->setFail(address);
+        lock->setFail(address, refresh);
 }
 
 void HostResolver::Entry::setUnused()
@@ -165,7 +165,7 @@ void HostResolver::setSuccess(const Poco::Net::IPAddress & address)
         updateWeights();
 }
 
-void HostResolver::setFail(const Poco::Net::IPAddress & address)
+void HostResolver::setFail(const Poco::Net::IPAddress & address, bool refresh)
 {
     Poco::Timestamp now;
 
@@ -200,6 +200,14 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
     }
 
     ProfileEvents::increment(metrics.failed);
+
+    if (!refresh)
+    {
+        /// As after a failed refresh: keep at least one address selectable.
+        std::lock_guard lock(mutex);
+        updateWeights();
+        return;
+    }
 
     try
     {
