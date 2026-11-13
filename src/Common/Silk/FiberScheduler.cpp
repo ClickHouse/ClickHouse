@@ -63,7 +63,8 @@ struct FiberContext
     {
         try
         {
-            /// Fails as a failed `ThreadStatus` construction would, before the task runs.
+            /// Makes the fiber finish with `EIO` before the task runs. It throws before `ThreadStatus` is constructed,
+            /// so it does not cover a construction that fails after publishing `current_thread`.
             fiu_do_on(DB::FailPoints::silk_fiber_main_failure,
             {
                 throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected failure before running a fiber task");
