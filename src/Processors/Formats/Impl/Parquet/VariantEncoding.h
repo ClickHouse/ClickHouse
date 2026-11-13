@@ -31,6 +31,7 @@ private:
     DataTypePtr output_type;
     String column_name;
     size_t max_depth;
+    bool escape_dots_in_json_keys;
     /// Set for `JSON`.
     std::shared_ptr<const JSONPathsFilter> filter;
 };

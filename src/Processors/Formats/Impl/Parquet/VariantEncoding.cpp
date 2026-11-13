@@ -185,6 +185,7 @@ struct DecodeContext
 {
     const Metadata & metadata;
     size_t max_depth;
+    bool escape_dots_in_json_keys;
 };
 
 void checkDepth(const DecodeContext & context, size_t depth)
@@ -537,8 +538,10 @@ void insertObjectPaths(
 
     for (UInt32 i = 0; i < layout.num_elements; ++i)
     {
-        const std::string_view name = context.metadata.getName(layout.fieldId(data, i));
-        String path = is_root ? String(name) : prefix + "." + String(name);
+        String name(context.metadata.getName(layout.fieldId(data, i)));
+        if (context.escape_dots_in_json_keys)
+            name = escapeDotInJSONKey(name);
+        String path = is_root ? std::move(name) : prefix + "." + name;
         if (filter && filter->shouldSkip(path))
             continue;
 
@@ -785,7 +788,7 @@ void writeContainerHeader(String & out, BasicType basic_type, UInt8 value_header
 
 struct JSONNode
 {
-    MapWithMemoryTracking<String, std::unique_ptr<JSONNode>> children;
+    MapWithMemoryTracking<String, size_t> children;
     std::optional<String> value;
 };
 
@@ -1212,52 +1215,55 @@ private:
 
     void encodeJSON(const ColumnObject & object, const DataTypeObject & type, size_t row, String & out)
     {
-        JSONNode root;
+        VectorWithMemoryTracking<JSONNode> nodes(1);
         for (auto it = ColumnObject::SortedPathsIterator(object, row, /*skip_typed_nulls_=*/true); !it.end(); it.next())
         {
             const auto path_info = it.getCurrentPathInfo();
             if (path_info.column->isNullAt(path_info.row))
                 continue;
 
-            if (static_cast<size_t>(std::count(path_info.path.begin(), path_info.path.end(), '.')) >= max_json_depth)
+            if (max_json_depth != 0
+                && static_cast<size_t>(std::count(path_info.path.begin(), path_info.path.end(), '.')) >= max_json_depth)
                 throw Exception(
                     ErrorCodes::TOO_DEEP_RECURSION,
                     "Cannot write a JSON value into the Parquet variant column '{}': the path '{}' is nested deeper than {} levels",
                     column_name, path_info.path, max_json_depth);
 
-            JSONNode * node = &root;
+            size_t node = 0;
             size_t begin = 0;
             while (true)
             {
-                if (node->value)
+                if (nodes[node].value)
                     throwJSONPathConflict(path_info.path);
                 const size_t end = path_info.path.find('.', begin);
                 String key(path_info.path.substr(begin, end == std::string_view::npos ? end : end - begin));
                 if (escape_dots_in_json_keys)
                     key = unescapeDotInJSONKey(key);
-                auto & child = node->children[std::move(key)];
-                if (!child)
-                    child = std::make_unique<JSONNode>();
-                node = child.get();
+                const auto [child_it, inserted] = nodes[node].children.try_emplace(std::move(key), nodes.size());
+                const size_t child = child_it->second;
+                if (inserted)
+                    nodes.emplace_back();
+                node = child;
                 if (end == std::string_view::npos)
                     break;
                 begin = end + 1;
             }
-            if (node->value || !node->children.empty())
+            if (nodes[node].value || !nodes[node].children.empty())
                 throwJSONPathConflict(path_info.path);
 
-            node->value.emplace();
+            auto & value = nodes[node].value.emplace();
             if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
-                encode(*path_info.column, *type.getTypedPaths().at(String(path_info.path)), path_info.row, *node->value);
+                encode(*path_info.column, *type.getTypedPaths().at(String(path_info.path)), path_info.row, value);
             else
-                encodeDynamic(assert_cast<const ColumnDynamic &>(*path_info.column), path_info.row, *node->value);
+                encodeDynamic(assert_cast<const ColumnDynamic &>(*path_info.column), path_info.row, value);
         }
-        writeJSONNode(root, out);
+        writeJSONNode(nodes, 0, out);
     }
 
-    void writeJSONNode(const JSONNode & node, String & out)
+    void writeJSONNode(const VectorWithMemoryTracking<JSONNode> & nodes, size_t node_index, String & out)
     {
         checkStackSize();
+        const JSONNode & node = nodes[node_index];
         if (node.value)
         {
             out.append(*node.value);
@@ -1271,7 +1277,7 @@ private:
         {
             ids.push_back(keyId(name));
             value_offsets.push_back(values.size());
-            writeJSONNode(*child, values);
+            writeJSONNode(nodes, child, values);
         }
         writeObject(ids, value_offsets, values, out);
     }
@@ -1297,6 +1303,7 @@ VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column
     : output_type(std::move(output_type_))
     , column_name(std::move(column_name_))
     , max_depth(format_settings.max_parser_depth)
+    , escape_dots_in_json_keys(format_settings.json.json_type_escape_dots_in_keys)
 {
     const DataTypePtr inner_type = removeNullable(output_type);
     if (const auto * object_type = typeid_cast<const DataTypeObject *>(inner_type.get()))
@@ -1308,7 +1315,7 @@ VariantValueDecoder::VariantValueDecoder(DataTypePtr output_type_, String column
 void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_view value_blob, IColumn & output) const
 {
     const Metadata parsed_metadata = parseMetadata(metadata_blob);
-    const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_depth};
+    const DecodeContext context{.metadata = parsed_metadata, .max_depth = max_depth, .escape_dots_in_json_keys = escape_dots_in_json_keys};
 
     /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
     /// null) go through `output.insertDefault()`, which inserts NULL into a nullable column.

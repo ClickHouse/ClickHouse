@@ -582,7 +582,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 
             auto old_type = Iceberg::deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
-            if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
+            if (!current_field->getValue<bool>(Iceberg::f_required) && new_type.second)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
             current_field->set(Iceberg::f_required, new_type.second);

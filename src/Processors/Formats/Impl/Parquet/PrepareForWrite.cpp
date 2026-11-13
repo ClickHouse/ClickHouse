@@ -266,6 +266,16 @@ void prepareColumnRecursive(
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
     const String & column_path, const IcebergOptionality & iceberg_optionality);
 
+void prepareColumnVariant(
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
+    const String & column_path, const IcebergOptionality & iceberg_optionality, bool force_required);
+
+bool isVariantGroupType(const DataTypePtr & type)
+{
+    return isDynamic(type) || (isVariant(type) && !type->getCustomName());
+}
+
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
     const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
     const String & column_path, const IcebergOptionality & iceberg_optionality)
@@ -852,9 +862,15 @@ void prepareColumnMap(
     /// always required per the Iceberg spec, and the producer forces that, so the lookup declines it.
     IcebergOptionality child_optionality = iceberg_optionality;
     child_optionality.owned_by_enclosing_nullable = false;
-    prepareColumnRecursive(
-        column_tuple_typed->getColumnPtr(0), map_type->getKeyType(), "key", options, states, schemas, child_field_ids,
-        Nested::concatenateName(column_path, "key"), child_optionality);
+    if (isVariantGroupType(map_type->getKeyType()))
+        prepareColumnVariant(
+            removeSpecialRepresentations(column_tuple_typed->getColumnPtr(0))->convertToFullColumnIfConst(), map_type->getKeyType(),
+            "key", options, states, schemas, child_field_ids, Nested::concatenateName(column_path, "key"), child_optionality,
+            /*force_required=*/ true);
+    else
+        prepareColumnRecursive(
+            column_tuple_typed->getColumnPtr(0), map_type->getKeyType(), "key", options, states, schemas, child_field_ids,
+            Nested::concatenateName(column_path, "key"), child_optionality);
     prepareColumnRecursive(
         column_tuple_typed->getColumnPtr(1), map_type->getValueType(), "value", options, states, schemas, child_field_ids,
         Nested::concatenateName(column_path, "value"), child_optionality);
@@ -943,10 +959,11 @@ void validateIcebergFieldIds(
 void prepareColumnVariant(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<ColumnNameToFieldId> & column_field_ids,
-    const String & column_path, const IcebergOptionality & iceberg_optionality)
+    const String & column_path, const IcebergOptionality & iceberg_optionality, bool force_required)
 {
-    const bool required = iceberg_optionality.mapper && iceberg_optionality.mapper->hasIcebergRequiredInfo()
-        && !iceberg_optionality.isOptional(column_path);
+    const bool required = force_required
+        || (iceberg_optionality.mapper && iceberg_optionality.mapper->hasIcebergRequiredInfo()
+            && !iceberg_optionality.isOptional(column_path));
 
     auto metadata = ColumnString::create();
     auto value = ColumnString::create();
@@ -1002,14 +1019,16 @@ void prepareColumnRecursive(
         case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
         case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
         case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
-        case TypeIndex::Dynamic: prepareColumnVariant(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality); break;
+        case TypeIndex::Dynamic:
+            prepareColumnVariant(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality, false);
+            break;
         case TypeIndex::Variant:
             if (type->getCustomName())
                 preparePrimitiveColumn(
                     column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
                     iceberg_optionality);
             else
-                prepareColumnVariant(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality);
+                prepareColumnVariant(column, type, name, options, states, schemas, column_field_ids, column_path, iceberg_optionality, false);
             break;
         case TypeIndex::LowCardinality:
         {

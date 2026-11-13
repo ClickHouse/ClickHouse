@@ -1646,6 +1646,18 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     partition_spec->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     Poco::JSON::Array::Ptr partition_specs = new Poco::JSON::Array;
     const auto & [part_spec, last_partition_id] = getPartitionSpec(partition_by, column_name_to_source_id);
+    const auto partition_fields = part_spec->getArray(Iceberg::f_fields);
+    for (UInt32 i = 0; i < partition_fields->size(); ++i)
+    {
+        const auto partition_field = partition_fields->getObject(i);
+        const auto source_id = partition_field->getValue<Int32>(Iceberg::f_source_id);
+        if (icebergTypeContainsVariant(schema_fields->getObject(source_id - 1)->get(Iceberg::f_type)))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot partition an Iceberg table by the column {}: the Iceberg type `variant` cannot be a partition source, "
+                "only primitive types can",
+                partition_field->getValue<String>(Iceberg::f_name));
+    }
     partition_specs->add(part_spec);
     new_metadata_file_content->set(Iceberg::f_partition_specs, partition_specs);
     new_metadata_file_content->set(Iceberg::f_last_partition_id, last_partition_id);
