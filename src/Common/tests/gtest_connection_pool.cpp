@@ -1551,7 +1551,7 @@ TEST_F(ConnectionPoolTest, ReconnectWithoutPoolKeepsToDeadline)
     /// request reconnects it directly.
     pool.reset();
     DB::HTTPConnectionPools::instance().dropCache();
-    connection->reset();
+    (*connection).reset();
     std::this_thread::sleep_until(deadline);
 
     try
