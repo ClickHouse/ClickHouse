@@ -1,6 +1,6 @@
--- A window sorting that reuses the storage order (`query_plan_reuse_storage_ordering_for_window_functions`) merges
--- the streams read in order, then scatters the merged stream by the `PARTITION BY` columns, so that the window
--- functions run in parallel instead of in a single stream.
+-- A window sorting that reuses the storage order (`query_plan_reuse_storage_ordering_for_window_functions`) runs the
+-- window functions in parallel instead of in a single stream: by ranges of the primary key when `PARTITION BY`
+-- determines its prefix, otherwise by scattering the merged stream by the `PARTITION BY` columns.
 
 SET enable_parallel_replicas = 0;
 SET explain_query_plan_default = 'legacy';
@@ -17,12 +17,16 @@ INSERT INTO t_window_read_in_order SELECT number % 100, number, number % 7 FROM 
 INSERT INTO t_window_read_in_order SELECT number % 100, number, number % 7 FROM numbers(300000, 100000);
 
 SELECT 'pipeline';
--- The window runs in four streams after the merge of the streams read in order.
-SELECT countIf(explain LIKE '%MergingSortedTransform%') > 0, countIf(explain LIKE '%ScatterByPartitionTransform%'), countIf(explain LIKE '%WindowTransform × 4%')
+-- `PARTITION BY a` determines a prefix of the primary key: the table is read by ranges of `a`, and every range is
+-- sorted and processed by its own window, with neither a merge of all the streams nor a scatter.
+SELECT countIf(explain LIKE '%ScatterByPartitionTransform%'), countIf(explain LIKE '%WindowTransform × %') > 0
 FROM (EXPLAIN PIPELINE SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM t_window_read_in_order);
--- Only a prefix of the window sorting comes from the storage: the suffix is sorted in every stream after the scatter.
-SELECT countIf(explain LIKE '%ScatterByPartitionTransform%'), countIf(explain LIKE '%FinishSortingTransform × 4%'), countIf(explain LIKE '%WindowTransform × 4%')
+-- Only a prefix of the window sorting comes from the storage: the suffix is sorted in every range.
+SELECT countIf(explain LIKE '%ScatterByPartitionTransform%'), countIf(explain LIKE '%FinishSortingTransform × %') > 0, countIf(explain LIKE '%WindowTransform × %') > 0
 FROM (EXPLAIN PIPELINE SELECT a, c, row_number() OVER (PARTITION BY a ORDER BY c, b) FROM t_window_read_in_order);
+-- Reading a `UNION ALL` cannot be split by ranges: the streams read in order are merged and scattered by `PARTITION BY`.
+SELECT countIf(explain LIKE '%ScatterByPartitionTransform%'), countIf(explain LIKE '%WindowTransform × 4%')
+FROM (EXPLAIN PIPELINE SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order));
 
 SELECT 'results';
 SELECT
@@ -31,15 +35,24 @@ SELECT
 SELECT
     (SELECT sum(cityHash64(a, b, s)) FROM (SELECT a, b, sum(b) OVER (PARTITION BY a ORDER BY c, b ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS s FROM t_window_read_in_order) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
   = (SELECT sum(cityHash64(a, b, s)) FROM (SELECT a, b, sum(b) OVER (PARTITION BY a ORDER BY c, b ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS s FROM t_window_read_in_order));
+SELECT
+    (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
+  = (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)));
+-- `PARTITION BY a, b % 10` determines only the first column of the primary key, which is enough to split by ranges of `a`.
+SELECT
+    (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a, b % 10 ORDER BY c) AS rn FROM t_window_read_in_order) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
+  = (SELECT sum(cityHash64(a, b, rn)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a, b % 10 ORDER BY c) AS rn FROM t_window_read_in_order));
 -- The second window reuses the sorting and the distribution of the first one.
 SELECT
     (SELECT sum(cityHash64(a, b, rn, s)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b, c) AS rn, sum(c) OVER (PARTITION BY a ORDER BY b) AS s FROM t_window_read_in_order) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0)
   = (SELECT sum(cityHash64(a, b, rn, s)) FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b, c) AS rn, sum(c) OVER (PARTITION BY a ORDER BY b) AS s FROM t_window_read_in_order));
 
 SELECT 'order by over the window';
--- The `ORDER BY` above stays a full sort: a merge of the scattered streams could deadlock against the scatter.
+-- `ORDER BY` above the window, over the ranges and over the scattered streams.
 SELECT a, b, rn FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM t_window_read_in_order) ORDER BY a, b LIMIT 3 OFFSET 3998
 SETTINGS query_plan_enable_multithreading_after_window_functions = 0;
 SELECT a, b, rn FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM t_window_read_in_order) ORDER BY a, b LIMIT 3 OFFSET 3998;
+SELECT a, b, rn FROM (SELECT a, b, row_number() OVER (PARTITION BY a ORDER BY b) AS rn FROM (SELECT a, b FROM t_window_read_in_order UNION ALL SELECT a, b FROM t_window_read_in_order)) ORDER BY a, b, rn LIMIT 3 OFFSET 7996
+SETTINGS query_plan_enable_multithreading_after_window_functions = 0;
 
 DROP TABLE t_window_read_in_order;

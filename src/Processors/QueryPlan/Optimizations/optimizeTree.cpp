@@ -995,6 +995,10 @@ void optimizeTreeSecondPass(
             it != projection_reject_reasons.end() ? it->second : "the projection was not considered by any read");
     }
 
+    /// Before `applyOrder`: a window sorting read by layers keeps one stream per layer, which it may advertise.
+    if (optimization_settings.read_in_order && !make_distributed_plan)
+        optimizeWindowByLayers(root);
+
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 

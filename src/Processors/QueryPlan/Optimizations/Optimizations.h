@@ -361,6 +361,10 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
 /// Whether `optimizeWindowPerPartition` would make every table partition of the reading below the window
 /// sorting at `node` be processed by its own window.
 bool canOptimizeWindowPerPartition(QueryPlan::Node & node);
+/// A window sorting that reads in order (`query_plan_reuse_storage_ordering_for_window_functions`) and whose
+/// `PARTITION BY` determines a prefix of the primary key reads the table by ranges of that prefix: every range
+/// holds whole window partitions, so the sorting and the window functions run for each range independently.
+void optimizeWindowByLayers(QueryPlan::Node & root);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
