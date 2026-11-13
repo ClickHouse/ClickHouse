@@ -15,6 +15,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 namespace ProfileEvents
 {
@@ -140,51 +141,40 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
 
 ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 {
-    std::unique_lock lock(mutex);
     while (true)
     {
-        if (!pending_objects_info.empty())
         {
-            auto result = std::move(pending_objects_info.front());
-            pending_objects_info.pop();
-            return result;
-        }
+            std::unique_lock lock(mutex);
+            objects_split_cv.wait(
+                lock, [&] { return !pending_objects_info.empty() || !iterator_exhausted || objects_being_split == 0; });
 
-        if (iterator_exhausted)
-        {
-            if (objects_being_split == 0)
+            if (!pending_objects_info.empty())
+            {
+                auto result = std::move(pending_objects_info.front());
+                pending_objects_info.pop();
+                return result;
+            }
+
+            if (iterator_exhausted)
                 return {};
-            objects_split_cv.wait(lock);
-            continue;
+
+            ++objects_being_split;
         }
 
-        ++objects_being_split;
-        lock.unlock();
-
-        ObjectInfos buckets;
-        bool exhausted = false;
-        try
-        {
-            if (auto object_info = iterator->next(id))
-                buckets = splitToBuckets(object_info);
-            else
-                exhausted = true;
-        }
-        catch (...)
-        {
-            lock.lock();
+        SCOPE_EXIT({
+            std::lock_guard lock(mutex);
             --objects_being_split;
             objects_split_cv.notify_all();
-            throw;
-        }
+        });
 
-        lock.lock();
-        --objects_being_split;
-        if (exhausted)
+        auto object_info = iterator->next(id);
+        auto buckets = object_info ? splitToBuckets(object_info) : ObjectInfos{};
+
+        std::lock_guard lock(mutex);
+        if (!object_info)
             iterator_exhausted = true;
         for (auto & bucket : buckets)
             pending_objects_info.push(std::move(bucket));
-        objects_split_cv.notify_all();
     }
 }
 
