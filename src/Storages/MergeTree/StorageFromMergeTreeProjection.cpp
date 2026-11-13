@@ -81,7 +81,8 @@ void StorageFromMergeTreeProjection::read(
             auto filter_query_tree = buildFilterQueryTree(
                 row_policy_filter->expression->clone(),
                 query_info.table_expression,
-                Context::createCopyForStoredDefinition(query_info.planner_context->getQueryContext()));
+                Context::createCopyForStoredDefinition(query_info.planner_context->getQueryContext()),
+                query_info.planner_context->isViewSourceInSubqueries());
             filter_info = buildFilterInfo(std::move(filter_query_tree), query_info.table_expression, query_info.planner_context);
         }
         catch (const Exception & e)

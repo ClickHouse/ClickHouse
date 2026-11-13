@@ -18,6 +18,7 @@
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveTopKThreshold.h>
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
@@ -59,8 +60,8 @@ constexpr size_t adaptive_argument_staging_batch_rows = 1024;
 constexpr size_t adaptive_miss_batch_max_key_bytes = 256 << 10;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
-/// How much of the next range of records the drain requests ahead of its prefetch cursor: a page, the most a
-/// hardware stream prefetcher covers without a fresh start.
+/// How much of the next range a walk over staged records requests into L2 as it enters a range: a page,
+/// the most a hardware stream prefetcher covers without a fresh start.
 constexpr size_t adaptive_drain_range_prefetch_bytes = 4096;
 /// A merge unit's table is prefetched into only when it is larger than this: below it the table stays in the
 /// cache through the drain, and a prefetch of a cache-resident slot is pure overhead.
@@ -178,8 +179,14 @@ struct AdaptiveAggregationSession
 
     /// Set when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or `uniqExactIf` (see
     /// `AdaptiveTopKPruning`). The producers hand their count bins, or their tables if they never froze, over to it,
-    /// and after the finish barrier `Aggregator::prepareAdaptiveTopKPruning` keeps it only for a merge that can prune.
+    /// and after the finish barrier `Aggregator::prepareAdaptiveTopK` keeps it only for a merge that can
+    /// prune. It is kept only together with `top_k_threshold`, whose value it prunes by.
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
+
+    /// The threshold of a top-K that the merge threads share (see `AdaptiveTopKThreshold`). It has no role
+    /// while the producers run: `Aggregator::prepareAdaptiveTopK` creates it after the finish barrier for
+    /// every merge of a top-K but the external one, whose units output partial states.
+    std::unique_ptr<AdaptiveTopKThreshold> top_k_threshold;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
     /// `Aggregator::finishAdaptiveProducer`). While other producers still run, the memory scheduler may write them to
