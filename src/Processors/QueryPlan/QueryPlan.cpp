@@ -1044,25 +1044,6 @@ DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimization
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// The replicas read only their buckets of a read, so they cannot check the limits of the whole read
-    /// (`ReadFromMergeTree::AnalysisResult::checkLimits`). Check them here, once per read, and keep the
-    /// `max_concurrent_queries` slot in the resources of this plan, which the pipeline of the query holds.
-    {
-        std::vector<Node *> stack{root};
-        while (!stack.empty())
-        {
-            Node * node = stack.back();
-            stack.pop_back();
-            if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()); read && read->getDistributedReadBucketCount() > 0)
-            {
-                if (auto query_id_holder = read->checkLimitsOfDistributedRead())
-                    resources.query_id_holders.emplace_back(std::move(query_id_holder));
-            }
-            for (Node * child : node->children)
-                stack.push_back(child);
-        }
-    }
-
     auto [distributed_plan, final_result_exchange, result_header, delayed_sets] = cutIntoDistributedPlan(optimization_settings);
     auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
 

@@ -5804,11 +5804,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// skip-index reader will be installed: such a reader re-counts them post-pruning, so
     /// incrementing here as well would double-count.
 
-    /// A replica reads only its buckets of a distributed read: the coordinator checks the limits of the
-    /// whole read in `QueryPlan::convertToDistributed`, and holds its `max_concurrent_queries` slot.
-    std::shared_ptr<QueryIdHolder> query_id_holder;
-    if (!(distributed_read_bucket_count > 0 && settings.parameter_lookup))
-        query_id_holder = result.checkLimits(*context, data, *data_settings);
+    auto query_id_holder = result.checkLimits(*context, data, *data_settings);
 
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     bool has_where_or_prewhere = query_info.prewhere_info || query_info.filter_actions_dag;
@@ -7505,11 +7501,6 @@ static String nextDistributedReadParamName()
 {
     static std::atomic<UInt64> counter{0};
     return "read_bucket_" + toString(counter.fetch_add(1, std::memory_order_relaxed));
-}
-
-std::shared_ptr<QueryIdHolder> ReadFromMergeTree::checkLimitsOfDistributedRead() const
-{
-    return getOrCreateAnalyzedResult()->checkLimits(*context, data, *data_settings);
 }
 
 size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets)

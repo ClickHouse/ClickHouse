@@ -1,9 +1,0 @@
--- three partitions, max_partitions_to_read = 1: every bucket reads one, the read reads three
-TOO_MANY_PARTITIONS
-TOO_MANY_PARTITIONS
-90000	1
--- the only slot is free: the read takes it once, not once per bucket
-60000	1
--- another read holds the only slot
-TOO_MANY_SIMULTANEOUS_QUERIES
-TOO_MANY_SIMULTANEOUS_QUERIES
