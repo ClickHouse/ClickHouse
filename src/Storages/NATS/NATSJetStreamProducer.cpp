@@ -52,6 +52,7 @@ natsStatus NATSJetStreamProducer::publishMessage(const String & message)
     {
         std::this_thread::sleep_for(NO_RESPONDERS_RETRY_WAIT);
         result = publish();
+        LOG_DEBUG(log, "Retried publish to NATS subject {}: {}", getSubject(), natsStatus_GetText(result));
     }
 
     if (result == NATS_NO_RESPONDERS)
