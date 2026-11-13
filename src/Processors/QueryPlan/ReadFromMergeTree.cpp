@@ -2028,8 +2028,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
 
         /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
         /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
-        /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
-        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
+        /// (adaptive granularity, local prefetched pool not allowed). With the columns cache, the pool does not align
+        /// tasks to the stripes of the cache when a stripe exceeds the share of a stream, so the small tasks stay small.
+        if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity()
             && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
             && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
         {
