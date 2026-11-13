@@ -119,6 +119,9 @@ def generate_buzz_config(
             "remotedatabase",
             "overlay",
             "timeseries",
+            "filelog",
+            "nats",
+            "rabbitmq",
         ]
         random.shuffle(disabled_engines)
         disabled_engines_str = ",".join(

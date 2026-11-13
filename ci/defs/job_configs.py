@@ -1906,6 +1906,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/jobs/scripts/server_fuzzer/",
                 "./tests/casa_del_dolor/",
+                # The target of the `tests/casa_del_dolor/nats_certs.sh` symlink
+                "./tests/integration/test_storage_nats/nats_certs.sh",
                 # The whole tree, as Keeper Stress does: listing only the imported modules
                 # misses the configs `cluster.py` reads through `write_embedded_config`.
                 "./tests/integration/helpers/",

@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from tests.integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
-from .kafkatest import KafkaHandler
+from .streamingtest import KafkaHandler, NATSHandler, RabbitMQHandler
 from .filetables import FileHandler
 from .laketables import (
     TableStorage,
@@ -167,6 +167,9 @@ class DolorCatalog:
 
 
 class SparkHandler:
+    # Engines whose tables a broker handler feeds, keyed in `streaming_handlers`
+    STREAMING_ENGINES = ("kafka", "nats", "rabbitmq")
+
     def __init__(self, cluster, with_unity: bool, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
         self.catalogs_lock = threading.Lock()
@@ -245,8 +248,14 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
+        # Kafka, NATS and RabbitMQ tables by engine name
+        self.streaming_handlers = {}
         if cluster.with_kafka:
-            self.kafka_handler = KafkaHandler(cluster)
+            self.streaming_handlers["kafka"] = KafkaHandler(cluster, self)
+        if cluster.with_nats:
+            self.streaming_handlers["nats"] = NATSHandler(cluster, self)
+        if cluster.with_rabbitmq:
+            self.streaming_handlers["rabbitmq"] = RabbitMQHandler(cluster, self)
 
     def start_uc_server(self):
         with self.catalogs_lock:
@@ -929,13 +938,12 @@ logger.jetty.level = warn
         saved_exception = None
         if data["engine"] == "file":
             return self.file_handler.create_table(cluster, data)
-        if data["engine"] == "kafka":
-            # At the moment, this is an ugly hack
-            return self.kafka_handler.create_kafka_table(
-                cluster,
+        if data["engine"] in self.STREAMING_ENGINES:
+            return self.streaming_handlers[data["engine"]].create_table(
                 data["database_name"],
                 data["table_name"],
                 data["topic"],
+                data["group"],
                 data["format"],
                 data["columns"],
             )
@@ -1050,7 +1058,7 @@ logger.jetty.level = warn
         catalog_type = LakeCatalogs.NoCatalog
         run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
 
-        if data["engine"] not in ("kafka", "file"):
+        if data["engine"] not in self.STREAMING_ENGINES + ("file",):
             with self.catalogs_lock:
                 next_table = self.catalogs[catalog_name].spark_tables[
                     data["table_name"]
@@ -1073,7 +1081,7 @@ logger.jetty.level = warn
                 is_file = data["engine"] == "file"
                 tbl = (
                     quote_ch_table_path(data["catalog_name"], data["table_name"])
-                    if data["engine"] in ("kafka", "file")
+                    if data["engine"] in self.STREAMING_ENGINES + ("file",)
                     else next_table.get_clickhouse_path()
                 )
                 # For File tables, reuse the reader's decode settings so these concurrent
@@ -1102,9 +1110,9 @@ logger.jetty.level = warn
             self.worker.resume()
 
         try:
-            if data["engine"] == "kafka":
-                res = self.kafka_handler.update_table(
-                    cluster, data["catalog_name"], data["table_name"]
+            if data["engine"] in self.STREAMING_ENGINES:
+                res = self.streaming_handlers[data["engine"]].update_table(
+                    data["catalog_name"], data["table_name"]
                 )
             elif data["engine"] in ("file", "iceberg", "deltalake", "paimon"):
                 is_file = data["engine"] == "file"

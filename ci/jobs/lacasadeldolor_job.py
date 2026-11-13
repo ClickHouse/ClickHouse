@@ -606,6 +606,9 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 {'--with-sqlite' if random.randint(1, 5) == 1 else ''}
 {'--with-mongodb' if random.randint(1, 5) == 1 else ''}
 {'--with-redis' if random.randint(1, 5) == 1 else ''}
+{'--with-kafka' if random.randint(1, 5) == 1 else ''}
+{'--with-nats' if random.randint(1, 5) == 1 else ''}
+{'--with-rabbitmq' if random.randint(1, 5) == 1 else ''}
 {'--with-nginx' if random.randint(1, 6) == 1 else ''}
 2>&1 | tee {fuzzer_log}
 """

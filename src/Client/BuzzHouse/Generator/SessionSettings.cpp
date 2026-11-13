@@ -2372,11 +2372,11 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
     }
-    if (!fc.dolor_server.has_value())
+    if (!fc.dolor_server.has_value() || !fc.dolor_spark_tables)
     {
         /// Dolor writes whole-file snappy File tables in the basic/Hadoop framing (the server
         /// default), so flipping the decode mode would fail every read of them. Randomize only
-        /// when dolor is not in use; the oracle values would flip it behind the tables' back too.
+        /// when dolor writes no File tables; the oracle values would flip it behind the tables' back too.
         serverSettings.insert(
             {{"snappy_mode",
               CHSetting(

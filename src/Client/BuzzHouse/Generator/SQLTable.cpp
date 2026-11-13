@@ -324,6 +324,23 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}, string_tp.get()));
         }
+        else if (t.isNATSEngine())
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_subject"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}, string_tp.get()));
+        }
+        else if (t.isRabbitMQEngine())
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_exchange_name"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_channel_id"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_delivery_tag"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_redelivered"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_message_id"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_timestamp"}, size_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_raw_message"}, string_tp.get()));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_error"}, string_tp.get()));
+        }
         if (!this->inside_projection || rg.nextSmallNumber() < 2)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}, string_tp.get()));
@@ -1405,7 +1422,7 @@ void StatementGenerator::generateEngineDetails(
     else if (
         te->has_engine()
         && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
-            || b.isRedisEngine() || b.isKafkaEngine() || b.isURLEngine()))
+            || b.isRedisEngine() || b.isAnyStreamingEngine() || b.isURLEngine()))
     {
         if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
         {
@@ -2789,6 +2806,15 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (connections.hasDolorConnection() && fc.kafka_server.has_value() && !b.isDeterministic() && (fc.engine_mask & allow_kafka) != 0)
         {
             this->ids.emplace_back(Kafka);
+        }
+        if (connections.hasDolorConnection() && fc.nats_server.has_value() && !b.isDeterministic() && (fc.engine_mask & allow_nats) != 0)
+        {
+            this->ids.emplace_back(NATS);
+        }
+        if (connections.hasDolorConnection() && fc.rabbitmq_server.has_value() && !b.isDeterministic()
+            && (fc.engine_mask & allow_rabbitmq) != 0)
+        {
+            this->ids.emplace_back(RabbitMQ);
         }
         if ((allow_mysql_tbl || allow_postgresql_tbl) && (fc.engine_mask & allow_external_distributed) != 0)
         {

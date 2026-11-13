@@ -526,6 +526,56 @@ bool SQLBase::isKafkaEngine(const bool as_alias) const
         || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Kafka);
 }
 
+bool SQLBase::isNATSEngine(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::NATS
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::NATS);
+}
+
+bool SQLBase::isRabbitMQEngine(const bool as_alias) const
+{
+    return engine.value == TableEngineValues::RabbitMQ
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::RabbitMQ);
+}
+
+bool SQLBase::isAnyStreamingEngine(const bool as_alias) const
+{
+    return isKafkaEngine(as_alias) || isNATSEngine(as_alias) || isRabbitMQEngine(as_alias);
+}
+
+String SQLBase::getDolorEngineName() const
+{
+    if (isAnyIcebergEngine())
+    {
+        return "iceberg";
+    }
+    if (isAnyDeltaLakeEngine())
+    {
+        return "deltalake";
+    }
+    if (isAnyPaimonEngine())
+    {
+        return "paimon";
+    }
+    if (isFileEngine())
+    {
+        return "file";
+    }
+    if (isKafkaEngine())
+    {
+        return "kafka";
+    }
+    if (isNATSEngine())
+    {
+        return "nats";
+    }
+    if (isRabbitMQEngine())
+    {
+        return "rabbitmq";
+    }
+    UNREACHABLE();
+}
+
 bool SQLBase::isTimeSeriesEngine(const bool as_alias) const
 {
     return engine.value == TableEngineValues::TimeSeries
@@ -665,7 +715,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && isAnyLakeEngine() && rg.nextBool())
+        if (has_dolor && fc.dolor_spark_tables && isAnyLakeEngine() && rg.nextBool())
         {
             integration = IntegrationCall::Dolor;
         }
@@ -779,7 +829,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         else if (isFileEngine())
         {
             /// Sometimes let Spark (dolor) write the data file, so ClickHouse only reads it
-            if (has_dolor && rg.nextBool())
+            if (has_dolor && fc.dolor_spark_tables && rg.nextBool())
             {
                 integration = IntegrationCall::Dolor;
             }
@@ -846,7 +896,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
     else if (
         isFileEngine() || isFileLogEngine()
-        || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
+        || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isAnyStreamingEngine()) && rg.nextMediumNumber() < 91))
     {
         file_format = fc.pickFormat(rg, fc.in_out_formats);
     }
@@ -901,11 +951,16 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     {
         integration = IntegrationCall::HTTP;
     }
-    else if (has_dolor && isKafkaEngine())
+    else if (has_dolor && isAnyStreamingEngine())
     {
+        /// The topic is a NATS subject or a RabbitMQ exchange, and the group a RabbitMQ queue base.
+        /// A NATS table has a group only to read from the JetStream stream of that name
         integration = IntegrationCall::Dolor;
         topic = "t" + std::to_string(rg.randomInt<uint32_t>(0, 19));
-        group = "g" + std::to_string(rg.randomInt<uint32_t>(0, 19));
+        if (!isNATSEngine() || rg.nextSmallNumber() < 4)
+        {
+            group = (isNATSEngine() ? "s" : "g") + std::to_string(rg.randomInt<uint32_t>(0, 19));
+        }
     }
 }
 

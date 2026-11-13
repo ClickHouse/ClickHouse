@@ -1725,16 +1725,19 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     buf += "]";
     if (t.isAnyLakeEngine())
     {
-        const char * engine = t.isAnyDeltaLakeEngine() ? "deltalake" : (t.isAnyPaimonEngine() ? "paimon" : "iceberg");
         buf += fmt::format(
             R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
-            engine,
+            t.getDolorEngineName(),
             escapeJSON(t.getSparkCatalogName()),
             t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
     }
-    else if (t.isKafkaEngine())
+    else if (t.isAnyStreamingEngine())
     {
-        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", escapeJSON(t.topic.value()), escapeJSON(t.group.value()));
+        buf += fmt::format(
+            R"(,"engine":"{}","topic":"{}","group":"{}")",
+            t.getDolorEngineName(),
+            escapeJSON(t.topic.value()),
+            escapeJSON(t.group.value_or("")));
     }
     else if (t.isFileEngine())
     {
@@ -1881,15 +1884,133 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
             }
         }
     }
-    else if (t.isKafkaEngine())
+    else if (t.isAnyStreamingEngine())
     {
-        const String & host = fc.kafka_server.has_value() ? fc.kafka_server.value().server_hostname : "localhost";
-        const uint16_t & port = static_cast<uint16_t>(fc.kafka_server.has_value() ? fc.kafka_server.value().port : 9092);
+        const bool is_kafka = t.isKafkaEngine();
+        const bool is_nats = t.isNATSEngine();
+        const ServerCredentials & sc
+            = is_kafka ? fc.kafka_server.value() : (is_nats ? fc.nats_server.value() : fc.rabbitmq_server.value());
+        const String prefix = is_kafka ? "kafka_" : (is_nats ? "nats_" : "rabbitmq_");
+        const String server = fmt::format("{}:{}", sc.server_hostname, sc.port);
+        /// The connection and the credentials come from the named collection dolor defines in the server config
+        const bool use_collection = !sc.named_collection.empty() && rg.nextSmallNumber() < 3;
+        /// Kafka takes the connection as engine arguments, the other two in their mandatory settings
+        const bool kafka_arguments = is_kafka && !use_collection && rg.nextSmallNumber() < 8;
+        SettingValues * svs = te->mutable_setting_values();
+        const auto add_setting = [&](const String & name, const String & value)
+        {
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            sv->set_property(prefix + name);
+            sv->set_value("'" + escapeSQLString(value) + "'");
+        };
+        /// Sometimes a list with a server that does not resolve
+        const auto server_list = [&](const String & unknown) { return rg.nextSmallNumber() < 3 ? server + "," + unknown : server; };
+        /// Sometimes wrong credentials, for the authentication failures
+        const auto password = [&]() { return rg.nextMediumNumber() < 6 ? String("wrong") : sc.password; };
 
-        te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
-        te->add_params()->set_svalue(t.topic.value()); /// topic
-        te->add_params()->set_svalue(t.group.value()); /// group
-        te->add_params()->set_in_out(t.file_format.value_or("CSV"));
+        if (use_collection)
+        {
+            te->add_params()->set_rvalue(sc.named_collection);
+        }
+        if (is_kafka)
+        {
+            /// Sometimes more topics than the one dolor creates, or a pattern over all of them
+            const uint32_t next_topics = rg.nextSmallNumber();
+            const String topics = next_topics < 8
+                ? t.topic.value()
+                : (next_topics < 10 ? t.topic.value() + ",t" + std::to_string(rg.randomInt<uint32_t>(0, 19)) : String("^t[0-9]+$"));
+
+            if (kafka_arguments)
+            {
+                te->add_params()->set_svalue(server_list("unknown_kafka:9092"));
+                te->add_params()->set_svalue(topics);
+                te->add_params()->set_svalue(t.group.value());
+                te->add_params()->set_in_out(t.file_format.value_or("CSV"));
+            }
+            else
+            {
+                if (!use_collection)
+                {
+                    add_setting("broker_list", server_list("unknown_kafka:9092"));
+                }
+                add_setting("topic_list", topics);
+                add_setting("group_name", t.group.value());
+                add_setting("format", t.file_format.value_or("CSV"));
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                /// Offsets in Keeper (`StorageKafka2`): the replicas of a group share the path
+                add_setting("keeper_path", "/clickhouse/kafka/" + t.group.value());
+                add_setting("replica_name", "r" + std::to_string(rg.randomInt<uint32_t>(0, 2)));
+            }
+        }
+        else if (is_nats)
+        {
+            if (!use_collection)
+            {
+                if (rg.nextSmallNumber() < 4)
+                {
+                    add_setting("server_list", server_list("unknown_nats:4444"));
+                }
+                else
+                {
+                    add_setting("url", server);
+                }
+                if (rg.nextMediumNumber() < 6)
+                {
+                    add_setting("token", "fuzz");
+                }
+                else
+                {
+                    add_setting("username", sc.user);
+                    add_setting("password", password());
+                }
+            }
+            add_setting("subjects", t.topic.value());
+            add_setting("format", t.file_format.value_or("CSV"));
+            if (t.group.has_value())
+            {
+                /// Dolor creates the stream and its durable consumer `c<group>`
+                add_setting("stream", t.group.value());
+                add_setting("consumer_name", "c" + t.group.value());
+            }
+        }
+        else
+        {
+            if (!use_collection)
+            {
+                if (rg.nextSmallNumber() < 4)
+                {
+                    add_setting("address", fmt::format("amqp://{}:{}@{}", sc.user, password(), server));
+                }
+                else
+                {
+                    add_setting("host_port", server);
+                    add_setting("username", sc.user);
+                    add_setting("password", password());
+                }
+            }
+            add_setting("exchange_name", t.topic.value());
+            add_setting("format", t.file_format.value_or("CSV"));
+            if (rg.nextBool())
+            {
+                /// The routing keys and the header dolor publishes with, so `direct`, `topic` and `headers` exchanges route
+                static const DB::Strings routing_keys = {"0", "1", "a", "0,1", "#", "*", "x-match=any,h=1", "x-match=all,h=2"};
+
+                add_setting("routing_key_list", rg.pickRandomly(routing_keys));
+            }
+            if (rg.nextBool())
+            {
+                add_setting("queue_base", t.group.value());
+                if (rg.nextSmallNumber() < 4)
+                {
+                    /// Read from the queue dolor declares and binds, without any setup of its own
+                    SetValue * sv = svs->add_other_values();
+                    sv->set_property("rabbitmq_queue_consume");
+                    sv->set_value("1");
+                }
+            }
+        }
     }
 }
 

@@ -414,6 +414,16 @@ public:
 
     bool isKafkaEngine(bool as_alias = false) const;
 
+    bool isNATSEngine(bool as_alias = false) const;
+
+    bool isRabbitMQEngine(bool as_alias = false) const;
+
+    /// Kafka, NATS or RabbitMQ: a broker that la Casa del Dolor feeds
+    bool isAnyStreamingEngine(bool as_alias = false) const;
+
+    /// The name la Casa del Dolor gives the engine of a table it handles
+    String getDolorEngineName() const;
+
     bool isTimeSeriesEngine(bool as_alias = false) const;
 
     bool isFileLogEngine(bool as_alias = false) const;

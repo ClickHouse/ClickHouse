@@ -2827,7 +2827,7 @@ static const auto has_time_series_func = [](const SQLTable & t) { return t.isAtt
 static const auto has_filelog_func = [](const SQLTable & t) { return t.isAttached() && t.isFileLogEngine(); };
 
 static const auto has_streaming_table_func
-    = [](const SQLTable & t) { return t.isAttached() && (t.isAnyQueueEngine() || t.isKafkaEngine()); };
+    = [](const SQLTable & t) { return t.isAttached() && (t.isAnyQueueEngine() || t.isAnyStreamingEngine()); };
 
 void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const bool allow_table_statements, SystemCommand * sc)
 {

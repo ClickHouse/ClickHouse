@@ -9,7 +9,13 @@ import typing
 
 from environment import get_system_timezones
 from tests.integration.helpers.cluster import ClickHouseCluster
-from tests.integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
+from tests.integration.helpers.config_cluster import (
+    mongo_pass,
+    mysql_pass,
+    nats_pass,
+    nats_user,
+    pg_pass,
+)
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -109,6 +115,17 @@ NGINX_INTERNAL_PORT = 80
 REDIS_INTERNAL_PORT = 6379
 MONGO_INTERNAL_PORT = 27017
 KAFKA_INTERNAL_PORT = 19092
+NATS_INTERNAL_PORT = 4444
+RABBITMQ_INTERNAL_PORT = 5672
+# The broker's default user in `docker_compose_rabbitmq.yml`
+RABBITMQ_USER = "root"
+RABBITMQ_PASSWORD = "clickhouse"
+# The named collection of each broker in the server config, which BuzzHouse may use for the connection
+STREAMING_NAMED_COLLECTIONS = {
+    "kafka": "dolor_kafka",
+    "nats": "dolor_nats",
+    "rabbitmq": "dolor_rabbitmq",
+}
 
 
 rocksdb_properties = {
@@ -2645,6 +2662,40 @@ def generate_distributed_cache_config(args, node: int) -> tuple[str, int]:
     config_path = f"{args.tmp_files_dir}/zz_distributed_cache_node{node}.xml"
     tree.write(config_path, encoding="utf-8", xml_declaration=True)
     return config_path, nservers
+
+
+def generate_streaming_named_collections(args, cluster) -> typing.Optional[str]:
+    """A server config with the named collection of each enabled broker, None without brokers."""
+    collections = {}
+    if args.with_kafka:
+        collections["kafka"] = {
+            "kafka_broker_list": f"{cluster.kafka_host}:{KAFKA_INTERNAL_PORT}"
+        }
+    if args.with_nats:
+        collections["nats"] = {
+            "nats_url": f"{cluster.nats_host}:{NATS_INTERNAL_PORT}",
+            "nats_username": nats_user,
+            "nats_password": nats_pass,
+        }
+    if args.with_rabbitmq:
+        collections["rabbitmq"] = {
+            "rabbitmq_host_port": f"{cluster.rabbitmq_host}:{RABBITMQ_INTERNAL_PORT}",
+            "rabbitmq_username": RABBITMQ_USER,
+            "rabbitmq_password": RABBITMQ_PASSWORD,
+        }
+    if not collections:
+        return None
+    root = ET.Element("clickhouse")
+    named_collections = ET.SubElement(root, "named_collections")
+    for engine, keys in collections.items():
+        collection = ET.SubElement(named_collections, STREAMING_NAMED_COLLECTIONS[engine])
+        for key, value in keys.items():
+            ET.SubElement(collection, key).text = value
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="    ", level=0)
+    config_path = f"{args.tmp_files_dir}/streaming_named_collections.xml"
+    tree.write(config_path, encoding="utf-8", xml_declaration=True)
+    return config_path
 
 
 def modify_user_settings(

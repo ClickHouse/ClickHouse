@@ -392,7 +392,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"remotedatabase", allow_remote_database},
            {"overlay", allow_overlay_database},
            {"timeseries", allow_time_series},
-           {"filelog", allow_filelog}};
+           {"filelog", allow_filelog},
+           {"nats", allow_nats},
+           {"rabbitmq", allow_rabbitmq}};
 
     const SettingEntries configEntries = {
         {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},
@@ -469,6 +471,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
         {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
         {"enable_failpoints", [&](const JSONObjectType & value) { enable_failpoints = value.getBool(); }},
+        {"dolor_spark_tables", [&](const JSONObjectType & value) { dolor_spark_tables = value.getBool(); }},
         {"allow_nasty_identifiers", [&](const JSONObjectType & value) { allow_nasty_identifiers = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
@@ -483,6 +486,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
         {"kafka", [&](const JSONObjectType & value) { kafka_server = loadServerCredentials(value, "kafka", 19092); }},
+        {"nats", [&](const JSONObjectType & value) { nats_server = loadServerCredentials(value, "nats", 4444); }},
+        {"rabbitmq", [&](const JSONObjectType & value) { rabbitmq_server = loadServerCredentials(value, "rabbitmq", 5672); }},
         {"dolor", [&](const JSONObjectType & value) { dolor_server = loadServerCredentials(value, "dolor", 8080); }},
         {"remote_servers", [&](const JSONObjectType & value) { remote_servers = loadArray(value); }},
         {"remote_secure_servers", [&](const JSONObjectType & value) { remote_secure_servers = loadArray(value); }},

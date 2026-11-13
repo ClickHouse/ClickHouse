@@ -1089,9 +1089,88 @@ static std::unordered_map<String, CHSetting> rabbitMQTableSettings
     = {{"rabbitmq_empty_queue_backoff_end_ms", CHSetting(highRange, {}, false)},
        {"rabbitmq_empty_queue_backoff_start_ms", CHSetting(highRange, {}, false)},
        {"rabbitmq_empty_queue_backoff_step_ms", CHSetting(highRange, {}, false)},
-       {"rabbitmq_flush_interval_ms", CHSetting(highRange, {}, false)}};
+       {"rabbitmq_flush_interval_ms", CHSetting(highRange, {}, false)},
+       {"rabbitmq_exchange_type",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'direct'", "'fanout'", "'topic'", "'headers'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'direct'", "'fanout'", "'topic'", "'headers'"},
+            false)},
+       {"rabbitmq_num_consumers",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 8)); }, {}, false)},
+       {"rabbitmq_num_queues",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 8)); }, {}, false)},
+       {"rabbitmq_persistent", trueOrFalseSetting},
+       {"rabbitmq_queue_settings_list",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                /// Queue arguments that drop or reject messages under the consumers
+                static const DB::Strings choices
+                    = {"'x-max-length=10'",
+                       "'x-max-length-bytes=1000'",
+                       "'x-message-ttl=1000'",
+                       "'x-max-length=5,x-overflow=reject-publish'",
+                       "'x-max-length=5,x-overflow=drop-head'",
+                       "'x-queue-type=quorum'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"rabbitmq_vhost",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                /// Only `/` exists on the broker
+                static const DB::Strings choices = {"'/'", "'v1'"};
+                return rg.pickRandomly(choices);
+            },
+            {},
+            false)},
+       {"rabbitmq_skip_broken_messages", CHSetting(highRange, {}, false)},
+       {"rabbitmq_max_block_size", CHSetting(highRange, {}, false)},
+       {"rabbitmq_commit_on_select", trueOrFalseSetting},
+       {"rabbitmq_max_rows_per_message", CHSetting(rowsRange, {}, false)},
+       {"rabbitmq_handle_error_mode",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'default'", "'stream'", "'dead_letter_queue'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'default'", "'stream'", "'dead_letter_queue'"},
+            false)}};
 
-static std::unordered_map<String, CHSetting> natsTableSettings = {{"nats_flush_interval_ms", CHSetting(highRange, {}, false)}};
+static std::unordered_map<String, CHSetting> natsTableSettings
+    = {{"nats_flush_interval_ms", CHSetting(highRange, {}, false)},
+       {"nats_secure", trueOrFalseSetting},
+       {"nats_num_consumers",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 8)); }, {}, false)},
+       {"nats_queue_group",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            { return rg.nextBool() ? String("''") : "'q" + std::to_string(rg.randomInt<uint32_t>(0, 3)) + "'"; },
+            {},
+            false)},
+       {"nats_reconnect_wait", CHSetting(highRange, {}, false)},
+       {"nats_startup_connect_tries",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 5)); }, {}, false)},
+       {"nats_skip_broken_messages", CHSetting(highRange, {}, false)},
+       {"nats_max_block_size", CHSetting(highRange, {}, false)},
+       {"nats_commit_on_select", trueOrFalseSetting},
+       {"nats_max_rows_per_message", CHSetting(rowsRange, {}, false)},
+       {"nats_handle_error_mode",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'default'", "'stream'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'default'", "'stream'"},
+            false)}};
 
 static std::unordered_map<String, CHSetting> fileLogTableSettings = {{"poll_timeout_ms", CHSetting(highRange, {}, false)}};
 
@@ -1812,6 +1891,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc, const bool has_cloud_feature
         joinTableSettings.erase(entry);
         embeddedRocksDBTableSettings.erase(entry);
         kafkaTableSettings.erase(entry);
+        natsTableSettings.erase(entry);
+        rabbitMQTableSettings.erase(entry);
         mySQLTableSettings.erase(entry);
         mergeTreeColumnSettings.erase(entry);
         s3Settings.erase(entry);

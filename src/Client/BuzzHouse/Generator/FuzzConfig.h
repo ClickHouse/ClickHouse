@@ -74,7 +74,7 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50), allow_remote = (UINT64_C(1) << 51),
     allow_cluster_database = (UINT64_C(1) << 52), allow_remote_database = (UINT64_C(1) << 53),
     allow_overlay_database = (UINT64_C(1) << 54), allow_time_series = (UINT64_C(1) << 55),
-    allow_filelog = (UINT64_C(1) << 56);
+    allow_filelog = (UINT64_C(1) << 56), allow_nats = (UINT64_C(1) << 57), allow_rabbitmq = (UINT64_C(1) << 58);
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;
@@ -335,6 +335,8 @@ public:
     std::optional<ServerCredentials> http_server;
     std::optional<ServerCredentials> azurite_server;
     std::optional<ServerCredentials> kafka_server;
+    std::optional<ServerCredentials> nats_server;
+    std::optional<ServerCredentials> rabbitmq_server;
     std::optional<ServerCredentials> dolor_server;
 
     std::unordered_map<String, PerformanceMetric> metrics;
@@ -373,6 +375,8 @@ public:
     bool enable_backups = true;
     bool enable_renames = true;
     bool enable_failpoints = true;
+    /// With a dolor connection, also create the lake and `File` tables Spark writes, not only the streaming ones
+    bool dolor_spark_tables = true;
     bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
