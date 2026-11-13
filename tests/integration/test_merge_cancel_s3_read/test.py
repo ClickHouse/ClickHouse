@@ -1013,6 +1013,12 @@ WRITE_ATTEMPTS_QUERY = (
     "SELECT sumIf(value, event = 'DiskS3WriteRequestAttempts') FROM system.events"
 )
 
+# Counted when a sent write request fails with a network error. A request that stops in the
+# shared backoff sends nothing.
+WRITE_ERRORS_QUERY = (
+    "SELECT sumIf(value, event = 'DiskS3WriteRequestsErrors') FROM system.events"
+)
+
 # Counted only when the client retries in its own loop, which is where it moves the shared
 # deadline. Retries inside the SDK are not counted.
 WRITE_RETRIES_QUERY = (
@@ -1042,6 +1048,11 @@ def test_cancellation_ends_wait_in_shared_s3_backoff(cluster, broken_s3):
     deadline passed, and during an outage the failures of other threads keep moving it.
 
     An `INSERT` opens the deadline here, so the merge waits in it before it fails even once.
+
+    A cancelled merge leaves `system.merges` only after the rollback of its part, which runs under
+    a `QueryCancellationBlocker` and so waits for the deadline on purpose. For the merge the oracle
+    is therefore that no cancelled upload is sent. The killed `INSERT` deletes nothing, so its end
+    is timed.
     """
     node = cluster.instances["node"]
     merged = "t_backoff_merge"
@@ -1118,6 +1129,7 @@ def test_cancellation_ends_wait_in_shared_s3_backoff(cluster, broken_s3):
             int(node.query(insert_running)) == 1
         ), "the INSERT ended before it was killed"
 
+        errors_before = int(node.query(WRITE_ERRORS_QUERY))
         cancelled = time.monotonic()
         logging.info(
             "Cancelling %.1f s after the INSERT opened the shared backoff",
@@ -1143,9 +1155,11 @@ def test_cancellation_ends_wait_in_shared_s3_backoff(cluster, broken_s3):
             insert_wait,
         )
 
-        assert merge_wait is not None and merge_wait < CANCELLED_WAIT_BUDGET_SECONDS, (
-            f"the merge stopped by SYSTEM STOP MERGES left system.merges only after "
-            f"{merge_wait} s: it waited out the shared S3 backoff"
+        assert merge_wait is not None, "the merge stopped by SYSTEM STOP MERGES never ended"
+        sent_after_cancel = int(node.query(WRITE_ERRORS_QUERY)) - errors_before
+        assert sent_after_cancel == 0, (
+            f"{sent_after_cancel} cancelled uploads were sent and failed: "
+            f"they waited out the shared S3 backoff"
         )
         assert insert_wait is not None and insert_wait < CANCELLED_WAIT_BUDGET_SECONDS, (
             f"the killed INSERT ended only after {insert_wait} s: "
