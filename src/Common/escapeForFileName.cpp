@@ -15,7 +15,7 @@ std::string escapeForFileName(std::string_view s)
     while (pos != end && isWordCharASCII(static_cast<unsigned char>(*pos)))
         ++pos;
     if (pos == end)
-        return s;
+        return std::string(s);
 
     std::string res;
     res.reserve(s.size() + 2);
