@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
--- A NULL read from the SQLite format into a non-Nullable column with input_format_null_as_default must store the default of the column type, not 0.
+-- Tag no-fasttest: requires the SQLite library, which is not built in the fast test.
+
+-- A NULL read from the `SQLite` format with `input_format_null_as_default` must store the default of the column type, not the zero of the column.
 
 INSERT INTO FUNCTION file(currentDatabase() || '_sqlite_null_as_default_enum.sqlite', SQLite)
 SELECT CAST(NULL, 'Nullable(Int8)') AS e, CAST(NULL, 'Nullable(Int8)') AS m, CAST(NULL, 'Nullable(Int8)') AS t, CAST(NULL, 'Nullable(Int8)') AS n
