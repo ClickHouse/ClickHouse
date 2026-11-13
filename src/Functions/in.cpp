@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -11,6 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 
@@ -33,6 +36,41 @@ namespace Setting
 
 namespace
 {
+
+template <typename ColumnType>
+ColumnPtr flipFloatZeroSign(const ColumnPtr & column)
+{
+    const auto * float_column = checkAndGetColumn<ColumnType>(column.get());
+    if (!float_column)
+        return nullptr;
+
+    const auto & values = float_column->getData();
+    if (std::none_of(values.begin(), values.end(), [](auto value) { return value == 0; }))
+        return nullptr;
+
+    auto alternate = column->cloneResized(column->size());
+    for (auto & value : assert_cast<ColumnType &>(*alternate).getData())
+    {
+        if (value == 0)
+            value = -value;
+    }
+    return alternate;
+}
+
+ColumnPtr flipFloatZeroSign(const ColumnPtr & column)
+{
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+    {
+        auto nested = flipFloatZeroSign(nullable->getNestedColumnPtr());
+        if (!nested)
+            return nullptr;
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+    }
+
+    if (auto alternate = flipFloatZeroSign<ColumnFloat32>(column))
+        return alternate;
+    return flipFloatZeroSign<ColumnFloat64>(column);
+}
 
 /** in(x, set) - function for evaluating the IN
   * notIn(x, set) - and NOT IN.
@@ -244,6 +282,26 @@ public:
             columns_of_key_columns.emplace_back(left_arg);
 
         auto res = set->execute(columns_of_key_columns, in_null_as_unknown ? false : negative);
+
+        const auto left_type_without_wrappers = removeNullable(removeLowCardinality(left_arg.type));
+        const auto left_type_id = left_type_without_wrappers->getTypeId();
+        if (in_null_as_unknown && columns_of_key_columns.size() == 1
+            && (left_type_id == TypeIndex::Float32 || left_type_id == TypeIndex::Float64))
+        {
+            /// Prepared sets compare floating keys by their bits. Probe the other signed-zero
+            /// representation too, so a match wins over a source `NULL` in this mode.
+            auto full_column = recursiveRemoveLowCardinality(left_arg.column->convertToFullIfWrapped());
+            if (auto alternate = flipFloatZeroSign(full_column))
+            {
+                ColumnsWithTypeAndName alternate_key;
+                alternate_key.emplace_back(alternate, removeLowCardinality(left_arg.type), left_arg.name);
+                auto alternate_res = set->execute(alternate_key, false);
+                auto combined = ColumnUInt8::create(res->size());
+                for (size_t row = 0; row < res->size(); ++row)
+                    combined->getData()[row] = res->getBool(row) || alternate_res->getBool(row);
+                res = std::move(combined);
+            }
+        }
 
         if (in_null_as_unknown)
             res = applyStandardNullSemantics(*res, *left_arg.column, set->hasNull());

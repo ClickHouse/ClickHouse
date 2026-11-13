@@ -1,6 +1,4 @@
-#include <algorithm>
 #include <atomic>
-#include <cmath>
 #include <optional>
 #include <shared_mutex>
 
@@ -58,50 +56,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-namespace
-{
-
-template <typename ColumnType>
-ColumnPtr normalizeFloatZeroColumn(const ColumnPtr & column)
-{
-    const auto * float_column = checkAndGetColumn<ColumnType>(column.get());
-    if (!float_column)
-        return column;
-
-    const auto & values = float_column->getData();
-    if (std::none_of(values.begin(), values.end(), [](auto value) { return value == 0 && std::signbit(value); }))
-        return column;
-
-    /// Packed and hashed `Set` keys compare raw bytes. Normalize both stored and probe keys so
-    /// floating-point zero has the same key for either sign, as it does for `equals`.
-    auto normalized = column->cloneResized(column->size());
-    auto & normalized_values = assert_cast<ColumnType &>(*normalized).getData();
-    for (auto & value : normalized_values)
-    {
-        if (value == 0)
-            value = 0;
-    }
-    return normalized;
-}
-
-ColumnPtr normalizeFloatZeroKey(const ColumnPtr & column)
-{
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
-    {
-        auto nested = normalizeFloatZeroKey(nullable->getNestedColumnPtr());
-        if (nested == nullable->getNestedColumnPtr())
-            return column;
-        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
-    }
-
-    auto normalized = normalizeFloatZeroColumn<ColumnFloat32>(column);
-    if (normalized != column)
-        return normalized;
-    return normalizeFloatZeroColumn<ColumnFloat64>(column);
-}
-
-}
 
 namespace ErrorCodes
 {
@@ -588,7 +542,7 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        holder.materialized_columns.emplace_back(normalizeFloatZeroKey(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped())));
+        holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
@@ -960,7 +914,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
 
         // Append the result to materialized columns
-        materialized_columns.emplace_back(normalizeFloatZeroKey(result));
+        materialized_columns.emplace_back(std::move(result));
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
