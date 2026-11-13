@@ -237,6 +237,22 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
                             total_decompressed_size, decompressed_size_limit);
     }
 
+    /// The same applies to the declared compressed size: the buffer for the compressed block is
+    /// allocated with the size from the (possibly untrusted) header before the block is read, so a
+    /// tiny truncated input could otherwise force a huge allocation before `readStrict` notices that
+    /// the declared data is not there. The checksum is verified only after the block is read, so it
+    /// does not help either.
+    if (compressed_size_limit)
+    {
+        total_compressed_size += sizeof(Checksum) + size_compressed_without_checksum;
+        if (total_compressed_size > compressed_size_limit)
+            throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
+                            "Too large compressed size: {}, the maximum is: {}. "
+                            "When reading compressed external data via HTTP, this limit can be tuned "
+                            "by the 'http_max_multipart_form_data_size' setting.",
+                            total_compressed_size, compressed_size_limit);
+    }
+
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     // Is whole compressed block available in 'compressed_in->' buffer?

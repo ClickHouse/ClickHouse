@@ -352,10 +352,13 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
         auto line = readLine(true);
         if (startsWith(line, boundary))
         {
-            set(in.position(), 0);
-            next();  /// We need to restrict our buffer to size of next available line.
+            /// The state of the new part must be initialized before |next| reads ahead its first line:
+            /// otherwise the flag would be consumed by the following line instead (e.g. the second header
+            /// of the part, which starts with the CRLF of the first one and would be taken for content).
             found_last_boundary = startsWith(line, boundary + "--");
             first_line_of_part = !found_last_boundary;
+            set(in.position(), 0);
+            next();  /// We need to restrict our buffer to size of next available line.
             return !found_last_boundary;
         }
     }

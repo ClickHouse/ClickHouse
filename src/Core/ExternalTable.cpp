@@ -267,8 +267,14 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
         /// reporting EOF at the cap would allow). The limit is a budget shared by all parts of the
         /// request, so only what is left of it after the previous parts is allowed here. When
         /// nothing is left, the raw `LimitReadBuffer` above already rejects any compressed block.
+        /// The declared compressed size of each block is bounded by the same remaining budget,
+        /// because the raw compressed bytes are read from the `LimitReadBuffer` above anyway, and
+        /// checking it up front avoids allocating a buffer for a block that cannot be there.
         if (form_data_size_limit && form_data_size_limit > form_data_bytes_read)
+        {
             compressed_buffer->setDecompressedSizeLimit(form_data_size_limit - form_data_bytes_read);
+            compressed_buffer->setCompressedSizeLimit(form_data_size_limit - form_data_bytes_read);
+        }
 
         read_buffer = std::move(compressed_buffer);
     }

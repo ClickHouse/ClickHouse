@@ -49,6 +49,12 @@ protected:
     size_t decompressed_size_limit = 0;
     size_t total_decompressed_size = 0;
 
+    /// If non-zero, the cumulative declared compressed size (including checksums) across all
+    /// blocks read through this buffer must not exceed this value. It is checked before the
+    /// buffer for the compressed block is allocated.
+    size_t compressed_size_limit = 0;
+    size_t total_compressed_size = 0;
+
     UInt64 statistics_hint = 0;
 
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
@@ -92,6 +98,16 @@ public:
     void setDecompressedSizeLimit(size_t limit)
     {
         decompressed_size_limit = limit;
+    }
+
+    /** Limit the total declared compressed size (including checksums) across all blocks read
+      * through this buffer. When set, a block whose header would push the cumulative compressed
+      * size over the limit is rejected before a buffer for it is allocated. Use for data from
+      * untrusted sources. A value of 0 disables the limit.
+      */
+    void setCompressedSizeLimit(size_t limit)
+    {
+        compressed_size_limit = limit;
     }
 
     /// Identifies the column this buffer reads, see LZ4StatisticsHint.h.
