@@ -1,0 +1,8 @@
+<test>
+    <!-- A subexpression with several uses inside a lazily executed argument of `and` is computed once. -->
+    <query>SELECT count() FROM numbers_mt(300000000) WHERE number % 2 = 0 AND length(repeat(toString(number), 10)) + position(repeat(toString(number), 10), '7') + countSubstrings(repeat(toString(number), 10), '1') > 25 FORMAT Null</query>
+
+    <!-- A subexpression used by the first argument of `multiIf` or `or` and by a lazily executed one is computed once. -->
+    <query>SELECT count() FROM numbers_mt(300000000) WHERE number % 2 = 0 AND multiIf(cityHash64(repeat(toString(number), 10)) % 10 = 0, 1, position(repeat(toString(number), 10), '7') > 0, 2, 3) = 2 FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(300000000) WHERE number % 2 = 0 AND (cityHash64(repeat(toString(number), 10)) % 10 = 0 OR position(repeat(toString(number), 10), '7') > 0) FORMAT Null</query>
+</test>

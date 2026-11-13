@@ -371,6 +371,16 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node, std::unord
     return res;
 }
 
+/// The number of uses of the node's column. The column of a lazily executed function is passed through aliases as is,
+/// so the uses of an alias count instead of the alias.
+static size_t countConsumers(const ActionsDAG::Node * node, const ActionsDAGReverseInfo & reverse_info)
+{
+    size_t res = 0;
+    for (const auto * parent : reverse_info.nodes_info[reverse_info.reverse_index.at(node)].parents)
+        res += parent->type == ActionsDAG::ActionType::ALIAS ? countConsumers(parent, reverse_info) : 1;
+    return res;
+}
+
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag,
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
@@ -555,6 +565,8 @@ void ExpressionActions::linearizeActions(
     for (const auto & node : nodes)
         data.push_back({.node = &node});
 
+    std::unordered_map<const Node *, bool> has_order_sensitive_functions_cache;
+
     /// There are independent queues for arrayJoin and other actions.
     /// We delay creation of arrayJoin as long as we can, so that they will be executed closer to end.
     std::queue<const Node *> ready_nodes;
@@ -630,6 +642,10 @@ void ExpressionActions::linearizeActions(
             action.short_circuit_argument_statistics = std::make_shared<ShortCircuitArgumentStatistics>();
         if (auto it = short_circuit_eager_arguments.find(node); it != short_circuit_eager_arguments.end())
             action.short_circuit_eager_argument = it->second;
+        /// A shared node is executed once for all its consumers, which must not change its values or side effects.
+        if (action.is_lazy_executed && countConsumers(node, reverse_info) >= 2
+            && !hasOrderSensitiveFunctions(node, has_order_sensitive_functions_cache))
+            action.is_shared_lazy_executed = true;
 
         for (const auto & parent : cur_info.parents)
         {
@@ -885,7 +901,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
                     /*allow_lazy_replicated_captures_=*/ false,
                     action.short_circuit_argument_statistics,
-                    action.short_circuit_eager_argument);
+                    action.short_circuit_eager_argument,
+                    action.is_shared_lazy_executed ? action.node : nullptr);
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);

@@ -7,6 +7,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -38,7 +39,8 @@ ColumnFunction::ColumnFunction(
     bool recursively_convert_result_to_full_column_if_low_cardinality_,
     bool allow_lazy_replicated_captures_,
     ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_,
-    std::optional<size_t> short_circuit_eager_argument_)
+    std::optional<size_t> short_circuit_eager_argument_,
+    const void * shared_node_)
     : elements_size(size)
     , function(function_)
     , is_short_circuit_argument(is_short_circuit_argument_)
@@ -47,6 +49,7 @@ ColumnFunction::ColumnFunction(
     , allow_lazy_replicated_captures(allow_lazy_replicated_captures_)
     , short_circuit_argument_statistics(std::move(short_circuit_argument_statistics_))
     , short_circuit_eager_argument(short_circuit_eager_argument_)
+    , shared_node(shared_node_)
 {
     appendArguments(columns_to_capture);
 }
@@ -66,7 +69,8 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
         /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
-        short_circuit_eager_argument);
+        short_circuit_eager_argument,
+        shared_node);
 }
 
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
@@ -104,7 +108,8 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
         /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
-        short_circuit_eager_argument);
+        short_circuit_eager_argument,
+        shared_node);
 }
 
 ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
@@ -124,7 +129,8 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
         recursively_convert_result_to_full_column_if_low_cardinality,
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
-        short_circuit_eager_argument);
+        short_circuit_eager_argument,
+        shared_node);
 }
 
 Field ColumnFunction::operator[](size_t n) const
@@ -278,7 +284,8 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
         recursively_convert_result_to_full_column_if_low_cardinality,
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
-        short_circuit_eager_argument);
+        short_circuit_eager_argument,
+        shared_node);
 }
 
 void ColumnFunction::filter(const Filter & filt)
@@ -324,7 +331,8 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality,
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
-        short_circuit_eager_argument);
+        short_circuit_eager_argument,
+        shared_node);
 }
 
 ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
@@ -342,7 +350,8 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality,
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
-        short_circuit_eager_argument);
+        short_circuit_eager_argument,
+        shared_node);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
@@ -380,7 +389,8 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_co
             recursively_convert_result_to_full_column_if_low_cardinality,
             allow_lazy_replicated_captures,
             short_circuit_argument_statistics,
-            short_circuit_eager_argument));
+            short_circuit_eager_argument,
+            shared_node));
     }
 
     return columns;
@@ -503,8 +513,88 @@ DataTypePtr ColumnFunction::getResultType() const
     return function->getResultType();
 }
 
+struct ColumnFunction::ReducedColumns
+{
+    using Key = std::pair<const void *, bool>;
+
+    struct KeyHash
+    {
+        size_t operator()(const Key & key) const { return std::hash<const void *>{}(key.first) * 2 + key.second; }
+    };
+
+    UnorderedMapWithMemoryTracking<Key, ColumnWithTypeAndName, KeyHash> columns;
+
+    static Key getKey(const ColumnFunction & column)
+    {
+        return {column.shared_node, column.recursively_convert_result_to_full_column_if_low_cardinality};
+    }
+
+    const ColumnWithTypeAndName * find(const ColumnFunction & column) const
+    {
+        if (!column.shared_node)
+            return nullptr;
+        auto it = columns.find(getKey(column));
+        return it == columns.end() ? nullptr : &it->second;
+    }
+};
+
 ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
 {
+    ReducedColumns reduced;
+    return reduceImpl(dry_run, reduced);
+}
+
+bool ColumnFunction::replaceReducedColumns(ColumnsWithTypeAndName & columns, const ReducedColumns & reduced, bool replace_columns)
+{
+    bool replaced = false;
+    for (auto & column : columns)
+    {
+        const ColumnFunction * column_function = checkAndGetShortCircuitArgument(column.column);
+        if (!column_function)
+            continue;
+
+        const auto * reduced_column = replace_columns ? reduced.find(*column_function) : nullptr;
+        if (reduced_column)
+        {
+            chassert(reduced_column->column->size() == column_function->elements_size);
+            column.column = reduced_column->column;
+            column.type = reduced_column->type;
+            replaced = true;
+            continue;
+        }
+
+        IFunction::ShortCircuitSettings settings;
+        bool replace_arguments = !column_function->function->isShortCircuit(settings, column_function->captured_columns.size())
+            || !settings.arguments_are_commutative;
+
+        ColumnsWithTypeAndName capture = column_function->captured_columns;
+        if (!replaceReducedColumns(capture, reduced, replace_arguments))
+            continue;
+
+        column.column = ColumnFunction::create(
+            column_function->elements_size,
+            column_function->function,
+            capture,
+            column_function->is_short_circuit_argument,
+            column_function->is_function_compiled,
+            column_function->recursively_convert_result_to_full_column_if_low_cardinality,
+            column_function->allow_lazy_replicated_captures,
+            column_function->short_circuit_argument_statistics,
+            column_function->short_circuit_eager_argument,
+            column_function->shared_node);
+        replaced = true;
+    }
+    return replaced;
+}
+
+ColumnWithTypeAndName ColumnFunction::reduceImpl(bool dry_run, ReducedColumns & reduced) const
+{
+    if (const auto * reduced_column = reduced.find(*this))
+    {
+        chassert(reduced_column->column->size() == elements_size);
+        return *reduced_column;
+    }
+
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
 
@@ -530,15 +620,20 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
             for (size_t i : settings.arguments_with_disabled_lazy_execution)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce(dry_run);
+                    columns[i] = arg->reduceImpl(dry_run, reduced);
             }
+
+            /// The lazy executed arguments are executed on a subset of these rows,
+            /// so the columns reduced on all of them can be filtered instead of being computed again.
+            if (!reduced.columns.empty())
+                replaceReducedColumns(columns, reduced, !settings.arguments_are_commutative);
         }
         else
         {
             for (auto & col : columns)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                    col = arg->reduce(dry_run);
+                    col = arg->reduceImpl(dry_run, reduced);
             }
         }
     }
@@ -565,6 +660,9 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
         res.column = recursiveRemoveLowCardinality(res.column);
         res.type = recursiveRemoveLowCardinality(res.type);
     }
+
+    if (shared_node)
+        reduced.columns.emplace(ReducedColumns::getKey(*this), res);
     return res;
 }
 
@@ -579,7 +677,8 @@ ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality()
         /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ true,
         allow_lazy_replicated_captures,
         short_circuit_argument_statistics,
-        short_circuit_eager_argument);
+        short_circuit_eager_argument,
+        shared_node);
 }
 
 void ColumnFunction::forEachMutableSubcolumn(MutableColumnCallback callback)

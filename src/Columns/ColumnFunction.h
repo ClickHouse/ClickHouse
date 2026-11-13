@@ -35,7 +35,8 @@ private:
         bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
         bool allow_lazy_replicated_captures_ = false,
         ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_ = nullptr,
-        std::optional<size_t> short_circuit_eager_argument_ = {});
+        std::optional<size_t> short_circuit_eager_argument_ = {},
+        const void * shared_node_ = nullptr);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -239,6 +240,19 @@ private:
     /// is executed first was chosen instead of the one from `arguments_with_disabled_lazy_execution`,
     /// see `processShortCircuitFunctions` in ExpressionActions.cpp.
     std::optional<size_t> short_circuit_eager_argument;
+
+    /// The lazily executed node this column computes, if the node has several consumers.
+    /// The copies of a node inside one tree contain the same rows, so they have the same result.
+    const void * shared_node = nullptr;
+
+    /// The results of the shared nodes already reduced on the rows of the tree that is being reduced.
+    struct ReducedColumns;
+
+    ColumnWithTypeAndName reduceImpl(bool dry_run, ReducedColumns & reduced) const;
+    /// Replaces the lazy executed arguments that are already reduced inside the lazy executed `columns`,
+    /// and `columns` themselves if `replace_columns`. A lazy executed argument of `and`/`or` is not replaced:
+    /// they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.
+    static bool replaceReducedColumns(ColumnsWithTypeAndName & columns, const ReducedColumns & reduced, bool replace_columns);
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

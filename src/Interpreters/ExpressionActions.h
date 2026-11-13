@@ -66,6 +66,9 @@ public:
         /// if the action is lazy executed.
         std::optional<size_t> short_circuit_eager_argument = {};
 
+        /// Lazily executed and used by several consumers: its result is reused within one `ColumnFunction` tree.
+        bool is_shared_lazy_executed = false;
+
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
     };
