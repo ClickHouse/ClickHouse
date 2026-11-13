@@ -142,6 +142,11 @@ using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPrep
 class MergeTreeIndexTextPostprocessor;
 using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
 
+class DataTypeMap;
+
+/// Returns the subcolumn `m.key_<key>` that `optimize_functions_to_subcolumns` reads for `m[key]`, or `std::nullopt`.
+std::optional<String> getMapElementSubcolumnName(const String & map_column_name, const DataTypeMap & map_type, Field key);
+
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
 /// of granules on reading from text index step (see MergeTreeReaderTextIndex)
@@ -153,6 +158,7 @@ public:
         ContextPtr context_,
         const Block & index_sample_block,
         const std::optional<String> & normalized_index_column_name_,
+        const std::optional<String> & map_element_subcolumn_name_,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -163,6 +169,8 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    /// `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp`.
+    static bool isPerTokenPatternFunction(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
@@ -177,6 +185,7 @@ public:
     const Block & getHeader() const { return header; }
 
     /// Create text search query for the function node if it is suitable for optimization.
+    /// A query with nothing to search only rewrites the function to the index tokenizer.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
@@ -250,6 +259,10 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
+    /// Returns true if the index is built on `m['key']` and the node reads the same element, as the subcolumn
+    /// `m.key_<key>` that `optimize_functions_to_subcolumns` makes, or as `m[key]` with an equal key.
+    bool hasIndexForMapElementSubcolumn(const RPNBuilderTreeNode & node) const;
+
     /// Returns the constant key of `m['key']` (`arrayElement` or `m.key_<key>` subcolumn) on this
     /// index's column.
     std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
@@ -304,6 +317,8 @@ private:
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
+    /// The subcolumn `m.key_<key>` that `optimize_functions_to_subcolumns` makes of the index expression `m['key']`.
+    std::optional<String> map_element_subcolumn_name;
     IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
