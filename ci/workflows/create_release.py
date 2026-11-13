@@ -1,8 +1,6 @@
-import os
-
 from praktika import Job, Secret, Workflow
 
-from ci.defs.defs import SECRETS
+from ci.defs.defs import SECRETS, WRITES_PUBLIC_PLACES
 
 robot_token_secret = Secret.Config(
     name="ROBOT_CLICKHOUSE_COMMIT_TOKEN",
@@ -39,7 +37,7 @@ workflow = Workflow.Config(
     enable_concurrency_queue=True,
     enable_slack_feed=True,
     # Uploads the job's `Result.files` (the reprepro, createrepo_c and geesefs logs) to S3
-    enable_report=os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse",
+    enable_report=WRITES_PUBLIC_PLACES,
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",

@@ -18,6 +18,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
+from ci.defs.defs import WRITES_PUBLIC_PLACES
 from ci.praktika.git import Git
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -29,7 +30,6 @@ from ci.jobs.scripts.buildx import (
     with_timeout,
 )
 from ci.jobs.scripts.create_release import (
-    GITHUB_REPOSITORY,
     ReleaseContextManager,
     ReleaseInfo,
     ReleaseProgress,
@@ -493,8 +493,8 @@ def main():
         finally:
             shutil.rmtree(backup_dir, ignore_errors=True)
 
-    # A private repository releases during an embargo; the changelog goes to public master after it.
-    if GITHUB_REPOSITORY == "ClickHouse/ClickHouse":
+    # A release elsewhere (a private repository) must not push the changelog to public master.
+    if WRITES_PUBLIC_PLACES:
         step(
             name="Bump Changelog and Push to master",
             command=_push_changelog_to_master,
