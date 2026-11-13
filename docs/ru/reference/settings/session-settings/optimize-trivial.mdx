@@ -23,7 +23,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Возможные значения:
 
 * 0 — Оптимизация отключена.
-  * 1 — Оптимизация включена.
+* 1 — Оптимизация включена.
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query}
 
@@ -34,7 +34,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Возможные значения:
 
 * 0 — Оптимизация отключена.
-  * 1 — Оптимизация включена.
+* 1 — Оптимизация включена.
 
 См. также:
 
@@ -64,7 +64,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 * `col > 0`, `col >= 1`, `col < 1`, `col <= 0` для беззнаковых целочисленных столбцов.
 * Просто `col` / `NOT col` для столбцов `Int*`, `UInt*`, `Bool` (проверка на истинность).
 
-Шаблоны равенства не применяются к `Float*`, `Enum*`, `Nullable`, `LowCardinality`
+Шаблоны равенства не применяются к `Float*`, `Enum*`, `Date32`, `Nullable`, `LowCardinality`
 или составным типам (`Tuple`, `Array`, `Map`, ...) — для них count вычисляется по
 обычному пути сканирования.
 
@@ -82,7 +82,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Возможные значения:
 
 * 0 — Оптимизация отключена.
-  * 1 — Оптимизация включена.
+* 1 — Оптимизация включена.
 
 См. также:
 

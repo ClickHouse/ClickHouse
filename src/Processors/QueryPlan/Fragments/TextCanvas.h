@@ -21,8 +21,8 @@ class WriteBuffer;
 /// - A character of display width 2 (e.g. CJK) takes two cells: the first holds the character, the second is an empty
 ///   continuation that `writeTo` skips, so every following column stays in place.
 /// - The grid grows as text is put into it: writing beyond the current size adds lines and pads them with spaces.
-/// - A later write overwrites a cell, so the order of the calls matters: `TreeBuilder::draw` draws the frames, then the
-///   boxes, then the edges, whose joints (`┴`, `▲`, `┼`) replace single characters of the borders.
+/// - A later write overwrites a cell, so the order of the calls matters: `TreeBuilder::drawFrom` draws the frames, then
+///   the boxes, then the edges, whose joints (`┴`, `▲`, `┼`) replace single characters of the borders.
 ///
 /// The canvas knows nothing about plans, fragments or exchanges: `TreeBuilder` in `FragmentGraphTree.cpp` decides every
 /// coordinate. Example:
@@ -50,13 +50,18 @@ public:
     /// functions draw through `put`.
     void put(size_t x, size_t y, std::string_view text);
 
-    /// Draws a box with its top-left corner at `(x, y)`, `width` columns wide and `boxHeight(text_lines.size())` lines
-    /// tall: `┌───┐`, then one `│ line │` per line of `text_lines` with one space of padding on each side, then
-    /// `└───┘`. The caller computes `width`, usually the widest line plus 4.
-    void box(size_t x, size_t y, size_t width, const std::vector<String> & text_lines);
+    /// Draws a box with its top-left corner at `(x, y)`, `width` columns wide and
+    /// `boxHeight(text_lines.size(), details.size())` lines tall: `┌───┐`, then one `│ line │` per line of `text_lines`
+    /// with one space of padding on each side; with `details`, a separator `├───┤` and one line per detail under it;
+    /// then `└───┘`. The caller computes `width`, usually the widest line plus 4.
+    void box(size_t x, size_t y, size_t width, const std::vector<String> & text_lines, const std::vector<String> & details = {});
 
-    /// The number of lines of a box with `text_lines` lines of text: the text and the top and bottom borders.
-    static size_t boxHeight(size_t text_lines) { return text_lines + 2; }
+    /// The number of lines of a box with `text_lines` lines of text and `details_count` detail lines: the text, the top
+    /// and bottom borders and, with details, the separator and the details.
+    static size_t boxHeight(size_t text_lines, size_t details_count = 0)
+    {
+        return text_lines + 2 + (details_count == 0 ? 0 : details_count + 1);
+    }
 
     /// Draws a frame `width` columns wide and `height` lines tall, with `title` in the top border: `┌─ title ───┐`.
     void frame(size_t x, size_t y, size_t width, size_t height, std::string_view title);
