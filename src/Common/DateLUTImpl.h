@@ -1084,8 +1084,10 @@ public:
             }
 
         // TODO: different overload for ExtendedDayNum
-        const LUTIndex i = toLUTIndex(v);
-        return static_cast<UInt16>(i + 1 - toFirstDayNumOfYearIndex(i));
+        /// The first day of the year of `i` is in the LUT and is not after `i`, so plain arithmetic on the underlying index
+        /// cannot overflow: the saturating operators of `LUTIndex` make this hot function measurably slower.
+        const UInt32 i = toLUTIndex(v).toUnderType();
+        return static_cast<UInt16>(i + 1 - years_lut[lut[i].year - DATE_LUT_MIN_YEAR].toUnderType());
     }
 
     /// Number of week from some fixed moment in the past. Week begins at monday.
