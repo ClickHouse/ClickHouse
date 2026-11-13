@@ -252,39 +252,6 @@
       "group": "AI 工具与智能体",
       "pages": [
         "zh/products/cloud/features/ai-ml/index",
-        {
-          "group": "Agents",
-          "pages": [
-            "zh/agents/index",
-            "zh/agents/quickstart",
-            "zh/agents/chat",
-            {
-              "group": "智能体构建器",
-              "pages": [
-                "zh/agents/builder/index",
-                "zh/agents/builder/model-parameters",
-                "zh/agents/builder/code-interpreter",
-                "zh/agents/builder/web-search",
-                "zh/agents/builder/image-generation",
-                "zh/agents/builder/vision",
-                "zh/agents/builder/mcp-servers",
-                "zh/agents/builder/skills",
-                "zh/agents/builder/subagents"
-              ]
-            },
-            "zh/agents/prompts",
-            "zh/agents/memory",
-            "zh/agents/marketplace",
-            "zh/agents/sharing-and-access",
-            {
-              "group": "Assistant",
-              "pages": [
-                "zh/agents/assistant/using-ai-chat",
-                "zh/agents/assistant/customizing-semantic-layer"
-              ]
-            }
-          ]
-        },
         "zh/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,

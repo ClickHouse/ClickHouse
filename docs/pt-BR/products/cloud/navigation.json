@@ -252,39 +252,6 @@
       "group": "Ferramentas e agentes de IA",
       "pages": [
         "pt-BR/products/cloud/features/ai-ml/index",
-        {
-          "group": "Agents",
-          "pages": [
-            "pt-BR/agents/index",
-            "pt-BR/agents/quickstart",
-            "pt-BR/agents/chat",
-            {
-              "group": "Construtor de agentes",
-              "pages": [
-                "pt-BR/agents/builder/index",
-                "pt-BR/agents/builder/model-parameters",
-                "pt-BR/agents/builder/code-interpreter",
-                "pt-BR/agents/builder/web-search",
-                "pt-BR/agents/builder/image-generation",
-                "pt-BR/agents/builder/vision",
-                "pt-BR/agents/builder/mcp-servers",
-                "pt-BR/agents/builder/skills",
-                "pt-BR/agents/builder/subagents"
-              ]
-            },
-            "pt-BR/agents/prompts",
-            "pt-BR/agents/memory",
-            "pt-BR/agents/marketplace",
-            "pt-BR/agents/sharing-and-access",
-            {
-              "group": "Assistant",
-              "pages": [
-                "pt-BR/agents/assistant/using-ai-chat",
-                "pt-BR/agents/assistant/customizing-semantic-layer"
-              ]
-            }
-          ]
-        },
         "pt-BR/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,

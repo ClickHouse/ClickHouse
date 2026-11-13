@@ -252,39 +252,6 @@
       "group": "أدوات الذكاء الاصطناعي والوكلاء",
       "pages": [
         "ar/products/cloud/features/ai-ml/index",
-        {
-          "group": "Agents",
-          "pages": [
-            "ar/agents/index",
-            "ar/agents/quickstart",
-            "ar/agents/chat",
-            {
-              "group": "منشئ الوكلاء",
-              "pages": [
-                "ar/agents/builder/index",
-                "ar/agents/builder/model-parameters",
-                "ar/agents/builder/code-interpreter",
-                "ar/agents/builder/web-search",
-                "ar/agents/builder/image-generation",
-                "ar/agents/builder/vision",
-                "ar/agents/builder/mcp-servers",
-                "ar/agents/builder/skills",
-                "ar/agents/builder/subagents"
-              ]
-            },
-            "ar/agents/prompts",
-            "ar/agents/memory",
-            "ar/agents/marketplace",
-            "ar/agents/sharing-and-access",
-            {
-              "group": "Assistant",
-              "pages": [
-                "ar/agents/assistant/using-ai-chat",
-                "ar/agents/assistant/customizing-semantic-layer"
-              ]
-            }
-          ]
-        },
         "ar/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
