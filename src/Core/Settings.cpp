@@ -9879,6 +9879,8 @@ With [`use_statistics`](#use_statistics) enabled, estimate the number of distinc
 
 The compressed size of a column bounds its entropy, so `2` to the power of the compressed bits per row approximates the effective number of distinct values: the number of equally frequent values that would give the same probability for two rows to have equal values. It is close to the number of distinct values when the values are equally frequent, and smaller when a few of them make up most of the rows. The estimate is only made for columns that compress to less than 10 bits per row, with the default codecs (`LZ4`, `LZ4HC`, `ZSTD`): above that the compression no longer tells the number of distinct values, and specialized codecs such as `Delta` compress by the order of the values rather than by their repetition.
 
+The columns of the primary key of a MergeTree table are estimated from the marks of the primary key index instead, which is in memory: the first column from the fraction of granules in which its value changes, the others from the values of the marks as a sample of the rows.
+
 The estimate drives join reordering only and never changes query results. As it can be much below the actual number of distinct values, the selectivity of an equality between join keys also takes the row count of a key without a known number of distinct values.
 )", 0, \
         {"26.11", true, true, "New setting to estimate the number of distinct values of columns without `uniq` statistics from the compressed size of the column for join reordering."}) \
