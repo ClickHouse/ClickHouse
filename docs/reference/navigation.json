@@ -25,6 +25,7 @@
                 "reference/statements/alter/comment",
                 "reference/statements/alter/constraint",
                 "reference/statements/alter/database-comment",
+                "reference/statements/alter/database-setting",
                 "reference/statements/alter/delete",
                 "reference/statements/alter/cluster",
                 "reference/statements/alter/named-collection",

@@ -458,6 +458,9 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
     "${CMAKE_SOURCE_DIR}/programs/server/play.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/uplot.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/leaflet.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/leaflet.css;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\

@@ -119,6 +119,7 @@ extern const DataLakeStorageSettingsUInt32 iceberg_metadata_async_prefetch_perio
 extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
+extern const DataLakeStorageSettingsTimezone iceberg_timezone_for_timestamptz;
 }
 
 namespace ErrorCodes
@@ -139,7 +140,7 @@ extern const char iceberg_metadata_prefetch_pause[];
 namespace Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
-extern const SettingsBool use_iceberg_manifest_statistics;
+extern const SettingsBool use_datalake_metadata_statistics;
 extern const SettingsBool use_statistics;
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
@@ -259,10 +260,15 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
                 std::call_once(cell->table_metadata_validated, [&] { IcebergSchemaProcessor::checkTableSchemas(*metadata_object); });
                 return cell;
             });
+    String timezone_for_timestamptz
+        = (*configuration->getDataLakeSettings())[DataLakeStorageSetting::iceberg_timezone_for_timestamptz].value;
+    if (timezone_for_timestamptz.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `iceberg_timezone_for_timestamptz` must not be empty");
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     PersistentTableComponents persistent_components{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_geo_types_in_iceberg]),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(
+            context_->getSettingsRef()[Setting::allow_geo_types_in_iceberg], timezone_for_timestamptz),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -1745,7 +1751,7 @@ std::optional<DataLakeReadEstimate>
 IcebergMetadata::estimateRead(
     StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
 {
-    if (!context->getSettingsRef()[Setting::use_iceberg_manifest_statistics] || !context->getSettingsRef()[Setting::use_statistics])
+    if (!context->getSettingsRef()[Setting::use_datalake_metadata_statistics] || !context->getSettingsRef()[Setting::use_statistics])
         return std::nullopt;
 
     auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);

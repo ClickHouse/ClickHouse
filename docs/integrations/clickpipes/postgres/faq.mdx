@@ -182,7 +182,25 @@ During this process, both the sync (pulling data from Postgres and streaming it 
 - For sync, if it is canceled mid-way, the confirmed_flush_lsn in Postgres isn't advanced, so the next sync will start from the same position as the aborted one, ensuring data consistency.
 - For normalize, the ReplacingMergeTree insert order handles deduplication.
 
-In summary, while sync and normalize processes are terminated during a pause, it is safe to do so as they can resume without data loss or inconsistency.
+In summary, while sync and normalize processes are terminated during a pause, it is safe to do so as they can resume without data loss or inconsistency. If the raw table has a TTL, keep the pause shorter than the TTL. See [raw table retention](#raw-mirror-table-retention).
+
+### Why is the `_peerdb_raw_mirror_*` table so large, and how do I limit it? {#raw-mirror-table-retention}
+
+A CDC ClickPipe first writes change events to a raw table named `_peerdb_raw_mirror_<pipe id>` in the destination database, then normalizes them into the target tables. ClickPipes doesn't truncate this table. New raw tables are created with a default TTL. Raw tables of older pipes may have no TTL and keep every event. Check which applies with `SHOW CREATE TABLE`, and add or change the TTL with:
+
+```sql
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY SETTING ttl_only_drop_parts = 1;
+
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 90 DAY;
+```
+
+If the raw table has no partition key, the first TTL pass rewrites existing parts and can cause noticeable background I/O on a large table. Follow its progress in `system.mutations`.
+
+<Warning>
+The TTL is evaluated on wall-clock time and doesn't know the pipe state. If the pipe is paused or stalled for longer than the TTL, events that weren't normalized yet are deleted and never reach the target tables. Choose a retention longer than any planned pause.
+</Warning>
 
 ### Can ClickPipe creation be automated or done via API or CLI? {#can-clickpipe-creation-be-automated-or-done-via-api-or-cli}
 

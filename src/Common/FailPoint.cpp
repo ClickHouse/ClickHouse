@@ -240,6 +240,8 @@ static struct InitFiu
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(trigger_sanitizer_error) \
+    ONCE(segfault_read_access) \
+    ONCE(segfault_write_access) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
@@ -367,8 +369,12 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
+    ONCE(merge_checkpoint_abort_before_last_column) \
+    PAUSEABLE_ONCE(merge_checkpoint_pause_after_column) \
+    PAUSEABLE_ONCE(merge_checkpoint_pause_before_column_commit) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
+    PAUSEABLE(merge_mutate_task_pause_after_part_handoff) \
     REGULAR(merge_task_throw_while_preparing_next_column) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
