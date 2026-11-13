@@ -1336,6 +1336,9 @@ ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary)
     if (!source || !source->elements || !equalsCaseInsensitive(source->name, "clickhouse"))
         return nullptr;
     String query;
+    String database;
+    String table;
+    String where;
     for (const auto & element : source->elements->children)
     {
         const auto * pair = element->as<ASTPair>();
@@ -1347,7 +1350,17 @@ ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary)
             return nullptr;
         if (equalsCaseInsensitive(pair->first, "query"))
             query = value;
+        else if (equalsCaseInsensitive(pair->first, "db"))
+            database = value;
+        else if (equalsCaseInsensitive(pair->first, "table"))
+            table = value;
+        else if (equalsCaseInsensitive(pair->first, "where"))
+            where = value;
     }
+    /// The table form runs a SELECT of the table with its WHERE, which can read other tables too.
+    if (query.empty() && !table.empty())
+        query = "SELECT 1 FROM " + (database.empty() ? "" : backQuoteIfNeed(database) + ".") + backQuoteIfNeed(table)
+            + (where.empty() ? "" : " WHERE " + where);
     if (query.empty())
         return nullptr;
     try
@@ -2215,15 +2228,26 @@ std::optional<String> indexOnlyAttachAccepts(const ASTCreateQuery & create, cons
 
         /// `validate` refuses a constant column, the minmax validator a type that is not comparable or holds `Dynamic` or `Variant`,
         /// and the bloom filter validator an array of nullable elements.
+        std::optional<IndexDescription> description;
         if (expression && columns_known && functions_known)
         {
-            const auto description = IndexDescription::getIndexFromAST(
-                child, columns, /* is_implicitly_created= */ false, /* escape_filenames= */ true, context);
-            for (const auto & column : description.sample_block)
+            /// The analysis can depend on the table's typing settings, which are picked later, so a failure decides nothing here.
+            try
+            {
+                description = IndexDescription::getIndexFromAST(
+                    child, columns, /* is_implicitly_created= */ false, /* escape_filenames= */ true, context);
+            }
+            catch (const Exception &) // NOLINT(bugprone-empty-catch)
+            {
+            }
+        }
+        if (description)
+        {
+            for (const auto & column : description->sample_block)
             {
                 if (column.column && (isColumnConst(*column.column) || column.column->isDummy()))
                     return what + " computes the constant " + backQuote(column.name);
-                if (description.type == "minmax")
+                if (description->type == "minmax")
                 {
                     if (!column.type->isComparable())
                         return what + " of type `minmax` computes " + backQuote(column.name) + " of the type "
@@ -2234,7 +2258,7 @@ std::optional<String> indexOnlyAttachAccepts(const ASTCreateQuery & create, cons
                         return what + " of type `minmax` computes " + backQuote(column.name) + " of the type "
                             + column.type->getName() + ", which holds values of different types";
                 }
-                if (description.type == "bloom_filter")
+                if (description->type == "bloom_filter")
                     if (const auto * array = typeid_cast<const DataTypeArray *>(column.type.get()); array && array->getNestedType()->isNullable())
                         return what + " of type `bloom_filter` computes " + backQuote(column.name) + " of the type "
                             + column.type->getName() + ", an array of nullable elements";
@@ -3417,6 +3441,7 @@ struct ReplayGateNeeds
     bool suspicious_codecs = false;
     bool deprecated_merge_tree_syntax = false;
     bool suspicious_primary_key = false;
+    bool reserved_column_names = false;
     bool suspicious_ttl_expressions = false;
     bool full_text_index = false;
     bool queue_hive_partitioning = false;
@@ -4525,11 +4550,11 @@ ReplayGateNeeds collectReplayGateNeeds(
                     return;
                 for (const auto & query : node.children)
                 {
-                    AnalyzerCarriers carriers = scan_analyzed(*query);
-                    carriers.subquery = false;
-                    add_carriers(carriers);
-                    /// The subquery runs, so its JOIN is planned and reads the Dynamic key gate.
+                    add_carriers(scan_analyzed(*query));
+                    /// The subquery runs, so its JOIN is planned and reads the Dynamic key gate, a JOIN of a query `eval` makes too.
                     forEachNode(*query, [&needs](const IAST & inner) { needs.executed_join |= inner.as<ASTTableJoin>() != nullptr; });
+                    for (const auto & generated : evalQueries(*query, nullptr, context))
+                        forEachNode(*generated, [&needs](const IAST & inner) { needs.executed_join |= inner.as<ASTTableJoin>() != nullptr; });
                 }
             });
         if (create->as_table_function)
@@ -4866,6 +4891,9 @@ ReplayGateNeeds collectReplayGateNeeds(
                             || type.contains("Object"))
                             variant_or_dynamic_columns.insert(column->name);
                     }
+            /// Virtual columns of MergeTree start with `_`; a fresh CREATE refuses such a column name without the gate.
+            for (const auto & column : columns)
+                needs.reserved_column_names |= column.starts_with('_');
             const auto ttl_needs_gate = [&](const IAST & expression)
             {
                 bool reads_variant_or_dynamic = false;
@@ -5038,6 +5066,7 @@ String replaySettingsPrelude(
         {"allow_suspicious_codecs", &ReplayGateNeeds::suspicious_codecs},
         {"allow_deprecated_syntax_for_merge_tree", &ReplayGateNeeds::deprecated_merge_tree_syntax},
         {"allow_suspicious_primary_key", &ReplayGateNeeds::suspicious_primary_key},
+        {"allow_reserved_column_names", &ReplayGateNeeds::reserved_column_names},
         {"allow_suspicious_ttl_expressions", &ReplayGateNeeds::suspicious_ttl_expressions},
         {"allow_experimental_full_text_index", &ReplayGateNeeds::full_text_index},
         {"allow_experimental_object_storage_queue_hive_partitioning", &ReplayGateNeeds::queue_hive_partitioning},
@@ -6104,9 +6133,11 @@ void markTypingSettings(
         const ASTStorage * storage = create->is_materialized_view ? create->getTargetInnerEngine(ViewTarget::To) : create->storage;
         if (storage)
         {
+            /// A key cannot hold `Variant`, `Dynamic` or `JSON`, so the probe fails analysis on such a type, through the CAST type name.
             for (const auto * key : {storage->order_by, storage->primary_key, storage->partition_by, storage->sample_by})
                 if (key)
-                    add(key, key->formatWithSecretsOneLine(), storage_expressions);
+                    add(key, "CAST(1, if(match(toTypeName(" + key->formatWithSecretsOneLine()
+                        + "), '(^|[(, ])(Variant[(]|Dynamic|JSON|Object[(])'), 'NotAllowedInKey', 'UInt8'))", storage_expressions);
             if (storage->ttl_table)
                 for (const auto & child : storage->ttl_table->children)
                     if (const auto * element = child->as<ASTTTLElement>())
