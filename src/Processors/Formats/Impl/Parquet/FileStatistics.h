@@ -8,8 +8,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
 #include <optional>
-#include <unordered_map>
 
 namespace DB
 {
@@ -45,7 +46,7 @@ struct ParquetFileSummary
 {
     UInt64 rows = 0;
     /// By the column name, for the requested columns that are top-level primitive columns of the file.
-    std::unordered_map<String, ParquetColumnSummary> columns;
+    UnorderedMapWithMemoryTracking<String, ParquetColumnSummary> columns;
 };
 
 /// Reads the footer of the Parquet file in `buf` (through `ParquetMetadataCache` when enabled, keyed as the reader

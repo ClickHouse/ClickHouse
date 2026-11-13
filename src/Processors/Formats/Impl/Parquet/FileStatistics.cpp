@@ -14,10 +14,12 @@
 
 #include <Poco/String.h>
 
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <cmath>
 #include <cstring>
-#include <map>
-#include <vector>
 
 namespace DB
 {
@@ -96,14 +98,14 @@ struct LeafColumn
     bool required = false;
 };
 
-std::unordered_map<String, LeafColumn> getTopLevelLeafColumns(const parq::FileMetaData & metadata, bool case_insensitive)
+UnorderedMapWithMemoryTracking<String, LeafColumn> getTopLevelLeafColumns(const parq::FileMetaData & metadata, bool case_insensitive)
 {
-    std::unordered_map<String, LeafColumn> result;
+    UnorderedMapWithMemoryTracking<String, LeafColumn> result;
     if (metadata.schema.empty())
         return result;
 
     /// The numbers of children left to visit of the elements on the path from the root.
-    std::vector<Int64> remaining_children{metadata.schema[0].num_children};
+    VectorWithMemoryTracking<Int64> remaining_children{metadata.schema[0].num_children};
     size_t leaf_index = 0;
     for (size_t i = 1; i < metadata.schema.size() && !remaining_children.empty(); ++i)
     {
@@ -199,7 +201,7 @@ ParquetFileSummary summarizeParquetFile(
     const auto leaves = getTopLevelLeafColumns(metadata, case_insensitive);
 
     /// The requested columns by their column chunk index, sorted, as `deserializeColumnChunks` needs.
-    std::map<size_t, std::pair<String, bool>> columns_by_index;
+    MapWithMemoryTracking<size_t, std::pair<String, bool>> columns_by_index;
     for (const auto & column_name : column_names)
         if (auto it = leaves.find(case_insensitive ? Poco::toLower(column_name) : column_name); it != leaves.end())
             columns_by_index.emplace(it->second.index, std::pair{column_name, it->second.required});
