@@ -25,7 +25,6 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
-#include <exception>
 #include <memory>
 #include <utility>
 
@@ -100,31 +99,19 @@ void FileChannel::log(const Message& msg)
 {
 	FastMutex::ScopedLock lock(_mutex);
 
-	/// A failed rotation keeps the current file, so the message is written and the error is rethrown after it.
-	std::exception_ptr rotation_error;
+	unsafeOpen();
+
+	if (_pArchiveStrategy && (_rotationPending || (_pRotateStrategy && _pRotateStrategy->mustRotate(_pFile.get()))))
+		unsafeTryRotate();
+
 	try
 	{
-		unsafeOpen();
-
-		if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile.get()))
+		if (!_rotationFailure.empty())
 		{
-			unsafeRotate();
-			// we must call mustRotate() again to give the
-			// RotateByIntervalStrategy a chance to write its timestamp
-			// to the new file.
-			_pRotateStrategy->mustRotate(_pFile.get());
+			_pFile->write(_rotationFailure, _flush);
+			_rotationFailure.clear();
 		}
-	}
-	catch (...)
-	{
-		if (!_pFile)
-			throw;
-		rotation_error = std::current_exception();
-	}
-
-	try
-	{
-	_pFile->write(msg.getText(), _flush);
+		_pFile->write(msg.getText(), _flush);
     }
     catch (const WriteFileException & e)
     {
@@ -140,9 +127,6 @@ void FileChannel::log(const Message& msg)
             PurgeOneFileStrategy().purge(_path);
         }
     }
-
-	if (rotation_error)
-		std::rethrow_exception(rotation_error);
 }
 
 	
@@ -336,7 +320,7 @@ void FileChannel::unsafeOpen()
 	{
 		_pFile = newLogFile();
 		if (_rotateOnOpen && _pFile->size() > 0)
-			unsafeRotate();
+			unsafeTryRotate();
 	}
 }
 
@@ -345,6 +329,56 @@ void FileChannel::unsafeRotate()
 {
 	_pArchiveStrategy->archive(_pFile, _streamCompress);
 	purge();
+}
+
+
+namespace
+{
+std::string currentExceptionText()
+{
+	try
+	{
+		throw;
+	}
+	catch (const Exception& e)
+	{
+		return e.displayText();
+	}
+	catch (const std::exception& e)
+	{
+		return e.what();
+	}
+	catch (...)
+	{
+		return "unknown error";
+	}
+}
+}
+
+
+void FileChannel::unsafeTryRotate()
+{
+	try
+	{
+		unsafeRotate();
+	}
+	catch (...)
+	{
+		/// The current file is still open: keep logging into it, report the failure once and retry with the next message.
+		if (!_pFile)
+			throw;
+		if (!_rotationPending)
+			_rotationFailure = "Log file rotation failed, logging continues in the current file: " + currentExceptionText();
+		_rotationPending = true;
+		return;
+	}
+
+	_rotationPending = false;
+	// we must call mustRotate() again to give the
+	// RotateByIntervalStrategy a chance to write its timestamp
+	// to the new file.
+	if (_pRotateStrategy)
+		_pRotateStrategy->mustRotate(_pFile.get());
 }
 
 

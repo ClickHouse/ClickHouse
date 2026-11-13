@@ -14,7 +14,6 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <iterator>
 #include <memory>
 #include <string>
@@ -22,6 +21,10 @@
 #include <vector>
 
 #include <cstring>
+#include <ctime>
+#include <string_view>
+
+#include <fmt/format.h>
 
 #include <fcntl.h>
 #include <sys/resource.h>
@@ -132,17 +135,28 @@ Poco::Message makeMessage(const std::string & text)
     return Poco::Message("gtest_file_channel_rotation_failure", text, Poco::Message::PRIO_INFORMATION);
 }
 
-void expectNoFreeDescriptors(const std::function<void()> & action, const std::string & what)
+constexpr std::string_view rotation_failed = "Log file rotation failed";
+
+size_t countOccurrences(std::string_view text, std::string_view needle)
 {
-    try
-    {
-        action();
-        ADD_FAILURE() << "Expected EMFILE: " << what;
-    }
-    catch (const Poco::FileException & e)
-    {
-        EXPECT_EQ(EMFILE, e.code()) << e.displayText();
-    }
+    size_t count = 0;
+    for (size_t pos = text.find(needle); pos != std::string_view::npos; pos = text.find(needle, pos + needle.size()))
+        ++count;
+    return count;
+}
+
+std::chrono::system_clock::time_point nextMinuteBoundary()
+{
+    return std::chrono::floor<std::chrono::minutes>(std::chrono::system_clock::now()) + std::chrono::minutes(1);
+}
+
+/// The `hh:mm` rotation time of `time` in UTC, the default of `FileChannel::PROP_TIMES`.
+std::string utcHourMinute(std::chrono::system_clock::time_point time)
+{
+    const std::time_t seconds = std::chrono::system_clock::to_time_t(time);
+    std::tm utc{};
+    gmtime_r(&seconds, &utc);
+    return fmt::format("{:02}:{:02}", utc.tm_hour, utc.tm_min);
 }
 
 std::string readFile(const std::string & path)
@@ -206,9 +220,9 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotation)
     ASSERT_NO_THROW(channel->log(makeMessage(old_content)));
     changes.take();
 
-    /// The new file cannot be opened: the message goes to the current file, and the error is reported.
-    expectNoFreeDescriptors([&] { channel->log(makeMessage("first message without descriptors")); }, "rotation");
-    expectNoFreeDescriptors([&] { channel->log(makeMessage("second message without descriptors")); }, "rotation");
+    /// The new file cannot be opened: logging continues in the current file, and no message fails.
+    for (const char * text : {"first message without descriptors", "second message without descriptors", "third message without descriptors"})
+        ASSERT_NO_THROW(channel->log(makeMessage(text)));
     /// A failed attempt renames nothing, so the current file never disappears.
     EXPECT_EQ(0u, changes.take());
     EXPECT_FALSE(std::filesystem::exists(path + ".0"));
@@ -218,7 +232,9 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotation)
 
     const std::string current = readFile(path);
     EXPECT_NE(std::string::npos, current.find("first message without descriptors"));
-    EXPECT_NE(std::string::npos, current.find("second message without descriptors"));
+    EXPECT_NE(std::string::npos, current.find("third message without descriptors"));
+    /// The failure is reported once, not with every message.
+    EXPECT_EQ(1u, countOccurrences(current, rotation_failed));
 
     /// Descriptors are free again, so the next message completes the rotation.
     const std::string marker = "logged after descriptors were released";
@@ -227,9 +243,11 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotation)
 
     const std::string archived = readFile(path + ".0");
     EXPECT_NE(std::string::npos, archived.find(old_content));
-    EXPECT_NE(std::string::npos, archived.find("second message without descriptors"));
+    EXPECT_NE(std::string::npos, archived.find("third message without descriptors"));
     EXPECT_EQ(std::string::npos, archived.find(marker));
-    EXPECT_NE(std::string::npos, readFile(path).find(marker));
+    const std::string after = readFile(path);
+    EXPECT_NE(std::string::npos, after.find(marker));
+    EXPECT_EQ(0u, countOccurrences(after, rotation_failed));
     EXPECT_FALSE(std::filesystem::exists(path + ".new.incomplete"));
 }
 
@@ -244,17 +262,53 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotateOnOpen)
     /// The existing file takes the only free descriptor, so the new file cannot be opened.
     DescriptorTableGuard guard;
     leaveOneFreeDescriptor(guard);
-    expectNoFreeDescriptors([&] { channel->open(); }, "rotation on open");
+    /// The rotation fails, but the channel stays usable with the existing file.
+    ASSERT_NO_THROW(channel->open());
     EXPECT_FALSE(std::filesystem::exists(path + ".0"));
     EXPECT_GT(channel->size(), 0u);
 
     guard.release();
 
+    /// The pending rotation is done with the next message.
     ASSERT_NO_THROW(channel->log(makeMessage("logged after descriptors were released")));
     channel->close();
+    EXPECT_NE(std::string::npos, readFile(path + ".0").find("previous run"));
     const std::string current = readFile(path);
-    EXPECT_NE(std::string::npos, current.find("previous run"));
     EXPECT_NE(std::string::npos, current.find("logged after descriptors were released"));
+    EXPECT_EQ(1u, countOccurrences(current, rotation_failed));
+}
+
+TEST_F(FileChannelRotation, ScheduledRotationRetriedAfterFailure)
+{
+    /// `RotateAtTimeStrategy` fires only on a minute boundary of the real clock, so this test waits for the next one.
+    auto boundary = nextMinuteBoundary();
+    if (boundary - std::chrono::system_clock::now() < std::chrono::seconds(5))
+    {
+        std::this_thread::sleep_until(boundary);
+        boundary = nextMinuteBoundary();
+    }
+    auto channel = makeChannel(utcHourMinute(boundary), /* compress */ false);
+    ASSERT_NO_THROW(channel->log(makeMessage("before the scheduled rotation")));
+    std::this_thread::sleep_until(boundary + std::chrono::milliseconds(100));
+
+    /// The schedule fires, but the new file cannot be opened.
+    DescriptorTableGuard guard;
+    ASSERT_EQ(0, getrlimit(nofile_resource, &guard.original_limit));
+    const rlim_t limit = std::min<rlim_t>({guard.original_limit.rlim_cur, guard.original_limit.rlim_max - 1, 1024});
+    ASSERT_EQ(0, setSoftLimit(limit, guard.original_limit));
+    ASSERT_EQ(EMFILE, fillDescriptorTable(guard));
+    ASSERT_NO_THROW(channel->log(makeMessage("at the scheduled time")));
+    EXPECT_FALSE(std::filesystem::exists(path + ".0"));
+
+    guard.release();
+
+    /// The schedule already moved to the next day, but the pending rotation must still happen now.
+    ASSERT_NO_THROW(channel->log(makeMessage("after descriptors were released")));
+    channel->close();
+    const std::string archived = readFile(path + ".0");
+    EXPECT_NE(std::string::npos, archived.find("before the scheduled rotation"));
+    EXPECT_NE(std::string::npos, archived.find("at the scheduled time"));
+    EXPECT_NE(std::string::npos, readFile(path).find("after descriptors were released"));
 }
 
 TEST_F(FileChannelRotation, CurrentFileRemovedFromOutside)
