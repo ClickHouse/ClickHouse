@@ -29,12 +29,8 @@ cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$
 # Handle extra dependencies that is now outside of workspace:
 #
 
-# delta-lake
+# delta-lake: cbindgen in its build script runs cargo metadata over its own workspace
 cd "$CH_TOP_DIR"/contrib/delta-kernel-rs || exit 1
-cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
-
-# chdig
-cd "$CH_TOP_DIR"/contrib/chdig || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # wasmtime

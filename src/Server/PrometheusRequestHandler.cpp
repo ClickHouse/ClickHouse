@@ -11,11 +11,12 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -50,6 +51,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsString log_comment;
 }
 
 namespace FailPoints
@@ -93,6 +95,10 @@ public:
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
+
+    /// Whether a URI parameter carries a PromQL expression. Such parameters are hidden in the request URI recorded in spans,
+    /// because `query_masking_rules` are not applied to it.
+    virtual bool isQueryTextParameter(const String & /* name */) const { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
     virtual bool sendsJSONErrors() const { return false; }
@@ -171,90 +177,49 @@ protected:
             context.reset();
             session.reset();
             params.reset();
-            handled_exception.reset();
         });
 
+        const auto & method = request.getMethod();
+        if (shouldParseFormFromRequestBody(request)
+            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+        else
+            params = std::make_unique<HTMLForm>(default_settings, request);
+        parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
+
+        if (!authenticateUserAndMakeContext(request, response))
+            return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
+                    /// and `request_credentials` must be preserved until the next request or until any exception.
+
+        /// Without a client trace, the user's and the request's settings decide whether to trace the request.
+        if (!parent().thread_trace_context)
+            parent().thread_trace_context = parent().startTracing(request, context);
+
+        /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
+        auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
+        if (buffer_size == 0)
+            buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        parent().http_response_buffer_size = buffer_size;
+
+        /// Initialize query scope.
+        QueryScope query_scope;
+        if (context)
+            query_scope = QueryScope::create(context);
+
+        handlingRequestWithContext(request, response);
+    }
+
+    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
+    {
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
-        /// Parse the OpenTelemetry traceparent header.
-        auto & client_trace_context = session->getClientTraceContext();
-        if (request.has("traceparent"))
-        {
-            String traceparent = request.get("traceparent");
-            String error;
-            if (!client_trace_context.parseTraceparentHeader(traceparent, error))
-                LOG_DEBUG(log(), "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
-            client_trace_context.tracestate = request.get("tracestate", "");
-        }
+        session->getClientTraceContext() = parent().client_trace_context;
 
-        QueryScope query_scope;
+        if (!authenticateUser(request, response))
+            return false;
 
-        std::optional<OpenTelemetry::TracingContextHolder> thread_trace_context;
-        auto start_trace = [&](const ContextPtr & settings_context)
-        {
-            thread_trace_context.emplace("PrometheusRequestHandler",
-                client_trace_context,
-                settings_context->getSettingsRef(),
-                settings_context->getOpenTelemetrySpanLog());
-            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-            thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
-        };
-
-        /// A client trace starts before authentication, so that requests failing there are traced too.
-        /// Without one, sampling waits for the user's and the request's settings.
-        if (client_trace_context.isTraceEnabled())
-            start_trace(session->sessionOrGlobalContext());
-
-        try
-        {
-            const auto & method = request.getMethod();
-            if (shouldParseFormFromRequestBody(request)
-                && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
-                params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
-            else
-                params = std::make_unique<HTMLForm>(default_settings, request);
-            parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
-
-            /// If the user is not authenticated yet, the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
-            /// and `request_credentials` must be preserved until the next request or until any exception.
-            if (authenticateUser(request, response))
-            {
-                makeContext(request);
-                if (!thread_trace_context)
-                    start_trace(context);
-
-                /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
-                auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
-                if (buffer_size == 0)
-                    buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-                parent().http_response_buffer_size = buffer_size;
-
-                query_scope = QueryScope::create(context);
-                handlingRequestWithContext(request, response);
-                if (handled_exception)
-                    thread_trace_context->root_span.addAttribute(*handled_exception);
-            }
-
-            /// Finalize the response here, so that a failure in the final flush is recorded on the root span.
-            fiu_do_on(FailPoints::prometheus_handler_finalize_throw,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the Prometheus response");
-            });
-            getOutputStream(response).finalize();
-        }
-        catch (...)
-        {
-            if (thread_trace_context)
-            {
-                thread_trace_context->root_span.addAttribute(std::current_exception());
-                /// The outer handler sends the error status for this exception code unless the response is already sent.
-                thread_trace_context->root_span.addAttribute("clickhouse.http_status",
-                    response.sent() ? response.getStatus() : exceptionCodeToHTTPStatus(getCurrentExceptionCode()));
-            }
-            throw;
-        }
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+        makeContext(request);
+        return true;
     }
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
@@ -277,8 +242,6 @@ protected:
     void makeContext(HTTPServerRequest & request)
     {
         context = session->makeQueryContext();
-
-        context->getClientTraceContext() = session->getClientTraceContext();
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
@@ -362,8 +325,6 @@ protected:
     std::unique_ptr<Session> session;
     std::unique_ptr<Credentials> request_credentials;
     ContextMutablePtr context;
-    /// An error of the current request that was turned into a response, for the root span.
-    std::optional<Exception> handled_exception;
 };
 
 
@@ -551,6 +512,12 @@ public:
         return !reserved_param_names.contains(name);
     }
 
+    bool isQueryTextParameter(const String & name) const override
+    {
+        /// Case-insensitive, like the `params->get` lookups above.
+        return Poco::icompare(name, "query") == 0 || Poco::icompare(name, "match[]") == 0;
+    }
+
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
     /// with 0 (the default) meaning no limit.
     UInt64 getLimitParam() const
@@ -572,7 +539,7 @@ public:
         const String & uri = request.getURI();
         /// This endpoint accepts user/password (and other secrets) as query-string parameters via
         /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
-        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
+        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), parent().getURIForLogging(request));
 
         response.setContentType("application/json");
 
@@ -607,6 +574,7 @@ public:
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
+                setLogCommentToPromQL(query);
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
@@ -632,6 +600,7 @@ public:
             else if (uri_path.ends_with("/query"))
             {
                 String query = params->get("query", "");
+                setLogCommentToPromQL(query);
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
@@ -697,7 +666,7 @@ public:
             }
             else
             {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", parent().getURIForLogging(request), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
             }
@@ -714,7 +683,8 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            handled_exception.emplace(e);
+            if (parent().thread_trace_context)
+                parent().thread_trace_context->root_span.addAttribute(e);
 
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
             /// not with the query: report it as an internal error so that clients don't attribute it
@@ -735,6 +705,14 @@ public:
     }
 
 private:
+    /// Records the PromQL text in query_log unless the request or the user's profile sets its own log_comment.
+    void setLogCommentToPromQL(const String & query)
+    {
+        /// The query text in query_log is masked by `query_masking_rules`, so this copy of the query is masked too.
+        if (!params->has("log_comment") && context->getSettingsRef()[Setting::log_comment].value.empty())
+            context->setSetting("log_comment", wipeSensitiveDataAndCutToLength(query, 0, /* wipe_sensitive= */ true));
+    }
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
@@ -829,6 +807,9 @@ public:
 
     bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
 
+    /// The request URI is recorded before `current_impl` is selected, so the PromQL parameters are hidden for any endpoint.
+    bool isQueryTextParameter(const String & name) const override { return query_impl.isQueryTextParameter(name); }
+
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,
     /// so the same endpoint works both bare ("/api/v1/write") and behind a configured prefix
@@ -911,11 +892,22 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
+    SCOPE_EXIT({
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+        thread_trace_context.reset();
+    });
+
     try
     {
         write_event = write_event_;
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
+
+        parseClientTraceContext(request);
+        /// A client trace starts before authentication, so that requests failing there are traced too.
+        if (client_trace_context.isTraceEnabled())
+            thread_trace_context = startTracing(request, Context::getGlobalContextInstance());
 
         /// Make keep-alive works.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -926,10 +918,17 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
 
+        fiu_do_on(FailPoints::prometheus_handler_finalize_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the Prometheus response");
+        });
         getOutputStream(response).finalize();
     }
     catch (...)
     {
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(std::current_exception());
+
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
@@ -956,6 +955,39 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         tryCallOnException();
     }
+}
+
+void PrometheusRequestHandler::parseClientTraceContext(const HTTPServerRequest & request)
+{
+    if (request.has("traceparent"))
+    {
+        std::string opentelemetry_traceparent = request.get("traceparent");
+        std::string error;
+        if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+        client_trace_context.tracestate = request.get("tracestate", "");
+    }
+}
+
+OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(const HTTPServerRequest & request, const ContextPtr & settings_context)
+{
+    /// Before authentication the global context is used. It is taken from `Context` rather than from `IServer::context`,
+    /// which throws in standalone Keeper. Standalone Keeper has no span log, so the spans are not recorded there.
+    auto holder = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
+        client_trace_context,
+        settings_context->getSettingsRef(),
+        settings_context->getOpenTelemetrySpanLog());
+    holder->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    holder->root_span.addAttribute("clickhouse.uri", [&] { return getURIForLogging(request); });
+    holder->root_span.addAttribute("http.referer", request.get("Referer", ""));
+    holder->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+    holder->root_span.addAttribute("http.method", request.getMethod());
+    return holder;
+}
+
+String PrometheusRequestHandler::getURIForLogging(const HTTPServerRequest & request) const
+{
+    return maskSensitiveQueryParametersInURI(request.getURI(), [this](const String & name) { return impl->isQueryTextParameter(name); });
 }
 
 WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)

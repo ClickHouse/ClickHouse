@@ -38,7 +38,7 @@ $CLICKHOUSE_LOCAL -q "SELECT count(), round(min(geometry.1), 3), round(max(geome
 FILTER="pointInPolygon(geometry, [(170., -20.), (180., -20.), (180., 0.), (170., 0.), (170., -20.)])"
 echo "--- pruning near the antimeridian"
 $CLICKHOUSE_LOCAL -q "SELECT id, geometry FROM file('$POINTS', Parquet) WHERE $FILTER ORDER BY id"
-$CLICKHOUSE_LOCAL --print-profile-events -q "SELECT id FROM file('$POINTS', Parquet) WHERE $FILTER ORDER BY id FORMAT Null" 2>&1 \
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -q "SELECT id FROM file('$POINTS', Parquet) WHERE $FILTER ORDER BY id FORMAT Null" 2>&1 \
     | grep -o 'ParquetPrunedRowGroups: [0-9]*'
 echo "--- the same without pruning"
 $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$POINTS', Parquet) WHERE $FILTER ORDER BY id SETTINGS input_format_parquet_spatial_filter_push_down = 0"
@@ -46,7 +46,7 @@ $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$POINTS', Parquet) WHERE $FILTER ORDE
 echo "--- pruning near the origin"
 FILTER="pointInPolygon(geometry, [(-10., -10.), (10., -10.), (10., 10.), (-10., 10.), (-10., -10.)])"
 $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$POINTS', Parquet) WHERE $FILTER ORDER BY id"
-$CLICKHOUSE_LOCAL --print-profile-events -q "SELECT id FROM file('$POINTS', Parquet) WHERE $FILTER FORMAT Null" 2>&1 \
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -q "SELECT id FROM file('$POINTS', Parquet) WHERE $FILTER FORMAT Null" 2>&1 \
     | grep -o 'ParquetPrunedRowGroups: [0-9]*'
 
 echo "--- pruning of a file written by ClickHouse: by GeospatialStatistics, the GeoParquet metadata has no covering"
@@ -67,7 +67,7 @@ do
     echo "-- $column"
     FILTER="polygonsIntersectCartesian($column, [[(29.5, 29.5), (30.5, 29.5), (30.5, 30.5), (29.5, 30.5), (29.5, 29.5)]])"
     $CLICKHOUSE_LOCAL -q "SELECT id FROM file('${DATA_DIR}/polygons.parquet', Parquet) WHERE $FILTER ORDER BY id"
-    $CLICKHOUSE_LOCAL --print-profile-events -q "SELECT id FROM file('${DATA_DIR}/polygons.parquet', Parquet) WHERE $FILTER FORMAT Null" 2>&1 \
+    $CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -q "SELECT id FROM file('${DATA_DIR}/polygons.parquet', Parquet) WHERE $FILTER FORMAT Null" 2>&1 \
         | grep -o 'ParquetPrunedRowGroups: [0-9]*'
 done
 rm -rf "${DATA_DIR}"
