@@ -76,8 +76,7 @@ struct ObjectInfo
     /// match, rather than splitting the file between readers: only then does reading the buckets tell
     /// which row groups of the whole file match.
     bool file_bucket_info_from_query_condition_cache = false;
-    /// Set if `file_bucket_info` is one of the buckets of an object read by several sources of one query
-    /// (see `DeferredObjectSplit`), and shared by the buckets of the object.
+    /// Shared by the buckets of an object split between the sources of one query (see `DeferredObjectSplit`).
     std::shared_ptr<SplitObjectReadState> split_object_read_state;
 
     /// Lazy materialization: if set, read only these rows of the file.

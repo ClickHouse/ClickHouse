@@ -99,8 +99,7 @@ struct SplitObjectReadState
     const size_t num_buckets;
 
     std::mutex mutex;
-    /// The row groups matching the query condition in the buckets read so far. The query condition cache entry
-    /// describes the whole object, so it is written only after the sources of all buckets have read them.
+    /// The query condition cache entry describes the whole object, so it is written only after all buckets are read.
     bool can_write_query_condition_cache TSA_GUARDED_BY(mutex) = true;
     size_t total_row_groups TSA_GUARDED_BY(mutex) = 0;
     std::unordered_set<size_t> matched_row_groups TSA_GUARDED_BY(mutex);
@@ -182,7 +181,6 @@ public:
     static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
     static std::optional<String> makeQueryConditionCacheKey(const String & identifier, const ObjectInfo & object_info, bool is_data_lake);
 
-    /// The `table_id` of the query condition cache entries for the objects read by a source.
     static UUID getQueryConditionCacheTableId(
         const StorageID & storage_id,
         const StorageObjectStorageConfiguration & configuration,
@@ -306,8 +304,7 @@ protected:
 
     std::future<ReaderHolder> createReaderAsync();
 
-    /// For a bucket of a split object, adds the row groups matching the query condition, and the source that
-    /// finishes the last bucket writes the query condition cache entry of the whole object.
+    /// Adds the matching row groups of a split object's bucket; the source finishing the last bucket writes the cache entry.
     void finishReadingSplitObjectBucket(
         const ObjectInfo & object_info, const IInputFormat & input_format, const std::optional<String> & query_condition_cache_key);
 

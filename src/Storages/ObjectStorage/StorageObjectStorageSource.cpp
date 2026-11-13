@@ -1393,9 +1393,8 @@ void StorageObjectStorageSource::finishReadingSplitObjectBucket(
     const IInputFormat & input_format,
     const std::optional<String> & query_condition_cache_key)
 {
-    /// The reader of one bucket reports the row groups of the other buckets as not matching, although it has
-    /// not read them, and a row group that is in no bucket was dropped by the query condition cache entry
-    /// for the same condition.
+    /// A bucket reader reports the row groups of the other buckets as not matching, although it has not read them, and a
+    /// row group that is in no bucket was dropped by the query condition cache entry for the same condition.
     std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> matched_buckets;
     if (query_condition_cache_key && !isCancelled())
         matched_buckets = input_format.getMatchedBuckets();

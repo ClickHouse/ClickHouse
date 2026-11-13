@@ -35,8 +35,7 @@ struct FormatParserSharedResources
     /// `num_streams` is the number of formats reading at the same time, they share the memory limits.
     static FormatParserSharedResourcesPtr singleThreaded(const Settings & settings, size_t num_streams_ = 1);
 
-    /// Makes the formats parse in the threads that read from them, as `singleThreaded`.
-    /// Must be called before any format initialized the runners.
+    /// Parse in the threads that read from the formats, as `singleThreaded`. Call before any format initializes the runners.
     void parseInReadingThreads();
 
     void finishStream();
