@@ -616,6 +616,17 @@ void filterPartsAndCollectProjectionCandidates(
 
     auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
 
+    size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
+    size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
+
+    /// Otherwise the analysis below only decides which parent parts have no matching rows.
+    const bool may_use_projection_index = projection.sample_block.has("_parent_part_offset")
+        && max_projection_rows_to_use_projection_index > 0
+        && std::any_of(
+            projection_parts.begin(),
+            projection_parts.end(),
+            [&](const auto & part) { return part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index; });
+
     /// Always request `_parent_part_offset` for projection analysis, even if the column does not exist. This does not
     /// affect the analysis itself. Later code will not use it as an index if the column is missing.
     static Names required_column_names = {"_parent_part_offset"};
@@ -631,7 +642,8 @@ void filterPartsAndCollectProjectionCandidates(
         /*max_block_numbers_to_read=*/nullptr,
         /// The result filters the parts of the actual read, so keep the read's own cache gate.
         reading.isQueryConditionCacheAllowed(),
-        reading.isTopKPrewhereQueryConditionCacheAllowed());
+        reading.isTopKPrewhereQueryConditionCacheAllowed(),
+        /*stop_at_first_match=*/ !may_use_projection_index);
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
@@ -644,8 +656,6 @@ void filterPartsAndCollectProjectionCandidates(
     bool projection_index_allowed
         = !context->getSettingsRef()[Setting::force_primary_key] || projection_result_ptr->pk_condition_useful;
 
-    size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
-    size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
     auto & desc = reading.getProjectionIndexReadDescription();
     bool in_use = false;
     for (auto & part : projection_result_ptr->parts_with_ranges)

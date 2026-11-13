@@ -402,7 +402,8 @@ public:
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
-        bool skip_ranges_analysis);
+        bool skip_ranges_analysis,
+        bool stop_at_first_match);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;

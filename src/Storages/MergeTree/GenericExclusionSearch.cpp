@@ -81,7 +81,7 @@ void searchUnlimited(
                 continue;
 
             bool exact = !mask.can_be_false;
-            if (exact || range.end == range.begin + 1)
+            if (exact || range.end == range.begin + 1 || (search_settings.stop_at_first_match && !result.ranges.empty()))
             {
                 appendWithMaxGap(result.ranges, range, search_settings.min_marks_for_seek);
 
@@ -148,6 +148,12 @@ void searchLimited(
             accepted.push_back(range);
             if (collect_exact_ranges && exact)
                 accepted_exact.push_back(range);
+            continue;
+        }
+
+        if (search_settings.stop_at_first_match && !accepted.empty())
+        {
+            accepted.push_back(range);
             continue;
         }
 

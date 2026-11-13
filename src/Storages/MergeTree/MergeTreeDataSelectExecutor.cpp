@@ -1464,6 +1464,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
         const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
+        /// The primary key decides part emptiness only when no skip index filters its ranges afterwards.
+        const bool pk_stop_at_first_match = filter_context.stop_at_first_match && skip_indexes.empty();
+
         auto process_part = [&](size_t part_index)
         {
             fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
@@ -1491,7 +1494,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
-                    log);
+                    log,
+                    pk_stop_at_first_match);
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
@@ -2370,7 +2374,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     size_t num_streams,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool use_query_condition_cache,
-    bool allow_top_k_prewhere_query_condition_cache) const
+    bool allow_top_k_prewhere_query_condition_cache,
+    bool stop_at_first_match) const
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
@@ -2398,7 +2403,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         allow_top_k_prewhere_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false,
         /*check_row_limits=*/true,
-        /*skip_ranges_analysis=*/false);
+        /*skip_ranges_analysis=*/false,
+        stop_at_first_match);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -2517,7 +2523,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges * exact_ranges,
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool stop_at_first_match)
 {
     return markRangesFromPKRange(
         part_with_ranges.data_part,
@@ -2530,7 +2537,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges,
         pk_to_minmax_slot,
         settings,
-        log);
+        log,
+        stop_at_first_match);
 }
 
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
@@ -2544,7 +2552,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges * exact_ranges,
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool stop_at_first_match)
 {
     return markRangesFromPKRange(
         LoadedMergeTreeDataPartInfoForReader(part, /*alter_conversions_=*/ nullptr),
@@ -2557,7 +2566,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges,
         pk_to_minmax_slot,
         settings,
-        log);
+        log,
+        stop_at_first_match);
 }
 
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
@@ -2571,7 +2581,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges * exact_ranges,
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool stop_at_first_match)
 {
     MarkRanges res;
 
@@ -3043,6 +3054,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             .coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity],
             .max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps],
             .min_marks_for_seek = min_marks_for_seek,
+            .stop_at_first_match = stop_at_first_match,
         };
 
         GenericExclusionSearchResult search_result;

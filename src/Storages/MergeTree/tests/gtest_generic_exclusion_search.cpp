@@ -647,3 +647,66 @@ TEST(GenericExclusionSearch, ConservativeOracle)
                 EXPECT_TRUE(matching[mark]);
     }
 }
+
+TEST(GenericExclusionSearch, StopAtFirstMatch)
+{
+    /// The search must find a match exactly when the full search does, keep a superset of the matching
+    /// marks, and make a number of checks bounded by the depth of the split tree.
+    // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) - deterministic test fixture
+    std::mt19937 rng(7);
+    constexpr size_t num_marks = 10000;
+
+    std::vector<std::pair<std::vector<bool>, double>> patterns;
+    for (double density : {0.0, 0.001, 0.05, 0.5, 1.0})
+        patterns.emplace_back(randomFlags(num_marks, density, rng), density);
+    std::vector<bool> last_mark_only(num_marks);
+    last_mark_only.back() = true;
+    patterns.emplace_back(std::move(last_mark_only), -1.0);
+
+    for (size_t coarse_index_granularity : {2, 8})
+    {
+        size_t depth = 0;
+        for (size_t size = num_marks; size > 1; size = (size - 1) / coarse_index_granularity + 1)
+            ++depth;
+        const size_t max_checks = 1 + 2 * coarse_index_granularity * depth;
+
+        for (size_t max_steps : {0, 1000})
+        {
+            for (const auto & [matching, density] : patterns)
+            {
+                SCOPED_TRACE(testing::Message() << "granularity " << coarse_index_granularity << ", max_steps " << max_steps
+                    << ", density " << density);
+
+                GenericExclusionSearchSettings full_settings{
+                    .coarse_index_granularity = coarse_index_granularity, .max_steps = max_steps, .min_marks_for_seek = 0};
+                GenericExclusionSearchSettings first_match_settings = full_settings;
+                first_match_settings.stop_at_first_match = true;
+
+                const auto initial = makeRanges({{0, num_marks}});
+                auto full = genericExclusionSearch(initial, oracleFromFlags(matching), full_settings, true);
+                auto first_match = genericExclusionSearch(initial, oracleFromFlags(matching), first_match_settings, true);
+
+                EXPECT_EQ(first_match.ranges.empty(), full.ranges.empty());
+
+                for (size_t mark = 0; mark != num_marks; ++mark)
+                    if (matching[mark])
+                        EXPECT_TRUE(covers(first_match.ranges, mark)) << "mark " << mark;
+
+                for (const auto & range : first_match.exact_ranges)
+                {
+                    EXPECT_TRUE(isContained(range, first_match.ranges));
+                    for (size_t mark = range.begin; mark != range.end; ++mark)
+                        EXPECT_TRUE(matching[mark]) << "mark " << mark;
+                }
+
+                if (max_steps == 0)
+                {
+                    EXPECT_LE(first_match.num_steps, max_checks);
+                    EXPECT_FALSE(first_match.reached_step_limit);
+                    if (density == 0.05)
+                        EXPECT_GT(full.num_steps, max_checks);
+                }
+            }
+        }
+    }
+}
