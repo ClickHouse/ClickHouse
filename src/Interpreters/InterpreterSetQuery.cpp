@@ -18,6 +18,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
@@ -130,6 +131,77 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
     const auto * last_select = children.back()->as<ASTSelectQuery>();
     if (last_select && last_select->settings())
         InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+}
+
+/// Strips `setting_name` from `*owner`'s SETTINGS child, pruning it from `owner` if that empties it -
+/// otherwise its formatter prints a bare `SETTINGS` that fails to re-parse.
+static void dropSettingDefault(IAST & owner, ASTPtr & settings_ast, const String & setting_name)
+{
+    auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
+    if (!set_query)
+        return;
+
+    const std::string_view name = setting_name;
+    stripNamesFromSetQuery(*set_query, {&name, 1});
+    if (isEmptySetQuery(*set_query))
+        owner.reset(settings_ast);
+}
+
+static void dropSettingDefaultFromSelect(ASTSelectQuery & select_query, const String & setting_name)
+{
+    auto settings_ast = select_query.settings();
+    auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
+    if (!set_query)
+        return;
+
+    const std::string_view name = setting_name;
+    stripNamesFromSetQuery(*set_query, {&name, 1});
+    if (isEmptySetQuery(*set_query))
+        select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+}
+
+static void dropSettingDefaultFromSelectWithUnion(ASTSelectWithUnionQuery & select_with_union, const String & setting_name)
+{
+    const ASTs & children = select_with_union.list_of_selects->children;
+    auto * last_select = children.empty() ? nullptr : children.back()->as<ASTSelectQuery>();
+    if (last_select)
+        dropSettingDefaultFromSelect(*last_select, setting_name);
+}
+
+/// Same clauses as `applySettingsFromQuery`; it must change with it.
+void InterpreterSetQuery::removeSettingDefaultFromQuery(const ASTPtr & ast, const String & setting_name)
+{
+    if (!ast)
+        return;
+
+    if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
+    {
+        if (query_with_output->settings_ast)
+            dropSettingDefault(*query_with_output, query_with_output->settings_ast, setting_name);
+
+        if (auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
+            dropSettingDefaultFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), setting_name);
+    }
+
+    if (auto * select_query = ast->as<ASTSelectQuery>())
+    {
+        dropSettingDefaultFromSelect(*select_query, setting_name);
+    }
+    else if (auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
+    {
+        dropSettingDefaultFromSelectWithUnion(*select_with_union_query, setting_name);
+    }
+    else if (auto * explain_query = ast->as<ASTExplainQuery>())
+    {
+        if (explain_query->settings_ast)
+            dropSettingDefault(*explain_query, explain_query->settings_ast, setting_name);
+        removeSettingDefaultFromQuery(explain_query->getExplainedQuery(), setting_name);
+    }
+    else if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->settings_ast)
+            dropSettingDefault(*insert_query, insert_query->settings_ast, setting_name);
+    }
 }
 
 namespace

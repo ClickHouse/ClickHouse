@@ -9,3 +9,8 @@ INTERSECT case
 true
 CREATE AS SELECT case
 true
+a clause left with only make_distributed_plan = DEFAULT is pruned, not left empty
+100000
+P1 UNION case: one arm wants the plan, the other resets its own clause
+false
+true

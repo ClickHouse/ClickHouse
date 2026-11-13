@@ -41,4 +41,21 @@ SELECT v FROM t_dp_settings_default_reset_ctas;
 DROP TABLE t_dp_settings_default_reset_ctas;
 "
 
+echo "a clause left with only make_distributed_plan = DEFAULT is pruned, not left empty"
+# A disabled localhost short-circuit, so remote() genuinely formats and dispatches the query over
+# the native protocol instead of just reading the local table in-process: a bare SETTINGS left by
+# an unpruned strip fails to re-parse there.
+${CLICKHOUSE_CLIENT} -q "
+SET prefer_localhost_replica = 0;
+SET distributed_plan_workers_num = 3, distributed_plan_execute_locally = 1;
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_dp_settings_default_reset) SETTINGS make_distributed_plan = DEFAULT;
+"
+
+echo "P1 UNION case: one arm wants the plan, the other resets its own clause"
+${CLICKHOUSE_CLIENT} -q "
+SELECT getSetting('make_distributed_plan') SETTINGS make_distributed_plan = DEFAULT
+UNION ALL
+SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_workers_num = 3, distributed_plan_execute_locally = 1
+" | sort
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_dp_settings_default_reset"
