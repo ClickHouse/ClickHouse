@@ -3,6 +3,9 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -98,6 +101,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
+    extern const SettingsUInt64 text_index_like_max_matched_tokens;
     extern const SettingsFloat text_index_hint_max_selectivity;
     extern const SettingsBool use_text_index_negative_tokens_cache;
     extern const SettingsBool use_text_index_pattern_bypass_cache;
@@ -820,9 +824,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     if (sparse_index.empty())
         return;
 
-    const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    const size_t max_postings_to_read = settings[Setting::text_index_like_max_postings_to_read];
+    const size_t max_matched_tokens = settings[Setting::text_index_like_max_matched_tokens];
+    /// The cache key does not hold `text_index_like_max_matched_tokens`, so the patterns it caps skip the cache.
     const bool use_pattern_bypass_cache
-        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_pattern_bypass_cache];
+        = settings[Setting::use_text_index_pattern_bypass_cache] && !analyzer->hasPerTokenPatterns();
     auto tokens_cache = condition_text.tokensCache();
     auto cache_key = TextIndexTokensCache::hashPatternBypass(
         index_id_for_caches, condition_text.getSearchPatternsHash(), max_postings_to_read);
@@ -951,9 +958,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 analyzer->addTokenInfo(token, infos[i]);
             }
 
-            if (postings_to_read > max_postings_to_read)
+            /// Reading postings for very many tokens is slower than checking the column.
+            /// Only hasTokenPrefix/Like/Match are capped, not `LIKE`.
+            if (postings_to_read > max_postings_to_read
+                || (max_matched_tokens && analyzer->getNumPerTokenPatternTokens() > max_matched_tokens))
             {
-                /// Too many large-posting tokens matched.
+                /// Too many tokens matched.
                 /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
                 analyzer->bypassPatternQueries();
                 if (use_pattern_bypass_cache)
@@ -2361,6 +2371,134 @@ void normalizeColumnExpression(ASTPtr & ast)
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
 }
 
+/// Constant values a lambda captures, by their name inside the lambda body.
+using CapturedConstants = std::unordered_map<String, ColumnPtr>;
+
+void addCapturedConstant(CapturedConstants & captured, const String & name, const ColumnPtr & column)
+{
+    if (column && isColumnConst(*column) && column->getDataType() != TypeIndex::Function)
+        captured[name] = column;
+}
+
+/// Evaluates a node that only depends on constants, like `arrayFirst(y -> 1, ['1'])`, which the DAG does not fold.
+std::optional<Field> tryEvaluateConstantNode(const ActionsDAG::Node & node, const CapturedConstants & captured)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || WhichDataType(node.result_type).isFunction())
+        return {};
+
+    auto dag = ActionsDAG::cloneSubDAG({&node}, /*remove_aliases=*/ false);
+    ActionsDAG::IntermediateExecutionResult node_to_column;
+    for (const auto * input : dag.getInputs())
+    {
+        auto it = captured.find(input->result_name);
+        if (it == captured.end())
+            return {};
+        node_to_column[input] = {it->second->cloneResized(1), input->result_type, input->result_name};
+    }
+
+    auto result = ActionsDAG::evaluatePartialResult(node_to_column, dag.getOutputs(), 1, {.skip_materialize = true});
+    if (result.size() != 1 || !result[0].column || result[0].column->size() != 1)
+        return {};
+    return (*result[0].column)[0];
+}
+
+/// Returns the DAG of the body of a lambda node, or nullptr, and adds its constant captures to `captured`.
+const ActionsDAG * tryGetLambdaBodyDAG(const ActionsDAG::Node & node, CapturedConstants & captured)
+{
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+    {
+        const auto & names = capture->getCapture().captured_names;
+        /// A captured value can be a constant call the DAG did not fold, like `arrayFirst(y -> 1, ['1'])`.
+        const CapturedConstants outer_captured = captured;
+        for (size_t i = 0; i < names.size() && i < node.children.size(); ++i)
+        {
+            addCapturedConstant(captured, names[i], node.children[i]->column);
+            if (!captured.contains(names[i]))
+                if (auto value = tryEvaluateConstantNode(*node.children[i], outer_captured))
+                    captured[names[i]] = node.children[i]->result_type->createColumnConst(1, *value);
+        }
+        return &capture->getAcionsDAG();
+    }
+
+    const IColumn * column = node.column.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        column = &column_const->getDataColumn();
+    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+    {
+        if (const auto * expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+        {
+            const auto & names = expression->getCapture().captured_names;
+            const auto & columns = column_function->getCapturedColumns();
+            for (size_t i = 0; i < names.size() && i < columns.size(); ++i)
+                addCapturedConstant(captured, names[i], columns[i].column);
+            return &expression->getAcionsDAG();
+        }
+    }
+    return nullptr;
+}
+
+/// Names folded constants like `KeyCondition` names a query's, e.g. `concat(s, toString(1))` becomes `concat(s, '1')`.
+/// Drops `materialize`, as `KeyCondition` does for a query.
+void foldConstantSubexpressions(ASTPtr & ast, const ActionsDAG & index_dag, const CapturedConstants & captured)
+{
+    auto * function = ast->as<ASTFunction>();
+    if (function && function->name == "lambda")
+        return;
+
+    if (function && function->name == "materialize" && function->arguments && function->arguments->children.size() == 1)
+    {
+        ASTPtr argument = function->arguments->children[0];
+        ast = argument;
+        foldConstantSubexpressions(ast, index_dag, captured);
+        return;
+    }
+
+    if (function)
+    {
+        const auto name = ast->getColumnName();
+        if (auto it = captured.find(name); it != captured.end())
+        {
+            ast = make_intrusive<ASTLiteral>((*it->second)[0]);
+            return;
+        }
+
+        for (const auto & node : index_dag.getNodes())
+        {
+            if (node.result_name != name)
+                continue;
+
+            if (node.column && isColumnConst(*node.column) && node.column->getDataType() != TypeIndex::Function)
+            {
+                ast = make_intrusive<ASTLiteral>((*node.column)[0]);
+                return;
+            }
+
+            if (auto value = tryEvaluateConstantNode(node, captured))
+            {
+                ast = make_intrusive<ASTLiteral>(*value);
+                return;
+            }
+
+            /// The body of a lambda argument is folded in the lambda's own DAG.
+            if (!function->arguments)
+                break;
+            auto & arguments = function->arguments->children;
+            for (size_t i = 0; i < arguments.size() && i < node.children.size(); ++i)
+            {
+                auto * lambda = arguments[i]->as<ASTFunction>();
+                CapturedConstants body_captured = captured;
+                const auto * body_dag = tryGetLambdaBodyDAG(*node.children[i], body_captured);
+                if (lambda && lambda->name == "lambda" && lambda->arguments && lambda->arguments->children.size() == 2 && body_dag)
+                    foldConstantSubexpressions(lambda->arguments->children[1], *body_dag, body_captured);
+            }
+            break;
+        }
+    }
+
+    for (auto & child : ast->children)
+        foldConstantSubexpressions(child, index_dag, captured);
+}
+
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
 /// expression after the same rewrite, or `std::nullopt` if it does not change.
@@ -2371,6 +2509,7 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
         return {};
 
     ASTPtr normalized = index.expression_list_ast->children.front()->clone();
+    foldConstantSubexpressions(normalized, index.expression->getActionsDAG(), {});
     normalizeColumnExpression(normalized);
 
     String name = normalized->getColumnName();
@@ -2463,7 +2602,8 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 {
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
-        preprocessor, postprocessor, params.enable_positions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
+        preprocessor, postprocessor, params.enable_positions, getMapSubcolumnShadowingCheck(),
+        index.expression->getRequiredColumnsWithTypes(), collectJSONIndexArgumentTypes(*index.expression),
         automaton_budget);
 }
 
