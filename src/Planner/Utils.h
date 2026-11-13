@@ -144,11 +144,6 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
-/// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise return empty.
-/// If the window frame is set in sql, use it anyway.
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
-
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 /// Remove query plan steps that don't affect the number of rows in the result.
