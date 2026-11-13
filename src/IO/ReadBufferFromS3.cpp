@@ -60,6 +60,7 @@ namespace FailPoints
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
     extern const char s3_read_before_get_object[];
+    extern const char s3_pause_merge_before_get_object[];
     extern const char s3_read_before_retry[];
     extern const char s3_read_inject_etag_mismatch[];
 }
@@ -679,6 +680,12 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_get_object);
+    fiu_do_on(FailPoints::s3_pause_merge_before_get_object,
+    {
+        /// A merge in an `Ordinary` database uses `database.table::result_part` as its query ID, including on I/O workers.
+        if (CurrentThread::getQueryId().contains(".s3_pause_merge_before_get_object::"))
+            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::s3_pause_merge_before_get_object);
+    });
     checkIfNotCancelled();
 
     /// Simulate a real `ExpiredToken` error returned from S3, used by integration tests for
