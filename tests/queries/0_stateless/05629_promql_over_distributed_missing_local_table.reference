@@ -1,0 +1,8 @@
+--- skip_unavailable_shards = 0
+--- skip_unavailable_shards = 1 in the query
+1
+1
+1
+--- skip_unavailable_shards = 1 on the table
+1
+1

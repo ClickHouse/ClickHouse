@@ -28,6 +28,8 @@ namespace DistributedSetting
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
 }
 
 
@@ -50,6 +52,53 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     /// Validate the settings early, so that a misspelled setting is reported during parsing
     /// rather than at the first read from the storage.
     DistributedSettings{}.applyChanges(settings_changes);
+
+    skipLocalShardsWithoutTable(context);
+}
+
+void TableFunctionRemote::skipLocalShardsWithoutTable(const ContextPtr & context)
+{
+    if (!remote_table_function_ptr)
+        return;
+
+    DistributedSettings declared;
+    declared.applyChanges(settings_changes);
+    const auto & query_settings = context->getSettingsRef();
+    const bool skip = query_settings[Setting::skip_unavailable_shards].changed
+        ? query_settings[Setting::skip_unavailable_shards].value
+        : declared[DistributedSetting::skip_unavailable_shards].value;
+    if (!skip)
+        return;
+
+    const auto & shards = cluster->getShardsInfo();
+    std::vector<size_t> kept;
+    for (size_t i = 0; i < shards.size(); ++i)
+    {
+        bool has_table = true;
+        if (shards[i].isLocal() && !shards[i].hasRemoteConnections())
+        {
+            auto shard_context = Context::createCopy(context);
+            if (!shards[i].default_database.empty())
+                shard_context->setCurrentDatabase(shards[i].default_database);
+            try
+            {
+                auto function = TableFunctionFactory::instance().get(remote_table_function_ptr, shard_context);
+                function->execute(remote_table_function_ptr, shard_context, function->getName());
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                    throw;
+                has_table = false;
+            }
+        }
+        if (has_table)
+            kept.push_back(i);
+    }
+
+    /// With no shard left the error of the missing table stays, as there is no structure to return.
+    if (!kept.empty() && kept.size() < shards.size())
+        cluster = cluster->getClusterWithMultipleShards(kept);
 }
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
