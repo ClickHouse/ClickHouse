@@ -81,10 +81,16 @@ def get_merge_base_profiler_url() -> str:
         prefix = _Environment.get_s3_prefix_static(
             pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
         )
-        url = f"{MASTER_PROFILER_BASE_URL}/{prefix}/build_arm_binary/clickhouse-examples"
-        if Shell.check(f"curl -sfI '{url}' > /dev/null"):
-            print(f"Using master binary from commit {sha[:12]}")
-            return url
+        # `build_arm_release` is the baseline of master commits made before
+        # `clickhouse-examples` moved to the non-ThinLTO `arm_binary` build.
+        # Its verdicts were checked to match a non-LTO baseline. Commits are
+        # walked newest first, so it is used only until the first master commit
+        # with the new artifact; remove it once all tracked commits have it.
+        for build in ("build_arm_binary", "build_arm_release"):
+            url = f"{MASTER_PROFILER_BASE_URL}/{prefix}/{build}/clickhouse-examples"
+            if Shell.check(f"curl -sfI '{url}' > /dev/null"):
+                print(f"Using master binary {build} from commit {sha[:12]}")
+                return url
     print(f"No master binary found in {len(commits)} tracked commits")
     return ""
 
@@ -307,9 +313,10 @@ def is_clickhouse_call_frame(frame: str) -> bool:
 def canonicalize_stack_frames(frames: list) -> list:
     """Build a cross-binary stack key from one primary symbol per address.
 
-    Master binaries contain DWARF inline frames separated by `--`, while PR
-    release binaries are built without debug information. Keeping only the
-    primary symbol makes the same physical backtrace comparable on both sides.
+    Symbolized frames may carry DWARF inline frames separated by `--`, and
+    inlining differs between builds (e.g. a ThinLTO master baseline and a
+    non-LTO PR binary). Keeping only the primary symbol makes the same physical
+    backtrace comparable on both sides.
     Ignore a leading sequence of allocation implementation frames when it leads
     to a ClickHouse frame because container specialization, inlining, and
     identical-code folding can differ between otherwise equivalent builds.
@@ -401,7 +408,7 @@ def compute_cross_version_diff(master_stacks: list, pr_stacks: list) -> list:
     """Compute per-stack diff between master and PR allocation profiles.
     Input: lists of
     (diff_bytes, formatted_stack_str, full_frames, canonical_frames).
-    Uses canonical frames as map keys to correlate debug and stripped binaries,
+    Uses canonical frames as map keys to correlate binaries with different inlining,
     but returns the formatted string for display.
     Returns list of (delta, master_bytes, pr_bytes, stack_str) sorted by |delta| desc."""
     master_map, master_display = aggregate_canonical_stacks(master_stacks)
