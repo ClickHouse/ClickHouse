@@ -17,8 +17,11 @@ FROM values('x Nullable(Tuple(Nullable(Int32), Int32)), s String', ((NULL, 1), '
 SELECT x IN ([materialize(x)]), x NOT IN ([materialize(x)])
 FROM values('x Array(Nullable(Int32))', ([NULL, 1]));
 
-SELECT x IN ([materialize(x)]), x NOT IN ([materialize(x)])
+SELECT x IN (materialize(x)), x NOT IN (materialize(x))
 FROM (SELECT map('a', CAST(NULL AS Nullable(Int32))) AS x);
+
+SELECT x IN (materialize(x)), x NOT IN (materialize(x))
+FROM (SELECT map('a', [CAST(NULL AS Nullable(Int32)), 1]) AS x);
 
 WITH (a, b) -> 0 AS arrayElement
 SELECT x IN (materialize(x)), x NOT IN (materialize(x))
