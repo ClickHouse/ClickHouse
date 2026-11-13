@@ -197,6 +197,8 @@ public:
 
     const DataTypePtr & getResultType() const override { return dag.back().result_type; }
 
+    const std::vector<FunctionBasePtr> & getNestedFunctions() const { return nested_functions; }
+
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         if (!compiled_function_holder)
@@ -388,12 +390,20 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
         {
             return false;
         }
+
+        /// Declared argument types can disagree with the children: a DAG rewrite may repoint a child
+        /// without updating `function_base`, and an alias carries its own copy of the type, which a
+        /// rewrite can leave behind. Compilation lowers the type the argument actually holds.
+        if (i < node.children.size() && !canBeNativeType(*removeAliasIfNecessary(node.children[i])->result_type))
+        {
+            return false;
+        }
     }
 
     return function.isCompilable();
 }
 
-static CompileDAG getCompilableDAG(
+CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
     const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
@@ -492,6 +502,12 @@ static CompileDAG getCompilableDAG(
     }
 
     return dag;
+}
+
+const std::vector<FunctionBasePtr> * ActionsDAG::getCompiledFunctions(const IFunctionBase & function)
+{
+    const auto * llvm_function = typeid_cast<const LLVMFunction *>(&function);
+    return llvm_function ? &llvm_function->getNestedFunctions() : nullptr;
 }
 
 void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)

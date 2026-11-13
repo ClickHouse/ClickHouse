@@ -15,8 +15,10 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <algorithm>
 #include <cstring> // memcpy
+#include <limits>
 
 
 namespace DB
@@ -59,6 +61,9 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
 
     if (data)
     {
+        if (isColumnConst(*data))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnArray cannot have ColumnConst as its nested column");
+
         Offset last_offset = offsets_data.empty() ? 0 : offsets_data.back();
 
         /// This will also prevent possible overflow in offset.
@@ -79,16 +84,14 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
             "offsets_column is not monotonically increasing: the offset {} at position {} is greater than the next offset {}",
             *non_monotonic, non_monotonic - offsets_data.begin(), *(non_monotonic + 1));
 #endif
-
-    /** NOTE
-      * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
-      * But in most cases, arrays with constant value are unexpected and code will work wrong. Use with caution.
-      */
 }
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
     : data(std::move(nested_column))
 {
+    if (isColumnConst(*data))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnArray cannot have ColumnConst as its nested column");
+
     if (!data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not empty data passed to ColumnArray, but no offsets passed");
 
@@ -424,6 +427,72 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     getOffsets().push_back(getOffsets().back() + size);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
+#else
+void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
+#endif
+{
+    /// Keep the same no-op behavior as IColumn::insertManyFrom, including for an invalid position.
+    if (length == 0)
+        return;
+
+    /// A single insertion does not benefit from bulk setup.
+    if (length == 1)
+    {
+        insertFrom(src_, position);
+        return;
+    }
+
+    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
+    const size_t source_size = src.sizeAt(position);
+
+    auto & offsets_data = getOffsets();
+    const size_t old_rows = offsets_data.size();
+    if (length > std::numeric_limits<size_t>::max() - old_rows)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
+
+    const size_t new_rows = old_rows + length;
+    const size_t old_offset = offsets_data.back();
+
+    auto insert_scalar = [&]
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src_, position);
+    };
+
+    /// Nested insertManyFrom repeats one value, so it can represent a repeated Array row
+    /// directly only when source_size == 1.
+    /// Keep the existing scalar implementation outside the narrow fast path.
+    if (getDataPtr().get() == src.getDataPtr().get()
+        || source_size > 1
+        || getData().hasDynamicStructure())
+    {
+        insert_scalar();
+        return;
+    }
+
+    if (new_rows > offsets_data.capacity())
+        offsets_data.reserve(new_rows);
+
+    if (source_size == 0)
+    {
+        offsets_data.resize_assume_reserved(new_rows);
+        std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
+        return;
+    }
+
+    /// source_size == 1
+    if (length > std::numeric_limits<Offset>::max() - old_offset)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", old_offset, length);
+
+    getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
+
+    offsets_data.resize_assume_reserved(new_rows);
+    for (size_t i = 0; i < length; ++i)
+        offsets_data[old_rows + i] = old_offset + i + 1;
+}
+
 
 void ColumnArray::insertDefault()
 {
@@ -634,13 +703,6 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 }
 
 
-ColumnPtr ColumnArray::convertToFullColumnIfConst() const
-{
-    /// It is possible to have an array with constant data and non-constant offsets.
-    /// Example is the result of expression: replicate('hello', [1])
-    return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
-}
-
 void ColumnArray::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = Array();
@@ -676,9 +738,8 @@ void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t le
 
     const ColumnArray & src_concrete = assert_cast<const ColumnArray &>(src);
 
-    if (start + length > src_concrete.getOffsets().size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnArray::insertRangeFrom method. "
-            "[start({}) + length({}) > offsets.size({})]", start, length, src_concrete.getOffsets().size());
+    if (start > src_concrete.getOffsets().size() || length > src_concrete.getOffsets().size() - start)
+        throwInsertRangeFromOutOfBound("ColumnArray", start, length, src_concrete.getOffsets().size());
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
@@ -1017,17 +1078,17 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
     ssize_t nested_result_size_hint = 0;
     if (result_size_hint < 0)
         nested_result_size_hint = result_size_hint;
     else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)    /// Avoid overflow.
          nested_result_size_hint = result_size_hint * data->size() / size;
 
-    res->data = data->filter(nested_filt, nested_result_size_hint);
+    /// See the comment in `indexImpl` about building the nested result first.
+    ColumnPtr res_data = data->filter(nested_filt, nested_result_size_hint);
 
-    Offsets & res_offsets = res->getOffsets();
+    auto res_offsets_column = ColumnOffsets::create();
+    Offsets & res_offsets = res_offsets_column->getData();
     if (result_size_hint)
         res_offsets.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
@@ -1041,7 +1102,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
         }
     }
 
-    return res;
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
@@ -1275,10 +1336,8 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
     nested_indexes.reserve_exact(getOffsets().back());
 
-    auto res = ColumnArray::create(data->cloneEmpty());
-
-    Offsets & res_offsets = res->getOffsets();
-    res_offsets.resize_exact(limit);
+    auto res_offsets_column = ColumnOffsets::create(limit);
+    Offsets & res_offsets = res_offsets_column->getData();
     size_t current_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
@@ -1289,10 +1348,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
         res_offsets[i] = current_offset;
     }
 
-    if (current_offset != 0)
-        res->data = data->index(*nested_indexes_column, current_offset);
-
-    return res;
+    /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
+    /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
+    ColumnPtr res_data = current_offset != 0 ? data->index(*nested_indexes_column, current_offset) : data->cloneEmpty();
+    return ColumnArray::create(res_data, std::move(res_offsets_column));
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
@@ -1387,12 +1446,14 @@ ColumnPtr ColumnArray::compress(bool force_compression) const
     ColumnPtr offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
+    Columns parts{data_compressed, offsets_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_data_compressed = std::move(data_compressed), my_offsets_compressed = std::move(offsets_compressed)]
         {
             return ColumnArray::create(my_data_compressed->decompress(), my_offsets_compressed->decompress());
-        });
+        },
+        std::move(parts));
 }
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
@@ -1440,8 +1501,6 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Decimal256>(replicate_offsets);
     if (typeid_cast<const ColumnString *>(data.get()))
         return replicateString(replicate_offsets);
-    if (typeid_cast<const ColumnConst *>(data.get()))
-        return replicateConst(replicate_offsets);
     if (typeid_cast<const ColumnNullable *>(data.get()))
         return replicateNullable(replicate_offsets);
     if (typeid_cast<const ColumnTuple *>(data.get()))
@@ -1472,28 +1531,40 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
     typename ColVecType::Container & res_data = typeid_cast<ColVecType &>(res_arr.getData()).getData();
     Offsets & res_offsets = res_arr.getOffsets();
 
-    res_data.reserve_exact(data->size() / col_size * replicate_offsets.back());
-    res_offsets.reserve_exact(replicate_offsets.back());
-
+    size_t res_data_size = 0;
     Offset prev_replicate_offset = 0;
     Offset prev_data_offset = 0;
-    Offset current_new_offset = 0;
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        res_data_size += (replicate_offsets[i] - prev_replicate_offset) * (src_offsets[i] - prev_data_offset);
+        prev_replicate_offset = replicate_offsets[i];
+        prev_data_offset = src_offsets[i];
+    }
 
+    res_data.resize_exact(res_data_size);
+    res_offsets.resize_exact(replicate_offsets.back());
+
+    prev_replicate_offset = 0;
+    prev_data_offset = 0;
+    Offset current_new_offset = 0;
+    size_t res_row = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         size_t value_size = src_offsets[i] - prev_data_offset;
+        size_t value_bytes = value_size * sizeof(T);
+        const T * src = &src_data[prev_data_offset];
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
+            /// memcpySmallAllowReadWriteOverflow15 is slower than memcpy for long values.
+            if (value_bytes <= 64)
+                memcpySmallAllowReadWriteOverflow15(&res_data[current_new_offset], src, value_bytes);
+            else
+                memcpy(&res_data[current_new_offset], src, value_bytes);
             current_new_offset += value_size;
-            res_offsets.push_back(current_new_offset);
-
-            if (value_size)
-            {
-                res_data.resize(res_data.size() + value_size);
-                memcpy(&res_data[res_data.size() - value_size], &src_data[prev_data_offset], value_size * sizeof(T));
-            }
+            res_offsets[res_row] = current_new_offset;
+            ++res_row;
         }
 
         prev_replicate_offset = replicate_offsets[i];
@@ -1579,44 +1650,6 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
     }
 
     return res;
-}
-
-
-ColumnPtr ColumnArray::replicateConst(const Offsets & replicate_offsets) const
-{
-    size_t col_size = size();
-    if (col_size != replicate_offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
-
-    if (0 == col_size)
-        return cloneEmpty();
-
-    const Offsets & src_offsets = getOffsets();
-
-    auto res_column_offsets = ColumnOffsets::create();
-    Offsets & res_offsets = res_column_offsets->getData();
-    res_offsets.reserve_exact(replicate_offsets.back());
-
-    Offset prev_replicate_offset = 0;
-    Offset prev_data_offset = 0;
-    Offset current_new_offset = 0;
-
-    for (size_t i = 0; i < col_size; ++i)
-    {
-        size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-        size_t value_size = src_offsets[i] - prev_data_offset;
-
-        for (size_t j = 0; j < size_to_replicate; ++j)
-        {
-            current_new_offset += value_size;
-            res_offsets.push_back(current_new_offset);
-        }
-
-        prev_replicate_offset = replicate_offsets[i];
-        prev_data_offset = src_offsets[i];
-    }
-
-    return ColumnArray::create(getData().cloneResized(current_new_offset), std::move(res_column_offsets));
 }
 
 
@@ -1736,4 +1769,10 @@ void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+ColumnPlanes ColumnArray::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Array, getOffsets().data());
+    planes.children = {&getData()};
+    return planes;
+}
 }

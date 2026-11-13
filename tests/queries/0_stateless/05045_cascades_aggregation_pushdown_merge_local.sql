@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- The `cascades_aggregation_pushdown` variant-A top step is a merge-only `Aggregating`
 -- (`Params::only_merge`); under the default cost weights it takes the Local strategy: gather the
 -- state rows and merge on one node. This file pins that shape via EXPLAIN conjuncts and executes
@@ -49,7 +46,8 @@ EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ml_facts AS 
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy';
 
 SELECT '-- execution through the Local merge';
-SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ml_facts AS t1 LEFT JOIN t_ml_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ml_facts AS t1 LEFT JOIN t_ml_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- the same execution without the distributed planner must match';
 SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_ml_facts AS t1 LEFT JOIN t_ml_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k

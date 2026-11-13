@@ -66,11 +66,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
+ShellCommand::ShellCommand(int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
     : in(in_fd_)
     , out(out_fd_)
     , err(err_fd_)
-    , pid(pid_)
     , config(config_)
 {
 }
@@ -99,6 +98,9 @@ UInt64 ShellCommand::remainingTerminationTimeoutMs()
 
 ShellCommand::~ShellCommand()
 {
+    if (pid == -1)
+        return;
+
     if (do_not_terminate)
         return;
 
@@ -186,7 +188,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
@@ -238,6 +240,26 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         for (const auto & fds : write_pipe_fds)
             fds->tryIncreaseSize(pipe_capacity);
+    }
+
+    std::unique_ptr<ShellCommand> res(new ShellCommand(
+        pipe_stdin.fds_rw[1],
+        pipe_stdout.fds_rw[0],
+        pipe_stderr.fds_rw[0],
+        config));
+
+    for (size_t i = 0; i < config.read_fds.size(); ++i)
+    {
+        auto & fds = *read_pipe_fds[i];
+        auto fd = config.read_fds[i];
+        res->read_fds.emplace(fd, fds.fds_rw[0]);
+    }
+
+    for (size_t i = 0; i < config.write_fds.size(); ++i)
+    {
+        auto & fds = *write_pipe_fds[i];
+        auto fd = config.write_fds[i];
+        res->write_fds.emplace(fd, fds.fds_rw[1]);
     }
 
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
@@ -296,29 +318,10 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(
-        pid,
-        pipe_stdin.fds_rw[1],
-        pipe_stdout.fds_rw[0],
-        pipe_stderr.fds_rw[0],
-        config));
+    res->pid = pid;
 
     if (config.register_in_udf_process_registry)
         res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
-
-    for (size_t i = 0; i < config.read_fds.size(); ++i)
-    {
-        auto & fds = *read_pipe_fds[i];
-        auto fd = config.read_fds[i];
-        res->read_fds.emplace(fd, fds.fds_rw[0]);
-    }
-
-    for (size_t i = 0; i < config.write_fds.size(); ++i)
-    {
-        auto & fds = *write_pipe_fds[i];
-        auto fd = config.write_fds[i];
-        res->write_fds.emplace(fd, fds.fds_rw[1]);
-    }
 
     LOG_TRACE(
         getLogger(),

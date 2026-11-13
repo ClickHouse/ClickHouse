@@ -11,6 +11,10 @@ For pricing information, see the [ClickHouse Cloud Pricing](https://clickhouse.c
 ClickHouse Cloud bills based on the usage of compute, storage, [data transfer](/products/cloud/reference/billing/network-data-transfer) (egress over the internet and cross-region), and [ClickPipes](/integrations/clickpipes/home). 
 To understand what can affect your bill, and ways that you can manage your spend, keep reading.
 
+## Managed Postgres {#managed-postgres}
+
+ClickHouse Managed Postgres follows the ClickHouse Cloud billing model for compute, storage, and data transfer. Each Managed Postgres instance retains backups for 7 days, and backup storage equal to the provisioned disk capacity is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in AWS `us-east-1`. Data egress is billed at the [ClickHouse Cloud data transfer rates](/products/cloud/reference/billing/network-data-transfer). See [Managed Postgres pricing](/products/managed-postgres/pricing) for details.
+
 ## Amazon Web Services (AWS) example {#amazon-web-services-aws-example}
 
 <Note>
@@ -250,7 +254,9 @@ Refunds appear once processed by us. Credit card refunds may take additional tim
 
 ### How long is the billing cycle? {#how-long-is-the-billing-cycle}
 
-Billing follows a monthly billing cycle and the start date is tracked as the date when the ClickHouse Cloud organization was created.
+Billing follows a monthly cycle. For new organizations, the billing cycle always starts on the first day of the month.
+Existing organizations may retain a billing cycle that starts on a different day of the month.
+To change your billing cycle, contact [ClickHouse Cloud support](https://console.clickhouse.cloud/support).
 
 ### If I have an active PAYG marketplace subscription and then sign a committed contract, will my committed credits be consumed first? {#committed-credits-consumed-first-with-active-payg-subscription}
 
@@ -298,8 +304,7 @@ AWS Marketplace billing follows the calendar month cycle.
 For example, for usage between dates 01-Dec-2024 and 01-Jan-2025, 
 an invoice is generated between 3-Jan and 5-Jan-2025
 
-ClickHouse Cloud usage statements follow a different billing cycle where usage is metered 
-and reported over 30 days starting from the day of sign up.
+For some existing organizations, ClickHouse Cloud usage statements follow a billing cycle that starts on a day other than the first of the month. New organizations follow a monthly billing cycle starting on the first day of the month.
 
 The usage and invoice dates will differ if these dates aren't the same. Since usage statements track usage by day for a given service, you can rely on statements to see the breakdown of costs.
 

@@ -12,45 +12,18 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки настраивают сервер ClickHouse и автоматически сгенерированы на основе исходного кода ClickHouse.
 
-<div id="use_minimalistic_part_header_in_zookeeper">
-  ## use_minimalistic_part_header_in_zookeeper
-</div>
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-Метод хранения заголовков частей данных в ZooKeeper. Эта настройка применяется только к семейству [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/index). Ее можно указать:
+Устаревшая настройка, ни на что не влияет. [Реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) таблицы всегда хранят заголовок части данных в компактном виде в одном `znode`. Заголовки частей, записанные более старыми версиями в виде отдельных дочерних `znodes` `columns` и `checksums`, по-прежнему считываются.
 
-**Глобально в разделе [merge&#95;tree](/ru/reference/settings/server-settings/settings/merge#merge_tree) файла `config.xml`**
-
-ClickHouse использует эту настройку для всех таблиц на сервере. Вы можете изменить настройку в любой момент. При изменении настройки существующие таблицы меняют свое поведение.
-
-**Для каждой таблицы**
-
-При создании таблицы укажите соответствующую [настройку движка](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table). Поведение существующей таблицы с этой настройкой не меняется, даже если глобальная настройка изменится.
-
-**Возможные значения**
-
-* `0` — Функциональность отключена.
-* `1` — Функциональность включена.
-
-Если [`use_minimalistic_part_header_in_zookeeper = 1`](/ru/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper), то [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) таблицы хранят заголовки частей данных в компактном виде, используя один `znode`. Если таблица содержит много столбцов, такой способ хранения значительно уменьшает объем данных, хранящихся в ZooKeeper.
-
-<Note>
-  После применения `use_minimalistic_part_header_in_zookeeper = 1` вы не сможете понизить версию сервера ClickHouse до версии, которая не поддерживает эту настройку. Будьте осторожны при обновлении ClickHouse на серверах кластера. Не обновляйте все серверы сразу. Безопаснее сначала протестировать новые версии ClickHouse в тестовой среде или только на нескольких серверах кластера.
-
-  Заголовки частей данных, уже сохраненные с этой настройкой, нельзя вернуть к прежнему (некомпактному) представлению.
-</Note>
-
-<div id="use_separate_cache_arena">
-  ## use_separate_cache_arena
-</div>
+## use_separate_cache_arena {#use_separate_cache_arena}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 Включает отдельную arena jemalloc для выделения памяти под кэш (mark cache, кэш несжатых данных, page cache).
 Изолирует данные кэша от выделений памяти при обработке запросов, уменьшая фрагментацию памяти.
 
-<div id="use_shared_merge_tree_log_pipeline">
-  ## use_shared_merge_tree_log_pipeline
-</div>
+## use_shared_merge_tree_log_pipeline {#use_shared_merge_tree_log_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 

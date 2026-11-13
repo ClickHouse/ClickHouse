@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -55,6 +56,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override { return delegate(arguments); }
 
@@ -74,10 +76,11 @@ private:
         return std::move(plan).finish(name, arguments);
     }
 
+    /// `LowCardinality(Nullable(T))` reports itself as not nullable, so strip the wrapper first.
     static DataTypePtr retypedAsTicks(const DataTypePtr & original)
     {
         const DataTypePtr ticks = std::make_shared<DataTypeInt64>();
-        return original->isNullable() ? makeNullable(ticks) : ticks;
+        return removeLowCardinality(original)->isNullable() ? makeNullable(ticks) : ticks;
     }
 
     FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
@@ -85,8 +88,8 @@ private:
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires exactly 2 arguments", getName());
 
-        const DataTypePtr value_type = removeNullable(arguments[0].type);
-        const DataTypePtr bin_type = removeNullable(arguments[1].type);
+        const DataTypePtr value_type = removeLowCardinalityAndNullable(arguments[0].type);
+        const DataTypePtr bin_type = removeLowCardinalityAndNullable(arguments[1].type);
 
         /// A NULL literal argument makes the whole result a NULL literal. `divide` short-circuits
         /// that itself, so delegating to it wholesale beats teaching the chain below about Nothing.
@@ -103,10 +106,11 @@ private:
 
         /// A datetime is rounded by an interval. The bin size may be a column, so the rounding
         /// cannot delegate to `toStartOfInterval`, which only takes a constant interval.
-        /// KQL datetime values are `DateTime64`. Do not accept ClickHouse's narrower date
-        /// carriers here: for example, `DateTime` cannot represent a bin before the Unix
-        /// epoch, whereas KQL datetime arithmetic can produce one.
-        if (isDateTime64(value_type))
+        /// KQL datetime values are `DateTime64`, but a table column may be one of ClickHouse's
+        /// narrower date carriers. Such a value is widened to `DateTime64` before rounding:
+        /// `DateTime`, for example, cannot represent a bin before the Unix epoch, whereas KQL
+        /// datetime arithmetic can produce one.
+        if (isDateTime64(value_type) || KQLPlanBuilder::isNarrowDateTime(value_type))
         {
             if (!isInterval(bin_type))
                 throw Exception(
@@ -137,9 +141,11 @@ private:
             /// physical ticks, avoiding both timezone-sensitive `dateDiff` and `Int64`
             /// nanosecond overflow for valid `DateTime64` values.
             KQLPlanBuilder plan(getContext());
-            const size_t value_slot = plan.argument(arguments[0].type);
+            size_t value_slot = plan.argument(arguments[0].type);
             const size_t bin_slot = plan.argument(arguments[1].type);
-            const size_t epoch = plan.constant(arguments[0].type, Field(DateTime64(0)));
+            if (KQLPlanBuilder::isNarrowDateTime(value_type))
+                value_slot = plan.widenToDateTime64(value_slot);
+            const size_t epoch = plan.constant(plan.slotType(value_slot), Field(DateTime64(0)));
             plan.step("kqlDateTimeBinAt", {value_slot, bin_slot, epoch});
             return std::move(plan).finish(name, arguments);
         }
@@ -257,14 +263,15 @@ Rounds a value down to a multiple of `roundTo`, as the Kusto Query Language's `b
 
 The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
 is an `Interval`) is rounded by a timespan, and a datetime is rounded by a timespan. A KQL
-datetime is a `DateTime64`; the narrower `DateTime` and `Date` carriers are rejected, because
-they cannot represent every bin a KQL datetime can produce.
+datetime is a `DateTime64`; a value of the narrower `DateTime`, `Date` or `Date32` types is
+converted to `DateTime64` first, because they cannot represent every bin a KQL datetime can
+produce.
 
 This function backs `bin()` when `dialect = 'kusto'`. It is not meant to be called directly
 from SQL.
 )",
         .syntax = "kqlBin(value, roundTo)",
-        .arguments = {{"value", "A number, a timespan, or a datetime (a `DateTime64`)."}, {"roundTo", "The bin size."}},
+        .arguments = {{"value", "A number, a timespan, or a datetime (a `DateTime64`, `DateTime`, `Date` or `Date32`)."}, {"roundTo", "The bin size."}},
         .returned_value = {"`value` rounded down to the nearest multiple of `roundTo`."},
         .examples
         = {{"number", "SELECT kqlBin(4.5, 1)", "4"},

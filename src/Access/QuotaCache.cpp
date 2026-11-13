@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -26,7 +27,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int QUOTA_REQUIRES_CLIENT_KEY;
     extern const int LOGICAL_ERROR;
 }
 
@@ -36,11 +36,21 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     quota = quota_;
     quota_id = quota_id_;
     roles = &quota->to_roles;
+
+    /// The quota may have been written by a version with a different set of profile events.
+    /// The unknown limit is preserved in the definition but has no effect. Report it here, once per
+    /// publication of the quota, rather than in `rebuildIntervals`, which runs for every new quota key.
+    for (const auto & limits : quota->all_limits)
+        for (const auto & event_name : limits.profile_events_max | boost::adaptors::map_keys)
+            if (!ProfileEvents::tryGetByName(event_name))
+                LOG_WARNING(getLogger("QuotaCache"), "Quota {} defines a limit over an unknown profile event {}; this limit is ignored",
+                    backQuote(quota->getName()), backQuote(event_name));
+
     rebuildAllIntervals();
 }
 
 
-String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
+String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
 {
     const auto & params = enabled.params;
     auto mask_address = [this](const Poco::Net::IPAddress & addr) -> String
@@ -128,14 +138,9 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         {
             if (!params.client_key.empty())
                 return params.client_key;
-
-            if (throw_if_client_key_empty)
-                throw Exception(
-                    ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY,
-                    "Quota {} (for user {}) requires a client supplied key.",
-                    quota->getName(),
-                    params.user_name);
-            return ""; // Authentication quota has no client key at time of authentication.
+            /// An empty key is a legitimate state: at the time of authentication no client key exists yet.
+            /// The requirement is published as `SingleQuota::requires_client_key` and enforced on the query path.
+            return "";
         }
         case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
         {
@@ -199,6 +204,18 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
                 interval.max[quota_type_i] = *limits.max[quota_type_i];
             interval.used[quota_type_i] = 0;
         }
+
+        interval.profile_event_limits.reserve(limits.profile_events_max.size());
+        for (const auto & [event_name, event_max] : limits.profile_events_max)
+        {
+            /// An unknown profile event (reported once in `setQuota`) is skipped: its limit has no effect.
+            auto event = ProfileEvents::tryGetByName(event_name);
+            if (!event)
+                continue;
+            auto & entry = interval.profile_event_limits.emplace_back();
+            entry.event = *event;
+            entry.max = event_max;
+        }
     }
 
     /// Order intervals by durations from largest to smallest.
@@ -234,6 +251,16 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
                 new_interval.used[quota_type_i].store(current_interval.used[quota_type_i].load());
                 new_interval.end_of_interval.store(current_interval.end_of_interval.load());
             }
+
+            /// The sets of limited profile events may differ; keep the consumption of the events
+            /// present in both. (The lists are tiny - only explicitly mentioned events are there.)
+            for (auto & new_limit : new_interval.profile_event_limits)
+                for (const auto & old_limit : current_interval.profile_event_limits)
+                    if (old_limit.event == new_limit.event)
+                    {
+                        new_limit.used.store(old_limit.used.load());
+                        break;
+                    }
         }
         it->second = new_intervals;
     }
@@ -256,8 +283,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
     const boost::container::flat_set<UUID> & enabled_roles,
     const std::shared_ptr<Poco::Net::IPAddress> & client_address,
     const String & forwarded_address,
-    const String & client_key,
-    bool throw_if_client_key_empty)
+    const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
@@ -280,7 +306,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
 
     auto res = std::shared_ptr<EnabledQuota>(new EnabledQuota(params));
     enabled_quotas.emplace(std::move(params), res);
-    chooseQuotaToConsumeFor(*res, throw_if_client_key_empty);
+    chooseQuotaToConsumeFor(*res);
     return res;
 }
 
@@ -370,7 +396,7 @@ void QuotaCache::chooseQuotaToConsume()
             i = enabled_quotas.erase(i);
         else
         {
-            chooseQuotaToConsumeFor(*elem, true);
+            chooseQuotaToConsumeFor(*elem);
             ++i;
         }
     }
@@ -384,7 +410,7 @@ void QuotaCache::chooseQuotaToConsume()
         LOG_TRACE(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
 }
 
-void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)
+void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
 {
     /// `mutex` is already locked.
 
@@ -393,12 +419,17 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
     auto new_quotas = boost::make_shared<Quotas>();
     for (auto & info : all_quotas | boost::adaptors::map_values)
     {
-        if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
+        if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles)
+            || access_control.shouldSkipSQLAccessEntityForUser(info.quota_id, enabled.params.user_id))
             continue;
 
-        String key = info.calculateKey(enabled, throw_if_client_key_empty);
+        String key = info.calculateKey(enabled);
         auto single = std::make_unique<SingleQuota>();
         single->intervals = info.getOrBuildIntervals(key);
+        single->requires_client_key = (info.quota->key_type == QuotaKeyType::CLIENT_KEY) && enabled.params.client_key.empty();
+        single->keyed_by_client_address = (info.quota->key_type == QuotaKeyType::IP_ADDRESS)
+            || (info.quota->key_type == QuotaKeyType::FORWARDED_IP_ADDRESS)
+            || (info.quota->key_type == QuotaKeyType::CLIENT_KEY_OR_IP_ADDRESS && enabled.params.client_key.empty());
 
         /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
         /// so that EnabledQuota can lazily resolve intervals per query hash.
@@ -418,11 +449,32 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
         new_quotas->push_back(std::move(single));
     }
 
+    /// Whether any governing quota defines limits over profile events. For NORMALIZED_QUERY_HASH
+    /// keyed quotas the session-level intervals are built from the same limits as the per-hash
+    /// ones, so checking the session intervals covers them too.
+    bool has_profile_event_limits = false;
+    for (const auto & single : *new_quotas)
+        for (const auto & interval : single->intervals->intervals)
+            has_profile_event_limits |= !interval.profile_event_limits.empty();
+
     /// Publish the new set: store `quotas` (always non-null, possibly empty) before updating the
     /// `empty` flag, so a concurrent reader never observes `empty == false` with a stale set.
+    ///
+    /// `has_profile_event_limits` is only a hint that lets a query skip loading `quotas` (and
+    /// taking a snapshot of its counters) when no governing quota needs it. The hint must never be
+    /// `false` while the published set has such limits, otherwise a query racing with the update
+    /// escapes the freshly installed limit. So it is raised before a set with limits is published
+    /// and lowered only after a set without them is; in between, a reader that sees `true` with
+    /// the older set just iterates over it and finds nothing to account, which is harmless.
+    if (has_profile_event_limits)
+        enabled.has_profile_event_limits = true;
+
     bool is_empty = new_quotas->empty();
     enabled.quotas.store(new_quotas);
     enabled.empty = is_empty;
+
+    if (!has_profile_event_limits)
+        enabled.has_profile_event_limits = false;
 }
 
 

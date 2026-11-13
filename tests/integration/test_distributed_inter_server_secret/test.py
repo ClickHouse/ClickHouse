@@ -80,12 +80,6 @@ def bootstrap():
         )
         n.query(
             """
-        CREATE TABLE dist_secure_backward AS data
-        Engine=Distributed(secure_backward, currentDatabase(), data, key)
-        """
-        )
-        n.query(
-            """
         CREATE TABLE dist_secure_from_buffer AS data_from_buffer
         Engine=Distributed(secure, currentDatabase(), data_from_buffer, key)
         """
@@ -466,20 +460,33 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
 
 
 def test_secure_cluster_distributed_over_distributed_different_users_remote():
-    # This works because we will have initial_user='default'
-    n1.query(
-        "SELECT * FROM remote('n1', currentDatabase(), dist_secure)", user="new_user"
+    # With the local-replica optimization the read runs in new_user's session while remote()
+    # stamps initial_user='default', so forwarding it over the cluster secret is rejected.
+    error = n1.query_and_get_error(
+        "SELECT * FROM remote('n1', currentDatabase(), dist_secure)",
+        user="new_user",
+        settings={"prefer_localhost_replica": 1},
     )
-    # While this is broken because now initial_user='new_user', and n2 does not has it
-    with pytest.raises(QueryRuntimeException):
-        n2.query(
-            "SELECT * FROM remote('n1', currentDatabase(), dist_secure, 'new_user')"
-        )
-    # And this is still a problem, let's assume that this is OK, since we are
-    # expecting that in case of dist-over-dist the clusters are the same (users
-    # and stuff).
-    with pytest.raises(QueryRuntimeException):
-        n1.query("SELECT * FROM dist_over_dist_secure", user="new_user")
+    assert "Refusing to forward a query over the cluster secret" in error
+
+    # With the optimization off, remote() opens a real connection that authenticates 'default',
+    # so initial_user==current_user=='default' and the query runs as 'default'.
+    n1.query(
+        "SELECT * FROM remote('n1', currentDatabase(), dist_secure)",
+        user="new_user",
+        settings={"prefer_localhost_replica": 0},
+    )
+
+    # new_user exists only on n1, so the secret forward to n2 fails there -- deeper than our
+    # guard, with no stable error text, so only assert the query is rejected.
+    assert n2.query_and_get_error(
+        "SELECT * FROM remote('n1', currentDatabase(), dist_secure, 'new_user')"
+    )
+
+    # Also rejected: dist-over-dist on the secure cluster (new_user is still missing on n2).
+    assert n1.query_and_get_error(
+        "SELECT * FROM dist_over_dist_secure", user="new_user"
+    )
 
 
 def test_secure_cluster_distributed_over_distributed_different_users_cluster():

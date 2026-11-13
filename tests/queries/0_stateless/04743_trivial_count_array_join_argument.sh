@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
-# no-old-analyzer: The plan assertions describe applyTrivialCountIfPossible; the old analyzer decides trivial count in TreeRewriter
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

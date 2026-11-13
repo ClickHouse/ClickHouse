@@ -1,0 +1,4 @@
+Invalid calls over no rows
+A valid call over no rows returns nothing and does not load the dictionary
+NOT_LOADED
+The same invalid calls with rows

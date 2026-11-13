@@ -109,6 +109,10 @@ public:
     bool limit_with_ties = false;
     bool limit_by_all = false;
     bool limit_after_all = false;
+    /// `SHUFFLE` is used in place of `ORDER BY`: the result rows are returned in a uniformly random order.
+    bool shuffle = false;
+    /// Not formatted or hashed: keeps `Context::isViewInnerQuery` of a query tree node converted to AST and built again.
+    bool is_view_inner_query = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
@@ -205,9 +209,5 @@ private:
 
     ASTPtr & getExpression(Expression expr);
 };
-
-/// Whether the AST subtree contains an `arrayJoin` function call, without descending into nested
-/// SELECTs (their `arrayJoin` belongs to a different scope).
-bool astContainsArrayJoinFunction(const ASTPtr & ast);
 
 }

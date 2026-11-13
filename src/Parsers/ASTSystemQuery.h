@@ -33,6 +33,7 @@ public:
         PREWARM_PRIMARY_INDEX_CACHE,
         CLEAR_MARK_CACHE,
         CLEAR_PRIMARY_INDEX_CACHE,
+        CLEAR_STATISTICS_CACHE,
         CLEAR_UNCOMPRESSED_CACHE,
         CLEAR_INDEX_MARK_CACHE,
         CLEAR_INDEX_UNCOMPRESSED_CACHE,
@@ -41,6 +42,7 @@ public:
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
+        CLEAR_COLUMNS_CACHE,
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
         CLEAR_ENCRYPTION_HEADERS_CACHE,
@@ -58,6 +60,7 @@ public:
         CLEAR_FORMAT_SCHEMA_CACHE,
         CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
+        CLEAR_TIME_SERIES_CACHES,
         STOP_LISTEN,
         START_LISTEN,
         RESTART_REPLICAS,
@@ -69,6 +72,10 @@ public:
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
         DROP_CATALOG_REPLICA,
+        DROP_AMBER_NODE,
+        ALLOCATE_AMBER_VOLUME,
+        CREATE_AMBER_VOLUME,
+        DROP_AMBER_VOLUME,
         JEMALLOC_PURGE,
         JEMALLOC_ENABLE_PROFILE,
         JEMALLOC_DISABLE_PROFILE,
@@ -116,6 +123,7 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        DISABLE_ALL_FAILPOINTS,
         ALLOCATE_MEMORY,
         FREE_MEMORY,
         WAIT_FAILPOINT,
@@ -153,6 +161,7 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        RESET_FILELOG,
         STOP_ALL_BACKGROUND,
         START_ALL_BACKGROUND,
         PAUSE_ALL_BACKGROUND,
@@ -172,7 +181,6 @@ public:
 
     ASTPtr database;
     ASTPtr table;
-    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;
@@ -188,18 +196,34 @@ public:
     String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
+    bool if_exists = false;
+    bool distributed_cache_drop_connections = false;
     bool with_tables{false};
+
+    /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
+    bool filelog_to_end = false;
+    std::optional<String> filelog_file;
+    std::optional<UInt64> filelog_offset;
+
     String storage_policy;
     String volume;
     String disk;
     UInt64 seconds{};
     UInt64 untracked_memory_size{};
+    struct AmberParams
+    {
+        String node_name;
+        UInt64 cluster_id{};
+        UInt64 volume_id{};
+        UInt64 shard_count{};
+        UInt64 segment_count{};
+    };
+    std::shared_ptr<const AmberParams> amber_params;
 
     std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
     String distributed_cache_server_id;
-    bool distributed_cache_drop_connections = false;
 
     std::string key_to_drop;
     std::optional<size_t> offset_to_drop;

@@ -12,34 +12,33 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーの構成に使用されるもので、ClickHouseのソースから自動生成されています。
 
-<div id="s3_allow_server_credentials_for_system_table_disks">
-  ## s3_allow_server_credentials_for_system_table_disks
-</div>
+## s3_allow_server_credentials_for_system_table_disks {#s3_allow_server_credentials_for_system_table_disks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-`system` データベース内のテーブルの動的な `disk(type = s3, ...)` が、`s3_allow_server_credentials_in_user_queries` の制限の適用対象外として、サーバー自身の 環境由来 な
-S3 認証情報を使用できるようにします。これは、サーバーの identity を使ってシステムテーブルを S3 に送る
+`system` データベース内のテーブルの動的な `disk(type = s3, ...)` が、`s3_allow_server_credentials_in_user_queries` の制限の適用対象外として、サーバー自身の 実行環境由来 な
+S3 認証情報を使用できるようにします。これは、サーバーの アイデンティティ を使ってシステムテーブルを S3 に送る
 サーバー内部のインフラストラクチャ (cloud operator により `system` データベースに attached されるもの) 向けです。session 設定とは異なり、これは
 server-level setting であるため、再起動時にテーブルがメタデータから再読み込みされた場合にも、この適用対象外は有効です。適用範囲は `system`
 データベースに限定されており、通常のユーザーはそこにテーブルを作成できないため、ユーザークエリに対する制限が緩和されることはありません。
 
-<div id="s3_credentials_provider_max_cache_size">
-  ## s3_credentials_provider_max_cache_size
-</div>
+動的な `disk(type = azure_blob_storage, ...)` にも同様に適用されます。このようなディスクは、
+`s3_allow_server_credentials_in_user_queries` の設定にかかわらず、サーバー自身の Azure アイデンティティ (AKS の Workload Identity またはマシンのマネージドID) を使用できます。
+
+Azure にも適用されるため、別名 `allow_server_credentials_for_system_table_disks` でも利用できます。
+
+## s3_credentials_provider_max_cache_size {#s3_credentials_provider_max_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />キャッシュできるS3認証情報プロバイダの最大数
 
-<div id="s3_load_table_anonymously_if_credentials_restricted">
-  ## s3_load_table_anonymously_if_credentials_restricted
-</div>
+## s3_load_table_anonymously_if_credentials_restricted {#s3_load_table_anonymously_if_credentials_restricted}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 永続的な `S3` または `S3Queue` テーブル、動的な `disk(type = s3, ...)`、または
 `DataLakeCatalog` (Glue、BigLake) データベースを既存のメタデータ (サーバー起動時または `RESTORE` 時) から読み込む際に、
 その定義が `s3_allow_server_credentials_in_user_queries` によってユーザークエリでの使用を禁止されている
-サーバー自身の (周囲環境から取得される) S3/クラウド認証情報に解決される場合の動作を制御します。
+サーバー自身の (実行環境由来の) S3/クラウド認証情報に解決される場合の動作を制御します。
 
 有効な場合 (デフォルト) 、起動を中断する代わりに、そのオブジェクトはそれらの認証情報なしで読み込まれます。つまり、
 `S3`/`S3Queue` テーブルまたは動的な S3 `disk` は匿名 S3 `client` で構築され、
@@ -51,18 +50,24 @@ server-level setting であるため、再起動時にテーブルがメタデ�
 `use_environment_credentials = 1` に再バインドされたもの ― によって、
 サーバーの起動全体が中断されるのを防げます。
 
-無効にすると、そのようなオブジェクトの読み込みは失敗し、サーバーが起動できなくなる可能性があります。
-table、`disk`、または `catalog` データベースが気付かないうちにアクセス不能になるよりも、明確に失敗するほうを望む場合にのみ使用してください。
+Azure にも同様に適用されます。永続的な `AzureBlobStorage` または `AzureQueue` テーブル、あるいは動的な
+`disk(type = azure_blob_storage, ...)` 上のテーブルのうち、定義上サーバー自身の Azure アイデンティティ
+(AKS のWorkload IdentityまたはマシンのマネージドID) で認証することになるものは、サーバー起動時に
+認証情報を持たないClientで読み込まれます。`RESTORE` は `CREATE` と同様に Azure テーブルを作成するため、`RESTORE` ではそのようなテーブルは拒否されます。
+このような動的 Azure ディスク上のテーブルが読み込まれるのは、読み込み時に Azure から何も読み取らない場合 (たとえばローカルメタデータを持つ空の `MergeTree` テーブル) に限られます。
+データパーツを持つテーブルや、`plain_rewritable` メタデータを持つディスクは、それらのリクエストも拒否されるため、読み込みに失敗する可能性があります。
+`s3_allow_server_credentials_in_user_queries` を使用して作成された動的 Azure ディスクは、サーバーのアイデンティティを保持するため影響を受けません。
 
-<div id="s3_max_redirects">
-  ## s3_max_redirects
-</div>
+無効にすると、そのようなオブジェクトの読み込みは失敗し、サーバーが起動できなくなる可能性があります。
+テーブル、`disk`、または `catalog` データベースが気付かないうちにアクセス不能になるよりも、明確に失敗するほうを望む場合にのみ使用してください。
+
+Azure にも適用されるため、別名 `load_table_anonymously_if_credentials_restricted` でも利用できます。
+
+## s3_max_redirects {#s3_max_redirects}
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />許可される S3 リダイレクトの最大ホップ数。
 
-<div id="s3_retry_attempts">
-  ## s3_retry_attempts
-</div>
+## s3_retry_attempts {#s3_retry_attempts}
 
 <SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Aws::Client::RetryStrategy 用の設定です。Aws::Client 自体が再試行を行うため、0 は再試行しないことを意味します
 

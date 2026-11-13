@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
@@ -6,11 +7,13 @@
 #include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -293,6 +296,9 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
 
 Field ColumnObject::operator[](size_t n) const
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     Object object;
 
     for (const auto & [path, column] : typed_paths)
@@ -1325,7 +1331,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         auto type_name = value_type->getName();
         hash.update(type_name);
         auto tmp_column = value_type->createColumn();
-        getDataTypesCache().getSerialization(type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        getDataTypesCache().getSerialization(type_name, value_type)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 
@@ -1940,7 +1946,9 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     for (const auto & [path, column] : dynamic_paths)
         dynamic_paths_source_columns[path].reserve(source_columns.size());
 
-    size_t total_size = 0;
+    /// Include the rows that this column already has: the discriminators and offsets of the dynamic paths are reserved
+    /// exactly, so a smaller reservation makes every dynamic path grow (reallocate and copy) during the squashing.
+    size_t total_size = size();
     for (const auto & source_column : source_columns)
     {
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
@@ -2182,6 +2190,34 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
+
+    /// The writer of a part takes the statistics from its sample column for every block. When the statistics of the
+    /// only source already match our dynamic paths, the code below would build an exact copy of them, so share them.
+    if (source_columns.size() == 1)
+    {
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_columns.front());
+        auto source_statistics = source_object.getOrCalculateStatistics();
+        bool can_share = source_statistics->shared_data_paths_statistics.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE;
+        for (const auto & [path, _] : source_statistics->dynamic_paths_statistics)
+            can_share = can_share && dynamic_paths.contains(path);
+        for (const auto & [path, _] : dynamic_paths)
+            can_share = can_share && !source_statistics->shared_data_paths_statistics.contains(path);
+
+        if (can_share)
+        {
+            statistics = std::move(source_statistics);
+            for (auto & [path, column] : dynamic_paths)
+            {
+                auto it = source_object.dynamic_paths.find(path);
+                if (it != source_object.dynamic_paths.end())
+                    column->takeOrCalculateStatisticsFrom({it->second});
+            }
+            for (auto & [path, column] : typed_paths)
+                column->takeOrCalculateStatisticsFrom({source_object.typed_paths.at(path)});
+            return;
+        }
+    }
+
     Statistics new_statistics;
     /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
@@ -2459,12 +2495,13 @@ std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() 
     return shared_data_values->getDataAt(shared_data_it);
 }
 
-ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
+ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo(bool materialize_shared_data_value) const
 {
     PathInfo path_info;
     path_info.type = current_path_type;
     path_info.path = getCurrentPath();
-    std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
+    if (current_path_type != PathType::SHARED_DATA || materialize_shared_data_value)
+        std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
 }
 
@@ -2615,7 +2652,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
                     auto type_from_dynamic_path = dynamic_paths_ptrs.find(path)->second->getTypeAt(i);
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}."
+                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}. "
                         "Value type in dynamic paths: {}. Value type in shared data: {}",
                         path,
                         i,

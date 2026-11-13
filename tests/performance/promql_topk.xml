@@ -12,7 +12,7 @@
 
     <!-- 4000 series, one sample every 10s over [100, 3090] -> a 300-point grid, 1.2M samples; the per-(series, step) hash values keep the bounded heaps churning at every step. -->
     <fill_query>
-        INSERT INTO promql_topk_ts (metric_name, tags, time_series)
+        INSERT INTO promql_topk_ts (metric_name, tags, samples)
         SELECT
             'load',
             map('instance', toString(number), 'dc', toString(number % 10)),

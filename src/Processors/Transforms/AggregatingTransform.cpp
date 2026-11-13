@@ -1,11 +1,14 @@
 #include <bit>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Interpreters/AdaptiveAggregationImpl.h>
-
+#include <Common/Arena.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
@@ -16,6 +19,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <base/types.h>
 #include <Common/formatReadable.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
@@ -36,6 +40,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AggregationSharedKeptKeysRebuilds;
 }
 
 namespace DB
@@ -154,6 +159,104 @@ namespace
     private:
         TemporaryBlockStreamReaderHolder tmp_stream;
     };
+
+    /// Feeds the staged records of an engaged adaptive aggregation into the external merge in the form of the spilled
+    /// parts it reads: chunks of aggregate states, in ascending order of their buckets. The sources split the buckets,
+    /// every `step`-th one from `first_bucket`, and merge each one as the adaptive merge does, a merge unit at a time
+    /// (see `Aggregator::mergeAndConvertAdaptiveBucket`), into the destination they share: the table slot and the
+    /// arena slot of a bucket belong to the source of the bucket. The records of a unit are freed once it is
+    /// converted, those read back from a spill as soon as they are drained, and the states of a chunk once the
+    /// external merge has merged it.
+    ///
+    /// The sources hold a throw-mode group limit against the staged groups of the buckets they merge, which
+    /// they count together in `merged_groups`. The groups that only the parts of the producers' tables hold
+    /// are not counted: the external merge of the parts checks no limit, as in the ordinary external
+    /// aggregation.
+    ///
+    /// The external merge takes a bucket once every input has passed it (see `GroupingAggregatedTransform`), which it
+    /// learns from the input's first chunk of a later bucket, and pulls nothing more from an input until it reaches
+    /// that bucket. So a source merges its next bucket right after it hands out the first chunk of a bucket, while
+    /// the merge works through the buckets before it: merging it only once the chunks run out would make the merge
+    /// wait for every bucket of the source.
+    class AdaptiveStagedRecordsSource final : public ISource
+    {
+    public:
+        AdaptiveStagedRecordsSource(
+            SharedHeader header,
+            AggregatingTransformParamsPtr params_,
+            AdaptiveAggregationSessionPtr session_,
+            ManyAggregatedDataVariantsPtr destination_,
+            std::shared_ptr<std::atomic<size_t>> merged_groups_,
+            size_t first_bucket,
+            size_t step_)
+            : ISource(std::move(header), false)
+            , params(std::move(params_))
+            , session(std::move(session_))
+            , destination(std::move(destination_))
+            , merged_groups(std::move(merged_groups_))
+            , parallel_merge(params->aggregator.parallelMergeThreshold(session.get()))
+            , next_bucket(first_bucket)
+            , step(step_)
+        {
+        }
+
+        String getName() const override { return "AdaptiveStagedRecordsSource"; }
+
+    protected:
+        Chunk generate() override
+        {
+            if (chunks.empty() || handed_out_first_chunk)
+            {
+                /// A bucket without staged records has no chunks, so the next bucket with some is merged.
+                const size_t chunks_before = chunks.size();
+                while (chunks.size() == chunks_before && next_bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
+                {
+                    const auto bucket = static_cast<Int32>(next_bucket);
+                    next_bucket += step;
+
+                    size_t merged_group_count = 0;
+                    auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
+                        *destination,
+                        *session,
+                        task,
+                        /*final=*/false,
+                        bucket,
+                        parallel_merge,
+                        is_cancelled,
+                        /*updater=*/nullptr,
+                        &merged_group_count);
+                    if (is_cancelled.load(std::memory_order_seq_cst))
+                        return {};
+                    params->aggregator.checkMergedGroupLimit(*merged_groups, merged_group_count);
+
+                    chunks.splice(chunks.end(), agg_chunks);
+                }
+            }
+
+            if (chunks.empty())
+                return {};
+
+            auto agg_chunk = std::move(chunks.front());
+            chunks.pop_front();
+            handed_out_first_chunk = agg_chunk.bucket_num != last_handed_out_bucket;
+            last_handed_out_bucket = agg_chunk.bucket_num;
+            return convertToChunk(std::move(agg_chunk));
+        }
+
+    private:
+        AggregatingTransformParamsPtr params;
+        AdaptiveAggregationSessionPtr session;
+        ManyAggregatedDataVariantsPtr destination;
+        std::shared_ptr<std::atomic<size_t>> merged_groups;
+        /// The sources take their buckets in a fixed stride, not from a shared counter, so they count as busy throughout.
+        const Aggregator::ParallelMergeThreshold parallel_merge;
+        AdaptiveMergeTask task;
+        Aggregator::AggregatedChunks chunks;
+        size_t next_bucket;
+        const size_t step;
+        Int32 last_handed_out_bucket = -1;
+        bool handed_out_first_chunk = false;
+    };
 }
 
 /// Worker which merges states for single-level aggregation of FixedHashMap.
@@ -217,13 +320,29 @@ public:
         /// limit is checked against this running total.
         std::atomic<size_t> single_level_merged_rows = 0;
 
-        /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
-        /// checked against this running total, taken from the bucket tables rather than from
-        /// the converted chunks, which the bucket-local Top-K conversion truncates. For the
-        /// adaptive aggregator this is the only enforcement the staged keys ever get: the
-        /// frozen tables are bounded and the staged cardinality is unknown until the merge.
-        /// The buckets partition the key space, so the sum counts every group exactly once.
+        /// The convergence verdict of the top-K threshold merge, shared across the buckets: the
+        /// number of buckets whose walk exhausted its budget. The buckets partition the groups by
+        /// hash, so their value distributions are alike, and once two buckets failed to converge,
+        /// the remaining ones take the ordinary merge (see `Aggregator::Params::threshold_top_k`).
+        std::atomic<int> threshold_top_k_verdict{0};
+
+        /// Groups the two-level bucket merge has built so far; a throw-mode group limit is
+        /// checked against this running total. The merge reports the groups it built rather
+        /// than the rows of the converted chunks, which the bucket-local Top-K conversion
+        /// truncates. For the adaptive aggregator this is the only enforcement the staged keys
+        /// get unless the merge goes external (see `AdaptiveStagedRecordsSource`): the frozen
+        /// tables are bounded and the staged cardinality is unknown until the merge. The buckets
+        /// partition the key space, so the sum counts every built group exactly once. The groups
+        /// that the top-K threshold merge and the adaptive top-K pruning skip go uncounted.
         std::atomic<size_t> two_level_merged_groups = 0;
+
+        /// How many of the claimed partitions of the single-level merge, or buckets of the adaptive merge (see
+        /// `next_bucket_to_merge`), merged without a cancellation. Each takes the states out of the cells of the source
+        /// tables that belong to it, so once all of them merged, the source tables hold no states, and the last one stops
+        /// the tables owning states. Their destruction then frees their buffers without walking their cells, which one
+        /// thread would otherwise do for every table at the end of the query. A cancelled merge leaves the tables to
+        /// destroy the states they keep.
+        std::atomic<size_t> merged_claims = 0;
 
         SharedData()
         {
@@ -239,15 +358,13 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         Arena * arena_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr adaptive_session_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
         , updater(std::move(updater_))
-        , adaptive_session(std::move(adaptive_session_))
     {
     }
 
@@ -274,45 +391,23 @@ protected:
             return {};
         }
 
-        /// The adaptive merge gives every bucket its own arena (see the setup in
-        /// `createSources`), so a retired bucket's drained and merged states free with its
-        /// slot instead of accumulating until the whole merge ends.
-        Arena * bucket_arena = arena;
-        if (adaptive_session)
-        {
-            bucket_arena = data->at(0)->adaptive_merge_bucket_arenas[bucket_num].get();
-            params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), bucket_arena, bucket_num, *adaptive_session, shared_data->is_cancelled);
-        }
-
-        /// The bucket's group count is taken from the table rather than from the chunk: the
-        /// bucket-local Top-K conversion truncates the chunk to its n best groups, and the
-        /// group-by limit must be enforced against the true cardinality.
-        size_t full_group_count = 0;
+        /// The bucket's group count comes from the merge rather than from the chunk: the
+        /// bucket-local Top-K conversion truncates the chunk to its n best groups, while the
+        /// group limit counts every group that the merge built (see `checkMergedGroupLimit`).
+        size_t merged_group_count = 0;
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
-            *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
+            *data,
+            arena,
+            params->final,
+            bucket_num,
+            shared_data->is_cancelled,
+            updater,
+            &merged_group_count,
+            &shared_data->threshold_top_k_verdict);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
-        /// A throw-mode group limit is enforced against the merged totals for every run: the
-        /// baseline producers' checks cannot see the merged cardinality (their tables are
-        /// checked one by one), and the adaptive producers' checks cannot see the staged keys
-        /// at all, so this is where the limit catches what they miss. The dropping modes keep
-        /// the merge untouched: their contract is decided at the producers, and stopping the
-        /// merge here would drop already-aggregated groups.
-        if (params->params.max_rows_to_group_by != 0 && params->params.group_by_overflow_mode == OverflowMode::THROW
-            && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
-        {
-            bool no_more_keys = false;
-            const size_t total = shared_data->two_level_merged_groups.fetch_add(full_group_count) + full_group_count;
-            params->aggregator.checkLimits(total, no_more_keys);
-        }
-
-        /// Retire the bucket's working memory only after a successful conversion: the output
-        /// chunk either copied the values out or captured the arena slot's ownership. A throw
-        /// above or a cancellation skips retirement and leaves everything to the ordinary
-        /// destruction of the variants, which still owns every non-retired slot.
-        if (adaptive_session && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
-            params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
-
+        if (!shared_data->is_cancelled.load(std::memory_order_seq_cst))
+            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, merged_group_count);
         shared_data->is_bucket_processed[bucket_num] = true;
 
         return chunk;
@@ -324,11 +419,96 @@ private:
     SharedDataPtr shared_data;
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    AdaptiveAggregationSessionPtr adaptive_session;
 };
 
-/// Worker of the parallel single-level merge: atomically takes the next hash partition, merges it out of
-/// every per-thread table and emits it as one chunk.
+/// Worker of the adaptive bucket merge: claims the buckets in the order of the session, which takes the heaviest first
+/// under the top-K pruning, and converts each into one chunk per merge unit (see
+/// `Aggregator::mergeAndConvertAdaptiveBucket`). The chunks are handed out one per call, and the next bucket is claimed
+/// once the previous one's chunks are gone; the downstream transform forwards them as they come, since the adaptive
+/// output order is free. The task keeps the table of the bucket merged last, which the next bucket takes over.
+class AdaptiveBucketMergingSource final : public ISource
+{
+public:
+    using SharedDataPtr = ConvertingAggregatedToChunksWithMergingSource::SharedDataPtr;
+
+    AdaptiveBucketMergingSource(
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        SharedDataPtr shared_data_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        AdaptiveAggregationSessionPtr session_,
+        Aggregator::ParallelMergeThreshold parallel_merge_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(std::move(params_))
+        , data(std::move(data_))
+        , shared_data(std::move(shared_data_))
+        , updater(std::move(updater_))
+        , session(std::move(session_))
+        , parallel_merge(parallel_merge_)
+    {
+        parallel_merge.taken = &shared_data->next_bucket_to_merge;
+        parallel_merge.total = ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS;
+    }
+
+    String getName() const override { return "AdaptiveBucketMergingSource"; }
+
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// Like the classic bucket merge, `ConvertingAggregatedToChunksTransform` expects to receive data from all
+        /// sources, so a partial result does not stop the processor.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+
+protected:
+    Chunk generate() override
+    {
+        while (chunks.empty())
+        {
+            const UInt32 claim = shared_data->next_bucket_to_merge.fetch_add(1);
+            if (claim >= ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS)
+            {
+                data.reset();
+                return {};
+            }
+            const UInt32 bucket_num = session->bucketToMerge(claim);
+
+            size_t merged_group_count = 0;
+            auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
+                *data, *session, task, params->final, bucket_num, parallel_merge, shared_data->is_cancelled, updater, &merged_group_count);
+            if (shared_data->is_cancelled.load(std::memory_order_seq_cst))
+                return {};
+
+            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, merged_group_count);
+            shared_data->is_bucket_processed[bucket_num] = true;
+            /// The first variants are the destination, which keeps its states.
+            if (shared_data->merged_claims.fetch_add(1) + 1 == ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS)
+                params->aggregator.resetAggregatorExceptFirst(*data);
+
+            for (auto & agg_chunk : agg_chunks)
+                chunks.push_back(convertToChunk(std::move(agg_chunk)));
+        }
+
+        Chunk chunk = std::move(chunks.front());
+        chunks.pop_front();
+        return chunk;
+    }
+
+private:
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataVariantsPtr data;
+    SharedDataPtr shared_data;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    AdaptiveAggregationSessionPtr session;
+    Aggregator::ParallelMergeThreshold parallel_merge;
+    DequeWithMemoryTracking<Chunk> chunks;
+    AdaptiveMergeTask task;
+};
+
+/// Worker of the parallel single-level merge: atomically takes hash partitions one after another, merges them out of
+/// every per-thread table into one table and emits it as one chunk (see `generate`).
 class ConvertingAggregatedToChunksByPartitionMergingSource final : public ISource
 {
 public:
@@ -339,16 +519,24 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         UInt32 num_partitions_,
-        size_t max_source_table_size_,
+        size_t rows_per_chunk_,
+        size_t output_streams_,
+        size_t destination_size_hint_,
+        Aggregator::ParallelMergeThreshold parallel_merge_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , num_partitions(num_partitions_)
-        , max_source_table_size(max_source_table_size_)
+        , rows_per_chunk(rows_per_chunk_)
+        , output_streams(output_streams_)
+        , destination_size_hint(destination_size_hint_)
+        , parallel_merge(parallel_merge_)
         , updater(std::move(updater_))
     {
+        parallel_merge.taken = &shared_data->next_bucket_to_merge;
+        parallel_merge.total = num_partitions;
     }
 
     String getName() const override { return "ConvertingAggregatedToChunksByPartitionMergingSource"; }
@@ -364,29 +552,60 @@ public:
 protected:
     Chunk generate() override
     {
-        UInt32 partition = shared_data->next_bucket_to_merge.fetch_add(1);
+        /// The worker merges the partitions it claims into one table, which goes downstream as one chunk once
+        /// it holds `rows_per_chunk` rows (see `planPartitionMerge`), or its share of the result for the
+        /// fan-out of the output (see `Aggregator::singleLevelPartitionChunkEndsForFanOut`), or once the
+        /// partitions run out. The chunks go downstream before the merge ends, so an early `LIMIT` stops it.
+        /// The transform forwards the chunks of all workers one at a time, so a chunk per partition would
+        /// make every partition pay a hop of the pipeline. A call claims its first partition before the merge
+        /// builds the table, so a worker whose claims ran out finishes without building one.
+        size_t claimed = 0;
+        const auto claim = [&](size_t rows) -> std::optional<size_t>
+        {
+            if (rows >= rows_per_chunk)
+                return std::nullopt;
+            if (Aggregator::singleLevelPartitionChunkEndsForFanOut(rows, claimed, num_partitions, output_streams))
+                return std::nullopt;
 
-        if (partition >= num_partitions)
+            /// The serial merge stops merging further tables once the group limit breaks; the parallel
+            /// equivalent is to stop taking further partitions once the merged total has crossed.
+            bool no_more_keys = false;
+            if (!params->aggregator.checkLimits(shared_data->single_level_merged_rows.load() + rows, no_more_keys))
+                return std::nullopt;
+
+            const UInt32 partition = shared_data->next_bucket_to_merge.fetch_add(1);
+            if (partition >= num_partitions)
+                return std::nullopt;
+            ++claimed;
+            return partition;
+        };
+
+        const auto first_partition = claim(0);
+        if (!first_partition)
         {
             data.reset();
             return {};
         }
 
-        /// The serial merge stops merging further tables once the group limit breaks; the parallel
-        /// equivalent is to stop taking further partitions once the merged total has crossed.
-        bool no_more_keys = false;
-        if (!params->aggregator.checkLimits(shared_data->single_level_merged_rows.load(), no_more_keys))
-        {
-            data.reset();
-            return {};
-        }
-
-        auto agg_chunk = params->aggregator.mergeSingleLevelPartitionAndConvertToChunk(
-            *data, params->final, partition, num_partitions, max_source_table_size, shared_data->is_cancelled, updater);
+        auto agg_chunk = params->aggregator.mergeSingleLevelPartitionsAndConvertToChunk(
+            *data,
+            params->final,
+            num_partitions,
+            *first_partition,
+            claim,
+            destination_size_hint,
+            parallel_merge,
+            shared_data->is_cancelled,
+            updater);
+        if (!shared_data->is_cancelled.load(std::memory_order_seq_cst)
+            && shared_data->merged_claims.fetch_add(claimed) + claimed == num_partitions)
+            for (const auto & variants : *data)
+                variants->aggregator = nullptr;
 
         /// Under the `throw` overflow mode this raises as soon as the running total exceeds the
         /// limit — the same condition on which the serial merge would have thrown between tables.
         const size_t total = shared_data->single_level_merged_rows.fetch_add(agg_chunk.chunk.getNumRows()) + agg_chunk.chunk.getNumRows();
+        bool no_more_keys = false;
         params->aggregator.checkLimits(total, no_more_keys);
 
         return convertToChunk(std::move(agg_chunk));
@@ -397,7 +616,10 @@ private:
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     UInt32 num_partitions;
-    size_t max_source_table_size;
+    size_t rows_per_chunk;
+    size_t output_streams;
+    size_t destination_size_hint;
+    Aggregator::ParallelMergeThreshold parallel_merge;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
@@ -405,8 +627,12 @@ private:
 class ConvertingAggregatedToChunksSource final : public ISource
 {
 public:
-    ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
-        : ISource(std::make_shared<const Block>(params_->getHeader()), false), params(params_), variant(variant_)
+    ConvertingAggregatedToChunksSource(
+        AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(params_)
+        , variant(variant_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -415,19 +641,51 @@ public:
 protected:
     Chunk generate() override
     {
+        /// The states are recorded before the conversion, which finalizes and destroys them, and the
+        /// keys after it - the order `Aggregator::mergeBucket` records in. This source converts one
+        /// thread's own table, and the tables the sources are given are disjoint, so their records sum
+        /// to the whole result without counting a group twice.
         if (variant->isTwoLevel())
         {
             if (current_bucket_num < NUM_BUCKETS)
             {
                 Arena * arena = variant->aggregates_pool;
-                auto agg_chunk = params->aggregator.convertOneBucketToChunk(*variant, arena, params->final, current_bucket_num++);
+                const Int32 bucket = current_bucket_num++;
+                if (updater)
+                    updater->recordAggregationStateSizes(*variant, bucket);
+
+                /// Filled by the Top-K conversion when the statistics ask for it (zero otherwise):
+                /// `Params::bucket_top_k` survives into the skip-merging pipeline, because the plan
+                /// pass that sets it runs before the one that skips the merge. The truncated chunk
+                /// carries only the kept groups, so its keys are not what the fragment would ship.
+                UntruncatedAggregationKeys untruncated_keys;
+                auto agg_chunk = params->aggregator.convertOneBucketToChunk(
+                    *variant, arena, params->final, bucket, updater ? &untruncated_keys : nullptr);
+                if (updater)
+                {
+                    if (untruncated_keys.bytes)
+                        updater->recordAggregationKeySizes(
+                            agg_chunk.chunk,
+                            params->aggregator.getKeysPositions(),
+                            params->aggregator.getKeyTypes(),
+                            untruncated_keys.bytes,
+                            untruncated_keys.sample_columns);
+                    else
+                        updater->recordAggregationKeySizes(
+                            agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+                }
                 return convertToChunk(std::move(agg_chunk));
             }
         }
         else if (!single_level_converted)
         {
+            if (updater)
+                updater->recordAggregationStateSizes(*variant, /*bucket=*/-1);
             auto agg_chunk = params->aggregator.prepareChunkAndFillSingleLevel<true /* return_single_block */>(*variant, params->final);
             single_level_converted = true;
+            if (updater)
+                updater->recordAggregationKeySizes(
+                    agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
             return convertToChunk(std::move(agg_chunk));
         }
 
@@ -441,6 +699,7 @@ private:
 
     AggregatingTransformParamsPtr params;
     AggregatedDataVariantsPtr variant;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     UInt32 current_bucket_num = 0;
     bool single_level_converted = false;
@@ -527,7 +786,7 @@ private:
         return Status::Ready;
     }
 
-    std::list<Chunk> chunks;
+    ListWithMemoryTracking<Chunk> chunks;
 };
 
 /// Generates chunks with aggregated data.
@@ -546,15 +805,19 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
+        size_t output_streams_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr adaptive_session_)
+        AdaptiveAggregationSessionPtr adaptive_session_,
+        Aggregator::ParallelMergeThreshold parallel_merge_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
+        , output_streams(output_streams_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
+        , parallel_merge(parallel_merge_)
     {
     }
 
@@ -592,19 +855,14 @@ public:
             else
                 mergeSingleLevel();
         }
-        else if (parallel_partition_merge_started || worthParallelPartitionMergeSingleLevel())
-        {
-            if (!parallel_partition_merge_started)
-            {
-                parallel_partition_merge_started = true;
-                LOG_TRACE(getLogger("AggregatingTransform"), "Use parallel hash-partition merge for single level aggregation data.");
-            }
-            if (inputs.empty())
-                createSourcesForPartitionMerge();
-        }
         else
         {
-            mergeSingleLevel();
+            if (!partition_merge_plan)
+                partition_merge_plan = planPartitionMerge();
+            if (!partition_merge_plan)
+                mergeSingleLevel();
+            else if (inputs.empty())
+                createSourcesForPartitionMerge(*partition_merge_plan);
         }
     }
 
@@ -661,11 +919,13 @@ public:
         else if (parallelize_single_level_merge)
             // Also single level, but need to check all input ports are finished.
             return prepareParallelizeSingleLevel();
-        else if (parallel_partition_merge_started)
+        else if (partition_merge_plan)
             // Also single level: the partition sources emit finished chunks, forward them as they come.
             return preparePartitionMerge();
 
         /// Two-level case.
+        if (adaptive_session)
+            return preparePartitionMerge();
         return prepareTwoLevel();
     }
 
@@ -686,59 +946,152 @@ private:
         return true;
     }
 
-    bool worthParallelPartitionMergeSingleLevel()
+    /// How the parallel single-level merge by hash partitions runs: the partitions, the workers that claim
+    /// them, the rows at which a worker emits its table as a chunk, and the initial size of that table. The
+    /// fan-out of the output can end a chunk earlier (see
+    /// `Aggregator::singleLevelPartitionChunkEndsForFanOut`).
+    struct PartitionMergePlan
+    {
+        size_t partitions = 0;
+        size_t workers = 0;
+        size_t rows_per_chunk = 0;
+        size_t destination_size_hint = 0;
+    };
+
+    /// The plan of the merge by hash partitions, or nothing when the tables cannot be merged so or the serial merge is
+    /// cheaper. It measures the source tables, so it is planned before any partition source runs: the merge mutates the
+    /// source tables concurrently, so the workers must not read their sizes.
+    std::optional<PartitionMergePlan> planPartitionMerge() const
     {
         if (!params->params.enable_parallel_single_level_merge)
-            return false;
+            return {};
 
         if (num_threads <= 1 || data->size() <= 1)
-            return false;
+            return {};
 
         /// The overflow row lives outside the partitioned cells, and under the `any` overflow mode
         /// the tables hold diverged key sets that the merge must reconcile key by key — both need
         /// the serial merge. Under `throw` and `break` the tables are ordinary, and the partition
         /// sources re-check the group limit against their shared running total.
         if (params->params.overflow_row)
-            return false;
+            return {};
         if (params->params.max_rows_to_group_by != 0 && params->params.group_by_overflow_mode == OverflowMode::ANY)
-            return false;
+            return {};
 
         if (!params->aggregator.canMergeSingleLevelInPartitions(*data->at(0)))
-            return false;
+            return {};
 
-        /// The largest source table is measured here, before any partition source runs: the
-        /// merge mutates the source tables concurrently, so the workers must not read their
-        /// sizes.
-        max_source_table_size = 0;
+        size_t max_source_table_size = 0;
+        size_t source_cells = 0;
+        size_t source_memory = 0;
         for (const auto & variants : *data)
-            max_source_table_size = std::max(max_source_table_size, variants->sizeWithoutOverflowRow());
+        {
+            const size_t table_size = variants->sizeWithoutOverflowRow();
+            max_source_table_size = std::max(max_source_table_size, table_size);
+            source_cells += table_size;
+            source_memory += variants->memoryUsage();
+        }
 
-        /// A single partition would rebuild the whole result into a fresh table with no
-        /// parallelism at all; the serial merge into the largest existing table is strictly
-        /// cheaper, because that table's own cells do not move.
-        partition_merge_num_partitions = singleLevelMergePartitionCount(max_source_table_size);
-        return partition_merge_num_partitions > 1;
+        /// A single partition would rebuild the whole result into a fresh table with no parallelism at all; the serial
+        /// merge into the largest existing table is strictly cheaper, because that table's own cells do not move. The
+        /// count of a scanning merge decides it for indexed tables too: it tells whether the merge is large enough to
+        /// share.
+        const size_t scanning_partitions = singleLevelMergePartitionCount(max_source_table_size, source_cells, source_memory);
+        if (scanning_partitions <= 1)
+            return {};
+
+        /// The producers of an adaptive aggregation index the cells of their tables (see
+        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of walking all
+        /// source tables. The partitions are those of the indexes then, and the workers claim them one by one, so a
+        /// worker beyond the partitions would claim none. The layout of more than 256 producers can have fewer
+        /// partitions than producers when an external-aggregation threshold reduces it. A single worker would only
+        /// rebuild the result into a fresh table, like a single partition.
+        PartitionMergePlan plan;
+        if (Aggregator::mergesByCellIndex(*data))
+        {
+            plan.partitions = data->at(0)->numCellIndexPartitions();
+            plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);
+            if (plan.workers <= 1)
+                return {};
+        }
+        else
+        {
+            plan.partitions = scanning_partitions;
+            plan.workers = std::min(num_threads, scanning_partitions);
+        }
+
+        /// A worker finalizes the states of the partitions it claimed when it emits them as a chunk. Where finalizing
+        /// outweighs merging, as for tables of disjoint keys with large states, the first workers would claim most
+        /// partitions and finalize them alone, so a worker emits a chunk once it holds about 4 MiB of states, estimated
+        /// by the memory of the source tables per cell, and others take the next partitions meanwhile. The states it
+        /// finalizes are still in the cache then. The bound is at most `max_block_size` rows. A worker checks it between
+        /// partitions, so a chunk exceeds it by up to one partition.
+        static constexpr size_t MEMORY_PER_CHUNK = 4 << 20;
+        const size_t bytes_per_cell = std::max<size_t>(source_memory / std::max<size_t>(source_cells, 1), 1);
+        plan.rows_per_chunk = std::clamp<size_t>(MEMORY_PER_CHUNK / bytes_per_cell, 1, params->params.max_block_size);
+
+        /// A worker's table takes the keys of one chunk: the worker's share of the partitions, or the smaller
+        /// share at which the fan-out of the output ends the chunk, which is at least one partition (see
+        /// `Aggregator::singleLevelPartitionChunkEndsForFanOut`). For example, 4 workers that merge 512
+        /// partitions for 64 output streams end their chunks at 8 partitions, a 64th of the keys. The largest
+        /// source table bounds those keys from below by the same share, up to `rows_per_chunk`.
+        const size_t shares = std::max(plan.workers, std::min(output_streams, plan.partitions));
+        plan.destination_size_hint = std::min<size_t>(max_source_table_size / shares, plan.rows_per_chunk);
+        LOG_TRACE(
+            getLogger("AggregatingTransform"),
+            "Use parallel hash-partition merge for single level aggregation data: {} tables of {} cells and {} bytes by {} "
+            "partitions in {} workers, {} rows per chunk, for {} output streams",
+            data->size(),
+            source_cells,
+            source_memory,
+            plan.partitions,
+            plan.workers,
+            plan.rows_per_chunk,
+            output_streams);
+        return plan;
     }
 
-    /// More partitions than workers, handed out dynamically, so a worker that got a light
-    /// partition does not stay idle. Heavy per-key states always get the full partition count:
-    /// their merge work dwarfs the partitioning overhead at any key count. Cheap states get
-    /// fewer partitions for smaller merges, sized by the largest source table — a lower bound
-    /// on the distinct-key count.
-    size_t singleLevelMergePartitionCount(size_t max_table_size) const
+    /// The partitions of a merge of tables without a cell index, each of which scans the cells of all the tables for its
+    /// two-level buckets, so the count is a power of two up to the 256 buckets. It also tells whether a merge of any
+    /// tables is large enough to share: at one partition, the serial merge is cheaper (see `planPartitionMerge`). More
+    /// partitions than workers, handed out dynamically, so that a worker that got a light partition does not stay idle:
+    /// the keys take up to twice the workers. Heavy states (see `Aggregator::hasHeavyStates`) always take that many,
+    /// because their merge work dwarfs the partitioning overhead at any key count. Cheap states take a partition per 512
+    /// keys of the largest source table, a lower bound on the distinct-key count. The memory of the tables takes a
+    /// partition per 4 MiB, so that a worker that takes the large states of a few keys does not hold up the end of the
+    /// merge, up to 16M scanned cells.
+    size_t singleLevelMergePartitionCount(size_t max_table_size, size_t source_cells, size_t source_memory) const
     {
-        const size_t max_partitions = std::bit_floor(std::min<size_t>(NUM_BUCKETS, num_threads * 2));
-
-        const bool has_heavy_states
-            = std::ranges::any_of(params->params.aggregates, [](const auto & aggregate) { return aggregate.function->sizeOfData() > 16; });
-        if (has_heavy_states)
-            return max_partitions;
-
         static constexpr size_t MIN_KEYS_PER_PARTITION = 512;
-        return std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
+        static constexpr size_t MEMORY_PER_PARTITION = 4 << 20;
+        static constexpr size_t MAX_SCANNED_CELLS = 16 << 20;
+
+        const size_t max_partitions = std::bit_floor(std::min<size_t>(NUM_BUCKETS, num_threads * 2));
+        const size_t for_keys = params->aggregator.hasHeavyStates()
+            ? max_partitions
+            : std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions);
+        const size_t for_memory = std::min(source_memory / MEMORY_PER_PARTITION, MAX_SCANNED_CELLS / std::max<size_t>(source_cells, 1));
+        return std::bit_floor(std::clamp<size_t>(std::max(for_keys, for_memory), 1, NUM_BUCKETS));
     }
 
-    /// The partition sources emit finished chunks in no particular order; forward them as they come.
+    /// The workers of a merge of tables whose cells are indexed (see `AggregatedDataVariants::indexCells`). The workers
+    /// claim the partitions of the indexes one by one, which balances them, so the count only follows the work, up to a
+    /// worker per thread. Heavy states (see `Aggregator::hasHeavyStates`) take that many, because their merge work dwarfs
+    /// the fixed costs of a worker, its table and its chunks, at any key count. Cheap states take a worker per 2048 cells
+    /// of the tables, and the memory of the tables a worker per 4 MiB, whether the states are heavy or hold their memory
+    /// in the arena, as the arrays of `-ForEach` do.
+    size_t singleLevelMergeWorkerCount(size_t source_cells, size_t source_memory) const
+    {
+        static constexpr size_t MIN_CELLS_PER_WORKER = 2048;
+        static constexpr size_t MEMORY_PER_WORKER = 4 << 20;
+
+        if (params->aggregator.hasHeavyStates())
+            return num_threads;
+        return std::clamp<size_t>(std::max(source_cells / MIN_CELLS_PER_WORKER, source_memory / MEMORY_PER_WORKER), 1, num_threads);
+    }
+
+    /// The partition sources of the single-level merge and the bucket sources of the adaptive merge
+    /// emit finished chunks in no particular order; forward them as they come.
     IProcessor::Status preparePartitionMerge()
     {
         auto & output = outputs.front();
@@ -848,7 +1201,8 @@ private:
             if (!chunk)
             {
                 /// Try push the current bucket.
-                if ((chunk = get_bucket_if_ready(current_bucket_num)))
+                chunk = get_bucket_if_ready(current_bucket_num);
+                if (chunk)
                 {
                     ++current_bucket_num;
                 }
@@ -907,18 +1261,24 @@ private:
 
     size_t num_threads;
 
+    /// How many streams the output is spread over downstream. It is not `num_threads`. That is capped by the
+    /// number of aggregating streams (1 for a single input stream), while the `Resize` after the aggregation
+    /// fans out to `max_threads`. 1 when the results must go out in bucket order.
+    size_t output_streams;
+
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    /// The session of an adaptive aggregation whose tables take the adaptive bucket merge (see
+    /// `AdaptiveAggregationSession::mergesByBuckets`).
     AdaptiveAggregationSessionPtr adaptive_session;
+    /// When the states of one group merge together on the pool (see `Aggregator::mergeSourceStates`), in the merge by
+    /// partitions and in the adaptive merge. The sources complete it with their progress.
+    Aggregator::ParallelMergeThreshold parallel_merge;
 
     bool is_initialized = false;
     bool finished = false;
     bool parallelize_single_level_merge = false;
-    bool parallel_partition_merge_started = false;
-
-    /// Set by the partition-merge gate for `createSourcesForPartitionMerge`; the sizes must be
-    /// read before any partition source runs, because the merge mutates the source tables.
-    size_t partition_merge_num_partitions = 0;
-    size_t max_source_table_size = 0;
+    /// Set once the single-level merge by hash partitions starts.
+    std::optional<PartitionMergePlan> partition_merge_plan;
 
     Chunks single_level_chunks;
 
@@ -933,7 +1293,7 @@ private:
     /// It works because we don't actually require any specific order of buckets anywhere, we only need to make sure that
     /// `GroupingAggregatedTransform` will output all buckets (from all the nodes) with the same id together.
     static constexpr UInt32 NUM_OOO_BUCKETS = 4;
-    std::vector<Int32> out_of_order_buckets;
+    VectorWithMemoryTracking<Int32> out_of_order_buckets;
 
     Processors processors;
 
@@ -977,6 +1337,13 @@ private:
             /// We skip the `max_rows_to_group_by` limit check during the merge to avoid race condition.
             /// Therefore here we need to check additional after merges are completed from different threads.
             params->aggregator.ensureLimitsFixedMapMerge(first);
+
+            /// The sources of the parallel merge only merge into `first` and emit nothing, so this is the
+            /// first point at which the merged states exist - the same point the serial branch below records
+            /// them at. Without this the aggregate states are missing from the statistics and only the group
+            /// keys are counted, which understates what replicas ship.
+            if (updater)
+                updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
         }
         else
         {
@@ -1003,7 +1370,11 @@ private:
                 throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
-        auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
+        const size_t max_rows_per_block = Aggregator::singleLevelChunkRowsForFanOut(first->sizeWithoutOverflowRow(), output_streams);
+        if (max_rows_per_block)
+            LOG_TRACE(getLogger("AggregatingTransform"), "Split single level result into chunks of at most {} rows.", max_rows_per_block);
+
+        auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final, max_rows_per_block);
         for (auto & agg_chunk : agg_chunks)
         {
             if (agg_chunk.chunk.getNumRows() > 0)
@@ -1023,29 +1394,19 @@ private:
     {
         AggregatedDataVariantsPtr & first = data->at(0);
 
-        if (adaptive_session)
-        {
-            /// The adaptive drain and merge create the destination's states in per-bucket
-            /// arenas, for two reasons. Fresh arenas (rather than `pools[thread]`, typically a
-            /// source local's arena) because with a zero-size aggregate state (`Nothing`) an
-            /// arena returns one address for every allocation, so a drained state would alias
-            /// that local's states and the bucket merge would see a state merged into itself.
-            /// And per bucket (rather than per source) so a converted bucket's states free
-            /// with its slot when the bucket retires. The slots live outside
-            /// `aggregates_pools`, which every bucket's output columns capture wholesale;
-            /// each conversion is handed its own slot instead.
-            first->adaptive_merge_bucket_arenas.resize(ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS);
-            for (auto & slot : first->adaptive_merge_bucket_arenas)
-                slot = std::make_shared<Arena>();
-        }
-
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            /// Select Arena to avoid race conditions; the adaptive sources pick their arena
-            /// per bucket instead.
-            Arena * arena = adaptive_session ? nullptr : first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
-                params, data, shared_data, arena, updater, adaptive_session);
+            /// The adaptive workers pick their arena per bucket.
+            if (adaptive_session)
+            {
+                processors.emplace_back(
+                    std::make_shared<AdaptiveBucketMergingSource>(params, data, shared_data, updater, adaptive_session, parallel_merge));
+                continue;
+            }
+
+            /// Select Arena to avoid race conditions
+            Arena * arena = first->aggregates_pools.at(thread).get();
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
 
             processors.emplace_back(std::move(source));
         }
@@ -1053,18 +1414,22 @@ private:
         data.reset();
     }
 
-    void createSourcesForPartitionMerge()
+    void createSourcesForPartitionMerge(const PartitionMergePlan & plan)
     {
-        /// Computed by the gate (`worthParallelPartitionMergeSingleLevel`), which engages this
-        /// path only for more than one partition.
-        const size_t num_partitions = partition_merge_num_partitions;
-        chassert(num_partitions > 1);
-
-        const size_t num_sources = std::min<size_t>(num_threads, num_partitions);
-        for (size_t thread = 0; thread < num_sources; ++thread)
+        /// `planPartitionMerge` plans the merge only for more than one worker.
+        chassert(plan.workers > 1 && plan.workers <= plan.partitions);
+        for (size_t worker = 0; worker < plan.workers; ++worker)
         {
             auto source = std::make_shared<ConvertingAggregatedToChunksByPartitionMergingSource>(
-                params, data, shared_data, static_cast<UInt32>(num_partitions), max_source_table_size, updater);
+                params,
+                data,
+                shared_data,
+                static_cast<UInt32>(plan.partitions),
+                plan.rows_per_chunk,
+                output_streams,
+                plan.destination_size_hint,
+                parallel_merge,
+                updater);
             processors.emplace_back(std::move(source));
         }
 
@@ -1085,8 +1450,128 @@ private:
     }
 };
 
+namespace
+{
+
+/// Builds the seed block of the kept-keys cutoff: the first `max_rows` keys of the freezing
+/// stream in the mergeable block layout, with empty aggregate states. Merging the seed into an
+/// empty `AggregatedDataVariants` pre-seeds the hash table with exactly the kept keys; merging
+/// the stream's own converted data on top with `no_more_keys` then merges the states of the kept
+/// keys and drops everything else.
+Block buildKeptKeysSeedBlock(
+    const Aggregator::AggregatedChunks & own_chunks, const Block & mergeable_header, size_t keys_size, size_t max_rows)
+{
+    MutableColumns seed_columns = mergeable_header.cloneEmptyColumns();
+
+    size_t rows_left = max_rows;
+    for (const auto & agg_chunk : own_chunks)
+    {
+        if (!rows_left)
+            break;
+        chassert(!agg_chunk.is_overflows);
+        size_t rows_to_take = std::min(rows_left, static_cast<size_t>(agg_chunk.chunk.getNumRows()));
+        const auto & columns = agg_chunk.chunk.getColumns();
+        for (size_t i = 0; i < keys_size; ++i)
+            seed_columns[i]->insertRangeFrom(*columns[i], 0, rows_to_take);
+        rows_left -= rows_to_take;
+    }
+
+    /// `checkLimits` freezes only when the table size exceeds `max_rows`, so the freezing
+    /// stream always has enough keys for a full seed.
+    chassert(rows_left == 0);
+
+    /// Empty aggregate states for the kept keys: `insertDefault` of `ColumnAggregateFunction`
+    /// creates a freshly initialized state, and merging such a state into another is a no-op.
+    for (size_t i = keys_size; i < seed_columns.size(); ++i)
+        seed_columns[i]->insertManyDefaults(max_rows - rows_left);
+
+    Block seed = mergeable_header.cloneEmpty();
+    seed.setColumns(std::move(seed_columns));
+    return seed;
+}
+
+/// Rebuilds `variants` in place to contain exactly the kept keys of the seed block, preserving
+/// the states the stream has accumulated for them. `own_chunks` must be the result of
+/// `convertToChunks(variants, final = false)` on the same variants (empty when the variants held
+/// no data). The states of the dropped keys are destroyed together with `own_chunks`.
+void rebuildVariantsToKeptKeys(
+    const Aggregator & aggregator,
+    AggregatedDataVariants & variants,
+    ConstBlockPtr seed,
+    Aggregator::AggregatedChunks own_chunks,
+    std::atomic<bool> & is_cancelled)
+{
+    /// After `convertToChunks` the chunks own the states. Reset the table and the arenas so the
+    /// old arenas die with the chunks instead of staying referenced for the rest of the query.
+    variants.resetAfterStateOwnershipTransfer();
+    variants.aggregates_pools = AggregatedDataVariants::Arenas(1, std::make_shared<Arena>());
+    variants.aggregates_pool = variants.aggregates_pools.back().get();
+    chassert(!variants.without_key);
+
+    /// None of the merges below may spill: they only re-insert what the table already held, and
+    /// a flush in the middle of them would drop the rest of the rebuild.
+    variants.kept_keys_rebuild_in_progress = true;
+    SCOPE_EXIT({ variants.kept_keys_rebuild_in_progress = false; });
+
+    bool rebuild_no_more_keys = false;
+    aggregator.mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
+    /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
+    chassert(!rebuild_no_more_keys);
+    rebuild_no_more_keys = true;
+
+    for (auto & agg_chunk : own_chunks)
+    {
+        size_t num_rows = agg_chunk.chunk.getNumRows();
+        aggregator.mergeOnBlock(
+            agg_chunk.chunk.detachColumns(), num_rows, /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
+    }
+
+    /// From here on the table admits no key outside the kept set, which is what makes it safe to
+    /// flush it to a temporary file under the cutoff (see `Aggregator::Params::SharedKeptKeysControl`).
+    variants.restricted_to_kept_keys = true;
+    variants.kept_keys_seed = std::move(seed);
+
+    ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysRebuilds);
+}
+
+}
+
+/// The spillable component of the staged records that the finished producers of an adaptive aggregation handed over to
+/// its session (see `AdaptiveAggregationSession::producer_buffers`). Every producer registers it, so it stays
+/// registered while any producer still runs, and the scheduler spills it through whichever of them runs.
+class AdaptiveSessionSpillable
+{
+public:
+    AdaptiveSessionSpillable(AggregatingTransformParamsPtr params_, AdaptiveAggregationSessionPtr session_)
+        : params(std::move(params_)), session(std::move(session_))
+    {
+    }
+
+    SpillableAdapter<AdaptiveSessionSpillable> spillable{*this};
+
+    ProcessorMemoryStats getMemoryStats() const
+    {
+        if (!params->params.tmp_data_scope)
+            return {};
+        return {.spillable_memory_bytes = static_cast<Int64>(session->spillable_handed_over_bytes.load(std::memory_order_relaxed))};
+    }
+
+    size_t spill(size_t /*at_least_bytes*/)
+    {
+        if (!getMemoryStats().spillable_memory_bytes)
+            return 0;
+        return params->aggregator.spillHandedOverStagedRecords(*session);
+    }
+
+    const TemporaryDataOnDiskScope * getSpillScope() const { return params->aggregator.getSpillScope(); }
+
+private:
+    AggregatingTransformParamsPtr params;
+    AdaptiveAggregationSessionPtr session;
+};
+
 AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_)
     : AggregatingTransform(
           std::move(header),
           std::move(params_),
@@ -1096,7 +1581,8 @@ AggregatingTransform::AggregatingTransform(
           1,
           true /* should_produce_results_in_order_of_bucket_number */,
           false /* skip_merging */,
-          updater_)
+          updater_,
+          output_streams_)
 {
 }
 
@@ -1109,34 +1595,36 @@ AggregatingTransform::AggregatingTransform(
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    size_t output_streams_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
+    , variant_index(current_variant)
     , max_threads(std::min(many_data->variants.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
+    , output_streams(output_streams_)
 {
     /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
     /// staged, so the merge-time drains find empty backlogs and do nothing.
     if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
+    {
         adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
+        if (!many_data->adaptive_spillable)
+            many_data->adaptive_spillable = std::make_shared<AdaptiveSessionSpillable>(params, many_data->adaptive_session);
+        adaptive_spillable = many_data->adaptive_spillable;
+        /// The records of the finished producers go to disk before a running producer gives up its own.
+        spillables = {&adaptive_spillable->spillable, &spillable};
+    }
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
-
-void AggregatingTransform::onCancel() noexcept
-{
-    /// A pressure sweep checks this between chunks and buckets: it can spill gigabytes to
-    /// disk, and a cancelled query must not wait that out.
-    if (adaptive_context)
-        adaptive_context->session->cancel();
-}
 
 size_t AggregatingTransform::getGeneratingStepGroup() const
 {
@@ -1270,6 +1758,15 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
+    /// The kept-keys cutoff froze in another stream: restrict this stream's hash table to the
+    /// kept keys before consuming more rows (see ManyAggregatedData::SharedKeptKeys). Once the
+    /// cutoff is applied, `no_more_keys` stays set, so this fires at most once per stream.
+    const auto & shared_kept_keys = many_data->shared_kept_keys;
+    if (shared_kept_keys && !no_more_keys && shared_kept_keys->frozen.load(std::memory_order_acquire))
+        applySharedKeptKeysCutoff(/*may_freeze=*/false);
+
+    const bool had_no_more_keys = no_more_keys;
+
     if (params->params.only_merge)
     {
         materializeChunk(chunk);
@@ -1289,6 +1786,126 @@ void AggregatingTransform::consume(Chunk chunk)
                 adaptive_context.get()))
             is_consume_finished = true;
     }
+
+    /// This stream is the first to exceed `max_rows_to_group_by` (`checkLimits` has just set
+    /// `no_more_keys`): publish the kept key set and restrict this stream to it. All the rows
+    /// consumed so far, including the chunk above, were aggregated normally.
+    if (no_more_keys && !had_no_more_keys)
+    {
+        if (shared_kept_keys)
+            applySharedKeptKeysCutoff(/*may_freeze=*/true);
+        else
+            capturePerStreamKeptKeysSeed();
+    }
+}
+
+void AggregatingTransform::capturePerStreamKeptKeysSeed()
+{
+    const auto & aggregator_params = params->params;
+
+    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, which caps the
+    /// stream at exactly `max_rows_to_group_by` keys and only lets a table already restricted to
+    /// them spill, and only when the table can actually be flushed to disk: the seed is needed to
+    /// re-fill it after the flush. Scheduler spills are possible even with
+    /// `max_bytes_before_external_group_by` disabled.
+    /// A plain `max_rows_to_group_by` cap keeps whatever the crossing block brought in and needs
+    /// no rebuild, so there the `Aggregator` snapshots the keys during the flush itself.
+    if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.tmp_data_scope)
+        return;
+
+    /// Already captured — the flag stays set for the rest of the aggregation.
+    if (variants.restricted_to_kept_keys || variants.empty())
+        return;
+
+    const auto & aggregator = params->aggregator;
+
+    /// The table holds exactly the keys this stream kept, so rebuilding it around them changes
+    /// nothing but hands the seed to the `Aggregator`. It happens once, on a table of about
+    /// `max_rows_to_group_by` keys, which is the LIMIT of the query.
+    auto own_chunks = aggregator.convertToChunks(variants, /*final=*/false);
+    auto seed = std::make_shared<const Block>(buildKeptKeysSeedBlock(
+        own_chunks, params->getCustomHeader(/*final_=*/false), aggregator_params.keys_size, aggregator_params.max_rows_to_group_by));
+    rebuildVariantsToKeptKeys(aggregator, variants, std::move(seed), std::move(own_chunks), is_cancelled);
+}
+
+void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
+{
+    auto & shared = *many_data->shared_kept_keys;
+    const auto & aggregator = params->aggregator;
+
+    if (may_freeze)
+    {
+        /// Claim the freeze before dismantling the hash table (see
+        /// `Aggregator::Params::SharedKeptKeysControl`). When a stream has spilled to disk
+        /// first, the cutoff is abandoned for the whole aggregation and `checkLimits` no
+        /// longer caps the tables: no rows have been dropped yet, so reset the flag and
+        /// continue aggregating without the restriction. When another stream claimed the
+        /// freeze first, fall through and apply its kept keys (the mutex below waits for
+        /// the seed publication).
+        const auto & control = aggregator.getParams().shared_kept_keys_control;
+        if (control && !control->tryFreeze() && control->isAbandoned())
+        {
+            no_more_keys = false;
+            return;
+        }
+    }
+
+    /// Move this stream's accumulated states out of the hash table. The chunks keep the states
+    /// alive (and destroy the dropped ones) while the table is rebuilt around the kept keys.
+    Aggregator::AggregatedChunks own_chunks;
+    if (!variants.empty())
+        own_chunks = aggregator.convertToChunks(variants, /*final=*/false);
+
+    if (may_freeze)
+    {
+        std::lock_guard lock(shared.mutex);
+        if (!shared.frozen.load(std::memory_order_relaxed))
+        {
+            /// The `Aggregator` re-seeds a table emptied by an external-aggregation spill from
+            /// this block (see `Aggregator::Params::SharedKeptKeysControl`), so every stream
+            /// shares it through `AggregatedDataVariants::kept_keys_seed`.
+            shared.seed = std::make_shared<const Block>(buildKeptKeysSeedBlock(
+                own_chunks, params->getCustomHeader(/*final_=*/false), aggregator.getParams().keys_size, aggregator.getParams().max_rows_to_group_by));
+            shared.frozen.store(true, std::memory_order_release);
+            LOG_TRACE(log, "Froze a shared set of {} kept keys for the GROUP BY LIMIT cutoff", shared.seed->rows());
+        }
+    }
+
+    rebuildVariantsToKeptKeys(aggregator, variants, shared.seed, std::move(own_chunks), is_cancelled);
+    shared.applied[variant_index] = 1;
+    no_more_keys = true;
+}
+
+ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
+{
+    /// Reclaimable only while the table is still being filled and can be written out as two-level. The staged records
+    /// of an adaptive producer are reclaimable as well, and need no reservation for their write.
+    if (is_consume_finished || !params->params.tmp_data_scope)
+        return {};
+    ProcessorMemoryStats res;
+    if (variants.hasData() && (variants.isTwoLevel() || variants.isConvertibleToTwoLevel()))
+    {
+        res.spillable_memory_bytes = variants.memoryUsage();
+        res.need_reserved_memory_bytes = variants.isTwoLevel() ? /* negligible */ 0 : res.spillable_memory_bytes;
+    }
+    if (adaptive_context)
+        res.spillable_memory_bytes += static_cast<Int64>(adaptive_context->stagedBytes());
+    return res;
+}
+
+size_t AggregatingTransform::spill(size_t at_least_bytes)
+{
+    if (!getMemoryStats().spillable_memory_bytes)
+        return 0;
+
+    /// Another producer may have frozen the kept keys while this one was idle.
+    if (const auto & shared = many_data->shared_kept_keys;
+        shared && !no_more_keys && shared->frozen.load(std::memory_order_acquire))
+        applySharedKeptKeysCutoff(/*may_freeze=*/false);
+
+    if (adaptive_context)
+        return params->aggregator.spillAdaptiveProducer(variants, *adaptive_context, no_more_keys, at_least_bytes);
+    return params->aggregator.spill(variants, no_more_keys);
 }
 
 void AggregatingTransform::initGenerate()
@@ -1316,6 +1933,14 @@ void AggregatingTransform::initGenerate()
         elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
 
+    /// Only a table restricted to the kept keys may be flushed to a temporary file while the
+    /// cutoff holds, so apply it before the flush below (see ManyAggregatedData::SharedKeptKeys).
+    /// A spill under the cutoff can only happen after the freeze, so whenever there is temporary
+    /// data to join, the freeze is already visible here.
+    if (const auto & shared = many_data->shared_kept_keys;
+        shared && !no_more_keys && !variants.empty() && shared->frozen.load(std::memory_order_acquire))
+        applySharedKeptKeysCutoff(/*may_freeze=*/false);
+
     if (params->aggregator.hasTemporaryData())
     {
         if (variants.isConvertibleToTwoLevel())
@@ -1328,16 +1953,10 @@ void AggregatingTransform::initGenerate()
             params->aggregator.writeToTemporaryFile(variants);
     }
 
-    bool adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
-    if (adaptive_engaged)
-    {
-        /// Complete this thread's backlog contribution before the finish barrier below: the last
-        /// finisher assembles the merge assuming every producer's staged records are enqueued.
-        params->aggregator.flushPendingChunks(*adaptive_context);
-
-        if (variants.isConvertibleToTwoLevel())
-            variants.convertToTwoLevel();
-    }
+    /// Hand this thread's staged records and count bins over before the finish barrier below: the
+    /// last finisher assembles the merge assuming the session holds every producer's contribution.
+    if (adaptive_context)
+        params->aggregator.finishAdaptiveProducer(variants, *adaptive_context);
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
@@ -1347,13 +1966,31 @@ void AggregatingTransform::initGenerate()
         return;
     }
 
-    adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
+    /// The merge reads the handed-over records from here on.
+    if (many_data->adaptive_session)
+        many_data->adaptive_session->endHandedOverSpills();
 
-    if (adaptive_engaged)
-        LOG_TRACE(
-            log,
-            "Adaptive aggregation: {} delayed records queued for the merge-time drain",
-            adaptive_context->session->backlog.undrainedRecords());
+    /// If the kept-keys cutoff froze, restrict the variants of the streams that finished
+    /// consuming before discovering the freeze: they still hold arbitrary keys whose merged
+    /// values would be undercounted (see ManyAggregatedData::SharedKeptKeys). All the streams
+    /// have finished consuming at this point (`num_finished`), so the variants are ours.
+    if (const auto & shared = many_data->shared_kept_keys; shared && shared->frozen.load(std::memory_order_acquire))
+    {
+        for (size_t i = 0; i < many_data->variants.size(); ++i)
+        {
+            auto & variant = *many_data->variants[i];
+            if (shared->applied[i] || variant.empty())
+                continue;
+            /// Use the aggregator that built the variant: mixed pipelines of aggregate
+            /// projections aggregate raw and pre-aggregated parts with two different ones.
+            const Aggregator & builder = variant.aggregator ? *variant.aggregator : params->aggregator;
+            auto own_chunks = builder.convertToChunks(variant, /*final=*/false);
+            rebuildVariantsToKeptKeys(builder, variant, shared->seed, std::move(own_chunks), is_cancelled);
+            shared->applied[i] = 1;
+        }
+    }
+
+    const bool adaptive_engaged = adaptive_context && adaptive_context->session->engaged();
 
     /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
     /// it is necessary to check whether any of the aggregators contains temporary data.
@@ -1366,62 +2003,46 @@ void AggregatingTransform::initGenerate()
                 [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
     };
 
-    if (adaptive_engaged)
-    {
-        auto & shared = *adaptive_context->session;
+    /// The external merge bypasses `prepareVariantsToMerge`, which is where the adaptive verdict of the run is
+    /// normally recorded.
+    if (adaptive_engaged && aggregator_has_temporary_data())
+        params->aggregator.recordAdaptiveStagingVerdict(*adaptive_context->session);
 
-        /// The producers' final flushes run after their own spill checks, and a flush's seal
-        /// copies can push memory over the external threshold with nothing re-checking. Re-check
-        /// here, after every producer flushed and before the merge path is chosen: the sweep
-        /// no-ops under the trigger, sheds staged records when over it, and spills the routing
-        /// table if shedding is not enough - which makes the choice below go external.
-        if (params->params.max_bytes_before_external_group_by)
-            params->aggregator.drainStagedChunksUnderMemoryPressure(shared);
-
-        if (aggregator_has_temporary_data())
-        {
-            /// A thawed or given-up producer spilled on the baseline path, so the merge goes
-            /// external and the bucket-parallel drain will not run: put the backlogs into
-            /// disk-mergeable form by draining everything into the routing table now (the
-            /// finish barrier guarantees a quiescent, uncontended sweep). The external branch
-            /// below flushes it together with the other still-in-memory variants.
-            params->aggregator.drainStagedChunksAtFinish(shared);
-
-            /// The external merge bypasses `prepareVariantsToMerge`, which is where the thaw
-            /// verdict is normally recorded.
-            params->aggregator.recordAdaptiveStagingVerdict(shared);
-        }
-        if (shared.early_drain_variants->hasData())
-        {
-            /// Early-drained records live in the routing table: it holds part of the result
-            /// and joins the merge set like any other variant. Only the last finisher gets
-            /// here, so growing `variants` is safe as long as nothing else reads it - hence
-            /// the barrier above counts `num_producers` rather than the size of this vector.
-            many_data->variants.push_back(shared.early_drain_variants);
-        }
-    }
+    /// The pruning also serves an aggregation in which no producer froze: it takes the adaptive merge to prune.
+    if (adaptive_context)
+        params->aggregator.prepareAdaptiveTopK(
+            *adaptive_context->session,
+            many_data->variants.size(),
+            /*external_merge=*/aggregator_has_temporary_data(),
+            /*collects_statistics=*/updater != nullptr);
+    const bool bucket_merge = adaptive_context && adaptive_context->session->mergesByBuckets();
 
     if (!aggregator_has_temporary_data())
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(
-                std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
+            AdaptiveAggregationSession * session = adaptive_context ? adaptive_context->session.get() : nullptr;
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), session);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
+            /// The producers of the session estimated the merge work, also when none of them froze and the tables merge
+            /// partition by partition.
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
-                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
+                params,
+                std::move(prepared_data_ptr),
+                max_threads,
+                output_streams,
+                updater,
+                bucket_merge ? adaptive_context->session : nullptr,
+                params->aggregator.parallelMergeThreshold(session)));
         }
         else
         {
-            if (updater)
-                updater->markUnsupportedCase();
-
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_session=*/nullptr);
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
                 /// Converts hash tables to blocks with data (finalized or not).
-                pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
+                pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant, updater));
             }
 
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
@@ -1500,6 +2121,21 @@ void AggregatingTransform::initGenerate()
             }
 
             tmp_files.splice(tmp_files.end(), new_tmp_files);
+        }
+
+        /// The staged records of an engaged adaptive aggregation are not written out as parts: they join the merge as
+        /// one source per merging thread, but no more than one per bucket, each merging its share of the buckets on
+        /// demand.
+        if (adaptive_engaged)
+        {
+            const auto destination
+                = std::make_shared<ManyAggregatedDataVariants>(1, params->aggregator.createAdaptiveMergeDestination());
+            const auto header = std::make_shared<const Block>(params->aggregator.getSpilledStatesHeader());
+            const auto merged_groups = std::make_shared<std::atomic<size_t>>(0);
+            const size_t num_sources = std::min(temporary_data_merge_threads, ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+            for (size_t first_bucket = 0; first_bucket < num_sources; ++first_bucket)
+                pipes.emplace_back(Pipe(std::make_unique<AdaptiveStagedRecordsSource>(
+                    header, params, adaptive_context->session, destination, merged_groups, first_bucket, num_sources)));
         }
 
         LOG_DEBUG(

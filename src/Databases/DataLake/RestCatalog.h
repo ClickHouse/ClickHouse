@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <unordered_set>
@@ -20,18 +21,8 @@ class ReadBuffer;
 namespace DataLake
 {
 
-struct AccessToken
-{
-    std::string token;
-    std::optional<std::chrono::system_clock::time_point> expires_at;
-
-    bool isExpired() const
-    {
-        if (!expires_at.has_value())
-            return false;
-        return std::chrono::system_clock::now() >= expires_at.value();
-    }
-};
+/// Parses "Name: value" into a header entry.
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -44,7 +35,9 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
-        DB::ContextPtr context_);
+        bool flat_namespaces_,
+        DB::ContextPtr context_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     ~RestCatalog() override = default;
 
@@ -73,22 +66,45 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
 
+    /// Inherited by every catalog based on the Iceberg REST protocol.
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
+    bool assignsLocationToNewNamespaces() const override { return true; }
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+    void createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const override;
+
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
+    Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const override;
+
     bool isTransactional() const override { return true; }
+
+    /// The Iceberg REST spec makes the server write the metadata file on create.
+    bool writesInitialMetadata() const override { return true; }
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
     struct Config
     {
@@ -98,6 +114,9 @@ public:
         /// Base location is location of data in storage
         /// (in filesystem or object storage).
         std::string default_base_location;
+        /// `snapshot-loading-mode` from `defaults` and from `overrides`, empty if absent.
+        std::string default_snapshot_loading_mode;
+        std::string override_snapshot_loading_mode;
 
         std::string toString() const;
     };
@@ -140,9 +159,13 @@ protected:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
-        DB::ContextPtr context_);
+        bool flat_namespaces_,
+        DB::ContextPtr context_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
+
+    std::optional<std::string> getNamespaceLocation(const std::string & namespace_name) const;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;
@@ -154,6 +177,8 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
+    bool flat_namespaces = false;
+    const DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
     mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -171,6 +196,9 @@ protected:
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
+    /// ClickHouse reads snapshots from the metadata file, so the load-table response needs only the referenced ones.
+    Poco::URI::QueryParameters getLoadTableParams(const Config & config) const;
+
     using StopCondition = std::function<bool(const std::string & namespace_name)>;
     using ExecuteFunc = std::function<void(const std::string & namespace_name)>;
 
@@ -180,10 +208,10 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    /// Whether this catalog has flat (single-level) namespaces and ignores the `parent` filter when
-    /// listing namespaces. Such catalogs (BigLake, Databricks Delta Sharing) echo the same namespaces
-    /// for any parent; treating those echoes as children would recurse without bound, so sub-namespace
-    /// listing is skipped for them (see `parseNamespaces`).
+    /// Whether this catalog has flat (single-level) namespaces, either because its type is always flat
+    /// (BigLake, Databricks Delta Sharing, S3 Tables) or because of the `flat_namespaces` database
+    /// setting. Such catalogs are never asked for sub-namespaces (see `getNamespacesRecursive`): they
+    /// either echo the parent back for any `parent` (which would recurse without bound) or reject it.
     bool hasFlatNamespaces() const;
 
     /// List the immediate child namespaces directly under `base_namespace`
@@ -210,9 +238,11 @@ protected:
     virtual DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const;
 
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
-    static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
+    static void parseCatalogConfigurationSettings(
+        const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode);
 
-    virtual void sendRequest(
+    /// Returns the body of the response, empty with `ignore_result`.
+    virtual String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
@@ -236,6 +266,13 @@ protected:
         CatalogState & new_state,
         std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
         std::unique_ptr<AccessToken> & new_access_token);
+
+private:
+    /// Builds the body of the `POST /tables` request. If there is no `location`, the catalog uses its default location.
+    Poco::JSON::Object::Ptr buildCreateTableRequestBody(
+        const String & table_name, const std::optional<String> & location, Poco::JSON::Object::Ptr metadata_content) const;
+
+    std::string getCreateTableEndpoint(const CatalogState & catalog_state, const String & namespace_name) const;
 };
 
 class OneLakeCatalog : public RestCatalog
@@ -271,12 +308,18 @@ public:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
-        DB::ContextPtr context_);
+        bool flat_namespaces_,
+        DB::ContextPtr context_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
+
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
 
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 
@@ -317,8 +360,10 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
+        const std::string & google_service_account_key_,
         DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_);
+        bool allow_server_credentials_in_user_queries_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -330,6 +375,7 @@ public:
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
     const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
+    const std::string & getGoogleServiceAccountKey() const { return google_service_account_key; }
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).
@@ -340,12 +386,20 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
+    const std::string google_service_account_key;
     /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
     /// catalog is cached and holds the global context, whose settings never reflect the creating session.
     const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
+    AccessToken retrieveGoogleCloudAccessTokenFromServiceAccountKey() const;
+
+    /// Whether Google OAuth is explicitly configured; otherwise the generic REST catalog auth is used.
+    bool usesGoogleOAuth() const
+    {
+        return !google_project_id.empty() || !google_adc_client_id.empty() || !google_service_account_key.empty();
+    }
 };
 
 /// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model
@@ -385,7 +439,9 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
-        DB::ContextPtr context_);
+        bool flat_namespaces_,
+        DB::ContextPtr context_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {

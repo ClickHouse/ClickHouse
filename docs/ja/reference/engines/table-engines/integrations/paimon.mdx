@@ -12,9 +12,7 @@ doc_type: 'reference'
 このエンジンは、Amazon S3、Azure、HDFS、またはローカルに保存された既存の Apache [Paimon](https://paimon.apache.org/) テーブルに対する読み取り専用インテグレーションを提供します。
 スナップショット読み取り、インクリメンタル読み取り、およびこのエンジンが提供する基本的なパーティションプルーニングをサポートしています。
 
-<div id="create-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#create-table}
 
 Paimon テーブルは、あらかじめストレージ内に存在している必要があることに注意してください。このコマンドでは、新しいテーブルを作成するための DDL パラメータは指定できません。
 `Paimon*` テーブルの作成は `allow_experimental_paimon_storage_engine` で制限されており (デフォルトでは無効) 、`CREATE TABLE` を実行する前にこれを有効にしてください。
@@ -35,18 +33,14 @@ CREATE TABLE paimon_table_local
     ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="engine-arguments">
-  ## エンジン引数
-</div>
+## エンジン引数 {#engine-arguments}
 
 引数の説明は、それぞれ `S3`、`AzureBlobStorage`、`HDFS`、`File` エンジンの引数の説明と同じです。
 `format` は、Paimon テーブル内のデータファイルのフォーマットを表します。
 
 エンジンパラメータは、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定できます
 
-<div id="example">
-  ### 例
-</div>
+### 例 {#example}
 
 ```sql
 CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -70,9 +64,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhou
 CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="capabilities">
-  ## 機能
-</div>
+## 機能 {#capabilities}
 
 * 最新のテーブルスナップショットからスナップショット読み取りを行います。
 * 有効化されている場合、コミット済みスナップショット ID に基づくインクリメンタル読み取りを行います。
@@ -80,9 +72,32 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * 設定されている場合、メタデータをバックグラウンドで任意に更新できます。
 * Atomic/Replicated データベースを使用している場合、テーブル UUID が安定するため、Keeper のパスで `{uuid}` マクロを使用できます。
 
-<div id="settings">
-  ## 設定
-</div>
+## プライマリキーテーブル {#primary-key-tables}
+
+Merge-on-read は実装されていないため、**プライマリキーテーブルは読み取れません**。リーダーはスナップショットのデータファイルを単純に結合した生データを返しますが、そこには後続の upsert によって置き換えられた古いバージョンの行も残っています。そのため、スキーマで `primary-key` が宣言されているテーブルを読み取ると、例外がスローされます。
+
+## 削除ベクターを含むテーブル {#deletion-vectors}
+
+削除ベクターは適用されないため、**削除ベクターを含むスナップショットは読み取れません**。読み取ると、後続の `DELETE` 文や `UPDATE` 文で削除された行が
+結果に残ったままになってしまいます。そのため、インデックスマニフェストに削除ベクターが記載されているスナップショットを読み取ろうとすると、
+`deletion-vectors.enabled` を無効にした後であっても例外がスローされます。
+
+Paimon でフルコンパクション (`compact_strategy => 'full'`) を実行すると削除ベクターが適用され、それ以降に作成された
+スナップショットは再び読み取れるようになります。
+
+インクリメンタル読み取りは、削除ベクターを含む最初の未消費スナップショットで停止し、フルコンパクションを実行した後もその位置に留まります。
+そのコンパクションまでのすべてのスナップショットに、同じ削除ベクターが記載されているためです。カーソルは進みません。
+読み取りが再開されるのは、Paimon がそれらのスナップショットを期限切れにしたとき、またはカーソルをフルコンパクションのスナップショットに
+移動してそれらを破棄したときです。後者の場合、そこまでの未消費のスナップショットはすべて削除されます
+([スナップショットを読み取れない場合](#when-a-snapshot-cannot-be-read)を参照) 。
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+いずれの場合も、これらの削除ベクターによって削除された行は、インクリメンタル読み取りですでに配信されたデータの中に残ったままになります。
+
+## 設定 {#settings}
 
 このエンジンは、対応するオブジェクトストレージエンジンと同じ設定を使用し、加えて Paimon 固有の設定もサポートします。
 
@@ -103,20 +118,16 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-  **`use_paimon_metadata_files_cache` のライフサイクル**
-
+<Note title="`use_paimon_metadata_files_cache` のライフサイクル">
   `use_paimon_metadata_files_cache` の適用方法は、Paimon テーブルへのアクセス方法によって異なります。
 
   * **Table functions** (例: `SELECT ... FROM paimonS3(...)`): cache の判定はクエリごとに評価されるため、`SELECT` で `SETTINGS use_paimon_metadata_files_cache = 1` を直接指定できます。
   * **永続テーブルエンジン** (`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal`、および `Paimon` エイリアス): cache の判定は、テーブルのメタデータが初期化される際に一度だけ固定され、不変の永続コンポーネントに保存されます。メタデータ更新パスでは、この設定は意図的に再読み込みされません。したがって、すでに初期化済みの永続テーブルに対する `SELECT` で `SETTINGS use_paimon_metadata_files_cache = 1` を指定しても効果はありません。以前に固定された判定が引き続き使用されます。これを変更するには、テーブルのメタデータが初期化される前に `use_paimon_metadata_files_cache` を設定するか、目的の値を指定してテーブルを `DROP` し、再度 `CREATE` してください。
 
   サーバーレベルの cache 容量 (`paimon_metadata_files_cache_size`) は固定されません。これは runtime 設定であり、`SYSTEM RELOAD CONFIG` によって変更でき、すでに初期化済みのテーブルに対しても即座に有効になります。
-</Info>
+</Note>
 
-<div id="incremental-read-examples">
-  ## インクリメンタル読み取りの例
-</div>
+## インクリメンタル読み取りの例 {#incremental-read-examples}
 
 Keeper の状態を使用したインクリメンタル読み取り:
 
@@ -129,9 +140,7 @@ SETTINGS
     paimon_replica_name = '{replica}';
 ```
 
-<div id="query-level-settings-for-incremental-read">
-  ### インクリメンタル読み取りのクエリレベル設定
-</div>
+### インクリメンタル読み取りのクエリレベル設定 {#query-level-settings-for-incremental-read}
 
 以下の設定は**クエリレベル**です (`CREATE TABLE` ではなく `SELECT ... SETTINGS` で指定します) 。インクリメンタル読み取りのクエリごとの動作を制御します。
 
@@ -154,9 +163,58 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
-<div id="paimon-to-mergetree-via-refresh-mv">
-  ## リフレッシャブルmaterialized view を介した Paimon から MergeTree への同期
-</div>
+### warehouse の巻き戻し {#rewinding-the-warehouse}
+
+`paimon_keeper_path` にある Keeper カーソルは、ストリームをどこまで消費したかを記録しています。インクリメンタル読み取りは、warehouse が常に前方向にのみ進むことを前提としています。つまり、Paimon のスナップショット ID は単調に増加し、再利用されることはありません。古いスナップショットを期限切れにするのは問題ありません。この操作は先頭部分 (プレフィックス) を削除するだけで、それより大きい ID には影響しないためです。
+
+一方、warehouse を*過去の状態に*戻すと、この前提が崩れます。古いバックアップからの warehouse の復元、別のエンジンによるロールバック、同じパスでの Paimon テーブルの削除と再作成は、いずれもスナップショット ID を巻き戻します。その結果、ライターはカーソルがすでに消費した ID を再利用することになります。
+
+**warehouse を巻き戻す場合は、同じ操作の中でカーソルもリセットする必要があります。** ID が再利用されると、ClickHouse はコンシューマーがどのスナップショットをすでに受信したかを再構築できません。そのため、巻き戻し後にカーソルを古いまま残しておくと配信の動作は未定義となり、再利用された ID のスナップショットがスキップされる可能性があります。
+
+巻き戻しの結果、カーソルが warehouse の最新スナップショットより先を指すようになった場合、読み取りは「新しいデータなし」として扱われるのではなく `INVALID_STATE` で失敗し、エラーメッセージには復旧用のコマンドが示されます。何も読み取られず、カーソルも変更されないため、問題が解決されるまで以降のポーリングはすべて同じエラーで失敗します。
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+復旧のために `committed_snapshot` ノードを削除しないでください。カーソルが存在しない状態は「一度も消費されていない」ことを意味するため、次回の読み取りは途中からの再開ではなく、テーブル全体の完全な再読み取りになります。
+
+カーソルをリセットする前に、リフレッシャブルmaterialized view を含め、`paimon_keeper_path` を共有しているすべてのコンシューマーを一時停止し、転送中の読み取りが完了するまで待ってください。
+
+読み取りのコミットは、その読み取りが観測したカーソルを前提条件として行われます。観測してからコミットするまでの間にカーソルが変更されると、その読み取りは `INVALID_STATE` で失敗して何も配信せず、設定した値はそのまま保持されます。一方、すでにコミット済みの読み取りは、カーソルのリセット後でもバッチを配信できます。そのため、カーソルを巻き戻すと、そのバッチが再度配信される可能性があります。
+
+`processing_lock` を手動で削除または置き換えないでください。これはインクリメンタル読み取りを実行している ClickHouse Keeper の session が所有する一時的なノードであり、そのライフサイクルは運用者が復旧に使うためのインターフェイスではありません。
+
+### スナップショットを読み取れない場合 {#when-a-snapshot-cannot-be-read}
+
+Paimon によって期限切れとなったスナップショットは自動的にスキップされます。期限切れ処理ではスナップショット ID の先頭部分 (プレフィックス) が削除されるため、warehouse の最も古いスナップショットより前のものはすでに存在しないことが確実であり、カーソルはそれらを飛ばして先に進みます。
+
+それ以外の理由でスナップショットの読み取りに失敗した場合 (オブジェクトストレージの一時的なエラーや、破損したスナップショットファイルなど) は、クエリが失敗し、カーソルは現在の位置にとどまります。このような失敗を許容する設定は、意図的に用意していません。未読のスナップショットをスキップすると、そこにコミットされたデータを恒久的に削除することになります。また、「エラーを許容する」スイッチを常時有効にできるようにすると、今後発生する一時的なネットワーク障害のたびに、気付かないうちにデータが失われることになります。カーソルは変更されないため、一時的なエラーであれば対処は一切不要です。次回のポーリングで同じ範囲が再度読み取られ、成功します。
+
+スナップショットが本当に読み取り不能で、ストリームを先に進める必要がある場合は、そのスナップショットを明示的に放棄してください。エラーメッセージには実行すべきコマンドが示されますが、その影響に注意してください。失敗した読み取りでは何も配信されていないため、カーソルを読み取り不能なスナップショットまで移動すると、読み取り不能なものだけでなく、そのスナップショットまで (そのスナップショット自体を含む) の未消費の**すべての**スナップショットが放棄されます。
+
+カーソルが 1 にあり、スナップショット 2、3、4 が保留中で、そのうち 3 が読み取り不能な場合:
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+読み取り可能なスナップショットを残すには、まず読み取れないスナップショットの手前まで排出します。ポーリングのたびにスナップショットが 1 つ消費されてカーソルが進み、読み取れないスナップショットに到達するまでこれが繰り返されます。
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+いずれの場合も、この判断は設定から推測されるのではなく、運用者による明示的な操作として記録されます。
+
+## リフレッシャブルmaterialized view を介した Paimon から MergeTree への同期 {#paimon-to-mergetree-via-refresh-mv}
 
 `APPEND` モードのリフレッシャブルMaterialized Viewを使用すると、Paimon テーブルから MergeTree テーブルへデータを継続的に同期するエンドツーエンドのパイプラインを構築できます。各リフレッシュサイクルでは、Paimon から新しいインクリメンタルデータのみを読み取り、それを宛先テーブルに追記します。
 
@@ -221,9 +279,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
   バックグラウンドでの更新によってDDL操作がブロックされるのを防ぐため、削除する前にMVを停止してください。
 </Note>
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
 * インクリメンタル読み取りを行うには、Keeper (ZooKeeper) が設定されている必要があります。
 * インクリメンタル読み取りを行うには、`paimon_keeper_path` を設定し、テーブルごとに一意にする必要があります。
@@ -233,15 +289,11 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * インクリメンタル読み取りでは、Paimon ソースの過去データの削除は扱われません。アップストリームの Paimon データが削除または更新されても、ClickHouse の MergeTree 宛先テーブルにすでに書き込まれている対応する行は自動では削除されません。古くなったデータをクリーンアップするには、MergeTree テーブルに対して `ALTER TABLE ... DELETE` を手動で実行する必要があります。
 * 基になる Paimon テーブルが同じオブジェクトストレージパスで削除されて再作成された場合 (たとえば Flink や Spark 経由) 、対応する ClickHouse テーブルを `DROP` してから再度 `CREATE` する必要があります。ClickHouse は schema-0 の作成タイムスタンプを比較して再作成を検出し、エラーを返します。古くなった ClickHouse テーブルは、再作成されるまで使用できません。
 
-<div id="aliases">
-  ## 別名
-</div>
+## 別名 {#aliases}
 
 `Paimon` テーブルエンジンは、`disk` 設定からストレージバックエンドを自動検出し、それに応じて `PaimonS3`、`PaimonAzure`、または `PaimonLocal` に振り分けます。`disk` が指定されていない場合は、デフォルトで `PaimonS3` 実装が使用されます。
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — ファイルのパス。型: `LowCardinality(String)`.
 * `_file` — ファイル名。型: `LowCardinality(String)`.
@@ -249,13 +301,11 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 最終更新時刻が不明な場合、値は `NULL` です。
 * `_etag` — ファイルの etag。型: `LowCardinality(String)`. etag が不明な場合、値は `NULL` です。
 
-<div id="data-types-supported">
-  ## 対応しているデータ型
-</div>
+## 対応しているデータ型 {#data-types-supported}
 
 | Paimon データ型                       | ClickHouse データ型           |
 | --------------------------------- | ------------------------- |
-| BOOLEAN                           | Int8                      |
+| BOOLEAN                           | Bool                      |
 | TINYINT                           | Int8                      |
 | SMALLINT                          | Int16                     |
 | INTEGER                           | Int32                     |
@@ -273,9 +323,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
 
-<div id="partition-supported">
-  ## サポートされるパーティションキー
-</div>
+## サポートされるパーティションキー {#partition-supported}
 
 Paimon のパーティションキーでサポートされるデータ型:
 

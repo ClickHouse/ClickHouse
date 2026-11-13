@@ -3,6 +3,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Core/Types.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <string>
@@ -42,10 +43,17 @@ public:
     /// (while full location would be "s3://bucket/path/to/table/data")
     virtual const std::string & getDataPath() const = 0;
 
+    /// Object storage path of a data file from its `add.path`: a path relative to the table root,
+    /// or an absolute URI, which a shallow clone uses for the files of its source table.
+    virtual std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const;
+
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
+
+    /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.
+    virtual void prepareForTableCreation() const {}
 
     /// Hash of current credentials; override for providers with rotating sessions.
     virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }

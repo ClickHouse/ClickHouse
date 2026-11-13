@@ -1,12 +1,104 @@
 #pragma once
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Core/ResultColumnOrigin.h>
+#include <Formats/FormatSettingsEnums.h>
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <limits>
+#include <string_view>
+
 namespace DB
 {
+
+/// Arrow offsets its `Utf8`, `Binary` and `List` buffers with 32-bit integers, and the Apache Arrow
+/// builders additionally reject the last representable value.
+constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
+
+/// `FormatSettings::CSV` and `FormatSettings::JSON`, at namespace level so that they can be forward-declared.
+struct CSVFormatSettings
+{
+    char delimiter = ',';
+    bool allow_single_quotes = true;
+    bool allow_double_quotes = true;
+    bool serialize_tuple_into_separate_columns = true;
+    bool header_serialize_tuple_into_separate_columns = true;
+    bool deserialize_separate_columns_into_tuple = true;
+    bool empty_as_default = false;
+    bool missing_nullable_as_empty_string = false;
+    bool crlf_end_of_line = false;
+    bool allow_cr_end_of_line = false;
+    bool enum_as_number = false;
+    bool arrays_as_nested_csv = false;
+    String null_representation = "\\N";
+    char tuple_delimiter = ',';
+    bool use_best_effort_in_schema_inference = true;
+    UInt64 skip_first_lines = 0;
+    String custom_delimiter;
+    bool try_detect_header = true;
+    bool skip_trailing_empty_lines = false;
+    bool trim_whitespaces = true;
+    bool allow_whitespace_or_tab_as_delimiter = false;
+    bool allow_variable_number_of_columns = false;
+    bool use_default_on_bad_values = false;
+    bool try_infer_numbers_from_strings = true;
+    bool try_infer_strings_from_quoted_tuples = true;
+};
+
+struct JSONFormatSettings
+{
+    size_t max_depth = 1000;
+    bool array_of_rows = false;
+    bool quote_64bit_integers = false;
+    bool quote_64bit_floats = false;
+    bool quote_denormals = true;
+    bool quote_decimals = false;
+    bool escape_forward_slashes = true;
+    bool read_named_tuples_as_objects = false;
+    /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by
+    /// `getFormatSettings`: the setting governs the `JSONExtract` family, and the `JSON` data
+    /// type must keep filling named tuples from arrays positionally.
+    bool extract_named_tuples_as_objects = false;
+    bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
+    bool write_named_tuples_as_objects = true;
+    bool skip_null_value_in_named_tuples = false;
+    bool defaults_for_missing_elements_in_named_tuple = false;
+    bool ignore_unknown_keys_in_named_tuple = false;
+    bool serialize_as_strings = false;
+    bool read_bools_as_numbers = true;
+    bool read_bools_as_strings = true;
+    bool read_numbers_as_strings = true;
+    bool read_objects_as_strings = true;
+    bool read_arrays_as_strings = true;
+    bool try_infer_numbers_from_strings = false;
+    bool validate_types_from_metadata = true;
+    bool validate_utf8 = false;
+    bool valid_output_on_exception = false;
+    bool compact_allow_variable_number_of_columns = false;
+    bool try_infer_objects_as_tuples = false;
+    bool infer_incomplete_types_as_strings = true;
+    bool throw_on_bad_escape_sequence = true;
+    bool ignore_unnecessary_fields = true;
+    bool empty_as_default = false;
+    bool type_json_skip_invalid_typed_paths = false;
+    bool type_json_skip_duplicated_paths = false;
+    bool type_json_skip_null_typed_paths = false;
+    std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
+    bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
+    bool type_json_skip_duplicate_key_detection = false;
+    bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
+    bool pretty_print = true;
+    char pretty_print_indent = ' ';
+    size_t pretty_print_indent_multiplier = 4;
+    bool infer_array_of_dynamic_from_array_of_different_values = true;
+    bool write_map_as_array_of_tuples = false;
+    bool read_map_as_array_of_tuples = false;
+    bool json_type_escape_dots_in_keys = false;
+    size_t max_row_size_for_json_each_row = 0;
+};
 
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
@@ -19,7 +111,7 @@ namespace DB
   * NOTE Parameters for unrelated formats and unrelated data types are collected
   * in this struct - it prevents modularity, but they are difficult to separate.
   */
-struct FormatSettings
+struct FormatSettings : FormatSettingsEnums
 {
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
@@ -33,6 +125,7 @@ struct FormatSettings
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
     bool precise_float_parsing = true;
+    bool check_integer_text_overflow = false;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -57,50 +150,21 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
+    /// The maximum number of steps of the search for the structure of a `Freeform` row, 0 means unlimited.
+    UInt64 freeform_max_search_steps = 4096;
+
     bool allow_special_serialization_kinds = false;
 
-    /// tolerates leading zeros during parsing integers
+    /// Infers a number, not a `String`, for an integer with leading zeros
     bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
 
-    enum class AggregateFunctionInputFormat : uint8_t
-    {
-        State,
-        Value,
-        Array,
-    };
-
     AggregateFunctionInputFormat aggregate_function_input_format = AggregateFunctionInputFormat::State;
 
-    enum class DateTimeInputFormat : uint8_t
-    {
-        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort, /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
-    };
-
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
-
-    enum class DateTimeOutputFormat : uint8_t
-    {
-        Simple,
-        ISO,
-        UnixTimestamp
-    };
-
-    enum class EscapingRule : uint8_t
-    {
-        None,
-        Escaped,
-        Quoted,
-        CSV,
-        JSON,
-        XML,
-        Raw
-    };
 
     UInt64 schema_inference_make_columns_nullable = 1;
     bool schema_inference_make_json_columns_nullable = false;
@@ -114,24 +178,13 @@ struct FormatSettings
     /// set by the `YTsaurus` reader, whose `timestamp` types are stored as raw ticks, not seconds.
     bool read_datetime_number_as_raw_value = false;
 
-    enum class IntervalOutputFormat : uint8_t
-    {
-        Kusto,
-        Numeric
-    };
-
     IntervalOutputFormat interval_output_format = IntervalOutputFormat::Numeric;
-
-    enum class DateTimeOverflowBehavior : uint8_t
-    {
-        Ignore,
-        Throw,
-        Saturate
-    };
 
     bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false;
 
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
+
+    bool throwOnDateTimeOverflow() const { return date_time_overflow_behavior == DateTimeOverflowBehavior::Throw; }
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
@@ -140,16 +193,14 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    enum class InputFormatColumnMatchingCaseSensitivity : uint8_t
-    {
-        MATCH_CASE, /// Matches case-sensitively
-        IGNORE_CASE, /// Matches case-insensitively
-        AUTO, /// First tries to match case-sensitively, if fails, tries to match case-insensitively
-    };
-
     InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::AUTO;
 
     UInt64 client_protocol_version = 0;
+
+    /// The hash of the settings `getFormatSettings` derived this from (see `getFormatSettingsHash`), for
+    /// keying a value by the format settings it was read with. Unset when the struct was not built by
+    /// `getFormatSettings`. A member changed afterwards is not reflected in it.
+    std::optional<UInt64> source_settings_hash = std::nullopt;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
@@ -161,12 +212,10 @@ struct FormatSettings
 
     bool pretty_format = false;
 
-    enum class ArrowCompression : uint8_t
-    {
-        NONE,
-        LZ4_FRAME,
-        ZSTD
-    };
+    /// The Arrow extension name both Arrow writers put on a column written as an opaque `Utf8`/`Binary`
+    /// column by `TEXT`/`BINARY` above, with the original ClickHouse type name in the extension metadata,
+    /// so that a consumer can tell it apart from a genuine string or binary column.
+    static constexpr std::string_view ARROW_OPAQUE_EXTENSION_NAME = "clickhouse.opaque";
 
     struct
     {
@@ -198,7 +247,12 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
-        bool output_unsupported_types_as_binary = true;
+        bool output_uuid_as_fixed_byte_array = false;
+        ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
+        UInt64 output_record_batch_rows = 0;
+        UInt64 output_record_batch_bytes = 0;
+        /// Upper bound on one record batch, as opposed to the targets above, which combine small blocks.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -236,34 +290,8 @@ struct FormatSettings
     bool allow_special_bool_values = true;
     bool allow_special_bool_values_inside_variant = false;
 
-    struct CSV
-    {
-        char delimiter = ',';
-        bool allow_single_quotes = true;
-        bool allow_double_quotes = true;
-        bool serialize_tuple_into_separate_columns = true;
-        bool header_serialize_tuple_into_separate_columns = true;
-        bool deserialize_separate_columns_into_tuple = true;
-        bool empty_as_default = false;
-        bool missing_nullable_as_empty_string = false;
-        bool crlf_end_of_line = false;
-        bool allow_cr_end_of_line = false;
-        bool enum_as_number = false;
-        bool arrays_as_nested_csv = false;
-        String null_representation = "\\N";
-        char tuple_delimiter = ',';
-        bool use_best_effort_in_schema_inference = true;
-        UInt64 skip_first_lines = 0;
-        String custom_delimiter;
-        bool try_detect_header = true;
-        bool skip_trailing_empty_lines = false;
-        bool trim_whitespaces = true;
-        bool allow_whitespace_or_tab_as_delimiter = false;
-        bool allow_variable_number_of_columns = false;
-        bool use_default_on_bad_values = false;
-        bool try_infer_numbers_from_strings = true;
-        bool try_infer_strings_from_quoted_tuples = true;
-    } csv{};
+    using CSV = CSVFormatSettings;
+    CSV csv{};
 
     struct HiveText
     {
@@ -292,75 +320,13 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
     } custom{};
 
-    struct JSON
-    {
-        size_t max_depth = 1000;
-        bool array_of_rows = false;
-        bool quote_64bit_integers = false;
-        bool quote_64bit_floats = false;
-        bool quote_denormals = true;
-        bool quote_decimals = false;
-        bool escape_forward_slashes = true;
-        bool read_named_tuples_as_objects = false;
-        bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
-        bool write_named_tuples_as_objects = true;
-        bool skip_null_value_in_named_tuples = false;
-        bool defaults_for_missing_elements_in_named_tuple = false;
-        bool ignore_unknown_keys_in_named_tuple = false;
-        bool serialize_as_strings = false;
-        bool read_bools_as_numbers = true;
-        bool read_bools_as_strings = true;
-        bool read_numbers_as_strings = true;
-        bool read_objects_as_strings = true;
-        bool read_arrays_as_strings = true;
-        bool try_infer_numbers_from_strings = false;
-        bool validate_types_from_metadata = true;
-        bool validate_utf8 = false;
-        bool valid_output_on_exception = false;
-        bool compact_allow_variable_number_of_columns = false;
-        bool try_infer_objects_as_tuples = false;
-        bool infer_incomplete_types_as_strings = true;
-        bool throw_on_bad_escape_sequence = true;
-        bool ignore_unnecessary_fields = true;
-        bool empty_as_default = false;
-        bool type_json_skip_invalid_typed_paths = false;
-        bool type_json_skip_duplicated_paths = false;
-        bool type_json_skip_null_typed_paths = false;
-        std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
-        bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
-        bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
-        bool pretty_print = true;
-        char pretty_print_indent = ' ';
-        size_t pretty_print_indent_multiplier = 4;
-        bool infer_array_of_dynamic_from_array_of_different_values = true;
-        bool write_map_as_array_of_tuples = false;
-        bool read_map_as_array_of_tuples = false;
-        bool json_type_escape_dots_in_keys = false;
-        size_t max_row_size_for_json_each_row = 0;
-    } json{};
+    using JSON = JSONFormatSettings;
+    JSON json{};
 
     struct
     {
         String column_for_object_name{};
     } json_object_each_row{};
-
-    enum class ParquetVersion : uint8_t
-    {
-        V1_0,
-        V2_4,
-        V2_6,
-        V2_LATEST,
-    };
-
-    enum class ParquetCompression : uint8_t
-    {
-        NONE,
-        SNAPPY,
-        ZSTD,
-        LZ4,
-        GZIP,
-        BROTLI,
-    };
 
     struct
     {
@@ -371,15 +337,18 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         size_t dictionary_filter_push_down = 1024 * 1024;
+        size_t footer_read_size = 0;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
+        /// Copied from the `apply_string_filters_during_scan` query setting.
+        bool apply_string_filters = false;
 
         bool enable_json_parsing = true;
         bool preserve_order = false;
         bool enable_row_group_prefetch = true;
         bool verify_checksums = true;
         bool local_time_as_utc = true;
-        std::unordered_set<int> skip_row_groups = {};
+        UnorderedSetWithMemoryTracking<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         size_t local_read_min_bytes_for_seek = 8192;
@@ -400,6 +369,7 @@ struct FormatSettings
         bool write_page_index = false;
         bool write_bloom_filter = false;
         bool write_checksums = true;
+        bool use_alp_encoding = false;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
@@ -407,8 +377,11 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool detect_variant_by_structure = true;
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
+        bool write_geometry_logical_type = false;
+        bool write_file_logical_type = false;
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
 
@@ -422,6 +395,7 @@ struct FormatSettings
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
         bool highlight_trailing_spaces = true;
+        bool display_control_characters = true;
         bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
@@ -442,6 +416,7 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
+        bool named_tuples_as_subcolumns = true;
 
         bool use_nbsp_for_padding = false;
 
@@ -485,6 +460,8 @@ struct FormatSettings
          * By default, use Text ResultSet.
          */
         bool binary_protocol = false;
+        /// The table columns the result columns come from, reported in the column definitions. Not owned; may be null.
+        const ResultColumnOrigins * result_column_origins = nullptr;
     } mysql_wire{};
 
     struct
@@ -536,22 +513,13 @@ struct FormatSettings
         bool escape_quote_with_quote = false;
     } values{};
 
-    enum class ORCCompression : uint8_t
-    {
-        NONE,
-        LZ4,
-        SNAPPY,
-        ZSTD,
-        ZLIB,
-    };
-
     struct
     {
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
-        std::unordered_set<int> skip_stripes = {};
+        UnorderedSetWithMemoryTracking<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
         bool filter_push_down = true;
@@ -563,14 +531,12 @@ struct FormatSettings
         UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
 
-    /// For capnProto format we should determine how to
-    /// compare ClickHouse Enum and Enum from schema.
-    enum class CapnProtoEnumComparingMode : uint8_t
+    struct
     {
-        BY_NAMES, // Names in enums should be the same, values can be different.
-        BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
-        BY_VALUES, // Values should be the same, names can be different.
-    };
+        bool filter_push_down = true;
+        bool preserve_order = false;
+        bool output_string_as_string = true;
+    } vortex{};
 
     struct CapnProto
     {
@@ -579,13 +545,6 @@ struct FormatSettings
         bool use_autogenerated_schema = true;
         UInt64 max_message_size = 1_GiB; /// Maximum size of a single CapnProto message
     } capn_proto{};
-
-    enum class MsgPackUUIDRepresentation : uint8_t
-    {
-        STR, // Output UUID as a string of 36 characters.
-        BIN, // Output UUID as 16-bytes binary.
-        EXT, // Output UUID as ExtType = 2
-    };
 
     struct
     {
@@ -620,6 +579,12 @@ struct FormatSettings
 
     struct
     {
+        String input_table_name;
+        String output_table_name = "table";
+    } sqlite{};
+
+    struct
+    {
         bool output_string_as_string;
         bool skip_fields_with_unsupported_types_in_schema_inference;
     } bson{};
@@ -642,8 +607,6 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
-
-    enum class UnsupportedGeometryHandling { Throw, Null };
 
     struct
     {

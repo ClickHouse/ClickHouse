@@ -1,0 +1,35 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-17
+title: 'Demo days - 2026-09-17'
+sidebarTitle: '2026-09-17'
+description: 'ClickStack demo days del 2026-09-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Colorear los nodos del mapa de servicios según la tasa de errores absoluta {#colouring-service-map-nodes-by-absolute-error-rate}
+
+*Demo de [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/d8QHorCCgqY" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Nos comentaron que era difícil saber qué servicios tenían errores en el mapa de servicios. Todos los nodos aparecían en algún tono de rojo, incluso los servicios sin errores. Además, los colores dependían del grafo mostrado: el servicio con la tasa de errores más alta siempre aparecía en el rojo más oscuro, aunque esa tasa fuera de solo el 0,3 %.
+
+La tasa de errores se representa ahora mediante cuatro categorías fijas:
+
+* **0 %:** gris frío
+* **Más del 0 % y menos del 1 %:** rojo claro
+* **Del 1 % a menos del 5 %:** rojo intermedio
+* **5 % o más:** rojo oscuro
+
+Un servicio sin tráfico aparece como un círculo vacío. Si tiene tráfico pero no registra errores, aparece en gris. Si ve un nodo rojo, ese servicio tiene errores.
+
+La elección del gris es importante. En un nodo de 32 px, el rosa pálido y otro tono de rosa ligeramente más oscuro parecen casi idénticos. El gris frío se distingue mucho mejor, y los tres tonos de rojo proceden de la paleta existente.
+
+La leyenda ahora muestra categorías diferenciadas, con `≥5%` en la parte superior. Ese umbral es el mismo que ya utiliza el color de alarma del tooltip, de modo que ambos son coherentes. La latencia y el caudal siguen usando escalas relativas, porque el umbral adecuado depende de la carga de trabajo.
+
+Esto tiene una contrapartida: una tasa del 6 % y otra del 60 % aparecen ahora con el mismo color. El tooltip sigue mostrando el porcentaje exacto. Un gráfico de anillo proporcional permitiría mostrar más detalle, pero requeriría un cambio mayor. Tampoco disponemos por ahora de los datos necesarios para desglosar las respuestas correctas, las respuestas `4xx` y `5xx` y las solicitudes sujetas a limitación de tasa; la fuente expone los estados `Ok`, `Error` y `Unset` de OpenTelemetry.
+
+Por ahora, los umbrales son fijos. Una mejora futura útil sería permitir sobrescrituras por fuente: un servicio con un SLO del `99.9%` y un trabajo por lotes tienen criterios distintos sobre qué tasa de errores es aceptable.
+
+**PR relacionados:** [#3125](https://github.com/hyperdxio/hyperdx/pull/3125) Colorear los nodos del mapa de servicios según umbrales absolutos de la tasa de errores

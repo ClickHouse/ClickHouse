@@ -1,4 +1,4 @@
--- Tags: no-fasttest, long
+-- Tags: no-fasttest, long, no-msan
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
 -- Tests that DDL statements which create / drop / materialize statistics
@@ -15,6 +15,9 @@ SET allow_statistics = 1;
 
 -- Error case: Unknown statistics types are rejected
 CREATE TABLE tab (col Float64 STATISTICS(no_statistics_type)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+-- Error case: A statistics type written as an expression is rejected as an unknown type
+CREATE TABLE tab (col Float64 STATISTICS(trim(BOTH '' FROM 'x'))) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
 -- Error case: The same statistics type can't exist more than once on a column
 CREATE TABLE tab (col Float64 STATISTICS(tdigest, tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -47,7 +50,7 @@ CREATE TABLE tab (col UUID STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tu
 CREATE TABLE tab (col IPv4 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
---   uniq requires data_type.isValueRepresentedByInteger or (Fixed)String
+--   uniq requires data_type.isValueRepresentedByInteger or (Fixed)String or UUID
 --     These types work:
 CREATE TABLE tab (col UInt8 STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col UInt256 STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
@@ -64,11 +67,14 @@ CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(uniq)) Engine = MergeTree
 CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col String STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col FixedString(1) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UUID STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(UUID) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(UUID) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(UUID)) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 --     These types don't work:
 CREATE TABLE tab (col Array(Float64) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col UUID STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(uniq)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
 --   countmin requires data_type.isValueRepresentedByInteger or data_type = (Fixed)String
@@ -125,7 +131,7 @@ CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(basic)) Engine = MergeTree(
 CREATE TABLE tab (col UUID STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col IPv6 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 
---   uniq_v2 requires data_type.isValueRepresentedByNumber or data_type = (Fixed)String (same validator as uniq)
+--   uniq_v2 requires data_type.isValueRepresentedByNumber or data_type = (Fixed)String or UUID (same validator as uniq)
 --     These types work:
 CREATE TABLE tab (col UInt8 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col UInt256 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
@@ -142,11 +148,14 @@ CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(uniq_v2)) Engine = MergeT
 CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col String STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col FixedString(1) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UUID STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(UUID) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(UUID) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(UUID)) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 --     These types don't work:
 CREATE TABLE tab (col Array(Float64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col UUID STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
 -- CREATE TABLE was easy, ALTER is more fun

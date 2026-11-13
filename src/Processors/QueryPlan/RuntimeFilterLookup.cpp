@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <bit>
-#include <cmath>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -8,21 +7,32 @@
 #include <utility>
 #include <vector>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
+#include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FailPoint.h>
 #include <Common/MergeLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -46,6 +56,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char runtime_filter_skip_finish_insert[];
 }
 
 namespace detail
@@ -167,24 +182,39 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 static constexpr size_t HASH_BATCH_SIZE = 1024;
-/// Max size up to which the bloom filter grows before the false positive rate starts degrading.
-static constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
-/// At 3 hash functions achieves a 12.5% false positive rate
-static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
-namespace
+bool detail::RuntimeFilterIndexAnalysis::supportsDataType(const DataTypePtr & data_type)
 {
-bool typeSupportsMinMaxRange(const DataTypePtr & type)
+    return runtimeFilterKeySupportsMinMaxRange(data_type);
+}
+
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & data_type)
 {
-    if (!type)
+    if (!data_type)
         return false;
 
-    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(type));
+    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(data_type));
     WhichDataType which(inner);
     return which.isInteger() || which.isDateOrDate32OrDateTimeOrDateTime64();
 }
 
-void extendRange(bool & has_range, Field & range_min, Field & range_max, const Field & new_min, const Field & new_max)
+detail::RuntimeFilterIndexAnalysis::RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_)
+    : range_supported(supportsDataType(data_type))
+    , positive_filter(positive_filter_)
+{
+}
+
+void detail::RuntimeFilterIndexAnalysis::setRange(const Range & range)
+{
+    if (!range_supported || !positive_filter)
+        return;
+
+    range_min = range.left;
+    range_max = range.right;
+    has_range = true;
+}
+
+void detail::RuntimeFilterIndexAnalysis::extendRange(const Field & new_min, const Field & new_max)
 {
     if (!has_range)
     {
@@ -198,6 +228,52 @@ void extendRange(bool & has_range, Field & range_min, Field & range_max, const F
         range_min = new_min;
     if (accurateLess(range_max, new_max))
         range_max = new_max;
+}
+
+void detail::RuntimeFilterIndexAnalysis::insert(const IColumn & values)
+{
+    if (!enabled || !range_supported || !positive_filter || values.empty())
+        return;
+
+    Field column_min;
+    Field column_max;
+    values.getExtremes(column_min, column_max, 0, values.size());
+    if (!column_min.isNull() && !column_max.isNull())
+        extendRange(column_min, column_max);
+}
+
+void detail::RuntimeFilterIndexAnalysis::mergeFrom(const RuntimeFilterIndexAnalysis & source)
+{
+    if (enabled && range_supported && positive_filter && source.has_range)
+        extendRange(source.range_min, source.range_max);
+}
+
+std::optional<Range> detail::RuntimeFilterIndexAnalysis::getRange() const
+{
+    if (!enabled || !range_supported || !positive_filter || !has_range || range_min.isNull() || range_max.isNull())
+        return {};
+    return Range(range_min, true, range_max, true);
+}
+
+namespace
+{
+
+/// Whether `equals` can answer differently from the bitwise comparison a hash table performs on keys:
+/// NaN is not equal to itself, and -0.0 is equal to 0.0. A JSON column counts as a whole, because a
+/// float can appear on a path discovered while reading, which is not among the type's static children.
+bool equalsCanDisagreeWithHashTable(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
+}
+
+/// A runtime filter key comes from an `=` predicate, which never matches NULL, so a `Nullable` integer key keeps
+/// only its non-NULL values, in the set of the nested type.
+bool canDropNullKeys(const DataTypePtr & type)
+{
+    if (!type->isNullable())
+        return false;
+    const auto nested = removeNullable(type);
+    return nested->isValueRepresentedByInteger() && nested->getSizeOfValueInMemory() <= 16;
 }
 
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
@@ -261,23 +337,6 @@ struct Overloaded : Ts...
 template <typename... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
-/// Grow the bloom filter bytes to hold `distinct_keys` keys at the target fill rate using
-/// `hash_functions` hash functions: filter_bits = -hash_functions * distinct_keys / ln(1 - fill_rate)
-/// The formula is built on the following logic:
-/// - distinct_keys * hash_functions: total bit-inserts into the filter
-/// - filter_bits: the size of the filter in bits (what we solve for)
-/// - 1/filter_bits: probability that one bit-insert sets a given bit
-/// - (1 - 1/filter_bits)^(distinct_keys * hash_functions): probability that a given bit is not set after all inserts
-/// - e^(-distinct_keys * hash_functions / filter_bits) is used to approximate the above probability
-/// - 1 - e^(-distinct_keys * hash_functions / filter_bits): expected fraction of bits that end up set (= fill_rate)
-/// For more infomation check: https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf
-UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
-{
-    const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
-    const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
-    const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
-    return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
-}
 }
 
 static size_t countPassedStats(ColumnPtr values);
@@ -287,9 +346,10 @@ ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
     const DataTypePtr & filter_column_target_type_, UInt64 bytes_limit_, UInt64 exact_values_limit_)
     : filter_column_target_type(filter_column_target_type_)
     , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type_))
+    , drop_null_keys(canDropNullKeys(filter_column_target_type_))
     , bytes_limit(bytes_limit_)
     , exact_values_limit(exact_values_limit_)
-    , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls)})
+    , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls && !drop_null_keys)})
 {
     ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type_, String())};
     getExactValues().setHeader(set_header);
@@ -315,6 +375,12 @@ const Set & ExactSetRuntimeFilter<negate>::getExactValues() const
 }
 
 template <bool negate>
+ColumnPtr ExactSetRuntimeFilter<negate>::toFilterColumnType(const ColumnPtr & set_elements) const
+{
+    return drop_null_keys ? makeNullable(set_elements) : set_elements;
+}
+
+template <bool negate>
 void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 {
     if (is_finished)
@@ -325,7 +391,8 @@ void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 
     auto & set = getExactValues();
     set.insertFromColumns({values});
-    is_full = set.getTotalRowCount() > exact_values_limit || set.getTotalByteCount() > bytes_limit;
+    const size_t set_bytes = bound_key_bytes ? set.getSetElementsBytes() : set.getTotalByteCount();
+    is_full = set.getTotalRowCount() > exact_values_limit || set_bytes > bytes_limit;
 }
 
 template <bool negate>
@@ -341,13 +408,15 @@ void ExactSetRuntimeFilter<negate>::finishInsert()
     /// If the set is empty just return a constant false column.
     if (set.getTotalRowCount() == 0)
     {
-        lookup_state = Empty{set.getSetElements().front()};
+        lookup_state = Empty{toFilterColumnType(set.getSetElements().front())};
         return;
     }
 
     /// If only one element is in the set then use `equals` instead of set lookup.
     /// If the argument is `Nullable`, use `Set` because it can handle `NULL` values.
-    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls)
+    /// If `equals` can disagree with the hash table, use `Set`: this filter must not reject a row the join matches.
+    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls
+        && !equalsCanDisagreeWithHashTable(*filter_column_target_type))
     {
         lookup_state = Single{set.getSetElements().front()};
         return;
@@ -410,13 +479,13 @@ ColumnPtr ExactSetRuntimeFilter<negate>::getValuesColumn() const
         Overloaded{
             [](const Empty & empty) -> ColumnPtr { return empty.column; },
             [](const Single & single) -> ColumnPtr { return single.column; },
-            [](const Many & many) -> ColumnPtr
+            [this](const Many & many) -> ColumnPtr
             {
                 if (!many.exact_values)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
 
                 many.exact_values->finishInsert();
-                return many.exact_values->getSetElements().front();
+                return toFilterColumnType(many.exact_values->getSetElements().front());
             },
         },
         lookup_state);
@@ -510,6 +579,44 @@ bool ApproximateSetRuntimeFilter::isWorthUsing(Float64 max_ratio_of_set_bits_in_
     return static_cast<double>(set_bits) <= max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits);
 }
 
+void ApproximateSetRuntimeFilter::serialize(WriteBuffer & out) const
+{
+    writeVarUInt(bloom_filter.getFilterSizeBytes(), out);
+    writeVarUInt(bloom_filter.getHashes(), out);
+    writeVarUInt(bloom_filter.getSeed(), out);
+    const auto & words = bloom_filter.getFilter();
+    out.write(reinterpret_cast<const char *>(words.data()), words.size() * sizeof(words[0]));
+}
+
+ApproximateSetRuntimeFilter ApproximateSetRuntimeFilter::deserialize(ReadBuffer & in, const RuntimeFilterGeometry & geometry)
+{
+    UInt64 size_bytes{};
+    UInt64 hash_functions{};
+    UInt64 seed{};
+    readVarUInt(size_bytes, in);
+    readVarUInt(hash_functions, in);
+    readVarUInt(seed, in);
+    /// The bloom size comes from `bloom_filter_bytes`, never from the exact-phase byte bound: the
+    /// sender may have been allowed a bigger exact set than the plain settings geometry, but every
+    /// receiver of the same exchange has to allocate the same bits or the merged bits are garbage.
+    if (size_bytes != geometry.bloom_filter_bytes || hash_functions != geometry.bloom_filter_hash_functions
+        || seed != BLOOM_FILTER_SEED)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Runtime filter bloom parameters ({}, {}, {}) do not match the expected ({}, {}, {})",
+            size_bytes,
+            hash_functions,
+            seed,
+            geometry.bloom_filter_bytes,
+            geometry.bloom_filter_hash_functions,
+            BLOOM_FILTER_SEED);
+
+    ApproximateSetRuntimeFilter filter(size_bytes, hash_functions);
+    auto & words = filter.bloom_filter.getFilter();
+    in.readStrict(reinterpret_cast<char *>(words.data()), words.size() * sizeof(words[0]));
+    return filter;
+}
+
 bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     return ApproximateSetRuntimeFilter::isDataTypeSupported(data_type);
@@ -517,23 +624,32 @@ bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type
 
 AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     const DataTypePtr & filter_column_target_type_,
-    UInt64 bytes_limit_,
-    UInt64 exact_values_limit_,
-    UInt64 bloom_filter_hash_functions_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
+    const RuntimeFilterGeometry & geometry_,
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_)
     : filter_column_target_type(filter_column_target_type_)
-    , bloom_filter_hash_functions(bloom_filter_hash_functions_)
-    , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
+    , bloom_filter_bytes(geometry_.bloom_filter_bytes)
+    , bloom_filter_hash_functions(geometry_.bloom_filter_hash_functions)
+    , max_ratio_of_set_bits_in_bloom_filter(geometry_.max_ratio_of_set_bits_in_bloom_filter)
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
-    , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, bytes_limit_, exact_values_limit_)
+    , key_range(filter_column_target_type_, /*positive_filter_=*/true)
+    , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, geometry_.exact_bytes_limit, geometry_.exact_values_limit)
 {
+}
+
+void AdaptiveSetRuntimeFilter::boundExactSetByKeyBytes()
+{
+    if (auto * exact_filter = std::get_if<ExactFilter>(&filter))
+        exact_filter->boundKeyBytes();
 }
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 {
+    if (state_serialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after its state was serialized");
+
+    key_range.insert(*values);
     insert(std::move(values), filter);
 }
 
@@ -610,6 +726,15 @@ ColumnPtr AdaptiveSetRuntimeFilter::getRecordedKeyValues() const
 
 void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source)
 {
+    if (state_serialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after its state was serialized");
+
+    /// Without a range from the source, the merged range would miss its keys.
+    if (source.key_range.isEnabled())
+        key_range.mergeFrom(source.key_range);
+    else
+        key_range.disable();
+
     std::visit(
         Overloaded{
             [&](const ExactFilter & source_exact_filter) { insert(source_exact_filter.getValuesColumn(), filter); },
@@ -639,12 +764,16 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
     if (!exact_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
     auto values = exact_filter->getValuesColumn();
-    UInt64 bytes_limit = exact_filter->getBytesLimit();
+
+    /// Only a filter that stays in one pipeline grows its bloom from statistics. A transported
+    /// partial carries no hint: its bloom must match the plan geometry on every receiver and must
+    /// not cost more on the wire than the settings-sized bloom.
+    UInt64 grown_bloom_filter_bytes = bloom_filter_bytes;
 
     if (distinct_keys_hint)
     {
-        bytes_limit
-            = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, bytes_limit, max_ratio_of_set_bits_in_bloom_filter);
+        grown_bloom_filter_bytes = growRuntimeBloomFilterBytesFromStats(
+            *distinct_keys_hint, bloom_filter_hash_functions, bloom_filter_bytes, max_ratio_of_set_bits_in_bloom_filter);
 
         /// The filter size is capped, so a build side with more distinct keys would produce a Bloom filter
         /// that `checkApproximateFilterWorthiness` discards. Predict that fill rate before constructing it.
@@ -652,9 +781,8 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         {
             const double least_distinct_keys
                 = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
-            const double predicted_fill_rate = -std::expm1(
-                -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys
-                / (static_cast<double>(bytes_limit) * 8.0));
+            const double predicted_fill_rate = estimateRuntimeBloomFilterSetBitsRatio(
+                least_distinct_keys, RuntimeBloomFilterParameters{grown_bloom_filter_bytes, bloom_filter_hash_functions});
             if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
             {
                 ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
@@ -664,7 +792,8 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         }
     }
 
-    auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(bytes_limit, bloom_filter_hash_functions);
+    auto & approximate_filter
+        = filter_.emplace<ApproximateSetRuntimeFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions);
     approximate_filter.insert(values);
     return &approximate_filter;
 }
@@ -674,6 +803,130 @@ void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
 {
     if (!approximate_filter.isWorthUsing(max_ratio_of_set_bits_in_bloom_filter))
         evaluation_state.markKeySetDropped();
+}
+
+static constexpr UInt64 RUNTIME_FILTER_STATE_VERSION = 1;
+
+void AdaptiveSetRuntimeFilter::serialize(WriteBuffer & out)
+{
+    state_serialized = true;
+
+    writeVarUInt(RUNTIME_FILTER_STATE_VERSION, out);
+
+    /// 0: the range is not tracked, 1: tracked, but no keys yet, 2: tracked, followed by min and max.
+    const auto range = key_range.getRange();
+    writeBinary(UInt8(!key_range.isEnabled() ? 0 : (range ? 2 : 1)), out);
+    if (range)
+    {
+        writeFieldBinary(range->left, out);
+        writeFieldBinary(range->right, out);
+    }
+
+    if (const auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter))
+    {
+        writeBinary(UInt8(1), out);
+        approximate_filter->serialize(out);
+        return;
+    }
+
+    /// A filter that gave up its key set passes all rows; there is no partial state to transport
+    /// and the wire format has no way to say so. It is unreachable: the key set is only dropped
+    /// from the statistics hint, which a transported partial never carries.
+    const auto * exact_filter = std::get_if<ExactFilter>(&filter);
+    if (!exact_filter)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize a runtime filter that gave up its key set");
+
+    writeBinary(UInt8(0), out);
+
+    /// Set elements have `LowCardinality` removed, so the block uses the same type. The row count goes
+    /// first so the reader can reject it before allocating.
+    auto values = exact_filter->getValuesColumn();
+    writeVarUInt(values->size(), out);
+    Block block({ColumnWithTypeAndName(values, recursiveRemoveLowCardinality(filter_column_target_type), "values")});
+    NativeWriter writer(out, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+}
+
+AdaptiveSetRuntimeFilter AdaptiveSetRuntimeFilter::deserialize(
+    ReadBuffer & in, const DataTypePtr & filter_column_target_type_, const RuntimeFilterGeometry & geometry_)
+{
+    UInt64 version{};
+    readVarUInt(version, in);
+    if (version != RUNTIME_FILTER_STATE_VERSION)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown runtime filter state version {}", version);
+
+    UInt8 key_range_state{};
+    readBinary(key_range_state, in);
+    if (key_range_state > 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed runtime filter key range");
+    std::optional<Range> range;
+    if (key_range_state == 2)
+    {
+        Field range_min = readFieldBinary(in);
+        Field range_max = readFieldBinary(in);
+        if (range_min.isNull() || range_max.isNull() || range_min.getType() != range_max.getType() || accurateLess(range_max, range_min))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed runtime filter key range");
+        range = Range(std::move(range_min), true, std::move(range_max), true);
+    }
+
+    UInt8 has_bloom_filter{};
+    readBinary(has_bloom_filter, in);
+    if (has_bloom_filter > 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed runtime filter state");
+
+    AdaptiveSetRuntimeFilter filter(
+        filter_column_target_type_,
+        geometry_,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter.boundExactSetByKeyBytes();
+    if (key_range_state != 0)
+        filter.key_range.enable();
+    if (range)
+        filter.key_range.setRange(*range);
+
+    if (has_bloom_filter)
+    {
+        filter.filter.emplace<ApproximateSetRuntimeFilter>(ApproximateSetRuntimeFilter::deserialize(in, geometry_));
+    }
+    else
+    {
+        UInt64 rows{};
+        readVarUInt(rows, in);
+        if (rows > geometry_.exact_values_limit)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Runtime filter declares {} exact values, more than the limit {}",
+                rows,
+                geometry_.exact_values_limit);
+
+        /// The row count does not bound variable-width keys. Without this check a sender could make
+        /// us parse far more than `exact_bytes_limit`. The slack covers the Native block header and
+        /// the type name.
+        const auto element_type = recursiveRemoveLowCardinality(filter_column_target_type_);
+        constexpr size_t native_framing_slack_bytes = 64 * 1024;
+        const size_t max_state_bytes = geometry_.exact_bytes_limit + element_type->getName().size() + native_framing_slack_bytes;
+        if (in.available() > max_state_bytes)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Runtime filter exact state of {} bytes exceeds the limit of {} bytes",
+                in.available(),
+                max_state_bytes);
+
+        Block block;
+        {
+            LimitReadBuffer limited(in, {.read_no_more = max_state_bytes});
+            block = NativeReader(limited, DBMS_TCP_PROTOCOL_VERSION).read();
+        }
+        if (block.columns() != 1 || block.rows() != rows || !block.getByPosition(0).type->equals(*element_type))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter values have unexpected structure: {}", block.dumpStructure());
+        filter.insert(block.getByPosition(0).column);
+    }
+
+    if (!in.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected data after the runtime filter state");
+
+    return filter;
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
@@ -692,16 +945,9 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & 
 
 RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
     : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
-    , range_supported(typeSupportsMinMaxRange(filter_column_target_type))
-    , range_positive(!std::holds_alternative<ExactNotContains>(data_.filter))
     , evaluation_state(std::move(config_))
     , data(std::move(data_))
 {
-    if (!range_supported)
-    {
-        std::lock_guard lock(mutex);
-        data.has_range = false;
-    }
 }
 
 void RuntimeFilter::insert(ColumnPtr values)
@@ -714,14 +960,7 @@ void RuntimeFilter::insert(ColumnPtr values)
             if constexpr (!FilterType::is_prebuilt)
             {
                 data.build_state.assertCanInsert();
-                if (data.index_analysis_enabled && range_supported && range_positive && !values->empty())
-                {
-                    Field column_min;
-                    Field column_max;
-                    values->getExtremes(column_min, column_max, 0, values->size());
-                    if (!column_min.isNull() && !column_max.isNull())
-                        extendRange(data.has_range, data.range_min, data.range_max, column_min, column_max);
-                }
+                data.index_analysis.insert(*values);
                 filter.insert(std::move(values));
             }
         },
@@ -790,8 +1029,7 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
         },
         data.filter,
         source.data.filter);
-    if (data.index_analysis_enabled && range_supported && range_positive && source.data.has_range)
-        extendRange(data.has_range, data.range_min, data.range_max, source.data.range_min, source.data.range_max);
+    data.index_analysis.mergeFrom(source.data.index_analysis);
     data.build_state.finishMerge();
 }
 
@@ -799,29 +1037,23 @@ void RuntimeFilter::enableIndexAnalysis()
 {
     std::lock_guard lock(mutex);
     data.build_state.assertCanInsert();
-    data.index_analysis_enabled = true;
+    data.index_analysis.enable();
 }
 
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
 {
-    if (!range_positive)
-        return nullptr;
-
     SharedLockGuard lock(mutex);
-    if (!data.index_analysis_enabled || !data.build_state.isFinished())
+    if (!data.index_analysis.canUseExactValues() || !data.build_state.isFinished())
         return nullptr;
     return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
 {
-    if (!range_supported || !range_positive)
-        return {};
-
     SharedLockGuard lock(mutex);
-    if (!data.has_range || !data.build_state.isFinished() || data.range_min.isNull() || data.range_max.isNull())
+    if (!data.build_state.isFinished())
         return {};
-    return Range(data.range_min, true, data.range_max, true);
+    return data.index_analysis.getRange();
 }
 
 template class ExactSetRuntimeFilter<false>;
@@ -840,11 +1072,16 @@ public:
             filter.reset(runtime_filter.release()); /// Save new filter.
             /// Record the readable structural name once because the map is keyed by the opaque rendezvous key.
             display_names.emplace(key, display_name);
+            LOG_TRACE(getLogger("RuntimeFilter"), "Registered runtime filter '{}' under key '{}'", display_name, key);
         }
         else
         {
             filter->merge(*runtime_filter); /// Add all new keys to an existing filter.
+            LOG_TRACE(getLogger("RuntimeFilter"), "Merged a partial into runtime filter '{}' under key '{}'", display_name, key);
         }
+        /// The registration above already makes the filter findable by the probe side, so skipping
+        /// the call below holds it in the registered-but-unfinished state that is otherwise transient.
+        fiu_do_on(FailPoints::runtime_filter_skip_finish_insert, { return; });
         filter->finishInsert();
     }
 
@@ -872,13 +1109,14 @@ public:
         for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
+            /// Several filters can share one display name, so the key is logged too.
             auto name_it = display_names.find(filter_key);
             const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(
                 getLogger("RuntimeFilter"),
-                "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
+                "Stats for '{}' (key '{}'): rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
                 name,
+                filter_key,
                 stats.rows_skipped.load(),
                 stats.rows_checked.load(),
                 stats.rows_passed.load(),
@@ -901,17 +1139,47 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup()
 }
 
 /// Build a pruning predicate on the column: exact IN values when available, otherwise a range.
+/// The input of the DAG with this name, added if there is none: the predicates of several descriptors may read the same column.
+static const ActionsDAG::Node & findOrAddInput(ActionsDAG & dag, const String & name, const DataTypePtr & type)
+{
+    for (const auto * input : dag.getInputs())
+        if (input->result_name == name && input->result_type->equals(*type))
+            return *input;
+    return dag.addInput(name, type);
+}
+
 static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
-    const RuntimeFilter & filter, const String & column_name, const DataTypePtr & column_type, ActionsDAG & dag, const ContextPtr & context)
+    const RuntimeFilter & filter,
+    const RuntimeFilterIndexAnalysisDescriptor & descriptor,
+    ActionsDAG & dag,
+    const ContextPtr & context)
 {
     auto exact_values = filter.getRecordedKeyValues();
     auto range = exact_values ? std::optional<Range>{} : filter.getRecordedKeyRanges();
     if (!exact_values && !range)
         return nullptr;
 
+    const String & column_name = descriptor.key_column_name;
+    const DataTypePtr & column_type = descriptor.key_column_type;
     const auto target_type = filter.getFilterColumnTargetType();
-    const auto & key_node = dag.addInput(column_name, column_type);
-    const auto & key_casted = column_type->equals(*target_type)
+
+    /// The key of a global row index descriptor is the same `_part_offset + _part_starting_offset` expression the probe side
+    /// filters by, under the name `MergeTreeSkipIndexReader::read` gives its key.
+    const ActionsDAG::Node * key_node_ptr = nullptr;
+    if (descriptor.is_global_row_index)
+    {
+        auto uint64_type = std::make_shared<DataTypeUInt64>();
+        const auto & part_offset = findOrAddInput(dag, "_part_offset", uint64_type);
+        const auto & part_starting_offset = findOrAddInput(dag, "_part_starting_offset", uint64_type);
+        key_node_ptr = &dag.addFunction(FunctionFactory::instance().get("plus", context), {&part_offset, &part_starting_offset}, {});
+        if (key_node_ptr->result_name != runtime_filter_global_row_index_node_name)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected name {} of the global row index key, expected {}",
+                key_node_ptr->result_name, runtime_filter_global_row_index_node_name);
+    }
+    else
+        key_node_ptr = &dag.addInput(column_name, column_type);
+    const auto & key_node = *key_node_ptr;
+    const auto & key_casted = key_node.result_type->equals(*target_type)
         ? key_node
         : dag.addCast(key_node, target_type, {}, context);
 
@@ -964,7 +1232,7 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
         if (!filter)
             continue;
         if (const auto * predicate
-            = convertRuntimeFilterToKeyConditionDAG(*filter, descriptor.key_column_name, descriptor.key_column_type, dag, context))
+            = convertRuntimeFilterToKeyConditionDAG(*filter, descriptor, dag, context))
             and_args.push_back(predicate);
     }
 
@@ -975,6 +1243,37 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
 
     FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
     return &dag.addFunction(and_func, std::move(and_args), {});
+}
+
+RuntimeFilterPruningPredicate::RuntimeFilterPruningPredicate(
+    RuntimeFilterIndexAnalysisDescriptors descriptors_, RuntimeFilterLookupPtr lookup_, ContextPtr context_)
+    : descriptors(std::move(descriptors_))
+    , lookup(std::move(lookup_))
+    , context(std::move(context_))
+{
+}
+
+std::optional<std::shared_ptr<const ActionsDAG>> RuntimeFilterPruningPredicate::tryGet() const
+{
+    std::lock_guard lock(mutex);
+    if (built)
+        return predicate_dag;
+
+    for (const auto & descriptor : descriptors)
+    {
+        auto filter = lookup->find(descriptor.filter_id);
+        if (!filter || !filter->isReady())
+            return std::nullopt;
+    }
+
+    built = true;
+    auto dag = std::make_shared<ActionsDAG>();
+    if (const auto * predicate = buildRuntimeRangePredicate(*lookup, descriptors, *dag, context))
+    {
+        dag->getOutputs() = {predicate};
+        predicate_dag = std::move(dag);
+    }
+    return predicate_dag;
 }
 
 }

@@ -1,0 +1,25 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
+    </settings>
+
+    <create_query>
+        CREATE TABLE sparse_column_index_sorted (a Int16, b UInt64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sparse_column_index_sorted SELECT
+            cityHash64(number) % 100 = 0 ? 1 + number % 7 : 0,
+            intHash32(number) % 20 = 0 ? number : 0
+        FROM numbers(500000000)
+    </fill_query>
+
+    <!-- `FilterTransform` indexes the sparse columns by the offsets of the sparse filter `a != 0`. -->
+    <query>SELECT a, count() FROM sparse_column_index_sorted WHERE a != 0 GROUP BY a FORMAT Null</query>
+    <query>SELECT sum(b) FROM sparse_column_index_sorted WHERE a != 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS sparse_column_index_sorted</drop_query>
+</test>

@@ -6,9 +6,12 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
@@ -64,6 +67,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -121,6 +125,10 @@ namespace
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
+        /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
+        /// Empty if disabled by the `use_idempotency_id` request setting.
+        const String idempotency_id
+            = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -149,12 +157,14 @@ namespace
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
-            if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+            auto metadata = object_metadata.value_or(ObjectAttributes{});
+            if (!idempotency_id.empty())
+                metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+            request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             if (usesFlexibleUploadChecksumHeader())
                 request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
@@ -171,6 +181,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->CreateMultipartUpload(request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -206,6 +217,7 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
+            request.setIdempotencyId(idempotency_id);
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
@@ -226,6 +238,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -242,9 +255,10 @@ namespace
                     break;
                 }
 
-                if (isTransientCompleteMultipartUploadError(outcome.GetError()) && (retries < max_retries))
+                const auto & error = outcome.GetError();
+
+                if (isTransientCompleteMultipartUploadError(error) && (retries < max_retries))
                 {
-                    const auto & error = outcome.GetError();
                     const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
                     LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry
@@ -259,12 +273,16 @@ namespace
 
         void abortMultipartUpload()
         {
+            /// Keep the retries of this cleanup when the query or merge is cancelled. The in-flight parts are already waited for.
+            ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
             LOG_TRACE(log, "Aborting multipart upload. Bucket: {}, Key: {}, Upload_id: {}", dest_bucket, dest_key, multipart_upload_id);
             S3::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -428,7 +446,7 @@ namespace
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
                 auto checksum = prepareChecksums(*request);
-                auto tag = processUploadPartRequest(*request);
+                auto tag = processUploadPartRequest(*request, task.part_size);
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
@@ -455,7 +473,7 @@ namespace
 
         /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const = 0;
-        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
+        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) = 0;
     };
 
     /// Helper class to help implementing copyDataToS3File().
@@ -531,7 +549,7 @@ namespace
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             if (usesFlexibleUploadChecksumHeader())
                 request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
@@ -542,7 +560,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        /// Returns true if the single-part upload failed with EntityTooLarge / InvalidRequest and the
+        /// Returns true if the single-part upload of a non-empty object failed with EntityTooLarge / InvalidRequest and the
         /// caller should fall back to a multipart upload. The fallback is done by the caller (not here)
         /// so the PutObject request and its in-memory body can be released first.
         bool processPutRequest(S3::PutObjectRequest & request)
@@ -554,6 +572,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -578,7 +597,8 @@ namespace
                     return false;
                 }
 
-                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
+                if (size && (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
+                             outcome.GetError().GetExceptionName() == "InvalidRequest"))
                 {
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
                     LOG_INFO(
@@ -632,7 +652,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) override
         {
             auto & req = typeid_cast<S3::UploadPartRequest &>(request);
 
@@ -640,13 +660,14 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->UploadPart(req);
             auto elapsed = watch.elapsedMicroseconds();
 
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
-                                           dest_bucket, dest_key, /* local_path_ */ {}, size, elapsed,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, part_size, elapsed,
                                            outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
                                            outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
 
@@ -719,6 +740,16 @@ namespace
             bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
             if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
             {
+                LOG_TRACE(
+                    log,
+                    "Not copying the range of {} natively, falling back to a buffered ranged read: {}",
+                    src_key,
+                    !multipart_copy_available
+                        ? String("multipart copy is unavailable")
+                        : fmt::format(
+                              "the source is {} bytes, not above the {} bytes S3 requires of a ranged copy source",
+                              src_object_size,
+                              MIN_SOURCE_SIZE_FOR_RANGE_COPY));
                 fallback_method();
                 return;
             }
@@ -770,7 +801,7 @@ namespace
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(S3::getStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -787,7 +818,16 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
+                Stopwatch watch;
                 auto outcome = client_ptr->CopyObject(request);
+                auto elapsed = watch.elapsedMicroseconds();
+
+                if (blob_storage_log)
+                    blob_storage_log->addCopyEvent(src_bucket, src_key, dest_bucket, dest_key, size, elapsed,
+                                                   outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                                   outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+
                 if (outcome.IsSuccess())
                 {
                     LOG_TRACE(
@@ -805,7 +845,9 @@ namespace
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
-                    if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
+                    /// The multipart retry sends byte-range `UploadPartCopy` requests (see MIN_SOURCE_SIZE_FOR_RANGE_COPY).
+                    if (!supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                        || src_object_size <= MIN_SOURCE_SIZE_FOR_RANGE_COPY || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
                         LOG_INFO(
                             log,
@@ -886,7 +928,7 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request, size_t part_size) override
         {
             auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
 
@@ -894,7 +936,16 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
+            Stopwatch watch;
             auto outcome = client_ptr->UploadPartCopy(req);
+            auto elapsed = watch.elapsedMicroseconds();
+
+            if (blob_storage_log)
+                blob_storage_log->addCopyEvent(src_bucket, src_key, dest_bucket, dest_key, part_size, elapsed,
+                                               outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                               outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+
             if (!outcome.IsSuccess())
             {
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());

@@ -84,5 +84,8 @@ cat numbers.csv
 ```
 
 <Note>
-You can't use table functions if the [allow_ddl](/reference/settings/session-settings/allow#allow_ddl) setting is disabled.
+
+Most table functions need the `CREATE TEMPORARY TABLE` privilege to run, so a `SELECT` or `INSERT`
+that executes one is refused when
+[`readonly`](/concepts/features/configuration/settings/permissions-for-queries#readonly) is set to 1.
 </Note>

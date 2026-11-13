@@ -1,0 +1,27 @@
+-- String -> LowCardinality(String)
+0
+2
+4
+5
+1
+0
+2
+4
+5
+0
+2
+4
+5
+6
+8
+9
+-- LowCardinality(String) -> String
+0
+2
+4
+5
+1
+0
+2
+4
+5

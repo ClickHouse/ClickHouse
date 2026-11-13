@@ -1,13 +1,10 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A distributed plan cannot guarantee that a projection is used, so a forced projection
 -- (`force_optimize_projection` / `force_optimize_projection_name`) falls back to local execution:
 -- the plan has no exchanges. Without forcing, the same query is distributed and has a GatherExchange.
 -- `distributed_plan_max_rows_to_broadcast = 0` forces a bucketed read, which together with the
 -- forced projection failed on the worker before the fallback.
 
-SET enable_analyzer = 1, enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 SET max_rows_to_group_by = 0;
 

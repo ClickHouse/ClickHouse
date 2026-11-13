@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Formats/NativeReader.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -36,8 +37,25 @@ namespace ErrorCodes
 }
 
 
-NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_)
+NativeReader::NativeReader(
+    ReadBuffer & istr_,
+    UInt64 server_revision_,
+    std::optional<FormatSettings> format_settings_,
+    ISerialization::KindSet allowed_kinds_)
+    : istr(istr_)
+    , server_revision(server_revision_)
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
+    , allowed_kinds(allowed_kinds_)
+{
+}
+
+NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_)
+    : NativeReader(istr_, server_revision_, std::nullopt)
+{
+}
+
+NativeReader::NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
+    : NativeReader(istr_, header_, server_revision_, std::nullopt)
 {
 }
 
@@ -46,12 +64,14 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_)
+    BlockMissingValues * block_missing_values_,
+    NativeReaderTypeCache * type_cache_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
     , block_missing_values(block_missing_values_)
+    , type_cache(type_cache_)
 {
 }
 
@@ -133,11 +153,24 @@ Block NativeReader::getHeader() const
     return header;
 }
 
+DataTypePtr NativeReader::getTypeByName(const String & type_name)
+{
+    if (type_cache)
+    {
+        if (auto it = type_cache->find(type_name); it != type_cache->end())
+            return it->second;
+    }
+
+    auto type = DataTypeFactory::instance().get(type_name);
+    setVersionToAggregateFunctions(type, true, server_revision);
+    if (type_cache)
+        type_cache->emplace(type_name, type);
+    return type;
+}
+
 Block NativeReader::read()
 {
     Block res;
-
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     if (use_index && index_block_it == index_block_end)
         return res;
@@ -195,7 +228,7 @@ Block NativeReader::read()
         ColumnWithTypeAndName column;
 
         /// Name
-        readBinary(column.name, istr);
+        readStringBinaryGrowing(column.name, istr);
 
         /// Type
         String type_name;
@@ -203,14 +236,13 @@ Block NativeReader::read()
         {
             column.type = decodeDataType(istr, format_settings->binary.max_binary_type_complexity);
             type_name = column.type->getName();
+            setVersionToAggregateFunctions(column.type, true, server_revision);
         }
         else
         {
-            readBinary(type_name, istr);
-            column.type = data_type_factory.get(type_name);
+            readStringBinaryGrowing(type_name, istr);
+            column.type = getTypeByName(type_name);
         }
-
-        setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
         MutableColumnPtr read_column;
@@ -225,7 +257,7 @@ Block NativeReader::read()
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
-                info->deserializeFromKindsBinary(istr);
+                info->deserializeFromKindsBinary(istr, allowed_kinds);
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);
@@ -251,7 +283,7 @@ Block NativeReader::read()
         /// If no rows, nothing to read.
         if (rows)
         {
-            const auto * format = format_settings ? &*format_settings : nullptr;
+            const auto * format = format_settings.get();
             NameAndTypePair name_and_type = {column.name, column.type};
             readData(*serialization, *read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
@@ -301,6 +333,14 @@ Block NativeReader::read()
                         column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
                     }
 
+                    column.type = header_column.type;
+                }
+                else if (!haveSameAggregateStateVersions(*header_column.type, *column.type))
+                {
+                    /// `equals` ignores the state version of `AggregateFunction` types, e.g. a version `0` state
+                    /// from an older writer read into a `AggregateFunction(1, uniq, UInt64)` header, where the query
+                    /// expects the version of the header. So relabel the column with the header type.
+                    column.column = relabelAggregateStateVersions(column.column, header_column.type);
                     column.type = header_column.type;
                 }
             }

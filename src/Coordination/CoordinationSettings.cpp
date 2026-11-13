@@ -7,6 +7,7 @@
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <base/sanitizer_defs.h>
+#include <base/unit.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -19,6 +20,8 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 /** These settings represent fine tunes for internal details of Coordination storages
@@ -106,8 +109,10 @@ namespace ErrorCodes
     DECLARE(UInt64, log_slow_cpu_threshold_ms, 100, "Requests for which the CPU (preprocessing and processing) latency is larger than this settings will be logged", 0) \
     DECLARE(UInt64, log_slow_connection_operation_threshold_ms, 1000, "Log message if a certain operation took too long inside a single connection", 0) \
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
+    DECLARE(UInt64, write_log_entry_version, 0, "Raft log entry format to write. 0: one log entry per request (readable by all versions). 1: one log entry per batch of write requests. Increase only after all servers in the cluster are upgraded to a version that supports the new format.", HOT_RELOAD) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
-    DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
+    DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour with Keeper versions before 26.5). Must not exceed 1 GiB. With 0, snapshots of 2 GiB or larger cannot be transferred, because a single NuRaft message cannot exceed 2 GiB.", 0) \
+    DECLARE(Bool, snapshot_transfer_remote_disk_streaming, false, "Send remote-disk snapshots to followers without caching the whole file in memory. Needs nonzero `snapshot_transfer_chunk_size`.", 0) \
     DECLARE(UInt64, write_snapshot_version, 8, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", HOT_RELOAD) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
@@ -136,7 +141,7 @@ namespace ErrorCodes
     DECLARE(UInt64, log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
     DECLARE(UInt64, log_readahead_serve_wait_timeout_ms, 200, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
     DECLARE(NonZeroUInt64, log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
-    DECLARE(UInt64, log_readahead_commit_window_bytes, 500_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
+    DECLARE(UInt64, log_readahead_commit_window_bytes, 16_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. This is a prefetch window, not a cache: entries are produced in order by one fill task and popped by the commit thread as it consumes them, so the window only has to cover the gap between the two rates, and a value in the tens of MiB is already hundreds of thousands of entries. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
     DECLARE(UInt64, log_startup_read_max_streams, 0, "Maximum number of changelog files read concurrently during Keeper startup. 0 = automatically use the number of CPU cores. 1 = use the serial (pre-parallel) startup read. Effective parallelism is capped by the number of changelog files that need to be read; consider lowering on seek-bound storage (HDD, IOPS-capped volumes).", 0) \
     DECLARE(NonZeroUInt64, log_startup_read_buffer_size, 8 * 1024 * 1024, "Per-stream read buffer size (bytes) used while reading changelogs at Keeper startup. Must be greater than 0. The buffer is additionally clamped to the file size.", 0) \
 
@@ -179,6 +184,18 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
     if ((*this)[CoordinationSetting::commit_logs_cache_size_threshold].changed
         && !(*this)[CoordinationSetting::log_readahead_commit_window_bytes].changed)
         (*this)[CoordinationSetting::log_readahead_commit_window_bytes] = (*this)[CoordinationSetting::commit_logs_cache_size_threshold];
+
+    if ((*this)[CoordinationSetting::snapshot_transfer_chunk_size] > 1_GiB)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The Keeper setting `snapshot_transfer_chunk_size` must not exceed {} bytes, got {}",
+            1_GiB, (*this)[CoordinationSetting::snapshot_transfer_chunk_size].value);
+
+    if ((*this)[CoordinationSetting::snapshot_transfer_remote_disk_streaming].value
+        && (*this)[CoordinationSetting::snapshot_transfer_chunk_size].value == 0)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "The Keeper setting `snapshot_transfer_remote_disk_streaming` requires a nonzero `snapshot_transfer_chunk_size`");
 
 #if defined(MEMORY_SANITIZER)
     if ((*this)[CoordinationSetting::commit_profiler_real_time_period_ns].changed

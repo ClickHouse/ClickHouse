@@ -1,7 +1,6 @@
 SET explain_query_plan_default = 'legacy';
 -- { echo ON }
 
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
@@ -39,25 +38,25 @@ OPTIMIZE TABLE t_proj FINAL;
 
 -- Pick projection based on both filters
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE region = 'eu' AND user_id = 101)
+FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE region = 'eu' AND user_id = 101 SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_proj WHERE region = 'eu' AND user_id = 101 ORDER BY ALL;
 
 -- Region only
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE region = 'zzz')
+FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE region = 'zzz' SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_proj WHERE region = 'zzz' ORDER BY ALL;
 
 -- User only
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE user_id = 106)
+FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE user_id = 106 SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_proj WHERE user_id = 106 ORDER BY ALL;
 
 -- OR → projection index disabled
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE region = 'asia' OR user_id = 101)
+FROM (EXPLAIN projections = 1 SELECT * FROM t_proj WHERE region = 'asia' OR user_id = 101 SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_proj WHERE region = 'asia' OR user_id = 101 ORDER BY ALL;
 
@@ -93,17 +92,17 @@ INSERT INTO t_gran SELECT number + 100, 'zzz' FROM numbers(1000);
 OPTIMIZE TABLE t_gran FINAL;
 
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_gran WHERE region = 'top')
+FROM (EXPLAIN projections = 1 SELECT * FROM t_gran WHERE region = 'top' SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_gran WHERE region = 'top' ORDER BY ALL;
 
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_gran WHERE region = 'mid')
+FROM (EXPLAIN projections = 1 SELECT * FROM t_gran WHERE region = 'mid' SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_gran WHERE region = 'mid' ORDER BY ALL;
 
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_gran WHERE region = 'bot')
+FROM (EXPLAIN projections = 1 SELECT * FROM t_gran WHERE region = 'bot' SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_gran WHERE region = 'bot' ORDER BY ALL;
 
@@ -136,13 +135,13 @@ SET min_table_rows_to_use_projection_index = 0;
 
 -- Should use projection for rows 4–6 only
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_partial WHERE region = 'ru')
+FROM (EXPLAIN projections = 1 SELECT * FROM t_partial WHERE region = 'ru' SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_partial WHERE region = 'ru' ORDER BY ALL;
 
 -- CN appears in both partial and full materialized parts
 SELECT trimLeft(explain)
-FROM (EXPLAIN projections = 1 SELECT * FROM t_partial WHERE region = 'cn')
+FROM (EXPLAIN projections = 1 SELECT * FROM t_partial WHERE region = 'cn' SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%ReadFromMergeTree%' OR match(explain, '^\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*:');
 SELECT * FROM t_partial WHERE region = 'cn' ORDER BY ALL;
 

@@ -117,6 +117,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
+    size_t processing_state_cache_ttl_seconds_,
     size_t keeper_multiread_batch_size_,
     size_t metadata_cache_size_bytes_,
     size_t metadata_cache_size_elements_)
@@ -135,6 +136,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
+    , processing_state_cache_ttl_seconds(processing_state_cache_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
@@ -263,6 +265,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 bucketing_mode,
                 partitioning_mode,
@@ -276,6 +279,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
         case ObjectStorageQueueMode::EXCLUSIVE:
@@ -285,6 +289,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 *this,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
     }
@@ -496,12 +501,13 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
                 continue;
             }
-            if (table_metadata.buckets > 1)
+            if (buckets_num > 1)
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "It is not allowed to modify `buckets` settings "
-                    "when it is already set to a non-zero value");
+                    "It is not allowed to modify `buckets` setting when the table already uses {} buckets "
+                    "(`buckets` is {}, `processing_threads_num` is {})",
+                    buckets_num, table_metadata.buckets.load(), table_metadata.processing_threads_num.load());
             }
             migrateToBucketsInKeeper(value);
             new_table_metadata.buckets = value;
@@ -530,9 +536,13 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
     LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
+
+    ObjectStorageQueueTableMetadata new_table_metadata(table_metadata);
+    new_table_metadata.buckets = value;
+
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
         zookeeper_path,
-        value,
+        new_table_metadata.getBucketsNum(),
         /* prev_value */table_metadata.buckets,
         zookeeper_name);
     table_metadata.buckets = value;
@@ -608,18 +618,18 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 && table_metadata.getMode() == ObjectStorageQueueMode::ORDERED
                 && table_metadata.buckets <= 1 && table_metadata.processing_threads_num <= 1)
             {
-                const std::string message = "Ordered mode in cloud without "
+                const auto message = PreformattedMessage::create("Ordered mode in cloud without "
                     "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
-                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.";
+                    "will not work properly. Please specify them in the CREATE query. See documentation for more details.");
 
                 if (is_attach)
                 {
-                    LOG_WARNING(log, "{}", message);
+                    LOG_WARNING(log, message);
                     warned = true;
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+                    throw Exception(message, ErrorCodes::BAD_ARGUMENTS);
                 }
             }
 
@@ -656,6 +666,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
+                    noop,
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
@@ -1548,6 +1559,8 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
             use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
             persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
+        if (change.name == "processing_state_cache_ttl_seconds")
+            processing_state_cache_ttl_seconds = change.value.safeGet<UInt64>();
     }
 }
 

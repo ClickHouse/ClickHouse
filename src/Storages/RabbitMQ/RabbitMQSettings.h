@@ -14,6 +14,7 @@ struct RabbitMQSettingsImpl;
 /// List of available types supported in RabbitMQSettings object
 #define RABBITMQ_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \

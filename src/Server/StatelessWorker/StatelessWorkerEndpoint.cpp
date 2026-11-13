@@ -1,8 +1,10 @@
 #include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/StatelessWorker/StatelessTaskExecutor.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
 #include <Server/StatelessWorker/StatelessWorkerProtocol.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPResponse.h>
@@ -10,12 +12,15 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Core/ProtocolDefines.h>
+#include <unordered_set>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -36,7 +41,6 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
     return endpoint_name + path;
 }
 
-void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
     writeVarUInt(task_description.serialization_version, out);
@@ -96,10 +100,29 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeStringBinary(change.name, out);
         writeFieldBinary(change.value, out);
     }
-}
 
-namespace
-{
+    if (task_description.serialization_version < DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS
+        && !task.runtime_filter_descriptors.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Distributed task serialization version {} cannot carry runtime filter receive descriptors",
+            task_description.serialization_version);
+
+    if (task_description.serialization_version >= DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS)
+    {
+        writeVarUInt(task.runtime_filter_descriptors.size(), out);
+        for (const auto & descriptor : task.runtime_filter_descriptors)
+        {
+            writeStringBinary(descriptor.filter_key, out);
+            writeStringBinary(descriptor.filter_name, out);
+            encodeDataType(descriptor.key_column_type, out);
+            descriptor.geometry.write(out);
+            writeStringBinary(descriptor.stream.exchange_id, out);
+            writeStringBinary(descriptor.stream.source_bucket, out);
+            writeStringBinary(descriptor.stream.destination_bucket, out);
+        }
+    }
+}
 
 void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
@@ -156,6 +179,9 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         ExchangeDescription exchange;
         UInt64 kind = 0;
         readVarUInt(kind, in);
+        if (kind != static_cast<UInt64>(ExchangeDescription::Kind::Persisted)
+            && kind != static_cast<UInt64>(ExchangeDescription::Kind::Streaming))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown exchange kind {}", kind);
         exchange.kind = static_cast<ExchangeDescription::Kind>(kind);
         readVarUInt(exchange.source_bucket_count, in);
         readVarUInt(exchange.destination_bucket_count, in);
@@ -171,11 +197,7 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         StreamSourceAddress address;
         readStringBinary(address.host, in);
         if (version >= 2)
-        {
-            UInt64 port = 0;
-            readVarUInt(port, in);
-            address.port = static_cast<UInt16>(port);
-        }
+            readVarUInt(address.port, in);
         task_description.exchange_stream_sources.stream_hosts[stream] = address;
     }
 
@@ -192,8 +214,39 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
             task_description.settings_changes.emplace_back(name, value);
         }
     }
-}
 
+    if (version >= DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS)
+    {
+        size_t descriptors_size = 0;
+        readVarUInt(descriptors_size, in);
+        /// Limits against a corrupt task; real tasks are far below them.
+        constexpr size_t max_runtime_filter_receive_descriptors = 1000;
+        if (descriptors_size > max_runtime_filter_receive_descriptors)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too many runtime filter receive descriptors: {}", descriptors_size);
+        task.runtime_filter_descriptors.resize(descriptors_size);
+        std::unordered_set<String> seen_filter_keys;
+        for (size_t i = 0; i < descriptors_size; ++i)
+        {
+            auto & descriptor = task.runtime_filter_descriptors[i];
+            readStringBinary(descriptor.filter_key, in);
+            readStringBinary(descriptor.filter_name, in);
+            /// Trusted server-to-server task: decode types without the input complexity limit.
+            descriptor.key_column_type = decodeDataType(in, /*max_complexity=*/0);
+            descriptor.geometry = RuntimeFilterGeometry::read(in);
+            readStringBinary(descriptor.stream.exchange_id, in);
+            readStringBinary(descriptor.stream.source_bucket, in);
+            readStringBinary(descriptor.stream.destination_bucket, in);
+
+            if (descriptor.filter_key.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter receive descriptor has an empty filter key");
+            if (descriptor.stream.exchange_id.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter receive descriptor has no exchange");
+            if (!seen_filter_keys.insert(descriptor.filter_key).second)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Duplicate runtime filter receive descriptor for key {}", descriptor.filter_key);
+            descriptor.geometry.validateTransported();
+        }
+    }
 }
 
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
@@ -204,14 +257,20 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
     if (operation == "start")
     {
         auto unique_temp_file_path = params.get("temp_path");
+        /// What the coordinator wants appended to status replies; absent means the fixed reply only.
+        TaskCollectors collectors;
+        if (params.has("collect"))
+            collectors = TaskCollectors::parse(params.get("collect"));
+
         /// Deserialize task fields from the request body
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
-        body->eof();
+        /// Read the rest of the body, otherwise the keep-alive connection is closed.
+        body->ignoreAll();
         body.reset();
 
         /// Pass it to the runner to start execution
-        task_runner->startTask(task_id, task_description, unique_temp_file_path);
+        task_runner->startTask(task_id, task_description, unique_temp_file_path, collectors);
     }
     else if (operation == "get_status")
     {
@@ -219,16 +278,13 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         if (params.has("wait_for_ms"))
             wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
 
-        UInt64 client_version = DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
-        if (params.has("client_version"))
-            client_version = parse<UInt64>(params.get("client_version"));
-
         body->eof();
         body.reset();
 
         auto status = task_runner->getStatus(task_id, wait_milliseconds);
         DistributedQueryTaskStatus task_status;
         task_status.progress = std::move(status.progress);
+        task_status.logs = std::move(status.logs);
 
         switch (status.result)
         {
@@ -236,6 +292,14 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
             {
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 task_status.status = "Running";
+                break;
+            }
+            case StatelessTaskExecutor::TaskFailing:
+            {
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                task_status.status = "Failing";
+                task_status.error_message = status.message;
+                task_status.error_code = status.error_code;
                 break;
             }
             case StatelessTaskExecutor::TaskFinished:
@@ -274,7 +338,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
                 break;
             }
         }
-        task_status.write(out, client_version);
+        task_status.write(out, status.collectors);
     }
     else if (operation == "cancel")
     {

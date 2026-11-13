@@ -74,6 +74,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
     hash_state.update(limit_after_all);
+    hash_state.update(shuffle);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -254,6 +255,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << " NULLS " << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST");
         }
     }
+
+    if (shuffle)
+        ostr << s.nl_or_ws << indent_str << "SHUFFLE";
 
     if (limitByLength())
     {
@@ -676,19 +680,6 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
     return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
 }
 
-bool astContainsArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
-            return true;
-    return false;
-}
-
 void ASTSelectQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "SelectQuery");
@@ -713,6 +704,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("group_by_with_grouping_sets", true);
     if (order_by_all)
         w.writeBool("order_by_all", true);
+    if (shuffle)
+        w.writeBool("shuffle", true);
     if (limit_with_ties)
         w.writeBool("limit_with_ties", true);
     if (limit_by_all)
@@ -764,7 +757,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
     {
-        auto child = r.readChild(key);
+        auto child = r.readExpressionChild(key);
         if (child)
             this->setExpression(expr, std::move(child));
     };
@@ -774,7 +767,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// node from malformed `clickhouse_json` would reach an internal cast. Restore them with a typed read.
     auto setExprList = [&](const char * key, ASTSelectQuery::Expression expr)
     {
-        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+        if (auto child = r.readScreenedChildOfType<ASTExpressionList>(key))
             this->setExpression(expr, std::move(child));
     };
 
@@ -785,7 +778,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// (`QueryTreeBuilder`, `getFirstTableExpression`, INSERT ... SELECT handling, etc.) downcast
     /// `tables()` unconditionally, so a different node type from malformed `clickhouse_json` must be
     /// rejected here with `BAD_ARGUMENTS` instead of reaching an internal downcast path later.
-    if (auto tables_child = r.readChildOfType<ASTTablesInSelectQuery>("tables"))
+    if (auto tables_child = r.readScreenedChildOfType<ASTTablesInSelectQuery>("tables"))
         this->setExpression(Expression::TABLES, std::move(tables_child));
 
     /// Both column `aliases` (`SELECT ... (a, b)`) and `cte_aliases` (`WITH (a, b) AS (...)`) are
@@ -845,7 +838,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// `orderBy()` branch. Restore it with a typed read, validate every child, and reject it unless the
     /// ORDER BY list carries a `WITH FILL` element (the parser cannot produce it otherwise, and
     /// `formatImpl` would silently drop it). An empty list is the valid `INTERPOLATE`-all form.
-    if (auto interpolate_child = r.readChildOfType<ASTExpressionList>("interpolate"))
+    if (auto interpolate_child = r.readScreenedChildOfType<ASTExpressionList>("interpolate"))
     {
         for (const auto & elem : interpolate_child->children)
             if (!elem || !elem->as<ASTInterpolateElement>())
@@ -865,6 +858,13 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
         if (!has_with_fill)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "INTERPOLATE requires an ORDER BY ... WITH FILL element during AST JSON deserialization");
+    }
+
+    if (r.getBool("shuffle"))
+    {
+        if (orderBy() || order_by_all)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use SHUFFLE together with ORDER BY during AST JSON deserialization");
+        shuffle = true;
     }
 
     /// `order_by_all` is only meaningful together with an ORDER BY clause, because

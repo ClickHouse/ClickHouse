@@ -7,13 +7,17 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
+#include <base/sleep.h>
 
+#include <chrono>
+#include <thread>
 #include <utility>
 
 namespace ProfileEvents
@@ -41,6 +45,12 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ASYNC_LOAD_CANCELED;
+}
+
+namespace FailPoints
+{
+    extern const char marks_loader_hold_task_until_canceled[];
+    extern const char merge_tree_marks_load_sync_sleep[];
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -294,6 +304,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 {
+    fiu_do_on(FailPoints::merge_tree_marks_load_sync_sleep, { sleepForMilliseconds(100); });
+
     MarkCache::MappedPtr loaded_marks;
 
     auto data_part_storage = data_part_reader->getDataPartStorage();
@@ -348,9 +360,27 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
+
+            /// Test-only: hold the task until the loader is destroyed, so a test can make the destructor win
+            /// the race against the thread pool deterministically. The wait is bounded so that a query which
+            /// does need these marks (and blocks in `loadMarks` on the future) cannot hang forever if the
+            /// fail point is left enabled by mistake.
+            fiu_do_on(FailPoints::marks_loader_hold_task_until_canceled,
+            {
+                for (size_t i = 0; i < 600 && !is_canceled; ++i)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            });
+
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
+                /// `is_canceled` is set only by the destructor, which then waits for this task and drops the
+                /// future without reading it, so nothing ever observes this exception - it only stops the task
+                /// from doing work that has become useless. Keep it out of `system.errors`, where it would look
+                /// like a failure: since `load_marks_asynchronously` is enabled by default, this happens on any
+                /// server whenever a reader is dropped before its marks are needed. `LoadingMarksTasksCanceled`
+                /// above is the counter for this event.
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "Background task for loading marks was canceled");
             }
 

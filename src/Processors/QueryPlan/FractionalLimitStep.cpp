@@ -1,4 +1,5 @@
 #include <IO/Operators.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
@@ -77,6 +78,11 @@ void FractionalLimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("With Ties", with_ties);
 }
 
+QueryPlanStepPtr FractionalLimitStep::clone() const
+{
+    return std::make_unique<FractionalLimitStep>(*this);
+}
+
 void FractionalLimitStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
@@ -90,7 +96,7 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out);
+        serializeSortDescription(description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
@@ -109,7 +115,7 @@ QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
 
     SortDescription description;
     if (with_ties)
-        deserializeSortDescription(description, ctx.in);
+        deserializeSortDescription(description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     return std::make_unique<FractionalLimitStep>(
         ctx.input_headers.front(), limit_fraction, offset_fraction, offset, with_ties, std::move(description));
