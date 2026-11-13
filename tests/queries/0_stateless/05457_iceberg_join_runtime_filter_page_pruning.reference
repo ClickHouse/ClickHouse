@@ -1,0 +1,21 @@
+--- A an exact set of keys ---
+2	2215
+2	2215
+a_on	14	0	14
+a_off	0	0	0
+--- W together with a filter of the query ---
+1	705
+1	705
+w_on	13	0	20
+w_off	0	0	7
+--- Q1 the query condition cache ---
+0	0
+0	0
+q1_on	16	0	16
+q1_off	0	0	0
+1600
+--- M a page index of the join key that cannot be parsed ---
+2	2215
+2	2215
+m_on	0	0	0
+m_off	0	0	0

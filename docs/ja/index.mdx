@@ -373,7 +373,7 @@ export const PageWrapper = ({ children }) => {
         />
 
         <HeroCard
-          title="当社のソリューション"
+          title="当社の製品"
           galaxyEvent="docs.home.solutions"
           description="ClickHouse のソリューションを詳しく知りたい"
           href={localizeHref("/products/cloud/getting-started/intro")}
@@ -384,7 +384,7 @@ export const PageWrapper = ({ children }) => {
       }
           links={[
           { label: "ClickHouse Cloud", href: localizeHref("/products/cloud/getting-started/cloud-get-started") },
-          { label: "ClickStack", href: localizeHref("/clickstack") },
+          { label: "ClickHouse Observability", href: localizeHref("/clickstack") },
           { label: "ClickHouse Managed Postgres", href: localizeHref("/products/managed-postgres/overview") },
           { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
           { label: "chDB", href: localizeHref("/chdb") },
@@ -401,7 +401,7 @@ export const PageWrapper = ({ children }) => {
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
         <HeroCard title="リアルタイムアナリティクス" galaxyEvent="docs.home.real-time-analytics" description="即座にインサイトとダッシュボードを大規模に提供。数十億行のデータをリアルタイムで分析し、ミリ秒単位で結果を得られます。" href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="オブザーバビリティ" galaxyEvent="docs.home.observability" description="ClickHouse を基盤とするオープンソースのオブザーバビリティスタック、ClickStack を使用して、ログ、メトリクス、トレースを大規模に保存・クエリできます。" href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="オブザーバビリティ" galaxyEvent="docs.home.observability" description="ClickHouse を基盤とするオープンソースのオブザーバビリティスタック、ClickHouse Observability を使用して、ログ、メトリクス、トレースを大規模に保存・クエリできます。" href={localizeHref("/clickstack/overview")} showArrow />
 
         <HeroCard title="データウェアハウジング" galaxyEvent="docs.home.data-warehousing" description="データを即座に分析・探索し、インサイトの獲得やアプリケーション活用に役立てられます。負荷の高いワークロードをオフロードすることで、より迅速にスケールできます。" href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
@@ -444,9 +444,9 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="ClickHouse を基盤とするオールインワンのオブザーバビリティスタックで、ログ、メトリクス、トレース、セッションリプレイ、エラーに対して超高速のクエリと強力な集計を提供します。" href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="ClickHouse を基盤とするオールインワンのオブザーバビリティスタックで、ログ、メトリクス、トレース、セッションリプレイ、エラーに対して超高速のクエリと強力な集計を提供します。" href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="高速でスケーラブルな、エンタープライズ向けの Postgres サービスです。ClickHouse とネイティブに統合されています。トランザクションには Postgres、分析には ClickHouse を簡単に組み合わせられます。" href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="高速でスケーラブルな、エンタープライズ向けの Postgres サービスです。ClickHouse とネイティブに統合されています。トランザクションには Postgres、分析には ClickHouse を簡単に組み合わせられます。" href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 

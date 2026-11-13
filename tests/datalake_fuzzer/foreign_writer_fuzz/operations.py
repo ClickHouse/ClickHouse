@@ -240,6 +240,10 @@ register(
 
 def _droppable(model):
     sources = model.partition_source_columns()
+    # Keep one column that is not a partition source: Delta Lake rejects a table where all columns are
+    # partition columns (`ALL_PARTITION_COLUMNS_NOT_ALLOWED`), and `id` may be one with `partition_on_id`.
+    if sum(n not in sources for n, _ in model.columns) < 2:
+        return []
     return [n for n, _ in model.non_id_columns() if n not in sources]
 
 
@@ -392,7 +396,11 @@ def random_partition_field(rng, model, caps, existing):
         for name, t in (
             model.non_id_columns() if not caps.partition_on_id else model.columns
         ):
-            if t.kind in TRANSFORM_KINDS[transform] and t.kind in caps.partition_kinds:
+            if (
+                t.kind in TRANSFORM_KINDS[transform]
+                and t.kind in caps.partition_kinds
+                and (transform, t.kind) not in caps.excluded_partition_shapes
+            ):
                 # One partition field per source column: several are "redundant" for PyIceberg.
                 if not any(p.column == name for p in existing):
                     options.append((transform, name))
@@ -475,7 +483,8 @@ def generate_table(rng, caps, gates):
         if caps.weird_names and rng.random() < 0.15:
             name = rng.choice([f"Mixed Case {i}", f"ünï{i}", f"sp ace{i}"])
         model.columns.append([name, t])
-    for _ in range(rng.choice(caps.initial_partition_fields)):
+    # At least one column stays out of the partitioning, see `_droppable`.
+    for _ in range(min(rng.choice(caps.initial_partition_fields), len(model.columns) - 1)):
         field = random_partition_field(rng, model, caps, model.partitioning)
         if field:
             model.partitioning.append(field)
