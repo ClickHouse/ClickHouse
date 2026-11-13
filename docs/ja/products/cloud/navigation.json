@@ -255,32 +255,32 @@
         {
           "group": "Agents",
           "pages": [
-            "ja/products/cloud/features/ai-ml/agents/index",
-            "ja/products/cloud/features/ai-ml/agents/quickstart",
-            "ja/products/cloud/features/ai-ml/agents/chat",
+            "ja/agents/index",
+            "ja/agents/quickstart",
+            "ja/agents/chat",
             {
               "group": "Agent Builder",
               "pages": [
-                "ja/products/cloud/features/ai-ml/agents/builder/index",
-                "ja/products/cloud/features/ai-ml/agents/builder/model-parameters",
-                "ja/products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                "ja/products/cloud/features/ai-ml/agents/builder/web-search",
-                "ja/products/cloud/features/ai-ml/agents/builder/image-generation",
-                "ja/products/cloud/features/ai-ml/agents/builder/vision",
-                "ja/products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                "ja/products/cloud/features/ai-ml/agents/builder/skills",
-                "ja/products/cloud/features/ai-ml/agents/builder/subagents"
+                "ja/agents/builder/index",
+                "ja/agents/builder/model-parameters",
+                "ja/agents/builder/code-interpreter",
+                "ja/agents/builder/web-search",
+                "ja/agents/builder/image-generation",
+                "ja/agents/builder/vision",
+                "ja/agents/builder/mcp-servers",
+                "ja/agents/builder/skills",
+                "ja/agents/builder/subagents"
               ]
             },
-            "ja/products/cloud/features/ai-ml/agents/prompts",
-            "ja/products/cloud/features/ai-ml/agents/memory",
-            "ja/products/cloud/features/ai-ml/agents/marketplace",
-            "ja/products/cloud/features/ai-ml/agents/sharing-and-access",
+            "ja/agents/prompts",
+            "ja/agents/memory",
+            "ja/agents/marketplace",
+            "ja/agents/sharing-and-access",
             {
               "group": "Assistant",
               "pages": [
-                "ja/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
-                "ja/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
+                "ja/agents/assistant/using-ai-chat",
+                "ja/agents/assistant/customizing-semantic-layer"
               ]
             }
           ]

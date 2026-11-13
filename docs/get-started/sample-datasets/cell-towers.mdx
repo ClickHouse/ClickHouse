@@ -224,11 +224,11 @@ For this tutorial, you'll need:
 
     <Step title="Optional: Visualize the data with ClickHouse Agents">
         Next we'd like to visualize this data. This is an optional example run: ClickHouse Agents is model-driven beta functionality, so its plan, tool trace and output can differ between runs.
-        [ClickHouse Agents](/products/cloud/features/ai-ml/agents) lets you easily query and explore your ClickHouse data through conversation, without writing SQL or orchestration logic yourself.
+        [ClickHouse Agents](/agents) lets you easily query and explore your ClickHouse data through conversation, without writing SQL or orchestration logic yourself.
         The agent interprets your intent, plans steps, calls the tools you’ve configured, and returns the results to you.
 
         Click **ClickHouse agents** underneath your organization name in the bottom of the left hand menu to open ClickHouse Agents.
-        You can message the ClickHouse agent through the [chat](/products/cloud/features/ai-ml/agents/chat).
+        You can message the ClickHouse agent through the [chat](/agents/chat).
         Type "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables" and hit send.
         On one run, the agent carried out the following steps:
 
@@ -253,7 +253,7 @@ Finally, you used ClickHouse Agents to turn that question into a density map wit
 
 From here you could:
 
-- **Ask the agent follow-up questions.** Try asking how density differs between radio types such as `LTE` and `GSM`, or which cities have the most `NR` towers. Save prompts you reuse in the [prompt library](/products/cloud/features/ai-ml/agents/prompts), or build a specialised agent in the [Agent Builder](/products/cloud/features/ai-ml/agents/builder).
+- **Ask the agent follow-up questions.** Try asking how density differs between radio types such as `LTE` and `GSM`, or which cities have the most `NR` towers. Save prompts you reuse in the [prompt library](/agents/prompts), or build a specialised agent in the [Agent Builder](/agents/builder).
 - **Compare countries.** Insert polygons for other countries and run the same `pointInPolygon` query against each one. The dictionary you created lets you label the results with country names.
 - **Bucket towers with H3 or geohash.** The agent used a simple rounding grid. ClickHouse also provides [H3](/reference/functions/regular-functions/geo/h3) and [geohash](/reference/functions/regular-functions/geo/geohash) functions, which produce hierarchical cells that suit zoomable maps.
 - **Explore other datasets.** The [NYC taxi](/get-started/sample-datasets/nyc-taxi) dataset also contains pickup and dropoff coordinates, and the [sample datasets](/get-started/sample-datasets) index lists many more.

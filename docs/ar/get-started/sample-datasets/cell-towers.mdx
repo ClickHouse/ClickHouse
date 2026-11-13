@@ -226,11 +226,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   <Step title="اختياري: مثّل البيانات بصريًا باستخدام ClickHouse Agents">
     بعد ذلك، نودّ عرض هذه البيانات بصريًا. هذا مثال تشغيل اختياري: إن ClickHouse Agents ميزة تجريبية (beta) تعتمد على النماذج، لذا قد تختلف خطتها وتتبّع أدواتها ومخرجاتها من تشغيل إلى آخر.
-    تتيح لك [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents) الاستعلام عن بيانات ClickHouse واستكشافها بسهولة عبر المحادثة، دون الحاجة إلى كتابة SQL أو منطق التنسيق بنفسك.
+    تتيح لك [ClickHouse Agents](/ar/agents) الاستعلام عن بيانات ClickHouse واستكشافها بسهولة عبر المحادثة، دون الحاجة إلى كتابة SQL أو منطق التنسيق بنفسك.
     يفهم الوكيل ما تقصده، ويخطط للخطوات، ويستدعي الأدوات التي قمت بتهيئتها، ثم يعيد إليك النتائج.
 
     انقر على **ClickHouse agents** أسفل اسم مؤسستك في الجزء السفلي من القائمة اليسرى لفتح ClickHouse Agents.
-    يمكنك مراسلة ClickHouse agent عبر [الدردشة](/ar/products/cloud/features/ai-ml/agents/chat).
+    يمكنك مراسلة ClickHouse agent عبر [الدردشة](/ar/agents/chat).
     اكتب &quot;Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables&quot; ثم اضغط إرسال.
     في إحدى مرات التشغيل، نفّذ الوكيل الخطوات التالية:
 
@@ -255,7 +255,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 بعد ذلك، يمكنك:
 
-* **طرح أسئلة متابعة على الوكيل.** جرّب أن تسأل عن الفرق في الكثافة بين أنواع التقنيات الراديوية مثل `LTE` و`GSM`، أو عن المدن التي تضم أكبر عدد من أبراج `NR`. احفظ الموجّهات التي تستخدمها باستمرار في [مكتبة الموجّهات](/ar/products/cloud/features/ai-ml/agents/prompts)، أو أنشئ وكيلًا متخصصًا باستخدام [Agent Builder](/ar/products/cloud/features/ai-ml/agents/builder).
+* **طرح أسئلة متابعة على الوكيل.** جرّب أن تسأل عن الفرق في الكثافة بين أنواع التقنيات الراديوية مثل `LTE` و`GSM`، أو عن المدن التي تضم أكبر عدد من أبراج `NR`. احفظ الموجّهات التي تستخدمها باستمرار في [مكتبة الموجّهات](/ar/agents/prompts)، أو أنشئ وكيلًا متخصصًا باستخدام [Agent Builder](/ar/agents/builder).
 * **المقارنة بين الدول.** أدرج مضلّعات لدول أخرى ونفّذ استعلام `pointInPolygon` نفسه على كلٍّ منها. ويتيح لك القاموس الذي أنشأته إرفاق أسماء الدول بالنتائج.
 * **تجميع الأبراج باستخدام H3 أو geohash.** اعتمد الوكيل على شبكة تقريب بسيطة، لكن ClickHouse يوفّر أيضًا دوال [H3](/ar/reference/functions/regular-functions/geo/h3) و[geohash](/ar/reference/functions/regular-functions/geo/geohash) التي تُنتج خلايا هرمية مناسبة للخرائط القابلة للتكبير.
 * **استكشاف مجموعات بيانات أخرى.** تحتوي مجموعة بيانات [سيارات الأجرة في نيويورك](/ar/get-started/sample-datasets/nyc-taxi) هي الأخرى على إحداثيات نقاط الانطلاق والوصول، كما يضم فهرس [مجموعات البيانات النموذجية](/ar/get-started/sample-datasets) العديد غيرها.

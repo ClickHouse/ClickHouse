@@ -255,32 +255,32 @@
         {
           "group": "Agents",
           "pages": [
-            "ko/products/cloud/features/ai-ml/agents/index",
-            "ko/products/cloud/features/ai-ml/agents/quickstart",
-            "ko/products/cloud/features/ai-ml/agents/chat",
+            "ko/agents/index",
+            "ko/agents/quickstart",
+            "ko/agents/chat",
             {
               "group": "Agent Builder",
               "pages": [
-                "ko/products/cloud/features/ai-ml/agents/builder/index",
-                "ko/products/cloud/features/ai-ml/agents/builder/model-parameters",
-                "ko/products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                "ko/products/cloud/features/ai-ml/agents/builder/web-search",
-                "ko/products/cloud/features/ai-ml/agents/builder/image-generation",
-                "ko/products/cloud/features/ai-ml/agents/builder/vision",
-                "ko/products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                "ko/products/cloud/features/ai-ml/agents/builder/skills",
-                "ko/products/cloud/features/ai-ml/agents/builder/subagents"
+                "ko/agents/builder/index",
+                "ko/agents/builder/model-parameters",
+                "ko/agents/builder/code-interpreter",
+                "ko/agents/builder/web-search",
+                "ko/agents/builder/image-generation",
+                "ko/agents/builder/vision",
+                "ko/agents/builder/mcp-servers",
+                "ko/agents/builder/skills",
+                "ko/agents/builder/subagents"
               ]
             },
-            "ko/products/cloud/features/ai-ml/agents/prompts",
-            "ko/products/cloud/features/ai-ml/agents/memory",
-            "ko/products/cloud/features/ai-ml/agents/marketplace",
-            "ko/products/cloud/features/ai-ml/agents/sharing-and-access",
+            "ko/agents/prompts",
+            "ko/agents/memory",
+            "ko/agents/marketplace",
+            "ko/agents/sharing-and-access",
             {
               "group": "Assistant",
               "pages": [
-                "ko/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
-                "ko/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
+                "ko/agents/assistant/using-ai-chat",
+                "ko/agents/assistant/customizing-semantic-layer"
               ]
             }
           ]

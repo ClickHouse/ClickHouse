@@ -255,32 +255,32 @@
         {
           "group": "Agents",
           "pages": [
-            "pt-BR/products/cloud/features/ai-ml/agents/index",
-            "pt-BR/products/cloud/features/ai-ml/agents/quickstart",
-            "pt-BR/products/cloud/features/ai-ml/agents/chat",
+            "pt-BR/agents/index",
+            "pt-BR/agents/quickstart",
+            "pt-BR/agents/chat",
             {
               "group": "Construtor de agentes",
               "pages": [
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/index",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/model-parameters",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/web-search",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/image-generation",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/vision",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/skills",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/subagents"
+                "pt-BR/agents/builder/index",
+                "pt-BR/agents/builder/model-parameters",
+                "pt-BR/agents/builder/code-interpreter",
+                "pt-BR/agents/builder/web-search",
+                "pt-BR/agents/builder/image-generation",
+                "pt-BR/agents/builder/vision",
+                "pt-BR/agents/builder/mcp-servers",
+                "pt-BR/agents/builder/skills",
+                "pt-BR/agents/builder/subagents"
               ]
             },
-            "pt-BR/products/cloud/features/ai-ml/agents/prompts",
-            "pt-BR/products/cloud/features/ai-ml/agents/memory",
-            "pt-BR/products/cloud/features/ai-ml/agents/marketplace",
-            "pt-BR/products/cloud/features/ai-ml/agents/sharing-and-access",
+            "pt-BR/agents/prompts",
+            "pt-BR/agents/memory",
+            "pt-BR/agents/marketplace",
+            "pt-BR/agents/sharing-and-access",
             {
               "group": "Assistant",
               "pages": [
-                "pt-BR/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
-                "pt-BR/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
+                "pt-BR/agents/assistant/using-ai-chat",
+                "pt-BR/agents/assistant/customizing-semantic-layer"
               ]
             }
           ]

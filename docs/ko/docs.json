@@ -56,6 +56,9 @@
           "$ref": "./clickstack/navigation.json"
         },
         {
+          "$ref": "./agents/navigation.json"
+        },
+        {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
           "item": "AI 엔지니어링"

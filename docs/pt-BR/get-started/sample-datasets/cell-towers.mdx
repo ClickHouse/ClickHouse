@@ -226,11 +226,11 @@ Para este tutorial, você vai precisar de:
 
   <Step title="Opcional: visualize os dados com ClickHouse Agents">
     Em seguida, vamos visualizar esses dados. Esta é uma execução de exemplo opcional: o ClickHouse Agents é uma funcionalidade beta baseada em modelos, portanto o plano, o rastro de ferramentas e a saída podem variar de uma execução para outra.
-    O [ClickHouse Agents](/pt-BR/products/cloud/features/ai-ml/agents) permite consultar e explorar facilmente seus dados do ClickHouse por meio de conversas, sem que você precise escrever SQL ou lógica de orquestração.
+    O [ClickHouse Agents](/pt-BR/agents) permite consultar e explorar facilmente seus dados do ClickHouse por meio de conversas, sem que você precise escrever SQL ou lógica de orquestração.
     O agente interpreta sua intenção, planeja as etapas, chama as ferramentas que você configurou e retorna os resultados para você.
 
     Clique em **ClickHouse agents**, abaixo do nome da sua organização, na parte inferior do menu à esquerda, para abrir o ClickHouse Agents.
-    Você pode enviar mensagens ao ClickHouse Agent pelo [chat](/pt-BR/products/cloud/features/ai-ml/agents/chat).
+    Você pode enviar mensagens ao ClickHouse Agent pelo [chat](/pt-BR/agents/chat).
     Digite &quot;Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables&quot; e clique em enviar.
     Em uma das execuções, o agente realizou as seguintes etapas:
 
@@ -255,7 +255,7 @@ Por fim, você usou o ClickHouse Agents para transformar essa pergunta em um map
 
 A partir daqui, você pode:
 
-* **Fazer novas perguntas ao agente.** Experimente perguntar como a densidade varia entre tipos de rádio, como `LTE` e `GSM`, ou quais cidades têm mais torres `NR`. Salve os prompts que você usa com frequência na [biblioteca de prompts](/pt-BR/products/cloud/features/ai-ml/agents/prompts) ou crie um agente especializado no [Agent Builder](/pt-BR/products/cloud/features/ai-ml/agents/builder).
+* **Fazer novas perguntas ao agente.** Experimente perguntar como a densidade varia entre tipos de rádio, como `LTE` e `GSM`, ou quais cidades têm mais torres `NR`. Salve os prompts que você usa com frequência na [biblioteca de prompts](/pt-BR/agents/prompts) ou crie um agente especializado no [Agent Builder](/pt-BR/agents/builder).
 * **Comparar países.** Insira polígonos de outros países e execute a mesma consulta `pointInPolygon` para cada um deles. O dicionário que você criou permite rotular os resultados com os nomes dos países.
 * **Agrupar torres com H3 ou geohash.** O agente usou uma grade simples de arredondamento. O ClickHouse também oferece funções [H3](/pt-BR/reference/functions/regular-functions/geo/h3) e [geohash](/pt-BR/reference/functions/regular-functions/geo/geohash), que geram células hierárquicas ideais para mapas com zoom.
 * **Explorar outros datasets.** O dataset de [táxis de NYC](/pt-BR/get-started/sample-datasets/nyc-taxi) também contém coordenadas de embarque e desembarque, e o índice de [datasets de exemplo](/pt-BR/get-started/sample-datasets) lista muitos outros.

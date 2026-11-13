@@ -1,0 +1,44 @@
+{
+  "groups": [
+    {
+      "group": "Get started",
+      "pages": [
+        "pt-BR/agents/index",
+        "pt-BR/agents/quickstart",
+        "pt-BR/agents/chat"
+      ]
+    },
+    {
+      "group": "Agent Builder",
+      "pages": [
+        "pt-BR/agents/builder/index",
+        "pt-BR/agents/builder/model-parameters",
+        "pt-BR/agents/builder/code-interpreter",
+        "pt-BR/agents/builder/web-search",
+        "pt-BR/agents/builder/image-generation",
+        "pt-BR/agents/builder/vision",
+        "pt-BR/agents/builder/mcp-servers",
+        "pt-BR/agents/builder/skills",
+        "pt-BR/agents/builder/subagents"
+      ]
+    },
+    {
+      "group": "Manage agents",
+      "pages": [
+        "pt-BR/agents/prompts",
+        "pt-BR/agents/memory",
+        "pt-BR/agents/marketplace",
+        "pt-BR/agents/sharing-and-access"
+      ]
+    },
+    {
+      "group": "Assistant",
+      "pages": [
+        "pt-BR/agents/assistant/using-ai-chat",
+        "pt-BR/agents/assistant/customizing-semantic-layer"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-agentic-data-stack.svg",
+  "item": "Agents"
+}
