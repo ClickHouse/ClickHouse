@@ -25,7 +25,7 @@ SELECT sum(k) FROM t_auto_readers SETTINGS distributed_plan_default_reader_bucke
 SET distributed_plan_execute_locally = 0, distributed_plan_workers_num = 1;
 SELECT sum(k) FROM t_auto_readers SETTINGS max_threads = 1024, log_comment = '05427_max_threads';
 
-SET make_distributed_plan = 0;
+SET make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 SYSTEM FLUSH LOGS query_log;
 
 SELECT q.log_comment, countIf(f.query_id != f.initial_query_id) AS fragments
