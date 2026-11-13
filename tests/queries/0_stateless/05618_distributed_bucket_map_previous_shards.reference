@@ -75,9 +75,10 @@ Previous shard 1 of bucket range 1-1 is invalid
 Previous shard 0 of bucket range 1-1 is invalid
 No previous shards are listed for bucket range 1-1
 Cannot parse
+expected ''previous''
 4	[(0,0,1,[]),(1,3,2,[])]
 -- a bucket can have several previous shards, but not a shard that the cluster does not have
-10	[(0,0,1,[]),(1,1,2,[3,1]),(2,3,2,[])]
+11	[(0,0,1,[]),(1,1,2,[3,1]),(2,3,2,[])]
 assigns buckets to shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards
 -- a query that does not skip shards does not need the map
 The bucket ranges cover 1 of 4 buckets

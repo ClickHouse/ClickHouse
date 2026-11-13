@@ -139,11 +139,13 @@ set_map 'format version: 1\nbuckets: 4\n0 0 1\n1 1 2 previous\n2 3 2\n'
 wait_for_map_exception 'No previous shards are listed for bucket range 1-1'
 set_map 'format version: 1\nbuckets: 4\n0 0 1\n1 1 2 previous 1 x\n2 3 2\n'
 wait_for_map_exception 'Cannot parse'
+set_map 'format version: 1\nbuckets: 4\n0 0 1\n1 1 2 previou\n2 3 2\n'
+wait_for_map_exception "expected ''previous''"
 loaded_map
 
 echo '-- a bucket can have several previous shards, but not a shard that the cluster does not have'
 set_map 'format version: 1\nbuckets: 4\n0 0 1\n1 1 2 previous 3 1\n2 3 2\n'
-wait_for_map_version 10
+wait_for_map_version 11
 loaded_map
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM dist WHERE key = 5 SETTINGS $SKIP_SHARDS" 2>&1 \
     | grep -o -m1 'assigns buckets to shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards'

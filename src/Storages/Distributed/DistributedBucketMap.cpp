@@ -60,8 +60,10 @@ DistributedBucketMap DistributedBucketMap::parse(const String & data)
     {
         Range range;
         in >> range.first >> " " >> range.last >> " " >> range.shard_num;
-        if (checkString(" previous", in))
+        /// Require the whole keyword: a cut-off one must not load as a range without previous shards.
+        if (checkChar(' ', in))
         {
+            assertString("previous", in);
             while (checkChar(' ', in))
             {
                 UInt32 previous_shard_num = 0;
