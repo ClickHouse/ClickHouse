@@ -12,8 +12,8 @@ namespace DB
 /// `identifier_name`. Works for both plain identifiers and function-expression nodes.
 void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name, const String & identifier_name);
 
-/// Builds an ActionsDAG for `expression_ast` over `source_columns`, projects to the single output,
-/// and removes unused actions.
+/// Builds an ActionsDAG for `expression_ast` over `source_columns`, projects to its output (one per
+/// element of an `ASTExpressionList`, in order), and removes unused actions.
 ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns);
 
 /// Validates common text-index transform requirements shared by preprocessor and postprocessor
