@@ -99,6 +99,30 @@ inline T unalignedLoadBigEndian(const void * address, size_t size)
 
 
 template <typename T>
+inline T unalignedLoadLittleEndian(const void * address, size_t size)
+{
+    T res {};
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(&res, address, size);
+    else
+        reverseMemcpy(reinterpret_cast<char *>(&res) + sizeof(res) - size, address, size);
+    return res;
+}
+
+
+template <typename T>
+inline void unalignedStoreLittleEndian(void * address,
+    const typename std::enable_if<true, T>::type & src, size_t size)
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(address, &src, size);
+    else
+        reverseMemcpy(address, reinterpret_cast<const char *>(&src) + sizeof(src) - size, size);
+}
+
+
+template <typename T>
 inline void unalignedStoreBigEndian(void * address,
     const typename std::enable_if<true, T>::type & src)
 {
