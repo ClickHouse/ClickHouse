@@ -154,13 +154,20 @@ public:
 
     /// Offset in the file up to which it must be read to read position `column_position` in all granules before
     /// `right_mark_non_included`. Uses only the marks, without assumptions on where the writer cuts compressed blocks.
+    /// `first_column_position` is the first position of the column of `column_position`.
     static size_t getRightOffsetByMarks(
-        const MergeTreeMarksGetter & marks, size_t num_marks, size_t total_file_size, size_t right_mark_non_included, size_t column_position);
+        const MergeTreeMarksGetter & marks,
+        size_t num_marks,
+        size_t total_file_size,
+        size_t right_mark_non_included,
+        size_t column_position,
+        size_t first_column_position);
 
 protected:
-    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
+    size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position, size_t first_column_position);
     std::optional<size_t> getLeftOffsetOneColumn(size_t mark, size_t column_position);
-    std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
+    std::pair<size_t, size_t>
+    estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position, size_t first_column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 };
 

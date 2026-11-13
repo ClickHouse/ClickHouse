@@ -117,6 +117,16 @@ private:
     void finish();
 };
 
+/// Worst-case memory of `MergeTreeReaderCompactMultiBuffer` that reads all columns of a part:
+/// the configured read buffer per column, and one more per column if it prefetches.
+static size_t estimateCompactMultiBufferMemory(const IMergeTreeDataPart & part, const ReadSettings & read_settings)
+{
+    bool is_remote = part.getDataPartStorage().isStoredOnRemoteDisk();
+    size_t buffer_size = is_remote ? read_settings.remote_fs_settings.buffer_size : read_settings.local_fs_settings.buffer_size;
+    bool use_prefetch = is_remote ? read_settings.remote_fs_settings.prefetch : read_settings.local_fs_settings.prefetch;
+    return part.getColumns().size() * buffer_size * (use_prefetch ? 2 : 1);
+}
+
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     SharedHeader result_header,
     MergeTreeSequentialSourceType type,
@@ -216,6 +226,12 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     {
         size_t compressed_size = data_part->getTotalColumnsSize().data_compressed;
         size_t bytes_to_prefetch = (*storage.getSettings())[MergeTreeSetting::compact_parts_merge_max_bytes_to_prefetch_part];
+
+        /// A merge also reads a bigger part with one buffer if the part fits into the worst-case memory of the per-column
+        /// buffers, and sends one request instead of one per column per stripe. A mutation reads columns out of the file
+        /// order, and one buffer would read the file again on each backward seek.
+        if (type == Merge && bytes_to_prefetch)
+            bytes_to_prefetch = std::max(bytes_to_prefetch, estimateCompactMultiBufferMemory(*data_part, read_settings));
 
         if (compressed_size <= bytes_to_prefetch)
         {

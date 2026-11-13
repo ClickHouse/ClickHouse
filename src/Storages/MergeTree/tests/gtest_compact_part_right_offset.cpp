@@ -21,8 +21,12 @@ namespace
 class CompactFileSimulator
 {
 public:
-    CompactFileSimulator(size_t num_granules_, size_t num_positions_, size_t max_block_size_)
-        : num_granules(num_granules_), num_positions(num_positions_), max_block_size(max_block_size_)
+    /// `first_position_of_column` maps a position to the first position of its column.
+    CompactFileSimulator(size_t num_granules_, size_t num_positions_, size_t max_block_size_, std::vector<size_t> first_position_of_column_)
+        : num_granules(num_granules_)
+        , num_positions(num_positions_)
+        , max_block_size(max_block_size_)
+        , first_position_of_column(std::move(first_position_of_column_))
     {
         marks.resize_fill((num_granules + 1) * num_positions);
         piece_ends.resize(num_granules * num_positions);
@@ -63,6 +67,7 @@ public:
 
     size_t getFileSize() const { return compressed_offset; }
     size_t getMarksCount() const { return num_granules + 1; }
+    size_t getFirstPositionOfColumn(size_t position) const { return first_position_of_column[position]; }
     MergeTreeMarksGetter getMarksGetter() const { return MergeTreeMarksGetter(MarksInCompressedFile::create(marks), num_positions); }
 
     /// The end of the block with the last byte of the piece.
@@ -91,7 +96,22 @@ public:
             return result;
         };
 
-        auto next = first_greater(marks[(right_mark_non_included - 1) * num_positions + position]);
+        size_t last_granule = right_mark_non_included - 1;
+        auto next = first_greater(marks[last_granule * num_positions + position]);
+
+        /// The cells that always follow (`last_granule`, `position`) in the file, whose marks count even when they are equal.
+        auto take = [&](size_t granule, size_t next_position)
+        {
+            const auto & mark = marks[granule * num_positions + next_position];
+            if (!next || mark < *next)
+                next = mark;
+        };
+
+        if (position + 1 < num_positions)
+            take(last_granule, position + 1);
+        if (last_granule + 1 < getMarksCount())
+            take(last_granule + 1, first_position_of_column[position]);
+
         if (!next)
             return getFileSize();
 
@@ -106,6 +126,7 @@ private:
     const size_t num_granules;
     const size_t num_positions;
     const size_t max_block_size;
+    const std::vector<size_t> first_position_of_column;
 
     MarksInCompressedFile::PlainArray marks;
     std::vector<MarkInCompressedFile> piece_ends;
@@ -120,6 +141,8 @@ enum class Cut
 {
     /// A new block for each column in each granule (`compress_per_column_in_compact_parts = 1`).
     PerColumnInGranule,
+    /// A new block for each substream too, as when the substreams of a column use different codecs.
+    PerSubstreamInGranule,
     /// A new block for each stripe (`compress_per_column_in_compact_parts = 0`).
     PerStripe,
     /// A new block for each column of a stripe. No writer does it, but the bound must still be safe.
@@ -171,7 +194,11 @@ CompactFileSimulator writeFile(const LayoutParams & params, std::mt19937 & rng)
         }
     }
 
-    CompactFileSimulator file(num_granules, num_positions, params.max_block_size);
+    std::vector<size_t> first_position_of_column;
+    for (size_t column = 0; column < substreams_in_columns.size(); ++column)
+        first_position_of_column.insert(first_position_of_column.end(), substreams_in_columns[column], first_positions[column]);
+
+    CompactFileSimulator file(num_granules, num_positions, params.max_block_size, std::move(first_position_of_column));
 
     auto write_column = [&](size_t granule, size_t column)
     {
@@ -179,6 +206,8 @@ CompactFileSimulator writeFile(const LayoutParams & params, std::mt19937 & rng)
         {
             size_t position = first_positions[column] + i;
             file.writePiece(granule, position, sizes[granule * num_positions + position]);
+            if (params.cut == Cut::PerSubstreamInGranule)
+                file.cutBlock();
         }
         if (params.cut == Cut::PerColumnInGranule)
             file.cutBlock();
@@ -212,6 +241,10 @@ TEST(CompactPartRightOffset, MatchesScanOfAllMarks)
         {Cut::PerColumnInGranule, 1, 4096, true},
         {Cut::PerColumnInGranule, 3, 1 << 20, true},
         {Cut::PerColumnInGranule, 4, 4096, true},
+        {Cut::PerSubstreamInGranule, 1, 1 << 20, true},
+        {Cut::PerSubstreamInGranule, 1, 4096, true},
+        {Cut::PerSubstreamInGranule, 4, 1 << 20, false},
+        {Cut::PerSubstreamInGranule, 4, 4096, false},
         {Cut::PerStripe, 1, 1 << 20, true},
         {Cut::PerStripe, 1, 4096, true},
         {Cut::PerStripe, 4, 1 << 20, false},
@@ -238,10 +271,13 @@ TEST(CompactPartRightOffset, MatchesScanOfAllMarks)
                     SCOPED_TRACE(fmt::format("right mark {}, position {}", right_mark, position));
 
                     size_t offset = MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(
-                        marks, file.getMarksCount(), file.getFileSize(), right_mark, position);
+                        marks, file.getMarksCount(), file.getFileSize(), right_mark, position, file.getFirstPositionOfColumn(position));
 
+                    size_t by_all_marks = file.getRightOffsetByAllMarks(right_mark, position);
                     if (layouts[layout_index].exact)
-                        EXPECT_EQ(offset, file.getRightOffsetByAllMarks(right_mark, position));
+                        EXPECT_EQ(offset, by_all_marks);
+                    else
+                        EXPECT_GE(offset, by_all_marks);
                     if (right_mark > 0 && right_mark <= num_granules)
                         EXPECT_GE(offset, file.getNeededEnd(right_mark - 1, position));
                 }
@@ -264,8 +300,39 @@ TEST(CompactPartRightOffset, ColumnsShareBlockOfGranule)
     MergeTreeMarksGetter marks(MarksInCompressedFile::create(plain), 4);
     for (size_t position = 0; position < 4; ++position)
     {
-        EXPECT_EQ(MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(marks, 4, 300, 1, position), 100);
-        EXPECT_EQ(MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(marks, 4, 300, 2, position), 200);
-        EXPECT_EQ(MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(marks, 4, 300, 3, position), 300);
+        EXPECT_EQ(MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(marks, 4, 300, 1, position, position), 100);
+        EXPECT_EQ(MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(marks, 4, 300, 2, position, position), 200);
+        EXPECT_EQ(MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(marks, 4, 300, 3, position, position), 300);
     }
+}
+
+/// A stripe of two granules of `a Array(UInt64) CODEC(...)`, whose sizes and elements are in separate blocks,
+/// and then a 4 MiB String column. The elements of both granules are empty, so their marks equal the mark of
+/// the data that follows them.
+TEST(CompactPartRightOffset, EmptyLastSubstreamOfColumn)
+{
+    const std::vector<std::vector<MarkInCompressedFile>> rows = {
+        {{0, 0}, {100, 0}, {200, 0}},
+        {{100, 0}, {200, 0}, {4194504, 0}},
+        {{8388808, 0}, {8388808, 0}, {8388808, 0}},
+    };
+
+    MarksInCompressedFile::PlainArray plain;
+    for (const auto & row : rows)
+        for (const auto & mark : row)
+            plain.push_back(mark);
+
+    MergeTreeMarksGetter marks(MarksInCompressedFile::create(plain), 3);
+    auto right_offset = [&](size_t right_mark, size_t position, size_t first_position)
+    { return MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(marks, 3, 8388808, right_mark, position, first_position); };
+
+    /// Inside the stripe the next granule of the column gives the exact end of the empty elements.
+    EXPECT_EQ(right_offset(1, 1, 0), 100);
+    /// At the end of the stripe the next data is the String column at the start of the stripe, which the marks
+    /// cannot tell from data written before the column. The bound stays safe but reads the String column too.
+    EXPECT_GE(right_offset(2, 1, 0), 200);
+
+    /// The sizes are never empty, so their bound is the start of the elements.
+    EXPECT_EQ(right_offset(1, 0, 0), 100);
+    EXPECT_EQ(right_offset(2, 0, 0), 200);
 }
