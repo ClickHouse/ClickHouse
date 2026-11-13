@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/LocalDirectorySyncGuard.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -74,6 +75,15 @@ namespace
         if (query.size() > MAX_QUERY_BYTES)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Template query text is too long: {} bytes, the maximum is {}", query.size(), MAX_QUERY_BYTES);
     }
+
+    /// Reads one escaped field without reading more than 4 input bytes (`\xHH`) per allowed byte.
+    void readBoundedEscapedString(String & s, ReadBuffer & in, size_t max_bytes)
+    {
+        LimitReadBuffer limited(in, {.read_no_more = max_bytes * 4 + 1});
+        readEscapedString(s, limited);
+        if (s.size() > max_bytes)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A template query field is longer than the maximum of {} bytes", max_bytes);
+    }
 }
 
 ColumnsDescription StorageSystemTemplateQueries::getColumnsDescription()
@@ -130,14 +140,17 @@ std::vector<StorageSystemTemplateQueries::UserQuery> StorageSystemTemplateQuerie
     std::vector<UserQuery> rows;
     while (!in.eof())
     {
+        if (rows.size() == MAX_USER_QUERIES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many user template queries, the maximum is {}", MAX_USER_QUERIES);
+
         UserQuery row;
-        readEscapedString(row.name, in);
+        readBoundedEscapedString(row.name, in, MAX_NAME_BYTES);
         assertChar('\t', in);
-        readEscapedString(row.category, in);
+        readBoundedEscapedString(row.category, in, MAX_CATEGORY_BYTES);
         assertChar('\t', in);
-        readEscapedString(row.description, in);
+        readBoundedEscapedString(row.description, in, MAX_DESCRIPTION_BYTES);
         assertChar('\t', in);
-        readEscapedString(row.query, in);
+        readBoundedEscapedString(row.query, in, MAX_QUERY_BYTES);
         assertChar('\t', in);
         readIntText(row.created_at, in);
         if (!in.eof())
@@ -164,7 +177,7 @@ void StorageSystemTemplateQueries::writeRows(const std::vector<UserQuery> & rows
     }
 }
 
-void StorageSystemTemplateQueries::saveToFile(std::vector<UserQuery> rows) const
+void StorageSystemTemplateQueries::saveToFile(std::vector<UserQuery> rows, const std::function<void()> & on_replaced) const
 {
     const String tmp_path = file_path + ".tmp";
     {
@@ -184,6 +197,8 @@ void StorageSystemTemplateQueries::saveToFile(std::vector<UserQuery> rows) const
 
     /// The file is replaced: the cache follows it even if the directory sync below throws.
     user_queries = std::move(rows);
+    if (on_replaced)
+        on_replaced();
     directory.sync();
 }
 
@@ -284,8 +299,11 @@ void StorageSystemTemplateQueries::deleteUserQuery(const String & name)
     if (updated.size() == user_queries.size())
         return;
 
-    saveToFile(std::move(updated));
-    LOG_INFO(getLogger("StorageSystemTemplateQueries"), "Deleted template query '{}' from '{}'", name, file_path);
+    /// Logged once the file is replaced, so a failed directory sync after it still leaves a record.
+    saveToFile(std::move(updated), [&]
+    {
+        LOG_INFO(getLogger("StorageSystemTemplateQueries"), "Deleted template query '{}' from '{}'", name, file_path);
+    });
 }
 
 class TemplateQueriesSink final : public SinkToStorage

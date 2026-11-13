@@ -2,6 +2,7 @@
 
 #include <Storages/System/IStorageSystemOneBlock.h>
 
+#include <functional>
 #include <mutex>
 #include <vector>
 
@@ -59,8 +60,9 @@ private:
 
     /// Must be called with `mutex` held.
     void loadIfNeeded() const;
-    /// Replaces the file and then the cached rows. Must be called with `mutex` held.
-    void saveToFile(std::vector<UserQuery> rows) const;
+    /// Replaces the file and then the cached rows, then calls `on_replaced` before the directory sync.
+    /// Must be called with `mutex` held.
+    void saveToFile(std::vector<UserQuery> rows, const std::function<void()> & on_replaced = {}) const;
 
     static void writeRows(const std::vector<UserQuery> & rows, WriteBuffer & out);
     static std::vector<UserQuery> readRows(ReadBuffer & in);
