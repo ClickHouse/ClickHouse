@@ -1,12 +1,28 @@
--- src_1
+-- src_1, exact_rows_before_limit = 0
 "rows": 1 "rows_before_limit_at_least": 100 
 "rows": 0 "rows_before_limit_at_least": 0 
+"rows": 1 "rows_before_limit_at_least": 100 
 "rows": 1 "rows_before_limit_at_least": 100 
 "rows": 1 "rows_before_aggregation": 100 
 "rows": 100 
--- abr
+-- abr, exact_rows_before_limit = 0
 "rows": 1 "rows_before_limit_at_least": 100 
 "rows": 0 "rows_before_limit_at_least": 0 
+"rows": 1 "rows_before_limit_at_least": 100 
+"rows": 1 "rows_before_limit_at_least": 100 
+"rows": 1 "rows_before_aggregation": 100 
+"rows": 100 
+-- src_1, exact_rows_before_limit = 1
+"rows": 1 "rows_before_limit_at_least": 100 
+"rows": 0 "rows_before_limit_at_least": 0 
+"rows": 1 "rows_before_limit_at_least": 100 
+"rows": 1 "rows_before_limit_at_least": 100 
+"rows": 1 "rows_before_aggregation": 100 
+"rows": 100 
+-- abr, exact_rows_before_limit = 1
+"rows": 1 "rows_before_limit_at_least": 100 
+"rows": 0 "rows_before_limit_at_least": 0 
+"rows": 1 "rows_before_limit_at_least": 100 
 "rows": 1 "rows_before_limit_at_least": 100 
 "rows": 1 "rows_before_aggregation": 100 
 "rows": 100 

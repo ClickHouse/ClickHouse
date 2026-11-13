@@ -42,8 +42,21 @@ public:
 
     String getName() const override { return "ReplaySource"; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
-    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation_counter.swap(counter); }
+    /// The values of the pipeline that wrote the blocks are added as soon as the counters are set, because the replay may be stopped before
+    /// its end, for example by a limit above this source that has enough rows.
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override
+    {
+        rows_before_limit_counter.swap(counter);
+        if (rows_before_limit_counter && rows_before_steps.limit)
+            rows_before_limit_counter->add(*rows_before_steps.limit);
+    }
+
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override
+    {
+        rows_before_aggregation_counter.swap(counter);
+        if (rows_before_aggregation_counter && rows_before_steps.aggregation)
+            rows_before_aggregation_counter->add(*rows_before_steps.aggregation);
+    }
 
 protected:
     Chunk generate() override
@@ -53,12 +66,16 @@ protected:
             block = reader->read();
 
         if (block.empty())
-        {
-            addRowsBeforeSteps();
             return {};
-        }
 
-        replayed_rows += block.rows();
+        /// If the pipeline that wrote the blocks applied no limit, but this one has a limit above this source, which then does not count its
+        /// input, the rows read from this source are counted instead, as they are produced. It is decided here and not when the counter is
+        /// set, as the counter is marked as applied only after that.
+        if (!count_replayed_rows)
+            count_replayed_rows = rows_before_limit_counter && !rows_before_steps.limit && rows_before_limit_counter->hasAppliedStep();
+        if (*count_replayed_rows)
+            rows_before_limit_counter->add(block.rows());
+
         Chunk chunk(block.getColumns(), block.rows());
         if (add_aggregation_info)
         {
@@ -72,22 +89,6 @@ protected:
     }
 
 private:
-    /// The values of the pipeline that wrote the blocks are added to the counters of this pipeline. If that pipeline applied no limit, but
-    /// this one has a limit above this source, which then does not count its input, the rows read from this source are counted instead.
-    void addRowsBeforeSteps()
-    {
-        if (rows_before_limit_counter)
-        {
-            if (rows_before_steps.limit)
-                rows_before_limit_counter->add(*rows_before_steps.limit);
-            else if (rows_before_limit_counter->hasAppliedStep())
-                rows_before_limit_counter->add(replayed_rows);
-        }
-
-        if (rows_before_aggregation_counter && rows_before_steps.aggregation)
-            rows_before_aggregation_counter->add(*rows_before_steps.aggregation);
-    }
-
     /// Owns the spill-files that `buffer` reads from, so it is declared before `buffer` to outlive it.
     CascadeWriteBuffer::WriteBufferPtrs buffer_owners;
     std::unique_ptr<ReadBuffer> buffer;
@@ -97,7 +98,7 @@ private:
     RowsBeforeSteps rows_before_steps;
     RowsBeforeStepCounterPtr rows_before_limit_counter;
     RowsBeforeStepCounterPtr rows_before_aggregation_counter;
-    size_t replayed_rows = 0;
+    std::optional<bool> count_replayed_rows;
 };
 
 }
