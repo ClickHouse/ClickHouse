@@ -50,7 +50,7 @@ both -q "SELECT ${db}.ns.t.x, ${db}.ns.sub.t.x FROM ${db}.ns.t INNER JOIN ${db}.
 
 echo '-- 7. setting off'
 $CLICKHOUSE_CLIENT --enable_analyzer=1 --allow_experimental_table_namespaces=0 \
-    -q "SELECT ${db}.ns.t.x FROM ${db}.ns.t INNER JOIN ${db}.u AS ${db} ON 1" 2>&1 | code
+    -q "SELECT ${db}.ns.t.x FROM ${db}.\`ns.t\` INNER JOIN ${db}.u AS ${db} ON 1" 2>&1 | code
 
 echo '-- 8. SEMI JOIN, non-preserved multipart side in a dead branch'
 for compat in 0 1; do

@@ -6,31 +6,39 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 db=${CLICKHOUSE_DATABASE}
+ON="$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1"
+
+code() { grep -oE 'Code: [0-9]+' | head -n1; }
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.\`ns.t\` (x Int32) ENGINE = MergeTree ORDER BY x"
 
 echo '-- setting off'
-$CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.ns.t VALUES (1)"
-$CLICKHOUSE_CLIENT -q "SELECT x FROM ${db}.ns.t"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${db}.\`ns.t\`"
-$CLICKHOUSE_CLIENT -q "EXISTS TABLE ${db}.ns.t"
-$CLICKHOUSE_CLIENT -q "DESCRIBE ${db}.ns.t" | cut -f1-2
-$CLICKHOUSE_CLIENT -q "SHOW COLUMNS FROM ${db}.ns.t" | cut -f1-2
-$CLICKHOUSE_CLIENT -q "SHOW INDEXES FROM ${db}.ns.t" | cut -f1 | uniq
+$CLICKHOUSE_CLIENT -q "SELECT x FROM ${db}.ns.t" 2>&1 | code
+$CLICKHOUSE_CLIENT -q "INSERT INTO ${db}.ns.t VALUES (1)" 2>&1 | code
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t" 2>&1 | code
 
-a=$($CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE ${db}.ns.t")
+echo '-- setting on'
+$ON -q "INSERT INTO ${db}.ns.t VALUES (1)"
+$ON -q "SELECT x FROM ${db}.ns.t"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${db}.\`ns.t\`"
+$ON -q "EXISTS TABLE ${db}.ns.t"
+$ON -q "DESCRIBE ${db}.ns.t" | cut -f1-2
+$ON -q "SHOW COLUMNS FROM ${db}.ns.t" | cut -f1-2
+$ON -q "SHOW INDEXES FROM ${db}.ns.t" | cut -f1 | uniq
+
+a=$($ON -q "SHOW CREATE TABLE ${db}.ns.t")
 b=$($CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE ${db}.\`ns.t\`")
 [ "$a" == "$b" ] && echo 'show create: same' || echo 'show create: different'
-a=$($CLICKHOUSE_CLIENT -q "EXPLAIN SYNTAX oneline = 1 SELECT x FROM ${db}.ns.t")
+a=$($ON -q "EXPLAIN SYNTAX oneline = 1 SELECT x FROM ${db}.ns.t")
 b=$($CLICKHOUSE_CLIENT -q "EXPLAIN SYNTAX oneline = 1 SELECT x FROM ${db}.\`ns.t\`")
 [ "$a" == "$b" ] && echo 'explain syntax: same' || echo 'explain syntax: different'
 
 $CLICKHOUSE_CLIENT -q "SELECT formatQuerySingleLine('SELECT * FROM a.b.c')"
 
 echo '-- DDL'
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.ns.t2 (x Int32) ENGINE = MergeTree ORDER BY x"
+$ON -q "CREATE TABLE ${db}.ns.t2 (x Int32) ENGINE = MergeTree ORDER BY x"
 $CLICKHOUSE_CLIENT -q "SHOW TABLES FROM ${db} LIKE 'ns.%'"
-$CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.ns.t2"
+$ON -q "DROP TABLE ${db}.ns.t2"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE ${db}.\`ns.t2\`"
 
 echo '-- errors, setting off'
@@ -40,10 +48,6 @@ $CLICKHOUSE_CLIENT --param_p=ns -q "SELECT * FROM ${db}.{p:Identifier}.t" 2>&1 |
 $CLICKHOUSE_CLIENT -q "SELECT ${db}.ns.t.x FROM ${db}.ns.t SETTINGS enable_analyzer = 1" 2>&1 | grep -oE 'Code: [0-9]+' | head -n1
 
 echo '-- HTTP'
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT x FROM ${db}.ns.t SETTINGS allow_experimental_table_namespaces = 1"
-
-echo '-- setting on'
-$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 -q "SELECT x FROM ${db}.ns.t"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.t\`"

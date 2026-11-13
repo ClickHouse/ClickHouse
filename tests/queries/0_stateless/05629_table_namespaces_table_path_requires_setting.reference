@@ -1,0 +1,67 @@
+-- A: every fold site is rejected
+A1: Code: 344
+A2: Code: 344
+A3: Code: 344
+A4: Code: 344
+A5a: Code: 344
+A5b: Code: 344
+A5c: Code: 344
+A5d: Code: 344
+A6: Code: 344
+A7a: Code: 344
+A7b: Code: 344
+A7c: Code: 344
+A7d: Code: 344
+A8: Code: 344
+A9a: Code: 344
+A9b: Code: 344
+A9c: Code: 344
+A10a: Code: 344
+A10b: Code: 344
+A10c: Code: 344
+A10d: Code: 344
+A11a: Code: 344
+A11b: Code: 344
+A11c: Code: 344
+A12a: Code: 344
+A12b: Code: 344
+A12c: Code: 344
+A13: Code: 344
+A14a: Code: 344
+A14b: Code: 344
+A15: Code: 344
+-- nothing was executed
+A_count: 1
+A_exists_u: 1
+A_exists_plain: 1
+-- S: SELECT scoping
+S1: 1
+S2: 1
+S3: ok
+S4: Code: 344
+S5a: 1
+S5b: Code: 344
+S6a: Code: 344
+S6b: 1 1
+S7a: Code: 344
+S7b: Code: 344
+S7c: Code: 344
+S8a: Code: 344
+S8b: Code: 344
+S8c: Code: 344
+S8d: Code: 344
+S8e: Code: 344
+S9: Code: 703
+S10: 1
+-- V: stored definitions
+V1a: 1
+CREATE VIEW db.v\n(\n    `x` UInt64\n)\nAS SELECT x\nFROM db.`ns.t`
+V1b: ok
+V1c: ok
+V1d: 1
+V2a: ok
+V2b: 1
+-- F: formatting is not checked
+F1a: CREATE TABLE a.`b.c` (`x` UInt64) ENGINE = Memory
+F1b: SELECT * FROM a.`b.c`
+F1c: INSERT INTO a.`b.c` FORMAT Values

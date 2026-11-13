@@ -58,8 +58,8 @@ $ON -q "SELECT ns.t1.x, ns.t2.y FROM ${db}.ns.t1 JOIN ${db}.ns.t2 ON ns.t1.x = n
 $ON -q "SELECT a.b.c FROM ${db}.\`a.b\`"
 
 echo '-- multipart column qualifiers, setting off'
-$OFF -q "SELECT ns.t.x FROM ${db}.ns.t" 2>&1 | code
-$OFF -q "SELECT ns.t1.x, ns.t2.y FROM ${db}.ns.t1 JOIN ${db}.ns.t2 ON ns.t1.x = ns.t2.x" 2>&1 | code
+$OFF -q "SELECT ns.t.x FROM ${db}.\`ns.t\`" 2>&1 | code
+$OFF -q "SELECT ns.t1.x, ns.t2.y FROM ${db}.\`ns.t1\` JOIN ${db}.\`ns.t2\` ON ns.t1.x = ns.t2.x" 2>&1 | code
 $OFF -q "SELECT a.b.c FROM ${db}.\`a.b\`" 2>&1 | code
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.\`ns.t\`"
