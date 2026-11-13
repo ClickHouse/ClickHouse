@@ -1274,26 +1274,33 @@ QueryTreeNodes QueryAnalyzer::getArrayElementsForInTupleArguments(
     return array_elements;
 }
 
+static QueryTreeNodePtr buildBoundNullSafeInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    const ContextPtr & context);
+
 /// Builds the row-wise comparison for a one-element IN set: the compare-nulls functions
-/// (`nullIn`, `notNullIn`) map to `isNotDistinctFrom` and its negation, the others map to
+/// (`nullIn`, `notNullIn`) compare nulls explicitly, while the others map to
 /// ifNull(equals/notEquals(...), default), with a NULL result for a NULL LHS value.
 /// The caller must resolve the returned node.
 static QueryTreeNodePtr buildScalarInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
     bool is_not_in,
-    bool compare_nulls)
+    bool compare_nulls,
+    const ContextPtr & context)
 {
     if (compare_nulls)
     {
-        auto comparison_fn = std::make_shared<FunctionNode>("isNotDistinctFrom");
-        comparison_fn->getArguments().getNodes() = {left_argument, right_argument};
-        if (is_not_in)
+        if (isNullableOrLowCardinalityNullable(left_argument->getResultType())
+            || isNullableOrLowCardinalityNullable(right_argument->getResultType()))
         {
-            auto not_fn = std::make_shared<FunctionNode>("not");
-            not_fn->getArguments().getNodes().push_back(std::move(comparison_fn));
-            return not_fn;
+            return buildBoundNullSafeInComparison(left_argument, right_argument, is_not_in, context);
         }
+
+        auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
+        comparison_fn->getArguments().getNodes() = {left_argument, right_argument};
         return comparison_fn;
     }
 
@@ -1330,6 +1337,43 @@ static QueryTreeNodePtr buildResolvedFunction(
     return function;
 }
 
+static QueryTreeNodePtr buildBoundNullSafeInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    const ContextPtr & context)
+{
+    auto left_array = buildResolvedFunction("array", {left_argument}, context);
+    auto right_array = buildResolvedFunction("array", {right_argument}, context);
+    const auto * left_array_type = typeid_cast<const DataTypeArray *>(left_array->getResultType().get());
+    const auto * right_array_type = typeid_cast<const DataTypeArray *>(right_array->getResultType().get());
+    chassert(left_array_type && right_array_type);
+    const DataTypes argument_types{
+        recursiveRemoveLowCardinality(left_array_type->getNestedType()),
+        recursiveRemoveLowCardinality(right_array_type->getNestedType())};
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"__in_null_left", "__in_null_right"});
+    lambda_arguments->resolve(argument_types);
+    auto left_value = std::make_shared<ColumnNode>(
+        NameAndTypePair{"__in_null_left", argument_types[0]}, lambda_arguments);
+    auto right_value = std::make_shared<ColumnNode>(
+        NameAndTypePair{"__in_null_right", argument_types[1]}, lambda_arguments);
+
+    auto equals = buildResolvedFunction("equals", {left_value, right_value}, context);
+    auto left_is_null = buildResolvedFunction("isNull", {left_value}, context);
+    auto right_is_null = buildResolvedFunction("isNull", {right_value}, context);
+    auto both_are_null = buildResolvedFunction("and", {std::move(left_is_null), std::move(right_is_null)}, context);
+    auto body = buildResolvedFunction("ifNull", {std::move(equals), std::move(both_are_null)}, context);
+    if (is_not_in)
+        body = buildResolvedFunction("not", {std::move(body)}, context);
+
+    auto lambda = std::make_shared<LambdaNode>(
+        lambda_arguments, body, false /*is_operator*/,
+        std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
+    auto mapped = buildResolvedFunction(
+        "arrayMap", {std::move(lambda), std::move(left_array), std::move(right_array)}, context);
+    return buildResolvedFunction("arrayElement", {std::move(mapped), std::make_shared<ConstantNode>(Field{1u})}, context);
+}
+
 static QueryTreeNodePtr buildNumericScalarInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
@@ -1342,8 +1386,10 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
     const bool left_is_decimal = isDecimal(left_type);
     const bool right_is_decimal = isDecimal(right_type);
+    const bool left_nullable = isNullableOrLowCardinalityNullable(left_argument->getResultType());
+    const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
 
-    if (bind_arguments && left_is_decimal != right_is_decimal)
+    if (bind_arguments && (left_is_decimal != right_is_decimal || (compare_nulls && (left_nullable || right_nullable))))
     {
         /// The exact comparison uses each operand in several branches. Bind both
         /// operands once so nested `IN` expressions grow linearly and the query
@@ -1423,25 +1469,22 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     }
     else if (compare_nulls)
     {
-        result = buildResolvedFunction("isNotDistinctFrom", {left_argument, right_argument}, context);
-        return is_not_in ? buildResolvedFunction("not", {std::move(result)}, context) : result;
+        result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
     }
     else
     {
         result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
     }
 
-    const bool left_nullable = isNullableOrLowCardinalityNullable(left_argument->getResultType());
-    const bool right_nullable = isNullableOrLowCardinalityNullable(right_argument->getResultType());
-
     if (compare_nulls)
     {
-        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
-        auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
-        auto either_is_null = buildResolvedFunction("or", {left_is_null, right_is_null}, context);
-        auto both_are_null = buildResolvedFunction("and", {std::move(left_is_null), std::move(right_is_null)}, context);
-        result = buildResolvedFunction("if", {std::move(either_is_null), std::move(both_are_null), std::move(result)}, context);
-        result = buildResolvedFunction("ifNull", {std::move(result), std::make_shared<ConstantNode>(Field{0u})}, context);
+        if (left_nullable || right_nullable)
+        {
+            auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+            auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
+            auto both_are_null = buildResolvedFunction("and", {std::move(left_is_null), std::move(right_is_null)}, context);
+            result = buildResolvedFunction("ifNull", {std::move(result), std::move(both_are_null)}, context);
+        }
         if (is_not_in)
             result = buildResolvedFunction("not", {std::move(result)}, context);
         return result;
@@ -2948,7 +2991,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (isStringOrFixedString(removeNullable(removeLowCardinality(right_type)))
                             && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
                             right_argument = castNodeToType(right_argument, left_type, scope);
-                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
+                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
                         resolveFunction(node, scope);
                         return ProjectionNames{proj};
                     }
@@ -3187,7 +3230,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
-                    node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
+                    node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }
