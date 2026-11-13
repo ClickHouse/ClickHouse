@@ -31,16 +31,37 @@ public:
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties &,
+        const AggregateFunctionProperties & properties,
         const DataTypes & arguments,
         const Array & params) const override
     {
         AggregateFunctionPtr res;
+        /// Only opt-in functions need a persisted first-seen order for DISTINCT keys.
+        const bool preserve_history_order = properties.preserve_distinct_input_order;
+
         if (arguments.size() == 1)
         {
+            if (preserve_history_order)
+            {
+                res.reset(createWithNumericType<
+                    AggregateFunctionDistinct,
+                    AggregateFunctionDistinctSingleNumericOrderedData>(
+                        *arguments[0], nested_function, arguments, params, true));
+
+                if (res)
+                    return res;
+
+                if (arguments[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+                    return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericOrderedData<true>>>(
+                        nested_function, arguments, params, true);
+
+                return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericOrderedData<false>>>(
+                    nested_function, arguments, params, true);
+            }
+
             res.reset(createWithNumericType<
                 AggregateFunctionDistinct,
-                AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments, params));
+                AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments, params, properties.is_order_dependent));
 
             if (res)
                 return res;
@@ -48,12 +69,17 @@ public:
             if (arguments[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
                 return std::make_shared<
                     AggregateFunctionDistinct<
-                        AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments, params);
+                        AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments, params, properties.is_order_dependent);
             return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericData<false>>>(
-                nested_function, arguments, params);
+                nested_function, arguments, params, properties.is_order_dependent);
         }
 
-        return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(nested_function, arguments, params);
+        if (preserve_history_order)
+            return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericOrderedData>>(
+                nested_function, arguments, params, true);
+
+        return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(
+            nested_function, arguments, params, properties.is_order_dependent);
     }
 };
 

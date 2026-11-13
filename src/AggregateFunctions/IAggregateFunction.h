@@ -1104,6 +1104,9 @@ protected:
 public:
     // Derived class can `override` this to flag that DateTime64 is not supported.
     static constexpr bool DateTime64Supported = true;
+    /// The UInt8 lookup-table fast path merges interleaved partial states in a different order.
+    /// Disable it for aggregates whose results depend on the order of input rows.
+    static constexpr bool can_use_lookup_table8 = true;
 
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_, result_type_)
@@ -1156,7 +1159,7 @@ public:
 
         /// If the function is complex or too large, use more generic algorithm.
 
-        if (func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
+        if (!Derived::can_use_lookup_table8 || func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
         {
             IAggregateFunctionHelper<Derived>::addBatchLookupTable8(row_begin, row_end, map, place_offset, init, key, columns, arena);
             return;
@@ -1258,6 +1261,10 @@ struct AggregateFunctionProperties
     bool is_window_function = false;
 
     VariantArgumentsConversion variant_arguments_conversion = VariantArgumentsConversion::None;
+
+    /// Keep DISTINCT keys in their first-seen order when replaying them must preserve that order.
+    /// Opt in explicitly, so existing DISTINCT state formats remain unchanged.
+    bool preserve_distinct_input_order = false;
 };
 
 
