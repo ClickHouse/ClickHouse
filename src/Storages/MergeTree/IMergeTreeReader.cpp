@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
@@ -46,9 +47,10 @@ namespace
 
     bool readsAnyOf(const ActionsDAG::Node & node, const NameSet & columns)
     {
-        if (node.type == ActionsDAG::ActionType::INPUT)
-            return columns.contains(node.result_name);
-        return std::ranges::any_of(node.children, [&](const auto * child) { return readsAnyOf(*child, columns); });
+        return !columns.empty() && anyReachableNode({&node}, [&](const ActionsDAG::Node * cur)
+        {
+            return cur->type == ActionsDAG::ActionType::INPUT && columns.contains(cur->result_name);
+        });
     }
 }
 namespace ErrorCodes
