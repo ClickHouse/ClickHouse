@@ -6,7 +6,7 @@
 #include <Poco/Net/SocketImpl.h>
 
 #if USE_SILK && USE_SSL
-#include <IO/SilkSecureFiberStreamSocketImpl.h>
+#include <Common/Silk/SecureFiberStreamSocketImpl.h>
 #endif
 
 namespace DB

@@ -17,9 +17,9 @@
 #include <poll.h>
 
 #if USE_SILK
-#include <IO/SilkFiberStreamSocketImpl.h>
+#include <Common/Silk/FiberStreamSocketImpl.h>
 #if USE_SSL
-#include <IO/SilkSecureFiberStreamSocketImpl.h>
+#include <Common/Silk/SecureFiberStreamSocketImpl.h>
 #endif
 #endif
 
