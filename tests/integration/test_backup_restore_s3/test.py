@@ -987,6 +987,78 @@ def test_killed_backup_to_s3_removes_its_files_in_shared_backoff(cluster, broken
         node.query("DROP TABLE IF EXISTS data SYNC;")
 
 
+def test_killed_backup_open_removes_its_lock_in_shared_backoff(cluster, broken_s3):
+    # The `.lock` upload is stored, but its response is lost, so the client retries it in its own
+    # loop and opens the shared backoff. Killed while it waits, the BACKUP fails in `open`, which must
+    # still remove the `.lock` it owns, otherwise a later BACKUP to the same destination fails.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY tuple();
+    INSERT INTO data SELECT number, toString(number) FROM numbers(1000);
+    """
+    )
+
+    backup_name = new_backup_name()
+    prefix = f"data/backups/{backup_name}/"
+    backup_destination = (
+        f"S3('http://resolver:8084/root/{prefix}', 'minio', '{minio_secret_key}')"
+    )
+    backup_id = uuid.uuid4().hex
+
+    def uploaded_objects():
+        return [
+            obj.object_name
+            for obj in cluster.minio_client.list_objects("root", prefix, recursive=True)
+        ]
+
+    try:
+        broken_s3.setup_at_object_upload(count=1, action="forward_then_reset")
+        retries_before = int(
+            node.query(
+                "SELECT sumIf(value, event = 'S3WriteRequestRetryableErrors') FROM system.events"
+            )
+        )
+        # A long backoff step, so the deadline is still open when `open` removes the `.lock`.
+        node.query(
+            f"BACKUP TABLE data TO {backup_destination} SETTINGS id='{backup_id}' ASYNC",
+            settings={
+                "backup_restore_s3_retry_initial_backoff_ms": 10000,
+                "backup_restore_s3_retry_max_backoff_ms": 10000,
+            },
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT sumIf(value, event = 'S3WriteRequestRetryableErrors') > {retries_before} "
+            f"FROM system.events",
+            "1",
+        )
+        stored = uploaded_objects()
+        assert stored == [f"{prefix}.lock"], f"the mock did not store the lock: {stored}"
+
+        node.query(
+            f"KILL QUERY WHERE query_kind='Backup' AND query LIKE '%{backup_id}%'"
+        )
+        # The status is set after `open` has failed and cleaned up.
+        assert_eq_with_retry(
+            node,
+            f"SELECT status != 'CREATING_BACKUP' FROM system.backups WHERE id='{backup_id}'",
+            "1",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        left = uploaded_objects()
+        assert not left, f"the killed BACKUP left its lock: {left}"
+
+        broken_s3.reset()
+        node.query(f"BACKUP TABLE data TO {backup_destination}")
+    finally:
+        broken_s3.reset()
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
 def test_incremental_backup_append_table_def(cluster):
     backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
 
