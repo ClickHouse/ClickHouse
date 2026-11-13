@@ -1117,6 +1117,8 @@ static const ORC::Type * traverseDownORCTypeByName(
             if (fold)
                 boost::to_lower(target_copy);
 
+            /// A field named like the whole request wins over an earlier one whose name is a dotted prefix of it.
+            std::pair<std::string, const ORC::Type *> prefix_match{"", nullptr};
             for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
             {
                 std::string field_name;
@@ -1132,19 +1134,20 @@ static const ORC::Type * traverseDownORCTypeByName(
                 if (fold)
                     boost::to_lower(field_name);
 
-                if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
-                {
-                    return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
-                }
+                if (target_copy == field_name)
+                    return {"", type_->getSubtype(i)};
+                if (!prefix_match.second && startsWith(target_copy, field_name) && target_copy[field_name.size()] == '.')
+                    prefix_match = {target_.substr(field_name.size() + 1), type_->getSubtype(i)};
             }
-            return {"", nullptr};
+            return prefix_match;
         };
 
         /// A field spelled exactly like the request always wins: a struct may hold several fields
         /// whose names differ only by case, and case-folding first binds the request to whichever
         /// of them the file lists first.
+        /// Fields named by Iceberg field id carry the requested names, so they are never folded.
         auto exact_match = search_pass(/*fold=*/false);
-        if (exact_match.second || !ignore_case)
+        if (exact_match.second || !ignore_case || names)
             return exact_match;
         return search_pass(/*fold=*/true);
     };
@@ -3177,7 +3180,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
     auto find_orc_column = [&](const String & name)
     {
         auto it = name_to_column_ptr.find(name);
-        if (it == name_to_column_ptr.end() && case_insensitive_matching)
+        if (it == name_to_column_ptr.end() && case_insensitive_matching && !iceberg_field_names)
         {
             for (const auto & field_name : orc_field_names)
                 if (boost::iequals(field_name, name))
