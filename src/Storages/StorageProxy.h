@@ -3,7 +3,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB

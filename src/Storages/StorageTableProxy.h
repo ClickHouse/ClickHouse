@@ -111,6 +111,34 @@ public:
     bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
     bool isStaticStorage() const override { return getNested()->isStaticStorage(); }
 
+    /// `BACKUP` and `RESTORE` reach the proxy instead of the loaded storage when the table has not been loaded yet,
+    /// or when it is still held by another query, so it is not replaced yet, see `replaceLoadedLazyTableUnlocked`.
+    /// Not forwarding these makes `BACKUP` write the table definition with no data at all, and the restore of such
+    /// a backup silently succeeds with an empty table. Forwarded here rather than in `StorageProxy`: there `getNested`
+    /// of `StorageTableFunctionProxy` would run the table function.
+    bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
+
+    /// Only the `Replicated*MergeTree` engines adjust the query, so a table of any other engine is not loaded for it:
+    /// a backup with `structure_only` collects no data, so it must not load every selected table.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override;
+
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    }
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    }
+
+    /// Called even when no data was restored, so a table that has not been loaded is not loaded for it.
+    void finalizeRestoreFromBackup() override
+    {
+        if (auto storage = tryGetNested())
+            storage->finalizeRestoreFromBackup();
+    }
+
     bool storesDataOnDisk() const override { return true; }
     /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
     bool hasUnreplicatedTableDataOnDisk() const override { return true; }

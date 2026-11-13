@@ -1,8 +1,0 @@
-x	String					
-x	String					
-x	String					
-x	String					
-fuzz	TableProxy
-mt	TableProxy
-a
-mt	MergeTree

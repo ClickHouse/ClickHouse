@@ -2,14 +2,10 @@
 # Tags: no-fasttest
 # - no-fasttest: requires Iceberg (USE_AVRO build option) and S3
 
-# A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in for the real storage, and an
-# `Alias` or a materialized view refreshes the external metadata (e.g. the schema of an Iceberg table) only of a
-# target that is already materialized, so that `DESCRIBE` does not load it. Here the external schema changes while
-# the database is detached, and the first access after `ATTACH` goes through the wrappers:
-# - a `SELECT` through an `Alias` used to resolve the columns from the `CREATE TABLE` query of the target and fail
-#   with `UNKNOWN_IDENTIFIER` for the new column;
-# - a mutation through an `Alias` of a materialized view materialized only the view, not its inner table, and failed
-#   with a `LOGICAL_ERROR` exception, as the mutation ran against the old schema.
+# A table of a database with `lazy_load_tables` is kept in the catalog as a proxy for the real storage. Here the
+# external schema of Iceberg tables changes while the database is detached, and the first access after `ATTACH`
+# goes through an `Alias`. Reading a materialized view refreshed the external metadata of the proxy of its target
+# rather than of the loaded storage, so it kept reading the snapshot the target was loaded with.
 
 # Use `IcebergS3` rather than `IcebergLocal`, because the local object storage becomes read-only after
 # `ATTACH`, which would block the mutation.

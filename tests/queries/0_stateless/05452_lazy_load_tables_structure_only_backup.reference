@@ -1,6 +1,0 @@
-fuzz	TableProxy
-mt	TableProxy
-fuzz	TableProxy
-mt	TableProxy
-mt	MergeTree
-a

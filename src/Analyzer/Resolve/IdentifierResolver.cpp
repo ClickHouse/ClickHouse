@@ -375,11 +375,6 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    /// An `Alias` takes its columns from its target, but refreshes only a lazy-load target that is already materialized,
-    /// as `DESCRIBE` must not load it. The query uses the target, so load it before the refresh and the snapshot below,
-    /// or the first query after the database is attached sees the schema of an external table from its `CREATE TABLE`.
-    if (typeid_cast<const StorageAlias *>(storage.get()))
-        loadLazyTargetsOfAliasesAndViews(storage);
     storage->updateExternalDynamicMetadataIfExists(context);
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
