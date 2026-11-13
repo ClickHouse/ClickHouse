@@ -19,6 +19,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Parsers/IAST.h>
@@ -293,6 +294,39 @@ NameSet collectDefaultStorageDependencies(
         }
     }
 
+    return result;
+}
+
+/// Array subcolumns of `Nested` structures with shared offsets that some source part does not store
+/// while storing another array subcolumn of the same structure. Reading such a part reconciles the
+/// default of the missing subcolumn with the offsets the part stores (see
+/// `reconcileEvaluatedDefaultWithSharedOffsets`), which may change the value the default expression
+/// produces, so the data derived from that value before the merge may disagree with the merged part.
+NameSet getNestedColumnsReconciledInSomePart(const NamesAndTypesList & storage_columns, const MergeTreeData::DataPartsVector & parts)
+{
+    std::unordered_map<String, Names> array_subcolumns_by_nested_name;
+    for (const auto & storage_column : storage_columns)
+    {
+        auto split = Nested::splitName(storage_column.name);
+        if (!split.second.empty() && isArray(storage_column.type))
+            array_subcolumns_by_nested_name[split.first].push_back(storage_column.name);
+    }
+
+    NameSet result;
+    for (const auto & part : parts)
+    {
+        const auto part_column_names = part->getColumns().getNameSet();
+        for (const auto & [_, subcolumns] : array_subcolumns_by_nested_name)
+        {
+            if (subcolumns.size() < 2
+                || !std::ranges::any_of(subcolumns, [&](const String & name) { return part_column_names.contains(name); }))
+                continue;
+
+            for (const auto & name : subcolumns)
+                if (!part_column_names.contains(name))
+                    result.insert(name);
+        }
+    }
     return result;
 }
 
@@ -619,6 +653,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             return std::ranges::any_of(part_column_names, [&](const NameSet & names) { return !names.contains(lhs) && !names.contains(rhs); });
         };
 
+        /// The stored values of a deterministic `MATERIALIZED` column are computed again from the
+        /// reconciled value of its dependency, so it is read in the same step even where it is stored.
+        const auto reconciled_in_some_part = getNestedColumnsReconciledInSomePart(global_ctx->storage_columns, global_ctx->future_part->parts);
+
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
         for (const auto & storage_column : global_ctx->storage_columns)
         {
@@ -626,10 +664,20 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             if (!column_default || !column_default->expression)
                 continue;
 
+            std::optional<bool> recomputed_where_stored;
+            auto is_recomputed_where_stored = [&]
+            {
+                if (!recomputed_where_stored)
+                    recomputed_where_stored = column_default->kind == ColumnDefaultKind::Materialized
+                        && isDeterministicDefaultExpression(column_default->expression, global_ctx->context);
+                return *recomputed_where_stored;
+            };
+
             for (const auto & dependency : collectDefaultStorageDependencies(column_default->expression, columns_desc, storage_columns))
             {
                 if (dependency != storage_column.name && has_shared_offsets(dependency)
-                    && missing_together_in_some_part(storage_column.name, dependency))
+                    && (missing_together_in_some_part(storage_column.name, dependency)
+                        || (reconciled_in_some_part.contains(dependency) && is_recomputed_where_stored())))
                 {
                     key_columns.insert(storage_column.name);
                     key_columns.insert(dependency);
@@ -2069,6 +2117,39 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
 
+    /// The merge may reconcile a `Nested` default with the shared offsets of a source part, so the
+    /// values a projection part of that source part was built from may differ from the ones written
+    /// to the merged part, including the values of the defaults computed from the reconciled column.
+    NameSet reconciled_in_some_part;
+    if ((*global_ctx->data_settings)[MergeTreeSetting::share_nested_offsets] && !projections.empty())
+        reconciled_in_some_part = getNestedColumnsReconciledInSomePart(global_ctx->storage_columns, global_ctx->future_part->parts);
+
+    const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
+    const auto storage_column_names = global_ctx->storage_columns.getNameSet();
+    const auto virtual_column_names = global_ctx->virtual_columns.getNameSet();
+
+    auto may_read_reconciled_column = [&](const Names & required_columns)
+    {
+        if (reconciled_in_some_part.empty())
+            return false;
+
+        for (const auto & name : required_columns)
+        {
+            auto name_in_storage = getColumnNameInStorage(name, storage_column_names, virtual_column_names);
+            if (reconciled_in_some_part.contains(name_in_storage))
+                return true;
+
+            auto column_default = columns_desc.getDefault(name_in_storage);
+            if (column_default && column_default->expression)
+            {
+                for (const auto & dependency : collectDefaultStorageDependencies(column_default->expression, columns_desc, storage_column_names))
+                    if (reconciled_in_some_part.contains(dependency))
+                        return true;
+            }
+        }
+        return false;
+    };
+
     for (const auto & projection : projections)
     {
         const auto & required_columns = projection.getRequiredColumns();
@@ -2076,6 +2157,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             required_columns.begin(),
             required_columns.end(),
             [&](const String & name) { return global_ctx->new_data_part->expired_columns.contains(name); });
+
 
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
@@ -2130,6 +2212,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             LOG_DEBUG(
                 ctx->log,
                 "Projection {} will be rebuilt because some projection parts miss columns the projection now expects",
+                projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (projection_parts.size() == global_ctx->future_part->parts.size() && may_read_reconciled_column(required_columns))
+        {
+            /// Rebuild from the values written to the merged part rather than merge the projection
+            /// parts built from the values before the reconciliation.
+            LOG_DEBUG(
+                ctx->log,
+                "Projection {} will be rebuilt because it reads a `Nested` column the merge may reconcile with the shared offsets",
                 projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }

@@ -85,6 +85,10 @@ ColumnPtr reconcileEvaluatedDefaultWithSharedOffsets(
     const DataTypePtr & type,
     const Columns & shared_offsets);
 
+/// Whether the stored values of a `MATERIALIZED` column with this expression may be recomputed from
+/// it: the expression contains no function known to be non-deterministic (e.g. `rand64`, `now`).
+bool isDeterministicDefaultExpression(const ASTPtr & expression, const ContextPtr & context);
+
 /// Whether `fillMissingColumns` may leave `column` unfilled for `evaluateMissingDefaults`.
 bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column);
 

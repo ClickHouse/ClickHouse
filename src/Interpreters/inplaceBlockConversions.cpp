@@ -1,4 +1,5 @@
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Functions/FunctionFactory.h>
 
 #include <utility>
 
@@ -583,6 +584,25 @@ static bool isSubcolumnOfAvailableColumn(
     /// pre-rename name, while evaluateMissingDefaults looks the parent up by its metadata name.
     auto parent_name = column_in_storage->getNameInStorage();
     return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
+}
+
+bool isDeterministicDefaultExpression(const ASTPtr & expression, const ContextPtr & context)
+{
+    if (!expression)
+        return true;
+
+    if (const auto * function = expression->as<ASTFunction>())
+    {
+        /// Only the name: resolving it does not touch the dictionary for `dictGet` and the like.
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
+            return false;
+    }
+
+    for (const auto & child : expression->children)
+        if (!isDeterministicDefaultExpression(child, context))
+            return false;
+
+    return true;
 }
 
 bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)

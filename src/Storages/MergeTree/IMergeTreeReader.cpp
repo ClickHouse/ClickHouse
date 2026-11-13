@@ -543,6 +543,23 @@ void IMergeTreeReader::evaluateMissingDefaults(
                 return false;
             };
 
+            /// A column read from the part by this step whose stored values are computed from its
+            /// `MATERIALIZED` expression and may be computed again (the expression is deterministic).
+            /// Columns produced by earlier steps are not returned by this step, so they stay as is.
+            std::unordered_map<String, bool> recomputable_stored_columns;
+            auto is_recomputable_stored_column = [&](const String & column_name)
+            {
+                auto [cached, inserted] = recomputable_stored_columns.emplace(column_name, false);
+                if (inserted && current_step_columns.contains(column_name))
+                {
+                    auto column_default = combined_columns.getDefault(column_name);
+                    cached->second = column_default && column_default->kind == ColumnDefaultKind::Materialized
+                        && column_default->expression
+                        && isDeterministicDefaultExpression(column_default->expression, context_copy);
+                }
+                return cached->second;
+            };
+
             NameSet reconciled_column_names;
             while (true)
             {
@@ -586,11 +603,15 @@ void IMergeTreeReader::evaluateMissingDefaults(
                     fixed_columns = std::move(changed_columns);
 
                 /// Drop the evaluated defaults computed from the values that are replaced now, so that
-                /// they are evaluated again from the reconciled values; keep all the others.
+                /// they are evaluated again from the reconciled values; keep all the others. So are the
+                /// stored values of a deterministic `MATERIALIZED` column read by this step (e.g. one
+                /// materialized by `ALTER TABLE ... MATERIALIZE COLUMN` from the default as is): the
+                /// new part stores the reconciled value, and the dependent must agree with it.
                 Names columns_to_recompute;
                 for (const auto & column : additional_columns)
                 {
-                    if (!source_column_names.contains(column.name) && !reconciled_column_names.contains(column.name)
+                    if ((!source_column_names.contains(column.name) || is_recomputable_stored_column(column.name))
+                        && !reconciled_column_names.contains(column.name)
                         && !fixed_columns.contains(column.name) && depends_on_any(column.name, fixed_columns))
                         columns_to_recompute.push_back(column.name);
                 }
