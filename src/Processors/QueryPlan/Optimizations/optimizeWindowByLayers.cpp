@@ -119,7 +119,12 @@ void tryReadWindowByLayers(QueryPlan::Node & node)
         return;
 
     bool in_reverse_order = false;
-    const size_t prefix_size = primaryKeyPrefixDeterminedByKeys(*reading, *dag, sorting->getPartitionByColumnNames(), in_reverse_order);
+    size_t prefix_size = primaryKeyPrefixDeterminedByKeys(*reading, *dag, sorting->getPartitionByColumnNames(), in_reverse_order);
+
+    /// Every layer is merged by the prefix of the sorting key that is read in order, and its range filter relies on
+    /// the merged stream being sorted by the columns it compares (`FilterSortedStreamByRange` checks the first and
+    /// the last row of a block). A longer prefix would let rows of other layers through.
+    prefix_size = std::min(prefix_size, reading->getInputOrder()->used_prefix_of_sorting_key_size);
     if (prefix_size == 0)
         return;
 

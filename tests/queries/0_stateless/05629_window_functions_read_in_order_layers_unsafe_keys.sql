@@ -35,6 +35,17 @@ FROM (SELECT a, b, count() OVER (PARTITION BY a, b) AS rn FROM t_window_layers_m
 SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1;
 DROP TABLE t_window_layers_mixed_directions;
 
+-- Window keys `(a, b)` determine the key `(a, b % 97)`, but the read is ordered only by `a`: the layers are split by `a`.
+DROP TABLE IF EXISTS t_window_layers_unordered_suffix;
+CREATE TABLE t_window_layers_unordered_suffix (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b % 97) SETTINGS index_granularity = 100;
+SYSTEM STOP MERGES t_window_layers_unordered_suffix;
+INSERT INTO t_window_layers_unordered_suffix SELECT intDiv(number, 1000), number FROM numbers(10000);
+INSERT INTO t_window_layers_unordered_suffix SELECT intDiv(number, 1000), number FROM numbers(10000);
+SELECT count(), min(s), max(s)
+FROM (SELECT count() OVER (PARTITION BY a, b) AS s FROM t_window_layers_unordered_suffix)
+SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
+DROP TABLE t_window_layers_unordered_suffix;
+
 -- The sorting key column `payload` is not used by the query and must not be read.
 DROP TABLE IF EXISTS t_window_layers_unused_key_suffix;
 CREATE TABLE t_window_layers_unused_key_suffix (a UInt32, payload String) ENGINE = MergeTree ORDER BY (a, payload) SETTINGS index_granularity = 100;
