@@ -4,9 +4,6 @@ edition = "2021"
 name = "_ch_rust_lance"
 version = "0.1.0"
 
-[lib]
-crate-type = ["staticlib"]
-
 [dependencies]
 arrow-array = "=57.3.0"
 arrow-data = "=57.3.0"

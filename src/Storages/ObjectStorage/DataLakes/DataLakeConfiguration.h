@@ -261,11 +261,13 @@ public:
     }
 
     Pipe alterPartition(
+        ObjectStoragePtr object_storage,
         const PartitionCommands & commands,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog,
         StorageID storage_id) override
     {
+        lazyInitializeIfNeeded(object_storage, context);
         return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
     }
 

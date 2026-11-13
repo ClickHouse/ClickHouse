@@ -5,7 +5,7 @@
 
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Formats/ColumnNameMaps.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>

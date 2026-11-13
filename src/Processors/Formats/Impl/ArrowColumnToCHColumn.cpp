@@ -1,7 +1,7 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Common/Exception.h>
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>

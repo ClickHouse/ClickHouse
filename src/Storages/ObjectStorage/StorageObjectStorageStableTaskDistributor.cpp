@@ -208,7 +208,14 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     std::unique_lock lock(mutex);
 
     if (!stealing_allowed_since)
-        stealing_allowed_since = std::chrono::steady_clock::now() + wait_for_owner;
+    {
+        /// Saturates instead of overflowing: the deadline is never earlier than requested.
+        const auto now = std::chrono::steady_clock::now();
+        if (wait_for_owner < std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::time_point::max() - now))
+            stealing_allowed_since = now + wait_for_owner;
+        else
+            stealing_allowed_since = std::chrono::steady_clock::time_point::max();
+    }
 
     /// Every file is assigned to a replica by rendezvous hashing, so that the same file is read by the same replica
     /// in every query, and is read from its cache. Taking a file of another replica breaks this, so it is done only

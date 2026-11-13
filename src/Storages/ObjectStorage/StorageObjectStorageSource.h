@@ -116,7 +116,10 @@ public:
         bool need_only_count_,
         LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr,
         std::optional<size_t> limit_ = {},
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
+        /// When set, the reader pool is shared with the other sources of this read instead of
+        /// private to this one. A shared pool must outlive every source using it.
+        std::shared_ptr<ThreadPool> shared_create_reader_pool_ = nullptr);
 
     ~StorageObjectStorageSource() override;
 
@@ -196,6 +199,8 @@ protected:
 
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
+    /// A shared pool is owned elsewhere, so this source must not wait on it in its destructor.
+    const bool owns_create_reader_pool;
 
     std::shared_ptr<IObjectIterator> file_iterator;
     SchemaCache & schema_cache;
