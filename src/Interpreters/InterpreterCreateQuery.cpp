@@ -1012,26 +1012,6 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
-/// `CREATE TABLE t AS s3(...)` creates the same permanent table as `CREATE TABLE t ENGINE = S3(...)`, so it needs the
-/// same `TABLE ENGINE ON S3` grant. Only unfiltered `READ ON S3` and `WRITE ON S3` imply that grant, because writes
-/// to a table are not checked against the source grants: a key renamed by `s3_create_new_file_on_insert`, or an
-/// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this grant,
-/// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
-/// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
-/// The function returns the engine whose grant is needed, or nothing.
-std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & context)
-{
-    /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`.
-    const auto table_function = TableFunctionFactory::instance().get(table_function_ast, context);
-    /// A definition that cannot be a table is refused the same way whatever the grants of the user.
-    throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, context);
-    String engine_name = table_function->getEngineNameForAccessCheck();
-    const auto & storages = StorageFactory::instance().getAllStorages();
-    if (auto it = storages.find(engine_name); it != storages.end() && it->second.features.source_access_type)
-        return engine_name;
-    return {};
-}
-
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
 bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
 {
@@ -1066,6 +1046,25 @@ void throwIfEngineIsUnknownAndNotGranted(
 
 }
 
+/// `CREATE TABLE t AS s3(...)` creates the same permanent table as `CREATE TABLE t ENGINE = S3(...)`, so it needs the
+/// same `TABLE ENGINE ON S3` grant. Only unfiltered `READ ON S3` and `WRITE ON S3` imply that grant, because writes
+/// to a table are not checked against the source grants: a key renamed by `s3_create_new_file_on_insert`, or an
+/// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this grant,
+/// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
+/// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
+std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context)
+{
+    /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`.
+    const auto table_function = TableFunctionFactory::instance().get(table_function_ast, query_context);
+    /// A definition that cannot be a table is refused the same way whatever the grants of the user.
+    throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, query_context);
+    String engine_name = table_function->getEngineNameForAccessCheck();
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    if (auto it = storages.find(engine_name); it != storages.end() && it->second.features.source_access_type)
+        return engine_name;
+    return {};
+}
+
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
@@ -1092,6 +1091,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             create.storage->engine->name, /*is_database_engine=*/ false, /*required_before=*/ {}, getContext());
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
+
+    /// A table function inherited by `CREATE TABLE copy AS src` from `src`.
+    if (create.as_table_function)
+        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
+            getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -4198,6 +4202,9 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                if (inherited.as_table_function)
+                    if (auto engine_name = getSourceEngineOfTableFunction(inherited.as_table_function->ptr(), getContext()))
+                        getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
 
                 /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
                 /// its inner engines while normalizing, so add the ones this query does not give itself

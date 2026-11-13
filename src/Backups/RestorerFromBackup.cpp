@@ -60,6 +60,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
     extern const SettingsBool restore_replace_external_engines_to_null;
+    extern const SettingsBool restore_replace_external_table_functions_to_null;
 }
 
 namespace FailPoints
@@ -510,6 +511,18 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     {
                         for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
                             add_engine(*inner_engine);
+                    }
+                    /// A table created as a table function gets the engine of the function, or `Null` instead of an external one.
+                    if (create.as_table_function)
+                    {
+                        if (auto engine_name = InterpreterCreateQuery::getSourceEngineOfTableFunction(create.as_table_function->ptr(), context))
+                        {
+                            const bool hosts_replace_external_table_functions_to_null
+                                = context->getSettingsRef()[Setting::restore_replace_external_table_functions_to_null]
+                                && restore_settings.core_settings.tryGet("restore_replace_external_table_functions_to_null") != nullptr;
+                            required_access.emplace_back(
+                                AccessType::TABLE_ENGINE, hosts_replace_external_table_functions_to_null ? "Null" : *engine_name);
+                        }
                     }
                 }
             }
