@@ -7,6 +7,7 @@ SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 0, query_plan_join_shard_by_pk_ranges = 0, query_plan_optimize_join_order_randomize = 0;
 SET use_hash_table_stats_for_join_reordering = 0, collect_hash_table_stats_during_joins = 0;
+SET hash_join_layout = 'auto'; -- Pin the session default: the 'auto' cases rely on parallel_hash_join_threshold deciding, which the randomizer would override
 
 CREATE TABLE l (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE r (k UInt64) ENGINE = MergeTree ORDER BY k;

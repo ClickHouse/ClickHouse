@@ -6,6 +6,7 @@ SET automatic_parallel_replicas_mode = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET ast_fuzzer_runs = 0;
+SET hash_join_layout = 'auto'; -- The randomizer's 'serial' changes the delayed-blocks pipeline the test asserts on
 
 -- A default join that does not spill: no DelayedPorts funnel, the delayed blocks stage is still built.
 SELECT countIf(explain ILIKE '%DelayedPorts%'), countIf(explain ILIKE '%DelayedJoinedBlocksTransform%')

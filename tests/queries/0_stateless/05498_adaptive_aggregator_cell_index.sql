@@ -10,6 +10,10 @@ SET max_threads_min_free_memory_per_thread = 0;
 SET max_block_size = 65536;
 SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 50000000;
+-- Pin the adaptive aggregator freeze thresholds to their defaults: the randomizer lowers them, so a
+-- thread's local table freezes earlier and the indexed-table counters the test checks change.
+SET adaptive_aggregator_freeze_threshold = 16384;
+SET adaptive_aggregator_freeze_threshold_bytes = 4194304;
 SET collect_hash_table_stats_during_aggregation = 0;
 SET optimize_aggregation_in_order = 0;
 SET max_bytes_before_external_group_by = 0;
