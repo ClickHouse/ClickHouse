@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The downsampling grid must not follow the server compatibility profile.
-# `TTL` analysis reads the global settings, so the profile is a command-line setting of `clickhouse local`.
+# The downsampling TTL reads the global settings, so each case sets them on the command line of `clickhouse local`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+echo '-- the grid does not follow the compatibility profile'
 $CLICKHOUSE_LOCAL --allow_experimental_time_series_table=1 --compatibility=26.10 --multiquery <<'SQL'
 SET session_timezone = 'UTC';
 
@@ -26,3 +26,34 @@ OPTIMIZE TABLE ts FINAL;
 SELECT arrayMap(x -> toUnixTimestamp64Second(x.timestamp), samples) FROM timeSeriesSamples(ts);
 DROP TABLE ts;
 SQL
+
+echo '-- a dense expired bucket stays under 1 GiB of resident memory with lazy column replication off'
+# A capture of the aggregated array uses several GiB for this bucket, and the query memory limit does not count those copies.
+out="${CLICKHOUSE_TMP}/05494_time_series_downsampling_global_settings.out"
+$CLICKHOUSE_LOCAL --allow_experimental_time_series_table=1 --enable_lazy_columns_replication=0 --multiquery >"$out" <<'SQL' &
+SET session_timezone = 'UTC';
+
+CREATE TABLE ts ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 0, samples_downsampling_periods = '30d:5m';
+INSERT INTO ts (metric_name, tags, samples)
+SELECT 'm', map(), arrayMap(i -> (toDateTime64('2000-01-01 00:00:00', 3, 'UTC') + toIntervalMillisecond(i * 100), toFloat64(i)), range(10000));
+OPTIMIZE TABLE ts FINAL;
+SELECT length(samples) FROM timeSeriesSamples(ts);
+SQL
+pid=$!
+peak=0
+while kill -0 "$pid" 2>/dev/null; do
+    hwm=$(awk '/VmHWM:/ {print $2}' "/proc/${pid}/status" 2>/dev/null || true)
+    if [[ -n "${hwm}" && "${hwm}" -gt "${peak}" ]]; then
+        peak=${hwm}
+    fi
+    sleep 0.02
+done
+wait "$pid"
+status=$?
+if [[ "$status" -ne 0 || "$peak" -gt 1048576 ]]; then
+    echo "status ${status} peak_kib ${peak}"
+    exit 1
+fi
+cat "$out"
+rm -f "$out"
