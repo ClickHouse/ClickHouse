@@ -4,21 +4,24 @@
 # submodule from the network when the main checkout has it.
 #
 # Usage:
-#   worktree.sh create [--no-submodules] <main-repo> <worktree-path> <branch> [<start-point>]
-#       Create <worktree-path> on <branch>. An existing local branch is checked out as it is. A new branch needs
-#       <start-point>, for example `origin/master` or `origin/<branch>`; fetch it before.
-#   worktree.sh update-submodules <worktree-path>
+#   worktree.sh create [--no-submodules] [--fresh-master] <main-repo> <worktree-path> <branch> [<start-point>]
+#       Create <worktree-path> on <branch>. An existing local branch is checked out as it is. A new branch starts
+#       from <start-point>; without it, from the current `master` of the main checkout, or with --fresh-master from
+#       the fresh upstream of `master`. Fetch any other start point before, for example `origin/<branch>`.
+#   worktree.sh update-submodules [--fresh-master] <worktree-path>
 #       Set up or update the submodules of a worktree: after `create --no-submodules`, after a merge or a checkout that
 #       moved pins, or after an interrupted setup. Existing submodule git data of the worktree is kept, with its local
 #       branches, stashes and commits; missing git data is copied from the main checkout.
 #
-# Both modes first refresh the main checkout:
-#   - When it is on a clean `master`, it is fast-forwarded to the upstream. A submodule of the main checkout moves to
-#     its new pin only when nobody works on it: detached at the previous pin, without changes in tracked files.
-#     Otherwise the files stay as they are and the script says why: other sessions can use the main checkout.
-#   - Its git data (`.git/modules/*`) gets every submodule commit that the worktree needs and does not have yet. The
-#     network is used only for missing commits, from the URL in `.gitmodules` of the worktree. A commit fetched by SHA
-#     is kept under `refs/pins/<sha>`, so that `git gc` does not remove it.
+# The main checkout: by default, the script uses it as it is. It does not fetch the superproject, and it does not
+# change the files of the main checkout. Only on request, with --fresh-master, it fetches the upstream of `master` and
+# fast-forwards a clean `master` of the main checkout to it. A submodule of the main checkout then moves to its new pin
+# only when nobody works on it: detached at the previous pin, without changes in tracked files. Otherwise the files
+# stay as they are and the script says why: other sessions can use the main checkout.
+#
+# Network: without --fresh-master, the script fetches only submodule commits that no local git data has: from the URL
+# in `.gitmodules`, by SHA, into the git data of the main checkout (`.git/modules/*`), where the next worktree finds
+# them. A commit fetched by SHA is kept under `refs/pins/<sha>`, so that `git gc` does not remove it.
 #
 # Storage sharing:
 #   - macOS (APFS): the submodule git data and the submodule files are clones (`cp -c`) of the main checkout. A clone
@@ -59,6 +62,8 @@ GD=""    # its git dir
 WT=""    # worktree
 WGD=""   # git dir of the worktree, `$GD/worktrees/<name>`
 CREATED=""  # what `create` added, for the message on failure
+FRESH=0     # 1 with --fresh-master
+FRESH_REF="" # the upstream of `master` that --fresh-master fetched
 PHASE=""    # of `create`: "parent" until the superproject checkout finished, then "submodules"
 STAGING=""  # staging directories that this run created, one per line; only these are ever deleted
 STAGE=""    # the last one, set by new_staging
@@ -263,10 +268,18 @@ refresh_main_stores()
     done <<< "$1"
 }
 
-# Fast-forwards the main checkout and its submodules to the upstream of master, when it is on a clean master.
+# For --fresh-master: fetches the upstream of master and sets FRESH_REF to it. Then fast-forwards the main checkout and
+# its submodules to it, when the main checkout is on a clean master. The user asked for a fresh master, so a missing
+# upstream or a failed fetch fails the run.
 refresh_main_worktree()
 {
     local branch f upstream old_head old_list list sha path name url cur old_sha moved=0 left=""
+    upstream=$(git -C "$MAIN" rev-parse --abbrev-ref --symbolic-full-name 'master@{upstream}' 2> /dev/null || true)
+    [ -n "$upstream" ] || die "--fresh-master: master of the main checkout has no upstream"
+    git -C "$MAIN" fetch -q --no-recurse-submodules "${upstream%%/*}" "${upstream#*/}" ||
+        die "--fresh-master: the fetch of $upstream failed (see above)"
+    FRESH_REF=$upstream
+    note "main checkout: fetched $upstream at $(git -C "$MAIN" rev-parse --short=12 "$upstream")"
     branch=$(git -C "$MAIN" symbolic-ref -q --short HEAD || true)
     if [ "$branch" != master ]
     then
@@ -287,18 +300,6 @@ refresh_main_worktree()
         ! git -C "$MAIN" diff --cached --quiet --ignore-submodules=none
     then
         note "main checkout: master has local changes; its files stay as they are"
-        return 0
-    fi
-    upstream=$(git -C "$MAIN" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2> /dev/null || true)
-    if [ -z "$upstream" ]
-    then
-        note "main checkout: master has no upstream; its files stay as they are"
-        return 0
-    fi
-    # The refresh is optional: without the network, the worktree is set up from the main checkout as it is.
-    if ! git -C "$MAIN" fetch -q --no-recurse-submodules "${upstream%%/*}" "${upstream#*/}"
-    then
-        note "main checkout: the fetch of $upstream failed (see above); its files stay as they are"
         return 0
     fi
     if ! git -C "$MAIN" merge-base --is-ancestor HEAD "$upstream"
@@ -543,21 +544,34 @@ sync_submodules()
 cmd_create()
 {
     local submodules=1 path branch start
-    if [ "${1:-}" = --no-submodules ]; then submodules=0; shift; fi
+    while [ $# -gt 0 ]
+    do
+        case $1 in
+            --no-submodules) submodules=0; shift ;;
+            --fresh-master) FRESH=1; shift ;;
+            -*) usage ;;
+            *) break ;;
+        esac
+    done
     [ $# -ge 3 ] && [ $# -le 4 ] || usage
     locate_main "$1"
     path=$2 branch=$3 start=${4:-}
     [ ! -e "$path" ] || die "$path exists"
     mkdir -p "$(dirname "$path")"
     WT=$(cd "$(dirname "$path")" && pwd -P)/$(basename "$path")
-    refresh_main_worktree
+    if [ "$FRESH" = 1 ]; then refresh_main_worktree; fi
     if git -C "$MAIN" show-ref -q --verify "refs/heads/$branch"
     then
         [ -z "$start" ] || die "branch $branch exists; do not give a start point"
         git -C "$MAIN" worktree add -q --no-checkout "$WT" "$branch"
         CREATED="branch $branch"
     else
-        [ -n "$start" ] || die "branch $branch does not exist; give a start point"
+        if [ -z "$start" ]
+        then
+            if [ "$FRESH" = 1 ]; then start=$FRESH_REF; else start=master; fi
+            git -C "$MAIN" rev-parse -q --verify "$start^{commit}" > /dev/null || die "start point $start does not exist"
+            note "start point: $start at $(git -C "$MAIN" rev-parse --short=12 "$start")"
+        fi
         git -C "$MAIN" worktree add -q --no-checkout -b "$branch" "$WT" "$start"
         CREATED="new branch $branch; delete it with: git -C $MAIN branch -D $branch"
     fi
@@ -576,12 +590,13 @@ cmd_create()
 
 cmd_update_submodules()
 {
+    if [ "${1:-}" = --fresh-master ]; then FRESH=1; shift; fi
     [ $# -eq 1 ] || usage
     locate_main "$1"
     WT=$(cd "$1" && pwd -P)
     [ "$(git -C "$WT" rev-parse --show-toplevel)" = "$WT" ] || die "give the top directory of the worktree"
     locate_worktree_git_dir
-    refresh_main_worktree
+    if [ "$FRESH" = 1 ]; then refresh_main_worktree; fi
     sync_submodules
 }
 
