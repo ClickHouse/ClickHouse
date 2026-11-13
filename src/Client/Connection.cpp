@@ -72,6 +72,7 @@ namespace ProfileEvents
     extern const Event DistributedConnectionReconnectCount;
     extern const Event DistributedConnectionConnectCount;
     extern const Event NativeProtocolDataReceiveBytes;
+    extern const Event NativeProtocolDataBytes;
 }
 
 namespace DB
@@ -1271,6 +1272,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), optionalFormatSettings());
     }
 
+    const size_t packet_start = out->count();
     if (scalar)
         writeVarUInt(Protocol::Client::Scalar, *out);
     else
@@ -1285,6 +1287,10 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     if (block.empty())
         out->finishChunk();
     out->next();
+
+    /// Blocks with rows sent by a server, e.g. by a distributed `INSERT`, count to its live IO meter.
+    if (!scalar && block.rows() > 0)
+        ProfileEvents::increment(ProfileEvents::NativeProtocolDataBytes, out->count() - packet_start);
 
     if (throttler)
         throttler->throttle(out->count() - prev_bytes);
@@ -1326,6 +1332,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     if (input.eof())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Buffer is empty (some kind of corruption)");
 
+    const size_t packet_start = out->count();
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
@@ -1336,6 +1343,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
     out->finishChunk();
     out->next();
+    ProfileEvents::increment(ProfileEvents::NativeProtocolDataBytes, out->count() - packet_start);
 }
 
 

@@ -11325,11 +11325,16 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
     if (cellOwnsChrome(cell))
         progressEl.adoptResourceState(cell.resources);
 
+    /// A background cell has no chrome to render into, but its IO rate is still sampled on its own clock.
+    const sampleBackgroundIo = () => {
+        if (!cellOwnsChrome(cell) && cell.progress) sampleIoRate(cell.resources, cell.progress.elapsed_ns);
+    };
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         onStop: () => { stop = true; },
         resourceMeter: (events) => {
             accumulateResourceEvents(cell.resources, events);
             if (cellOwnsChrome(cell)) progressEl.renderResourcesFrom(cell.resources);
+            sampleBackgroundIo();
         },
         rawText,
         format,
@@ -11337,6 +11342,7 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
         payloadMeter: (bytes) => {
             accumulateResultPayload(cell.resources, bytes);
             if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
+            sampleBackgroundIo();
         },
         advanceClock: (stream_elapsed_ns) => {
             const elapsed_ns = io_clock_base_ns + stream_elapsed_ns;
@@ -11348,6 +11354,7 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
         /// Progress packets advance the IO clock too, so the rate falls once the payload stops.
         progressMeter: () => {
             if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
+            sampleBackgroundIo();
         },
         onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
         onException: () => { saw_exception = true; },

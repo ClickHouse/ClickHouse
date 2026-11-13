@@ -1721,6 +1721,51 @@ async function main() {
               out.doc.includes('"kept": "2"'), out.doc);
     }
 
+    /// Contract: a cell whose tab is in the background still samples its IO rate, so a running
+    /// query that stopped moving data does not show its old rate when the tab is opened again.
+    {
+        const scenario = 'background-cell-samples-io';
+        const r = await runScenario(js, { href: base });
+        const out = await evalJSONAsync(r.sandbox, `
+            const tab = getActiveTab();
+            const cell = tab.cells[0];
+            const owner = activeTabId;
+            /// The stub progress element samples the IO rate like \`QueryProgressElement._sampleIo\`.
+            progressEl._last_elapsed_ns = 0;
+            progressEl.renderPayloadFrom = (state) => sampleIoRate(state, progressEl._last_elapsed_ns);
+            progressEl.renderResourcesFrom = (state) => sampleIoRate(state, progressEl._last_elapsed_ns);
+            progressEl.adoptResourceState = () => {};
+            cell.progress = { elapsed_ns: 0 };
+            const ev = (name, obj) => 'event: ' + name + '\\ndata: ' + JSON.stringify(obj) + '\\n\\n';
+            /// 1 MB is read in the first two seconds, then the tab is in the background for 18 seconds
+            /// and only progress packets arrive.
+            const steps = [
+                [owner, ev('progress', { elapsed_ns: '1000000000' })],
+                [owner, ev('profile_events', [{ thread_id: '0', host_name: 'h', name: 'OSReadBytes', value: '1000000' }])],
+                [owner, ev('progress', { elapsed_ns: '2000000000' })],
+            ];
+            for (let s = 3; s <= 20; ++s)
+                steps.push(['another-tab', ev('progress', { elapsed_ns: String(s * 1e9) })]);
+            let i = 0;
+            let rate_in_foreground = null;
+            const encoder = new TextEncoder();
+            const response = { body: { getReader: () => ({ read: async () => {
+                if (i === 3) rate_in_foreground = cell.resources.io;
+                if (i >= steps.length) { activeTabId = owner; return { done: true, value: undefined }; }
+                const [active, text] = steps[i++];
+                activeTabId = active;
+                return { done: false, value: encoder.encode(text) };
+            } }) } };
+            const noop = () => {};
+            const target = { update: noop, appendLog: noop, updateMetrics: noop, finalizeMetrics: noop, flushFragment: noop };
+            await readEventStream(response, target, new AbortController(), cell, tab.reqNum, false, false, '');
+            return { rate_in_foreground, rate_after: cell.resources.io };
+        `);
+        check(scenario, 'the rate is about 1 MB/s while the data is read',
+              out.rate_in_foreground > 900000 && out.rate_in_foreground < 1100000, out);
+        check(scenario, 'the rate falls while the tab is in the background', out.rate_after < 1000, out);
+    }
+
     if (failures) {
         console.log(`${failures} check(s) FAILED`);
         process.exit(1);
