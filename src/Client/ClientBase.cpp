@@ -42,6 +42,7 @@
 #include <Common/quoteString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
@@ -885,6 +886,14 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 }
 
 
+/// A format may write `Sparse` and `Replicated` columns as they are, but nothing can write a `ColumnBLOB`.
+/// A server sends one to a client that asks for a secondary query with an intermediate stage.
+static Block materializeBlockForOutput(const Block & block, const IOutputFormat & output_format)
+{
+    return materializeBlock(convertBLOBColumns(block), !output_format.supportsSpecialSerializationKinds());
+}
+
+
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
     if (block.empty() || local_format_error_happened)
@@ -902,9 +911,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     try
     {
-        output_format->write(materializeBlock(
-            block,
-            !output_format->supportsSpecialSerializationKinds()));
+        output_format->write(materializeBlockForOutput(block, *output_format));
         written_first_block = true;
     }
     catch (const NetException &)
@@ -974,7 +981,7 @@ void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
     if (local_format_error_happened)
         return;
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
+    output_format->setTotals(materializeBlockForOutput(block, *output_format));
 }
 
 
@@ -983,7 +990,7 @@ void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
     if (local_format_error_happened)
         return;
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
+    output_format->setExtremes(materializeBlockForOutput(block, *output_format));
 }
 
 
