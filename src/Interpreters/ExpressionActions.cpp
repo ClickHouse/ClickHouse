@@ -371,8 +371,7 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node, std::unord
     return res;
 }
 
-/// The number of uses of the node's column. The column of a lazily executed function is passed through aliases as is,
-/// so the uses of an alias count instead of the alias.
+/// The column of a lazily executed function is passed through aliases as is, so the uses of an alias count instead of the alias.
 static size_t countConsumers(const ActionsDAG::Node * node, const ActionsDAGReverseInfo & reverse_info)
 {
     size_t res = 0;

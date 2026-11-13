@@ -623,8 +623,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(bool dry_run, ReducedColumns & 
                     columns[i] = arg->reduceImpl(dry_run, reduced);
             }
 
-            /// The lazy executed arguments are executed on a subset of these rows,
-            /// so the columns reduced on all of them can be filtered instead of being computed again.
+            /// The lazy executed arguments run on a subset of these rows, so the columns reduced on all of them can be reused.
             if (!reduced.columns.empty())
                 replaceReducedColumns(columns, reduced, !settings.arguments_are_commutative);
         }
