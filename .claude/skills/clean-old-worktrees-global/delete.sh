@@ -2,8 +2,9 @@
 # Delete the directories listed in a file (paths relative to root, one per line), then prune worktree metadata in the
 # affected main repos.
 # Usage: delete.sh <list_file> [root=$HOME]
-# Entries must be a worktree (at any depth, `.git` is a file pointing to `.../worktrees/<name>`) or a build* directory
-# inside a checkout. Right before deletion, every entry is checked again and skipped if it:
+# Entries must be a worktree (at any depth, `.git` is a file pointing to `<main>/.git/worktrees/<name>`) or a build*
+# directory directly inside a main repository or a worktree (not a submodule). Right before deletion, every entry is
+# checked again and skipped if it:
 #   - is a main repository (`.git` is a directory), a symlink, or reached through a symlink;
 #   - contains a mount point (e.g. `/dev` or `/proc` bind-mounted into a chroot);
 #   - contains a block device file;
@@ -43,7 +44,14 @@ awk '{print $5}' /proc/self/mountinfo | while read -r m; do printf '%b\n' "$m"; 
 ' | sort -u > "$state/active"
 
 # Collect main repos of worktrees before their `.git` files disappear.
-mains=$(while read -r d; do [ -n "$d" ] && [ -f "$d/.git" ] && sed -n 's#^gitdir: \(.*\)/\.git/worktrees/.*#\1#p' "$d/.git"; done < "$list" | sort -u)
+# Only `.git` files of worktrees are considered (see `is_worktree` below); a relative `gitdir` is relative to the worktree.
+mains=$(while read -r d; do
+    [ -n "$d" ] && [ -f "$d/.git" ] || continue
+    m=$(sed -n '1s#^gitdir: \(.*\)/\.git/worktrees/[^/]\{1,\}$#\1#p' "$d/.git")
+    [ -n "$m" ] || continue
+    case $m in /*) ;; *) m=$d/$m ;; esac
+    realpath -e "$m" 2>/dev/null
+done < "$list" | sort -u)
 
 export ROOT="$root" STATE="$state"
 export SUDO="${sudo_cmd[*]}"
@@ -63,9 +71,18 @@ tr '\n' '\0' < "$list" | xargs -r -0 -P 8 -n1 bash -c '
     [ -d "$p" ] || skip "not a directory"
     [ -d "$p/.git" ] && skip "main repository"
     [ "$(realpath "$p")" = "$p" ] || skip "reached through a symlink"
-    if ! grep -qs "^gitdir: .*/worktrees/" "$p/.git"; then
+    # The same check as `is_worktree` in scan.sh: the part of `gitdir` after the first `.git` component must be
+    # exactly `worktrees/<name>`, which is not the case for submodules, even if their name contains `worktrees/`.
+    is_worktree()
+    {
+        local g
+        g=$(sed -n "1s/^gitdir: //p" "$1/.git" 2>/dev/null)
+        g=${g#*/.git/}
+        [[ $g == worktrees/?* && ${g#worktrees/} != */* ]]
+    }
+    if ! is_worktree "$p"; then
         case ${d##*/} in build*) ;; *) skip "neither a worktree nor a build directory" ;; esac
-        [ -e "${p%/*}/.git" ] || skip "build directory outside a checkout"
+        [ -d "${p%/*}/.git" ] || is_worktree "${p%/*}" || skip "build directory outside a checkout"
     fi
     is_under() { P=$p awk "{ if (\$0 == ENVIRON[\"P\"] || index(\$0, ENVIRON[\"P\"] \"/\") == 1) { found = 1; exit } } END { exit !found }" "$1"; }
     is_under "$STATE/mounts" && skip "contains a mount point"

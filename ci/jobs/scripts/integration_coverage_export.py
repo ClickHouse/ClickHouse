@@ -23,14 +23,17 @@ class IntegrationCoverageExporter:
     Without XRay (the per-test build does not enable it) `min_depth` is the entry count
     of the function, saturated at 254 (see `getCurrentCoveredNameRefs`), so the module's
     value is the saturated sum over flushes, as is `call_count` of the indirect calls.
+
+    The performance collector writes the same six-column line format and reuses
+    this exporter with query/phase identities in `test_name`.
     """
 
-    def __init__(self, clickhouse_path: str, coverage_dir: str, dest: CIDBCluster, job_name: str):
+    def __init__(self, clickhouse_path: str, coverage_dir: str, dest: CIDBCluster, job_name: str, check_start_time=""):
         self.clickhouse_path = clickhouse_path
         self.coverage_dir = Path(coverage_dir)
         self.dest = dest
         self.job_name = job_name
-        self.check_start_time = Utils.timestamp_to_str(Utils.timestamp())
+        self.check_start_time = check_start_time or Utils.timestamp_to_str(Utils.timestamp())
 
     def _query(self, query):
         # The binary is the instrumented one; keep its own profile out of the way.
@@ -61,9 +64,9 @@ class IntegrationCoverageExporter:
     def do(self):
         lines = self._source("lines", LINES_STRUCTURE)
         if not lines:
-            raise RuntimeError(f"Per-module coverage is empty: no rows in {self.coverage_dir}")
+            raise RuntimeError(f"Per-test coverage is empty: no rows in {self.coverage_dir}")
         stats = self._query(f"SELECT count(), uniqExact(test_name) FROM {lines}").split()
-        print(f"Coverage dumps: {stats[0]} rows, {stats[1]} modules")
+        print(f"Coverage dumps: {stats[0]} rows, {stats[1]} test identities")
         # `dest` was checked with `is_ready` before the tests; a second ping here only
         # adds its 3 s timeout as a way to lose hours of coverage.
         assert self.dest.url, "Destination cluster was not checked with is_ready"

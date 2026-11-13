@@ -24,7 +24,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -53,6 +53,7 @@ The expression list immediately after `SELECT` is required; all other clauses ar
 - [WINDOW clause](/reference/functions/window-functions/index)
 - [QUALIFY clause](/reference/statements/select/qualify)
 - [ORDER BY clause](/reference/statements/select/order-by)
+- [SHUFFLE clause](/reference/statements/select/shuffle)
 - [LIMIT BY clause](/reference/statements/select/limit-by)
 - [LIMIT clause](/reference/statements/select/limit)
 - [OFFSET clause](/reference/statements/select/offset)

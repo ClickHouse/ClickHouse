@@ -72,6 +72,7 @@
 #include <Common/ThreadPool.h>
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -1316,7 +1317,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 }
             }
 
-            auto index_order = std::make_shared<std::vector<size_t>>(skip_indexes.useful_indices.size());
+            auto index_order = std::make_shared<VectorWithMemoryTracking<size_t>>(skip_indexes.useful_indices.size());
             std::iota(index_order->begin(), index_order->end(), 0);
 
             index_sizes.clear();
@@ -2037,7 +2038,11 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// match now. Only the mutations still applicable to the parts count: the snapshot also
             /// holds finished ones. The write sides are gated symmetrically (see `ReadFromMergeTree`).
             || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
-            || hasPendingAlterOrMetadataMutations(parts_with_ranges, mutations_snapshot))
+            || hasPendingAlterOrMetadataMutations(parts_with_ranges, mutations_snapshot)
+            /// A masking policy rewrites the values this read filters without being in the mutations snapshot
+            /// or the condition hash, so entries recorded by a read without the policy may drop matching marks.
+            || (!parts_with_ranges.empty()
+                && parts_with_ranges.front().data_part->storage.hasEnabledMaskingPolicies(context)))
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
@@ -2393,7 +2398,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         use_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false,
-        /*check_row_limits=*/true);
+        /*check_row_limits=*/true,
+        /*skip_ranges_analysis=*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

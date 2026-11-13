@@ -48,7 +48,7 @@ void PostgreSQLCancelDeleter::operator()(pg_cancel * cancel) const noexcept
 namespace
 {
 
-/// pqxx hands the libpq connection only to its large-object API.
+/// pqxx hands the libpq connection only to its large-object API, as an opaque `void *`.
 struct LibpqConnection : pqxx::largeobject
 {
     using pqxx::largeobject::raw_connection;
@@ -56,7 +56,7 @@ struct LibpqConnection : pqxx::largeobject
 
 std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> makeCancelHandle(const pqxx::dbtransaction & tx)
 {
-    std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> handle(PQgetCancel(LibpqConnection::raw_connection(tx)));
+    std::unique_ptr<pg_cancel, PostgreSQLCancelDeleter> handle(PQgetCancel(static_cast<PGconn *>(LibpqConnection::raw_connection(tx))));
     if (!handle)
         throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Cannot prepare the cancellation of the PostgreSQL query");
     return handle;
@@ -257,7 +257,7 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled() && !stop_requested.load())
     {
-        const std::vector<pqxx::zview> * row{nullptr}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `pqxx::stream_from::read_row` returns a std::vector owned by the library
+        const std::vector<std::string_view> * row{nullptr}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `pqxx::stream_from::read_row` returns a std::vector owned by the library
         try
         {
             row = stream->read_row();
@@ -288,8 +288,8 @@ Chunk PostgreSQLSource<T>::generate()
         {
             const auto & sample = description.sample_block.getByPosition(idx);
 
-            /// if got NULL type, then pqxx::zview will return nullptr in c_str()
-            if ((*row)[idx].c_str())
+            /// A SQL NULL is reported as a view with a null data pointer.
+            if ((*row)[idx].data())
             {
                 try
                 {

@@ -5,7 +5,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/SQLSecurityDefs.h>
-#include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
 #include <Backups/BackupsWorker.h>
@@ -35,24 +34,25 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/StorageTableProxy.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -105,6 +105,72 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
+/// not reach this: it is refused unless its hosts run as the initiating user.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+{
+    StorageMetadataHandle metadata;
+    if (table)
+        metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+
+    bool adds_transform = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+            continue;
+
+        if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+            if (hasTextIndexPreOrPostProcessor(*declaration))
+                adds_transform = true;
+    }
+
+    /// Against the schema the whole statement produces: a command of the same statement can change what
+    /// an alias in a transform expands to. Transforms only, so other statements get no extra analysis.
+    if (!adds_transform || !metadata)
+        return;
+
+    AlterCommands commands;
+    /// Runs of consecutive metadata commands; `runCommandSegments` commits each run on its own.
+    size_t metadata_segments = 0;
+    bool previous_is_metadata = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command_ast = child->as<ASTAlterCommand>();
+        std::optional<AlterCommand> command;
+        if (command_ast->type != ASTAlterCommand::EXECUTE_COMMAND)
+            command = AlterCommand::parse(command_ast);
+
+        if (command)
+        {
+            if (!previous_is_metadata)
+                ++metadata_segments;
+            commands.emplace_back(std::move(*command));
+        }
+        previous_is_metadata = command.has_value();
+    }
+
+    /// Applying every command at once would reject statements the executor, which commits segment by
+    /// segment, accepts. `AlterCommands::apply` authorizes each segment as the user anyway.
+    if (metadata_segments > 1)
+        return;
+
+    /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it.
+    commands.validate(table, context);
+
+    bool share_nested = true;
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    StorageInMemoryMetadata metadata_copy = *metadata;
+    commands.prepare(metadata_copy, share_nested);
+    table->checkAlterIsPossible(commands, context);
+    /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
+    removeImplicitStatistics(metadata_copy.columns);
+    commands.apply(metadata_copy, context, share_nested);
+
+}
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
@@ -427,55 +493,43 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
             /// then all repopulate from the metadata committed as of holding the lock.
             if (auto metadata_cache = context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
-            /// A lazy-load stand-in that has not been materialized yet knows only the columns of the
-            /// `CREATE TABLE` query and hides the engine from the downcast below, while `alter` below
-            /// materializes it in any case. Prepare the commands against the real storage.
-            StoragePtr engine_table = resolveStorageProxyLoading(table);
-            auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-            alter_commands->validate(engine_table, context);
+                metadata_cache->clear();
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            alter_commands->validate(table, context);
 
             bool share_nested = true;
-            if (auto * merge_tree = castStorage<MergeTreeData>(engine_table, DeferredTable::Load).get())
+            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
+            /// The following segments must see the metadata this ALTER committed.
+            if (auto metadata_cache = context->getQueryMetadataCache())
+                metadata_cache->clear();
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
                 auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                /// Validate against the real storage: `MutationsInterpreter` reads the MergeTree settings of
-                /// the table through a downcast, which a lazy-load stand-in defeats, and `mutate` below
-                /// materializes the stand-in in any case.
-                StoragePtr engine_table = resolveStorageProxyLoading(table);
-                /// The same holds for the targets of materialized views and `Alias` tables, which `mutate` executes on,
-                /// through any number of them: they forward the refresh below only to a target that is already materialized.
-                loadLazyTargetsOfAliasesAndViews(engine_table);
-                /// Pin the current state of an external table (e.g. Iceberg) before validating, as
-                /// `InterpreterDeleteQuery` does: `mutate` executes the mutation against this same state
-                /// and does not refresh it again.
-                engine_table->updateExternalDynamicMetadataIfExists(context);
-                auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, true);
-                engine_table->checkMutationIsPossible(*mutation_commands, settings);
+                /// Before the snapshot: on a lazily loaded table this loads the nested storage, and only
+                /// then does the snapshot carry the sorting key, partition key and projections that
+                /// `MutationsInterpreter` validates against, instead of the stand-in's columns-only metadata.
+                table->checkMutationIsPossible(*mutation_commands, settings);
                 checkStatisticsMutationsAreAllowed(*mutation_commands, settings);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also
                 /// fails to analyze.
-                MutationsInterpreter::validateNonDeterministicMutationsForStorage(engine_table, *mutation_commands, context);
+                MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
                 auto validation_context = Context::createCopy(context);
                 validation_context->setAnalyzingBackgroundExpressions(true);
-                MutationsInterpreter(engine_table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 context->onQueryExecutionStarted();
-                engine_table->mutate(*mutation_commands, context);
+                table->mutate(*mutation_commands, context);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
@@ -618,6 +672,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
+
         params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
@@ -631,6 +686,17 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
             /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
             checkNoRowPolicyForExport(captured_alter, default_database, context);
+
+            /// `throw_if_unresolved` means the hosts do not run the query as this user.
+            if (throw_if_unresolved)
+                for (const auto & child : captured_alter.command_list->children)
+                {
+                    const auto & command = child->as<const ASTAlterCommand &>();
+                    if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+                        continue;
+                    if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+                        rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+                }
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -655,6 +721,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
         }
     }
+
+    checkAddedIndexPermissions(alter, table, getContext());
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
@@ -827,22 +895,7 @@ InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsCo
     /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
     if (!storage)
         return RowExistsColumnKind::Unknown;
-    /// A lazy-load stand-in that has not been materialized yet answers from the columns of the
-    /// `CREATE TABLE` query alone, without the virtual columns of the engine, so it would hide the
-    /// marker and turn `_row_exists = 0` into a regular update. Every caller is about to mutate the
-    /// table or a mutation of it, so ask the real storage.
-    /// But this runs before the access check, and materializing starts the engine, which a user without
-    /// any mutation privilege on the table must not cause, nor see its initialization errors. Such a user
-    /// cannot pass the check with any classification, so the fail-closed `Unknown` is enough for them.
-    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()); proxy && proxy->isLazyStandIn() && !proxy->tryGetNested())
-    {
-        const auto storage_id = storage->getStorageID();
-        const auto access = context_->getAccess();
-        if (!access->isGranted(AccessType::ALTER_DELETE, storage_id.database_name, storage_id.table_name)
-            && !access->isGranted(AccessType::ALTER_UPDATE, storage_id.database_name, storage_id.table_name))
-            return RowExistsColumnKind::Unknown;
-    }
-    const auto metadata_snapshot = resolveStorageProxyLoading(storage)->getInMemoryMetadataPtr(context_, false);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
         ? RowExistsColumnKind::LightweightDeleteMarker
         : RowExistsColumnKind::Regular;

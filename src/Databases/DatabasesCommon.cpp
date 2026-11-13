@@ -35,6 +35,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/ReadHelpers.h>
 #include <base/sleep.h>
 
 #if CLICKHOUSE_CLOUD
@@ -572,6 +573,54 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
     return tables.contains(table_name);
 }
 
+StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::iterator it) const
+{
+    const auto * proxy = dynamic_cast<const StorageTableProxy *>(it->second.get());
+    if (!proxy)
+        return it->second;
+    StoragePtr loaded = proxy->getLoadedTable();
+    if (!loaded)
+        return it->second;
+
+    /// The proxy is not counted like the loaded storage, e.g. `AttachedReplicatedTable` is only counted
+    /// for `StorageReplicatedMergeTree`. Computed in advance, because nothing may throw once the UUID
+    /// mapping has been replaced, or the two maps would disagree from then on.
+    std::vector<CurrentMetrics::Metric> proxy_counters;
+    std::vector<CurrentMetrics::Metric> loaded_counters;
+    if (!loaded->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    {
+        proxy_counters = getAttachedCountersForStorage(it->second);
+        loaded_counters = getAttachedCountersForStorage(loaded);
+    }
+
+    /// Replace the proxy only if nobody holds it, so that no query can be using the proxy and its own
+    /// table locks while other queries use the loaded storage and its locks. Under the mutexes of the
+    /// database and of the UUID mapping, nobody can obtain the proxy anew. Otherwise, keep the proxy for
+    /// now and try again on the next lookup.
+    ///
+    /// The UUID mapping has to be updated as well: `DatabaseCatalog::getTableImpl` answers a `StorageID`
+    /// that already carries a UUID straight from it, without asking the database.
+    const auto uuid = it->second->getStorageID().uuid;
+    if (uuid != UUIDHelpers::Nil)
+    {
+        if (!DatabaseCatalog::instance().replaceUnusedTableInUUIDMapping(uuid, it->second, loaded))
+            return it->second;
+    }
+    else if (it->second.use_count() != 1)
+        return it->second;
+
+    it->second = loaded;
+    for (auto metric : proxy_counters)
+        CurrentMetrics::sub(metric);
+    for (auto metric : loaded_counters)
+        CurrentMetrics::add(metric);
+
+    LOG_TRACE(log, "Replaced the proxy of lazily loaded table {} with the loaded {}",
+              loaded->getStorageID().getNameForLogs(), loaded->getName());
+
+    return loaded;
+}
+
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     waitTableStarted(table_name);
@@ -582,20 +631,22 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 {
     ensurePopulated();
     std::lock_guard lock(mutex);
-    /// Consumers of this iterator - the `system.parts` / `system.replicas` family, the `SYSTEM` commands,
-    /// the asynchronous metrics - recognize an engine by downcasting the storage they get, which the
-    /// lazy-load stand-in defeats, so such a table stayed invisible to them even after it had been loaded.
-    /// `mutex` is held here, so never wait for a materialization that is in flight in another thread: it
-    /// would stall every query on this database for the duration of the load.
-    Tables snapshot_tables;
-    for (const auto & [table_name, storage] : tables)
+
+    if (!filter_by_table_name)
     {
-        if (!filter_by_table_name || filter_by_table_name(table_name))
-            snapshot_tables.emplace(table_name, unwrapMaterializedLazyTable(storage, /* wait_for_materialization= */ false));
+        for (auto it = tables.begin(); it != tables.end(); ++it)
+            replaceLoadedLazyTableUnlocked(it);
+        ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
+        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
     }
 
-    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, snapshot_tables.size());
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(snapshot_tables), database_name);
+    Tables filtered_tables;
+    for (auto it = tables.begin(); it != tables.end(); ++it)
+        if (filter_by_table_name(it->first))
+            filtered_tables.emplace(it->first, replaceLoadedLazyTableUnlocked(it));
+
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, filtered_tables.size());
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
 }
 
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
@@ -657,10 +708,6 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
     tables.erase(it);
     table_storage->is_detached = true;
-    /// The database iterator hands out the storage behind a materialized lazy-load stand-in directly, and a reader
-    /// such as `system.parts` keeps it and locks it later, so mark that storage detached as well. `mutex` is held,
-    /// so do not wait for a load in flight: none can be, see `DatabaseOrdinary::detachTable`.
-    unwrapMaterializedLazyTable(table_storage, /* wait_for_materialization= */ false)->is_detached = true;
 
     if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
@@ -710,7 +757,6 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
-    unwrapMaterializedLazyTable(table, /* wait_for_materialization= */ false)->is_detached = false;
 
     if (!table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
@@ -907,7 +953,7 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
 {
     auto it = tables.find(table_name);
     if (it != tables.end())
-        return it->second;
+        return replaceLoadedLazyTableUnlocked(it);
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
 }
@@ -964,14 +1010,14 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_nam
         std::lock_guard lock(mutex);
         auto it = tables.find(table_name);
         if (it != tables.end())
-            return it->second;
+            return replaceLoadedLazyTableUnlocked(it);
     }
 
     ensurePopulated();
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())
-        return it->second;
+        return replaceLoadedLazyTableUnlocked(it);
     return {};
 }
 

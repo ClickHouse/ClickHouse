@@ -3,6 +3,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
@@ -114,7 +115,10 @@ public:
         FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_,
         LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr,
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
+        /// When set, the reader pool is shared with the other sources of this read instead of
+        /// private to this one. A shared pool must outlive every source using it.
+        std::shared_ptr<ThreadPool> shared_create_reader_pool_ = nullptr);
 
     ~StorageObjectStorageSource() override;
 
@@ -184,14 +188,16 @@ protected:
     {
         String cache_file_key;
         size_t total_row_groups = 0;
-        std::vector<size_t> matched_row_groups;
+        RowGroupIndices matched_row_groups;
         /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
-        std::vector<std::pair<size_t, Field>> best_values;
+        VectorWithMemoryTracking<std::pair<size_t, Field>> best_values;
     };
     std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
+    /// A shared pool is owned elsewhere, so this source must not wait on it in its destructor.
+    const bool owns_create_reader_pool;
 
     std::shared_ptr<IObjectIterator> file_iterator;
     SchemaCache & schema_cache;
@@ -327,6 +333,7 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
+        bool skip_hidden_files_,
         bool with_tags,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -346,6 +353,13 @@ private:
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;
+    /// Skip objects with a path segment starting with '_' or '.' (and not containing '=') below
+    /// the non-glob prefix, the way every other reader of Hive-layout data does (Hive, Spark, Trino):
+    /// such segments hold in-progress staging output and marker objects, not table data. Enabled by
+    /// the per-engine skip_hidden_files settings and unconditionally for hive partition strategy.
+    const bool skip_hidden_files;
+    /// Size of the literal (glob-free) prefix of the glob path: only segments starting past it are checked.
+    size_t hidden_check_prefix_size = 0;
     const LoggerPtr log;
 
     size_t index = 0;
@@ -370,6 +384,7 @@ private:
 
     size_t total_listed = 0;
     size_t total_glob_filtered = 0;
+    size_t total_hidden_filtered = 0;
     size_t total_predicate_filtered = 0;
 };
 

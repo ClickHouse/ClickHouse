@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge/>
 
@@ -22,7 +21,15 @@ Vision only works with models that support image inputs. If the selected model c
 
 Click the paperclip icon at the bottom-left of the message composer and choose **Upload to Provider** to attach an image — a screenshot, a photo, a chart, a diagram. Then ask any question that requires reading the image: *"What's wrong with this query plan?"*, *"Transcribe the text in this screenshot,"* or *"Compare this dashboard to last week's."*
 
-<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="Message composer with the paperclip menu open showing Upload to Provider, Upload as Text, and Upload to Code Environment options" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Message composer with the paperclip menu open showing Upload to Provider, Upload as Text, and Upload to Code Environment options](/images/cloud/agent-builder/vision/vision.webp)
+
+</Frame>
+
+</div>
 
 The agent treats the image as part of the message context, so follow-up questions in the same turn can reference what it saw without re-uploading.
 
