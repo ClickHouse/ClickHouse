@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -21,9 +22,9 @@ struct HypotheticalProjection;
 /// plans the query again with this hypothetical projection and records its outcome
 using WeighHypotheticalProjection = std::function<void(const std::shared_ptr<HypotheticalProjection> &)>;
 
-/// re-validate a stored definition, empty with a reason if it no longer fits
+/// the stored definition, or empty with a reason when a column or setting that it binds to changed
 std::optional<ProjectionDescription> refreshHypotheticalProjection(
-    const ProjectionDescription & stored,
+    const HypotheticalObjectStore::ProjectionEntry & hypothetical,
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata,
     const ContextPtr & context,
@@ -31,7 +32,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
 
 /// like evaluateIndex, for a hypothetical projection
 WhatIfCandidateResult evaluateProjection(
-    const ProjectionDescription & stored_projection,
+    const HypotheticalObjectStore::ProjectionEntry & hypothetical,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,

@@ -272,6 +272,12 @@ ColumnPtr tryGetScalarSubqueryPayload(const ActionsDAG::Node * node, const DataT
     return node->column;
 }
 
+void updateHashWithString(SipHash & hash_state, std::string_view value)
+{
+    hash_state.update(value.size());
+    hash_state.update(value);
+}
+
 }
 
 std::unordered_set<const ActionsDAG::Node *> findReachableNodes(
@@ -411,18 +417,18 @@ void ActionsDAG::Node::updateOwnHash(
     if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
     {
         const bool normalize = build_independent && !(type == ActionType::INPUT && !input_header);
-        hash_state.update(normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
+        updateHashWithString(hash_state, normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
     }
 
     if (build_independent && type == ActionType::INPUT && input_header)
         hash_state.update(input_header->has(result_name) ? input_header->getPositionByName(result_name) : input_header->columns());
 
     if (result_type)
-        hash_state.update(result_type->getName());
+        updateHashWithString(hash_state, result_type->getName());
 
     if (function_base)
     {
-        hash_state.update(function_base->getName());
+        updateHashWithString(hash_state, function_base->getName());
         /// The name says nothing about the settings a function captured when it was built (a
         /// conversion captures how it parses), and two expressions that differ only in those are not
         /// the same expression.
@@ -434,7 +440,7 @@ void ActionsDAG::Node::updateOwnHash(
     }
 
     if (function)
-        hash_state.update(function->getName());
+        updateHashWithString(hash_state, function->getName());
 
     /// A lambda's body is not in this node: `function_base->getName()` is only `FunctionCapture`, and the
     /// composed `result_name` that does carry it - `arrayExists(lambda(tuple(v), greater(v, 5)), a)` -
@@ -446,17 +452,19 @@ void ActionsDAG::Node::updateOwnHash(
     {
         const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
         {
-            hash_state.update(normalizeGeneratedTableQualifiers(capture.return_name));
-            hash_state.update(capture.return_type->getName());
+            updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(capture.return_name));
+            updateHashWithString(hash_state, capture.return_type->getName());
+            hash_state.update(capture.captured_names.size());
             for (const auto & captured_name : capture.captured_names)
-                hash_state.update(normalizeGeneratedTableQualifiers(captured_name));
+                updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(captured_name));
             for (const auto & captured_type : capture.captured_types)
-                hash_state.update(captured_type->getName());
+                updateHashWithString(hash_state, captured_type->getName());
             /// The lambda's own argument names are written by the user, so they are the same in every build.
+            hash_state.update(capture.lambda_arguments.size());
             for (const auto & argument : capture.lambda_arguments)
             {
-                hash_state.update(argument.name);
-                hash_state.update(argument.type->getName());
+                updateHashWithString(hash_state, argument.name);
+                updateHashWithString(hash_state, argument.type->getName());
             }
             lambda_dag.updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
         };
@@ -483,7 +491,7 @@ void ActionsDAG::Node::updateOwnHash(
 
     if (column)
     {
-        hash_state.update(column->getName());
+        updateHashWithString(hash_state, column->getName());
 
         /// We must also hash the actual constant value, not just the column type name.
         /// Otherwise, two different constants with the same type and the same expression-based
@@ -4017,6 +4025,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
     const NameSet & cross_type_equivalent_columns,
+    bool keep_runtime_filters_out_of_left_stream,
+    bool keep_runtime_filters_out_of_right_stream,
     bool filter_is_always_false)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
@@ -4151,10 +4161,17 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto conjunction_atoms = extractConjunctionAtoms(predicate);
     std::ranges::reverse(conjunction_atoms);
 
-    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions)
+    /// Two copies of a runtime filter may pass different rows, and a match removed from the side an OUTER or ANTI
+    /// join only matches against makes that join emit a row it would not, so no equivalent copy is pushed there.
+    auto is_runtime_filter = [](const Node * conjunct)
+    { return anyReachableNode({conjunct}, [](const Node * node) { return node->is_runtime_filter_id; }); };
+
+    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions, bool keep_runtime_filters_out)
     {
         std::unordered_set<const Node *> remaining(side_allowed_conjunctions.begin(), side_allowed_conjunctions.end());
-        remaining.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
+        for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
+            if (!keep_runtime_filters_out || !is_runtime_filter(conjunct))
+                remaining.insert(conjunct);
 
         NodeRawConstPtrs ordered;
         ordered.reserve(remaining.size());
@@ -4165,13 +4182,16 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         return ordered;
     };
 
-    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(left_stream_push_down_conjunctions.allowed);
-    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(right_stream_push_down_conjunctions.allowed);
+    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(
+        left_stream_push_down_conjunctions.allowed, keep_runtime_filters_out_of_left_stream);
+    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(
+        right_stream_push_down_conjunctions.allowed, keep_runtime_filters_out_of_right_stream);
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
     rejected_conjunctions_set.insert(right_stream_push_down_conjunctions.rejected.begin(), right_stream_push_down_conjunctions.rejected.end());
     rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.rejected.begin(), both_streams_push_down_conjunctions.rejected.end());
+    rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
 
     for (const auto & left_stream_allowed_conjunction : left_stream_allowed_conjunctions)
         rejected_conjunctions_set.erase(left_stream_allowed_conjunction);
@@ -4870,7 +4890,12 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputsImpl(
             if (frame.node->type == ActionsDAG::ActionType::INPUT)
                 can_compute[frame.node] = available_inputs.contains(frame.node->result_name);
             else
-                can_compute[frame.node] = frame.can_compute_all_children;
+            {
+                /// The filter is computed again on the table rows, so a function that can return another value on each
+                /// evaluation, such as `rand`, cannot be computed here.
+                can_compute[frame.node] = frame.can_compute_all_children
+                    && allNodeFunctions(*frame.node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+            }
 
             stack.pop();
         }
