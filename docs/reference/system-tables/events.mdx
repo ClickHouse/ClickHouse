@@ -152,7 +152,7 @@ Number of aggregation streams that rebuilt their hash table to the shared set of
 
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
-Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).
+Number of times a hash table that stopped admitting new keys under `group_by_overflow_mode = any` was re-seeded with the keys it kept after being flushed to a temporary file by external aggregation, so that their remaining rows keep being aggregated. Covers both the shared set of the trivial GROUP BY LIMIT cutoff (see the `optimize_trivial_group_by_limit_query` setting) and the per-stream set of a plain `max_rows_to_group_by` cap.
 
 ### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
 
@@ -2872,6 +2872,10 @@ Number of skipped files during Iceberg partition pruning
 
 Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list
 
+### IcebergRuntimeFilterPrunedFiles {#icebergruntimefilterprunedfiles}
+
+Number of Iceberg data files skipped because their manifest bounds cannot contain a key of a JOIN runtime filter
+
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Trivial count optimization applied while reading from Iceberg
@@ -3063,6 +3067,14 @@ Number of non-joined rows emitted by NonJoinedBlocksTransform.
 ### JoinOptimizeMicroseconds {#joinoptimizemicroseconds}
 
 Total time spent executing JOIN plan optimizations.
+
+### JoinPackedStringKeysHashed {#joinpackedstringkeyshashed}
+
+Number of single `String` join keys of 16 bytes or more that hash joins inserted into their hash tables as their 128-bit `SipHash` (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.
+
+### JoinPackedStringKeysInline {#joinpackedstringkeysinline}
+
+Number of single `String` join keys of up to 15 bytes that hash joins inserted inline into their hash tables (see `enable_packed_string_keys_in_hash_join`). A join with `OR` inserts a key for each condition. A row is counted again when it is inserted again: after a `grace_hash` join splits its buckets, or after a spilling join switches to `grace_hash`.
 
 ### JoinProbeTableRowCount {#joinprobetablerowcount}
 
@@ -3523,6 +3535,10 @@ Number of times a streaming snapshot transfer repositioned its reader because Nu
 ### KeeperReconfigRequest {#keeperreconfigrequest}
 
 Number of reconfig requests
+
+### KeeperRejectedCommittedLogRollback {#keeperrejectedcommittedlogrollback}
+
+Number of times Keeper refused a request that would have rolled back already-committed log entries
 
 ### KeeperRemoveRequest {#keeperremoverequest}
 
@@ -4307,6 +4323,10 @@ Number of expired lease objects and condemned markers removed from object storag
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 Objects that did not match the glob or regex pattern and were skipped during listing.
+
+### ObjectStorageHiddenFilteredObjects {#objectstoragehiddenfilteredobjects}
+
+Objects with a hidden path segment (starting with '_' or '.') below the non-glob prefix that were skipped during listing.
 
 ### ObjectStorageListedObjects {#objectstoragelistedobjects}
 

@@ -400,6 +400,14 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 }
 
 
+bool StorageTimeSeries::hasInnerRequiredTables() const
+{
+    return isInnerTable(ViewTarget::Samples)
+        || isInnerTable(ViewTarget::Tags)
+        || isInnerTable(ViewTarget::MetricFamilies);
+}
+
+
 void StorageTimeSeries::createOrDropTagsDeduplicationCache()
 {
     std::lock_guard lock{caches_mutex};
@@ -531,7 +539,7 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
 {
     checkTimeSeriesVersionIsSupported(*this);
 
-    if (!hasInnerTables())
+    if (!hasInnerRequiredTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
@@ -655,7 +663,7 @@ bool StorageTimeSeries::optimize(
 {
     checkTimeSeriesVersionIsSupported(*this);
 
-    if (!hasInnerTables())
+    if (!hasInnerRequiredTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());

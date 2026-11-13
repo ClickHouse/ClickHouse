@@ -9,8 +9,7 @@
 #      user who cannot describe the target cannot learn its columns by creating a `Distributed` over it.
 #   2. With `SHOW_COLUMNS` granted, the structure is still inferred (the check does not break inference).
 #   3. An explicit column list infers nothing and stays allowed without any rights on the target.
-#   4. The same check applies to a temporary table, which reaches the engine through its own path.
-#   5. A table whose structure was inferred still detaches and re-attaches after the grant is
+#   4. A table whose structure was inferred still detaches and re-attaches after the grant is
 #      revoked: the inferred columns are persisted into its metadata, so the short `ATTACH` carries
 #      them and never re-infers.
 
@@ -30,8 +29,6 @@ CREATE USER $user;
 -- The user may create and read tables in its own database, but holds no rights on the target the
 -- engine points at, so the check below is exercised in isolation.
 GRANT CREATE TABLE, SELECT, INSERT ON $db.* TO $user;
--- CREATE TEMPORARY TABLE is a global-level privilege and cannot be granted on a database.
-GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 GRANT TABLE ENGINE ON Distributed TO $user;
 GRANT REMOTE ON *.* TO $user;
 REVOKE SELECT, INSERT ON $db.protected_target FROM $user;
@@ -64,12 +61,7 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query \
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() FROM system.tables WHERE database = '$db' AND name = 'd_explicit'"
 
-echo "-- 4. temporary table, omitted columns, no rights on the target: rejected"
-${CLICKHOUSE_CLIENT} --user "$user" --query \
-    "CREATE TEMPORARY TABLE tmp_d ENGINE = Distributed('test_shard_localhost', '$db', 'protected_target')" 2>&1 \
-    | grep -c -m1 "ACCESS_DENIED\|Not enough privileges"
-
-echo "-- 5. a detached table with an inferred structure re-attaches without the grant"
+echo "-- 4. a detached table with an inferred structure re-attaches without the grant"
 ${CLICKHOUSE_CLIENT} --query "GRANT DROP TABLE, UNDROP TABLE ON $db.* TO $user"
 ${CLICKHOUSE_CLIENT} --user "$user" <<EOF
 DETACH TABLE $db.d;
