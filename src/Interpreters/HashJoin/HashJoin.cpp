@@ -228,8 +228,7 @@ std::vector<ScatteredBlock::Selector> scatterImpl(
     if constexpr (requires { KeyGetter::has_pre_computed_hashes; })
         static_assert(!KeyGetter::has_pre_computed_hashes, "Bucket routing assumes the map computes the hash it places by");
 
-    /// For ASOF the key getter leaves out the ASOF column. It is asked about the rows of the selector only: an ASOF build
-    /// leaves out the rows with a NULL ASOF key.
+    /// For ASOF the key getter leaves out the ASOF column.
     const ColumnsHashing::RowRange key_rows = joinKeyRows(selector);
     KeyGetter key_getter = is_asof
         ? makeJoinKeyGetter<KeyGetter>(ColumnRawPtrs(key_columns.begin(), key_columns.end() - 1), Sizes(key_sizes.begin(), key_sizes.end() - 1), key_rows)

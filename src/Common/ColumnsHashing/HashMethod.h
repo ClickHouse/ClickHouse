@@ -480,8 +480,7 @@ struct HashMethodKeysFixed
 
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
-    /// Keys wider than 16 bytes are packed one cache-sized chunk at a time; a block of narrower keys fits in the cache, so
-    /// it is packed at once and read as a plain array.
+    /// Keys wider than 16 bytes are packed one cache-sized chunk at a time.
     static constexpr bool packs_in_chunks = sizeof(Key) > 16 && !has_low_cardinality && !for_sub_range;
 
     static constexpr bool has_cheap_key_calculation = true;
@@ -509,8 +508,7 @@ struct HashMethodKeysFixed
     bool packs_longest_first = false;
     size_t prepared_keys_begin = 0;
 
-    /// A state that packs in chunks packs the rows [rows_begin, rows_end) into `prepared_keys` one chunk at a time, when
-    /// the first row past the current chunk is asked for, so the chunk stays in the cache until its rows are read.
+    /// The rows [rows_begin, rows_end) are packed into `prepared_keys` one chunk at a time, when a row past the chunk is asked for.
     struct Chunks
     {
         size_t rows_begin = 0;
@@ -531,7 +529,6 @@ struct HashMethodKeysFixed
     /// A caller that asks about fewer than one row in this many builds a `SparseState`.
     static constexpr size_t max_rows_per_asked_row = 6;
 
-    /// The rows of a chunk: the keys take an eighth of the L2 cache, as in `HashMethodSerialized`.
     static size_t preparedKeysChunkRows()
     {
         return std::clamp<size_t>(getL2CacheSize() / 8, 64 * 1024, 1024 * 1024) / sizeof(Key);
@@ -566,7 +563,6 @@ struct HashMethodKeysFixed
 
     /// The batch buffer is resized before probing, even when every input key is already present.
     /// Match the padding and capacity rounding of `PaddedPODArray::resize_fill` on an empty array.
-    /// A state that packs in chunks allocates one chunk at its first pack.
     static size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes)
     {
         if (!num_rows || !(usePreparedKeys(key_sizes) || useOrderedPreparedKeys(key_sizes)))
@@ -819,9 +815,8 @@ private:
         return {0, block_rows};
     }
 
-    /// Returns the key of a row that `prepared_keys` does not hold by pointer, so that the inlined caller only ever loads a
-    /// key and never stores one. A row behind the chunk means that the rows are not read in ascending order, so the whole
-    /// range is packed once.
+    /// Returns a pointer, so that the inlined caller only ever loads a key and never stores one. A row behind the chunk
+    /// means that the rows are not read in ascending order, so the whole range is packed once.
     NO_INLINE const Key * packUnpreparedRow(size_t row)
     {
         if (chunks.chunk_rows && row - chunks.rows_begin < chunks.rows_end - chunks.rows_begin)
@@ -839,13 +834,11 @@ private:
         return &chunks.unprepared_key;
     }
 
-    /// Packs the chunk that holds `row` and returns its key. The chunk starts up to `getMaxLookAheadValue` rows before
-    /// `row`: a lookup trails the look-ahead prefetch that asked for `row` by at most that many rows.
+    /// The chunk starts up to `getMaxLookAheadValue` rows before `row`: a lookup trails the prefetch that asked for `row` by that much.
     const Key & packChunk(size_t row)
     {
         const size_t begin = row - std::min(PrefetchingHelper::getMaxLookAheadValue(), row - chunks.rows_begin);
         const size_t end = std::min(chunks.rows_end, begin + chunks.next_chunk_rows);
-        /// The chunks grow from a short one, so a caller that stops early has not packed many rows it does not read.
         chunks.next_chunk_rows = std::min(chunks.chunk_rows, 2 * chunks.next_chunk_rows);
         prepared_keys.reserve(std::min(chunks.chunk_rows, chunks.rows_end - chunks.rows_begin));
         packRows(begin, end);
@@ -872,9 +865,8 @@ private:
         return false;
     }
 
-    /// Nullable keys of widths 1, 2, 4, 8 and 16 bytes are batch-packed for every caller. The other ordered keys only
-    /// for a caller that skips none of its rows and, but for a sub-range state, is built for the whole block: a caller that asks about a
-    /// few rows packs them faster one by one.
+    /// Keys of another width, or not nullable, are batch-packed only for a caller that skips none of its rows and, but for a
+    /// sub-range state, is built for the whole block: a caller that asks about a few rows packs them faster one by one.
     static bool batchPacksOrderedKeys(const Sizes & key_sizes, RowRange rows, size_t block_rows)
     {
         if (has_nullable_keys && !hasOtherKeyWidth(key_sizes))
@@ -916,8 +908,8 @@ private:
     }
 };
 
-/// The sparse state of a state that packs in chunks is its sub-range variant: over the whole block, for a caller that
-/// skips rows, it packs as master does (per row, but a nullable set of widths 1, 2, 4, 8 and 16 bytes packs its block).
+/// The sparse state of a state that packs in chunks is its sub-range variant, which packs no chunks: per row, or, for a
+/// nullable set of widths 1, 2, 4, 8 and 16 bytes, the whole block at once.
 template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool use_cache, bool need_offset>
 struct SparseStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, false, use_cache, need_offset, false>>
 {

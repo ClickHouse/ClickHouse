@@ -137,7 +137,6 @@ private:
     size_t samples = 0;
 };
 
-/// `rows` describes the rows the getter is asked about, for a getter that takes it.
 template <typename KeyGetter, bool is_asof_join>
 KeyGetter createJoinKeyGetter(
     const ColumnRawPtrs & key_columns,
