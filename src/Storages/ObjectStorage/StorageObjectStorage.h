@@ -252,8 +252,6 @@ public:
     }
 
 protected:
-    void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & local_context);
-
     /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
     void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
 
