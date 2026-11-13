@@ -1,0 +1,5 @@
+{"commitInfo":{"version":1,"timestamp":1709212191754,"userId":"user","userName":"user","operation":"MERGE","operationParameters":{"queryId":"20240229_130951_00002_i2yuq"},"clusterId":"trino-testversion-28854534-ed0b-49e8-b473-a4204fc8a94f","readVersion":0,"isolationLevel":"WriteSerializable","isBlindAppend":true}}
+{"cdc":{"path":"_change_data/key=2/20240229_130951_00002_i2yuq_472d047f-25dd-4aef-81ba-330e644c8157","partitionValues":{"key":"2"},"size":394,"dataChange":false}}
+{"cdc":{"path":"_change_data/key=1/20240229_130951_00002_i2yuq_2aac203a-2fdd-48bf-a6b2-771cde32519e","partitionValues":{"key":"1"},"size":389,"dataChange":false}}
+{"remove":{"path":"key=1/20240229_130949_00001_i2yuq_2756a3ae-09f1-4832-bbc0-c2425c7ccee2","deletionTimestamp":1709212191756,"dataChange":true}}
+{"add":{"path":"key=2/20240229_130951_00002_i2yuq_3a1f6f82-fe21-4c1f-a304-e573a33c9b66","partitionValues":{"key":"2"},"size":200,"modificationTime":1709212191676,"dataChange":true,"stats":"{\"numRecords\":1,\"minValues\":{\"value\":\"a\"},\"maxValues\":{\"value\":\"a\"},\"nullCount\":{\"value\":0}}","tags":{}}}

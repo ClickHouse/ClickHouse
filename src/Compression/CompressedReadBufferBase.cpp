@@ -18,6 +18,7 @@
 #include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <IO/SeekableReadBuffer.h>
 
 
 namespace ProfileEvents
@@ -306,7 +307,7 @@ void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed,
     codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
 }
 
-void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
+void CompressedReadBufferBase::decompress(BufferBase::WorkingBuffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
 
