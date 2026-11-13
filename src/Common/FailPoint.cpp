@@ -261,6 +261,7 @@ static struct InitFiu
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(storage_buffer_fail_capturing_flush_identity) \
     PAUSEABLE_ONCE(storage_buffer_pause_flush_for_other_identity) \
+    ONCE(storage_buffer_fail_appending_block) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(keeper_shutdown_delay_before_queue_check) \

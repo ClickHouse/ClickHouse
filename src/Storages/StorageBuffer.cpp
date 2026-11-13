@@ -124,6 +124,7 @@ namespace FailPoints
 {
     extern const char storage_buffer_fail_capturing_flush_identity[];
     extern const char storage_buffer_pause_flush_for_other_identity[];
+    extern const char storage_buffer_fail_appending_block[];
 }
 
 /// Access identity captured from the context that initiated an INSERT into a Buffer. A buffered block is
@@ -1226,18 +1227,28 @@ private:
             buffer.metadata_version = metadata_version;
         }
 
-        if (!buffer.first_write_time)
-        {
-            buffer.first_write_time = current_time;
-            buffer.write_identity = write_identity;
-        }
+        /// The shard's identity, and the first write time of an empty shard which goes together with it, are published
+        /// only once the block is appended: a block that fails to append must not change the authority of the rows
+        /// accepted before it.
+        const bool shard_was_empty = !buffer.first_write_time;
+        std::shared_ptr<const BufferWriteIdentity> identity_after_append = buffer.write_identity;
+        if (shard_was_empty)
+            identity_after_append = write_identity;
         else if (storage.destination_id)
-            buffer.write_identity = identityForJoinedBatch(buffer.write_identity, *write_identity);
+            identity_after_append = identityForJoinedBatch(buffer.write_identity, *write_identity);
 
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
 
+        fiu_do_on(FailPoints::storage_buffer_fail_appending_block,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while appending a block to a Buffer shard");
+        });
         appendBlock(storage.log, sorted_block, buffer.data);
+
+        if (shard_was_empty)
+            buffer.first_write_time = current_time;
+        buffer.write_identity = std::move(identity_after_append);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
         storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
