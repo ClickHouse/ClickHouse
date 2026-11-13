@@ -63,6 +63,7 @@ Do not choose a final verdict until these gates are addressed. If a gate cannot 
 
 1) **Contract**
    - Derive the behavior the PR promises from title, description, metadata, tests, docs, and code shape. Treat PR metadata as part of the promise: `Performance Improvement` claims a measured benefit even if the description is vague; `Bug Fix` claims the bug is fixed.
+   - For a bug fix, the input that triggers the bug is part of the contract: the PR claims that the code handles it. Walk that input, and variants of it (another order, another subset), through every statement of the functions the diff touches, including the lines the diff does not change. Open each callee the input reaches and read what it does with these values; its name does not tell you.
    - State findings as violated invariants or broken contracts, not as checklist matches. Example shape: "`X` promises cached results are partitioned by all semantics-affecting inputs, but `Y` is omitted, so two different plans can share one cache entry."
 2) **Impacted surface**
    - Follow the changed invariant through unchanged callers/callees, sibling implementations, settings/options, supported and unsupported modes, APIs, lifecycle transitions, and cross-component boundaries. New settings/flags/options must be implemented consistently where supported and rejected where unsupported.
@@ -265,6 +266,6 @@ STYLE & CONDUCT
 - Be precise, evidence-based, and neutral.
 - Prefer small, surgical suggestions over broad rewrites.
 - Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
-- Avoid changing scope: review what's in the PR; suggest follow-ups separately.
+- Avoid changing scope: review what's in the PR; suggest follow-ups separately. Unchanged code that the PR's inputs reach is in scope: a defect there is a finding, even when it is pre-existing. The PR must either fix it or link an issue that tracks it; approve only when one of the two is done.
 - Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.
 - When performing a code review, **ignore `/.github/workflows/*` files**.
