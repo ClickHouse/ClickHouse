@@ -1247,6 +1247,56 @@ def test_where_bool_wide_constants(started_cluster, bool_type):
 
 
 @pytest.mark.parametrize(
+    "column_type", ["Int128", "UInt128", "Int256", "UInt256", "Nullable(Int128)"]
+)
+def test_where_wide_membership_bool_members(started_cluster, column_type):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "wide_membership_bool_members"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many([{"id": 1, "n": True}, {"id": 2, "n": 1}, {"id": 3, "n": 2}])
+
+    node = started_cluster.instances["node"]
+    structure = f"id Int32, n {column_type}"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for query, result in {
+                "SELECT id FROM {} WHERE n IN (true) ORDER BY id": "1\n2\n",
+                "SELECT id FROM {} WHERE n NOT IN (true) ORDER BY id": "3\n",
+                "SELECT id FROM {} WHERE n IN (true, 2) ORDER BY id": "1\n2\n3\n",
+                "SELECT id FROM {} WHERE n IN (true) ORDER BY id LIMIT 1": "1\n",
+            }.items():
+                assert node.query(query.format(reference)) == result
+                for throw_on_unsupported_query in (0, 1):
+                    assert (
+                        node.query(
+                            query.format(source),
+                            settings={
+                                "mongodb_throw_on_unsupported_query": throw_on_unsupported_query
+                            },
+                        )
+                        == result
+                    )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+@pytest.mark.parametrize(
     "column_type",
     [
         "UInt8",

@@ -536,6 +536,8 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         /// bound; `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
         const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
+        /// `fieldAsBSONValue` writes no wide integer, so the members of a wide integer column are written as `Int64`s.
+        const DataTypePtr member_type = isWideInteger(column_type) ? std::make_shared<DataTypeInt64>() : column_type;
         Array converted_elements;
         converted_elements.reserve(elements.size());
         for (size_t i = 0; i < elements.size(); ++i)
@@ -550,33 +552,45 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
             /// Every element is converted: the list is written with the column's type, so a `Float64`
             /// element under an integer column would be read back as an integer.
+            Field converted;
             if (element_type && element_type->equals(*column_type) && !boolDiffers(element_type, column_type))
+                converted = elements[i];
+            else
             {
-                converted_elements.push_back(elements[i]);
-                continue;
+                const auto * element_hint = conversionHint(element_type, column_type);
+                converted = tryConvertFieldToType(elements[i], *column_type, element_hint, {}, /*strict=*/ true);
+                if (converted.isNull())
+                {
+                    auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                    LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
+                    continue;
+                }
+                if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_hint).isNull())
+                {
+                    auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                    LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
+                    return {};
+                }
             }
 
-            const auto * element_hint = conversionHint(element_type, column_type);
-            auto converted = tryConvertFieldToType(elements[i], *column_type, element_hint, {}, /*strict=*/ true);
-            if (converted.isNull())
+            if (member_type != column_type)
             {
-                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
-                LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
-                continue;
+                converted = tryConvertFieldToTypeExact(converted, *member_type, nullptr);
+                if (converted.isNull())
+                {
+                    auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                    LOG_DEBUG(log, "Cannot write constant value {} as a BSON value of column type {}", value_string, column_type->getName());
+                    return {};
+                }
             }
-            if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_hint).isNull())
-            {
-                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
-                LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
-                return {};
-            }
-            if (isBoolNumberComparison(element_type, column_type))
+
+            if (isBoolNumberComparison(element_type, member_type))
                 other_encodings.emplace_back(elements[i], element_type);
             converted_elements.push_back(std::move(converted));
         }
 
         const_value = std::move(converted_elements);
-        column_type = std::make_shared<DataTypeArray>(column_type);
+        column_type = std::make_shared<DataTypeArray>(member_type);
         const_type = column_type;
     }
 
