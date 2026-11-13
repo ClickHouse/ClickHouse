@@ -319,12 +319,6 @@ int64_t MetadataStorageFromDisk::recordAsRemoved(const StoredObjects & blobs)
     return removed_count;
 }
 
-bool MetadataStorageFromDisk::hasPendingRemovalBlobs(const StoredObjects & blobs) const
-{
-    std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.containsAny(blobs);
-}
-
 int64_t MetadataStorageFromDisk::getDeadBlobsQueueEstimate()
 {
     std::lock_guard guard(removed_objects_mutex);

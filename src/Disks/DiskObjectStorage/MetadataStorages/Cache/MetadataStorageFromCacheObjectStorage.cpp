@@ -226,20 +226,6 @@ int64_t MetadataStorageFromCacheObjectStorage::recordAsRemoved(const StoredObjec
     return objects_to_remove.markAsRemoved(blobs);
 }
 
-bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredObjects & blobs) const
-{
-    if (underlying->hasPendingRemovalBlobs(blobs))
-        return true;
-
-    std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.containsAny(blobs);
-}
-
-bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBatches(const BatchIds & batch_ids) const
-{
-    return underlying->hasPendingRemovalBatches(batch_ids);
-}
-
 int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
 {
     std::lock_guard guard(removed_objects_mutex);
@@ -446,11 +432,6 @@ void MetadataStorageFromCacheObjectStorageTransaction::recordBlobsReplication(co
 StoredObjects MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBlobs()
 {
     return underlying->getSubmittedForRemovalBlobs();
-}
-
-BatchIds MetadataStorageFromCacheObjectStorageTransaction::getSubmittedForRemovalBatches()
-{
-    return underlying->getSubmittedForRemovalBatches();
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)

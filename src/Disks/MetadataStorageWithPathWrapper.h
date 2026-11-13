@@ -143,7 +143,6 @@ public:
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override { return delegate->generateObjectKeyForPath(path); }
     void recordBlobsReplication(const StoredObject & blob, const Locations & missing_locations) override { delegate->recordBlobsReplication(blob, missing_locations); }
     StoredObjects getSubmittedForRemovalBlobs() override { return delegate->getSubmittedForRemovalBlobs(); }
-    BatchIds getSubmittedForRemovalBatches() override { return delegate->getSubmittedForRemovalBatches(); }
 };
 
 class MetadataStorageWithPathWrapper final : public IMetadataStorage
@@ -314,16 +313,6 @@ public:
     int64_t recordBatchesAsRemoved(const BatchesToRemove & batches) override
     {
         return delegate->recordBatchesAsRemoved(batches);
-    }
-
-    [[nodiscard]] bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
-    {
-        return delegate->hasPendingRemovalBlobs(blobs);
-    }
-
-    [[nodiscard]] bool hasPendingRemovalBatches(const BatchIds & batch_ids) const override
-    {
-        return delegate->hasPendingRemovalBatches(batch_ids);
     }
 
     [[nodiscard]] bool hasDeadBlobsQueue() const override

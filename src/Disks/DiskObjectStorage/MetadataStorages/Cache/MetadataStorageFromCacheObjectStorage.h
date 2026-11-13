@@ -76,8 +76,6 @@ public:
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
-    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
-    bool hasPendingRemovalBatches(const BatchIds & batch_ids) const override;
     int64_t getDeadBlobsQueueEstimate() override;
     bool hasDeadBlobsQueue() const override;
     void setDeadBlobsQueuedCallback(std::function<void()> callback) override;
@@ -139,7 +137,6 @@ public:
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
     void recordBlobsReplication(const StoredObject & blob, const Locations & missing_locations) override;
     StoredObjects getSubmittedForRemovalBlobs() override;
-    BatchIds getSubmittedForRemovalBatches() override;
 
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
