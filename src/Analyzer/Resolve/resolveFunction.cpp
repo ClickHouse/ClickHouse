@@ -1436,6 +1436,62 @@ QueryTreeNodes QueryAnalyzer::getArrayElementsForInTupleArguments(
 /// functions map to isDistinctFrom/isNotDistinctFrom and the remaining functions map to
 /// ifNull(equals/notEquals(...), default), with a NULL result for a NULL LHS value.
 /// The caller must resolve the returned node.
+/// Compare numeric set members before they can be narrowed to the array element type.
+/// A `Decimal`/`Float` pair also needs a round trip: ordinary `equals` converts the
+/// `Decimal` to `Float64`, which can round two distinct values into a match.
+static QueryTreeNodePtr buildNumericInEquality(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const DataTypePtr & left_argument_type,
+    const DataTypePtr & right_argument_type)
+{
+    const auto left_type = removeNullable(removeLowCardinality(left_argument_type));
+    const auto right_type = removeNullable(removeLowCardinality(right_argument_type));
+    const bool decimal_float_pair = (isDecimal(left_type) && isFloat(right_type))
+        || (isFloat(left_type) && isDecimal(right_type));
+    if (!decimal_float_pair)
+    {
+        auto equals = std::make_shared<FunctionNode>("equals");
+        equals->getArguments().getNodes() = {left_argument, right_argument};
+        return equals;
+    }
+
+    const auto & decimal_argument = isDecimal(left_type) ? left_argument : right_argument;
+    const auto & float_argument = isFloat(left_type) ? left_argument : right_argument;
+    const auto & decimal_type = isDecimal(left_type) ? left_type : right_type;
+    auto converted = std::make_shared<FunctionNode>("accurateCastOrNull");
+    converted->getArguments().getNodes() = {
+        float_argument,
+        std::make_shared<ConstantNode>(decimal_type->getName(), std::make_shared<DataTypeString>())};
+
+    auto decimal_equals = std::make_shared<FunctionNode>("equals");
+    decimal_equals->getArguments().getNodes() = {decimal_argument, converted};
+    auto round_trip = std::make_shared<FunctionNode>("toFloat64");
+    round_trip->getArguments().getNodes().push_back(converted);
+    auto float_equals = std::make_shared<FunctionNode>("equals");
+    float_equals->getArguments().getNodes() = {float_argument, std::move(round_trip)};
+    auto both_equal = std::make_shared<FunctionNode>("and");
+    both_equal->getArguments().getNodes() = {std::move(decimal_equals), std::move(float_equals)};
+
+    /// An unrepresentable non-`NULL` float is a nonmatch. Source `NULL` values
+    /// still contribute an unknown result to the surrounding `IN` expression.
+    auto no_match = std::make_shared<FunctionNode>("ifNull");
+    no_match->getArguments().getNodes() = {std::move(both_equal), std::make_shared<ConstantNode>(Field{0u})};
+    auto either_null = std::make_shared<FunctionNode>("or");
+    for (const auto & argument : {left_argument, right_argument})
+    {
+        auto is_null = std::make_shared<FunctionNode>("isNull");
+        is_null->getArguments().getNodes().push_back(argument);
+        either_null->getArguments().getNodes().push_back(std::move(is_null));
+    }
+    auto result = std::make_shared<FunctionNode>("if");
+    result->getArguments().getNodes() = {
+        std::move(either_null),
+        std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())),
+        std::move(no_match)};
+    return result;
+}
+
 static QueryTreeNodePtr buildScalarInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
@@ -1445,11 +1501,13 @@ static QueryTreeNodePtr buildScalarInComparison(
 {
     if (use_standard_null_semantics)
     {
-        auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
-        eq_fn->getArguments().getNodes() = {left_argument, right_argument};
+        QueryTreeNodePtr comparison = buildNumericInEquality(
+            left_argument, right_argument, left_argument->getResultType(), right_argument->getResultType());
+        if (is_not_in)
+            comparison = createNotWrapper(std::move(comparison));
 
         auto to_nullable_fn = std::make_shared<FunctionNode>("toNullable");
-        to_nullable_fn->getArguments().getNodes().push_back(std::move(eq_fn));
+        to_nullable_fn->getArguments().getNodes().push_back(std::move(comparison));
         return to_nullable_fn;
     }
 
@@ -3115,13 +3173,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// Numeric comparisons can be exact without having a lossless array
                     /// element supertype. Keep each source value in its original type;
                     /// converting a fractional float to an integer could invent a match.
-                    const bool numeric_left = isNumber(removeNullable(removeLowCardinality(in_first_argument->getResultType())));
+                    const auto left_value_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
+                    const bool numeric_left = isNumber(left_value_type) || isBool(left_value_type);
                     const bool has_numeric_source = std::any_of(source_elements.begin(), source_elements.end(), [](const auto & element)
                     {
                         return isNumber(removeNullable(removeLowCardinality(element->getResultType())));
                     });
                     if (use_standard_null_semantics && numeric_left && has_numeric_source
-                        && !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false))
+                        && (isBool(left_value_type)
+                            || !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false)))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         QueryTreeNodes arrays;
@@ -3157,11 +3217,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                     std::make_shared<ConstantNode>(cast_type->getName(), std::make_shared<DataTypeString>())};
                                 right_argument = std::move(cast);
                             }
-                            auto equals = std::make_shared<FunctionNode>("equals");
-                            equals->getArguments().getNodes() = {
+                            QueryTreeNodePtr comparison = buildNumericInEquality(
                                 std::make_shared<IdentifierNode>(Identifier{argument_names.front()}),
-                                std::move(right_argument)};
-                            QueryTreeNodePtr comparison = std::move(equals);
+                                right_argument,
+                                in_first_argument->getResultType(),
+                                numeric_element ? element->getResultType() : in_first_argument->getResultType());
                             if (!numeric_element)
                             {
                                 /// A failed conversion is a nonmatch; only a source `NULL`
