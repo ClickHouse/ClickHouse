@@ -987,10 +987,8 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
-/// Re-applying the explained query's own SETTINGS clause can reset a `make_distributed_plan` that
-/// executeQuery inferred; infer it again so EXPLAIN plans what executes. Only restores a plan that
-/// was already on - a nested EXPLAIN (e.g. viewExplain) never had executeQuery infer anything for
-/// it in the first place, and must keep not inferring one.
+/// Re-applying the explained query's SETTINGS can reset a `make_distributed_plan` that `executeQuery` inferred;
+/// infer it again so EXPLAIN plans what executes. Only a plan already on is restored, so a nested EXPLAIN never infers one.
 static void reapplySettingsAndRestoreDistributedPlan(const ASTPtr & query, ContextMutablePtr context)
 {
     const bool plan_was_on = context->getSettingsRef()[Setting::make_distributed_plan].value;
