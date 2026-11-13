@@ -188,6 +188,7 @@ protected:
 
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;
+    bool columns_substreams_initialized = false;
 
 private:
     void initSkipIndices();
