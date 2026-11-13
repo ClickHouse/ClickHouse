@@ -1,0 +1,5 @@
+1	12345	Nullable(Decimal(14, 0))
+2	12345678901234	Nullable(Decimal(14, 0))
+id	Nullable(Int64)
+d	Nullable(Decimal(14, 0))
+s	Nullable(String)
