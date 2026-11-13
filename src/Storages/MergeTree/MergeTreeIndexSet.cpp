@@ -125,6 +125,9 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     settings.position_independent_encoding = false;
 
     size_t num_columns = block.columns();
+    set_hyperrectangle.clear();
+    Field min_val;
+    Field max_val;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -136,21 +139,6 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
         elem.column = std::move(mutable_col);
-    }
-
-    fillHyperrectangle();
-}
-
-void MergeTreeIndexGranuleSet::fillHyperrectangle()
-{
-    size_t num_columns = block.columns();
-    set_hyperrectangle.clear();
-    Field min_val;
-    Field max_val;
-
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        const auto & elem = block.getByPosition(i);
 
         if (!hasMeaningfulFieldExtremes(*elem.type))
         {

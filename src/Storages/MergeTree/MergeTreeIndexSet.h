@@ -28,9 +28,6 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    /// Computes `set_hyperrectangle` from the values in `block`.
-    void fillHyperrectangle();
-
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
     size_t memoryUsageBytes() const override { return block.bytes() + (set_hyperrectangle.capacity() * sizeof(Range)); }

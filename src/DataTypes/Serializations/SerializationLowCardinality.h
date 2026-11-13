@@ -61,10 +61,11 @@ public:
 
     /// Reads the whole `DictionaryKeys` stream of a top-level `LowCardinality` column of a `Wide` part.
     /// If the stream ends with the marker written with `low_cardinality_write_complete_dictionaries_marker`,
-    /// returns a `LowCardinality` column with every key of all dictionaries, which is a superset of the values
-    /// of the column (it also has the default value and `NULL`). Otherwise returns nullptr: the column can have
-    /// keys that are not in the dictionaries, or the part was written without the marker.
-    ColumnPtr deserializeCompleteDictionaries(ReadBuffer & keys_stream) const;
+    /// returns a `LowCardinality` column per dictionary, which refers to the dictionary as it is, without copying
+    /// or hashing its keys again. Together they have every value of the column (`NULL` and the default value only
+    /// if the rows use them). Otherwise returns `std::nullopt`: the column can have keys that are not
+    /// in the dictionaries, or the part was written without the marker.
+    std::optional<Columns> deserializeCompleteDictionaries(ReadBuffer & keys_stream) const;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

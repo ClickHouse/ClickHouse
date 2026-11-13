@@ -2361,6 +2361,8 @@ When enabled, the filter of a `SELECT` query is evaluated on the dictionaries of
 and the parts of `MergeTree` tables where no value of a dictionary can satisfy the filter are not read, like with a skip
 index of type `set`. Only `Wide` parts written with the MergeTree setting `write_low_cardinality_complete_dictionaries_marker`
 are filtered, and only if the dictionaries contain all values of the column in the part.
+The parts on remote disks are not filtered: the dictionaries are read before the query starts reading the data,
+and the latency of remote reads can cost more than the pruning saves.
 The size of the dictionaries to read is limited by `max_low_cardinality_dictionaries_bytes_for_part_pruning`.
 
 Possible values:

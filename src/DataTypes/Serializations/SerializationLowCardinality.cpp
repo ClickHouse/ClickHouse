@@ -405,13 +405,12 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
     }
 }
 
-ColumnPtr SerializationLowCardinality::deserializeCompleteDictionaries(ReadBuffer & keys_stream) const
+std::optional<Columns> SerializationLowCardinality::deserializeCompleteDictionaries(ReadBuffer & keys_stream) const
 {
     UInt64 keys_version = 0;
     readBinaryLittleEndian(keys_version, keys_stream);
     KeysSerializationVersion::checkVersion(keys_version);
 
-    auto result = std::make_shared<DataTypeLowCardinality>(dictionary_type)->createColumn();
     auto keys_type = removeNullable(dictionary_type);
     std::vector<MutableColumnUniquePtr> dictionaries;
 
@@ -428,7 +427,7 @@ ColumnPtr SerializationLowCardinality::deserializeCompleteDictionaries(ReadBuffe
     }
 
     if (keys_stream.eof())
-        return nullptr;
+        return std::nullopt;
 
     UInt64 flags = 0;
     readBinaryLittleEndian(flags, keys_stream);
@@ -438,6 +437,8 @@ ColumnPtr SerializationLowCardinality::deserializeCompleteDictionaries(ReadBuffe
     /// The rows use every key of the dictionaries, and also `NULL` and the default value if the flags say so.
     /// A function that cannot be executed on the default value is then executed only on the values of the rows,
     /// like when the column is read, see `IExecutableFunction::executeWithoutSparseColumns`.
+    Columns result;
+    result.reserve(dictionaries.size());
     for (auto & dictionary : dictionaries)
     {
         auto positions = ColumnUInt64::create();
@@ -452,10 +453,12 @@ ColumnPtr SerializationLowCardinality::deserializeCompleteDictionaries(ReadBuffe
             positions_data.push_back(i);
         }
 
+        if (positions_data.empty())
+            continue;
+
         ColumnPtr dictionary_ptr = std::move(dictionary);
         ColumnPtr positions_ptr = std::move(positions);
-        auto dictionary_column = ColumnLowCardinality::create(dictionary_ptr, positions_ptr, /*is_shared=*/ false);
-        result->insertRangeFrom(*dictionary_column, 0, dictionary_column->size());
+        result.push_back(ColumnLowCardinality::create(dictionary_ptr, positions_ptr, /*is_shared=*/ false));
     }
 
     return result;

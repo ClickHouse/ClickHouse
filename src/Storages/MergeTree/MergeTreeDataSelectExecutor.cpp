@@ -1337,6 +1337,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictio
         if (!isWidePart(part) || partHasPendingAlterOrMetadataMutations(part, mutations_snapshot))
             return true;
 
+        /// The dictionaries are read before the pipeline starts, a few at a time and without prefetching,
+        /// so on a remote disk the round trips can cost more than the reads that the pruning saves.
+        if (part->getDataPartStorage().isStoredOnRemoteDisk())
+            return true;
+
         for (const auto & condition : conditions)
         {
             /// The column is converted on read if the part stores it with another type, and absent in old parts.
@@ -1359,19 +1364,26 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictio
 
             auto file = part->getDataPartStorage().readFile(file_name, context->getReadSettings().adjustBufferSize(file_size), file_size);
             CompressedReadBufferFromFile keys_stream(std::move(file), /* allow_different_codecs */ true);
-            auto values = condition.serialization->deserializeCompleteDictionaries(keys_stream);
-            if (!values)
+            auto dictionaries = condition.serialization->deserializeCompleteDictionaries(keys_stream);
+            if (!dictionaries)
             {
                 part->setIncompleteLowCardinalityDictionaries(part_column->name);
                 continue;
             }
 
+            /// Each dictionary is a granule of the `set` index, and the part can match if any of them can.
+            /// The condition is evaluated on every value anyway, so the range of values is not computed
+            /// to check the condition on it first: it would materialize every value.
             const auto & index_description = condition.index->index;
-            auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_description.name, index_description.sample_block, /*max_rows=*/ 0);
-            granule->block = index_description.sample_block.cloneWithColumns(Columns{std::move(values)});
-            granule->fillHyperrectangle();
+            const bool can_match_by_column = std::ranges::any_of(*dictionaries, [&](const ColumnPtr & values)
+            {
+                auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_description.name, index_description.sample_block, /*max_rows=*/ 0);
+                granule->block = index_description.sample_block.cloneWithColumns(Columns{values});
+                granule->set_hyperrectangle.assign(1, Range::createWholeUniverse());
+                return condition.condition->mayBeTrueOnGranule(granule, {});
+            });
 
-            if (!condition.condition->mayBeTrueOnGranule(granule, {}))
+            if (!dictionaries->empty() && !can_match_by_column)
             {
                 LOG_TRACE(log, "Part {} pruned by the dictionaries of column {}", part->name, condition.column.name);
                 return false;

@@ -9,7 +9,7 @@ SET min_marks_per_part_to_load_statistics = 0;
 
 DROP TABLE IF EXISTS t_lc;
 CREATE TABLE t_lc (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
 
 SYSTEM STOP MERGES t_lc;
 INSERT INTO t_lc SELECT number, ['a', 'b'][number % 2 + 1] FROM numbers(100);
@@ -49,7 +49,7 @@ DROP TABLE t_lc;
 -- A merged part has the values of all merged parts in its dictionary.
 DROP TABLE IF EXISTS t_lc_merge;
 CREATE TABLE t_lc_merge (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id PARTITION BY id % 2
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
 INSERT INTO t_lc_merge SELECT number, 'p' || toString(number % 2) || '_' || toString(number % 5) FROM numbers(100);
 INSERT INTO t_lc_merge SELECT number + 100, 'p' || toString(number % 2) || '_' || toString(number % 5 + 5) FROM numbers(100);
 OPTIMIZE TABLE t_lc_merge FINAL;
@@ -62,7 +62,7 @@ DROP TABLE t_lc_merge;
 -- LowCardinality(Nullable) is pruned like by a skip index of type `set`.
 DROP TABLE IF EXISTS t_lc_null;
 CREATE TABLE t_lc_null (id UInt64, s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
 SYSTEM STOP MERGES t_lc_null;
 INSERT INTO t_lc_null SELECT number, if(number % 2, 'x', NULL) FROM numbers(100);
 INSERT INTO t_lc_null SELECT number + 100, 'y' FROM numbers(100);
@@ -80,7 +80,7 @@ DROP TABLE t_lc_null;
 DROP TABLE IF EXISTS t_lc_unused;
 SET allow_suspicious_low_cardinality_types = 1;
 CREATE TABLE t_lc_unused (id UInt64, n LowCardinality(Nullable(Int32)), s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
 SYSTEM STOP MERGES t_lc_unused;
 INSERT INTO t_lc_unused SELECT number, number + 1, toString(number + 1) FROM numbers(10);
 INSERT INTO t_lc_unused SELECT number + 10, number + 101, toString(number + 101) FROM numbers(10);
@@ -100,7 +100,7 @@ DROP TABLE t_lc_unused;
 -- and the part is not skipped.
 DROP TABLE IF EXISTS t_lc_overflow;
 CREATE TABLE t_lc_overflow (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, write_low_cardinality_complete_dictionaries_marker = 1;
 SYSTEM STOP MERGES t_lc_overflow;
 INSERT INTO t_lc_overflow SELECT number, toString(number) FROM numbers(20000);
 INSERT INTO t_lc_overflow SELECT number + 20000, 'small' FROM numbers(100);
@@ -113,7 +113,7 @@ DROP TABLE t_lc_overflow;
 -- Compact parts and parts without the marker are not skipped.
 DROP TABLE IF EXISTS t_lc_compact;
 CREATE TABLE t_lc_compact (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 10000000000, min_rows_for_wide_part = 1000000000, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 10000000000, min_rows_for_wide_part = 1000000000, write_low_cardinality_complete_dictionaries_marker = 1;
 SYSTEM STOP MERGES t_lc_compact;
 INSERT INTO t_lc_compact SELECT number, 'a' FROM numbers(100);
 INSERT INTO t_lc_compact SELECT number + 100, 'b' FROM numbers(100);
@@ -123,7 +123,7 @@ DROP TABLE t_lc_compact;
 
 DROP TABLE IF EXISTS t_lc_no_marker;
 CREATE TABLE t_lc_no_marker (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 0;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 0;
 SYSTEM STOP MERGES t_lc_no_marker;
 INSERT INTO t_lc_no_marker SELECT number, 'a' FROM numbers(100);
 INSERT INTO t_lc_no_marker SELECT number + 100, 'b' FROM numbers(100);
@@ -134,7 +134,7 @@ DROP TABLE t_lc_no_marker;
 -- With FINAL, a part without matching values can hold the latest version of a row.
 DROP TABLE IF EXISTS t_lc_final;
 CREATE TABLE t_lc_final (id UInt64, s LowCardinality(String)) ENGINE = ReplacingMergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS storage_policy = 'default', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
 SYSTEM STOP MERGES t_lc_final;
 INSERT INTO t_lc_final VALUES (1, 'old');
 INSERT INTO t_lc_final VALUES (1, 'new');
