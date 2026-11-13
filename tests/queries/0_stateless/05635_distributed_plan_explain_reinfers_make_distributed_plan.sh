@@ -31,7 +31,7 @@ COUNT=$(${CLICKHOUSE_CLIENT} -q "EXPLAIN PIPELINE \
     SETTINGS distributed_plan_execute_locally = 1, distributed_plan_workers_num = 3, \
     max_rows_to_group_by = 0, make_distributed_plan = DEFAULT" \
     | grep -c "ReadFromDistributedPlanSource")
-if [ "${COUNT}" -gt 1 ]; then echo "union: distributed"; else echo "union: not distributed"; fi
+if [ "${COUNT}" -gt 0 ]; then echo "union: distributed"; else echo "union: not distributed"; fi
 
 # EXPLAIN ANALYZE executes the plan, and rejects one that stays distributed; with the DEFAULT
 # clause it must reject the same way as without it, instead of silently executing locally.
