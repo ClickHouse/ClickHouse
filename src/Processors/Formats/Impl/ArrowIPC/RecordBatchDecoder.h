@@ -132,15 +132,10 @@ DataTypePtr stripHint(const DataTypePtr & type);
 /// The requested type hint for the element of an Array-like field, or null when the hint is not an Array.
 DataTypePtr arrayElementHint(const DataTypePtr & hint);
 
-/// The requested type hint for a struct child. For a named Tuple it is matched by element name — the same
-/// way the later named-tuple CAST maps the struct, including case-insensitively when requested — and there
-/// is no positional fallback (that could attach the hint to the wrong element). For an unnamed Tuple (the
-/// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
-DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive);
-
-/// The requested type hint for the element at `pos` of a Tuple, named or not, or null when the hint is not a Tuple
-/// or has no such element. Used for the fields of a struct with `ArrowType::positional_fields`.
-DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos);
+/// The requested type hints for the fields of a struct, null where there is none: paired with the elements of a named
+/// Tuple hint as the later CAST pairs them (`DataTypeTuple::matchElementsByName`), else by position (an unnamed Tuple
+/// hint such as the synthetic Map-entries one, or `by_position` for a struct with `ArrowType::positional_fields`).
+DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_names, bool by_position, bool case_insensitive);
 
 /// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.
 DataTypePtr mapEntriesHint(const DataTypePtr & hint);
@@ -382,10 +377,10 @@ private:
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
     /// normalized name appended to its parent's path.
     String childPath(const String & path, const String & child_name) const;
-    /// The requested type hint and the path of the `i`-th field of a struct: by name, or by position (the path
+    /// The requested type hints of the fields of a struct and the path of its `i`-th field: by name, or by position (the path
     /// then uses the 1-based element number, as for an unnamed `Tuple`) when the struct has `positional_fields`.
     /// Positional paths keep equally named fields apart in the dictionary uses, which are keyed by path.
-    DataTypePtr structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const;
+    DataTypes structFieldHints(const DataTypePtr & hint, const ArrowType & type) const;
     String structFieldPath(const String & path, const ArrowType & type, size_t i) const;
 
     const ArrowSchema & schema;

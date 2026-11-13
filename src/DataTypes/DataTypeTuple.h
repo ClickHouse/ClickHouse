@@ -76,6 +76,8 @@ public:
     /// `case_insensitive`, the first one whose name differs only by case and that no other element of `to` has taken.
     /// Each element of this tuple is taken at most once.
     VectorWithMemoryTracking<std::optional<size_t>> matchElementsByName(const DataTypeTuple & to, bool case_insensitive) const;
+    static VectorWithMemoryTracking<std::optional<size_t>> matchElementsByName(
+        const Strings & from_names, const Strings & to_names, bool case_insensitive);
 
     bool hasExplicitNames() const { return has_explicit_names; }
 

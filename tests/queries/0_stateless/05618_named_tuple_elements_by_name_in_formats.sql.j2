@@ -34,9 +34,11 @@ SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', '
 {% endif -%}
 {% if format in ['ORC', 'Arrow'] -%}
 INSERT INTO FUNCTION file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}')
-SELECT id, c0 FROM values('id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))', (1, tuple(tuple(11), tuple(21))), (2, tuple(NULL, tuple(22))));
+SELECT id, c0, (toDate32('2000-01-01'), toDate32('2200-01-01'))::Tuple(A Date32, a Date32) AS c1, (toInt128(id), toInt256(id + 10))::Tuple(A Int128, a Int256) AS c2
+FROM values('id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))', (1, tuple(tuple(11), tuple(21))), (2, tuple(NULL, tuple(22))));
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c0 Tuple(a Tuple(b UInt32))') ORDER BY id SETTINGS {{ ci }};
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c0 Tuple(A Nullable(Tuple(b UInt32)), a Tuple(b UInt32))') ORDER BY id SETTINGS {{ ci }}, input_format_null_as_default = 1;
+SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, c1 Tuple(A DateTime(\'UTC\'), a Int32), c2 Tuple(A Int128, a Int256)') ORDER BY id SETTINGS {{ ci }};
 {% endif -%}
 {% endfor -%}
 

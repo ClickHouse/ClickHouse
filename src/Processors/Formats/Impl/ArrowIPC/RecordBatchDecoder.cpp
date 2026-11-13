@@ -150,26 +150,24 @@ DataTypePtr arrayElementHint(const DataTypePtr & hint)
     return nullptr;
 }
 
-DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive)
+DataTypes tupleElementHints(const DataTypePtr & hint, const Strings & field_names, bool by_position, bool case_insensitive)
 {
+    DataTypes hints(field_names.size());
     const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
     if (!tuple)
-        return nullptr;
-    if (tuple->hasExplicitNames())
+        return hints;
+    const auto & elements = tuple->getElements();
+    if (by_position || !tuple->hasExplicitNames())
     {
-        if (const auto position = tuple->tryGetPositionByName(child_name, case_insensitive))
-            return tuple->getElements()[*position];
-        return nullptr;
+        for (size_t i = 0; i < hints.size() && i < elements.size(); ++i)
+            hints[i] = elements[i];
+        return hints;
     }
-    return tupleElementHintByPosition(hint, pos);
-}
-
-DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
-{
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
-    if (tuple && pos < tuple->getElements().size())
-        return tuple->getElements()[pos];
-    return nullptr;
+    const auto fields = DataTypeTuple::matchElementsByName(field_names, tuple->getElementNames(), case_insensitive);
+    for (size_t i = 0; i < fields.size(); ++i)
+        if (fields[i])
+            hints[*fields[i]] = elements[i];
+    return hints;
 }
 
 DataTypePtr mapEntriesHint(const DataTypePtr & hint)
@@ -1284,6 +1282,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 return ColumnTuple::create(rows); /// empty Tuple() has no element columns
             Columns elements;
             elements.reserve(type.children.size());
+            const DataTypes hints = structFieldHints(effective_hint, type);
             for (size_t i = 0; i < type.children.size(); ++i)
             {
                 const ArrowField & child = type.children[i];
@@ -1292,7 +1291,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
                 /// Arrow spec even when the child's own validity marks the slot valid.
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false, structFieldHint(effective_hint, type, i),
+                    child, /*allow_low_cardinality=*/false, hints[i],
                     structFieldPath(path, type, i), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
@@ -1627,12 +1626,13 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
     {
         Columns elements;
         elements.reserve(type.children.size());
+        const DataTypes hints = structFieldHints(effective_hint, type);
         for (size_t i = 0; i < type.children.size(); ++i)
         {
             const ArrowField & child = type.children[i];
             expectNextNodeLength(declared_rows, fmt::format("struct field '{}'", child.name));
             elements.push_back(buildSizeDeterminedColumn(
-                child, rows, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth));
+                child, rows, hints[i], structFieldPath(path, type, i), list_depth));
         }
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
@@ -2492,11 +2492,13 @@ String RecordBatchDecoder::childPath(const String & path, const String & child_n
     return path.empty() ? seg : path + "." + seg;
 }
 
-DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const
+DataTypes RecordBatchDecoder::structFieldHints(const DataTypePtr & hint, const ArrowType & type) const
 {
-    if (type.positional_fields)
-        return tupleElementHintByPosition(hint, i);
-    return tupleElementHint(hint, type.children[i].name, i, settings.arrow.case_insensitive_column_matching);
+    Strings names;
+    names.reserve(type.children.size());
+    for (const ArrowField & child : type.children)
+        names.push_back(child.name);
+    return tupleElementHints(hint, names, type.positional_fields, settings.arrow.case_insensitive_column_matching);
 }
 
 String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
@@ -2861,14 +2863,13 @@ void RecordBatchDecoder::collectDictionaryUses(
                 type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, lookup_types, uses);
             break;
         case TypeKind::Struct:
+        {
+            const DataTypes hints = structFieldHints(effective_hint, type);
             for (size_t i = 0; i < type.children.size(); ++i)
-            {
-                const ArrowField & child = type.children[i];
                 collectDictionaryUses(
-                    child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
-                    lookup_types, uses);
-            }
+                    type.children[i], hints[i], structFieldPath(path, type, i), list_depth, lookup_types, uses);
             break;
+        }
         case TypeKind::RunEndEncoded:
             /// The values are decoded with the field's own hint, path and list depth (see `decodeRunEndEncoded`);
             /// the run ends are a plain integer child.

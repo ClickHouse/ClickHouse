@@ -431,7 +431,7 @@ const ArrowIPC::ArrowField * childField(const ArrowIPC::ArrowField * field, size
 /// Tuple and Map so nested shapes convert too. Anything not recognised is returned unchanged for the
 /// subsequent `castColumn`. Returns the (possibly rewritten) column and its new type.
 /// The walk follows the decoded (source) shape and resolves each level's requested type with the same
-/// hint helpers the decoder's recursion uses (`arrayElementHint`, `tupleElementHint`, `mapEntriesHint`,
+/// hint helpers the decoder's recursion uses (`arrayElementHint`, `tupleElementHints`, `mapEntriesHint`,
 /// `stripHint`): the decoder converts binary leaves under those rules — by tuple element name, through
 /// `Nullable`/`LowCardinality` wrappers — so this rewrite must resolve targets identically, or a
 /// converted leaf (physically typed, still declared by its Arrow type) would reach `castColumn`
@@ -502,15 +502,15 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         Columns new_cols(from_elems.size());
         DataTypes new_types(from_elems.size());
         bool changed = false;
+        const DataTypes elem_targets
+            = ArrowIPC::tupleElementHints(to_type, from_names, /*by_position=*/!from_tup->hasExplicitNames(), case_insensitive);
         for (size_t i = 0; i < from_elems.size(); ++i)
         {
             /// Resolve the element's target exactly as the decoder did when it decoded this element: by
             /// name for a named target Tuple (so reordered or subset targets pair correctly), by position
             /// for an unnamed one, and also by position for a struct with empty or repeated field names,
             /// which is decoded as an unnamed Tuple. An element the request does not mention stays as decoded.
-            const DataTypePtr elem_target = from_tup->hasExplicitNames()
-                ? ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive)
-                : ArrowIPC::tupleElementHintByPosition(to_type, i);
+            const DataTypePtr & elem_target = elem_targets[i];
             if (elem_target)
             {
                 auto [c, t] = reinterpretRawBytes(
