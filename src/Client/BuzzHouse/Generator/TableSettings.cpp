@@ -356,15 +356,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"merge_selecting_sleep_slowdown_factor",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 1.0, 4.0)); }, {}, false)},
-    {"merge_selector_algorithm",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices = {"'Simple'", "'Trivial'", "'StochasticSimple'", "'Manual'"};
-             return rg.pickRandomly(choices);
-         },
-         {"'Simple'", "'Trivial'", "'StochasticSimple'", "'Manual'"},
-         false)},
     {"merge_selector_base",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 8.0)); }, {}, false)},
@@ -1485,7 +1476,7 @@ static String generateInlineDisk(RandomGenerator & rg, const FuzzConfig & fc, co
     return res + fmt::format(", path = '{}_{}/')", encrypted ? "encrypted" : "cache", std::hash<String>{}(res) % 100000);
 }
 
-void loadFuzzerTableSettings(const FuzzConfig & fc)
+void loadFuzzerTableSettings(const FuzzConfig & fc, const bool has_cloud_features)
 {
     std::unordered_set<String> codecsEscpated;
     std::unordered_map<String, CHSetting> s3Settings;
@@ -1786,6 +1777,20 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {"s3queue_tracked_files_limit", CHSetting(rowsRange, {}, false)}});
     azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
     azureQueueSettings.insert(queueSettings.begin(), queueSettings.end());
+
+    DB::Strings merge_selector_choices = {"'Simple'", "'StochasticSimple'", "'Manual'"};
+    if (!has_cloud_features)
+    {
+        /// With cloud features a MergeTree may become a SharedMergeTree, whose coordinated merges
+        /// request several merges at once, which `Trivial` rejects with a LOGICAL_ERROR by design
+        merge_selector_choices.emplace_back("'Trivial'");
+    }
+    mergeTreeTableSettings.insert(
+        {{"merge_selector_algorithm",
+          CHSetting(
+              [merge_selector_choices](RandomGenerator & rg, FuzzConfig &) { return rg.pickRandomly(merge_selector_choices); },
+              {merge_selector_choices.begin(), merge_selector_choices.end()},
+              false)}});
 
     for (const auto & entry : fc.disallowed_settings)
     {

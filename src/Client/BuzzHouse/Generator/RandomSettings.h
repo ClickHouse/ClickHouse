@@ -115,7 +115,7 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp);
 String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 void loadFuzzerServerSettings(const FuzzConfig & fc);
-void loadFuzzerTableSettings(const FuzzConfig & fc);
+void loadFuzzerTableSettings(const FuzzConfig & fc, bool has_cloud_features);
 void loadSystemTables(FuzzConfig & fc);
 
 }

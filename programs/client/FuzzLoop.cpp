@@ -763,7 +763,7 @@ bool Client::buzzHouse()
         /// Load server configurations for the fuzzer
         fuzz_config->loadServerConfigurations();
         loadFuzzerServerSettings(*fuzz_config);
-        loadFuzzerTableSettings(*fuzz_config);
+        loadFuzzerTableSettings(*fuzz_config, has_cloud_features);
         loadSystemTables(*fuzz_config);
 
         if (fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles)
