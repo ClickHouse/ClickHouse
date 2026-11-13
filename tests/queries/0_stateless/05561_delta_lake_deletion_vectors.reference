@@ -1,0 +1,51 @@
+-- count
+112	8739
+112	8739
+4
+43
+-- every version
+0	0	\N
+1	100	4950
+2	90	4500
+3	81	4005
+4	131	10230
+5	112	8739
+6	112	8739
+6	112	8739
+-- rows around deleted ones
+[45,46,47,48,61,62,64,65]
+[1,12,23,34,45,67,78,89,100,111,122,144]
+[]
+-- tiny blocks
+112	8739	416
+112	8739	416
+-- virtual columns
+112	3	3	6	6
+1	updated	0
+2	v2	2
+12	updated	1
+101	v101	1
+149	v149	49
+61
+-- table engine
+112	8739
+46	4975
+90	4500
+-- older writer
+112	8739	12
+1
+-- partitioned, column mapping, renamed column
+0	9	240	9
+1	7	171	7
+2	9	234	9
+3	8	216	8
+7
+7
+[1,5,13,17,41,45,49]
+id	Nullable(Int64)					
+s	Nullable(String)					
+p	Nullable(Int32)					
+-- MERGE
+0	30	535	0	39
+1	5	120	20	28
+[18,19,20,22,24,26,28,30,31,32]

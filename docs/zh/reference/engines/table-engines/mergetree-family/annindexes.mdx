@@ -33,17 +33,13 @@ LIMIT <N>
 这里可以使用任意一种可用的[距离函数](/zh/reference/functions/regular-functions/distance-functions)。
 `<N>` 指定要返回多少个邻居。
 
-<div id="exact-nearest-neighbor-search">
-  ## 精确向量搜索
-</div>
+## 精确向量搜索 {#exact-nearest-neighbor-search}
 
 可以直接使用上述 SELECT 查询按原样执行精确向量搜索。
 这类查询的运行时间通常与已存储向量的数量、向量元素数量 (= 维度) 以及向量元素的位宽成正比。
 此外，由于 ClickHouse 会对所有向量执行穷举扫描，运行时间还取决于该查询使用的线程数 (请参见设置 [max&#95;threads](/zh/reference/settings/session-settings/max-threads#max_threads)) 。
 
-<div id="exact-nearest-neighbor-search-example">
-  ### 示例
-</div>
+### 示例 {#exact-nearest-neighbor-search-example}
 
 ```sql
 CREATE TABLE tab
@@ -73,13 +69,9 @@ LIMIT 3;
    └────┴─────────┘
 ```
 
-<div id="approximate-nearest-neighbor-search">
-  ## 近似向量搜索
-</div>
+## 近似向量搜索 {#approximate-nearest-neighbor-search}
 
-<div id="vector-similarity-index">
-  ### 向量相似度索引
-</div>
+### 向量相似度索引 {#vector-similarity-index}
 
 ClickHouse 提供了一种特殊的“向量相似度”索引，用于执行近似向量搜索。
 
@@ -88,9 +80,7 @@ ClickHouse 提供了一种特殊的“向量相似度”索引，用于执行近
   如果遇到问题，欢迎在 [ClickHouse 仓库](https://github.com/clickhouse/clickhouse/issues)中提交 issue。
 </Note>
 
-<div id="creating-a-vector-similarity-index">
-  #### 创建向量相似度索引
-</div>
+#### 创建向量相似度索引 {#creating-a-vector-similarity-index}
 
 可以像下面这样在新表上创建向量相似度索引：
 
@@ -214,9 +204,7 @@ Memory consumption = 3072 + 512 = 3584 MB
 
 上述公式未将向量相似度索引用于分配预分配缓冲区、缓存等运行时数据结构所需的额外内存计算在内。
 
-<div id="using-a-vector-similarity-index">
-  #### 使用向量相似度索引
-</div>
+#### 使用向量相似度索引 {#using-a-vector-similarity-index}
 
 <Note>
   要使用向量相似度索引，[compatibility](/zh/reference/settings/session-settings/compatibility#compatibility) 设置必须为 `''` (默认值) ，或者为 `'25.1'` 或更高版本。
@@ -423,9 +411,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
   在未启用重评分 (`vector_search_with_rescoring = 0`) 且启用并行副本的情况下运行的查询，可能仍会回退到重评分。
 </Note>
 
-<div id="performance-tuning">
-  #### 性能调优
-</div>
+#### 性能调优 {#performance-tuning}
 
 **压缩调优**
 
@@ -576,9 +562,7 @@ result = chclient.query(
 在该示例中，参考向量会以原始二进制形式发送，并在服务器端重新解释为浮点数数组。
 这样可以节省服务器端的 CPU 时间，并避免服务器日志和 `system.query_log` 过度膨胀。
 
-<div id="administration">
-  #### 管理与监控
-</div>
+#### 管理与监控 {#administration}
 
 向量相似度索引的磁盘占用大小可从 [system.data&#95;skipping&#95;indices](/zh/reference/system-tables/data_skipping_indices) 获取：
 
@@ -596,9 +580,15 @@ WHERE type = 'vector_similarity';
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-<div id="differences-to-regular-skipping-indexes">
-  #### 与常规跳过索引的差异
-</div>
+#### 已删除的行 {#deleted-rows}
+
+向量相似度索引是在分片写入、合并或变更时构建的，因此它无法感知之后通过[轻量级 `DELETE`](/zh/reference/statements/delete) 删除的行，也无法感知仍处于待处理状态的 `ALTER TABLE ... DELETE` 变更所删除的行。
+索引仍会将这些行作为候选结果返回，待读取后才将其剔除，因此查询返回的行数可能少于 `LIMIT N`，也可能遗漏剩余数据中真正的最近邻。
+为保证结果正确，对于包含已删除行的分片，ClickHouse 不会使用向量相似度索引，而是完整读取这些分片 (即精确搜索) 。
+待该分片经合并或变更重写后 (例如执行 `OPTIMIZE TABLE ... FINAL` 之后) ，索引会重新对其生效。
+若设置 `apply_deleted_mask = 0`，查询会返回已被轻量级删除的行，因此除非查询显式按 `_row_exists` 进行过滤，否则仍会使用该索引。
+
+#### 与常规跳过索引的差异 {#differences-to-regular-skipping-indexes}
 
 和所有常规[跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)一样，向量相似度索引也是基于粒度构建的，每个索引块由 `GRANULARITY = [N]` 个粒度组成 (对普通跳过索引来说，`[N]` 的默认值为 1) 。
 例如，如果表的主索引粒度为 8192 (设置 `index_granularity = 8192`) ，且 `GRANULARITY = 2`，那么每个索引块将包含 16384 行。
@@ -624,9 +614,7 @@ WHERE type = 'vector_similarity';
 通常建议为向量相似度索引使用较大的 `GRANULARITY`，只有在出现向量相似度结构内存占用过高等问题时，才退回到较小的 `GRANULARITY` 值。
 如果未为向量相似度索引指定 `GRANULARITY`，默认值为 1 亿。
 
-<div id="approximate-nearest-neighbor-search-example">
-  #### 示例
-</div>
+#### 示例 {#approximate-nearest-neighbor-search-example}
 
 查询：
 
@@ -664,18 +652,14 @@ LIMIT 3;
 * [dbpedia](/zh/get-started/sample-datasets/dbpedia)
 * [hackernews](/zh/get-started/sample-datasets/hacker-news-vector-search)
 
-<div id="vector-search-with-quantized-codecs">
-  ### 使用量化编解码器进行向量搜索
-</div>
+### 使用量化编解码器进行向量搜索 {#vector-search-with-quantized-codecs}
 
 <ExperimentalBadge />
 
 要启用 `Quantized` 编解码器，请先运行 `SET enable_quantized_codec = 1`。
 如果你遇到问题，请在 [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues) 中提交 issue。
 
-<div id="quantized-codecs-introduction">
-  #### 简介
-</div>
+#### 简介 {#quantized-codecs-introduction}
 
 [向量相似度索引](#vector-similarity-index)通过遍历图来回答最近邻查询；当图可完全驻留于内存中时，其性能非常出色。
 但以下两个因素限制了它的适用性：
@@ -700,9 +684,7 @@ LIMIT 3;
 * **分布式。** 在分片集群中，工作会分发到各台机器：每个分片并行扫描自己的数据部分，协调器再合并候选列表。
 * **无需额外构建成本。** 写入向量时会生成量化编码。无需构建、调优或重建额外索引，因此数据写入表后即可搜索。
 
-<div id="quantized-codecs-declaring">
-  #### 应用编解码器
-</div>
+#### 应用编解码器 {#quantized-codecs-declaring}
 
 为 `Array(Float32)` (或 `Array(Float64)` / `Array(BFloat16)`) 列指定 `Quantized(...)` 编解码器。
 
@@ -720,9 +702,7 @@ ORDER BY ...;
 
 无法在之后通过 `ALTER TABLE` 添加或修改该编解码器。
 
-<div id="quantized-codecs-methods">
-  #### 量化方法
-</div>
+#### 量化方法 {#quantized-codecs-methods}
 
 每种量化方法在大小和准确性之间各有不同的权衡。
 `dimensions` 参数表示向量长度。
@@ -735,9 +715,7 @@ ORDER BY ...;
 
 `rabitq` 和 `turboquant` 要求 `dimensions` 必须是 8 的倍数。
 
-<div id="quantized-codecs-searching">
-  #### 使用编解码器
-</div>
+#### 使用编解码器 {#quantized-codecs-searching}
 
 常规的 top-`k` 查询形态会自动使用该编解码器 (请参阅[精确搜索](#exact-nearest-neighbor-search)) ：
 
@@ -759,9 +737,7 @@ SETTINGS vector_search_use_quantized_codes = 1;
 较大的乘数可提高召回率，但会增加重评分开销。
 默认值为 `1` (不进行过采样) ；通常需要将其提高到 (例如) `10`，才能获得良好的召回率。
 
-<div id="approximate-nearest-neighbor-search-qbit">
-  ### 量化位 (QBit)
-</div>
+### 量化位 (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 加速精确向量搜索的一种常见方法是使用较低精度的[浮点数据类型](/zh/reference/data-types/float)。
 例如，如果向量存储为 `Array(BFloat16)` 而不是 `Array(Float32)`，数据大小会减少一半，查询运行时间预计也会相应缩短。
@@ -788,9 +764,7 @@ column_name QBit(element_type, dimension[, stride])
 * `dimension` – 每个向量中的元素个数
 * `stride` – 可选。`dimension` 的一个除数，它会将各维度划分为 `dimension / stride` 个连续分组，并分别存储在独立的流中，因此如果只对前几个维度进行搜索，需要读取的流就更少 (对 Matryoshka 嵌入向量很有用) 。默认值为 `dimension`，此时该类型在字节级别上与非 stride 的 `QBit` 完全相同。详见 [`QBit` 数据类型页面](/zh/reference/data-types/qbit)。
 
-<div id="qbit-create">
-  #### 创建 `QBit` 表并插入数据
-</div>
+#### 创建 `QBit` 表并插入数据 {#qbit-create}
 
 ```sql
 CREATE TABLE fruit_animal (
@@ -808,9 +782,7 @@ INSERT INTO fruit_animal VALUES
     ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<div id="qbit-search">
-  #### 使用 `QBit` 进行向量搜索
-</div>
+#### 使用 `QBit` 进行向量搜索 {#qbit-search}
 
 下面使用 L2 距离查找与表示单词 &#39;lemon&#39; 的向量最接近的邻居。距离函数中的第三个参数用于指定精度 (以位为单位) ——值越高，精度越高，但所需计算也越多。
 
@@ -860,18 +832,14 @@ ORDER BY distance;
 
 注意，使用 12 位量化时，我们能在加快查询执行速度的同时，较好地近似这些距离。相对顺序基本保持一致，&#39;apple&#39; 仍然是最接近的匹配项。
 
-<div id="qbit-performance">
-  #### 性能考量
-</div>
+#### 性能考量 {#qbit-performance}
 
 `QBit` 的性能优势来自 I/O 操作减少：使用较低精度时，需要从存储中读取的数据更少。此外，当 `QBit` 包含 `Float32` 数据且精度参数为 16 或更低时，由于计算量减少，还能获得额外的性能收益。精度参数直接决定了准确性与速度之间的权衡：
 
 * **更高精度** (更接近原始数据位宽) ：结果更准确，但查询更慢
 * **更低精度**：查询更快，但结果是近似值，内存占用更低
 
-<div id="references">
-  ### 参考资料
-</div>
+### 参考资料 {#references}
 
 博客文章：
 

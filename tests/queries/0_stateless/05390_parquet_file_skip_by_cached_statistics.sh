@@ -112,7 +112,8 @@ run_batch
 
 # Ranges too large to keep (250 row groups with 3000-byte bounds of four columns) are collected only up to what could
 # be kept, for all columns together. The third read of the file, which collects them, takes about as much memory as the
-# third read of an unsettled copy.
+# third read of an unsettled copy. Each file is read by a single stream: when a file is split between several readers
+# (see `ParquetBucketSplitter::splitForParallelReading`), their peak memory varies too much to compare.
 WIDE_STRUCTURE="x UInt32, s1 String, s2 String, s3 String, s4 String"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${DIR}/wide.parquet', Parquet, '$WIDE_STRUCTURE')
     SELECT number, repeat('a', 3000), repeat('b', 3000), repeat('c', 3000), repeat('d', 3000) FROM numbers(250)
@@ -125,7 +126,7 @@ for f in wide wide_unsettled; do
     for n in 1 2 3; do
         Q_WIDE+="SELECT count() FROM file('${DIR}/$f.parquet', Parquet, '$WIDE_STRUCTURE')
             WHERE s1 = 'zzzz' AND s2 = 'zzzz' AND s3 = 'zzzz' AND s4 = 'zzzz'
-            SETTINGS use_query_condition_cache = 0, max_untracked_memory = 0, $PINNED, log_comment = '05390 $f $n' FORMAT Null;"
+            SETTINGS use_query_condition_cache = 0, max_untracked_memory = 0, max_threads = 1, $PINNED, log_comment = '05390 $f $n' FORMAT Null;"
     done
 done
 ${CLICKHOUSE_CLIENT} --query "$Q_WIDE"

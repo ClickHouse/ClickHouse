@@ -89,12 +89,15 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
+    ProfileEvents::getByName
+    ProfileEvents::tryGetByName
     ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
+    ProfileEvents::subtractIncrements
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::keeper_profile_events
@@ -278,6 +281,7 @@ directories_to_lint_std_containers_usages=(
     src/Functions
     src/IO
     src/Loggers
+    src/Processors/Formats
     src/Processors/Merges
     src/Processors/Executors
     src/Processors/Sources
