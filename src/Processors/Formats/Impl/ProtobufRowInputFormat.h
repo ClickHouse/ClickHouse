@@ -44,6 +44,8 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
 
+    bool supportsReadInto() const override { return true; }
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;
@@ -59,6 +61,8 @@ private:
     VectorWithMemoryTracking<size_t> missing_column_indices;
     const ProtobufSchemas::DescriptorHolder descriptor;
     std::unique_ptr<ProtobufSerializer> serializer;
+    /// First of the columns `serializer` is bound to, to detect when `readRow` gets different ones.
+    const IColumn * bound_column = nullptr;
 
     bool with_length_delimiter;
     bool flatten_google_wrappers;
