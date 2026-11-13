@@ -742,7 +742,10 @@ void HashJoin::dataMapInit(MapsVariant & map)
 {
     const auto maps_kind = getMapsKind();
     joinDispatchInit(kind, strictness, map, maps_kind);
-    joinDispatch(kind, strictness, map, maps_kind, [&](auto, auto, auto & map_) { map_.create(data->type); });
+    joinDispatch(kind, strictness, map, maps_kind, [&](auto, auto, auto & map_)
+    {
+        map_.create(data->type, table_join->enableRobinHoodHashForJoins());
+    });
 
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin::dataMapInit called with empty data");

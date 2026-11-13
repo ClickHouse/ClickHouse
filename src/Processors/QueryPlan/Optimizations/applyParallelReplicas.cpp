@@ -15,6 +15,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -206,8 +207,8 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
 }
 
 /// True if `predicate` holds for any `ActionsDAG` a step in this subtree hands to its `serialize` - a
-/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, or a source step's row-level
-/// filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
+/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, a filter fused into `ARRAY JOIN`, or a
+/// source step's row-level filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
 /// serializes a DAG not listed here would escape every check built on this walk. Child plans are walked
 /// too, so a subplan held by a step (`ReadFromMerge`) is not invisible.
 static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate);
@@ -304,6 +305,13 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
         /// so `IN (SELECT ... GROUP BY ... WITH TOTALS HAVING ...)` does put one in the walked plan.
         if (const auto * actions = totals_having->getActions())
             if (predicate(*actions))
+                return true;
+    }
+    else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
+    {
+        /// `ArrayJoinStep::serialize` writes the element filter fused into it from a `FilterStep` above.
+        if (const auto & element_filter = array_join->getElementFilter())
+            if (predicate(*element_filter))
                 return true;
     }
     else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))

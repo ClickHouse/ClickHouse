@@ -135,8 +135,9 @@ struct JoinSettings
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
+    bool enable_robin_hood_hash_for_joins;
     bool join_runtime_filter_from_fixed_hash_table;
-    /// Not in the serialized plan settings: a node that runs a deserialized plan compares `String` keys exactly.
+    /// A deserialized plan without these names compares `String` keys exactly.
     bool enable_packed_string_keys_in_hash_join;
     UInt64 min_rows_for_packed_string_keys_in_hash_join;
 

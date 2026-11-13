@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-# Tag no-fasttest: needs Parquet
+# Tags: no-parallel
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache,
 # which a parallel sibling test can wipe at any moment (see 04498_query_condition_cache_local_files.sh).
 
