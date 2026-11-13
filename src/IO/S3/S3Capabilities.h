@@ -33,6 +33,15 @@ public:
     std::optional<bool> isBatchDeleteSupported() const;
     void setIsBatchDeleteSupported(bool support_batch_delete_);
 
+    /// Set once the server rejected a `DeleteObjects` request carrying `Content-MD5`; later batches then use `SHA256`.
+    /// Learned at run time, so it is not part of the serialized form. Returns true if this call changed the state.
+    bool isDeleteMD5Rejected() const;
+    bool setDeleteMD5Rejected();
+
+    /// Atomically marks batch delete as unsupported unless it is known to be supported. Returns true if batch delete is now
+    /// unsupported, including when another thread already marked it so, and false if it is known to be supported.
+    bool setBatchDeleteUnsupportedUnlessSupported();
+
     /// Y.Cloud S3 implementation support proxy for connection
     const bool support_proxy{false};
 
@@ -43,6 +52,7 @@ private:
     /// `support_batch_delete` is guarded by mutex because function deleteFilesFromS3() can update this field from another thread.
     /// If `support_batch_delete == nullopt` that means it's not clear yet if it's supported or not.
     std::optional<bool> support_batch_delete TSA_GUARDED_BY(mutex);
+    bool delete_md5_rejected TSA_GUARDED_BY(mutex) = false;
 
     mutable std::mutex mutex;
 };
