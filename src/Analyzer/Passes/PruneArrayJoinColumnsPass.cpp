@@ -208,17 +208,24 @@ public:
             if (!isSubcolumnFunction(*function_node))
                 return;
 
-            const auto & arguments = function_node->getArguments().getNodes();
+            auto & arguments = function_node->getArguments().getNodes();
             if (arguments.size() < 2)
                 return;
 
             auto * column_node = arguments[0]->as<ColumnNode>();
-            auto * constant_node = arguments[1]->as<ConstantNode>();
-            if (!column_node || !constant_node)
+            if (!column_node)
                 return;
 
             auto * expr_usage = findReferencedExpression(*column_node, usage_map);
-            if (!expr_usage || expr_usage->fully_used)
+            if (!expr_usage)
+                return;
+
+            /// needChildVisit skips all arguments, but the default argument may reference ARRAY JOIN columns too.
+            for (size_t i = 1; i < arguments.size(); ++i)
+                visit(arguments[i]);
+
+            auto * constant_node = arguments[1]->as<ConstantNode>();
+            if (!constant_node || expr_usage->fully_used)
                 return;
 
             if (expr_usage->hasNested())

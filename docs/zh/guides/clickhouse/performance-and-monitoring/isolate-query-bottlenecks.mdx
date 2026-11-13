@@ -9,7 +9,6 @@ doc_type: '指南'
 keywords: ['查询优化', '查询瓶颈', '性能', '基准测试']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
 
 每次只修改查询的一部分，并将结果与稳定的基线进行比较，可使查询优化更容易。本指南介绍如何逐步简化查询，并通过比较各次运行结果的差异，识别对其耗时影响最大的操作。随后，您可以在选择优化方案前验证疑似瓶颈。
@@ -71,7 +70,15 @@ SET optimize_use_implicit_projections = 0;
 
 此工作流将受控执行查询与查询日志中的测量数据结合使用：
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="用于从查询日志中识别候选查询并隔离测试变更的工作流" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![用于从查询日志中识别候选查询并隔离测试变更的工作流](/images/guides/best-practices/query_optimization_diagram_1.webp)
+
+</Frame>
+
+</div>
 
 按以下方式收集每次运行的测量数据：
 

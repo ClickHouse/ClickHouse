@@ -62,6 +62,7 @@
               "pages": [
                 "products/cloud/reference/service-uptime",
                 "products/cloud/reference/data-resiliency",
+                "products/cloud/guides/deletion-protection",
                 "products/cloud/features/admin-features/upgrades"
               ]
             },
@@ -358,6 +359,5 @@
           "sourceRef": "ClickHouse/airgap-docs"
         }
   ],
-  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }

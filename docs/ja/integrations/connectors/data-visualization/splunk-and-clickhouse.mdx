@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -34,7 +32,15 @@ ClickHouse 向けには、[Splunk DB Connect App](https://splunkbase.splunk.com/
 
 このガイドを使用すると、ClickHouse に接続された次のようなダッシュボードを作成できるようになります。
 
-<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="NYC タクシーデータの可視化を表示する Splunk ダッシュボード" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![NYC タクシーデータの可視化を表示する Splunk ダッシュボード](/images/integrations/splunk/splunk-1.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   このガイドでは、[New York City Taxi dataset](/ja/get-started/sample-datasets/nyc-taxi) を使用します。[ドキュメント](http://localhost:3000/docs/getting-started/example-datasets)には、ほかにも使用できるデータセットが多数あります。
@@ -71,7 +77,15 @@ DB Connect App のインストールで問題が発生した場合は、追加�
 
 DB Connect App がインストールされていることを確認したら、Configuration -&gt; Settings で DB Connect App に `java_home` のパスを追加し、save をクリックしてから reset をクリックします。
 
-<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="Java Home の設定を表示する Splunk DB Connect の設定ページ" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Java Home の設定を表示する Splunk DB Connect の設定ページ](/images/integrations/splunk/splunk-2.webp)
+
+</Frame>
+
+</div>
 
 <div id="configure-jdbc-for-clickhouse">
   ## ClickHouse 用の JDBC を設定する
@@ -106,7 +120,15 @@ ui_default_catalog = $database$
 
 DB Connect App に戻り、Configuration &gt; Settings &gt; Drivers に移動します。ClickHouse の横に緑色のチェックマークが表示されているはずです。
 
-<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="ClickHouse ドライバーが正常にインストールされていることを示す Splunk DB Connect のドライバーページ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickHouse ドライバーが正常にインストールされていることを示す Splunk DB Connect のドライバーページ](/images/integrations/splunk/splunk-3.webp)
+
+</Frame>
+
+</div>
 
 <div id="connect-splunk-search-to-clickhouse">
   ## Splunk Search を ClickHouse に接続する
@@ -116,13 +138,29 @@ DB Connect App の Configuration -&gt; Databases -&gt; Identities に移動し�
 
 Configuration -&gt; Databases -&gt; Connections に移動し、&quot;New Connection&quot; を選択して、ClickHouse への新しい接続を作成します。
 
-<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="Splunk DB Connect の新規接続ボタン" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Splunk DB Connect の新規接続ボタン](/images/integrations/splunk/splunk-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 ClickHouse のホスト情報を入力し、&quot;Enable SSL&quot; にチェックが入っていることを確認します。
 
-<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="ClickHouse 用の Splunk 接続設定ページ" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse 用の Splunk 接続設定ページ](/images/integrations/splunk/splunk-5.webp)
+
+</Frame>
+
+</div>
 
 接続を保存すると、ClickHouse と Splunk の接続は完了です。
 
@@ -138,11 +176,27 @@ ClickHouse のホスト情報を入力し、&quot;Enable SSL&quot; にチェッ�
 
 DB Connect App の DataLab セクションにある SQL Explorer で接続情報を選択します。このデモでは `trips` テーブルを使用します。
 
-<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="ClickHouse への接続を選択している Splunk SQL Explorer" />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse への接続を選択している Splunk SQL Explorer](/images/integrations/splunk/splunk-6.webp)
+
+</Frame>
+
+</div>
 
 `trips` テーブルに対して、テーブル内の全レコード数を返す SQLクエリを実行します。
 
-<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="trips テーブルのレコード数を表示する Splunk SQLクエリの実行" />
+<div className="ch-image-md">
+
+<Frame>
+
+![trips テーブルのレコード数を表示する Splunk SQLクエリの実行](/images/integrations/splunk/splunk-7.webp)
+
+</Frame>
+
+</div>
 
 クエリが正常に実行されると、結果が表示されます。
 
@@ -164,7 +218,15 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 
 作成したカラムチャートを表示するには、[可視化] タブを選択します。
 
-<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="上位 10 件の乗車地域を示す Splunk のカラムチャートの可視化" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![上位 10 件の乗車地域を示す Splunk のカラムチャートの可視化](/images/integrations/splunk/splunk-8.webp)
+
+</Frame>
+
+</div>
 
 次に、Save As &gt; Save to a Dashboard をクリックしてダッシュボードを作成します。
 
@@ -177,7 +239,15 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 
 今回は、棒グラフの可視化を作成し、前のダッシュボードに保存しましょう。
 
-<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="乗客数ごとの平均運賃を示すSplunkの棒グラフ" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![乗客数ごとの平均運賃を示すSplunkの棒グラフ](/images/integrations/splunk/splunk-9.webp)
+
+</Frame>
+
+</div>
 
 最後に、乗客数と移動距離の相関を示すクエリをもう1つ追加しましょう。
 
@@ -190,7 +260,15 @@ ORDER BY year, count(*) DESC; " connection="chc"
 
 完成したダッシュボードは次のようになります。
 
-<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="NYCのタクシーデータを複数の可視化で表示した完成版のSplunkダッシュボード" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![NYCのタクシーデータを複数の可視化で表示した完成版のSplunkダッシュボード](/images/integrations/splunk/splunk-10.webp)
+
+</Frame>
+
+</div>
 
 <div id="time-series-data">
   ## 時系列データ
