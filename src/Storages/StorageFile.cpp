@@ -3328,10 +3328,11 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
     /// `max_num_streams` is a read-parallelism request, not a thread budget.
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
-    /// The sources of a split file read whole buckets, and the rows passing a filter may all be in one of them.
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0
-        && (output_ports < resize_to || (split_file && output_ports > 1)))
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
         pipe.resize(resize_to);
+    /// The sources of a split file read whole buckets, and the rows passing a filter may all be in one of them.
+    else if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && split_file && output_ports > 1)
+        pipe.resize(resize_to, /*strict=*/ false, std::min<UInt64>(build_settings.min_outstreams_per_resize_after_split, 8));
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
