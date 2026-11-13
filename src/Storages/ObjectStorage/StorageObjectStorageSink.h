@@ -98,6 +98,8 @@ private:
     size_t getWrittenBytes();
 
     void initialize();
+    /// Calls `initialize`, cancelling the write into the destination if it fails after the destination has been opened.
+    void initializeOrCancel();
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();

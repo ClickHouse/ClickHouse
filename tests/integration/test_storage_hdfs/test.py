@@ -804,6 +804,47 @@ def test_split_on_write_by_size(started_cluster):
     fs.delete(f"/{id}/", recursive=True)
 
 
+def test_new_file_on_insert_broken_sink_construction(started_cluster):
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    id = uuid.uuid4()
+    fs.mkdirs(f"/{id}/", permission=777)
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/{id}/data.tsv.zst', 'TSV', 'x UInt64')"
+    wildcard = f"hdfs('hdfs://hdfs1:9000/{id}/data*.tsv.zst', 'TSV', 'x UInt64')"
+    node1.query(f"create table test_broken_sink_construction as {table_function}")
+
+    def files():
+        return sorted(fs.listdir(f"/{id}/"))
+
+    node1.query("insert into test_broken_sink_construction select 1")
+    node1.query(
+        "insert into test_broken_sink_construction select 2 settings hdfs_create_new_file_on_insert = 1"
+    )
+    assert files() == ["data.1.tsv.zst", "data.tsv.zst"]
+
+    # Opening the destination already creates the file in HDFS, and then the compressing wrapper rejects
+    # the setting. The file is removed rather than left empty for the readers of a wildcard path.
+    assert "ILLEGAL_CODEC_PARAMETER" in node1.query_and_get_error(
+        "insert into test_broken_sink_construction select 3 "
+        "settings hdfs_create_new_file_on_insert = 1, output_format_compression_zstd_window_log = 1"
+    )
+    assert files() == ["data.1.tsv.zst", "data.tsv.zst"]
+
+    node1.query(
+        "insert into test_broken_sink_construction select 4 settings hdfs_create_new_file_on_insert = 1"
+    )
+    assert files() == ["data.1.tsv.zst", "data.2.tsv.zst", "data.tsv.zst"]
+    assert node1.query(
+        "select groupArray(x) from (select x from test_broken_sink_construction order by x)"
+    ) == TSV([["[1,2,4]"]])
+    assert node1.query(
+        f"select groupArray(x) from (select x from {wildcard} order by x)"
+    ) == TSV([["[1,2,4]"]])
+
+    node1.query("drop table test_broken_sink_construction")
+    fs.delete(f"/{id}/", recursive=True)
+
+
 def test_format_detection_from_file_name(started_cluster):
     node1.query(
         "create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"

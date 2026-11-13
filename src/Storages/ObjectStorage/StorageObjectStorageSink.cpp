@@ -97,7 +97,26 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     if (split_on_write_by_size_bytes && !get_next_path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next object");
 
-    initialize();
+    initializeOrCancel();
+}
+
+void StorageObjectStorageSink::initializeOrCancel()
+{
+    try
+    {
+        initialize();
+    }
+    catch (...)
+    {
+        /// The destination can be already opened when creating the compressing wrapper or the output format fails
+        /// (e.g. with `output_format_compression_zstd_window_log = 1`). In HDFS, opening it already creates the file,
+        /// and destroying the buffer without the cancellation would finalize it, leaving an empty file that is not
+        /// a part of the table, but is read by a wildcard path. The destructor does not run for a sink whose
+        /// constructor throws, and in `consume` the sink may not be cancelled yet, so the write is cancelled here.
+        cancelBuffers();
+        releaseBuffers();
+        throw;
+    }
 }
 
 void StorageObjectStorageSink::initialize()
@@ -149,8 +168,10 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
     if (split_on_write_by_size_bytes && !writer)
     {
         path = get_next_path();
-        initialize();
+        /// Before the initialization: if it fails after the object has been opened, its cancellation
+        /// treats it as a new object that is not a part of the table.
         path_is_published = false;
+        initializeOrCancel();
     }
 
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
