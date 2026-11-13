@@ -1404,7 +1404,8 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
     }
     ASSERT_TRUE(queue_full);
 
-    /// Resolving the host again, which a failed connect asks for, would take 3 s.
+    /// Resolving the host again would take 3 s. A failed connect asks for it, and so does `resolve` 400 ms after the last
+    /// resolution, which is sooner than the connect gives up.
     auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
     auto resolve_func = [resolve_calls, slow_ip, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
     {
@@ -1421,7 +1422,7 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
         {}
     };
 
-    auto resolver = std::make_shared<ResolveMock>(test_host, Poco::Timespan(60 * 1000 * 1000), std::move(resolve_func));
+    auto resolver = std::make_shared<ResolveMock>(test_host, Poco::Timespan(1200 * 1000), std::move(resolve_func));
     DB::HostResolversPool::instance().injectResolverForTest(test_host, resolver);
 
     /// Ban the good address, so that the pool tries the slow one first.
@@ -1442,7 +1443,7 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
     auto metrics = pool->getMetrics();
 
     const auto start = std::chrono::steady_clock::now();
-    ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(300)));
+    ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(500)));
     ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
 
     /// Once the slow address fails, both are banned, so both are selectable again: the good one is not tried after the

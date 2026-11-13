@@ -1220,6 +1220,10 @@ private:
 
         for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
         {
+            /// Before `resolve`, which can refresh the addresses synchronously.
+            if (deadline && connect_attempts > 0 && std::chrono::steady_clock::now() >= *deadline)
+                break;
+
             auto address = resolver->resolve();
             if (!tried_addresses.insert(*address).second)
             {
@@ -1231,16 +1235,7 @@ private:
                 continue;
             }
 
-            ConnectionTimeouts attempt_timeouts = timeouts;
-            if (deadline)
-            {
-                if (connect_attempts > 0 && std::chrono::steady_clock::now() >= *deadline)
-                {
-                    address.setUnused();
-                    break;
-                }
-                attempt_timeouts = timeouts.getCappedAt(*deadline);
-            }
+            const ConnectionTimeouts attempt_timeouts = deadline ? timeouts.getCappedAt(*deadline) : timeouts;
 
             ++connect_attempts;
 
