@@ -5,6 +5,7 @@
 
 SET max_threads = 4, max_threads_min_free_memory_per_thread = 0;
 SET join_algorithm = 'hash', parallel_hash_join_threshold = 100000;
+SET hash_join_layout = 'auto'; -- The test checks the layout the planner picks
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;

@@ -16,6 +16,7 @@ SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET enable_parallel_single_level_merge = 1;
 SET max_rows_to_group_by = 0;
+SET query_plan_aggregation_bucket_top_k = 1; -- The top-K pruning of the adaptive merge
 
 -- Each lane feeds one producer, so every table holds all the keys of its lane whatever the scheduling.
 CREATE VIEW lanes AS

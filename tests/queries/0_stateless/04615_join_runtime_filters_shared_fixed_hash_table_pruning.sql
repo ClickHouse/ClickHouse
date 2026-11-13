@@ -43,6 +43,7 @@ SET enable_join_fixed_hash_table_conversion = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
+SET hash_join_layout = 'auto'; -- The test checks the layout the planner picks
 -- The fixed-hash-table conversion (and therefore the shared filter publication) is skipped for
 -- joins that may spill, so keep the build side in memory.
 SET max_bytes_before_external_join = 0;

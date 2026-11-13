@@ -5,6 +5,7 @@ SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 -- (randomized on) plus auto-statistics, rhs would gain real ~1e6 stats at insert time that
 -- override the 50000 hint, planning the first run as ConcurrentHashJoin instead of HashJoin.
 SET materialize_statistics_on_insert = 0;
+SET hash_join_layout = 'auto'; -- The test checks the layout the planner picks
 
 create table lhs(a UInt64) Engine=MergeTree order by ();
 create table rhs(a UInt64) Engine=MergeTree order by ();

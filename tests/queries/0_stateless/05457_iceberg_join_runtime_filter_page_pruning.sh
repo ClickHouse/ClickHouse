@@ -35,7 +35,7 @@ INSERT INTO dim_q VALUES (150);
 # Every setting that decides whether the probe side gets a runtime filter, which side is probed, or whether row
 # groups and pages are pruned by statistics is pinned.
 SETTINGS="enable_join_runtime_filters = 1, join_algorithm = 'hash', enable_join_runtime_filters_index_analysis = 1, use_iceberg_partition_pruning = 1,
-    join_runtime_filter_min_probe_rows = 0, query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
+    join_runtime_filter_min_probe_rows = 0, join_runtime_filter_exact_values_limit = 10000, query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
     use_hash_table_stats_for_join_reordering = 0, enable_parallel_replicas = 0, use_iceberg_metadata_files_cache = 0,
     input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1, use_query_condition_cache = 0"
 

@@ -49,6 +49,7 @@ INSERT INTO t_rf_r SELECT toUInt8(number) FROM numbers(50);
 INSERT INTO t_rf_l SELECT toUInt8(number % 100) FROM numbers(5000);
 
 SET join_algorithm = 'hash';
+SET hash_join_layout = 'auto'; -- The test checks the layout the planner picks
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET max_threads = 4;
 SET query_plan_join_swap_table = 'false';
