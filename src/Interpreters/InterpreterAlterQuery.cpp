@@ -122,12 +122,12 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
             continue;
 
         if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
-            if (hasTextIndexPreOrPostProcessor(*declaration))
+            if (hasTextIndexPreOrPostProcessor(*declaration) || declaration->getWhere())
                 adds_transform = true;
     }
 
     /// Against the schema the whole statement produces: a command of the same statement can change what
-    /// an alias in a transform expands to. Transforms only, so other statements get no extra analysis.
+    /// an alias in a transform expands to. Transforms and index conditions only, so other statements get no extra analysis.
     if (!adds_transform || !metadata)
         return;
 
