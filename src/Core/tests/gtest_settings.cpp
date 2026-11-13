@@ -601,7 +601,7 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
 
 GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
 {
-    /// With `STRINGS_WITH_FLAGS`, a built-in setting marked `CUSTOM` is parsed via
+    /// A built-in setting marked `CUSTOM` is parsed via
     /// `SettingFieldCustom::parseFromString` -> `Field::restoreFromDump` -> `readQuoted`. An
     /// exponent-form decimal dump builds a `Decimal` scale that, before the fix, bypassed the binary
     /// reader's check and reached the decimal text writer (a fixed-size stack buffer) with an
@@ -617,7 +617,7 @@ GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
     ReadBufferFromString in(wire);
     try
     {
-        settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+        settings.read(in);
         FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
     }
     catch (const Exception & e)
