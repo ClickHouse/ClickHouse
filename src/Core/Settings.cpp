@@ -8695,10 +8695,14 @@ Prefetch step in marks. Zero means `auto` - approximately the best prefetch step
     DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
 Maximum memory usage for prefetches.
 
+It also applies to merges and mutations.
+
 Cloud default value: 10% of total memory.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
+
+It also applies to merges and mutations.
 )", 0) \
     \
     DECLARE(Bool, allow_calculating_subcolumns_sizes_for_merge_tree_reading, true, R"(
