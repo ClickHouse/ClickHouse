@@ -438,9 +438,6 @@ def main():
             # changelog.py runs in the container (no host gh session): the robot token goes in via -e GH_TOKEN / --gh-user-or-token, and the string carries $GH_TOKEN, not its value.
             f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
             f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
-            # A private origin refuses the container's anonymous `git fetch`.
-            ' -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0="url.https://x-access-token:$GH_TOKEN@github.com/.insteadOf"'
-            " -e GIT_CONFIG_VALUE_0=https://github.com/"
             f" clickhouse/style-test:latest"
             f" ./ci/tools/changelog.py -v --debug-helpers"
             f' --gh-user-or-token "$GH_TOKEN"'
