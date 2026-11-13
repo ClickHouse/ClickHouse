@@ -51,16 +51,24 @@ for threads in 32 1; do
     ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT count(), sum(id), sum(length(s)) FROM s3('${SMALL}', ${AUTH}, 'Parquet')"
 done
 
+function read_object()
+{
+    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT count(), sum(id), sum(length(s)), sum(arr[2]), sum(t.1), max(t.2) FROM s3('${OBJECT}', ${AUTH}, 'Parquet')"
+    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE s = '123'"
+    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') PREWHERE id % 7 = 0 WHERE s LIKE '1%'"
+    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE id BETWEEN 25500 AND 74321"
+    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT sum(_row_number = id), sum(_row_number) FROM s3('${OBJECT}', ${AUTH}, 'Parquet')"
+    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT id, s FROM s3('${OBJECT}', ${AUTH}, 'Parquet') ORDER BY id DESC LIMIT 3"
+    ${CLICKHOUSE_CLIENT} "$@" --query "SELECT _file, _size > 0, count() FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE _path LIKE '%05621.parquet' GROUP BY ALL"
+}
+
 for threads in 8 1; do
     echo "-- max_threads = ${threads}"
-    ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT count(), sum(id), sum(length(s)), sum(arr[2]), sum(t.1), max(t.2) FROM s3('${OBJECT}', ${AUTH}, 'Parquet')"
-    ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE s = '123'"
-    ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') PREWHERE id % 7 = 0 WHERE s LIKE '1%'"
-    ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT count(), sum(id) FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE id BETWEEN 25500 AND 74321"
-    ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT sum(_row_number = id), sum(_row_number) FROM s3('${OBJECT}', ${AUTH}, 'Parquet')"
-    ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT id, s FROM s3('${OBJECT}', ${AUTH}, 'Parquet') ORDER BY id DESC LIMIT 3"
-    ${CLICKHOUSE_CLIENT} --max_threads "${threads}" --query "SELECT _file, _size > 0, count() FROM s3('${OBJECT}', ${AUTH}, 'Parquet') WHERE _path LIKE '%05621.parquet' GROUP BY ALL"
+    read_object --max_threads "${threads}"
 done
+# The sources of a split object that get no more than one parsing thread each parse in the threads of the pipeline.
+echo "-- max_threads = 8, max_parsing_threads = 8"
+read_object --max_threads 8 --max_parsing_threads 8
 
 echo "-- hive partitioning columns"
 ${CLICKHOUSE_CLIENT} --query "SELECT p, count() FROM s3('${OBJECT}', ${AUTH}, 'Parquet') GROUP BY p SETTINGS use_hive_partitioning = 1, max_threads = 4"

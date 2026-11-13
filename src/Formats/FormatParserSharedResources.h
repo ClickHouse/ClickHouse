@@ -19,7 +19,7 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 /// because most implementations don't use most of this struct.
 struct FormatParserSharedResources
 {
-    const size_t max_parsing_threads = 0;
+    size_t max_parsing_threads = 0;
     const size_t max_io_threads = 0;
 
     std::atomic<size_t> num_streams{0};
@@ -34,6 +34,10 @@ struct FormatParserSharedResources
     /// Parsing happens in the threads that read from the formats, without a thread pool.
     /// `num_streams` is the number of formats reading at the same time, they share the memory limits.
     static FormatParserSharedResourcesPtr singleThreaded(const Settings & settings, size_t num_streams_ = 1);
+
+    /// Makes the formats parse in the threads that read from them, as `singleThreaded`.
+    /// Must be called before any format initialized the runners.
+    void parseInReadingThreads();
 
     void finishStream();
 

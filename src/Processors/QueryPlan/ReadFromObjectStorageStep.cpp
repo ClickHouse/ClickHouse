@@ -101,6 +101,7 @@ struct DeferredObjectSplit : public IObjectIterator
     ContextPtr context;
     /// The number of sources.
     size_t num_sources = 0;
+    FormatParserSharedResourcesPtr parser_shared_resources;
 
     /// The next bucket to read, or the next object to read if the object is not split.
     ObjectInfoPtr next(size_t id) override
@@ -434,10 +435,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     // here create for node -> query -> level thread pool
-    /// Unlike `ReadFromFile` for a split local file, the sources of a split object keep parsing in the shared
-    /// pool even with one parsing thread each: a remote read waits for each response, and parsing in the
-    /// threads of the pipeline would leave them idle during the wait.
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
+    if (deferred_object_split)
+        deferred_object_split->parser_shared_resources = parser_shared_resources;
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
@@ -627,6 +627,10 @@ void DeferredObjectSplit::split()
 
     if (buckets.empty())
         fallback = std::make_shared<SingleObjectIterator>(object_info, iterator);
+    /// As for a split local file (see `ReadFromFile::initializePipeline`): if the sources get no more than one parsing
+    /// thread each, they parse in the threads of the pipeline.
+    else if (std::min(buckets.size(), num_sources) >= parser_shared_resources->max_parsing_threads)
+        parser_shared_resources->parseInReadingThreads();
 }
 
 ObjectInfos DeferredObjectSplit::splitObject(const ObjectInfoPtr & object_info)
