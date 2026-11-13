@@ -661,9 +661,22 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
     /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    /// A node that runs a secondary query as another user than the initial one (a cluster without an interserver
+    /// secret) passes on the current roles of the initial user it received, so that the next node takes the row
+    /// policies of the initial user for these roles too, and not for its default roles.
+    std::optional<Strings> received_roles_of_initial_user;
+    if (modified_client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && modified_client_info.initial_user != modified_client_info.current_user)
+        received_roles_of_initial_user = modified_client_info.current_roles;
+
+    const bool push_roles = context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     modified_client_info.current_roles.reset();
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
-        && modified_client_info.initial_user == modified_client_info.current_user)
+    if (push_roles && received_roles_of_initial_user)
+    {
+        modified_client_info.current_roles = std::move(received_roles_of_initial_user);
+    }
+    else if (push_roles && modified_client_info.initial_user == modified_client_info.current_user)
     {
         const auto & access_control = context->getAccessControl();
         Strings current_role_names;
