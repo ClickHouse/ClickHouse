@@ -14,6 +14,28 @@ ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/e
 
 To expose ClickHouse's own metrics for a Prometheus server to scrape, see the [Prometheus metrics endpoint](/concepts/features/interfaces/prometheus-metrics).
 
+## PromQL over a Distributed table {#promql-over-a-distributed-table}
+
+The query endpoints (`/api/v1/query`, `/api/v1/query_range`), the `prometheusQuery` and `prometheusQueryRange` table functions, and the `promql` dialect also accept a `Distributed` table over per-shard `TimeSeries` tables, so one PromQL query can read several ClickHouse nodes:
+
+```sql
+-- On every shard:
+CREATE TABLE metrics_local ENGINE = TimeSeries;
+
+-- On the node that receives the queries:
+CREATE TABLE metrics AS metrics_local
+ENGINE = Distributed(my_cluster, currentDatabase(), metrics_local, cityHash64(metric_name));
+
+SELECT * FROM prometheusQuery(metrics, 'sum by (job) (rate(http_requests_total[5m]))', now());
+```
+
+The samples matching each selector are read on every shard, and the PromQL expression is evaluated on the node that received the query. The result is the same as for one `TimeSeries` table that holds all of the data, as long as all samples of a series are stored on one shard.
+
+- Reading needs `SELECT` on the `Distributed` table and `READ ON REMOTE`; the table functions also need `CREATE TEMPORARY TABLE`, as they do over a `TimeSeries` table. If the node that receives the query is itself one of the shards, it reads its own shard as the querying user, who then also needs the grants for a PromQL query over that local `TimeSeries` table.
+- A row policy or an `additional_table_filters` entry on the `Distributed` table would not be applied, so a query is refused while one exists.
+- The `Distributed` table must name a cluster from the server configuration, and its `skip_unavailable_shards` setting is respected.
+- Remote write, remote read, federation and the metadata endpoints (`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`) work only with a `TimeSeries` table.
+
 ## Prerequisites {#prerequisites}
 
 The setup steps differ between ClickHouse Cloud and self-managed ClickHouse. Follow the section for your deployment.

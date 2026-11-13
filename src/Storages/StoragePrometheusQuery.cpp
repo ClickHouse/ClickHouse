@@ -20,6 +20,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -108,10 +109,15 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
-    UInt64 time_series_version = time_series_storage->getVersion();
+    auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+    auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (!distributed_target)
+        checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
+
+    /// A Distributed table declares the same outer samples column as its shard-local TimeSeries tables.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+    UInt64 time_series_version = outerSamplesVersion(*time_series_storage, *time_series_metadata);
     auto table_timestamp_type = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type).first;
 
@@ -154,6 +160,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
+    evaluation_settings.distributed = std::move(distributed_target);
     evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.time_zone = getPromQLResultTimeZone(table_timestamp_type, time_parameter_types);
     evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
@@ -212,11 +219,16 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    auto time_series_storage = DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context);
+    auto evaluation_settings = config.evaluation_settings;
+    /// Resolved again: a table created AS this function is read later, and by another user.
+    evaluation_settings.distributed = resolvePrometheusQueryTarget(*time_series_storage);
+    if (evaluation_settings.distributed)
+        checkPrometheusQueryDistributedRead(time_series_storage->getStorageID(), context);
+    else
+        checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
 
     LOG_DEBUG(log, "Building SQL to evaluate promql: {}", *config.promql_query);
-    auto evaluation_settings = config.evaluation_settings;
     evaluation_settings.push_down_label_matchers = context->getSettingsRef()[Setting::promql_push_down_label_matchers];
     PrometheusQueryToSQL::Converter converter{config.promql_query, evaluation_settings};
     ASTPtr select_query = converter.getSQL();
@@ -227,6 +239,9 @@ void StoragePrometheusQuery::readImpl(
     /// Isolate the settings required by generated PromQL from the outer query.
     auto query_context = Context::createCopy(context);
     applySettingsForPrometheusQuery(*query_context);
+    /// The shards must get the query text: a serialized plan would resolve the shard-local table on this server.
+    if (evaluation_settings.distributed)
+        query_context->setSetting("serialize_query_plan", false);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
