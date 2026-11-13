@@ -36,19 +36,22 @@ struct DictionaryUse
 {
     FieldPosition position;
     DataTypePtr hint;
+
+    /// Uses with equal keys decode the dictionary's values identically, so they share one decoding.
+    String key() const;
 };
 
 using DictionaryUses = VectorWithMemoryTracking<DictionaryUse>;
 
 /// Decoded dictionary values (from `DictionaryBatch` messages), keyed by Arrow dictionary id and by the
-/// position of the field they were decoded for. Referenced by `RecordBatchDecoder` when materializing
-/// dictionary-encoded (LowCardinality) fields.
+/// use (position and hint) of the field they were decoded for. Referenced by `RecordBatchDecoder` when
+/// materializing dictionary-encoded (LowCardinality) fields.
 class DictionaryRegistry
 {
 public:
     /// Each dictionary use stores its decoded values and their resulting ClickHouse type. Requested hints
     /// affect the value representation, so fields sharing a dictionary id are decoded and stored separately
-    /// for each requested position. Dictionary entries may be null regardless of the referencing field's
+    /// for each requested position and hint. Dictionary entries may be null regardless of the referencing field's
     /// nullability; each field applies its own nullability when materializing these values.
     struct Values
     {
@@ -72,20 +75,19 @@ public:
         }
     };
 
-    /// Replaces (or, for delta batches, appends to) the values of dictionary `id` decoded for the field at
-    /// `position`. A delta batch is decoded for the same positions as its base and must decode to the same
-    /// column layout there, so referenced values can be gathered into a common output column.
-    void set(Int64 id, const FieldPosition & position, Values values, bool is_delta);
-    const Dictionary & get(Int64 id, const FieldPosition & position) const;
+    /// Replaces (or, for delta batches, appends to) the values of dictionary `id` decoded for `use`. A
+    /// delta batch is decoded for the same uses as its base and must decode to the same column layout
+    /// there, so referenced values can be gathered into a common output column.
+    void set(Int64 id, const DictionaryUse & use, Values values, bool is_delta);
+    const Dictionary & get(Int64 id, const DictionaryUse & use) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
     void clear() { dictionaries.clear(); }
 
 private:
-    /// The decodings of one dictionary, keyed by `positionKey`.
-    using DictionariesByPosition = UnorderedMapWithMemoryTracking<String, Dictionary>;
-    static String positionKey(const FieldPosition & position);
+    /// The decodings of one dictionary, keyed by `DictionaryUse::key`.
+    using DictionariesByUse = UnorderedMapWithMemoryTracking<String, Dictionary>;
 
-    UnorderedMapWithMemoryTracking<Int64, DictionariesByPosition> dictionaries;
+    UnorderedMapWithMemoryTracking<Int64, DictionariesByUse> dictionaries;
 };
 
 /// Rows whose values are semantically absent: null at this or an ancestor level, in a list range no
@@ -323,11 +325,11 @@ private:
         UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const;
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
-    /// validity buffer), so this function needs no separate null map for the indices. `path` and
-    /// `list_depth` are the field's position, which selects the dictionary values decoded for it.
+    /// validity buffer), so this function needs no separate null map for the indices. `hint`, `path` and
+    /// `list_depth` are the field's resolved hint and position, which select the dictionary values decoded for it.
     ColumnPtr decodeDictionary(
         const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
-        const String & path, size_t list_depth);
+        const DataTypePtr & hint, const String & path, size_t list_depth);
     ColumnUInt8::Ptr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.

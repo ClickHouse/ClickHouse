@@ -329,7 +329,7 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
     message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
 
-    /// Decode the values once for each position of a field encoding this dictionary, so every field gets
+    /// Decode the values once for each use (position and hint) of a field encoding this dictionary, so every field gets
     /// the decoding it would get for inline values in a record batch. The registered type must describe the
     /// registered column: the raw-byte rewrite the record-batch columns go through reinterprets
     /// fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the decoder already
@@ -348,7 +348,7 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
 
         /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`
         /// builds a `LowCardinality` by inserting the values into its own unique dictionary and remapping the indexes.
-        dictionaries.set(id, use.position, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
+        dictionaries.set(id, use, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
     }
 }
 

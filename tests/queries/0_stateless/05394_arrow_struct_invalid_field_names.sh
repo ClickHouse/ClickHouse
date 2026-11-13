@@ -21,7 +21,8 @@ $CLICKHOUSE_LOCAL -q "
 
 # The fields of such a struct get their requested types by position, also when the requested `Tuple` is named:
 # a `fixed_size_binary(16)` field is read as `UInt128` only when it gets that type. Two equally named fields that
-# share a dictionary keep their own requested types: the second one is range-checked as `Date32`.
+# share a dictionary keep their own requested types: the second one is range-checked as `Date32`. So do two fields
+# sharing a dictionary whose names differ only in case, matched case-insensitively.
 DATA_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$DATA_DIR"
 trap 'rm -rf "$DATA_DIR"' EXIT
@@ -50,10 +51,10 @@ with ipc.new_stream(f"{out}/binary.arrows", pa.schema([pa.field("s", s.type)])) 
     writer.write_batch(pa.record_batch([s], names=["s"]))
 
 
-def write_shared(path, day):
-    dictionary = pa.array([day], type=pa.date32())
-    children = [pa.DictionaryArray.from_arrays(pa.array([0], type=pa.int32()), dictionary) for _ in range(2)]
-    s = pa.StructArray.from_arrays(children, fields=[pa.field("x", c.type) for c in children])
+def write_shared(path, days, names=("x", "x"), indices=(0, 0)):
+    dictionary = pa.array(days, type=pa.date32())
+    children = [pa.DictionaryArray.from_arrays(pa.array([i], type=pa.int32()), dictionary) for i in indices]
+    s = pa.StructArray.from_arrays(children, fields=[pa.field(n, c.type) for n, c in zip(names, children)])
     sink = pa.BufferOutputStream()
     with ipc.new_stream(sink, pa.schema([pa.field("s", s.type)])) as writer:
         writer.write_batch(pa.record_batch([s], names=["s"]))
@@ -73,8 +74,9 @@ def write_shared(path, day):
         f.write(data)
 
 
-write_shared(f"{out}/shared_in_range.arrows", 19000)
-write_shared(f"{out}/shared_out_of_range.arrows", 3000000)
+write_shared(f"{out}/shared_in_range.arrows", [19000])
+write_shared(f"{out}/shared_out_of_range.arrows", [3000000])
+write_shared(f"{out}/shared_case.arrows", [10957, 84006], names=("A", "a"), indices=(0, 1))
 
 # A named struct inside a struct whose only field has an empty name.
 inner = pa.StructArray.from_arrays([pa.array([7], type=pa.int32())], fields=[pa.field("x", pa.int32())])
@@ -92,6 +94,8 @@ $CLICKHOUSE_LOCAL -q "
     SELECT s FROM file('$DATA_DIR/shared_in_range.arrows', ArrowStream, 's Tuple(Int64, Date32)');
     SELECT s FROM file('$DATA_DIR/shared_out_of_range.arrows', ArrowStream, 's Tuple(Int64, Int64)');
     SELECT s FROM file('$DATA_DIR/shared_out_of_range.arrows', ArrowStream, 's Tuple(Int64, Date32)'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+    SELECT s FROM file('$DATA_DIR/shared_case.arrows', ArrowStream, 's Tuple(A DateTime(''UTC''), a Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, date_time_overflow_behavior = 'saturate';
+    SELECT s FROM file('$DATA_DIR/shared_case.arrows', ArrowStream, 's Tuple(a Int32, A DateTime(''UTC''))') SETTINGS input_format_arrow_case_insensitive_column_matching = 1, date_time_overflow_behavior = 'saturate';
 "
 
 # Case-insensitive matching still applies to named structs nested in such a struct, which is matched by position.
