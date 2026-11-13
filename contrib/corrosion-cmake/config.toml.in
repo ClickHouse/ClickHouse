@@ -1,3 +1,4 @@
+@RUST_BUILD_DIR_CONFIG@
 [profile.release]
 debug = false
 strip = true
@@ -6,9 +7,17 @@ strip = true
 # We use LTO to slightly decrease binary size
 [profile.release-thinlto]
 inherits = "release"
-lto = true
+lto = "thin"
 
 @RUST_DEV_PROFILE@
+# Features are resolved once for all members of the workspace in `contrib/rust-contrib-workspace`,
+# so a crate that several members use is compiled once.
+[unstable]
+feature-unification = true
+
+[resolver]
+feature-unification = "workspace"
+
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 

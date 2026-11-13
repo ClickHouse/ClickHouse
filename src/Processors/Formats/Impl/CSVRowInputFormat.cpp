@@ -282,9 +282,9 @@ void CSVFormatReader::skipHeaderRow()
 }
 
 template <bool is_header>
-std::vector<String> CSVFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> CSVFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readCSVFieldIntoString<is_header>());
@@ -359,9 +359,16 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 void CSVFormatReader::setDataTypes(const DataTypes & types)
 {
     skip_whitespaces_before_field.resize(types.size());
+    keep_empty_value_for_field.resize(types.size());
     for (size_t i = 0; i != types.size(); ++i)
+    {
         skip_whitespaces_before_field[i]
             = format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(types[i]));
+
+        /// Same condition as the one `readField` used to compute for every empty field.
+        keep_empty_value_for_field[i] = format_settings.csv.missing_nullable_as_empty_string
+            && isNullableOrLowCardinalityNullable(types[i]) && isString(removeLowCardinalityAndNullable(types[i]));
+    }
 }
 
 bool CSVFormatReader::readField(
@@ -397,12 +404,12 @@ bool CSVFormatReader::readField(
         /// `Nullable(String)` (including its low-cardinality form `LowCardinality(Nullable(String))`)
         /// should be read as an empty string instead of NULL, so it must fall through to normal
         /// deserialization.
-        bool keep_empty_value = format_settings.csv.missing_nullable_as_empty_string
-            && isNullableOrLowCardinalityNullable(type) && isString(removeLowCardinalityAndNullable(type));
+        chassert(column_index < keep_empty_value_for_field.size());
+        bool keep_empty_value = keep_empty_value_for_field[column_index];
 
         if (!keep_empty_value)
         {
-            column.insertDefault();
+            type->insertDefaultInto(column);
             return false;
         }
     }
@@ -452,7 +459,7 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
 
     if (column.size() == col_size + 1)
         column.popBack(1);
-    column.insertDefault();
+    type->insertDefaultInto(column);
     return false;
 }
 
@@ -506,7 +513,7 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};

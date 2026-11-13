@@ -934,10 +934,35 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
         left_scaled && left_scaled == scale_and_kind(right, which_right))
         return false;
 
+    /// Tuples are compared element-wise by `executeTuple`. A tuple comparison cannot throw if and
+    /// only if both sides have the same non-zero number of elements and each corresponding element
+    /// comparison cannot throw.
+    if (const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(left.get()))
+    {
+        if (const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(right.get()))
+        {
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+
+            if (left_elements.empty() || left_elements.size() != right_elements.size())
+                return true;
+
+            for (size_t i = 0; i < left_elements.size(); ++i)
+            {
+                if (comparisonCanThrow(left_elements[i], right_elements[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
-    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
-    /// dispatches on the type of every individual row.
-    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+    /// as they are stored. `Variant`, `Dynamic`, `JSON` and `Tuple` are excluded: a comparison of
+    /// those dispatches on the type of every individual row, or decomposes into element comparisons.
+    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject() && !which_left.isTuple())
         return false;
 
     return true;
@@ -1910,7 +1935,22 @@ public:
     /// have to be answered separately.
     std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
-        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+        if (arguments.size() != 2)
+            return true;
+        if (!comparisonCanThrow(arguments[0].type, arguments[1].type))
+            return false;
+        /// A constant string is converted to the other argument's type once, before any row is compared (`executeWithConstString`).
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const ColumnConst * constant = arguments[i].column ? checkAndGetColumnConstStringOrFixedString(arguments[i].column) : nullptr;
+            if (!constant)
+                continue;
+            const DataTypePtr type_to_compare = removeNullable(removeLowCardinality(arguments[1 - i].type));
+            const DataTypePtr type_string = removeNullable(removeLowCardinality(arguments[i].type));
+            return comparisonCanThrow(type_to_compare, type_to_compare)
+                || tryConvertFieldToType(constant->getField(), *type_to_compare, type_string.get(), params.format_settings).isNull();
+        }
+        return true;
     }
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
