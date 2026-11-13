@@ -8,6 +8,7 @@
 
 #include <initializer_list>
 #include <vector>
+#include <Common/FlatHashMapWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -33,7 +34,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = UnorderedMapWithMemoryTracking<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using IndexByName = FlatHashMapWithMemoryTracking<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     Container data;
     IndexByName index_by_name;

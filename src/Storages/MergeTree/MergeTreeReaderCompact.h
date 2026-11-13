@@ -5,6 +5,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
+#include <absl/container/flat_hash_map.h>
+
 namespace DB
 {
 
@@ -59,6 +61,9 @@ protected:
 
     using InputStreamGetter = ISerialization::InputStreamGetter;
 
+    /// Columns already read in the current granule, by name.
+    using GranuleColumnsCache = absl::flat_hash_map<String, ColumnPtr>;
+
     void readData(
         size_t column_idx,
         IColumn & column,
@@ -66,8 +71,8 @@ protected:
         size_t from_mark,
         size_t column_size_before_reading,
         MergeTreeReaderStream & stream,
-        std::unordered_map<String, ColumnPtr> & output_columns_cache,
-        std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+        GranuleColumnsCache & output_columns_cache,
+        GranuleColumnsCache * columns_cache_for_subcolumns,
         ISerialization::SubstreamsCache * substreams_cache);
 
     virtual MergeTreeReaderStream & getStream(const NameAndTypePair & column) = 0;

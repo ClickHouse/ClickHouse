@@ -209,7 +209,7 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
     serializations_of_full_columns[column.getNameInStorage()] = column_for_offsets->serialization;
 }
 
-static ColumnPtr getFullColumnFromCache(std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns, const String & column_name)
+static ColumnPtr getFullColumnFromCache(const auto * columns_cache_for_subcolumns, const String & column_name)
 {
     if (!columns_cache_for_subcolumns)
         return nullptr;
@@ -228,8 +228,8 @@ void MergeTreeReaderCompact::readData(
     size_t from_mark,
     size_t column_size_before_reading,
     MergeTreeReaderStream & stream,
-    std::unordered_map<String, ColumnPtr> & output_columns_cache,
-    std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+    GranuleColumnsCache & output_columns_cache,
+    GranuleColumnsCache * columns_cache_for_subcolumns,
     ISerialization::SubstreamsCache * substreams_cache)
 {
     const auto & name_and_type = columns_to_read[column_idx];

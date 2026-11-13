@@ -4,6 +4,8 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
+#include <absl/container/flat_hash_map.h>
+
 
 namespace DB
 {
@@ -138,7 +140,7 @@ private:
 
     SerializationStates serialization_states;
 
-    using ColumnStreams = std::map<String, StreamPtr>;
+    using ColumnStreams = absl::flat_hash_map<String, StreamPtr>;
     ColumnStreams column_streams;
 
     /// Some long column names may be replaced to hashes.

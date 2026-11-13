@@ -12,6 +12,9 @@
 #include <optional>
 #include <unordered_map>
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/inlined_vector.h>
+
 namespace DB
 {
 
@@ -74,8 +77,8 @@ public:
 
     /// This map helps to find input position by its name.
     /// Key is a view to input::result_name.
-    /// Result is a list because it is allowed for inputs to have same names.
-    using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
+    /// Value holds several positions because it is allowed for inputs to have same names.
+    using NameToInputMap = absl::flat_hash_map<std::string_view, absl::InlinedVector<size_t, 1>>;
 
 private:
     ActionsDAG actions_dag;

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 
@@ -51,16 +52,16 @@ void MergeTreeReaderCompactSingleBuffer::readGranule(
     deserialize_binary_bulk_state_map.clear();
     deserialize_binary_bulk_state_map_for_subcolumns.clear();
 
-    /// Use cache to avoid reading the column with the same name twice.
-    /// It may happen if there are empty array Nested in the part.
-    std::unordered_map<String, ColumnPtr> columns_cache;
-    std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
-
-    /// If we don't have substream marks and we need to read multiple subcolumns from a single column in storage,
-    /// we will read the whole column only once and then reuse to extract all subcolumns.
-    /// We cannot use SubstreamsCache for it, because we may also read the full column itself
-    /// and it might be not empty inside res_columns (and SubstreamsCache contains the whole columns).
-    std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
+    /// The caches are members only to reuse their memory between granules. Empty them on exit,
+    /// so that they don't keep references to the columns that were read.
+    SCOPE_EXIT({
+        granule_columns_cache.clear();
+        granule_deserialize_states_caches.clear();
+        granule_columns_cache_for_subcolumns.clear();
+    });
+    auto & columns_cache = granule_columns_cache;
+    auto & deserialize_states_caches = granule_deserialize_states_caches;
+    auto & columns_cache_for_subcolumns = granule_columns_cache_for_subcolumns;
 
     for (size_t pos = 0; pos < num_columns; ++pos)
     {

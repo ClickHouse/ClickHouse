@@ -449,7 +449,7 @@ void Block::eraseImpl(size_t position)
     for (auto it = index_by_name.begin(); it != index_by_name.end();)
     {
         if (it->second == position)
-            it = index_by_name.erase(it);
+            index_by_name.erase(it++);
         else
         {
             if (it->second > position)
@@ -862,7 +862,7 @@ Block Block::sortColumns() const
 {
     Block sorted_block;
 
-    /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
+    /// `index_by_name` is unordered, so sort it by name
     VectorWithMemoryTracking<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;

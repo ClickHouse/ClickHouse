@@ -38,6 +38,17 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStream> stream;
+
+    /// Use cache to avoid reading the column with the same name twice.
+    /// It may happen if there are empty array Nested in the part.
+    GranuleColumnsCache granule_columns_cache;
+    absl::flat_hash_map<String, ISerialization::SubstreamsDeserializeStatesCache> granule_deserialize_states_caches;
+
+    /// If we don't have substream marks and we need to read multiple subcolumns from a single column in storage,
+    /// we will read the whole column only once and then reuse to extract all subcolumns.
+    /// We cannot use SubstreamsCache for it, because we may also read the full column itself
+    /// and it might be not empty inside res_columns (and SubstreamsCache contains the whole columns).
+    GranuleColumnsCache granule_columns_cache_for_subcolumns;
 };
 
 }
