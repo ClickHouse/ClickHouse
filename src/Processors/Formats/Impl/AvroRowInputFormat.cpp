@@ -714,12 +714,15 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
                 if (auto variant_deserialize = tryCreateVariantDeserializeFn(root_node->leafAt(non_null_union_index), target_type))
                 {
-                    return [non_null_union_index, variant_deserialize](IColumn & column, avro::Decoder & decoder)
+                    return [non_null_union_index, variant_deserialize, target_type](IColumn & column, avro::Decoder & decoder)
                     {
                         if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
                             return variant_deserialize(column, decoder);
                         /// NULL, or an empty object for `JSON`, the same as a variant null.
-                        column.insertDefault();
+                        if (target_type->isDefaultInsertTrivial())
+                            column.insertDefault();
+                        else
+                            target_type->insertDefaultInto(column);
                         return true;
                     };
                 }
@@ -744,14 +747,17 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 if (null_as_default)
                 {
                     auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
-                    return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
+                    return [non_null_union_index, nested_deserialize, target_type](IColumn & column, avro::Decoder & decoder)
                     {
                         if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
                         {
                             nested_deserialize(column, decoder);
                             return true;
                         }
-                        column.insertDefault();
+                        if (target_type->isDefaultInsertTrivial())
+                            column.insertDefault();
+                        else
+                            target_type->insertDefaultInto(column);
                         return false;
                     };
                 }
@@ -851,10 +857,13 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             }
             else if (null_as_default)
             {
-                return [](IColumn & column, avro::Decoder & decoder)
+                return [target_type](IColumn & column, avro::Decoder & decoder)
                 {
                     decoder.decodeNull();
-                    column.insertDefault();
+                    if (target_type->isDefaultInsertTrivial())
+                        column.insertDefault();
+                    else
+                        target_type->insertDefaultInto(column);
                     return false;
                 };
             }

@@ -21,6 +21,7 @@ struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+class RuntimeFilterPruningPredicate;
 
 /// The settings of the file format readers that change which row groups a read prunes or which
 /// physical column it binds a column to. They are folded into the query condition cache keys of files.
@@ -182,6 +183,10 @@ struct FormatFilterInfo
     /// so applying it partially or not at all is always correct.
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
+    /// Once all its filters are built, the format may skip the row groups whose statistics cannot contain
+    /// a key of them. Only the Parquet format uses it.
+    std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;
 
@@ -192,6 +197,10 @@ private:
     std::once_flag init_flag;
     std::exception_ptr init_exception;
 
+    std::mutex join_runtime_filter_mutex;
+    bool join_runtime_filter_key_condition_built TSA_GUARDED_BY(join_runtime_filter_mutex) = false;
+    std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition TSA_GUARDED_BY(join_runtime_filter_mutex);
+
 public:
     /// True if the format may skip rows of the file.
     bool hasFilter() const;
@@ -199,6 +208,11 @@ public:
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
+
+    /// The condition that every row passing `join_runtime_filter_predicate` satisfies, on `keys` followed by
+    /// `additional_columns` (the columns of `key_condition`). nullopt while a filter is not built,
+    /// nullptr if none gives an `IN` set or a range. Call after `initKeyConditionOnce`.
+    std::optional<std::shared_ptr<const KeyCondition>> tryGetJoinRuntimeFilterKeyCondition(const Block & keys);
 
     /// The query condition cache key of the rows `filter_actions_dag` and `prewhere_info` keep, if
     /// the condition is deterministic and covers `prewhere_info`.

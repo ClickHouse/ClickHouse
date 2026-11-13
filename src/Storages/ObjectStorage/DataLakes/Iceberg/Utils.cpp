@@ -355,6 +355,10 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
+        /// Holding the whole message lets the zstd buffer size its context to it at `finalize`.
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE;
+        if (compression_method == CompressionMethod::Zstd)
+            buf_size = std::max(buf_size, data.size());
         /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
         /// independent of the session `snappy_mode`. The wire format is not encoded in the
         /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
@@ -365,7 +369,8 @@ void writeMessageToFile(
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
             /*zstd_window_log=*/ 0,
-            SnappyMode::Basic);
+            SnappyMode::Basic,
+            buf_size);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -575,6 +580,14 @@ bool writeMetadataFileAndVersionHint(
         /* create */ try_write_version_hint,
         /* assert_version_exactly */ false);
     return true;
+}
+
+void removeRejectedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    ObjectStoragePtr object_storage)
+{
+    object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_file_info.path)));
 }
 
 
@@ -2075,7 +2088,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             }
             if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
-            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+            auto [version, metadata_file_path, compression_method, _] = getMetadataFileAndVersion(path);
 
             if (need_all_metadata_files_parsing)
             {
@@ -2344,7 +2357,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
 }
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier)
+CatalogMetadataFilePath getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier)
 {
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
@@ -2358,7 +2371,9 @@ String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & ca
             "Catalog did not return a metadata file location for table '{}.{}'",
             namespace_name, table_name);
 
-    return table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
+    return {
+        .location = specific_properties->iceberg_metadata_file_location,
+        .path = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location)};
 }
 
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
@@ -2387,11 +2402,12 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             /* force_fetch_latest_metadata */ true,
             ignore_metadata_pointer_overrides);
 
+    const auto catalog_metadata_file = getCatalogMetadataFilePath(catalog, table_identifier);
     DataLakeStorageSettings effective_settings = data_lake_settings;
-    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path] = getCatalogMetadataFilePath(catalog, table_identifier);
+    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path] = catalog_metadata_file.path;
 
     /// A catalog's pointer IS the committed state, so it is resolved rather than overridden.
-    return getLatestOrExplicitMetadataFileAndVersion(
+    auto result = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         table_path,
         effective_settings,
@@ -2402,6 +2418,8 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
         known_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_metadata_pointer_overrides */ false);
+    result.catalog_metadata_location = catalog_metadata_file.location;
+    return result;
 }
 
 

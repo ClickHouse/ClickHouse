@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
+#include <Poco/Dynamic/Var.h>
 
 namespace DataLake
 {
@@ -12,6 +13,9 @@ std::vector<String> splitTypeArguments(const String & type_str);
 
 /// `time_as_int64` maps Iceberg `time` to `Int64` instead of `Time64(6)`, see setting `iceberg_time_as_int64`.
 DB::DataTypePtr getType(const String & type_name, bool nullable, bool time_as_int64, const String & prefix = "");
+
+/// Converts Iceberg types to Glue/Hive strings; ClickHouse reads exact types from `metadata.json`.
+String icebergTypeToGlueType(const Poco::Dynamic::Var & type);
 
 /// Parse a string, containing at least one dot, into a two substrings:
 /// A.B.C.D.E -> A.B.C.D and E, where

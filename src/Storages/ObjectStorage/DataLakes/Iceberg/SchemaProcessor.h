@@ -100,8 +100,10 @@ public:
         ManifestFile,
     };
 
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false, bool time_as_int64_ = false)
-        : allow_geo_parser(allow_geo_parser_), time_as_int64(time_as_int64_)
+    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false, bool time_as_int64_ = false, String timezone_for_timestamptz_ = "UTC")
+        : allow_geo_parser(allow_geo_parser_)
+        , time_as_int64(time_as_int64_)
+        , timezone_for_timestamptz(std::move(timezone_for_timestamptz_))
     {
     }
 
@@ -120,7 +122,8 @@ public:
     bool isSchemaRegisteredFromMetadata(Int32 id) const;
 
     /// `time_as_int64` maps `time` to `Int64` microseconds instead of `Time64(6)` (setting `iceberg_time_as_int64`).
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true, bool time_as_int64 = false);
+    static DataTypePtr getSimpleType(
+        const String & type_name, bool allow_geo_parser = true, bool time_as_int64 = false, const String & timezone_for_timestamptz = "UTC");
 
     /// The first Iceberg spec violation in `schema`, or nullopt: a field, list element, map key or value without the members
     /// its type needs, or invalid geo type parameters. With `is_table_schema`, also a non-`struct` schema or an
@@ -193,6 +196,7 @@ private:
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;
     bool time_as_int64 = false;
+    String timezone_for_timestamptz = "UTC";
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;

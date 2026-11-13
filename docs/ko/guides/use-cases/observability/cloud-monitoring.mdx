@@ -7,9 +7,9 @@ doc_type: 'guide'
 keywords: ['관측성', '모니터링', '클라우드', '메트릭', '시스템 상태']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import ObservabilityIntegrations from '/snippets/ko/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/ko/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/ko/_community_monitoring.mdx';
 
 이 가이드는 ClickHouse Cloud를 평가하는 엔터프라이즈 팀을 위해 프로덕션 배포 시 모니터링 및 관측성 기능에 관한 종합적인 정보를 제공합니다. 엔터프라이즈 고객은 기본 제공 모니터링 기능, Datadog 및 AWS CloudWatch 같은 도구를 포함한 기존 관측성 스택과의 통합, 그리고 자체 호스팅 배포와 비교했을 때 ClickHouse의 모니터링이 어떤지에 대해 자주 문의합니다.
@@ -26,13 +26,29 @@ ClickHouse Cloud는 모니터링 섹션에서 접근할 수 있는 내장 대시
   이 메트릭에 접근해도 기본 서비스에 쿼리가 실행되지 않으며, 유휴 상태의 서비스를 깨우지 않습니다.
 </Note>
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 이러한 시각화를 확장하려는 사용자는 ClickHouse Cloud의 dashboards 기능을 사용해 시스템 테이블(system tables)을 직접 쿼리할 수 있습니다.
 
 * **네이티브 고급 대시보드**: 모니터링 섹션의 &quot;You can still access the native advanced dashboard&quot;를 통해 접근할 수 있는 대체 대시보드 인터페이스입니다. 별도의 탭에서 인증과 함께 열리며, 시스템 및 서비스 상태 모니터링을 위한 대체 UI를 제공합니다. 이 대시보드에서는 기본 SQL 쿼리를 수정할 수 있어 고급 분석을 수행할 수 있습니다.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 두 대시보드 모두 외부 종속성 없이 서비스 상태와 성능을 즉시 파악할 수 있으므로, ClickStack과 같은 외부 디버깅 중심 도구와 차별화됩니다.
 
