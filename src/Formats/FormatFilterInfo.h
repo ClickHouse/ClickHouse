@@ -110,9 +110,8 @@ public:
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
-    /// The name under which a reader reads a top-level field of a data file that has this field id: the column of the
-    /// read schema with the id, or the field's own name for a reserved id (https://iceberg.apache.org/spec/#reserved-field-ids),
-    /// which no schema holds. nullopt if the read schema has no column with the id: the field is not read.
+    /// The name a top-level data file field with this id is read as: the read schema's column with the id, or the field's own name for
+    /// a reserved id, which no schema holds (https://iceberg.apache.org/spec/#reserved-field-ids); nullopt: the field is not read.
     std::optional<String> getReadNameOfFileField(Int64 field_id, const String & file_field_name) const;
 
 private:

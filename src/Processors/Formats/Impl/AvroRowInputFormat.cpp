@@ -1357,8 +1357,7 @@ void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, UnorderedSetWithM
     }
 }
 
-/// How the top-level fields of an Iceberg data file bind to the columns of `header`: by field id
-/// (https://iceberg.apache.org/spec/#column-projection).
+/// Top-level fields of an Iceberg data file bound to `header` by field id (https://iceberg.apache.org/spec/#column-projection).
 struct IcebergAvroFieldBinding
 {
     /// The columns of `header` whose field id is not in the file: read as NULL.

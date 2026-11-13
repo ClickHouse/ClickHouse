@@ -1201,9 +1201,8 @@ static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type
     return std::nullopt;
 }
 
-/// The names the top-level fields of `root` are read as, matched by their `iceberg.id` with the columns of `column_mapper`
-/// (https://iceberg.apache.org/spec/#column-projection); a field none of them has is not in the result, so it is not read.
-/// nullopt if a field has no id or two fields share one: the file is matched by name.
+/// The names the top-level fields of `root` are read as, matched by `iceberg.id` with the columns of `column_mapper`; a field
+/// none of them has is not read. nullopt if a field has no id or two fields share one: the file is matched by name.
 static std::optional<IcebergORCFieldNames> getIcebergORCFieldNames(const ORC::Type & root, const ColumnMapper & column_mapper)
 {
     IcebergORCFieldNames result;
