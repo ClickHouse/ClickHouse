@@ -1241,6 +1241,19 @@ static bool needsExactInCastCheck(const DataTypePtr & source_type, const DataTyp
         && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(target) || isBool(target));
 }
 
+static bool needsCalendarDateInCast(const DataTypePtr & source_type, const DataTypePtr & target_type)
+{
+    const auto source = removeNullable(removeLowCardinality(source_type));
+    const auto target = removeNullable(removeLowCardinality(target_type));
+    return (isDate(target) || isDate32(target)) && (isDateTime(source) || isDateTime64(source));
+}
+
+static QueryTreeNodePtr buildNumericInEquality(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const DataTypePtr & left_argument_type,
+    const DataTypePtr & right_argument_type);
+
 static QueryTreeNodePtr makeExactInCast(
     const QueryTreeNodePtr & source,
     const DataTypePtr & source_type,
@@ -1300,11 +1313,13 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             const auto source_element_type = source_array_type->getNestedType();
             const bool both_numeric = isNumber(removeNullable(removeLowCardinality(target_type)))
                 && isNumber(removeNullable(removeLowCardinality(source_element_type)));
-            const bool exact_cast_required = needsExactInCastCheck(source_element_type, target_type);
+            const bool calendar_cast_required = needsCalendarDateInCast(source_element_type, target_type);
+            const bool exact_cast_required = !calendar_cast_required && needsExactInCastCheck(source_element_type, target_type);
             if (!target_type->onlyNull()
                 && target_type->canBeInsideNullable()
                 && !both_numeric
-                && ((exact_cast_required && isBool(target_type))
+                && (calendar_cast_required
+                    || (exact_cast_required && isBool(target_type))
                     || !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_element_type})))
             {
                 const String lambda_argument_name = "__in_array_element_to_cast";
@@ -1330,9 +1345,32 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             }
         }
 
-        auto has_fn = std::make_shared<FunctionNode>("has");
-        has_fn->getArguments().getNodes() = {array_arg->clone(), element_arg};
-        QueryTreeNodePtr match_result = has_fn;
+        QueryTreeNodePtr match_result;
+        if (source_array_type
+            && isNumber(removeNullable(removeLowCardinality(element_arg->getResultType())))
+            && isNumber(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
+            && !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_array_type->getNestedType()}))
+        {
+            const String candidate_name = "__in_numeric_array_candidate";
+            auto comparison = buildNumericInEquality(
+                element_arg,
+                std::make_shared<IdentifierNode>(Identifier{candidate_name}),
+                element_arg->getResultType(),
+                source_array_type->getNestedType());
+            auto non_null_match = std::make_shared<FunctionNode>("ifNull");
+            non_null_match->getArguments().getNodes() = {std::move(comparison), std::make_shared<ConstantNode>(Field{0u})};
+            auto lambda = std::make_shared<LambdaNode>(
+                std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(non_null_match), false /*is_operator*/);
+            auto any_match = std::make_shared<FunctionNode>("arrayExists");
+            any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
+            match_result = std::move(any_match);
+        }
+        else
+        {
+            auto has_fn = std::make_shared<FunctionNode>("has");
+            has_fn->getArguments().getNodes() = {array_arg->clone(), element_arg};
+            match_result = std::move(has_fn);
+        }
         resolveFunction(match_result, scope);
 
         QueryTreeNodePtr no_match_result = std::make_shared<ConstantNode>(Field{0u});
@@ -1601,6 +1639,13 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
         { return isNullConstant(arg) || canContainNull(*arg->getResultType()); });
 
     DataTypePtr common_type = getLeastSupertypeForInArrayElements(array_elements, in_first_argument, left_is_null);
+    if (scope.context->getSettingsRef()[Setting::in_null_as_unknown]
+        && !left_is_null
+        && std::any_of(array_elements.begin(), array_elements.end(), [&](const auto & element)
+        {
+            return needsCalendarDateInCast(element->getResultType(), in_first_argument->getResultType());
+        }))
+        common_type = in_first_argument->getResultType();
     /// If no supertype exists, keep the old behaviour for non-NULL left-hand side
     /// values and let per-element `CAST` handle or reject the mismatch. For NULL
     /// left-hand side values, let `array` infer the right-hand side type on its own.
@@ -3381,12 +3426,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const auto & right_type = non_const_set_candidate->getResultType();
                         const bool is_number_comparison = isNumber(removeNullable(removeLowCardinality(left_type)))
                             && isNumber(removeNullable(removeLowCardinality(right_type)));
-                        if (!is_number_comparison && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
+                        const bool calendar_cast_required = use_standard_null_semantics
+                            && needsCalendarDateInCast(right_type, left_type);
+                        if (calendar_cast_required
+                            || (!is_number_comparison && !tryGetLeastSupertype(DataTypes{left_type, right_type})))
                         {
                             DataTypePtr cast_elements_to = left_type;
                             if (canContainNull(*right_type) || !compare_nulls)
                                 cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
-                            if (use_standard_null_semantics && needsExactInCastCheck(right_type, cast_elements_to))
+                            if (use_standard_null_semantics && !calendar_cast_required
+                                && needsExactInCastCheck(right_type, cast_elements_to))
                             {
                                 right_argument = makeExactInCast(right_argument, right_type, cast_elements_to);
                                 resolveFunction(right_argument, scope);
