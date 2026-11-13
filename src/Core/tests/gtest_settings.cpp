@@ -25,6 +25,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONVERT_TYPE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -676,4 +677,32 @@ GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
     ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(4096)));
     ASSERT_EQ(settings.get("totals_auto_threshold"), Field(0.25));
     ASSERT_TRUE(in.eof());
+}
+
+
+GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
+{
+    /// With `STRINGS_WITH_FLAGS`, a built-in setting marked `CUSTOM` is parsed via
+    /// `SettingFieldCustom::parseFromString` -> `Field::restoreFromDump` -> `readQuoted`. An
+    /// exponent-form decimal dump builds a `Decimal` scale that, before the fix, bypassed the binary
+    /// reader's check and reached the decimal text writer (a fixed-size stack buffer) with an
+    /// oversized scale. The scale must be rejected while reading the settings, not formatted later.
+    WriteBufferFromOwnString out;
+    BaseSettingsHelpers::writeString("max_block_size", out);
+    BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+    BaseSettingsHelpers::writeString("Decimal64_'1e-1000'", out);
+    BaseSettingsHelpers::writeString("", out); /// end of settings
+
+    const String wire = out.str();
+    Settings settings;
+    ReadBufferFromString in(wire);
+    try
+    {
+        settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 }
