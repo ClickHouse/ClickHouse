@@ -41,7 +41,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
     Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override

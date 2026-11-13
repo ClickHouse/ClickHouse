@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > В этом документе приводится краткое введение в миграцию данных из Snowflake в ClickHouse.
 
 Snowflake — это облачное хранилище данных, в первую очередь ориентированное на перенос устаревших рабочих нагрузок хранилищ данных из собственной инфраструктуры
@@ -52,7 +50,15 @@ shared-disk и масштабируемость архитектуры shared-no
 Изображение ниже с [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
 показывает эту архитектуру:
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Архитектура Snowflake" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Архитектура Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+
+</Frame>
+
+</div>
 
 В отличие от Snowflake, ClickHouse как продукт с открытым исходным кодом и облачным размещением можно развернуть
 как в архитектуре shared-disk, так и в архитектуре shared-nothing. Последняя типична для
@@ -71,7 +77,15 @@ shared-disk (узкие места дискового ввода-вывода и
 доступная текущим узлам в cluster, не снижается при добавлении новых
 узлов.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Архитектура ClickHouse Cloud" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Архитектура ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+
+</Frame>
+
+</div>
 
 <div id="differences">
   ### Различия

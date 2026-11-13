@@ -9,7 +9,6 @@ sidebarTitle: 'Kubernetes'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 Collect container logs, node and cluster metrics, and Kubernetes events with two OpenTelemetry collectors: a DaemonSet on each node and a single deployment for cluster-wide data.
 
@@ -31,7 +30,15 @@ These collectors gather infrastructure data. Instrument your applications separa
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy the OTLP HTTP endpoint and API key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Set these variables in your terminal:
 

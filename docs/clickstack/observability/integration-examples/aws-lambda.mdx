@@ -9,7 +9,6 @@ keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', 'logs', 'CloudWa
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
@@ -33,7 +32,15 @@ Collect function logs and extension logs with the Rotel Lambda Extension and sen
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Use the exact endpoint, including its port, as `ROTEL_OTLP_EXPORTER_ENDPOINT` below. Use the base HTTP endpoint without a `/v1/logs` suffix and set the protocol to `http`. The managed service requires an `Authorization=Bearer YOUR_API_KEY` header.
 
@@ -226,9 +233,25 @@ aws logs tail /aws/lambda/my-function --follow
 
 Open **Search** in ClickHouse Observability, select your **Logs** source, and filter for `ServiceName:my-lambda-api` if you used the example service name. Otherwise, use your Lambda function name. Select **Last 15 minutes**.
 
-<Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda Log View"/>
+<div className="ch-image-lg">
 
-<Image img="/images/clickstack/lambda/lambda-log.webp" alt="Lambda Log Detail"/>
+<Frame>
+
+![Lambda Log View](/images/clickstack/lambda/lambda-log-view.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Lambda Log Detail](/images/clickstack/lambda/lambda-log.webp)
+
+</Frame>
+
+</div>
 
 Look for these key attributes in the logs:
 - `service.name`: Your configured service name, or the Lambda function name by default

@@ -6,8 +6,6 @@ tags: ['Безопасность и аутентификация']
 keywords: ['SSL', 'Let/`s Encrypt']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="steps-to-follow">
   ## Порядок действий
 </div>
@@ -57,7 +55,15 @@ product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
 
 <br />
 
-<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="Конфигурация AWS Security Group с открытым портом 80" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Конфигурация AWS Security Group с открытым портом 80](/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp)
+
+</Frame>
+
+</div>
 
 3. Установите [`certbot`](https://certbot.eff.org/instructions), например с помощью `apt`
 
