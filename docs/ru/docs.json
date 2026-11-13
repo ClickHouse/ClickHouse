@@ -39,8 +39,7 @@
           "item": "Развертывания"
         },
         {
-        "$ref": "./products/cloud/navigation.json",
-        "href": "/ru/products/cloud/getting-started/cloud-get-started"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",

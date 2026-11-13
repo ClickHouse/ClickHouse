@@ -39,8 +39,7 @@
           "item": "عمليات النشر"
         },
         {
-        "$ref": "./products/cloud/navigation.json",
-        "href": "/ar/products/cloud/getting-started/cloud-get-started"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",

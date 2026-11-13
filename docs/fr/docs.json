@@ -39,8 +39,7 @@
           "item": "Déploiements"
         },
         {
-        "$ref": "./products/cloud/navigation.json",
-        "href": "/fr/products/cloud/getting-started/cloud-get-started"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",

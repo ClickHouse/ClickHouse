@@ -39,8 +39,7 @@
           "item": "배포"
         },
         {
-        "$ref": "./products/cloud/navigation.json",
-        "href": "/ko/products/cloud/getting-started/cloud-get-started"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
