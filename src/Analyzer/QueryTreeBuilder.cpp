@@ -302,7 +302,7 @@ void applyQueryLevelSettings(
         updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 }
 
-/// Undoes `executeQuery`'s own derivation otherwise, the one re-application above that can lose it.
+/// Re-applying a top-level `make_distributed_plan = DEFAULT` clears the value `executeQuery` inferred; infer it again.
 void rederiveDistributedPlanIfReset(
     bool is_subquery, const std::vector<String> & default_settings, const ContextMutablePtr & updated_context)
 {
