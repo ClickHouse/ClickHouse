@@ -57,8 +57,13 @@ run_case partitioned "x Int64, p Int32" "PARTITION BY p ORDER BY x" \
 run_case two_columns "a Int32, b Int32" "ORDER BY (a, b)" \
     "SELECT cityHash64(number) % 10, cityHash64(number, 1) % 1000 FROM numbers(10000)" "(a, b)" "arraySort"
 run_case desc "x Int64" "ORDER BY x DESC" "SELECT ${RANDOM_X} FROM numbers(10000)" "x" "arrayReverseSort"
-# A small byte limit ends files before the row limit; they are still sorted and tagged.
-run_case byte_limit "x Int64" "ORDER BY x" "SELECT ${RANDOM_X} FROM numbers(10000)" "x" "arraySort" "--iceberg_insert_max_bytes_in_data_file=12000"
+# The byte limit applies to the compressed file: 2000 compressible rows of 1 KiB stay in one file under a 512 KiB
+# limit, incompressible ones are split, still sorted and tagged.
+PARQUET_SETTINGS="SETTINGS output_format_parquet_row_group_size = 100, output_format_parquet_parallel_encoding = 0"
+run_case compressible "x Int64, s String" "ORDER BY x ${PARQUET_SETTINGS}" \
+    "SELECT ${RANDOM_X}, repeat('a', 1024) FROM numbers(2000)" "x" "arraySort" "--iceberg_insert_max_bytes_in_data_file=524288"
+run_case incompressible "x Int64, s String" "ORDER BY x ${PARQUET_SETTINGS}" \
+    "SELECT ${RANDOM_X}, randomPrintableASCII(1024) FROM numbers(2000)" "x" "arraySort" "--iceberg_insert_max_bytes_in_data_file=524288"
 # `CREATE TABLE` writes `nulls-last` into the sort order for `ASC` and `nulls-first` for `DESC`.
 run_case nullable "x Nullable(Int64)" "ORDER BY x" \
     "SELECT if(number % 7 = 0, NULL, ${RANDOM_X}) FROM numbers(10000)" "(isNull(x), ifNull(x, 0))" "arraySort"

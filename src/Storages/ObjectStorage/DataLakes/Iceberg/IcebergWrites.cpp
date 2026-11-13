@@ -1459,7 +1459,6 @@ void IcebergStorageSink::consume(Chunk & chunk)
         partition_result.push_back({{}, chunk.clone()});
 
     const UInt64 max_rows_in_data_file = context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file];
-    const UInt64 max_bytes_in_data_file = context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file];
     const UInt64 max_sort_buffer_bytes = context->getSettingsRef()[Setting::iceberg_insert_max_sort_buffer_bytes];
     for (auto & [partition_key, part_chunk] : partition_result)
     {
@@ -1468,10 +1467,9 @@ void IcebergStorageSink::consume(Chunk & chunk)
             if (!part_chunk.hasRows())
                 continue;
             auto & pending_file = pending_file_per_partition_key[partition_key];
-            /// Counted uncompressed, so a file can end well below the compressed byte target.
+            /// Uncompressed, so it bounds only memory; the writer ends files at the compressed byte limit.
             const size_t chunk_bytes = Chunk(withoutSortColumns(part_chunk.getColumns(), start_columns_size), part_chunk.getNumRows()).bytes();
-            if (pending_file.rows
-                && (pending_file.rows + part_chunk.getNumRows() > max_rows_in_data_file || pending_file.bytes + chunk_bytes > max_bytes_in_data_file))
+            if (pending_file.rows && pending_file.rows + part_chunk.getNumRows() > max_rows_in_data_file)
                 writePendingFile(partition_key, pending_file);
             /// Bounds memory across partitions: write the largest pending files, as smaller sorted files.
             while (max_sort_buffer_bytes && pending_bytes && pending_bytes + chunk_bytes > max_sort_buffer_bytes)
