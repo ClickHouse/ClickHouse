@@ -1,0 +1,14 @@
+IN on shards	5	5	1
+JOIN on shards	5	5	1
+function merge	5	5	1
+function remote	5	5	1
+function view	5	5	1
+parameterized view	5	5	1
+subquery	5	5	1
+view	5	5	1
+view in JOIN	5	5	1
+1
+4
+05558_local	1	1
+05558_remote	1	0
+05558_remote	0	1

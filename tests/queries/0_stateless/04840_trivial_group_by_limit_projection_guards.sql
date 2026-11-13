@@ -5,8 +5,8 @@
 -- returned wrong results (fewer rows or wrong values) before the guards were added, as
 -- pinned by the expected outputs.
 --
--- The queries run at the top level of an `INSERT ... SELECT` because the pass fires only
--- on the top-level query. The result of the problematic query is captured into a table
+-- The queries run at the top level of an `INSERT ... SELECT` because without aggregate
+-- functions the optimization applies only to the top-level query. The result of the problematic query is captured into a table
 -- because its correct output rows are an unspecified subset of the groups; the assertions
 -- are on deterministic aggregates of it.
 
