@@ -1709,11 +1709,13 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                 if (decimal_type->getTypeId() == TypeIndex::Decimal64)
                 {
                     /// Below 2^51 raw units, adjacent decimal values are farther apart
-                    /// than one `Float64` ULP at every scale. The ordinary comparison
-                    /// is therefore safe and avoids the scaled fallback on common values.
-                    auto raw_magnitude = buildResolvedFunction("abs", {raw_decimal}, context);
+                    /// than one `Float64` ULP at every scale. A float below half that
+                    /// magnitude can only compare equal to a decimal in the safe range.
+                    /// Guarding the float avoids decoding every decimal in common rows.
+                    auto float_magnitude = buildResolvedFunction("abs", {float_value}, context);
+                    const auto safe_float_magnitude = std::ldexp(1.0, 50) / std::pow(10.0, static_cast<int>(scale));
                     auto within_exact_range = buildResolvedFunction(
-                        "less", {std::move(raw_magnitude), std::make_shared<ConstantNode>(Field{UInt64{1} << 51})}, context);
+                        "less", {std::move(float_magnitude), std::make_shared<ConstantNode>(Field{safe_float_magnitude})}, context);
                     auto fast_equal = buildResolvedFunction("equals", {decimal_argument, numeric_argument}, context);
                     result = buildResolvedFunction("if", {std::move(within_exact_range), std::move(fast_equal), std::move(result)}, context);
                 }
