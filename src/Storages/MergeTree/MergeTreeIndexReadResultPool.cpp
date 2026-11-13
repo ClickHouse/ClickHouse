@@ -199,6 +199,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
                         ranges.getNumberOfMarks(), total_granules, part_info->getPartName());
+        total_granules = ranges.getNumberOfMarks();
     }
 
     /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys). The primary key and skip indexes
@@ -261,6 +262,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
                     log);
+                total_granules = ranges.getNumberOfMarks();
             }
 
             MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
@@ -277,7 +279,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 if (!condition || condition->alwaysUnknownOrTrue())
                     continue;
 
-                const size_t marks_before = ranges.getNumberOfMarks();
                 auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     index_helper,
                     condition,
@@ -293,8 +294,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     no_disjunctions,
                     log);
                 ranges = std::move(filtered_ranges);
-                if (ranges.getNumberOfMarks() < marks_before)
+                if (ranges.getNumberOfMarks() < total_granules)
                     add_used_index(index_helper->index.name);
+                total_granules = ranges.getNumberOfMarks();
             }
 
             const size_t granules_after = ranges.getNumberOfMarks();
