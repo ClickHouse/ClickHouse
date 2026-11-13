@@ -902,7 +902,7 @@ bool GlueCatalog::commitTableUpdate(
         const auto & existing = get_outcome.GetResult().GetTable();
         const auto & parameters = existing.GetParameters();
         auto current_it = parameters.find("metadata_location");
-        const String current_metadata_path = current_it == parameters.end() ? "" : current_it->second;
+        const String current_metadata_path(current_it == parameters.end() ? "" : current_it->second);
 
         /// An earlier `UpdateTable` landed, but its response was lost and the retry was rejected by `VersionId`.
         if (current_metadata_path == new_metadata_path)
