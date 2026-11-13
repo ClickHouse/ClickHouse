@@ -294,7 +294,8 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
-#### Изменение существующего запроса {#modify-an-existing-query}
+<a id="modify-an-existing-query" />
+#### Изменение существующего запроса
 
 Настройки формирования применимы не только к запросам по путям, но и к запросу, который вы составляете сами. Запрос становится производной таблицей, поэтому настройки применяются к его результату, а не объединяются с ним. Например, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` выполняется следующим образом:
 
@@ -329,7 +330,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   `filter` не является механизмом контроля доступа. Он добавляет предложение `WHERE` к оборачивающему подзапросу, поэтому базовые данные могут быть прочитаны и обработаны до применения фильтра. Чтобы ограничить доступ пользователя к определённым строкам, используйте [политики строк](/ru/concepts/features/security/access-rights#row-policy-management) или [`additional_table_filters`](/ru/reference/settings/session-settings/additional#additional_table_filters).
 </Warning>
 
-### Переопределение форматов и сжатия {#format-and-compression-overrides}
+<a id="format-and-compression-overrides" />
+### Переопределение форматов и сжатия
 
 | Настройка        | Действие                                                                                                                                                                                                                                                                                                                               |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -345,7 +347,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 Двоичные и сжатые HTTP-ответы содержат заголовок `Content-Disposition: attachment; filename=…`. Имя файла определяется URL-путём, а если путь его не задаёт, используется `result.<format>.<compression>`.
 
-### Использование таблицы из пути в запросе {#implicit-table}
+<a id="implicit-table" />
+### Использование таблицы из пути в запросе
 
 Если путь указывает на таблицу и вы также задаёте параметр `query`, таблица из пути становится доступной через [`implicit_table_at_top_level`](/ru/reference/settings/session-settings/implicit#implicit_table_at_top_level). `SELECT` без предложения `FROM` читает данные из таблицы, указанной в пути:
 
@@ -362,7 +365,8 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 Для `INSERT`-запросов необходим метод передачи данных `POST`. В этом случае начало запроса можно указать в параметре URL, а сами данные для вставки передать через POST. Данными для вставки может быть, например, дамп из MySQL с полями, разделёнными табуляцией. Таким образом, запрос `INSERT` заменяет команду `LOAD DATA LOCAL INFILE` из MySQL.
 
-### Примеры {#examples}
+<a id="examples" />
+### Примеры
 
 Чтобы создать таблицу:
 
@@ -448,7 +452,8 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Для успешных запросов, которые не возвращают таблицу с данными, тело ответа будет пустым.
 
-### Вставка данных в формате Protobuf {#insert-protobuf}
+<a id="insert-protobuf" />
+### Вставка данных в формате Protobuf
 
 Данные в двоичных форматах, таких как [`Protobuf`](/ru/reference/formats/Protobuf/Protobuf), отправляются так же, поскольку `--data-binary` передаёт байты без изменений.
 Настройки, которые требуются формату, например [`format_schema`](/ru/reference/settings/formats/format-schema#format_schema), передаются в виде параметров URL наряду с `query` — как и любые другие настройки.
@@ -505,7 +510,8 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 Формат `Protobuf` ожидает, что каждому сообщению предшествует его длина, закодированная как varint.
 Для одиночного сообщения без такого префикса используйте [`ProtobufSingle`](/ru/reference/formats/Protobuf/ProtobufSingle), а для строк, передаваемых как вложенные сообщения одного сообщения `Envelope`, — [`ProtobufList`](/ru/reference/formats/Protobuf/ProtobufList).
 
-## Сжатие {#compression}
+<a id="compression" />
+## Сжатие
 
 Сжатие можно использовать для уменьшения сетевого трафика при передаче больших объёмов данных или для создания дампов, которые сразу сжимаются.
 
@@ -653,7 +659,8 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 * [Настройки](/ru/reference/settings/session-settings)
 * [SET](/ru/reference/statements/set)
 
-## Использование сеансов ClickHouse в HTTP-протоколе {#using-clickhouse-sessions-in-the-http-protocol}
+<a id="using-clickhouse-sessions-in-the-http-protocol" />
+## Использование сеансов ClickHouse в HTTP-протоколе
 
 Сеансы ClickHouse также можно использовать в HTTP-протоколе. Для этого добавьте к запросу `GET`-параметр `session_id`. В качестве идентификатора сеанса можно использовать любую строку.
 
@@ -694,7 +701,8 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 HTTP-интерфейс позволяет передавать внешние данные (внешние временные таблицы) для выполнения запросов. Подробнее см. в разделе [&quot;Внешние данные для обработки запросов&quot;](/ru/reference/engines/table-engines/special/external-data).
 
-## Буферизация ответа {#response-buffering}
+<a id="response-buffering" />
+## Буферизация ответа
 
 Буферизацию ответа можно включить на стороне сервера. Для этого предусмотрены следующие URL-параметры:
 
@@ -720,9 +728,8 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   Используйте буферизацию, чтобы избежать ситуаций, когда ошибка при обработке запроса возникает уже после того, как клиенту были отправлены код ответа и HTTP-заголовки. В таком случае сообщение об ошибке записывается в конец тела ответа, и на стороне клиента её можно обнаружить только на этапе разбора.
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## Установка роли с помощью параметров запроса
-</div>
+<a id="setting-role-with-query-parameters" />
+## Установка роли с помощью параметров запроса
 
 Эта возможность была добавлена в ClickHouse 24.4.
 
@@ -755,7 +762,10 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 В этом случае `?role=my_role&role=my_other_role` эквивалентно выполнению `SET ROLE my_role, my_other_role` перед выполнением оператора.
 
-## Нюансы кодов HTTP-ответов {#http_response_codes_caveats}
+На параметр запроса `role` не распространяется действие настройки сервера `access_control_improvements.readonly_restricts_set_role`, которая запрещает только оператор `SET ROLE`.
+
+<a id="http_response_codes_caveats" />
+## Нюансы кодов HTTP-ответов
 
 Из-за ограничений HTTP-протокола код ответа HTTP 200 не гарантирует, что запрос был выполнен успешно.
 
@@ -891,9 +901,8 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## Предопределённый HTTP-интерфейс
-</div>
+<a id="predefined_http_interface" />
+## Предопределённый HTTP-интерфейс
 
 ClickHouse поддерживает выполнение определённых запросов через HTTP-интерфейс. Например, записать данные в таблицу можно следующим образом:
 
@@ -902,6 +911,8 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 ```
 
 ClickHouse также поддерживает предопределённый HTTP-интерфейс, который упрощает интеграцию со сторонними инструментами, такими как [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Давайте рассмотрим пример.
+
+Те же обработчики можно задать и с помощью SQL, не редактируя файл конфигурации сервера, — см. [`CREATE HANDLER`](/ru/reference/statements/create/handler).
 
 Прежде всего, добавьте этот раздел в файл конфигурации сервера.
 
@@ -945,23 +956,23 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
-# HELP "Query" "Количество выполняемых запросов"
+# HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
 "Query" 1
 
-# HELP "Merge" "Количество выполняемых фоновых слияний"
+# HELP "Merge" "Number of executing background merges"
 # TYPE "Merge" counter
 "Merge" 0
 
-# HELP "PartMutation" "Количество мутаций (ALTER DELETE/UPDATE)"
+# HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
 # TYPE "PartMutation" counter
 "PartMutation" 0
 
-# HELP "ReplicatedFetch" "Количество частей данных, загружаемых с реплики"
+# HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
 # TYPE "ReplicatedFetch" counter
 "ReplicatedFetch" 0
 
-# HELP "ReplicatedSend" "Количество частей данных, отправляемых на реплики"
+# HELP "ReplicatedSend" "Number of data parts being sent to replicas"
 # TYPE "ReplicatedSend" counter
 "ReplicatedSend" 0
 
@@ -1022,7 +1033,8 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 Далее рассматриваются способы настройки для разных `type`.
 
-### predefined_query_handler {#predefined_query_handler}
+<a id="predefined_query_handler" />
+### predefined_query_handler
 
 `predefined_query_handler` поддерживает установку значений `Settings` и `query_params`. Вы можете настроить `query` для типа `predefined_query_handler`.
 
@@ -1102,7 +1114,8 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
   В одном `predefined_query_handler` поддерживается только один `запрос`.
 </Note>
 
-### dynamic_query_handler {#dynamic_query_handler}
+<a id="dynamic_query_handler" />
+### dynamic_query_handler
 
 В `dynamic_query_handler` запрос передаётся в виде параметра HTTP-запроса. Отличие состоит в том, что в `predefined_query_handler` запрос записывается в файле конфигурации. В `dynamic_query_handler` можно настроить `query_param_name`.
 
@@ -1386,7 +1399,8 @@ ClickHouse позволяет настраивать пользовательс�
 </clickhouse>
 ```
 
-## Корректный JSON/XML-ответ при исключении во время потоковой передачи по HTTP {#valid-output-on-exception-http-streaming}
+<a id="valid-output-on-exception-http-streaming" />
+## Корректный JSON/XML-ответ при исключении во время потоковой передачи по HTTP
 
 Во время выполнения запроса по HTTP может возникнуть исключение, когда часть данных уже была отправлена. Обычно в таком случае исключение отправляется клиенту в виде обычного текста.
 Даже если для вывода данных использовался определённый формат, результат может стать недопустимым с точки зрения этого формата.

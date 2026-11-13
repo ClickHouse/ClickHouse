@@ -10,6 +10,8 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { CloudSQLIAMAuthentication } from "/snippets/ja/clickpipes/_cloudsql_iam_authentication.mdx";
+
 <Info>
   サイドバーにあるサポート対象のプロバイダのいずれかを使用している場合は、そのプロバイダ向けのガイドを参照してください。
 </Info>
@@ -20,9 +22,7 @@ integration:
 
 Postgres 12 以降
 
-<div id="enable-logical-replication">
-  ## 論理レプリケーションを有効にする
-</div>
+## 論理レプリケーションを有効にする {#enable-logical-replication}
 
 設定 `cloudsql.logical_decoding` がオンになっている場合は、以下の手順に従う**必要はありません**。別のデータレプリケーションツールから移行している場合は、この設定は通常あらかじめ構成されています。
 
@@ -60,9 +60,7 @@ Postgres 12 以降
 
 </div>
 
-<div id="creating-clickpipes-user-and-granting-permissions">
-  ## ClickPipes ユーザーの作成と権限の付与
-</div>
+## ClickPipes ユーザーの作成と権限の付与 {#creating-clickpipes-user-and-granting-permissions}
 
 管理者ユーザーで Cloud SQL Postgres に接続し、以下のコマンドを実行します。
 
@@ -98,19 +96,21 @@ Postgres 12 以降
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
+* 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケーションするつもりでない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
+## IAM データベース認証を使用する (任意、ベータ) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="postgres" />
+
 [//]: # "TODO SSH トンネリングを追加"
 
-<div id="add-clickpipes-ips-to-firewall">
-  ## ClickPipes の IP アドレスをファイアウォールに追加する
-</div>
+## ClickPipes の IP アドレスをファイアウォールに追加する {#add-clickpipes-ips-to-firewall}
 
 以下の手順に従って、ClickPipes の IP アドレスをネットワークに追加してください。
 

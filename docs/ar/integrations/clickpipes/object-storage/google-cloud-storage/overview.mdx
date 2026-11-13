@@ -36,9 +36,7 @@ doc_type: 'guide'
 
 عند تمكين الإدخال المستمر، تقوم ClickPipes بإدخال البيانات باستمرار من المسار المحدد. ولتحديد ترتيب الإدخال، يعتمد ClickPipe الخاص بـ GCS، افتراضيًا، على [الترتيب المعجمي](#continuous-ingestion-lexicographical-order) الضمني للملفات. كما يمكن أيضًا تهيئته لإدخال الملفات [بأي ترتيب](#continuous-ingestion-any-order) باستخدام اشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) [مُعدّ لتوفير إشعارات للحاوية](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line).
 
-<div id="continuous-ingestion-lexicographical-order">
-  #### الترتيب المعجمي
-</div>
+#### الترتيب المعجمي {#continuous-ingestion-lexicographical-order}
 
 يفترض GCS ClickPipe أن الملفات تُضاف إلى الحاوية بترتيب معجمي، ويعتمد على هذا الترتيب الضمني لإدخال الملفات بشكل تسلسلي. وهذا يعني أن أي ملف جديد **يجب** أن يكون أكبر معجميًا من آخر ملف تم إدخاله. على سبيل المثال، ستُدخَل الملفات المسماة `file1`، `file2`، و `file3` بشكل تسلسلي، ولكن إذا أُضيف `file 0` جديد إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف تم إدخاله.
 
@@ -55,7 +53,7 @@ doc_type: 'guide'
 يمكن تهيئة GCS ClickPipe لإدخال الملفات التي لا تملك ترتيبًا ضمنيًا، وذلك عبر إعداد اشتراك [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) يتلقى إشعارات من الحاوية. يتيح ذلك لـ ClickPipes الاستماع إلى أحداث إنشاء الكائنات وإدخال أي ملفات جديدة بغض النظر عن اصطلاح تسمية الملفات.
 
 <Note>
-  الوضع غير المرتب **غير** مدعوم للحاويات العامة. ويتطلب مصادقة **حساب الخدمة** واشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) متصلًا بالحاوية.
+  الوضع غير المرتب **غير** مدعوم للحاويات العامة. ويتطلب مصادقة حساب الخدمة، باستخدام إما مفتاح تم تحميله أو GCP Workload Identity، واشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) متصلًا بالحاوية.
 </Note>
 
 في هذا الوضع، يجري GCS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يستمع إلى إشعارات `OBJECT_FINALIZE` عبر اشتراك Pub/Sub التي تطابق المسار المحدد. سيتم **تجاهل** أي رسالة لملف تمت رؤيته سابقًا، أو لملف لا يطابق المسار، أو لحدث من نوع مختلف. لإدخال الملفات التي يتم تسليمها عبر الاشتراك فقط، فعّل **تخطي التحميل الأولي**. عند تفعيله، يتخطى ClickPipes الفحص الأولي للملفات الموجودة في المسار المحدد ويعالج فقط الملفات التي يتم تسليمها عبر اشتراك Pub/Sub.
@@ -149,9 +147,12 @@ doc_type: 'guide'
 
 يلزم استخدام مصادقة **حساب الخدمة** عند استخدام [الوضع غير المرتَّب](#continuous-ingestion-any-order) مع إشعارات Pub/Sub. حدِّد **حساب الخدمة** باعتبارها طريقة المصادقة، ثم حمِّل ملف JSON الخاص بمفتاح حساب الخدمة.
 
-<div id="hmac-credentials">
-  #### بيانات اعتماد HMAC
-</div>
+#### Workload Identity في GCP (تجريبي) {#gcp-workload-identity}
+
+اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity) للحصول على حساب الخدمة المُدار من سياق خدمة ClickPipes. امنح هذا الحساب الدور `roles/storage.objectViewer` على حاوية المصدر، ثم أنشئ مسار استيعاب البيانات باستخدام المصادقة من نوع `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. أما في حالة الإدخال غير المرتب، فامنحه أيضًا الدورين `roles/pubsub.subscriber` و`roles/pubsub.viewer` على اشتراك الإشعارات القائم، واستخدم اسمه المؤهَّل بالكامل: `projects/<project-id>/subscriptions/<subscription-id>`.
+
+<a id="hmac-credentials" />
+#### بيانات اعتماد HMAC
 
 لاستخدام [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) للمصادقة، اختر `Credentials` ضمن **طريقة المصادقة** عند إعداد ClickPipe connection. ثم أدخِل مفتاح الوصول (على سبيل المثال، `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) والمفتاح السري (على سبيل المثال، `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) في حقلي `Access key` و`Secret key`، على التوالي.
 
@@ -180,9 +181,8 @@ doc_type: 'guide'
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<div id="advanced-settings">
-  ## الإعدادات المتقدمة
-</div>
+<a id="advanced-settings" />
+## الإعدادات المتقدمة
 
 يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة استخدامك تتطلب مزيدًا من الضبط الدقيق، فيمكنك تعديل الإعدادات التالية:
 

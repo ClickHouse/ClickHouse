@@ -71,6 +71,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
       Los buckets de almacenamiento, la VPC/VNet, el clúster de Kubernetes y los recursos de computación necesarios para ejecutar ClickHouse no se incluyen en esta configuración inicial. Se aprovisionarán en el siguiente paso.
     </Note>
 
+<a id="terraform-module-aws" />
 #### Módulo de Terraform para AWS
 
     Si prefiere usar Terraform en lugar de CloudFormation para las implementaciones de AWS, use el módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
@@ -90,6 +91,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
       Anteriormente, el módulo se distribuía como un archivo tarball en `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Esa URL sigue disponible, pero está obsoleta; utilice el módulo de GitHub anterior.
     </Note>
 
+<a id="aws-external-id" />
 #### ID externo de AWS
 
     En AWS, el rol de IAM creado durante la configuración establece una relación de confianza con ClickHouse Cloud mediante un [ID externo](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) para protegerse contra ataques de suplantación de autoridad. La ClickHouse Cloud console genera un ID externo para su cuenta de AWS al iniciar el onboarding y lo rellena previamente en el enlace de CloudFormation; si utiliza Terraform, proporcione el mismo valor como `external_id`. Todas las infraestructuras BYOC de la misma cuenta de AWS comparten el mismo ID externo.
@@ -102,7 +104,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
   <Step title="Configure la infraestructura BYOC" id="setup-byoc-infrastructure">
     Se le pedirá que configure la infraestructura —incluidos los buckets de almacenamiento de objetos, la VPC/VNet y el clúster de Kubernetes— desde la consola de ClickHouse Cloud. Algunas configuraciones deben definirse en esta etapa, ya que no podrán modificarse posteriormente. En concreto:
 
-    * **Región**: Todas las **regiones públicas** incluidas en nuestra documentación sobre [regiones compatibles](/es/products/cloud/reference/supported-regions) están disponibles para implementaciones de BYOC. Actualmente, las regiones privadas no son compatibles.
+    * **Región**: Elija una región marcada como `BYOC` en nuestra documentación sobre [regiones compatibles](/es/products/cloud/reference/supported-regions). Las regiones que además están marcadas como `Private` están disponibles bajo solicitud. Póngase en contacto con su representante de ClickHouse para solicitar una.
 
     * **Rango CIDR de VPC/VNet**: De forma predeterminada, usamos `10.0.0.0/16` como rango CIDR para la VPC de BYOC (AWS/GCP) o la VNet (Azure). Si planea usar peering de VPC/VNet con otra cuenta, asegúrese de que los rangos CIDR no se superpongan. El tamaño mínimo difiere según la nube:
 
@@ -124,6 +126,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
 
     </div>
 
+<a id="preflight-validation" />
 #### Validación previa
 
     Al hacer clic en **Set up Infrastructure**, ClickHouse Cloud ejecuta un conjunto de comprobaciones previas de **solo lectura** sobre su cuenta antes de crear ningún recurso. Si todas se superan, el aprovisionamiento continúa. Si una comprobación falla, la configuración se pausa y la consola muestra exactamente cuál es el problema, de modo que pueda corregirlo antes de que se cree ningún recurso.
@@ -168,7 +171,8 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
   </Step>
 </Steps>
 
-### Crea tu primer servicio de ClickHouse BYOC {#create-clickhouse-service}
+<a id="create-clickhouse-service" />
+### Crea tu primer servicio de ClickHouse BYOC
 
 Una vez aprovisionada tu infraestructura BYOC, ya puedes lanzar tu primer servicio de ClickHouse. Abre la consola de ClickHouse Cloud, selecciona tu entorno BYOC y sigue las indicaciones para crear un nuevo servicio.
 

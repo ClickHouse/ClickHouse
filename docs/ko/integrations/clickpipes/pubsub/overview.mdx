@@ -20,11 +20,9 @@ Pub/Sub ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관�
   ## 사전 요구 사항
 </div>
 
-[ClickPipes 소개](/ko/integrations/clickpipes/home)를 숙지했으며, 수집할 토픽이 포함된 GCP 프로젝트에 액세스할 수 있고, 적절한 Pub/Sub 권한이 있는 서비스 계정을 생성한 상태여야 합니다. ClickPipes에 필요한 정확한 권한 집합은 [Pub/Sub IAM 권한 가이드](/ko/integrations/clickpipes/pubsub/auth)에서 확인하십시오.
+[ClickPipes 소개](/ko/integrations/clickpipes/home)를 숙지했으며, 수집할 토픽이 포함된 GCP 프로젝트에 액세스할 수 있고, ClickPipes가 사용하는 서비스 계정에 적절한 Pub/Sub 권한을 부여할 수 있어야 합니다. 인증 옵션과 필요한 정확한 권한 집합은 [Pub/Sub IAM 권한 가이드](/ko/integrations/clickpipes/pubsub/auth)에서 확인하십시오.
 
-<div id="creating-your-first-clickpipe">
-  ## 첫 번째 ClickPipe 만들기
-</div>
+## 첫 번째 ClickPipe 만들기 {#creating-your-first-clickpipe}
 
 1. ClickHouse Cloud 서비스의 SQL 콘솔에 액세스합니다.
 
@@ -91,7 +89,7 @@ Pub/Sub ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관�
 
 </div>
 
-6. 다음 단계에서는 데이터를 새 ClickHouse table에 수집할지, 기존 table을 재사용할지 선택할 수 있습니다. 화면의 안내에 따라 table 이름, 스키마, 설정을 수정하십시오. 상단의 샘플 table에서 변경 사항을 실시간으로 미리 볼 수 있습니다.
+6. 다음 단계에서는 데이터를 새 ClickHouse 테이블에 수집할지, 기존 테이블을 재사용할지 선택할 수 있습니다. 화면의 안내에 따라 테이블 이름, 스키마, 설정을 수정하십시오. 상단의 샘플 테이블에서 변경 사항을 실시간으로 미리 볼 수 있습니다.
 
 <div className="ch-image-lg">
 
@@ -115,7 +113,7 @@ Pub/Sub ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관�
 
 </div>
 
-7. 또는 데이터를 기존 ClickHouse table에 수집하도록 선택할 수도 있습니다. 이 경우 UI에서 source의 필드를 선택한 대상 table의 ClickHouse 필드에 매핑할 수 있습니다.
+7. 또는 데이터를 기존 ClickHouse 테이블에 수집하도록 선택할 수도 있습니다. 이 경우 UI에서 소스의 필드를 선택한 대상 테이블의 ClickHouse 필드에 매핑할 수 있습니다.
 
 <div className="ch-image-lg">
 
@@ -129,10 +127,10 @@ Pub/Sub ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관�
 
 8. 마지막으로 내부 ClickPipes 사용자에 대한 권한을 구성할 수 있습니다.
 
-**권한:** ClickPipes는 대상 테이블에 데이터를 쓰기 위한 전용 사용자를 생성합니다. 사용자 지정 role 또는 사전 정의된 role 중 하나를 선택하여 이 내부 사용자의 role을 설정할 수 있습니다.
+**권한:** ClickPipes는 대상 테이블에 데이터를 쓰기 위한 전용 사용자를 생성합니다. 사용자 지정 역할(role) 또는 사전 정의된 역할(role) 중 하나를 선택하여 이 내부 사용자의 역할(role)을 설정할 수 있습니다.
 
-* `Full access`: cluster에 대한 전체 액세스 권한을 부여합니다. 대상 테이블과 함께 materialized view 또는 딕셔너리를 사용하는 경우 유용할 수 있습니다.
-  * `Only destination table`: 대상 테이블에 대한 `INSERT` 권한만 부여합니다.
+* `Full access`: 클러스터에 대한 전체 액세스 권한을 부여합니다. 대상 테이블과 함께 materialized view 또는 딕셔너리를 사용하는 경우 유용할 수 있습니다.
+* `Only destination table`: 대상 테이블에 대한 `INSERT` 권한만 부여합니다.
 
 <div className="ch-image-lg">
 
@@ -144,7 +142,7 @@ Pub/Sub ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관�
 
 </div>
 
-9. &quot;Complete Setup&quot;을 클릭하면 시스템이 ClickPipe를 등록하며, 요약 table에 나열된 항목을 확인할 수 있습니다.
+9. &quot;Complete Setup&quot;을 클릭하면 시스템이 ClickPipe를 등록하며, 요약 테이블에 나열된 항목을 확인할 수 있습니다.
 
 <div className="ch-image-sm">
 
@@ -351,10 +349,10 @@ ClickPipes는 가용 영역에 분산된 아키텍처를 통해 고가용성을 
 
 Pub/Sub용 ClickPipes는 **at-least-once** 전달을 제공합니다. Pub/Sub 메시지는 해당 행이 ClickHouse에 삽입된 후에만(또는 형식이 잘못된 레코드의 경우 오류 테이블에 기록된 후에만) ack됩니다. 무한 재전달을 방지하기 위해, 오류 테이블로 라우팅된 잘못된 레코드를 포함해 모든 메시지는 처리되면 ack됩니다. 레플리카가 삽입 후 Pub/Sub에 ack가 도달하기 전에 장애로 중단되면, 메시지는 ack deadline이 지난 뒤 다시 전달되고 다시 삽입되므로 다운스트림 consumer는 중복을 허용할 수 있어야 합니다. 정확히 한 번 처리 의미 체계가 필요하다면 `_message_id` 가상 컬럼을 사용해 다운스트림에서 중복을 제거하십시오(Pub/Sub의 각 메시지 ID는 토픽 내에서 고유합니다).
 
-<div id="authentication">
-  ## 인증
-</div>
+## 인증 {#authentication}
 
-ClickPipes for Pub/Sub는 서비스 계정 JSON 키를 사용하여 GCP에 인증합니다. 파이프를 생성할 때 키 파일을 업로드하면 ClickPipes가 이를 저장 시 암호화하고, 메시지를 수신하며 관리형 subscription의 수명 주기를 관리하는 데 런타임에 사용합니다.
+ClickPipes UI는 서비스 계정 JSON 키를 사용합니다. 파이프를 생성할 때 키 파일을 업로드하면 ClickPipes가 이를 저장 시 암호화하고, 메시지를 수신하며 관리형 구독의 수명 주기를 관리하는 데 런타임에 사용합니다.
 
-필요한 IAM 권한의 정확한 목록과 권장 사용자 지정 Role 정의는 [Pub/Sub IAM 권한 가이드](/ko/integrations/clickpipes/pubsub/auth)를 참조하십시오.
+GCP Workload Identity도 베타로 제공됩니다. 설정 방법은 [GCP Workload Identity 가이드](/ko/integrations/clickpipes/security/gcp-workload-identity)를 참조하십시오.
+
+필요한 IAM 권한의 정확한 목록과 권장 사용자 지정 역할(role) 정의는 [Pub/Sub IAM 권한 가이드](/ko/integrations/clickpipes/pubsub/auth)를 참조하십시오.

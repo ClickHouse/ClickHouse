@@ -71,6 +71,7 @@ doc_type: '참고'
       ClickHouse 실행에 필요한 스토리지 버킷, VPC/VNet, Kubernetes 클러스터 및 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 다음 단계에서 프로비저닝됩니다.
     </Note>
 
+<a id="terraform-module-aws" />
 #### AWS용 Terraform 모듈
 
     AWS 배포에서 CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
@@ -90,6 +91,7 @@ doc_type: '참고'
       이 모듈은 이전에 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`에서 tarball 형태로 배포되었습니다. 해당 URL은 계속 사용할 수 있지만 더 이상 사용되지 않으므로 위의 GitHub 모듈을 사용하십시오.
     </Note>
 
+<a id="aws-external-id" />
 #### AWS 외부 ID
 
     AWS에서는 설정 중 생성된 IAM 역할이 혼동된 대리인 공격을 방지하기 위해 [외부 ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)(`sts:ExternalId`)를 통해 ClickHouse Cloud를 신뢰하도록 구성됩니다. ClickHouse Cloud 콘솔은 온보딩을 시작할 때 AWS 계정용 외부 ID를 생성하여 CloudFormation 링크에 미리 입력합니다. Terraform을 사용하는 경우 동일한 값을 `external_id`로 전달하십시오. 동일한 AWS 계정의 모든 BYOC 인프라는 같은 외부 ID를 공유합니다.
@@ -102,7 +104,7 @@ doc_type: '참고'
   <Step title="BYOC 인프라 구성" id="setup-byoc-infrastructure">
     ClickHouse Cloud 콘솔에서 객체 스토리지 버킷, VPC/VNet, Kubernetes 클러스터를 포함한 인프라를 설정하라는 안내가 표시됩니다. 이 단계에서 결정해야 하며 이후에는 변경할 수 없는 구성도 있습니다. 구체적으로 다음과 같습니다.
 
-    * **리전**: [지원 리전](/ko/products/cloud/reference/supported-regions) 문서에 나열된 모든 **퍼블릭 리전**에서 BYOC를 배포할 수 있습니다. 현재 프라이빗 리전은 지원되지 않습니다.
+    * **리전**: [지원 리전](/ko/products/cloud/reference/supported-regions) 문서에서 `BYOC`로 표시된 리전을 선택하십시오. `Private`로도 표시된 리전은 요청 시 사용할 수 있으며, 해당 리전을 요청하려면 ClickHouse 담당자에게 문의하십시오.
 
     * **VPC/VNet CIDR 범위**: 기본적으로 BYOC VPC(AWS/GCP) 또는 VNet(Azure)의 CIDR 범위로 `10.0.0.0/16`을 사용합니다. 다른 계정과 VPC/VNet 피어링을 사용할 계획이라면 CIDR 범위가 겹치지 않도록 하십시오. 최소 크기는 Cloud마다 다릅니다:
 
@@ -124,6 +126,7 @@ doc_type: '참고'
 
     </div>
 
+<a id="preflight-validation" />
 #### 사전 유효성 검사
 
     **Set up Infrastructure**를 클릭하면 ClickHouse Cloud는 리소스를 생성하기 전에 계정을 대상으로 일련의 **읽기 전용** 사전 점검을 실행합니다. 모든 점검을 통과하면 프로비저닝이 계속 진행됩니다. 점검에 실패하면 설정이 일시 중지되고 콘솔에 문제가 무엇인지 정확히 표시되므로, 리소스가 생성되기 전에 문제를 해결할 수 있습니다.
@@ -168,7 +171,8 @@ doc_type: '참고'
   </Step>
 </Steps>
 
-### 첫 번째 BYOC ClickHouse 서비스 생성 {#create-clickhouse-service}
+<a id="create-clickhouse-service" />
+### 첫 번째 BYOC ClickHouse 서비스 생성
 
 BYOC 인프라가 프로비저닝되면 첫 번째 ClickHouse 서비스를 생성할 준비가 됩니다. ClickHouse Cloud 콘솔을 열고 BYOC 환경을 선택한 다음, 안내에 따라 새 서비스를 생성하십시오.
 

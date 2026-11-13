@@ -29,9 +29,7 @@ Las siguientes características diferencian a ClickHouse Private de las implemen
 * Versiones de la base de datos y del operador de ClickHouse totalmente probadas y validadas en ClickHouse Cloud
 * API para operaciones mediante programación, incluidas copias de seguridad y operaciones de escalado
 
-<div id="architecture">
-  ## Arquitectura
-</div>
+## Arquitectura {#architecture}
 
 ClickHouse Private se ejecuta por completo dentro de su entorno de despliegue y ofrece nuestra arquitectura nativa de Cloud con separación de cómputo y almacenamiento.
 
@@ -49,16 +47,16 @@ ClickHouse Private se ejecuta por completo dentro de su entorno de despliegue y 
 
 <br />
 
-<div id="supported-configurations">
-  ## Configuraciones compatibles
-</div>
+## Configuraciones compatibles {#supported-configurations}
 
-ClickHouse Private admite actualmente las siguientes configuraciones:
+ClickHouse Private está disponible en las siguientes configuraciones, con indicación del estado de compatibilidad de cada entorno:
 
-| Entorno | Orquestación                     | Almacenamiento              | Estado       |
-| :------ | :------------------------------- | :-------------------------- | :----------- |
-| AWS     | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Disponible   |
-| GCP     | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | Vista previa |
+| Entorno                | Orquestación                     | Almacenamiento              | Estado             |
+| :--------------------- | :------------------------------- | :-------------------------- | :----------------- |
+| AWS                    | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Compatible         |
+| GCP                    | Google Kubernetes Engine (GKE)   | Google Cloud Storage (GCS)  | Compatible         |
+| Infraestructura propia | Kubernetes autoalojado           | MinIO AIStor                | Compatible         |
+| Azure                  | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | Versión preliminar |
 
 <div id="onboarding-process">
   ## Proceso de incorporación

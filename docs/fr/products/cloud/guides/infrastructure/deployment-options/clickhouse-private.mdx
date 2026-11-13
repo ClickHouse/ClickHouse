@@ -29,9 +29,7 @@ Les fonctionnalités suivantes distinguent ClickHouse Private des déploiements 
 * Versions de la base de données ClickHouse et de l’opérateur entièrement testées et validées dans ClickHouse Cloud
 * API pour les opérations automatisées, notamment les sauvegardes et la mise à l’échelle
 
-<div id="architecture">
-  ## Architecture
-</div>
+## Architecture {#architecture}
 
 ClickHouse Private est entièrement autonome dans votre environnement de déploiement et offre notre architecture cloud native avec séparation du calcul et du stockage.
 
@@ -53,12 +51,14 @@ ClickHouse Private est entièrement autonome dans votre environnement de déploi
   ## Configurations prises en charge
 </div>
 
-ClickHouse Private est actuellement pris en charge dans les configurations suivantes :
+ClickHouse Private est disponible dans les configurations suivantes ; le statut de prise en charge est indiqué pour chaque environnement :
 
-| Environnement | Orchestration                    | Stockage                    | Statut     |
-| :------------ | :------------------------------- | :-------------------------- | :--------- |
-| AWS           | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Disponible |
-| GCP           | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | Aperçu     |
+| Environnement | Orchestration                    | Stockage                    | Statut         |
+| :------------ | :------------------------------- | :-------------------------- | :------------- |
+| AWS           | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Pris en charge |
+| GCP           | Google Kubernetes Engine (GKE)   | Google Cloud Storage (GCS)  | Pris en charge |
+| Sur site      | Kubernetes auto-hébergé          | MinIO AIStor                | Pris en charge |
+| Azure         | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | Préversion     |
 
 <div id="onboarding-process">
   ## Processus d&#39;onboarding

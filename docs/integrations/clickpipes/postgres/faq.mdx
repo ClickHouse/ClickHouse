@@ -45,7 +45,7 @@ Please refer to the [Postgres Generated Columns: Gotchas and Best Practices](/in
 For a table to be replicated using ClickPipes for Postgres, it must have either a primary key or a [REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) defined.
 
 - **Primary Key**: The most straightforward approach is to define a primary key on the table. This provides a unique identifier for each row, which is crucial for tracking updates and deletions. You can have REPLICA IDENTITY set to `DEFAULT` (the default behavior) in this case.
-- **Replica Identity**: If a table doesn't have a primary key, you can set a replica identity. The replica identity can be set to `FULL`, which means that the entire row will be used to identify changes. Alternatively, you can set it to use a unique index if one exists on the table, and then set REPLICA IDENTITY to `USING INDEX index_name`.
+- **Replica Identity**: If a table doesn't have a primary key, you can set a replica identity. The replica identity can be set to `FULL`, which means that the entire row will be used to identify changes. Alternatively, you can set it to use a unique index if one exists on the table, and then set REPLICA IDENTITY to `USING INDEX index_name`. If you use `FULL` on a table without a primary key, set a [custom ordering key](/integrations/clickpipes/postgres/ordering_keys) on columns that are unique and never change.
 To set the replica identity to FULL, you can use the following SQL command:
 ```sql
 ALTER TABLE your_table_name REPLICA IDENTITY FULL;
@@ -53,6 +53,13 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
 REPLICA IDENTITY FULL also enables replication of unchanged TOAST columns. More on that [here](/integrations/clickpipes/postgres/toast).
 
 Note that using `REPLICA IDENTITY FULL` can have performance implications and also faster WAL growth, especially for tables without a primary key and with frequent updates or deletes, as it requires more data to be logged for each change. If you have any doubts or need assistance with setting up primary keys or replica identities for your tables, please reach out to our support team for guidance.
+
+<Warning>
+Without a custom ordering key, ClickPipes uses all columns of a keyless `REPLICA IDENTITY FULL` table as the `ORDER BY`. Even with `FINAL`, this means:
+
+- an update leaves the old row visible;
+- identical rows collapse into one, and deleting one deletes all of them.
+</Warning>
 
 It's important to note that if neither a primary key nor a replica identity is defined, ClickPipes won't be able to replicate changes for that table, and you may encounter errors during the replication process. Therefore, it's recommended to review your table schemas and ensure that they meet these requirements before setting up your ClickPipe.
 
@@ -83,6 +90,8 @@ For more details, refer to:
 Primary key updates in PostgreSQL can't be properly replayed in ClickHouse by default.
 
 This limitation exists because `ReplacingMergeTree` deduplication works based on the `ORDER BY` columns (which typically correspond to the primary key). When a primary key is updated in PostgreSQL, it appears as a new row with a different key in ClickHouse, rather than an update to the existing row. This can lead to both the old and new primary key values existing in your ClickHouse table.
+
+For tables with no primary key and `REPLICA IDENTITY FULL`, ClickPipes uses every column as the `ORDER BY` unless you set a custom ordering key, so every update counts as a primary key update.
 </Warning>
 
 Note that updating primary key columns isn't a common practice in PostgreSQL database design, as primary keys are intended to be immutable identifiers. Most applications avoid primary key updates by design, making this limitation rarely encountered in typical use cases.
@@ -143,6 +152,12 @@ For an excellent deep dive into this topic, check out our blog post: [Overcoming
 
 ClickPipes for Postgres aims to map Postgres data types as natively as possible on the ClickHouse side. This document provides a comprehensive list of each data type and its mapping: [Data Type Matrix](https://docs.peerdb.io/datatypes/datatype-matrix).
 
+### Why are NULL values from Postgres stored as `0` or empty strings in ClickHouse? {#null-values-stored-as-defaults}
+
+By default, ClickPipes creates non-`Nullable` columns in ClickHouse and stores a Postgres `NULL` as the column type's default value, such as `0` or `''`. As a result, a `NULL` and a real `0` look the same in ClickHouse.
+
+To keep `NULL` values, turn on **Preserve NULL values from source** when creating the ClickPipe. Changing the destination column to `Nullable` yourself isn't enough, because ClickPipes keeps writing default values.
+
 ### Can I define my own data type mapping while replicating data from Postgres to ClickHouse? {#can-i-define-my-own-data-type-mapping-while-replicating-data-from-postgres-to-clickhouse}
 
 Currently, we don't support defining custom data type mappings as part of the pipe. However, note that the default data type mapping used by ClickPipes is highly native. Most column types in Postgres are replicated as closely as possible to their native equivalents on ClickHouse. Integer array types in Postgres, for instance, are replicated as integer array types on ClickHouse.
@@ -165,7 +180,25 @@ During this process, both the sync (pulling data from Postgres and streaming it 
 - For sync, if it is canceled mid-way, the confirmed_flush_lsn in Postgres isn't advanced, so the next sync will start from the same position as the aborted one, ensuring data consistency.
 - For normalize, the ReplacingMergeTree insert order handles deduplication.
 
-In summary, while sync and normalize processes are terminated during a pause, it is safe to do so as they can resume without data loss or inconsistency.
+In summary, while sync and normalize processes are terminated during a pause, it is safe to do so as they can resume without data loss or inconsistency. If the raw table has a TTL, keep the pause shorter than the TTL. See [raw table retention](#raw-mirror-table-retention).
+
+### Why is the `_peerdb_raw_mirror_*` table so large, and how do I limit it? {#raw-mirror-table-retention}
+
+A CDC ClickPipe first writes change events to a raw table named `_peerdb_raw_mirror_<pipe id>` in the destination database, then normalizes them into the target tables. ClickPipes doesn't truncate this table. New raw tables are created with a default TTL. Raw tables of older pipes may have no TTL and keep every event. Check which applies with `SHOW CREATE TABLE`, and add or change the TTL with:
+
+```sql
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY SETTING ttl_only_drop_parts = 1;
+
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 90 DAY;
+```
+
+If the raw table has no partition key, the first TTL pass rewrites existing parts and can cause noticeable background I/O on a large table. Follow its progress in `system.mutations`.
+
+<Warning>
+The TTL is evaluated on wall-clock time and doesn't know the pipe state. If the pipe is paused or stalled for longer than the TTL, events that weren't normalized yet are deleted and never reach the target tables. Choose a retention longer than any planned pause.
+</Warning>
 
 ### Can ClickPipe creation be automated or done via API or CLI? {#can-clickpipe-creation-be-automated-or-done-via-api-or-cli}
 

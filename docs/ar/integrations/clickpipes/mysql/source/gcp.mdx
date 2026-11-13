@@ -10,6 +10,8 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { CloudSQLIAMAuthentication } from "/snippets/ar/clickpipes/_cloudsql_iam_authentication.mdx";
+
 هذا دليل إرشادي خطوة بخطوة لتهيئة مثيل Cloud SQL for MySQL لديك لنسخ بياناته عبر MySQL ClickPipe.
 
 <div id="enable-binlog-retention-gcp">
@@ -18,9 +20,7 @@ integration:
 
 إن binlog عبارة عن مجموعة من ملفات السجل التي تحتوي على معلومات عن تعديلات البيانات التي أُجريت على مثيل خادم MySQL، كما أن ملفات binlog مطلوبة لعملية النسخ المتماثل.
 
-<div id="enable-binlog-logging-gcp">
-  ### تمكين binary logging عبر PITR
-</div>
+### تمكين binary logging عبر PITR {#enable-binlog-logging-gcp}
 
 تحدد ميزة PITR ما إذا كان binary logging مفعّلًا أو معطّلًا لـ MySQL في Google Cloud. ويمكن ضبط ذلك من Cloud Console، من خلال تحرير مثيل Cloud SQL والتمرير إلى أسفل حتى القسم الموضّح أدناه.
 
@@ -91,6 +91,10 @@ integration:
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+## استعمال مصادقة قاعدة البيانات باستخدام IAM (اختياري، تجريبي) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="mysql" />
+
 <div id="configure-network-access-gcp-mysql">
   ## تهيئة الوصول إلى الشبكة
 </div>
@@ -108,9 +112,7 @@ integration:
 
 </div>
 
-<div id="download-root-ca-certificate-gcp-mysql">
-  ## تنزيل شهادة الجذر لـ CA واستخدامها
-</div>
+## تنزيل شهادة الجذر لـ CA واستخدامها {#download-root-ca-certificate-gcp-mysql}
 
 للاتصال بمثيل Cloud SQL الخاص بك، تحتاج إلى تنزيل شهادة الجذر لـ CA.
 

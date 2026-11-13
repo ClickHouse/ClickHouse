@@ -20,11 +20,9 @@ Les ClickPipes Pub/Sub peuvent être déployés et gérés manuellement dans la 
   ## Prérequis
 </div>
 
-Vous avez pris connaissance de l’[introduction à ClickPipes](/fr/integrations/clickpipes/home), vous avez accès à un projet GCP contenant le topic à partir duquel vous souhaitez ingérer des données, et vous avez créé un compte de service disposant des autorisations Pub/Sub appropriées. Suivez le [guide des autorisations IAM Pub/Sub](/fr/integrations/clickpipes/pubsub/auth) pour connaître l’ensemble exact des autorisations requises par ClickPipes.
+Vous avez pris connaissance de l’[introduction à ClickPipes](/fr/integrations/clickpipes/home), vous avez accès à un projet GCP contenant le topic à partir duquel vous souhaitez ingérer des données, et vous pouvez accorder les autorisations Pub/Sub appropriées au compte de service utilisé par ClickPipes. Suivez le [guide des autorisations IAM Pub/Sub](/fr/integrations/clickpipes/pubsub/auth) pour connaître les options d’authentification et l’ensemble exact des autorisations requises.
 
-<div id="creating-your-first-clickpipe">
-  ## Créer votre premier ClickPipe
-</div>
+## Créer votre premier ClickPipe {#creating-your-first-clickpipe}
 
 1. Accédez à la SQL Console de votre service ClickHouse Cloud.
 
@@ -127,12 +125,12 @@ Vous pouvez également personnaliser les paramètres avancés à l&#39;aide des 
 
 </div>
 
-8. Enfin, vous pouvez configurer les permissions de l&#39;utilisateur interne ClickPipes.
+8. Enfin, vous pouvez configurer les autorisations de l&#39;utilisateur interne ClickPipes.
 
-**Permissions :** ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne, soit un rôle personnalisé, soit l&#39;un des rôles prédéfinis :
+**Autorisations :** ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne, soit un rôle personnalisé, soit l&#39;un des rôles prédéfinis :
 
-* `Full access` : accès complet au cluster. Cela peut être utile si vous utilisez une vue matérialisée ou un Dictionary avec la table de destination.
-  * `Only destination table` : permissions `INSERT` sur la table de destination uniquement.
+* `Full access` : accès complet au cluster. Cela peut être utile si vous utilisez une vue matérialisée ou un Dictionary avec la table de destination.
+* `Only destination table` : autorisations `INSERT` sur la table de destination uniquement.
 
 <div className="ch-image-lg">
 
@@ -190,7 +188,7 @@ Il propose également des commandes pour supprimer le ClickPipe et afficher un r
 
 </div>
 
-10. **Félicitations !** Vous avez configuré avec succès votre premier ClickPipe Pub/Sub. Il fonctionnera en continu et ingérera des données en temps réel depuis votre topic Pub/Sub dans votre service ClickHouse Cloud.
+10. **Félicitations !** Vous avez configuré avec succès votre premier ClickPipe Pub/Sub. Il fonctionnera en continu et ingérera des données en temps réel depuis votre topic Pub/Sub dans votre service ClickHouse Cloud.
 
 <div id="managed-subscriptions">
   ## Abonnements gérés
@@ -351,10 +349,10 @@ Quel que soit le nombre de consommateurs en cours d’exécution, la tolérance 
 
 ClickPipes for Pub/Sub fournit une livraison **at-least-once**. Un message Pub/Sub n’est acquitté qu’après l’insertion de la ligne correspondante dans ClickHouse (ou son écriture dans la table d’erreurs pour les enregistrements mal formés) ; tous les messages sont acquittés une fois traités — y compris les enregistrements invalides redirigés vers la table d’erreurs — afin d’éviter une rediffusion infinie. Si un réplica tombe en panne après l’insertion, mais avant que l’acquittement n’atteigne Pub/Sub, le message sera renvoyé après l’ack deadline et inséré de nouveau ; les consommateurs en aval doivent donc tolérer les doublons. Si vous avez besoin d’une sémantique exactly-once, dédupliquez en aval à l’aide de la colonne virtuelle `_message_id` (chaque ID de message Pub/Sub est unique dans un topic).
 
-<div id="authentication">
-  ## Authentification
-</div>
+## Authentification {#authentication}
 
-ClickPipes for Pub/Sub s’authentifie auprès de GCP à l’aide de la clé JSON d’un compte de service. Vous téléversez le fichier de clé lors de la création du pipe ; ClickPipes le chiffre au repos et l’utilise à l’exécution pour consommer les messages et gérer le cycle de vie de l’abonnement géré.
+L’interface utilisateur de ClickPipes utilise la clé JSON d’un compte de service. Vous téléversez le fichier de clé lors de la création du pipe ; ClickPipes le chiffre au repos et l’utilise à l’exécution pour consommer les messages et gérer le cycle de vie de l’abonnement géré.
+
+GCP Workload Identity est également disponible en version bêta. Consultez le [guide GCP Workload Identity](/fr/integrations/clickpipes/security/gcp-workload-identity) pour connaître les instructions de configuration.
 
 Pour obtenir la liste exacte des autorisations IAM requises et une définition recommandée pour un rôle personnalisé, consultez le [guide des autorisations IAM Pub/Sub](/fr/integrations/clickpipes/pubsub/auth).

@@ -293,7 +293,8 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
-#### 既存のクエリを変更する {#modify-an-existing-query}
+<a id="modify-an-existing-query" />
+#### 既存のクエリを変更する
 
 構築設定はパスリクエストだけに適用されるものではなく、自分で記述したクエリにも影響します。クエリは派生テーブルになるため、設定はクエリにマージされるのではなく、その結果に適用されます。たとえば、`?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` は次のように実行されます。
 
@@ -328,7 +329,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
   `filter` はアクセス制御のための仕組みではありません。ラップするサブクエリに `WHERE` 句を追加するため、フィルターが適用される前に基になるデータが読み取られ、処理される可能性があります。ユーザーがアクセスできる行を制限するには、[行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management) または [`additional_table_filters`](/ja/reference/settings/session-settings/additional#additional_table_filters) を使用してください。
 </Warning>
 
-### フォーマットと圧縮のオーバーライド {#format-and-compression-overrides}
+<a id="format-and-compression-overrides" />
+### フォーマットと圧縮のオーバーライド
 
 | 設定               | 効果                                                                                                                                                                                                                                   |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -344,7 +346,8 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 バイナリまたは圧縮された HTTP レスポンスには、`Content-Disposition: attachment; filename=…` ヘッダーが含まれます。ファイル名は URL パスから導出され、パスから取得できない場合は `result.<format>.<compression>` が使用されます。
 
-### クエリでパステーブルを使用する {#implicit-table}
+<a id="implicit-table" />
+### クエリでパステーブルを使用する
 
 パスがテーブルを示し、`query` パラメータも指定した場合、パステーブルは [`implicit_table_at_top_level`](/ja/reference/settings/session-settings/implicit#implicit_table_at_top_level) を介して公開されます。`FROM` 句のない `SELECT` はパステーブルから読み取ります。
 
@@ -361,7 +364,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 `INSERT` クエリでは、データの送信に `POST` メソッドを使用する必要があります。この場合、クエリの先頭部分を URL パラメーターに記述し、挿入するデータは `POST` で渡せます。挿入するデータとしては、たとえば MySQL のタブ区切りの dump を使用できます。このように、`INSERT` クエリは MySQL の `LOAD DATA LOCAL INFILE` の代替として使用できます。
 
-### 例 {#examples}
+### 例
 
 テーブルを作成するには：
 
@@ -447,7 +450,8 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 データテーブルを返さない正常なリクエストでは、レスポンスボディは空になります。
 
-### Protobuf データを挿入する {#insert-protobuf}
+<a id="insert-protobuf" />
+### Protobuf データを挿入する
 
 `--data-binary` はバイト列を変更せずにそのまま渡すため、[`Protobuf`](/ja/reference/formats/Protobuf/Protobuf) などのバイナリ形式も同じ方法で送信できます。
 [`format_schema`](/ja/reference/settings/formats/format-schema#format_schema) など、フォーマットに必要な設定は、他の設定と同様に `query` と並べて URL パラメータとして指定します。
@@ -654,7 +658,8 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 * [設定](/ja/reference/settings/session-settings)
 * [SET](/ja/reference/statements/set)
 
-## HTTPプロトコルでClickHouseセッションを使用する {#using-clickhouse-sessions-in-the-http-protocol}
+<a id="using-clickhouse-sessions-in-the-http-protocol" />
+## HTTPプロトコルでClickHouseセッションを使用する
 
 HTTPプロトコルでもClickHouseセッションを使用できます。これを行うには、リクエストに `session_id` `GET` パラメータを追加する必要があります。セッションIDには任意の文字列を使用できます。
 
@@ -695,7 +700,8 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 HTTP インターフェイスでは、クエリのために外部データ (外部一時テーブル) を渡すこともできます。詳細については、[&quot;クエリ処理用の外部データ&quot;](/ja/reference/engines/table-engines/special/external-data) を参照してください。
 
-## レスポンスのバッファリング {#response-buffering}
+<a id="response-buffering" />
+## レスポンスのバッファリング
 
 レスポンスのバッファリングはサーバー側で有効にできます。このために、次のURLパラメータが用意されています。
 
@@ -721,9 +727,8 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   レスポンスコードとHTTPヘッダーをクライアントに送信した後でクエリ処理エラーが発生する事態を避けるため、バッファリングを使用してください。この場合、エラーメッセージはレスポンスボディの末尾に書き込まれるため、クライアント側ではパース段階でしかエラーを検出できません。
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## クエリパラメータでロールを設定する
-</div>
+<a id="setting-role-with-query-parameters" />
+## クエリパラメータでロールを設定する
 
 この機能は ClickHouse 24.4 で追加されました。
 
@@ -756,7 +761,10 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 この場合、`?role=my_role&role=my_other_role` は、ステートメントの前に `SET ROLE my_role, my_other_role` を実行するのと同じように機能します。
 
-## HTTPレスポンスコードに関する注意点 {#http_response_codes_caveats}
+`role` クエリパラメータは、`access_control_improvements.readonly_restricts_set_role` サーバー設定の影響を受けません。このサーバー設定で拒否されるのは `SET ROLE` ステートメントのみです。
+
+<a id="http_response_codes_caveats" />
+## HTTPレスポンスコードに関する注意点
 
 HTTPプロトコルの制約上、HTTP 200のレスポンスコードでも、クエリが成功したとは限りません。
 
@@ -854,6 +862,7 @@ __exception__
 パラメータ付きのクエリを作成し、対応する HTTP リクエストパラメータから値を渡せます。詳しくは、[CLI のパラメータ付きクエリ](/ja/concepts/features/interfaces/client#cli-queries-with-parameters)を参照してください。
 
 <div id="examples">
+  <a id="example-3" />
   ### 例
 </div>
 
@@ -892,9 +901,8 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## 事前定義済み HTTP インターフェイス
-</div>
+<a id="predefined_http_interface" />
+## 事前定義済み HTTP インターフェイス
 
 ClickHouse は、HTTP インターフェイス経由で特定のクエリをサポートしています。たとえば、次のようにテーブルにデータを書き込むことができます。
 
@@ -903,6 +911,8 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 ```
 
 ClickHouse は、[Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter) のようなサードパーティーツールとの連携を容易にする、事前定義済み HTTP インターフェイスもサポートしています。では、例を見てみましょう。
+
+同じハンドラーは、サーバー設定ファイルを編集しなくても SQL から定義できます。詳しくは [`CREATE HANDLER`](/ja/reference/statements/create/handler) を参照してください。
 
 まず、このセクションをサーバー設定ファイルに追加します。
 
@@ -946,23 +956,23 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
-# HELP "Query" "実行中のクエリ数"
+# HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
 "Query" 1
 
-# HELP "Merge" "実行中のバックグラウンドマージ数"
+# HELP "Merge" "Number of executing background merges"
 # TYPE "Merge" counter
 "Merge" 0
 
-# HELP "PartMutation" "ミューテーション数 (ALTER DELETE/UPDATE)"
+# HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
 # TYPE "PartMutation" counter
 "PartMutation" 0
 
-# HELP "ReplicatedFetch" "レプリカからフェッチ中のデータパーツ数"
+# HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
 # TYPE "ReplicatedFetch" counter
 "ReplicatedFetch" 0
 
-# HELP "ReplicatedSend" "レプリカへ送信中のデータパーツ数"
+# HELP "ReplicatedSend" "Number of data parts being sent to replicas"
 # TYPE "ReplicatedSend" counter
 "ReplicatedSend" 0
 
@@ -1021,7 +1031,8 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 異なる `type` の設定方法については、次で説明します。
 
-### predefined_query_handler {#predefined_query_handler}
+<a id="predefined_query_handler" />
+### predefined_query_handler
 
 `predefined_query_handler` では、`Settings` と `query_params` の値を設定できます。`predefined_query_handler` 型では `query` を設定できます。
 
@@ -1101,7 +1112,8 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
   1 つの `predefined_query_handler` でサポートされる `query` は 1 つだけです。
 </Note>
 
-### dynamic_query_handler {#dynamic_query_handler}
+<a id="dynamic_query_handler" />
+### dynamic_query_handler
 
 `dynamic_query_handler` では、クエリを HTTP リクエストのパラメータとして記述します。`predefined_query_handler` との違いは、`predefined_query_handler` ではクエリを設定ファイルに記述する点です。`query_param_name` は `dynamic_query_handler` で設定できます。
 
@@ -1385,7 +1397,8 @@ ClickHouse では、設定可能なあらゆる種類のハンドラーに適用
 </clickhouse>
 ```
 
-## HTTP streaming 中の例外発生時に有効な JSON/XML レスポンス {#valid-output-on-exception-http-streaming}
+<a id="valid-output-on-exception-http-streaming" />
+## HTTP streaming 中の例外発生時に有効な JSON/XML レスポンス
 
 HTTP 経由でクエリを実行している際、データの一部がすでに送信された後で例外が発生することがあります。通常、例外はプレーンテキストでクライアントに送信されます。
 データの出力に特定のデータフォーマットを使用していた場合、その出力は指定したデータフォーマットとしては無効になる可能性があります。

@@ -10,6 +10,8 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { CloudSQLIAMAuthentication } from "/snippets/zh/clickpipes/_cloudsql_iam_authentication.mdx";
+
 这是一份分步指南，介绍如何配置您的 Cloud SQL for MySQL 实例，以便通过 MySQL ClickPipe 复制其中的数据。
 
 <div id="enable-binlog-retention-gcp">
@@ -18,9 +20,7 @@ integration:
 
 二进制日志是一组日志文件，用于记录对 MySQL 服务器实例所做的数据更改；而二进制日志文件是进行复制所必需的。
 
-<div id="enable-binlog-logging-gcp">
-  ### 通过 PITR 启用二进制日志
-</div>
+### 通过 PITR 启用二进制日志 {#enable-binlog-logging-gcp}
 
 PITR 功能决定 Google Cloud 中 MySQL 是否启用二进制日志。你可以在 Cloud 控制台中进行设置：编辑你的 Cloud SQL 实例，然后向下滚动到以下部分。
 
@@ -91,6 +91,10 @@ PITR 功能决定 Google Cloud 中 MySQL 是否启用二进制日志。你可以
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+## 使用 IAM 数据库身份验证 (可选，Beta) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="mysql" />
+
 <div id="configure-network-access-gcp-mysql">
   ## 配置网络访问
 </div>
@@ -108,9 +112,7 @@ PITR 功能决定 Google Cloud 中 MySQL 是否启用二进制日志。你可以
 
 </div>
 
-<div id="download-root-ca-certificate-gcp-mysql">
-  ## 下载并使用根 CA 证书
-</div>
+## 下载并使用根 CA 证书 {#download-root-ca-certificate-gcp-mysql}
 
 要连接到您的 Cloud SQL 实例，您需要下载根 CA 证书。
 

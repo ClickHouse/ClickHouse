@@ -232,11 +232,13 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
   이를 보안 SSL connection을 통해 실행하려면 `remoteSecure` 함수를 사용하십시오.
 </Note>
 
-<div id="exporting-data">
-  ### 데이터 내보내기
-</div>
+### 데이터 내보내기 {#exporting-data}
 
 `s3` 테이블 함수를 사용하면 S3의 파일에 쓸 수 있습니다. 이를 위해서는 적절한 권한이 필요합니다. 필요한 자격 증명은 요청에 함께 전달하지만, 더 많은 옵션은 [자격 증명 관리](#managing-credentials) 페이지를 참조하십시오.
+
+<Warning>
+  ClickHouse Cloud에서 Amazon S3로 데이터를 내보낼 때는 글로벌 엔드포인트인 `https://s3.amazonaws.com/...` 대신 `https://my-bucket.s3.eu-west-1.amazonaws.com/...`와 같은 버킷의 리전별 S3 엔드포인트를 사용하십시오. 글로벌 엔드포인트를 사용하면 추가 데이터 전송 요금이 발생할 수 있습니다.
+</Warning>
 
 아래의 간단한 예시에서는 테이블 함수를 소스가 아니라 대상으로 사용합니다. 여기서는 `trips` 테이블의 10,000개 행을 버킷으로 스트리밍하면서 `lz4` 압축과 `CSV` 출력 유형을 지정합니다:
 
@@ -698,7 +700,8 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 S3 디스크를 사용할 때는 `ReplicatedMergeTree` 테이블 엔진으로 복제를 구성할 수 있습니다. 자세한 내용은 [S3 객체 스토리지를 사용해 두 AWS 리전에 걸쳐 단일 세그먼트를 복제하는](#s3-multi-region) 가이드를 참조하십시오.
 
-### 읽기 및 쓰기 {#read--writes}
+<a id="read--writes" />
+### 읽기 및 쓰기
 
 다음 참고 사항은 ClickHouse의 S3 상호작용 구현을 설명합니다. 주로 참고용 정보이지만, [성능 최적화](#s3-optimizing-performance) 시 도움이 될 수 있습니다.
 
@@ -779,7 +782,8 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-### 테스트 {#testing}
+<a id="testing" />
+### 테스트
 
 1. 다음과 같이 ClickHouse client로 로그인합니다
 
@@ -1172,7 +1176,8 @@ zk_synced_followers     2
 sudo service clickhouse-server start
 ```
 
-#### ClickHouse 서버 확인 {#verify-clickhouse-server}
+<a id="verify-clickhouse-server" />
+#### ClickHouse 서버 확인
 
 [클러스터 구성](#define-a-cluster)을 추가할 때, 두 ClickHouse 노드에 걸쳐 복제되는 단일 세그먼트가 정의되었습니다. 이 확인 단계에서는 ClickHouse가 시작될 때 클러스터가 생성되었는지 확인하고, 해당 클러스터를 사용해 복제된 테이블을 생성합니다.
 
@@ -1243,7 +1248,8 @@ sudo service clickhouse-server start
   위에 표시된 `'clickhouse/tables/{uuid}/{shard}` ZooKeeper 경로는 `default_replica_path`와 `default_replica_name`을 설정하여 사용자 지정할 수 있습니다. 관련 문서는 [여기](/ko/reference/settings/server-settings/settings/default-replica#default_replica_path)에서 확인할 수 있습니다.
 </Note>
 
-### 테스트 {#testing-1}
+<a id="testing-1" />
+### 테스트
 
 이 테스트는 데이터가 두 서버에 걸쳐 복제되는지, 그리고 로컬 디스크가 아니라 S3 버킷에 저장되는지를 확인합니다.
 

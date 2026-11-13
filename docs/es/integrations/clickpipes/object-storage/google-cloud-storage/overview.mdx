@@ -36,9 +36,7 @@ De forma predeterminada, el ClickPipe de GCS cargará en la tabla de destino de 
 
 Cuando la ingestión continua está activada, ClickPipes realiza la ingestión continua de datos desde la ruta especificada. Para determinar el orden de ingestión, el ClickPipe de GCS se basa, de forma predeterminada, en el [orden lexicográfico](#continuous-ingestion-lexicographical-order) implícito de los archivos. También puede configurarse para ingestar archivos en [cualquier orden](#continuous-ingestion-any-order) mediante una suscripción de [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) [configurada para proporcionar notificaciones del bucket](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line).
 
-<div id="continuous-ingestion-lexicographical-order">
-  #### Orden lexicográfico
-</div>
+#### Orden lexicográfico {#continuous-ingestion-lexicographical-order}
 
 El ClickPipe de GCS asume que los archivos se agregan a un bucket en orden lexicográfico y se basa en ese orden implícito para ingestar los archivos secuencialmente. Esto significa que cualquier archivo nuevo **debe** ser lexicográficamente mayor que el último archivo ingestado. Por ejemplo, los archivos llamados `file1`, `file2` y `file3` se ingestarán secuencialmente, pero si se agrega un nuevo `file 0` al bucket, se **ignorará** porque el nombre del archivo no es lexicográficamente mayor que el del último archivo ingestado.
 
@@ -55,10 +53,10 @@ En este modo, el ClickPipe de GCS realiza una carga inicial de **todos los archi
 Es posible configurar un ClickPipe de GCS para ingestar archivos que no tengan un orden implícito mediante la configuración de una suscripción de [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) que reciba notificaciones del bucket. Esto permite a ClickPipes detectar eventos de creación de objetos e ingestar cualquier archivo nuevo, independientemente de la convención de nombres.
 
 <Note>
-  El modo no ordenado **no** es compatible con buckets públicos. Requiere autenticación con **Service Account** y una suscripción de [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) conectada al bucket.
+  El modo no ordenado **no** es compatible con buckets públicos. Requiere autenticación mediante cuenta de servicio, ya sea con una clave cargada o con Workload Identity de GCP, y una suscripción de [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) conectada al bucket.
 </Note>
 
-En este modo, el ClickPipe de GCS realiza una carga inicial de **todos los archivos** de la ruta seleccionada y, a continuación, escucha notificaciones `OBJECT_FINALIZE` a través de la suscripción de Pub/Sub que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. Para ingerir solo los archivos entregados a través de la suscripción, habilita **Skip initial load**. Cuando está habilitado, ClickPipes omite el escaneo inicial de los archivos existentes en la ruta seleccionada y procesa solo los archivos entregados a través de la suscripción de Pub/Sub.
+En este modo, el ClickPipe de GCS realiza una carga inicial de **todos los archivos** de la ruta seleccionada y, a continuación, escucha notificaciones `OBJECT_FINALIZE` a través de la suscripción de Pub/Sub que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. Para ingerir solo los archivos entregados a través de la suscripción, habilita **Skip initial load**. Cuando está habilitado, ClickPipes omite la exploración inicial de los archivos existentes en la ruta seleccionada y procesa solo los archivos entregados a través de la suscripción de Pub/Sub.
 
 <div id="file-pattern-matching">
   ### Coincidencia de patrones de archivos
@@ -149,9 +147,12 @@ Al usar [modo no ordenado](#continuous-ingestion-any-order), la cuenta de servic
 
 La autenticación mediante cuenta de servicio es obligatoria cuando se usa el [modo no ordenado](#continuous-ingestion-any-order) con notificaciones de Pub/Sub. Seleccione **Service Account** como método de autenticación y cargue el archivo JSON de la clave de la cuenta de servicio.
 
-<div id="hmac-credentials">
-  #### Credenciales HMAC
-</div>
+#### Workload Identity de GCP (Beta) {#gcp-workload-identity}
+
+Siga la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para obtener la cuenta de servicio administrada a partir del contexto del servicio de ClickPipes. Concédale el rol `roles/storage.objectViewer` en el bucket de origen y cree la canalización con la autenticación `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Para la ingestión en modo unordered, concédale también los roles `roles/pubsub.subscriber` y `roles/pubsub.viewer` en la suscripción de notificaciones existente y utilice su nombre completo: `projects/<project-id>/subscriptions/<subscription-id>`.
+
+<a id="hmac-credentials" />
+#### Credenciales HMAC
 
 Para usar [claves HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) para autenticarte, selecciona `Credentials` en **Authentication method** al configurar tu conexión de ClickPipe. Luego, proporciona la clave de acceso (p. ej., `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) y la clave secreta (p. ej., `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) en `Access key` y `Secret key`, respectivamente.
 
@@ -180,9 +181,8 @@ Los ClickPipes de GCS utilizan dos rutas de red distintas para el descubrimiento
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<div id="advanced-settings">
-  ## Configuración avanzada
-</div>
+<a id="advanced-settings" />
+## Configuración avanzada
 
 ClickPipes proporciona valores predeterminados adecuados para cubrir los requisitos de la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más fino, puede modificar la siguiente configuración:
 

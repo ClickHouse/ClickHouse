@@ -29,9 +29,7 @@ ClickHouse Private は、ClickHouse Cloud で稼働しているものと同じ�
 * ClickHouse Cloud で十分にテストおよび検証された ClickHouse データベースとClickHouse Operatorのバージョン
 * バックアップやスケーリング操作を含む各種操作をプログラムから実行するための API
 
-<div id="architecture">
-  ## アーキテクチャ
-</div>
+## アーキテクチャ {#architecture}
 
 ClickHouse Private はお客様のデプロイ環境内に完全に自己完結しており、クラウドネイティブなコンピュートとストレージの分離を提供します。
 
@@ -53,12 +51,14 @@ ClickHouse Private はお客様のデプロイ環境内に完全に自己完結�
   ## サポートされている構成
 </div>
 
-ClickHouse Private は現在、以下の構成がサポートされています。
+ClickHouse Private は以下の構成で利用できます。各環境のサポート状況は次のとおりです。
 
-| 環境  | オーケストレーション                       | ストレージ                       | ステータス |
-| :-- | :------------------------------- | :-------------------------- | :---- |
-| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 利用可能  |
-| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | プレビュー |
+| 環境     | オーケストレーション                       | ストレージ                       | ステータス  |
+| :----- | :------------------------------- | :-------------------------- | :----- |
+| AWS    | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | サポート済み |
+| GCP    | Google Kubernetes Engine (GKE)   | Google Cloud Storage (GCS)  | サポート済み |
+| オンプレミス | セルフホスト Kubernetes                | MinIO AIStor                | サポート済み |
+| Azure  | Azure Kubernetes Service (AKS)   | Azure Blob Storage          | プレビュー  |
 
 <div id="onboarding-process">
   ## オンボーディングプロセス

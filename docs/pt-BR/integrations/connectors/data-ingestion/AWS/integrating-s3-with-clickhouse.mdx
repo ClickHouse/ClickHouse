@@ -232,11 +232,13 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
   Para executar isso por uma conexão SSL segura, utilize a função `remoteSecure`.
 </Note>
 
-<div id="exporting-data">
-  ### Exportando dados
-</div>
+### Exportando dados {#exporting-data}
 
 Você pode gravar arquivos no S3 usando a função de tabela `s3`. Isso exigirá as permissões adequadas. Passamos as credenciais necessárias na solicitação, mas consulte a página [Gerenciamento de credenciais](#managing-credentials) para ver outras opções.
+
+<Warning>
+  Ao exportar do ClickHouse Cloud para o Amazon S3, use o endpoint S3 regional do bucket, como `https://my-bucket.s3.eu-west-1.amazonaws.com/...`, em vez do endpoint global `https://s3.amazonaws.com/...`. O uso do endpoint global pode gerar cobranças adicionais por transferência de dados.
+</Warning>
 
 No exemplo simples abaixo, usamos a função de tabela como destino em vez de origem. Aqui, transmitimos 10.000 linhas da tabela `trips` para um bucket, especificando a compressão `lz4` e o tipo de saída `CSV`:
 
@@ -698,7 +700,8 @@ Aqui, reutilizamos o volume principal em nossa nova política s3&#95;tiered e in
 
 A replicação com discos S3 pode ser feita usando o motor de tabela `ReplicatedMergeTree`. Consulte o guia [replicando um único shard em duas Regiões da AWS usando armazenamento de objetos S3](#s3-multi-region) para mais detalhes.
 
-### Leituras e gravações {#read--writes}
+<a id="read--writes" />
+### Leituras e gravações
 
 As notas a seguir abordam a implementação das interações entre o S3 e o ClickHouse. Embora sejam, em geral, apenas informativas, elas podem ajudar os leitores na [otimização de desempenho](#s3-optimizing-performance):
 
@@ -779,7 +782,8 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-### Teste {#testing}
+<a id="testing" />
+### Teste
 
 1. Faça login com o ClickHouse client, como no exemplo a seguir
 
@@ -1172,7 +1176,8 @@ Em cada servidor ClickHouse, execute
 sudo service clickhouse-server start
 ```
 
-#### Verifique o servidor ClickHouse {#verify-clickhouse-server}
+<a id="verify-clickhouse-server" />
+#### Verifique o servidor ClickHouse
 
 Quando você adicionou a [configuração do cluster](#define-a-cluster), foi definido um único shard replicado entre os dois nós do ClickHouse. Nesta etapa de verificação, você confirmará que o cluster foi criado quando o ClickHouse foi iniciado e criará uma tabela replicada usando esse cluster.
 
@@ -1243,7 +1248,8 @@ Quando você adicionou a [configuração do cluster](#define-a-cluster), foi def
   Você pode personalizar o caminho do ZooKeeper `'clickhouse/tables/{uuid}/{shard}` mostrado acima definindo `default_replica_path` e `default_replica_name`. A documentação está [aqui](/pt-BR/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
-### Teste {#testing-1}
+<a id="testing-1" />
+### Teste
 
 Estes testes vão verificar se os dados estão sendo replicados entre os dois servidores e se estão armazenados nos buckets do S3, e não no disco local.
 

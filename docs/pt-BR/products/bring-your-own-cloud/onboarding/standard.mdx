@@ -71,6 +71,7 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
       Os buckets de armazenamento, a VPC/VNet, o cluster do Kubernetes e os recursos de compute necessários para executar o ClickHouse não estão incluídos nesta configuração inicial. Eles serão provisionados no próximo passo.
     </Note>
 
+<a id="terraform-module-aws" />
 #### Módulo do Terraform para AWS
 
     Se preferir usar o Terraform em vez do CloudFormation para implantações na AWS, use o módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
@@ -90,6 +91,7 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
       O módulo era distribuído anteriormente como um tarball em `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Essa URL continua disponível, mas foi descontinuada — use o módulo do GitHub acima.
     </Note>
 
+<a id="aws-external-id" />
 #### ID externo da AWS
 
     Na AWS, a função do IAM criada durante o setup confia no ClickHouse Cloud usando um [ID externo](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) para proteção contra ataques de representante confuso. O console do ClickHouse Cloud gera um ID externo para sua conta AWS quando você inicia o onboarding e o preenche automaticamente no link do CloudFormation; se usar o Terraform, passe o mesmo valor como `external_id`. Todas as infraestruturas BYOC na mesma conta AWS compartilham o mesmo ID externo.
@@ -102,7 +104,7 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
   <Step title="Configure a infraestrutura de BYOC" id="setup-byoc-infrastructure">
     Você deverá configurar a infraestrutura, incluindo buckets de armazenamento de objetos, VPC/VNet e o cluster do Kubernetes, no console do ClickHouse Cloud. Algumas configurações devem ser definidas nesta etapa, pois não poderão ser alteradas posteriormente. Especificamente:
 
-    * **Região**: Todas as **regiões públicas** listadas em nossa documentação sobre [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) estão disponíveis para implantações BYOC. Atualmente, regiões privadas não são compatíveis.
+    * **Região**: Escolha uma região marcada como `BYOC` em nossa documentação sobre [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions). Regiões também marcadas como `Private` estão disponíveis mediante solicitação. Para solicitar uma delas, entre em contato com seu representante do ClickHouse.
 
     * **Intervalo CIDR da VPC/VNet**: Por padrão, usamos `10.0.0.0/16` como intervalo CIDR para a VPC BYOC (AWS/GCP) ou VNet (Azure). Se você planeja usar peering de VPC/VNet com outra conta, certifique-se de que os intervalos CIDR não se sobreponham. O tamanho mínimo varia conforme a Cloud:
 
@@ -124,6 +126,7 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
 
     </div>
 
+<a id="preflight-validation" />
 #### Validação prévia
 
     Ao clicar em **Set up Infrastructure**, o ClickHouse Cloud executa um conjunto de verificações prévias **read-only** na sua conta antes de criar qualquer recurso. Se tudo for aprovado, o provisionamento continua. Se alguma verificação falhar, a configuração é pausada e o console mostra exatamente qual é o problema, para que você possa corrigi-lo antes que qualquer recurso seja criado.
@@ -168,7 +171,8 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
   </Step>
 </Steps>
 
-### Crie seu primeiro serviço BYOC do ClickHouse {#create-clickhouse-service}
+<a id="create-clickhouse-service" />
+### Crie seu primeiro serviço BYOC do ClickHouse
 
 Depois que sua infraestrutura BYOC for provisionada, você poderá lançar seu primeiro serviço do ClickHouse. Abra o console do ClickHouse Cloud, selecione seu ambiente BYOC e siga as instruções para criar um novo serviço.
 

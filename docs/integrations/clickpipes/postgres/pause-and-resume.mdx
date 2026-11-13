@@ -12,6 +12,10 @@ integration:
 
 There are scenarios where it would be useful to pause a Postgres ClickPipe. For example, you may want to run some analytics on existing data in a static state. Or, you might be performing upgrades on Postgres. Here is how you can pause and resume a Postgres ClickPipe.
 
+<Warning>
+If the pipe's `_peerdb_raw_mirror_*` table has a TTL, including one configured automatically by ClickPipes, events still in that table when the TTL expires are deleted, even while the pipe is paused. Before planning a long pause, run `SHOW CREATE TABLE` on the raw table to check its TTL, and keep the pause shorter than it. See [raw table retention](/integrations/clickpipes/postgres/faq#raw-mirror-table-retention).
+</Warning>
+
 ## Steps to pause a Postgres ClickPipe {#pause-clickpipe-steps}
 
 1. In the Data Sources tab, click on the Postgres ClickPipe you wish to pause.
