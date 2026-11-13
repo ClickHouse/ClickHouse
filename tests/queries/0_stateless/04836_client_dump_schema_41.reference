@@ -17,6 +17,12 @@ column types match
 dump rc=210
 Code: 48
 0
+--- a Distributed sharding key loads its dictionary only when the call is constant ---
+k: dump rc=0
+0
+toUInt64(1): dump rc=210
+Code: 48
+0
 --- a JOIN in a constraint subquery carries the Dynamic key gate ---
 1
 replay rc=0

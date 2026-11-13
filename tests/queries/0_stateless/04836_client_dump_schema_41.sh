@@ -86,6 +86,27 @@ echo "dump rc=$?"
 grep -o 'Code: 48' "$work/tf.err" | head -1
 grep -c 'paths.tsv' "$work/tf.err"
 
+echo '--- a Distributed sharding key loads its dictionary only when the call is constant ---'
+cat > "$work/clusters.xml" <<'XML'
+<clickhouse><remote_servers><c><shard><replica><host>localhost</host><port>9000</port></replica></shard></c></remote_servers></clickhouse>
+XML
+for key in "k" "toUInt64(1)"
+do
+    rm -rf "$work/src"
+    printf '1\t5\n' > "$work/keys.tsv"
+    $CLICKHOUSE_LOCAL --config-file "$work/clusters.xml" --path "$work/src" -n -q "
+    CREATE DATABASE d;
+    CREATE TABLE d.loc (k UInt64) ENGINE = Memory;
+    CREATE DICTIONARY d.zzz_dict (id UInt64, v UInt64) PRIMARY KEY id SOURCE(FILE(path '$work/keys.tsv' format 'TSV'))
+        LAYOUT(FLAT()) LIFETIME(0);
+    CREATE TABLE d.aaa_dist (k UInt64) ENGINE = Distributed(c, d, loc, dictGetUInt64('d.zzz_dict', 'v', $key));"
+    rm "$work/keys.tsv"
+    $CLICKHOUSE_LOCAL --config-file "$work/clusters.xml" --path "$work/src" --dump-schema d > /dev/null 2> "$work/keys.err"
+    echo "$key: dump rc=$?"
+    grep -o 'Code: 48' "$work/keys.err" | head -1
+    grep -c 'keys.tsv' "$work/keys.err"
+done
+
 echo '--- a JOIN in a constraint subquery carries the Dynamic key gate ---'
 $CLICKHOUSE_CLIENT --allow_dynamic_type_in_join_keys=1 -n -q "
 CREATE TABLE src (k Dynamic) ENGINE = Memory;

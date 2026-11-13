@@ -29,6 +29,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -124,24 +125,52 @@ void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const Str
 namespace
 {
 
+/// Whether an argument of the call, other than a dictionary name, reads a column, so the call is not folded.
+bool readsColumn(const ASTFunction & call)
+{
+    if (!call.arguments)
+        return false;
+    const auto & arguments = call.arguments->children;
+    std::vector<const IAST *> stack;
+    for (size_t i = Poco::toLower(call.name).starts_with("dict") ? 1 : 0; i < arguments.size(); ++i)
+        stack.push_back(arguments[i].get());
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (node->as<ASTIdentifier>())
+            return true;
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+    return false;
+}
+
 /// With `load_tables_readonly`, refuses an argument that loads a dictionary or runs a user-defined function when it is folded.
 void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQuery & create, const ContextPtr & context)
 {
     if (!function || !function->arguments || !context->getServerSettings()[ServerSetting::load_tables_readonly])
         return;
-    std::vector<const IAST *> stack{function->arguments.get()};
-    while (!stack.empty())
+    const auto & arguments = function->arguments->children;
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        const IAST * node = stack.back();
-        stack.pop_back();
-        if (const auto * call = node->as<ASTFunction>(); call
-            && (Poco::toLower(call->name).starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(call->name)
-                || UserDefinedExecutableFunctionFactory::has(call->name, context)))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
-                backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
-        for (const auto & child : node->children)
-            stack.push_back(child.get());
+        /// The sharding key of `Distributed` runs per row, so only its calls on constants are folded at load.
+        const bool per_row = function->name == "Distributed" && i == 3;
+        std::vector<const IAST *> stack{arguments[i].get()};
+        while (!stack.empty())
+        {
+            const IAST * node = stack.back();
+            stack.pop_back();
+            if (const auto * call = node->as<ASTFunction>(); call
+                && (Poco::toLower(call->name).starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(call->name)
+                    || UserDefinedExecutableFunctionFactory::has(call->name, context))
+                && !(per_row && readsColumn(*call)))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
+                    backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
+            for (const auto & child : node->children)
+                stack.push_back(child.get());
+        }
     }
 }
 
