@@ -398,7 +398,6 @@ bool isBoolNode(const IDataType & type)
     return custom_name && custom_name->getName() == "Bool";
 }
 
-/// Whether `to` has a `Bool` at a position where `from` has another type; `from` and `to` are equal, so their trees match.
 bool convertsToBool(const IDataType & from, const IDataType & to)
 {
     if (isBoolNode(to))

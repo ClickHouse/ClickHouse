@@ -6923,7 +6923,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (old_type != old_types.end() && old_type->second->equals(*command.data_type)
                     && !isIdentityConversion(*old_type->second, *command.data_type))
                 {
-                    /// A name may be a subcolumn of the altered column, such as `t.x` of `t`.
                     auto reads_column = [&](const Names & names)
                     {
                         return std::ranges::any_of(names, [&](const String & name)
