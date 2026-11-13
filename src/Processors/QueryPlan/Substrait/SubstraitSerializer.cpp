@@ -102,8 +102,8 @@ struct AggregateOverload
     std::vector<std::string_view> arg_types;
     std::string_view urn;
 
-    /// Over empty input ClickHouse aggregates return a default (sum of nothing is 0) where most Substrait functions return NULL.
-    /// Only a query without GROUP BY can aggregate empty input into a row.
+    /// Over empty input ClickHouse returns a default (sum of nothing is 0) where most Substrait functions return NULL.
+    /// A Nullable argument gives NULL in both, so it always emits keyed. Only a query without GROUP BY can aggregate empty input into a row.
     /// keyed: Emitted with GROUP BY. Every group has rows, so the disagreement cannot surface.
     /// keyless: Emitted without GROUP BY, must return ClickHouse's empty-input value, sum emits sum0. nullopt means no such function.
     AggregateEmission keyed;
@@ -242,13 +242,15 @@ std::expected<ResolvedAggregate, SubstraitBlockingReason> mapAggregateFunction(
         return blocked(fmt::format("aggregate function {} has no Substrait overload for {}", name, fmt::join(arg_shorts, ", ")));
     const AggregateOverload & overload = *overload_it;
 
-    if (!has_grouping_keys && !overload.keyless)
+    /// A ClickHouse aggregate returns NULL over empty input when its result type is Nullable.
+    const bool empty_input_agrees = has_grouping_keys || description.function->getResultType()->isNullable();
+    if (!empty_input_agrees && !overload.keyless)
         return blocked(
             fmt::format(
                 "aggregate function {} returns a default value over empty input in ClickHouse "
                 "but NULL in Substrait, so it cannot be offloaded without grouping keys",
                 name));
-    const AggregateEmission & emission = has_grouping_keys ? overload.keyed : *overload.keyless;
+    const AggregateEmission & emission = empty_input_agrees ? overload.keyed : *overload.keyless;
 
     return ResolvedAggregate{
         .urn = overload.urn,
