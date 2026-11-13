@@ -1,5 +1,0 @@
-select: distributed
-union: distributed
-analyze no-default: distributed
-analyze default: distributed
-nested: 0
