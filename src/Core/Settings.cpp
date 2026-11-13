@@ -6451,7 +6451,7 @@ Possible values:
 
 - 0 — Use the default ClickHouse `IN` handling for `NULL` values.
 - 1 — Use SQL three-valued logic for scalar `IN` and `NOT IN` expressions.
-)", 0, \
+)", IMPORTANT, \
         {"26.11", false, false, "New setting to use SQL three-valued logic for scalar `IN` and `NOT IN` expressions."}) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`, and of the virtual columns whose values may differ between replicas, such as `_table`, `_database` and `_disk_name`.
