@@ -60,7 +60,7 @@
         },
         {
           "href": "https://langfuse.com/docs",
-          "icon": "sparkles",
+          "icon": "/images/icons/logo-langfuse.svg",
           "item": "Инженерия ИИ"
         },
         {
