@@ -368,44 +368,42 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
     std::optional<std::vector<size_t>> rows_entering_prewhere;
 
-    /// Per-granule PREWHERE drop attribution. Between the first and last query-PREWHERE reader the chain runs the
-    /// conjuncts of the query's PREWHERE: user predicate steps (`is_query_prewhere`) and any synthesized dynamic
-    /// filters that are not PREWHERE -- a top-K threshold filter, a join runtime filter. (Row-level policies,
-    /// on-fly mutations and lightweight deletes are separate readers that run before the first PREWHERE step, so
-    /// they only affect `entering` below, never this range.) A granule counts as dropped by PREWHERE only when the
-    /// user predicate alone empties it. We can assert that only if no dynamic filter removed any of its rows: once
-    /// a dynamic filter has thinned a granule, a later user step that empties the remnant is not emptying the
-    /// granule -- most of it was already gone -- so the drop cannot be attributed to PREWHERE (fail-closed).
-    /// `dynamic_touched[g]` records that such a non-user step reduced g's survivors; the final verdict also
-    /// requires g to be empty after the last user step, measured before any later dynamic filter.
+    /// Per-granule PREWHERE drop attribution. A granule counts as dropped by PREWHERE only when the user
+    /// predicate alone empties it. We can assert that only if no synthesized dynamic filter (a top-K threshold
+    /// filter, a join runtime filter) removed any of its rows: once a dynamic filter has thinned a granule, a
+    /// user step that empties the remnant is not emptying the granule -- most of it was already gone -- so the
+    /// drop cannot be attributed to PREWHERE (fail-closed). `dynamic_touched[g]` records that a dynamic filter
+    /// reduced g's survivors anywhere in the chain, including a top-K filter that runs before the first user
+    /// step; the final verdict also requires g to be empty after the last user step. Row-level policies, on-fly
+    /// mutations and lightweight deletes are not dynamic filters and do not contaminate: they run before PREWHERE
+    /// and are excluded via the `entering` snapshot instead.
     std::vector<size_t> prewhere_prev_surviving; /// survivors per granule after the previously tracked step
-    std::vector<char> prewhere_dynamic_touched;  /// a non-user step between the user steps removed rows from this granule
+    std::vector<char> prewhere_dynamic_touched;  /// a synthesized dynamic filter removed rows from this granule
     bool prewhere_tracking_started = false;
 
-    /// Fold one chain step into the per-granule attribution above. Called for every step from the first to the
-    /// last query-PREWHERE reader (inclusive); steps outside that range cannot change PREWHERE's verdict.
+    /// Fold one chain step into the per-granule attribution above. Called for every reader up to the last
+    /// query-PREWHERE reader; later readers cannot change PREWHERE's verdict. Tracking starts at the first
+    /// reader so a dynamic filter preceding the first user step (a leading top-K) is caught.
     auto track_prewhere_granules = [&](size_t step_index)
     {
-        if (!prewhere_granule_stats_enabled
-            || step_index < first_query_prewhere_reader_index
-            || step_index > last_query_prewhere_reader_index)
+        if (!prewhere_granule_stats_enabled || step_index > last_query_prewhere_reader_index)
             return;
 
         auto surviving = read_result.survivingRowsPerGranule();
         if (!prewhere_tracking_started)
         {
-            /// Survivors entering the first query-PREWHERE step: its input snapshot, or the raw rows read when
-            /// PREWHERE is the first reader.
-            prewhere_prev_surviving = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
+            /// Survivors before the first reader are the raw rows read.
+            prewhere_prev_surviving = read_result.raw_rows_per_granule;
             prewhere_dynamic_touched.assign(surviving.size(), 0);
             prewhere_tracking_started = true;
         }
 
         const auto * step = range_readers[step_index].getPrewhereInfo();
-        const bool is_query_prewhere_step = step && step->type == PrewhereExprStep::Filter && step->is_query_prewhere;
-        /// A non-user (dynamic filter) step that removes any row of a granule contaminates it: the user predicate
-        /// alone can no longer be shown to empty that granule. User steps only reduce the honest survivor count.
-        if (!is_query_prewhere_step)
+        const bool is_dynamic_filter_step = step && step->type == PrewhereExprStep::Filter && step->is_synthesized_dynamic_filter;
+        /// A synthesized dynamic filter that removes any row of a granule contaminates it: the user predicate
+        /// alone can no longer be shown to empty that granule. User predicates, and the mutation/row-policy
+        /// readers, only reduce the honest survivor count and do not contaminate.
+        if (is_dynamic_filter_step)
             for (size_t granule = 0; granule < surviving.size(); ++granule)
                 if (surviving[granule] < prewhere_prev_surviving[granule])
                     prewhere_dynamic_touched[granule] = 1;

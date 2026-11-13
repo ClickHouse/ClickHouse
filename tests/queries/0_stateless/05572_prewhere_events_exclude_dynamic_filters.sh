@@ -29,12 +29,20 @@ dump_events() {
 ${CLICKHOUSE_CLIENT} -q "
   DROP TABLE IF EXISTS t_facts;
   DROP TABLE IF EXISTS t_dim;
+  DROP TABLE IF EXISTS t_prefix;
   CREATE TABLE t_facts(a UInt32, b UInt32, c UInt32) ENGINE=MergeTree ORDER BY a
     SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, index_granularity=8192, add_minmax_index_for_numeric_columns=0;
   INSERT INTO t_facts SELECT number, number, number FROM numbers(200000)
     SETTINGS min_insert_block_size_rows = 200001, min_insert_block_size_bytes = 0;
   CREATE TABLE t_dim(x UInt32) ENGINE=MergeTree ORDER BY x;
   INSERT INTO t_dim VALUES (42)(100)(7);
+  -- For number >= 65536, b = number % 8192, so ORDER BY b LIMIT keeps the ten smallest-b rows of each of those
+  -- granules; those ten rows are exactly the ones with c = 0, so the user predicate c = 1 rejects the whole
+  -- top-K remnant while thousands of rows per granule still satisfy c = 1.
+  CREATE TABLE t_prefix(a UInt32, b UInt32, c UInt8) ENGINE=MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, index_granularity=8192, add_minmax_index_for_numeric_columns=0;
+  INSERT INTO t_prefix SELECT number, if(number < 65536, number, number % 8192), number < 65536 OR number % 8192 >= 10 FROM numbers(200000)
+    SETTINGS min_insert_block_size_rows = 200001, min_insert_block_size_bytes = 0;
 "
 
 # -------- ORDER BY <non-key> LIMIT: the top-K dynamic threshold filter is not PREWHERE --------
@@ -108,6 +116,17 @@ ${CLICKHOUSE_CLIENT} --use_top_k_dynamic_filtering 1 --enable_multiple_prewhere_
   --max_threads 1 --use_query_condition_cache 0 \
   --query_id "$qid_topk_fused" -q "SELECT a FROM t_facts PREWHERE c % 2 = 0 ORDER BY b LIMIT 10 FORMAT Null"
 
+# -------- A leading top-K filter (before the user step) that empties the granule's remnant is not counted ------
+# In a split plan the top-K `__topKFilter(b)` runs as its own step BEFORE the user `c = 1` step. It keeps only ten
+# rows per affected granule, and those ten are exactly the c = 0 rows, so `c = 1` rejects the whole remnant and
+# empties the granule. But every granule has thousands of rows satisfying `c = 1`, so the user predicate alone
+# does not empty it -- the top-K did. The granule must not be attributed to PREWHERE, which requires tracking a
+# dynamic filter that precedes the first user step. 25 read, 0 dropped, 170 rows dropped (the c = 0 rows).
+qid_topk_lead="${CLICKHOUSE_DATABASE}_topk_lead_$RANDOM$RANDOM"
+${CLICKHOUSE_CLIENT} --use_top_k_dynamic_filtering 1 --enable_multiple_prewhere_read_steps 1 \
+  --max_threads 1 --max_block_size 65536 --preferred_block_size_bytes 0 --use_query_condition_cache 0 \
+  --query_id "$qid_topk_lead" -q "SELECT a FROM t_prefix PREWHERE c = 1 ORDER BY b LIMIT 10 FORMAT Null"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # granules read / granules dropped / rows dropped by PREWHERE.
@@ -119,6 +138,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 #   RF partial big: 25, 0, 100002    (runtime filter thinned the granule; user step emptied only the remnant)
 #   RF partial small:25, 0, 100002   (same, with the granule split into block fragments)
 #   topK fused:     0, 0, 0          (mixed fused step not separable, not attributed)
+#   topK leading:  25, 0, 170        (top-K before the user step thinned the granule; user step emptied remnant)
 dump_events "$qid_topk"
 dump_events "$qid_rf"
 dump_events "$qid_pw"
@@ -127,5 +147,6 @@ dump_events "$qid_rf_interleaved"
 dump_events "$qid_rf_partial_big"
 dump_events "$qid_rf_partial_small"
 dump_events "$qid_topk_fused"
+dump_events "$qid_topk_lead"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_facts; DROP TABLE t_dim; DROP TABLE t_prefix"

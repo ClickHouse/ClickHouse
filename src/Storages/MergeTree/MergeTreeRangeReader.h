@@ -62,6 +62,15 @@ struct PrewhereExprStep
     /// count only these steps, so that a query without `PREWHERE` reports nothing and filtering by
     /// mutations/policies is not attributed to `PREWHERE`.
     bool is_query_prewhere = false;
+
+    /// True for a step that carries a synthesized dynamic filter of the query predicate -- a top-K
+    /// threshold filter (`__topKFilter` of `ORDER BY ... LIMIT`) or a join runtime filter (`__applyFilter`),
+    /// possibly fused with a user predicate. Mutually exclusive with `is_query_prewhere`. The PREWHERE
+    /// granule stats treat such a step as a contaminant: a granule it thins can no longer be shown to be
+    /// emptied by the user predicate alone, so it is not attributed to `PREWHERE`. Unlike row-level
+    /// policies and mutations (which run before `PREWHERE` and are excluded via the entering snapshot),
+    /// a dynamic filter may run anywhere in the query-predicate chain, including before the first user step.
+    bool is_synthesized_dynamic_filter = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;

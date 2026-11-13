@@ -549,6 +549,9 @@ bool tryBuildPrewhereSteps(
                 .mutation_version = std::nullopt,
                 .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
                 .is_query_prewhere = step_is_query_prewhere,
+                /// A split step that is not entirely a user predicate carries a synthesized dynamic filter: the
+                /// only non-user conjuncts the splitter sees come from the query predicate's dynamic filters.
+                .is_synthesized_dynamic_filter = !step_is_query_prewhere,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

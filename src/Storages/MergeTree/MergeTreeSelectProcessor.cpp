@@ -449,6 +449,9 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     if (prewhere_info &&
         (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, read_ahead_prewhere_columns, &index_read_tasks)))
     {
+        const bool prewhere_is_entirely_query_predicate
+            = prewhereIsEntirelyQueryPredicate(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name);
+
         PrewhereExprStep prewhere_step
         {
             .type = PrewhereExprStep::Filter,
@@ -463,7 +466,8 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             /// is counted only when it is entirely a user query predicate. A step that carries a dynamic filter
             /// -- solely (`ORDER BY ... LIMIT` top-K or a join runtime filter) or mixed with a user predicate --
             /// reports nothing, rather than attributing the dynamic filter's rejections to PREWHERE.
-            .is_query_prewhere = prewhereIsEntirelyQueryPredicate(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name),
+            .is_query_prewhere = prewhere_is_entirely_query_predicate,
+            .is_synthesized_dynamic_filter = !prewhere_is_entirely_query_predicate,
         };
 
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));

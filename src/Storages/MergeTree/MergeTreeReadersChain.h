@@ -149,9 +149,9 @@ private:
     /// (on-fly mutations, row-level policies) is not attributed to PREWHERE. Valid only when stats enabled.
     size_t first_query_prewhere_reader_index = 0;
     /// Index in `range_readers` of the last reader whose step is the query `PREWHERE`. Per-granule drop
-    /// attribution walks the steps from the first to this reader and stops here: a granule still non-empty at
-    /// this point is never dropped by PREWHERE, whatever a later synthesized dynamic filter (a join runtime
-    /// filter `optimizePrewhere` appends after the user predicate) does to it. Valid only when stats enabled.
+    /// attribution walks every reader up to this one and stops here: a granule still non-empty at this point is
+    /// never dropped by PREWHERE, whatever a later synthesized dynamic filter (a join runtime filter
+    /// `optimizePrewhere` appends after the user predicate) does to it. Valid only when stats enabled.
     size_t last_query_prewhere_reader_index = 0;
     std::optional<size_t> prewhere_pending_mark;
     bool prewhere_pending_mark_survived = false;
