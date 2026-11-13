@@ -151,6 +151,30 @@ if [ -z "$default_compression_codec" ]; then
     exit 1
 fi
 
+# The Keeper keeps its data across the upgrade, so it must keep its feature flags too: a flag that
+# turns off is a Keeper downgrade, which stops every coordinated refreshable view on ATTACH.
+function read_keeper_feature_flags()
+{
+    sed -n '/<feature_flags>/,/<\/feature_flags>/s|.*<\([a-z_]*\)>\([01]\)</\1>.*|\1=\2|p' \
+        /etc/clickhouse-server/config.d/keeper_port.xml | paste -sd ' ' -
+}
+
+function restore_keeper_feature_flags()
+{
+    local flag
+    for flag in $1; do
+        sudo sed -i "/<feature_flags>/,/<\/feature_flags>/s|<${flag%=*}>[01]</${flag%=*}>|<${flag%=*}>${flag#*=}</${flag%=*}>|" \
+            /etc/clickhouse-server/config.d/keeper_port.xml
+    done
+}
+
+keeper_feature_flags=$(read_keeper_feature_flags)
+if [ -z "$keeper_feature_flags" ]; then
+    echo -e "Cannot read the Keeper feature flags drawn for the previous-release server$FAIL" >> /test_output/test_results.tsv
+    exit 1
+fi
+echo "Keeper feature flags of the previous-release server: $keeper_feature_flags"
+
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -594,6 +618,12 @@ if [ "$upgraded_default_compression_codec" != "$default_compression_codec" ]; th
     echo -e "Default compression codec is stable across the upgrade$FAIL previous release: $default_compression_codec, upgraded server: $upgraded_default_compression_codec" >> /test_output/test_results.tsv
     exit 1
 fi
+restore_keeper_feature_flags "$keeper_feature_flags"
+upgraded_keeper_feature_flags=$(read_keeper_feature_flags)
+if [ "$upgraded_keeper_feature_flags" != "$keeper_feature_flags" ]; then
+    echo -e "Keeper feature flags are stable across the upgrade$FAIL previous release: $keeper_feature_flags, upgraded server: $upgraded_keeper_feature_flags" >> /test_output/test_results.tsv
+    exit 1
+fi
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
@@ -857,6 +887,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       DDL entry (e.g. an `ON CLUSTER` `BACKUP`) and a pending batch of a `Distributed` table both keep the settings
 #       of the query that created them and run again after the restart. Nothing enables fault injection on the
 #       upgraded server itself, so this message is never a compatibility signal, whichever component logs it.
+# `Code: 153` + `Division by zero` in `intDiv(100, x)` + `While executing TTL` is `05073_column_ttl_recompute_materialized`
+#       failing a TTL merge on purpose: the column TTL resets `x` to 0, from which the `MATERIALIZED intDiv(100, x)` column
+#       of `t_column_ttl_materialized_undefined` cannot be computed. In a stress worker's shared `--database=test_N` the
+#       table outlives the test, as `--fake-drop` ignores its `DROP`, and both the previous release and the upgraded server
+#       retry the merge without end (issue #123953). The entry pins the code, the fixture's expression and the TTL context,
+#       so any other failing TTL merge still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -871,6 +907,13 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `while loading statistics` + `ILLEGAL_STATISTICS` appears when the statistics file format version changes between
 #       releases. The new binary cannot deserialize old statistics files and throws ILLEGAL_STATISTICS (Code: 708).
 #       Filtered via regex in the secondary pipe below to require both the loading context AND the error code together.
+# `hash of uncompressed files doesn't match` + `is not byte-identical to data on another replicas` is expected while
+#       replicas run different versions (docs/guides/oss/update.mdx): the upgraded server redoes a merge or mutation that
+#       the other replica committed under the previous release, uncompressed part files such as `statistics.packed` change
+#       format between releases, and the replica then fetches the part. Filtered only when it is the sole mismatch, so
+#       divergent data of the part's own columns (`uncompressed hash of compressed files`), a different number of files
+#       and the KILL MUTATION `different columns hash` case still fail this job. Each projection is one uncompressed
+#       `<name>.proj` entry of the parent part's checksums, so divergent projection data is not detected here.
 # `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
 #       broker is unavailable during upgrade (several tests point at a deliberately unreachable broker). Filtered
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
@@ -1058,6 +1101,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "No stream (ba1.bin) file checksum for column b" \
            -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
            -e "Query memory tracker: fault injected" \
+           -e "Code: 153. DB::Exception: Division by zero: while executing 'FUNCTION intDiv(100 :: 1, x :: 0) -> intDiv(100, x) Int8 : 3': While executing TTL. (ILLEGAL_DIVISION)" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
@@ -1068,6 +1112,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
+    | grep -av -e "(\(Merge\|Mutate\)FromLogEntryTask): Code: 40\. DB::Exception: Checksums of parts don't match: hash of uncompressed files doesn't match ([0-9a-f]* vs [0-9a-f]*)\. (CHECKSUM_DOESNT_MATCH) (version .*)\. Data after \(merge\|mutation\) is not byte-identical to data on another replicas\." \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \

@@ -82,7 +82,8 @@ private:
         MergeTreeRangeReader & reader,
         ReadResult & result,
         const Block & previous_header,
-        bool is_last_reader);
+        bool is_last_reader,
+        bool keep_additional_columns);
 
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
 
@@ -115,6 +116,10 @@ private:
     /// They don't change between blocks, so they are collected once.
     std::vector<NameSet> previous_steps_columns;
 
+    /// The last reader that may evaluate defaults of columns missing in the part, 0 if none.
+    /// Only the steps before it keep the columns they project out.
+    size_t last_reader_evaluating_defaults = 0;
+
     /// Storage names of overwritten columns that an on-fly MUTATION step genuinely consumes
     /// as a function input before any step overwrites them. They must still be converted to
     /// the post-`MODIFY` metadata type, otherwise the consuming action sees a type/storage
@@ -126,6 +131,35 @@ private:
     /// at their own turn).
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
+
+    /// PREWHERE granule ProfileEvents (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders).
+    /// Each granule is fed in mark order from each block with three flags: `was_read` (rows reached the user
+    /// predicate), `survived` (a row survived the user predicate), and `contaminated` (a synthesized dynamic
+    /// filter removed rows from it). `GranulesReadByPrewhereReaders` is incremented as soon as a granule is
+    /// first seen read, so a query that stops early (e.g. a LIMIT) still counts the granules it read. The
+    /// granule is kept pending until a higher mark (or the end of the task) proves it was read in full; only
+    /// then, if it was read, nothing survived and no dynamic filter contaminated it, is it counted in
+    /// `GranulesSkippedByPrewhereReaders` -- the unread remainder of a granule cut off by early termination is
+    /// never declared dropped. A granule split across blocks repeats with the same mark; its flags are OR-ed, so
+    /// a fragment a dynamic filter emptied before the user step still contaminates the mark even though no row
+    /// of that fragment reached the user predicate, and the granule is counted once.
+    void feedPrewhereGranuleMark(size_t mark, bool was_read, bool survived, bool contaminated);
+    void finalizeCompletedPrewhereGranule();
+
+    bool prewhere_granule_stats_enabled = false;
+    /// Index in `range_readers` of the first reader whose step is the query `PREWHERE`. Granules are counted
+    /// as entering PREWHERE from the survivors at this reader's input, so filtering done by earlier readers
+    /// (on-fly mutations, row-level policies) is not attributed to PREWHERE. Valid only when stats enabled.
+    size_t first_query_prewhere_reader_index = 0;
+    /// Index in `range_readers` of the last reader whose step is the query `PREWHERE`. Per-granule drop
+    /// attribution walks every reader up to this one and stops here: a granule still non-empty at this point is
+    /// never dropped by PREWHERE, whatever a later synthesized dynamic filter (a join runtime filter
+    /// `optimizePrewhere` appends after the user predicate) does to it. Valid only when stats enabled.
+    size_t last_query_prewhere_reader_index = 0;
+    std::optional<size_t> prewhere_pending_mark;
+    bool prewhere_pending_read = false;
+    bool prewhere_pending_survived = false;
+    bool prewhere_pending_contaminated = false;
 
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();

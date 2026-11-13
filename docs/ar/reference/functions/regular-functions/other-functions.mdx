@@ -850,18 +850,18 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 راجع أيضًا [عبارة `SET`](/ar/reference/statements/use).
 
 <Note>
-  هذه الدالة غير حتمية: إذ يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
+  هذه الدالة غير حتمية: إذ يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 currentDatabase()
 ```
 
-**الأسماء البديلة**: `current_database`, `DATABASE`, `SCHEMA`
+**الأسماء المستعارة**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
-**المعاملات**
+**الوسيطات**
 
 * لا شيء.
 
@@ -883,7 +883,7 @@ SELECT currentDatabase()
 └───────────────────┘
 ```
 
-**صياغة SQL القياسية من دون أقواس**
+**صيغة SQL القياسية من دون أقواس**
 
 ```sql title=Query
 SELECT CURRENT_DATABASE
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-أُضيف في: v26.6.0
+أُضيف في: v26.8.0
 
 يعيد اسم معالج HTTP المعرّف بلغة SQL (والمنشأ باستخدام `CREATE HANDLER`) الذي استدعى الاستعلام.
 يعيد سلسلة فارغة إذا لم يُستدعَ الاستعلام عبر معالج من هذا النوع.
@@ -905,10 +905,10 @@ SELECT CURRENT_DATABASE
 يفيد في تخصيص سلوك الاستعلام بحسب المعالج الذي استدعاه.
 
 <Note>
-  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسائط نفسها.
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 currentHandler()
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-أُضيف في: v26.6.0
+أُضيف في: v26.8.0
 
 تعيد URL لطلب HTTP (المسار وسلسلة الاستعلام) الذي استدعى الاستعلام.
 تعيد سلسلة فارغة إذا لم يُستدعَ الاستعلام عبر HTTP.
@@ -1017,10 +1017,10 @@ SELECT currentQueryID();
 المضمّنة في مسار الطلب.
 
 <Note>
-  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 currentRequestURL()
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+أُضيف في: v26.8.0
+
+دالة توافق مع PostgreSQL. تُعيد قيمة معلمة تكوين خاصة بوقت التشغيل. ولا تُحاكي إلا مجموعة صغيرة من المعلمات المتاحة للقراءة فقط، والتي يستخدمها العميل لأغراض الاستبطان.
+
+<Note>
+  هذه الدالة غير حتمية: إذ قد تُعيد نتائج مختلفة عند استدعائها بالوسيطات نفسها.
+</Note>
+
+**الصيغة**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**الوسيطات**
+
+* `name` — اسم معلمة التكوين. [`String`](/ar/reference/data-types/string)
+* `missing_ok` — إرجاع `NULL` بدلاً من إطلاق استثناء عند تمرير معلمة غير معروفة. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+قيمة معلمة التكوين، أو `NULL` إذا كانت المعلمة غير معروفة وكانت قيمة `missing_ok` هي true. [`Nullable(String)`](/ar/reference/data-types/nullable)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2348,6 +2385,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+أُضيف في: v26.8.0
+
+دالة توافق مع PostgreSQL. تُعيد اسم النوع في SQL بالاستناد إلى مُعرِّف OID الخاص به. في حالة النوع `numeric`، يُفكَّك ترميز مُعدِّل النوع إلى الدقة وعدد المنازل العشرية (`numeric(p, s)`)، أما في سائر الأنواع فيُتجاهَل المُعدِّل. ويدل مُعدِّل النوع ذو القيمة `NULL` على عدم وجود مُعدِّل معروف، شأنه في ذلك شأن القيمة `-1`، في حين يُعيد مُعرِّف OID للنوع إذا كان `NULL` القيمةَ `NULL`.
+
+**الصيغة**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**الوسيطات**
+
+* `type_oid` — معرّف OID للنوع. [`(U)Int*`](/ar/reference/data-types/int-uint)
+* `typemod` — مُعدِّل النوع، أو `NULL`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`NULL`](/ar/reference/syntax#null)
+
+**القيمة المعادة**
+
+اسم النوع في SQL. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4160,9 +4230,9 @@ SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
 
 أُضيف في: v22.6.0
 
-يحسب الحد الأدنى المطلوب لحجم العينة لاختبار A/B يقارن معدلات التحويل (النِّسب) بين عينتين.
+يحسب الحد الأدنى المطلوب لحجم العينة لاختبار A/B يقارن معدلات التحويل (النِّسب) بين عينتين.
 
-يستخدم الصيغة الموضحة في [هذه المقالة](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a). ويفترض تساوي حجمَي مجموعتي المعالجة والضبط. ويُرجع حجم العينة المطلوب لمجموعة واحدة (أي إن حجم العينة المطلوب للتجربة بأكملها يساوي ضعف القيمة المُعادة).
+يستخدم الصيغة الموضحة في [هذه المقالة](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a). ويفترض تساوي حجمَي مجموعة المعالجة والمجموعة الضابطة. ويُرجع حجم العينة المطلوب لمجموعة واحدة (أي إن حجم العينة المطلوب للتجربة بأكملها يساوي ضعف القيمة المُعادة).
 
 **الصيغة**
 
@@ -4190,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -4994,17 +5064,18 @@ SELECT pg_get_userbyid(10)
 
 أُضيف في: v26.8.0
 
-دالة توافق مع بروتوكول الاتصال PostgreSQL، وهي نظير للدالة `pg_catalog.pg_table_is_visible`.
+دالة توافق مع بروتوكول الاتصال الشبكي لـ PostgreSQL، وهي نظير للدالة `pg_catalog.pg_table_is_visible`.
 تستخدمها عميل PostgreSQL (مثل الأمر `\d` في `psql`) لتصفية الجداول الظاهرة في مسار البحث.
-ونظرًا لأن العرض `pg_class` الذي يحاكيه ClickHouse لا يكشف إلا عن جداول قاعدة البيانات الحالية، وجميعها ظاهرة، فإن الدالة تُرجع دائمًا `1`.
+خارج session بروتوكول الاتصال الشبكي لـ PostgreSQL، لا يوجد catalog محاكى يمكن مطابقة قيمة oid به، لذا تُرجع الدالة `1`.
+أما داخل هذه الـ session، فيُعيد معالج PostgreSQL كتابة الاستدعاء إلى فحص لمسار البحث في الـ catalog المحاكى، لأن هذا الأخير يعرض كل قاعدة بيانات بوصفها مخططًا.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 pgTableIsVisible(oid)
 ```
 
-**الأسماء البديلة**: `pg_table_is_visible`
+**الأسماء المستعارة**: `pg_table_is_visible`
 
 **الوسيطات**
 
@@ -6076,7 +6147,7 @@ ROLLBACK;
 تعيد أحدث لقطة (Commit Sequence Number) لـ [معاملة](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) المتاحة للقراءة.
 
 <Note>
-  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة:
+  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة:
 
   ```xml
   <clickhouse>
@@ -6087,13 +6158,17 @@ ROLLBACK;
   لمزيد من المعلومات، راجع صفحة [دعم المعاملات (ACID)](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
+<Note>
+  هذه الدالة غير حتمية: قد تُعيد نتائج مختلفة عند استدعائها بالوسيطات نفسها.
+</Note>
+
 **الصيغة**
 
 ```sql
 transactionLatestSnapshot()
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * لا شيء.
 
@@ -6119,7 +6194,7 @@ ROLLBACK;
 
 ## transactionOldestSnapshot {#transactionOldestSnapshot}
 
-تم تقديمه في: v22.6.0
+أُضيف في: v22.6.0
 
 <ExperimentalBadge />
 
@@ -6128,7 +6203,7 @@ ROLLBACK;
 تُرجع أقدم لقطة (Commit Sequence Number) تكون مرئية لإحدى [المعاملات](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) الجارية.
 
 <Note>
-  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة الخاصة بك:
+  هذه الدالة جزء من مجموعة ميزات تجريبية. فعِّل دعم المعاملات التجريبي بإضافة هذا الإعداد إلى التهيئة الخاصة بك:
 
   ```xml
   <clickhouse>
@@ -6139,13 +6214,17 @@ ROLLBACK;
   لمزيد من المعلومات، راجع صفحة [دعم المعاملات (ACID)](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: فقد تُعيد نتائج مختلفة عند استدعائها بالوسيطات نفسها.
+</Note>
+
+**الصيغة**
 
 ```sql
 transactionOldestSnapshot()
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * لا شيء.
 

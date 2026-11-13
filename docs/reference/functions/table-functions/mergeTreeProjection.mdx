@@ -24,6 +24,8 @@ mergeTreeProjection(database, table, projection)
 | `table`      | The table name to read projection from.    |
 | `projection` | The projection to read from.               |
 
+Resolving the structure of the result, for example with `DESCRIBE`, requires the `SHOW COLUMNS` privilege on the source table, and reading from it requires `SELECT` on the source table.
+
 ## Returned value {#returned-value}
 
 A table object with columns provided by given projection.

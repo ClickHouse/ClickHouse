@@ -35,6 +35,33 @@
         </rule>
 
         <rule>
+            <methods>POST</methods>
+            <url>/test_predefined_handler_request_body_session_query</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <query_param_name>query</query_param_name>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>POST</methods>
+            <url>/test_predefined_handler_request_body</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT concat('Welcome, ', {_request_body:String})</query>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>POST</methods>
+            <url><![CDATA[regex:/test_predefined_handler_request_body_capture/(?P<_request_body>[a-z]+)]]></url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT concat('Welcome, ', {_request_body:String})</query>
+            </handler>
+        </rule>
+
+        <rule>
             <methods>GET</methods>
             <url>/test_predefined_handler_request_parser_backtracks</url>
             <handler>
