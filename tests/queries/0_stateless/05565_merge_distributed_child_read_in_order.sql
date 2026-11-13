@@ -26,13 +26,13 @@ SELECT groupArray(rn) FROM (SELECT x, row_number() OVER (ORDER BY x) AS rn FROM 
     SETTINGS optimize_read_in_window_order = 1;
 
 SYSTEM FLUSH LOGS query_log;
+SET make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
 -- The child plan still runs distributed.
 SELECT count() > 0 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query = 'main'
     AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
-            AND log_comment = '05565_order_by')
-SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = DEFAULT;
+            AND log_comment = '05565_order_by');
 
 DROP TABLE t_merge_dp_order;

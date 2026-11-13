@@ -1,0 +1,7 @@
+SELECT case
+true
+distributed
+UNION case
+true
+true
+distributed
