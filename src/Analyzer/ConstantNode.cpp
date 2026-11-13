@@ -18,6 +18,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -179,6 +180,10 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
     constant_value.getColumn()->updateHashFast(hash_state);
     constant_value.getType()->updateHash(hash_state);
     updateExpressionIdentityHash(*constant_value.getType(), hash_state);
+
+    /// The fast hash of a `Dynamic` value leaves out the type it holds, time zone included.
+    if (anyInTypeTree(*constant_value.getType(), [](const IDataType & nested) { return isDynamic(nested); }))
+        constant_value.getColumn()->updateHashWithValue(0, hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const

@@ -311,6 +311,14 @@ WHERE number IN (SELECT toUInt64(toHour(finalizeAggregation(materialize(
     OR number IN (SELECT toUInt64(toHour(finalizeAggregation(materialize(
         arrayReduce('argMaxState', [toDateTime(0, 'Asia/Tokyo')], [1]))))) AS v);
 
+SELECT 'two zones inside Dynamic keep their own IN sets', count() FROM numbers(10)
+WHERE number IN (SELECT toUInt64(toHour(materialize(toDateTime(0, 'UTC')::Dynamic))) AS v)
+    OR number IN (SELECT toUInt64(toHour(materialize(toDateTime(0, 'Asia/Tokyo')::Dynamic))) AS v);
+
+SELECT 'two zones inside Array(Dynamic) keep their own IN sets', count() FROM numbers(10)
+WHERE number IN (SELECT arrayJoin(arrayMap(x -> toUInt64(toHour(x)), materialize([toDateTime(0, 'UTC')::Dynamic]))) AS v)
+    OR number IN (SELECT arrayJoin(arrayMap(x -> toUInt64(toHour(x)), materialize([toDateTime(0, 'Asia/Tokyo')::Dynamic]))) AS v);
+
 -- A declared name is compared at its own position, so one sitting elsewhere in the type does not
 -- decide for a zone: these two differ only in a zone left out and are one expression.
 SELECT 'a declared name beside an omitted zone under one alias',
