@@ -640,6 +640,11 @@ public:
     /// slices for a plain read, primary-key-range layers grouped into the buckets for `FINAL`. Returns
     /// the bucket count, or 0 (read serially) when a `FINAL` read cannot be split safely.
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
+
+    /// Coordinator side of a bucketed read: checks the limits of `AnalysisResult::checkLimits` against
+    /// the whole read, which the replicas cannot do, as each reads only its buckets. The returned holder
+    /// of a `max_concurrent_queries` slot, if any, must be kept until the query finishes.
+    std::shared_ptr<QueryIdHolder> checkLimitsOfDistributedRead() const;
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
     /// per-bucket blob shipped as the per-read bucket task parameter; empty unless this is a distributed read.
     std::vector<String> serializeDistributedReadBuckets() const;
