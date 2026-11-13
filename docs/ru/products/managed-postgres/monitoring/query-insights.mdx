@@ -88,7 +88,15 @@ ClickHouse Cloud. Телеметрия нормализуется внутри P
 time** растёт: это может указывать на устойчивую конкуренцию за блокировку. Нажмите на любой
 чарт ожиданий, чтобы открыть таблицу [Waits](#waits).
 
-<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="Чарты ожиданий: активные сеансы с накоплением по типу ожидания, время ожидания блокировки (p50, p95 и максимум) и заблокированные сеансы во времени" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Чарты ожиданий: активные сеансы с накоплением по типу ожидания, время ожидания блокировки (p50, p95 и максимум) и заблокированные сеансы во времени](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
+
+</Frame>
+
+</div>
 
 ## Медленные шаблоны {#slow-patterns}
 
@@ -181,7 +189,15 @@ CPU time.
 Разверните раздел **Waits** или нажмите на [чарт ожиданий](#wait-charts), чтобы увидеть события
 ожидания, ранжированные по среднему числу активных сеансов за выбранный период времени.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="Таблица Waits с событиями ожидания, ранжированными по среднему числу активных сеансов, со столбцами Wait event, Wait type, Avg active sessions и Share of load" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Таблица Waits с событиями ожидания, ранжированными по среднему числу активных сеансов, со столбцами Wait event, Wait type, Avg active sessions и Share of load](/images/managed-postgres/monitoring/query-insights-waits.webp)
+
+</Frame>
+
+</div>
 
 | Столбец                 | Что отображает                                                                                                                                     |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |

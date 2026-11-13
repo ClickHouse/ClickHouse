@@ -89,7 +89,15 @@ Observe se **Blocked sessions** se mantém acima de zero enquanto **Lock wait
 time** aumenta: isso pode indicar contenção de bloqueio persistente. Clique em qualquer
 gráfico de espera para abrir a tabela [Waits](#waits).
 
-<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="Gráficos de espera mostrando, ao longo do tempo, sessões ativas empilhadas por tipo de espera, tempo de espera por bloqueio em p50, p95 e máximo, e sessões bloqueadas" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Gráficos de espera mostrando, ao longo do tempo, sessões ativas empilhadas por tipo de espera, tempo de espera por bloqueio em p50, p95 e máximo, e sessões bloqueadas](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
+
+</Frame>
+
+</div>
 
 ## Padrões lentos {#slow-patterns}
 
@@ -182,7 +190,15 @@ limitado ao padrão dessa execução específica.
 Expanda **Waits** ou clique em um [gráfico de espera](#wait-charts) para ver os eventos
 de espera classificados pela média de sessões ativas no período selecionado.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="Tabela Waits mostrando eventos de espera classificados pela média de sessões ativas, com as colunas Wait event, Wait type, Avg active sessions e Share of load" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Tabela Waits mostrando eventos de espera classificados pela média de sessões ativas, com as colunas Wait event, Wait type, Avg active sessions e Share of load](/images/managed-postgres/monitoring/query-insights-waits.webp)
+
+</Frame>
+
+</div>
 
 | Coluna                  | O que mostra                                                                                                                                    |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |

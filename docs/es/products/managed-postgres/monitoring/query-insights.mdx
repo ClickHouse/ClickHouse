@@ -88,7 +88,15 @@ Fíjese en si **Blocked sessions** se mantiene por encima de cero mientras **Loc
 time** aumenta: esto puede indicar una contención de bloqueos sostenida. Haga clic en cualquier
 gráfico de esperas para abrir la tabla [Esperas](#waits).
 
-<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="Gráficos de esperas que muestran las sesiones activas apiladas por tipo de espera, el tiempo de espera por bloqueo en p50, p95 y máximo, y las sesiones bloqueadas a lo largo del tiempo" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Gráficos de esperas que muestran las sesiones activas apiladas por tipo de espera, el tiempo de espera por bloqueo en p50, p95 y máximo, y las sesiones bloqueadas a lo largo del tiempo](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
+
+</Frame>
+
+</div>
 
 ## Slow patterns {#slow-patterns}
 
@@ -181,7 +189,15 @@ acotado al patrón de esa única ejecución.
 Expanda **Esperas** o haga clic en un [gráfico de esperas](#wait-charts) para ver los
 eventos de espera ordenados según el promedio de sesiones activas durante el período de tiempo seleccionado.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="Tabla Waits que muestra los eventos de espera ordenados según el promedio de sesiones activas, con las columnas Wait event, Wait type, Avg active sessions y Share of load" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Tabla Waits que muestra los eventos de espera ordenados según el promedio de sesiones activas, con las columnas Wait event, Wait type, Avg active sessions y Share of load](/images/managed-postgres/monitoring/query-insights-waits.webp)
+
+</Frame>
+
+</div>
 
 | Columna                 | Qué muestra                                                                                                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

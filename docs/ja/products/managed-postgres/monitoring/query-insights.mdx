@@ -84,7 +84,15 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 
 **Lock wait time** が上昇する一方で、**Blocked sessions** がゼロを上回ったままになっていないかを確認してください。これは、ロック競合が継続していることを示している可能性があります。いずれかの待機チャートをクリックすると、[Waits](#waits) テーブルが開きます。
 
-<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="待機タイプごとに積み上げたアクティブなセッション、p50・p95・最大値のロック待機時間、ブロックされたセッションの推移を示す待機チャート" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![待機タイプごとに積み上げたアクティブなセッション、p50・p95・最大値のロック待機時間、ブロックされたセッションの推移を示す待機チャート](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
+
+</Frame>
+
+</div>
 
 ## 低速クエリパターン {#slow-patterns}
 
@@ -174,7 +182,15 @@ CPU time でソートできます。
 
 **Waits** を展開するか、[待機チャート](#wait-charts)をクリックすると、選択した期間の平均アクティブセッション数の多い順に並んだ待機イベントを確認できます。
 
-<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="平均アクティブセッション数の順に待機イベントを並べた Waits テーブル。Wait event、Wait type、Avg active sessions、Share of load の各カラムを表示" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![平均アクティブセッション数の順に待機イベントを並べた Waits テーブル。Wait event、Wait type、Avg active sessions、Share of load の各カラムを表示](/images/managed-postgres/monitoring/query-insights-waits.webp)
+
+</Frame>
+
+</div>
 
 | カラム                     | 表示内容                                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------------------- |
