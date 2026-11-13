@@ -53,7 +53,9 @@ check 2 "fixed-width keys and a String key" "k, s" \
 check 3 "settings agree" "k, s" \
     "enable_packed_string_keys_in_aggregation = 0, enable_fixed_and_packed_string_keys_in_aggregation = 0"
 
-# Whether the aggregations of the initiator and of the remote server converted their tables to two levels.
+# Whether the aggregations of the initiator and of the remote server converted their tables to two levels. The
+# queries of the remote server can run in another current database, so they are found through the initial
+# queries, which run in this one.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT any(log_comment),
@@ -61,7 +63,11 @@ ${CLICKHOUSE_CLIENT} --query "
         countIf(NOT is_initial_query AND ProfileEvents['AggregationConvertedToTwoLevel'] > 0) > 0
     FROM system.query_log
     WHERE type = 'QueryFinish' AND query_kind = 'Select'
-        AND initial_query_id IN ('${CLICKHOUSE_DATABASE}_1', '${CLICKHOUSE_DATABASE}_2', '${CLICKHOUSE_DATABASE}_3')
+        AND initial_query_id IN (
+            SELECT query_id
+            FROM system.query_log
+            WHERE is_initial_query AND current_database = currentDatabase()
+                AND query_id IN ('${CLICKHOUSE_DATABASE}_1', '${CLICKHOUSE_DATABASE}_2', '${CLICKHOUSE_DATABASE}_3'))
     GROUP BY initial_query_id
     ORDER BY initial_query_id"
 
