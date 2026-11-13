@@ -11,6 +11,9 @@ from .utils import Utils
 
 
 class Cache:
+    # Workflow kv data key with per-job digest salts, see `CacheRunnerHooks.configure`.
+    DIGEST_SALTS_KV_KEY = "job_digest_salts"
+
     @dataclasses.dataclass
     class CacheRecord:
         class Type:

@@ -317,6 +317,20 @@ def main():
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
+    # A PR without the AMD performance comparison builds `amd_release` without ThinLTO, PGO
+    # and BOLT, see `configure_amd_release_thinlto`. Its compile commands are then those of
+    # `amd_binary`, so the compiler cache that master fills for that build serves it.
+    from ci.jobs.scripts.workflow_hooks.filter_job import AMD_RELEASE_WITHOUT_THINLTO_KV
+
+    without_thinlto = build_type == BuildTypes.AMD_RELEASE and info.get_kv_data(
+        AMD_RELEASE_WITHOUT_THINLTO_KV
+    ) is True
+    if without_thinlto:
+        assert info.pr_number > 0, "only PR builds may skip ThinLTO"
+        print("NOTE: no AMD performance comparison in this PR - build without ThinLTO, PGO and BOLT")
+        assert "-DENABLE_THINLTO=1" in cmake_cmd
+        cmake_cmd = cmake_cmd.replace("-DENABLE_THINLTO=1", "-DENABLE_THINLTO=0")
+
     cmake_cmd += flavor_cmake_options(
         cmake_cmd,
         official=info.pr_number == 0 and not reference_build,
@@ -327,8 +341,8 @@ def main():
     pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
     bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
     release_type = PERFORMANCE_REFERENCE_TO_RELEASE.get(build_type, build_type)
-    use_pgo = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
-    use_bolt = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+    use_pgo = not without_thinlto and release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = not without_thinlto and release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
