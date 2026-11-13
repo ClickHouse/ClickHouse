@@ -12,8 +12,9 @@ CLUSTER_FN="icebergLocalCluster('test_cluster_two_shards_localhost', '${TABLE_PA
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (k Nullable(UInt8)) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (NULL), (1)"
 
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLUSTER_FN} WHERE k NOT IN (256) SETTINGS in_null_as_unknown = 1"
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${RANDOM}"
-${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "SELECT count() FROM ${CLUSTER_FN} WHERE k NOT IN (256) SETTINGS in_null_as_unknown = 1"
+${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "SELECT k FROM ${CLUSTER_FN} WHERE k NOT IN (256) SETTINGS in_null_as_unknown = 1 FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLUSTER_FN} WHERE k NOT IN (256) SETTINGS in_null_as_unknown = 0 FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLUSTER_FN} WHERE k NOT IN (SELECT CAST(NULL AS Nullable(UInt8))) SETTINGS in_null_as_unknown = 0 FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLUSTER_FN} WHERE k NOT IN (SELECT CAST(NULL AS Nullable(UInt8))) SETTINGS in_null_as_unknown = 1"
