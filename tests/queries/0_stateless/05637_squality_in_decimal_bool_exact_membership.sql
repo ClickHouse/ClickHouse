@@ -10,6 +10,8 @@ WHERE x IN (materialize(toFloat64(9007199254740992)), NULL);
 SELECT toDecimal128('0.1', 1) IN (toFloat64(0.1), NULL),
        toDecimal128('0.1', 1) IN (materialize(toFloat64(0.1)), NULL);
 SELECT toDecimal128('1', 0) IN (materialize(toFloat64(1.5)), NULL);
+SELECT toDecimal64('1', 0) IN (toBFloat16(1), NULL),
+       toDecimal64('1', 0) IN (materialize(toBFloat16(1)), NULL);
 
 SELECT true IN (2, NULL), true IN (materialize(2), NULL);
 SELECT true NOT IN (2, NULL), true NOT IN (materialize(2), NULL);

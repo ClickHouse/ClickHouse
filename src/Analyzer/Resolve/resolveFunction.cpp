@@ -1459,9 +1459,11 @@ static QueryTreeNodePtr buildNumericInEquality(
     const auto & decimal_argument = isDecimal(left_type) ? left_argument : right_argument;
     const auto & float_argument = isFloat(left_type) ? left_argument : right_argument;
     const auto & decimal_type = isDecimal(left_type) ? left_type : right_type;
+    auto float_as_float64 = std::make_shared<FunctionNode>("toFloat64");
+    float_as_float64->getArguments().getNodes().push_back(float_argument);
     auto converted = std::make_shared<FunctionNode>("accurateCastOrNull");
     converted->getArguments().getNodes() = {
-        float_argument,
+        std::move(float_as_float64),
         std::make_shared<ConstantNode>(decimal_type->getName(), std::make_shared<DataTypeString>())};
 
     auto decimal_equals = std::make_shared<FunctionNode>("equals");
