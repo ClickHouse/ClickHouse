@@ -1381,7 +1381,9 @@ static QueryTreeNodePtr includeMatchingNaNs(
 {
     const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
     const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
-    if (!isFloat(left_type) || !isFloat(right_type))
+    if (!isFloat(left_type) || !isFloat(right_type)
+        || (!isNullableOrLowCardinalityNullable(left_argument->getResultType())
+            && !isNullableOrLowCardinalityNullable(right_argument->getResultType())))
         return result;
 
     auto both_nan = buildResolvedFunction(
@@ -1628,17 +1630,35 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
             auto fractional_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
             result = buildResolvedFunction("if", {std::move(is_integral), std::move(result), std::move(fractional_equals)}, context);
 
-            /// Below the float's exact-integer limit, the raw Decimal integer cannot
-            /// round onto a different integral float. Use the ordinary comparison
-            /// for this common case and keep the exact path for larger values.
-            const UInt64 exact_limit = numeric_type->getTypeId() == TypeIndex::Float32 ? (1ULL << 24) : (1ULL << 53);
-            auto above_lower = buildResolvedFunction(
-                "greaterOrEquals", {raw_decimal, std::make_shared<ConstantNode>(Field{-static_cast<Int64>(exact_limit)})}, context);
-            auto below_upper = buildResolvedFunction(
-                "less", {raw_decimal, std::make_shared<ConstantNode>(Field{exact_limit})}, context);
-            auto within_exact_range = buildResolvedFunction("and", {std::move(above_lower), std::move(below_upper)}, context);
+            /// Below half the float's exact-integer range divided by the Decimal
+            /// scale, distinct Decimal values cannot round onto the same float.
+            /// Test the float first so the common range avoids Decimal arithmetic.
+            Float64 safe_float_limit = numeric_type->getTypeId() == TypeIndex::Float32 ? (1ULL << 23) : (1ULL << 52);
+            for (UInt32 i = 0; i < scale; ++i)
+                safe_float_limit /= 10.0;
+            auto magnitude = buildResolvedFunction("abs", {numeric_argument}, context);
+            auto within_exact_range = buildResolvedFunction(
+                "less", {std::move(magnitude), std::make_shared<ConstantNode>(Field{safe_float_limit})}, context);
             auto common_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
             result = buildResolvedFunction("if", {std::move(within_exact_range), std::move(common_equals), std::move(result)}, context);
+        }
+        else if ((decimal_type->getTypeId() == TypeIndex::Decimal32 || decimal_type->getTypeId() == TypeIndex::Decimal64)
+            && isInteger(numeric_type))
+        {
+            /// A Decimal32/64 can compare an in-range integer directly without
+            /// rescaling overflow. Keep the raw-integer path for larger values.
+            UInt64 max_raw_value = 1;
+            for (UInt32 i = 0; i < getDecimalPrecision(*decimal_type); ++i)
+                max_raw_value *= 10;
+            UInt64 multiplier = 1;
+            for (UInt32 i = 0; i < scale; ++i)
+                multiplier *= 10;
+            const UInt64 max_integral_value = (max_raw_value - 1) / multiplier;
+            auto magnitude = buildResolvedFunction("abs", {numeric_argument}, context);
+            auto within_decimal_range = buildResolvedFunction(
+                "lessOrEquals", {std::move(magnitude), std::make_shared<ConstantNode>(Field{max_integral_value})}, context);
+            auto common_equals = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+            result = buildResolvedFunction("if", {std::move(within_decimal_range), std::move(common_equals), std::move(result)}, context);
         }
     }
     else if (compare_nulls)
