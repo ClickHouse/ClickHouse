@@ -12,6 +12,7 @@
 #if USE_AVRO
 
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -31,6 +32,28 @@ namespace DB::Iceberg
 
 using namespace DB;
 
+namespace
+{
+
+/// Avro `null` is read as `Nothing`, which has no values to get or print. For example, Iceberg writes a `void`
+/// partition field whose source column was dropped as `null`. Read it as `Nullable(Nothing)`, so its value is NULL.
+DataTypePtr makeNothingNullable(const DataTypePtr & type)
+{
+    if (isNothing(type))
+        return makeNullable(type);
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (!tuple_type)
+        return type;
+
+    DataTypes elements;
+    for (const auto & element : tuple_type->getElements())
+        elements.push_back(makeNothingNullable(element));
+    return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+}
+
+}
+
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
     const IcebergPathFromMetadata & manifest_file_path_,
@@ -43,7 +66,7 @@ try
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
-    auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
+    auto data_type = makeNothingNullable(AvroSchemaReader::avroNodeToDataType(root_node));
 
     MutableColumns columns;
     columns.push_back(data_type->createColumn());
@@ -224,26 +247,12 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     ///    ....
     /// However, somehow parser ignores all these nested keys like "total_amount_trunc" or "decimal_10_2" and
     /// directly returns tuple of partition values. However it's exactly what we need.
-    const auto & partition_column_with_type = extractSubcolumnWithType(c_data_file_partition);
-    if (!partition_column_with_type.has_value())
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Cannot find column {} in manifest file {}",
-            c_data_file_partition,
-            manifest_file_path);
-
-    const auto & partition_column = assert_cast<const ColumnTuple &>(*partition_column_with_type->first);
-    const auto & partition_types = assert_cast<const DataTypeTuple &>(*partition_column_with_type->second).getElements();
+    Field partition_value = getValueFromRowByName(row_index, c_data_file_partition);
+    auto tuple = partition_value.safeGet<Tuple>();
 
     DB::Row partition_key_value;
-    for (size_t i = 0; i < partition_types.size(); ++i)
-    {
-        /// A `void` partition field whose source column was dropped has the Avro type `null`, which is read as `Nothing`.
-        if (isNothing(partition_types[i]))
-            partition_key_value.emplace_back();
-        else
-            partition_key_value.emplace_back(partition_column.getColumn(i)[row_index]);
-    }
+    for (const auto & value : tuple)
+        partition_key_value.emplace_back(value);
 
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
