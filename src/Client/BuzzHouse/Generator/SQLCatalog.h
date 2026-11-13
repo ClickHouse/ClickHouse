@@ -98,14 +98,7 @@ public:
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
     }
-    SQLColumn(SQLColumn && c) noexcept
-    {
-        this->cname = std::move(c.cname);
-        this->tp = std::move(c.tp);
-        this->special = c.special;
-        this->nullable = c.nullable;
-        this->dmod = c.dmod;
-    }
+    SQLColumn(SQLColumn && c) noexcept = default;
     SQLColumn & operator=(const SQLColumn & c)
     {
         if (this == &c)
@@ -119,19 +112,7 @@ public:
         this->dmod = std::optional<DModifier>(c.dmod);
         return *this;
     }
-    SQLColumn & operator=(SQLColumn && c) noexcept
-    {
-        if (this == &c)
-        {
-            return *this;
-        }
-        this->cname = std::move(c.cname);
-        this->tp = std::move(c.tp);
-        this->special = c.special;
-        this->nullable = std::optional<bool>(c.nullable);
-        this->dmod = std::optional<DModifier>(c.dmod);
-        return *this;
-    }
+    SQLColumn & operator=(SQLColumn && c) noexcept = default;
     ~SQLColumn() = default;
 
     bool canBeInserted() const;
@@ -173,10 +154,6 @@ public:
     static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d);
 
     static void setName(SQLIdentifier * db, const String & name);
-
-    bool isAtomicDatabase() const;
-
-    bool isMemoryDatabase() const;
 
     bool isReplicatedDatabase() const;
 
@@ -314,109 +291,70 @@ public:
 
     bool isShared(bool as_alias = false) const;
 
-    bool isFileEngine(bool as_alias = false) const;
+    /// The engine is `v`, or with `as_alias` an `Alias` of a `v` table
+    bool hasEngine(const TableEngineValues v, const bool as_alias) const
+    {
+        return engine.value == v
+            || (as_alias && engine.value == TableEngineValues::Alias && subengine.has_value() && subengine->value == v);
+    }
 
-    bool isSummingMergeTree(bool as_alias = false) const;
-
-    bool isJoinEngine(bool as_alias = false) const;
-
-    bool isNullEngine(bool as_alias = false) const;
-
-    bool isSetEngine(bool as_alias = false) const;
-
-    bool isBufferEngine(bool as_alias = false) const;
-
-    bool isRocksEngine(bool as_alias = false) const;
-
-    bool isMemoryEngine(bool as_alias = false) const;
-
+    bool isFileEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::File, as_alias); }
+    bool isSummingMergeTree(const bool as_alias = false) const { return hasEngine(TableEngineValues::SummingMergeTree, as_alias); }
+    bool isJoinEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Join, as_alias); }
+    bool isNullEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Null, as_alias); }
+    bool isSetEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Set, as_alias); }
+    bool isBufferEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Buffer, as_alias); }
+    bool isRocksEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::EmbeddedRocksDB, as_alias); }
     bool isMySQLEngine(bool as_alias = false) const;
-
     bool isPostgreSQLEngine(bool as_alias = false) const;
-
-    bool isSQLiteEngine(bool as_alias = false) const;
-
-    bool isMongoDBEngine(bool as_alias = false) const;
-
-    bool isRedisEngine(bool as_alias = false) const;
-
-    bool isS3Engine(bool as_alias = false) const;
-
-    bool isS3QueueEngine(bool as_alias = false) const;
-
+    bool isSQLiteEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::SQLite, as_alias); }
+    bool isMongoDBEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::MongoDB, as_alias); }
+    bool isRedisEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Redis, as_alias); }
+    bool isS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::S3, as_alias); }
+    bool isS3QueueEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::S3Queue, as_alias); }
     bool isAnyS3Engine(bool as_alias = false) const;
-
-    bool isAzureEngine(bool as_alias = false) const;
-
-    bool isAzureQueueEngine(bool as_alias = false) const;
-
+    bool isAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::AzureBlobStorage, as_alias); }
+    bool isAzureQueueEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::AzureQueue, as_alias); }
     bool isAnyAzureEngine(bool as_alias = false) const;
-
     bool isAnyQueueEngine(bool as_alias = false) const;
-
-    bool isHudiEngine(bool as_alias = false) const;
-
-    bool isDeltaLakeS3Engine(bool as_alias = false) const;
-
-    bool isDeltaLakeAzureEngine(bool as_alias = false) const;
-
-    bool isDeltaLakeLocalEngine(bool as_alias = false) const;
-
+    bool isHudiEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Hudi, as_alias); }
+    bool isDeltaLakeS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::DeltaLakeS3, as_alias); }
+    bool isDeltaLakeAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::DeltaLakeAzure, as_alias); }
+    bool isDeltaLakeLocalEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::DeltaLakeLocal, as_alias); }
     bool isAnyDeltaLakeEngine(bool as_alias = false) const;
-
-    bool isIcebergS3Engine(bool as_alias = false) const;
-
-    bool isIcebergAzureEngine(bool as_alias = false) const;
-
-    bool isIcebergLocalEngine(bool as_alias = false) const;
-
+    bool isIcebergS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::IcebergS3, as_alias); }
+    bool isIcebergAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::IcebergAzure, as_alias); }
+    bool isIcebergLocalEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::IcebergLocal, as_alias); }
     bool isAnyIcebergEngine(bool as_alias = false) const;
-
-    bool isPaimonS3Engine(bool as_alias = false) const;
-
-    bool isPaimonAzureEngine(bool as_alias = false) const;
-
-    bool isPaimonLocalEngine(bool as_alias = false) const;
-
+    bool isPaimonS3Engine(const bool as_alias = false) const { return hasEngine(TableEngineValues::PaimonS3, as_alias); }
+    bool isPaimonAzureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::PaimonAzure, as_alias); }
+    bool isPaimonLocalEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::PaimonLocal, as_alias); }
     bool isAnyPaimonEngine(bool as_alias = false) const;
-
     bool isAnyLakeEngine(bool as_alias = false) const;
-
     bool isOnS3() const;
-
     bool isOnAzure() const;
-
     bool isOnLocal() const;
-
-    bool isMergeEngine(bool as_alias = false) const;
-
-    bool isDistributedEngine(bool as_alias = false) const;
-
-    bool isRemoteSecureEngine(bool as_alias = false) const;
-
+    bool isMergeEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Merge, as_alias); }
+    bool isDistributedEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Distributed, as_alias); }
+    bool isRemoteSecureEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::RemoteSecure, as_alias); }
     bool isAnyRemoteEngine(bool as_alias = false) const;
-
-    bool isDictionaryEngine(bool as_alias = false) const;
-
-    bool isGenerateRandomEngine(bool as_alias = false) const;
-
-    bool isURLEngine(bool as_alias = false) const;
-
-    bool isKeeperMapEngine(bool as_alias = false) const;
-
-    bool isExternalDistributedEngine(bool as_alias = false) const;
-
-    bool isMaterializedPostgreSQLEngine(bool as_alias = false) const;
-
-    bool isArrowFlightEngine(bool as_alias = false) const;
-
-    bool isAliasEngine(bool as_alias = false) const;
-
-    bool isKafkaEngine(bool as_alias = false) const;
-
-    bool isNATSEngine(bool as_alias = false) const;
-
-    bool isRabbitMQEngine(bool as_alias = false) const;
+    bool isDictionaryEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Dictionary, as_alias); }
+    bool isGenerateRandomEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::GenerateRandom, as_alias); }
+    bool isURLEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::URL, as_alias); }
+    bool isKeeperMapEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::KeeperMap, as_alias); }
+    bool isExternalDistributedEngine(const bool as_alias = false) const
+    {
+        return hasEngine(TableEngineValues::ExternalDistributed, as_alias);
+    }
+    bool isMaterializedPostgreSQLEngine(const bool as_alias = false) const
+    {
+        return hasEngine(TableEngineValues::MaterializedPostgreSQL, as_alias);
+    }
+    bool isArrowFlightEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::ArrowFlight, as_alias); }
+    bool isAliasEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Alias, as_alias); }
+    bool isKafkaEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::Kafka, as_alias); }
+    bool isNATSEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::NATS, as_alias); }
+    bool isRabbitMQEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::RabbitMQ, as_alias); }
 
     /// Kafka, NATS or RabbitMQ: a broker that la Casa del Dolor feeds
     bool isAnyStreamingEngine(bool as_alias = false) const;
@@ -424,9 +362,9 @@ public:
     /// The name la Casa del Dolor gives the engine of a table it handles
     String getDolorEngineName() const;
 
-    bool isTimeSeriesEngine(bool as_alias = false) const;
+    bool isTimeSeriesEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::TimeSeries, as_alias); }
 
-    bool isFileLogEngine(bool as_alias = false) const;
+    bool isFileLogEngine(const bool as_alias = false) const { return hasEngine(TableEngineValues::FileLog, as_alias); }
 
     bool isNotTruncableEngine() const;
 
@@ -556,15 +494,7 @@ public:
     bool targets_oracle_role = false;
 
     SQLPolicy() = default;
-    SQLPolicy(const SQLPolicy & other)
-        : WithCluster(other)
-    {
-        this->is_row = other.is_row;
-        this->table_key = other.table_key;
-        this->name = other.name;
-        this->where_expr = other.where_expr;
-        this->targets_oracle_role = other.targets_oracle_role;
-    }
+    SQLPolicy(const SQLPolicy & other) = default;
     SQLPolicy & operator=(const SQLPolicy & other) = default;
 };
 
@@ -605,6 +535,7 @@ public:
 
     SQLType * getBottomType() const;
 
+    /// The dotted path inside `quote`, each name escaped for it, or raw with an empty `quote`
     String columnPathRef(const String & quote = "`") const;
 };
 

@@ -275,8 +275,9 @@ struct DiskInfo
     bool is_cached = false; /// true when cache_path != '' in system.disks
 };
 
-/// Escape a string for embedding inside a single-quoted SQL literal (doubles single quotes).
-String escapeSQLString(const String & s, char escape_char = '\'');
+/// Escape a string for embedding inside a ClickHouse SQL literal or quoted name by doubling `escape_char`
+/// and the backslash, which the ClickHouse lexer reads as an escape. Other dialects take `escape_backslash = false`.
+String escapeSQLString(const String & s, char escape_char = '\'', bool escape_backslash = true);
 
 /// Percent-encode a string for use as a URL query parameter value.
 /// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
@@ -301,6 +302,7 @@ public:
     DB::Strings out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native", "Null"};
     DB::Strings in_out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native"};
     DB::Strings storage_policies;
+    DB::Strings volumes;
     DB::Strings timezones;
     DB::Strings keeper_disks;
     std::vector<DiskInfo> disks;
@@ -439,6 +441,13 @@ private:
         loadServerSettings(out, desc, query, [](const String & s) -> T { return s; });
     }
 
+    /// Runs `query` into `fuzzer_out_file` and returns the lines of the result, without `\r`, up to the first empty one.
+    /// Nothing when the query fails
+    std::optional<DB::Strings> queryLines(const String & query, bool outlog, const String & format = "TabSeparated");
+
+    /// The first line of the result of `query`, empty when it fails
+    String queryFirstLine(const String & query, bool outlog, const String & format = "TabSeparated");
+
     uint32_t tableCountSystemRows(const String & system_table, const String & database, const String & table);
 
     String tableGetRandomSystemName(uint64_t rand_val, const String & system_table, const String & database, const String & table);
@@ -466,8 +475,6 @@ public:
     }
 
     void loadSystemTables(std::vector<SystemTable> & tables);
-
-    bool hasMutations();
 
     String getRandomMutation(uint64_t rand_val);
 

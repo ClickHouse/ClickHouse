@@ -208,15 +208,6 @@ message SpecialVal {
     optional bool paren = 2;
 }
 
-message NumericLiteral {
-    required bool negative = 1;
-    repeated uint32 digits = 2;
-    required bool decimal_point = 3;
-    repeated uint32 dec_digits = 4;
-    repeated uint32 exp_digits = 5;
-    required bool negative_exp = 6;
-}
-
 enum Integers {
     UInt8 = 1;
     UInt16 = 2;
@@ -265,14 +256,19 @@ message DateTimeTp {
     optional string timezone = 3;
 }
 
+/// When `mid_upper` and `mid_lower` are set, the value is 256-bit: upper:mid_upper:mid_lower:lower
 message HugeIntLiteral {
     required int64 upper = 1;
     required uint64 lower = 2;
+    optional uint64 mid_upper = 3;
+    optional uint64 mid_lower = 4;
 }
 
 message UHugeIntLiteral {
     required uint64 upper = 1;
     required uint64 lower = 2;
+    optional uint64 mid_upper = 3;
+    optional uint64 mid_lower = 4;
 }
 
 message IntLiteral {
@@ -288,12 +284,9 @@ message IntLiteral {
 message LiteralValue {
     oneof lit_val_oneof {
         IntLiteral int_lit = 1;
-        NumericLiteral numeric_lit = 2;
-        bytes string_lit = 3;
-        bytes hex_string = 4;
-        bytes heredoc = 5;
-        SpecialVal special_val = 6;
-        string no_quote_str = 7;
+        bytes string_lit = 2;
+        SpecialVal special_val = 3;
+        string no_quote_str = 4;
     }
 }
 
@@ -464,10 +457,13 @@ message ExprLike {
         ILIKE = 2;
         REGEXP = 3;
         SIMILAR_TO = 4;
+        /// The `~` and `~*` regex operators
+        TILDE = 5;
+        TILDE_ASTERISK = 6;
     }
     required PossibleKeywords keyword = 3;
     required Expr expr2 = 4;
-    /// Quoted `ESCAPE` literal, not for `REGEXP`
+    /// Quoted `ESCAPE` literal, not for the regex keywords
     optional string escape = 5;
 }
 
@@ -769,6 +765,8 @@ enum JoinType {
     J_FULL = 4;
     J_PASTE = 5;
     J_CROSS = 6;
+    /// FROM t1, t2
+    J_COMMA = 7;
 }
 
 enum JoinConst {
@@ -839,12 +837,6 @@ message FileFunc {
     optional string format = 4;
     optional Expr structure = 5;
     optional string fcomp = 6;
-}
-
-message FormatFunc {
-    required string format = 1;
-    optional Expr structure = 2;
-    required string data = 3;
 }
 
 message NumbersFunc {
@@ -1028,34 +1020,33 @@ message ArrowFlightFunc {
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
-        FormatFunc format = 2;
-        NumbersFunc numbers = 3;
-        RemoteFunc remote = 4;
-        MySQLFunc mysql = 5;
-        PostgreSQLFunc postgresql = 6;
-        SQLiteFunc sqite = 7; /// For style check
-        ObjectStoreFunc object_func = 8;
-        MergeFunc merge = 9;
-        ClusterFunc cluster = 10;
-        TableOrFunction loop = 11;
-        GenerateRandomFunc grandom = 12;
-        ValuesStatement values = 13;
-        ExprSchemaTable dictionary = 14;
-        URLFunc url = 15;
-        RedisFunc redis = 16;
-        MongoDBFunc mongodb = 17;
-        Expr nullf = 18;
-        ArrowFlightFunc flight = 19;
-        MergeTreeIndexFunc mtindex = 20;
-        MergeTreeProjectionFunc mtproj = 21;
-        MergeTreeTextIndexFunc mttxtidx = 22;
-        MergeTreeAnalyzeIndexesFunc mtanindex = 23;
-        SQLTableFuncCall func = 24;
-        ExprSchemaTable mtcodecblocks = 25;
-        Select obfuscate = 28;
+        NumbersFunc numbers = 2;
+        RemoteFunc remote = 3;
+        MySQLFunc mysql = 4;
+        PostgreSQLFunc postgresql = 5;
+        SQLiteFunc sqite = 6; /// For style check
+        ObjectStoreFunc object_func = 7;
+        MergeFunc merge = 8;
+        ClusterFunc cluster = 9;
+        TableOrFunction loop = 10;
+        GenerateRandomFunc grandom = 11;
+        ValuesStatement values = 12;
+        ExprSchemaTable dictionary = 13;
+        URLFunc url = 14;
+        RedisFunc redis = 15;
+        MongoDBFunc mongodb = 16;
+        Expr nullf = 17;
+        ArrowFlightFunc flight = 18;
+        MergeTreeIndexFunc mtindex = 19;
+        MergeTreeProjectionFunc mtproj = 20;
+        MergeTreeTextIndexFunc mttxtidx = 21;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 22;
+        SQLTableFuncCall func = 23;
+        ExprSchemaTable mtcodecblocks = 24;
+        Select obfuscate = 27;
     }
-    optional SettingValues setting_values = 26;
-    repeated HTTPHeader http_headers = 27;
+    optional SettingValues setting_values = 25;
+    repeated HTTPHeader http_headers = 26;
 }
 
 message SampleClause {
@@ -1080,30 +1071,20 @@ message JoinedTableOrFunction {
 message TableOrSubquery {
     oneof tos_oneof {
         JoinedTableOrFunction joined_table = 1;
-        JoinedQuery joined_query = 2;
     }
 }
 
 message JoinedQuery {
-    /// If empty, use the join clause
-    repeated TableOrSubquery tos_list = 1;
-    required JoinClause join_clause = 2;
+    required JoinClause join_clause = 1;
 }
 
 message FromStatement {
     required JoinedQuery tos = 1;
 }
 
-message ColumnComparison {
-    required ExprSchemaTableColumn col = 1;
-    required BinaryOperator op = 2;
-    required Expr expr = 3;
-}
-
 message ExprComparisonHighProbability {
     oneof expr_comp_oneof {
-        ColumnComparison cc = 1;
-        Expr expr = 2;
+        Expr expr = 1;
     }
 }
 
@@ -1357,8 +1338,7 @@ message JSONDefItem {
     oneof JSON_spec_oneof {
         uint32 max_dynamic_paths = 1;
         uint32 max_dynamic_types = 2;
-        ColumnPath skip_path = 3;
-        JSONPathType path_type = 4;
+        JSONPathType path_type = 3;
     }
 }
 
@@ -1682,21 +1662,20 @@ enum TableEngineOption {
 message TableEngineParam {
     oneof table_engine_param_oneof {
         ColumnPath cols = 1;
-        string in = 2;
-        string out = 3;
-        string in_out = 4;
-        JoinType join_op = 5;
-        JoinConst join_const = 6;
-        SQLIdentifier database = 7;
-        SQLIdentifier table = 8;
-        uint32 num = 9;
-        string svalue = 10;
-        ColumnPathList col_list = 11;
-        string regexp = 12;
-        ExprSchemaTable est = 13;
-        Expr expr = 14;
-        KeyValuePair kvalue = 15;
-        string rvalue = 16;
+        string out = 2;
+        string in_out = 3;
+        JoinType join_op = 4;
+        JoinConst join_const = 5;
+        SQLIdentifier database = 6;
+        SQLIdentifier table = 7;
+        uint32 num = 8;
+        string svalue = 9;
+        ColumnPathList col_list = 10;
+        string regexp = 11;
+        ExprSchemaTable est = 12;
+        Expr expr = 13;
+        KeyValuePair kvalue = 14;
+        string rvalue = 15;
     }
 }
 
@@ -1802,9 +1781,8 @@ message CreateTable {
         CreateTableAs table_as = 8;
     }
     required TableEngine engine = 9;
-    optional TTLExpr ttl_expr = 10;
-    optional CreateTableSelect as_select_stmt = 11;
-    optional string comment = 12;
+    optional CreateTableSelect as_select_stmt = 10;
+    optional string comment = 11;
 }
 
 enum SQLObject {
@@ -1836,13 +1814,14 @@ message Drop {
     optional bool if_exists = 3;
     optional bool if_empty = 4;
     required SQLObjectName object = 5;
-    repeated SQLObjectName other_objects = 6;
-    optional Cluster cluster = 7;
-    optional ExprSchemaTable target = 8;
-    optional bool sync = 9;
-    optional SettingValues setting_values = 10;
+    optional Cluster cluster = 6;
+    optional ExprSchemaTable target = 7;
+    optional bool sync = 8;
+    optional SettingValues setting_values = 9;
     /// DROP ALL HYPOTHETICAL INDEXES, DROP ALL HYPOTHETICAL PROJECTIONS
-    optional bool all = 11;
+    optional bool all = 10;
+    /// DROP TABLE t1, t2
+    repeated SQLObjectName other_objects = 11;
 }
 
 message InsertFromFile {
@@ -1937,10 +1916,9 @@ message SelectIntoFile {
         TRUNCATE = 2;
     }
     required string path = 1;
-    optional bool tstdout = 2;
-    optional SelectIntoFileStep step = 3;
-    optional string compression = 4;
-    optional uint32 level = 5;
+    optional SelectIntoFileStep step = 2;
+    optional string compression = 3;
+    optional uint32 level = 4;
 }
 
 message TopSelect {
@@ -2116,7 +2094,6 @@ message RefreshInterval {
 
 message DependsList {
     required ExprSchemaTable est = 1;
-    repeated ExprSchemaTable other_est = 2;
 }
 
 message RefreshableView {
@@ -2511,141 +2488,138 @@ message ResetFileLog {
 }
 
 message SystemCommand {
-    reserved 4; // was: reload_models
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
         bool reload_embedded_dictionaries = 2;
         bool reload_dictionaries = 3;
-        bool reload_functions = 5;
-        SQLIdentifier reload_function = 6;
-        bool reload_asynchronous_metrics = 7;
-        bool drop_dns_cache = 8;
-        bool drop_mark_cache = 9;
-        bool drop_uncompressed_cache = 10;
-        bool drop_compiled_expression_cache = 11;
-        bool drop_query_cache = 12;
+        bool reload_functions = 4;
+        SQLIdentifier reload_function = 5;
+        bool reload_asynchronous_metrics = 6;
+        bool drop_dns_cache = 7;
+        bool drop_mark_cache = 8;
+        bool drop_uncompressed_cache = 9;
+        bool drop_compiled_expression_cache = 10;
+        bool drop_query_cache = 11;
         /// The bool value is used here
-        bool drop_format_schema_cache = 13;
-        bool flush_logs = 14;
-        bool reload_config = 15;
-        bool reload_users = 16;
-        ExprSchemaTable stop_merges = 17;
-        ExprSchemaTable start_merges = 18;
-        ExprSchemaTable stop_ttl_merges = 19;
-        ExprSchemaTable start_ttl_merges = 20;
-        ExprSchemaTable stop_moves = 21;
-        ExprSchemaTable start_moves = 22;
-        ExprSchemaTable wait_loading_parts = 23;
-        ExprSchemaTable stop_fetches = 24;
-        ExprSchemaTable start_fetches = 25;
-        ExprSchemaTable stop_replicated_sends = 26;
-        ExprSchemaTable start_replicated_sends = 27;
-        ExprSchemaTable stop_replication_queues = 28;
-        ExprSchemaTable start_replication_queues = 29;
-        ExprSchemaTable stop_pulling_replication_log = 30;
-        ExprSchemaTable start_pulling_replication_log = 31;
-        SyncReplica sync_replica = 32;
-        SQLIdentifier sync_replicated_database = 33;
-        ExprSchemaTable restart_replica = 34;
-        ExprSchemaTable restore_replica = 35;
-        bool restart_replicas = 36;
-        bool drop_filesystem_cache = 37;
-        bool sync_file_cache = 38;
-        bool load_pks = 39;
-        ExprSchemaTable load_pk = 40;
-        bool unload_pks = 41;
-        ExprSchemaTable unload_pk = 42;
-        ExprSchemaTable refresh_view = 43;
-        bool stop_views = 44;
-        ExprSchemaTable stop_view = 45;
-        bool start_views = 46;
-        ExprSchemaTable start_view = 47;
-        ExprSchemaTable cancel_view = 48;
-        ExprSchemaTable wait_view = 49;
-        ExprSchemaTable prewarm_cache = 50;
-        ExprSchemaTable prewarm_primary_index_cache = 51;
-        bool drop_connections_cache = 52;
-        bool drop_primary_index_cache = 53;
-        bool drop_index_mark_cache = 54;
-        bool drop_index_uncompressed_cache = 55;
-        bool drop_mmap_cache = 56;
-        bool drop_page_cache = 57;
-        bool drop_schema_cache = 58;
-        bool drop_s3_client_cache = 59;
-        bool flush_async_insert_queue = 60;
-        bool sync_filesystem_cache = 61;
-        bool drop_vector_similarity_index_cache = 62;
-        ExprSchemaTable reload_dictionary = 63;
-        ExprSchemaTable flush_distributed = 64;
-        ExprSchemaTable stop_distributed_sends = 65;
-        ExprSchemaTable start_distributed_sends = 66;
-        bool drop_query_condition_cache = 67;
-        string enable_failpoint = 68;
-        string disable_failpoint = 69;
-        bool iceberg_metadata_cache = 70;
-        bool reconnect_keeper = 71;
-        bool drop_text_index_tokens_cache = 72;
-        bool drop_text_index_header_cache = 73;
-        bool drop_text_index_postings_cache = 74;
-        bool drop_text_index_caches = 75;
-        bool reset_ddl_worker = 76;
-        bool drop_parquet_metadata_cache = 77;
-        string wait_failpoint = 78;
-        string notify_failpoint = 79;
-        DeltaKernelTraceLevel reload_delta_kernel_tracing = 80;
-        SQLIdentifier restore_database_replica = 81;
-        ExprSchemaTable stop_replicated_view = 82;
-        ExprSchemaTable start_replicated_view = 83;
-        string unfreeze = 84;
-        DropReplica drop_replica = 85;
-        DropDatabaseReplica drop_database_replica = 86;
-        ExprSchemaTable stop_cleanup = 87;
-        ExprSchemaTable start_cleanup = 88;
-        bool stop_replicated_ddl_queries = 89;
-        bool start_replicated_ddl_queries = 90;
-        bool jemalloc_purge = 91;
-        bool jemalloc_enable_profile = 92;
-        bool jemalloc_disable_profile = 93;
-        bool jemalloc_flush_profile = 94;
-        bool sync_transaction_log = 95;
-        bool start_thread_fuzzer = 96;
-        bool stop_thread_fuzzer = 97;
-        DropDistributedCache drop_distributed_cache = 98;
-        UnlockSnapshot unlock_snapshot = 99;
-        FlushObjectStorageQueue flush_object_storage_queue = 100;
-        ExprSchemaTable stop_virtual_parts_update = 101;
-        ExprSchemaTable start_virtual_parts_update = 102;
-        ExprSchemaTable stop_reduce_blocking_parts = 103;
-        ExprSchemaTable start_reduce_blocking_parts = 104;
-        string wait_blobs_cleanup = 105;
-        ExprSchemaTable pause_view = 106;
-        bool pause_views = 107;
-        string restart_disk = 108;
-        bool unload_dictionaries = 109;
-        ExprSchemaTable unload_dictionary = 110;
+        bool drop_format_schema_cache = 12;
+        bool flush_logs = 13;
+        bool reload_config = 14;
+        bool reload_users = 15;
+        ExprSchemaTable stop_merges = 16;
+        ExprSchemaTable start_merges = 17;
+        ExprSchemaTable stop_ttl_merges = 18;
+        ExprSchemaTable start_ttl_merges = 19;
+        ExprSchemaTable stop_moves = 20;
+        ExprSchemaTable start_moves = 21;
+        ExprSchemaTable wait_loading_parts = 22;
+        ExprSchemaTable stop_fetches = 23;
+        ExprSchemaTable start_fetches = 24;
+        ExprSchemaTable stop_replicated_sends = 25;
+        ExprSchemaTable start_replicated_sends = 26;
+        ExprSchemaTable stop_replication_queues = 27;
+        ExprSchemaTable start_replication_queues = 28;
+        ExprSchemaTable stop_pulling_replication_log = 29;
+        ExprSchemaTable start_pulling_replication_log = 30;
+        SyncReplica sync_replica = 31;
+        SQLIdentifier sync_replicated_database = 32;
+        ExprSchemaTable restart_replica = 33;
+        ExprSchemaTable restore_replica = 34;
+        bool restart_replicas = 35;
+        bool drop_filesystem_cache = 36;
+        bool sync_file_cache = 37;
+        bool load_pks = 38;
+        ExprSchemaTable load_pk = 39;
+        bool unload_pks = 40;
+        ExprSchemaTable unload_pk = 41;
+        ExprSchemaTable refresh_view = 42;
+        bool stop_views = 43;
+        ExprSchemaTable stop_view = 44;
+        bool start_views = 45;
+        ExprSchemaTable start_view = 46;
+        ExprSchemaTable cancel_view = 47;
+        ExprSchemaTable wait_view = 48;
+        ExprSchemaTable prewarm_cache = 49;
+        ExprSchemaTable prewarm_primary_index_cache = 50;
+        bool drop_connections_cache = 51;
+        bool drop_primary_index_cache = 52;
+        bool drop_index_mark_cache = 53;
+        bool drop_index_uncompressed_cache = 54;
+        bool drop_mmap_cache = 55;
+        bool drop_page_cache = 56;
+        bool drop_schema_cache = 57;
+        bool drop_s3_client_cache = 58;
+        bool flush_async_insert_queue = 59;
+        bool sync_filesystem_cache = 60;
+        bool drop_vector_similarity_index_cache = 61;
+        ExprSchemaTable reload_dictionary = 62;
+        ExprSchemaTable flush_distributed = 63;
+        ExprSchemaTable stop_distributed_sends = 64;
+        ExprSchemaTable start_distributed_sends = 65;
+        bool drop_query_condition_cache = 66;
+        string enable_failpoint = 67;
+        string disable_failpoint = 68;
+        bool iceberg_metadata_cache = 69;
+        bool reconnect_keeper = 70;
+        bool drop_text_index_tokens_cache = 71;
+        bool drop_text_index_header_cache = 72;
+        bool drop_text_index_postings_cache = 73;
+        bool drop_text_index_caches = 74;
+        bool reset_ddl_worker = 75;
+        bool drop_parquet_metadata_cache = 76;
+        string wait_failpoint = 77;
+        string notify_failpoint = 78;
+        DeltaKernelTraceLevel reload_delta_kernel_tracing = 79;
+        SQLIdentifier restore_database_replica = 80;
+        ExprSchemaTable stop_replicated_view = 81;
+        ExprSchemaTable start_replicated_view = 82;
+        string unfreeze = 83;
+        DropReplica drop_replica = 84;
+        DropDatabaseReplica drop_database_replica = 85;
+        bool stop_replicated_ddl_queries = 86;
+        bool start_replicated_ddl_queries = 87;
+        bool jemalloc_purge = 88;
+        bool jemalloc_enable_profile = 89;
+        bool jemalloc_disable_profile = 90;
+        bool jemalloc_flush_profile = 91;
+        bool sync_transaction_log = 92;
+        bool start_thread_fuzzer = 93;
+        bool stop_thread_fuzzer = 94;
+        DropDistributedCache drop_distributed_cache = 95;
+        UnlockSnapshot unlock_snapshot = 96;
+        FlushObjectStorageQueue flush_object_storage_queue = 97;
+        ExprSchemaTable stop_virtual_parts_update = 98;
+        ExprSchemaTable start_virtual_parts_update = 99;
+        ExprSchemaTable stop_reduce_blocking_parts = 100;
+        ExprSchemaTable start_reduce_blocking_parts = 101;
+        string wait_blobs_cleanup = 102;
+        ExprSchemaTable pause_view = 103;
+        bool pause_views = 104;
+        string restart_disk = 105;
+        bool unload_dictionaries = 106;
+        ExprSchemaTable unload_dictionary = 107;
         /// Engine-agnostic background controls for streaming engines and refreshable views.
         /// None of them accept `ON CLUSTER`, so don't set `can_set_cluster` when printing.
-        ExprSchemaTable stop_background = 111;
-        ExprSchemaTable start_background = 112;
-        ExprSchemaTable pause_background = 113;
-        ExprSchemaTable cancel_background = 114;
-        ExprSchemaTable refresh_background = 115;
-        bool stop_all_background = 116;
-        bool start_all_background = 117;
-        bool pause_all_background = 118;
-        bool cancel_all_background = 119;
-        bool refresh_all_background = 120;
-        ExprSchemaTable drop_time_series_caches = 121;
-        bool drop_statistics_cache = 122;
-        bool drop_columns_cache = 123;
-        bool drop_encryption_headers_cache = 124;
-        bool drop_paimon_metadata_cache = 125;
-        bool drop_point_in_polygon_cache = 126;
-        bool drop_avro_schema_cache = 127;
-        string drop_disk_metadata_cache = 128;
+        ExprSchemaTable stop_background = 108;
+        ExprSchemaTable start_background = 109;
+        ExprSchemaTable pause_background = 110;
+        ExprSchemaTable cancel_background = 111;
+        ExprSchemaTable refresh_background = 112;
+        bool stop_all_background = 113;
+        bool start_all_background = 114;
+        bool pause_all_background = 115;
+        bool cancel_all_background = 116;
+        bool refresh_all_background = 117;
+        ExprSchemaTable drop_time_series_caches = 118;
+        bool drop_statistics_cache = 119;
+        bool drop_columns_cache = 120;
+        bool drop_encryption_headers_cache = 121;
+        bool drop_paimon_metadata_cache = 122;
+        bool drop_point_in_polygon_cache = 123;
+        bool drop_avro_schema_cache = 124;
+        string drop_disk_metadata_cache = 125;
         /// Fail points are node-local, so no `ON CLUSTER`
-        bool disable_all_failpoints = 129;
-        ResetFileLog reset_filelog = 130;
+        bool disable_all_failpoints = 126;
+        ResetFileLog reset_filelog = 127;
     }
 }
 
@@ -2658,8 +2632,7 @@ message BackupRestoreObject {
     optional bool is_temp = 1;
     required SQLObject sobject = 2;
     required SQLObjectName object = 3;
-    optional SQLObjectName alias = 4;
-    repeated PartitionExpr partitions = 5;
+    repeated PartitionExpr partitions = 4;
 }
 
 message BackupRestoreElement {
@@ -2667,10 +2640,9 @@ message BackupRestoreElement {
         BackupRestoreObject bobject = 1;
         bool all = 2;
     }
-    repeated ExprSchemaTable except_tables = 3;
     /// EXCEPT DATA FROM TABLE[S], BACKUP only
-    optional bool except_data_plural = 4;
-    repeated ExprSchemaTable except_data_tables = 5;
+    optional bool except_data_plural = 3;
+    repeated ExprSchemaTable except_data_tables = 4;
 }
 
 message BackupRestore {
@@ -2684,16 +2656,15 @@ message BackupRestore {
         /// BACKUP FROM SNAPSHOT {snapshot_source} TO {out}
         BackupOut from_snapshot = 3;
     }
-    repeated BackupRestoreElement other_elements = 4;
-    optional Cluster cluster = 5;
-    required BackupOut out = 6;
-    optional SettingValues setting_values = 7;
+    optional Cluster cluster = 4;
+    required BackupOut out = 5;
+    optional SettingValues setting_values = 6;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 8;
-    optional string format = 9;
+    optional SyncOrAsync sync = 7;
+    optional string format = 8;
 }
 
 message SnapshotQuery {
@@ -2734,12 +2705,6 @@ message ShowObject {
     required SQLObjectName object = 4;
 }
 
-message ShowTables {
-    optional bool full = 1;
-    optional bool is_temp = 2;
-    optional SQLIdentifier database = 3;
-}
-
 message ShowDictionaries {
     optional SQLIdentifier database = 1;
 }
@@ -2766,29 +2731,28 @@ message ShowStatement {
     oneof show_oneof {
         ShowObject object = 1;
         bool databases = 2;
-        ShowTables tables = 3;
-        ShowColumns columns = 4;
-        ShowDictionaries dictionaries = 5;
-        ShowIndex indexes = 6;
-        bool processlist = 7;
-        bool grants = 8; /// bool is used here
-        bool users = 9;
-        bool roles = 10; /// bool is used here
-        bool profiles = 11; /// bool is used here
-        ExprSchemaTable policies = 12;
-        bool quotas = 13;
-        bool quota = 14; /// bool is used here
-        bool access = 15;
-        Cluster cluster = 16;
-        bool clusters = 17;
-        bool settings = 18; /// bool is used here
-        string setting = 19;
-        bool filesystem_caches = 20;
-        bool engines = 21;
-        bool functions = 22;
-        bool merges = 23;
+        ShowColumns columns = 3;
+        ShowDictionaries dictionaries = 4;
+        ShowIndex indexes = 5;
+        bool processlist = 6;
+        bool grants = 7; /// bool is used here
+        bool users = 8;
+        bool roles = 9; /// bool is used here
+        bool profiles = 10; /// bool is used here
+        ExprSchemaTable policies = 11;
+        bool quotas = 12;
+        bool quota = 13; /// bool is used here
+        bool access = 14;
+        Cluster cluster = 15;
+        bool clusters = 16;
+        bool settings = 17; /// bool is used here
+        string setting = 18;
+        bool filesystem_caches = 19;
+        bool engines = 20;
+        bool functions = 21;
+        bool merges = 22;
     }
-    optional SettingValues setting_values = 24;
+    optional SettingValues setting_values = 23;
 }
 
 message CreatePolicy {
@@ -2903,11 +2867,10 @@ message ExplainQuery {
         WHATIF = 9;
         ANALYZE = 10;
     }
-    optional string execute_as = 1;
-    optional bool is_explain = 2;
-    optional ExplainValues expl = 3;
-    repeated ExplainOption opts = 4;
-    required SQLQueryInner inner_query = 5;
+    optional bool is_explain = 1;
+    optional ExplainValues expl = 2;
+    repeated ExplainOption opts = 3;
+    required SQLQueryInner inner_query = 4;
 }
 
 message SingleSQLQuery {

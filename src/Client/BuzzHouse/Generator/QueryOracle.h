@@ -71,6 +71,16 @@ private:
     std::unordered_set<String> found_tables;
     DB::Strings nsettings;
 
+    /// Generator state guards for the oracles, nested to get the `StatementGenerator` friendship
+    class OracleGenerationScope;
+    class NoAggregatesScope;
+
+    static void finishSettings(SettingValues * svs);
+    static void generateTruePredicate(RandomGenerator & rg, StatementGenerator & gen, Expr * expr);
+    static void addOrderedTableDumpColumns(
+        RandomGenerator & rg, StatementGenerator & gen, const std::unordered_map<String, SQLColumn> & cols, SelectStatementCore * ssc);
+    /// Sets the format and the truncated `qcfile` output, removing any previous file
+    void setOracleOutFile(TopSelect * ts, const String & format) const;
     void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
     void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
