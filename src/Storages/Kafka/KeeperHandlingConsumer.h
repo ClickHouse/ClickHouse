@@ -60,19 +60,29 @@ public:
     class OffsetGuard
     {
     public:
-        OffsetGuard(KeeperHandlingConsumer & consumer_, int64_t new_offset_);
+        OffsetGuard(KeeperHandlingConsumer & consumer_, int64_t new_offset_, bool replays_existing_intent_);
         OffsetGuard(OffsetGuard && other) noexcept;
         ~OffsetGuard();
 
         void commit();
+        /// Rolls back the offsets. Only valid when the insert of the batch has not started in this
+        /// attempt. If the batch is fresh, its intent is discarded too: nobody tried to insert its
+        /// messages, so there is nothing to deduplicate, and the intent would only force the next
+        /// batch to replay the same messages for no reason. If the batch replays an existing
+        /// intent, the intent is preserved: the insert of an earlier attempt may have committed the
+        /// rows (e.g. it reported an unknown status), so a later batch must still replay the same
+        /// messages for deduplication.
+        void rollbackBeforeInsert();
     private:
         bool needs_rollback{true};
         KeeperHandlingConsumer * consumer;
         int64_t new_offset;
+        /// Whether the intent existed before the batch of this guard was collected.
+        bool replays_existing_intent;
     };
 
     using MessageSinkFunction
-        = std::function<bool(ReadBufferPtr, const MessageInfo &, bool /*has_more_polled_messages*/, bool /*stalled*/)>;
+        = std::function<bool(ReadBufferPtr, const MessageInfo &, bool /*has_more_polled_messages*/, bool /*stalled*/, bool /*replaying_intent*/)>;
 
     KeeperHandlingConsumer(
         const KafkaConsumer2Ptr & kafka_consumer_,
@@ -210,8 +220,12 @@ private:
 
     void saveCommittedOffset(int64_t new_offset);
     void saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, uint64_t intent);
-    // To save commit and intent nodes
-    void writeTopicPartitionInfoToKeeper(const std::filesystem::path & keeper_path_to_data, const String & data);
+    /// Drops the intent of a batch that was abandoned before its insert started. Callable while an
+    /// exception is propagating, where a throw would terminate the server.
+    void discardIntentSizeNoThrow() noexcept;
+    // To build and execute the transactions that save the commit and intent nodes
+    void addSetOrCreateRequest(Coordination::Requests & ops, const std::filesystem::path & path, const String & data);
+    void executeMultiInKeeper(Coordination::Requests ops);
     // Searches first in permanent_locks, then in tmp_locks.
 
 
