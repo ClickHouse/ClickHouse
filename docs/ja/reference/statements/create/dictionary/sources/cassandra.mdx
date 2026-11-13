@@ -18,6 +18,8 @@ doc_type: 'reference'
         port 9042
         user 'username'
         password 'qwerty123'
+        secure 1
+        compression 'lz4'
         keyspace 'database_name'
         column_family 'table_name'
         allow_filtering 1
@@ -38,7 +40,9 @@ doc_type: 'reference'
             <port>9042</port>
             <user>username</user>
             <password>qwerty123</password>
-            <keyspase>database_name</keyspase>
+            <secure>1</secure>
+            <compression>lz4</compression>
+            <keyspace>database_name</keyspace>
             <column_family>table_name</column_family>
             <allow_filtering>1</allow_filtering>
             <partition_key_prefix>1</partition_key_prefix>
@@ -54,20 +58,22 @@ doc_type: 'reference'
 
 設定項目:
 
-| 設定                     | 説明                                                                                                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host`                 | Cassandra のホスト、またはカンマ区切りのホスト一覧です。                                                                                                                           |
-| `port`                 | Cassandra サーバーのポートです。指定しない場合は、デフォルトポート `9042` が使用されます。                                                                                                      |
-| `user`                 | Cassandra ユーザー名です。                                                                                                                                          |
-| `password`             | Cassandra ユーザーのパスワードです。                                                                                                                                     |
-| `keyspace`             | keyspace (データベース) 名です。                                                                                                                                      |
-| `column_family`        | column family (テーブル) 名です。                                                                                                                                   |
-| `allow_filtering`      | クラスタリングキーのカラムに対して、コストが高くなる可能性のある条件を許可するかどうかを示すフラグです。デフォルト値は `1` です。                                                                                         |
-| `partition_key_prefix` | Cassandra テーブルの主キーに含まれるパーティションキーのカラム数です。複合キー辞書では必須です。辞書定義内のキーカラムの順序は、Cassandra 内の順序と同じである必要があります。デフォルト値は `1` です (最初のキーカラムがパーティションキーで、他のキーカラムはクラスタリングキーです) 。 |
-| `consistency`          | 整合性レベルです。設定可能な値: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`。デフォルト値は `One` です。                 |
-| `where`                | 任意の選択条件です。                                                                                                                                                  |
-| `max_threads`          | 複合キー辞書で、複数のパーティションからデータを読み込む際に使用するスレッドの最大数です。                                                                                                               |
-| `query`                | カスタムクエリです。任意です。                                                                                                                                             |
+| 設定                     | 説明                                                                                                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`                 | Cassandra のホスト、またはカンマ区切りのホスト一覧です。                                                                                                                                                                                                      |
+| `port`                 | Cassandra サーバーのポートです。指定しない場合は、デフォルトポート `9042` が使用されます。                                                                                                                                                                                 |
+| `user`                 | Cassandra ユーザー名です。                                                                                                                                                                                                                     |
+| `password`             | Cassandra ユーザーのパスワードです。                                                                                                                                                                                                                |
+| `secure`               | 接続に TLS を使用します。証明書検証モードなどの TLS クライアント設定は、サーバー設定の `openSSL.client` セクションから取得されます。デフォルト値は `0` です。                                                                                                                                        |
+| `compression`          | 転送データの圧縮方式です。`none`、`lz4`、`snappy` のいずれかを指定します。デフォルト値は `none` です。                                                                                                                                                                      |
+| `keyspace`             | keyspace (データベース) 名です。                                                                                                                                                                                                                 |
+| `column_family`        | column family (テーブル) 名です。                                                                                                                                                                                                              |
+| `allow_filtering`      | クラスタリングキーのカラムに対して、コストが高くなる可能性のある条件を許可するかどうかを示すフラグです。デフォルト値は `1` です。                                                                                                                                                                    |
+| `partition_key_prefix` | Cassandra テーブルの主キーに含まれるパーティションキーのカラム数です。複合キー辞書では必須です。辞書定義内のキーカラムの順序は、Cassandra 内の順序と同じである必要があります。デフォルト値は `1` です (最初のキーカラムがパーティションキーで、他のキーカラムはクラスタリングキーです) 。                                                                            |
+| `consistency`          | 整合性レベルです。設定可能な値: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`。デフォルト値は `One` です。                                                                                            |
+| `where`                | 任意の選択条件です。                                                                                                                                                                                                                             |
+| `max_threads`          | データの読み込み (例えば、複合キー辞書で複数のパーティションから読み込む場合) のために開いたまま保持するアイドル接続の最大数です。デフォルト値は `8` です。                                                                                                                                                     |
+| `query`                | カスタムクエリです。任意です。CQL はサブクエリをサポートしていないため、複合キーを持ち `cache` または `direct` レイアウトを使用する辞書では、クエリに `{condition}` プレースホルダーを含める必要があります。このプレースホルダーは、要求されたキーに対する条件に置き換えられます。辞書全体を読み込む際には、プレースホルダーは直前の `WHERE` または `AND` とともに削除されるため、必ずこれらの直後に配置してください。 |
 
 <Note>
   `column_family` フィールドまたは `where` フィールドは、`query` フィールドと併用できません。また、`column_family` フィールドと `query` フィールドのいずれか一方は必ず指定する必要があります。
