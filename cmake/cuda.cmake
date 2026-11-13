@@ -102,26 +102,6 @@ if (ENABLE_GPU)
     gpu_cuda_library (GPU_NVJITLINK_LIBRARY      nvJitLink_static)
     gpu_cuda_library (GPU_NVPTXCOMPILER_LIBRARY  nvptxcompiler_static)
 
-    # These three register their static constructors in `.ctors`, which lld - unlike GNU ld - does not fold into
-    # `.init_array`: their globals were never constructed, and the first call of nvJitLink crashed on a null mutex.
-    # Copies with the constructors moved to `.init_array` are linked instead; see cmake/gpu_ctors_to_init_array.py.
-    find_package (Python3 REQUIRED COMPONENTS Interpreter)
-    function (gpu_cuda_library_with_init_array var)
-        get_filename_component (_name "${${var}}" NAME)
-        set (_converted "${CMAKE_BINARY_DIR}/gpu_libs/${_name}")
-        if (NOT EXISTS "${_converted}" OR "${${var}}" IS_NEWER_THAN "${_converted}")
-            file (MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/gpu_libs")
-            execute_process (
-                COMMAND "${Python3_EXECUTABLE}" "${ClickHouse_SOURCE_DIR}/cmake/gpu_ctors_to_init_array.py"
-                    "${OBJCOPY_PATH}" "${${var}}" "${_converted}"
-                COMMAND_ERROR_IS_FATAL ANY)
-        endif ()
-        set (${var} "${_converted}" PARENT_SCOPE)
-    endfunction ()
-    gpu_cuda_library_with_init_array (GPU_NVRTC_LIBRARY)
-    gpu_cuda_library_with_init_array (GPU_NVJITLINK_LIBRARY)
-    gpu_cuda_library_with_init_array (GPU_NVPTXCOMPILER_LIBRARY)
-
     # What FindCUDAToolkit would have attached to CUDA::cudart_static. Consumers link this
     # rather than naming the archive, or the first executable to pull one in fails on
     # pthread_*, dl* and clock_gettime. Threads::Threads arrives with

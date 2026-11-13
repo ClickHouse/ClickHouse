@@ -1,6 +1,7 @@
 # cuVS for the `ivf` vector similarity index, on the GPU island like cuDF (see gpu_island_target in cmake/cuda.cmake).
-# Only what CAGRA and CAGRA-Q need is built. The generated instantiations and JIT-LTO fragments come from evaluating
-# upstream's cpp/CMakeLists.txt (cuvs_evaluate_upstream), so they follow the submodule; the source list is ours.
+# Only what the index uses is built: the balanced k-means and `select_k`, with the clustering and distances they call.
+# The generated instantiations come from evaluating upstream's cpp/CMakeLists.txt (cuvs_evaluate_upstream), so they
+# follow the submodule; the source list is ours.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using cuVS")
@@ -28,7 +29,6 @@ add_library (cuco::cuco ALIAS _cuco)
 
 include ("${CUVS_CPP_DIR}/cmake/modules/generate_inst_matrix.cmake")
 include ("${CUVS_CPP_DIR}/cmake/modules/generate_string_matrix.cmake")
-include ("${CMAKE_CURRENT_SOURCE_DIR}/island_jit_lto.cmake")
 
 set (BUILD_MG_ALGOS OFF)
 
@@ -47,83 +47,28 @@ macro (cuvs_evaluate_upstream BEGIN END)
     cmake_language (EVAL CODE "${_cuvs_code}")
 endmacro ()
 
-# CAGRA search instantiations and all JIT-LTO fragments.
-cuvs_evaluate_upstream (
-    "  generate_inst_matrix(\n    cagra_search_inst_files"
-    "  include(cmake/modules/generate_cutile_kernels.cmake)")
-# The other instantiations.
+# The instantiations, of which `select_k` and the pairwise distances are built.
 cuvs_evaluate_upstream (
     "  generate_inst_matrix(\n    pairwise_matrix_dispatch_inst_files"
     "  add_library(\n    cuvs_objs OBJECT")
 
-# No interface compile options on contrib targets (cmake/sanitize_targets.cmake); add_jit_lto_kernel sets them.
-set_target_properties (jit_lto_kernel_usage_requirements PROPERTIES INTERFACE_COMPILE_OPTIONS "")
-
-# Fragments of indexes we do not build.
-list (FILTER jit_lto_files EXCLUDE REGEX "/generated_kernels/(ivf_sq|ivf_rabitq)/")
-
 set (CUVS_SOURCES
-    src/neighbors/cagra.cpp
-    src/neighbors/detail/cagra/graph_shared.cu
-    src/neighbors/detail/cagra/cagra_helpers.cpp
-    src/neighbors/detail/cagra/topk_for_cagra/topk.cu
-    src/neighbors/ivf_common.cu
-    src/neighbors/ivf_pq_index.cu
-    src/neighbors/ivf_pq/ivf_pq_build_common.cu
-    src/neighbors/ivf_pq/detail/ivf_pq_build_precomputed_int64_t.cu
-    src/neighbors/ivf_pq/detail/ivf_pq_contiguous_list_data.cu
-    src/neighbors/ivf_pq/detail/ivf_pq_list_data.cu
-    src/neighbors/ivf_pq/detail/ivf_pq_process_and_fill_codes.cu
-    src/neighbors/ivf_flat_index.cpp
-    src/neighbors/ivf_flat/ivf_flat_helpers.cu
-    src/neighbors/nn_descent.cu
-    src/neighbors/nn_descent_gnnd_inst.cu
-    src/neighbors/nn_descent_index.cpp
-    src/neighbors/sample_filter.cu
-    src/neighbors/roaring_bitmap_filter.cu
-    src/core/bitset.cu
-    src/core/bloom_filter.cu
-    src/core/roaring_allowlist.cu
     src/core/omp_wrapper.cpp
-    src/util/file_io.cpp
-    src/util/host_memory.cpp
-    src/preprocessing/quantize/bbq.cu
     src/cluster/detail/minClusterDistanceCompute.cu
     src/cluster/kmeans_cluster_cost.cu
     src/cluster/kmeans_fit_float.cu
     src/cluster/kmeans_predict_float.cu
     src/cluster/kmeans_balanced_fit_float.cu
-    src/cluster/kmeans_balanced_fit_half.cu
-    src/cluster/kmeans_balanced_fit_int8.cu
-    src/cluster/kmeans_balanced_fit_uint8.cu
     src/cluster/kmeans_balanced_fit_predict_float.cu
-    src/cluster/kmeans_balanced_fit_predict_int8.cu
     src/cluster/kmeans_balanced_predict_float.cu
-    src/cluster/kmeans_balanced_predict_half.cu
-    src/cluster/kmeans_balanced_predict_int8.cu
-    src/cluster/kmeans_balanced_predict_uint8.cu
     src/distance/distance.cu
     src/distance/pairwise_distance.cu
     src/distance/top_1_nn.cu)
 list (TRANSFORM CUVS_SOURCES PREPEND "${CUVS_CPP_DIR}/")
 
 list (APPEND CUVS_SOURCES
-    # VPQ of CAGRA-Q, instead of src/preprocessing/quantize/pq.cu (see the file).
-    "${CMAKE_CURRENT_SOURCE_DIR}/vpq_train_from_rows.cu"
-    ${cagra_build_inst_files}
-    ${cagra_serialize_inst_files}
-    ${cuvs_cagra_search_cuda_inst_files}
-    ${ivf_pq_build_extend_inst_files}
-    ${ivf_pq_compute_similarity_inst_files}
-    ${ivf_pq_search_inst_files}
-    ${ivf_pq_transform_inst_files}
-    ${ivf_flat_interleaved_scan_inst_files}
-    ${nn_descent_inst_files}
-    ${refine_device_inst_files}
-    ${refine_host_inst_files}
     ${select_k_inst_files}
-    ${pairwise_matrix_dispatch_inst_files}
-    ${jit_lto_files})
+    ${pairwise_matrix_dispatch_inst_files})
 
 add_library (_cuvs STATIC ${CUVS_SOURCES})
 
@@ -133,7 +78,6 @@ gpu_island_target (_cuvs)
 target_include_directories (_cuvs SYSTEM PUBLIC "${CUVS_CPP_DIR}/include")
 target_include_directories (_cuvs SYSTEM PRIVATE
     "${CUVS_CPP_DIR}/src"
-    # The generated neighbors/detail/cagra/compute_distance-ext.cuh.
     "${CUVS_GENERATED_DIR}/src"
     "${GPU_CUDA_ROOT}/include")
 
