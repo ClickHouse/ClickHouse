@@ -6,8 +6,6 @@ title: 'ClickHouse Client'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server.
 It supports both interactive mode (for live query execution) and batch mode (for scripting and automation).
 Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](/reference/formats/index), such as Pretty, CSV, JSON, and more.
@@ -68,19 +66,29 @@ For a complete list of command-line options, see [Command Line Options](#command
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
 
-<Image img="/images/_snippets/cloud-connect-button.webp"
-  size="md"
-  alt="ClickHouse Cloud service connect button"
-/>
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud service connect button](/images/_snippets/cloud-connect-button.webp)
+
+</Frame>
+
+</div>
 
 <br/><br/>
 
 Choose **Native**, and the details are shown with an example `clickhouse-client` command:
 
-<Image img="/images/_snippets/connection-details-native.webp"
-  size="md"
-  alt="ClickHouse Cloud Native TCP connection details"
-/>
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud Native TCP connection details](/images/_snippets/connection-details-native.webp)
+
+</Frame>
+
+</div>
 
 ### Storing connections in a configuration file {#connection-credentials}
 
@@ -258,6 +266,14 @@ To configure the correct work of the meta key (Option) on MacOS:
 
 iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
 </Tip>
+
+### Vim mode {#vim-mode}
+
+Start the client with the `--vim` parameter to edit queries with `vim`-like keys.
+The input starts in insert mode; `Esc` switches to normal mode, where motions (`h`, `j`, `k`, `l`, `w`, `b`, `e`, `0`, `$`, `f`, `t`, `%`, `gg`, `G`, ...), operators (`d`, `c`) with counts and text objects (`iw`, `aw`, `i(`, `a(`, ...), and commands such as `x`, `r`, `s`, `o`, `A`, `I`, `D`, `C` are available.
+In vim mode, `Enter` inserts a new line in insert mode and moves to the next line in normal mode; press `Ctrl + j` to submit the query.
+In normal mode, `v` opens the current query in the editor (not available in the embedded client).
+The history search shortcuts (`Ctrl + r`, `Ctrl + s`, `Ctrl + t`, `Alt + r`) and `Alt + #` work in normal mode as well.
 
 ## Batch mode {#batch-mode}
 
@@ -865,6 +881,7 @@ All command-line options can be specified directly on the command line or as def
 | `--history_max_entries`                             | Maximum number of entries in the history file.                                                                                     | `1000000` (1 million)        |
 | `--prompt <prompt>`                                 | Specify a custom prompt.                                                                                                           | The `display_name` of the server |
 | `--verbose`                                         | Increase output verbosity.                                                                                                         | -                            |
+| `--vim`                                             | Emulate the `vim` editing mode in the interactive mode. See [Vim mode](#vim-mode).                                                 | -                            |
 | `-V [ --version ]`                                  | Print version and exit.                                                                                                            | -                            |
 
 ### Connection options {#command-line-options-connection}

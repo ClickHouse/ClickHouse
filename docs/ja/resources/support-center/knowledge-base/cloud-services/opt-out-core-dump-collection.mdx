@@ -5,8 +5,6 @@ description: 'この記事では、ClickHouse Cloud でクラッシュレポー�
 tags: ['Cloud 管理']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="overview">
   ## 概要
 </div>
@@ -62,10 +60,26 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 4. スクロールして「Share crash reports with ClickHouse」を探します
 5. このオプションをオフにすると、オプトアウトできます
 
-<Image img="/images/crash-reports.png" size="md" alt="Cloud UIでオプトアウトのオプションを見つける場所" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Cloud UIでオプトアウトのオプションを見つける場所](/images/crash-reports.png)
+
+</Frame>
+
+</div>
 
 <Note>
   サービスごとの設定に加えて、組織全体の設定も構成できます。この設定を無効にすると、つまりクラッシュレポートの収集をオプトアウトすると、既存および新規のすべてのサービスが自動的にオプトアウトされます。設定を有効、つまりオプトインにした場合は、サービスレベルで個別に無効化して上書きし、オプトアウトできます。
 </Note>
 
-<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="クラッシュレポートの収集" />
+<div className="ch-image-md">
+
+<Frame>
+
+![クラッシュレポートの収集](/images/cloud/crash-reports-collection.png)
+
+</Frame>
+
+</div>
