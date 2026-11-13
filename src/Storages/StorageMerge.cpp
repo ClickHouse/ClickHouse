@@ -133,7 +133,6 @@ extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
-extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int ACCESS_DENIED;
 extern const int DATABASE_ACCESS_DENIED;
@@ -2579,18 +2578,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
-        if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
-        {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
-            if (!deps_mv.empty())
-            {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                    backQuoteIfNeed(command.column_name), toString(deps_mv));
-            }
-        }
+        checkAlterKeepsDependentViews(command, name_deps, local_context);
     }
 }
 

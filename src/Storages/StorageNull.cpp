@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 
@@ -62,19 +61,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
-        if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
-        {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
-            if (!deps_mv.empty())
-            {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                    backQuoteIfNeed(command.column_name), toString(deps_mv)
-                    );
-            }
-        }
+        checkAlterKeepsDependentViews(command, name_deps, context);
     }
 }
 

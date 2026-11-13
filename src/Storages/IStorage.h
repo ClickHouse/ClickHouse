@@ -36,6 +36,7 @@ class ASTInsertQuery;
 
 struct Settings;
 
+struct AlterCommand;
 class AlterCommands;
 class MutationCommands;
 struct PartitionCommand;
@@ -314,6 +315,9 @@ public:
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
+
+    /// Throws if `command` drops or renames a column that a materialized view reads; `name_deps` is filled on first use.
+    void checkAlterKeepsDependentViews(const AlterCommand & command, std::optional<NameDependencies> & name_deps, ContextPtr context) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     virtual void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const;

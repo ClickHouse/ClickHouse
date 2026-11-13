@@ -2,6 +2,7 @@
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
+#include <Common/quoteString.h>
 #include <Common/StringUtils.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -44,6 +45,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int TABLE_IS_BEING_RESTARTED;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
@@ -443,6 +445,22 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         }
     }
     return name_deps;
+}
+
+void IStorage::checkAlterKeepsDependentViews(
+    const AlterCommand & command, std::optional<NameDependencies> & name_deps, ContextPtr context) const
+{
+    const bool is_drop = command.type == AlterCommand::DROP_COLUMN && !command.clear;
+    if (!is_drop && command.type != AlterCommand::RENAME_COLUMN)
+        return;
+
+    if (!name_deps)
+        name_deps = getDependentViewsByColumn(context);
+
+    if (auto it = name_deps->find(command.column_name); it != name_deps->end())
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER {} column {} which is referenced by materialized view {}",
+            is_drop ? "DROP" : "RENAME", backQuoteIfNeed(command.column_name), toString(it->second));
 }
 
 bool IStorage::isStaticStorage() const
