@@ -78,3 +78,18 @@ WITH (SELECT CAST(tuple(s.x AS x), 'Tuple(x UInt64)')) AS q
 SELECT x AS outer_x, q.* REPLACE (1 AS x) FROM squality_matcher_defer_scalar AS s ORDER BY outer_x;
 
 DROP TABLE squality_matcher_defer_scalar;
+
+-- A lambda in a qualifier alias can refer to the preserved side of an outer join.
+-- This works with the correlated-qualifier setting disabled too.
+SET join_use_nulls = 1;
+CREATE TABLE squality_matcher_defer_join (x UInt64) ENGINE = Memory;
+INSERT INTO squality_matcher_defer_join VALUES (1), (2), (3);
+
+SELECT o.x, (
+    WITH arrayMap(n -> tuple(o.x), [1])[1] AS q
+    SELECT q.* FROM numbers(1)
+)
+FROM squality_matcher_defer_join AS o LEFT JOIN numbers(1) AS r ON 1
+ORDER BY o.x;
+
+DROP TABLE squality_matcher_defer_join;

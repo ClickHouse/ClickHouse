@@ -622,33 +622,48 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
 
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
 {
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-        return {};
-
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
+    std::optional<JoinTableSide> result;
+    std::vector<const IQueryTreeNode *> nodes_to_process{resolved_identifier.get()};
+    while (!nodes_to_process.empty())
     {
-        const auto & resolved_function = resolved_identifier->as<FunctionNode &>();
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
 
-        const auto & argument_nodes = resolved_function.getArguments().getNodes();
-
-        std::optional<JoinTableSide> result;
-        for (const auto & argument_node : argument_nodes)
+        if (const auto * column = current->as<ColumnNode>())
         {
-            auto table_side = getColumnSideFromJoinTree(argument_node, join_node);
-            if (table_side && result && *table_side != *result)
+            const auto * column_source = column->getColumnSource().get();
+            std::optional<JoinTableSide> column_side;
+            if (isFromJoinTree(column_source, join_node.getLeftTableExpressionNode().get()))
+                column_side = JoinTableSide::Left;
+            else if (isFromJoinTree(column_source, join_node.getRightTableExpressionNode().get()))
+                column_side = JoinTableSide::Right;
+
+            if (column_side && result && *column_side != *result)
                 return {};
-            result = table_side;
+            if (column_side)
+                result = column_side;
+            continue;
         }
-        return result;
+
+        /// A nested query resolves its own join nullability. A lambda's body,
+        /// however, can use columns from this join even when its argument nodes do not.
+        if (current->getNodeType() == QueryTreeNodeType::QUERY || current->getNodeType() == QueryTreeNodeType::UNION)
+            continue;
+        if (const auto * lambda = current->as<LambdaNode>())
+        {
+            nodes_to_process.push_back(lambda->getExpression().get());
+            continue;
+        }
+        if (current->asTableExpression())
+            continue;
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
     }
-
-    const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
-
-    if (isFromJoinTree(column_src, join_node.getLeftTableExpressionNode().get()))
-        return JoinTableSide::Left;
-    if (isFromJoinTree(column_src, join_node.getRightTableExpressionNode().get()))
-        return JoinTableSide::Right;
-    return {};
+    return result;
 }
 
 IdentifierResolveScope & QueryAnalyzer::createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope)
