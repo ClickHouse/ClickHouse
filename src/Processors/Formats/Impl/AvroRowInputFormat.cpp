@@ -1174,7 +1174,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     if (header.has(current_path))
     {
         auto target_column_idx = header.getPositionByName(current_path);
-        if (column_found[target_column_idx])
+        if (column_bound[target_column_idx])
             return AvroDeserializer::Action(createSkipFn(node));
         const auto & column = header.getByPosition(target_column_idx);
         try
@@ -1182,6 +1182,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             current_column_name = column.name;
             AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type));
             column_found[target_column_idx] = true;
+            column_bound[target_column_idx] = true;
             return action;
         }
         catch (Exception & e)
@@ -1210,20 +1211,20 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
     else if (node->type() == avro::AVRO_UNION)
     {
-        /// Only one branch is read per row, so each one starts from the columns found before the union.
-        const auto found_before_union = column_found;
-        auto found_in_any_branch = column_found;
+        /// Only one branch is read per row, so each one starts from the columns bound before the union.
+        const auto bound_before_union = column_bound;
+        auto bound_in_any_branch = column_bound;
         VectorWithMemoryTracking<AvroDeserializer::Action> branch_actions(node->leaves());
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
-            column_found = found_before_union;
+            column_bound = bound_before_union;
             const auto & branch_node = node->leafAt(i);
             const auto & branch_name = nodeName(branch_node);
             branch_actions[i] = createAction(header, branch_node, concatPath(current_path, branch_name));
-            for (size_t j = 0; j < column_found.size(); ++j)
-                found_in_any_branch[j] = found_in_any_branch[j] || column_found[j];
+            for (size_t j = 0; j < column_bound.size(); ++j)
+                bound_in_any_branch[j] = bound_in_any_branch[j] || column_bound[j];
         }
-        column_found = std::move(found_in_any_branch);
+        column_bound = std::move(bound_in_any_branch);
         return AvroDeserializer::Action::unionAction(branch_actions);
     }
     else if (node->type() == avro::AVRO_ARRAY)
@@ -1231,7 +1232,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         /// If header doesn't have column with current_path name and node is Array(Record),
         /// check if we have a flattened Nested table with such name.
         Names nested_names = Nested::getAllNestedColumnsForTable(header, current_path);
-        std::erase_if(nested_names, [&](const String & name) { return column_found[header.getPositionByName(name)]; });
+        std::erase_if(nested_names, [&](const String & name) { return column_bound[header.getPositionByName(name)]; });
         auto nested_avro_node = node->leafAt(0);
         if (nested_names.empty() || nested_avro_node->type() != avro::AVRO_RECORD)
             return AvroDeserializer::Action(createSkipFn(node));
@@ -1262,6 +1263,8 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             nested_indexes.push_back(nested_column_index);
         }
 
+        for (size_t index : nested_indexes)
+            column_bound[index] = true;
         return AvroDeserializer::Action(nested_indexes, nested_deserializers);
     }
     else
@@ -1281,6 +1284,7 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
     header.insert({data_type->createColumn(), data_type, column_name});
 
     column_found.resize(header.columns());
+    column_bound.resize(header.columns());
     row_action = createAction(header, schema_root, column_name);
     // fail on missing fields when allow_missing_fields = false
     if (!allow_missing_fields)
@@ -1304,6 +1308,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     }
 
     column_found.resize(header.columns());
+    column_bound.resize(header.columns());
     row_action = createAction(header, schema_root);
     // fail on missing fields when allow_missing_fields = false
     if (!allow_missing_fields)

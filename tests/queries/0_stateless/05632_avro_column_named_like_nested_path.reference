@@ -12,6 +12,8 @@ two nested paths
 6
 top-level field beside a nested array
 [9]
+skipped nested array before the matching field
+[99]
 union branches with the same name
 1	1
 2	2

@@ -148,6 +148,8 @@ private:
 
     /// Bitmap of columns found in Avro schema
     VectorWithMemoryTracking<bool> column_found;
+    /// Bitmap of columns that already have a deserialization action
+    VectorWithMemoryTracking<bool> column_bound;
     /// Deserialize/Skip actions for a row
     Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.

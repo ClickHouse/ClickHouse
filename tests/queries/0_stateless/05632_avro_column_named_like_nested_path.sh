@@ -45,6 +45,12 @@ ${CLICKHOUSE_LOCAL} --query "
     SELECT \`n.a\` FROM file('${DIR}/n.avro', 'Avro', '\`n.a\` Array(Int32)');
 "
 
+echo "skipped nested array before the matching field"
+${CLICKHOUSE_LOCAL} --query "
+    INSERT INTO FUNCTION file('${DIR}/skipped.avro', 'Avro', 'n Array(Tuple(\`a.x\` Int32, b Int32)), \`n.a\` Tuple(x Array(Int32))') SELECT [tuple(1, 2)], tuple([99]);
+    SELECT \`n.a.x\` FROM file('${DIR}/skipped.avro', 'Avro', '\`n.a.x\` Array(Int32)');
+"
+
 echo "union branches with the same name"
 ${CLICKHOUSE_LOCAL} --input-format Avro -S 'id Int32, `u.R.x` Int32' --query 'SELECT * FROM table' < "${CURDIR}"/data_avro/union_same_name_record_branches.avro
 
