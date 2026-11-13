@@ -372,7 +372,12 @@ public:
                 auto alternate_res = set->execute(alternate_key, false);
                 auto combined = ColumnUInt8::create(res->size());
                 for (size_t row = 0; row < res->size(); ++row)
-                    combined->getData()[row] = res->getBool(row) || alternate_res->getBool(row);
+                {
+                    /// A failed conversion has a synthetic `NULL` with a zero in its
+                    /// nested storage. It must not match a genuine `NULL` set key.
+                    const bool valid_zero = !full_column->isNullAt(row) && full_column->getFloat64(row) == 0;
+                    combined->getData()[row] = res->getBool(row) || (valid_zero && alternate_res->getBool(row));
+                }
                 res = std::move(combined);
             }
 

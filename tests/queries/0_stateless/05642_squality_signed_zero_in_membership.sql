@@ -12,6 +12,10 @@ SELECT toFloat64(0) IN (SELECT toFloat64(-0.));
 SELECT toInt64(0) IN (SELECT toFloat64(-0.)), toInt64(0) IN materialize(toFloat64(-0.));
 SELECT toInt64(0) IN (SELECT arrayJoin([toNullable(toFloat64(-0.)), NULL])),
        toInt64(0) IN (materialize(toFloat64(-0.)), NULL);
+SELECT toUInt64(9007199254740993) IN (SELECT CAST(NULL AS Nullable(Float64))),
+       toUInt64(9007199254740993) NOT IN (SELECT CAST(NULL AS Nullable(Float64)));
+SELECT count() FROM values('x UInt64', (9007199254740993))
+WHERE x IN (SELECT CAST(NULL AS Nullable(Float64)));
 
 SET in_null_as_unknown = 0;
 SELECT toFloat64(0) IN (toFloat64(-0.));

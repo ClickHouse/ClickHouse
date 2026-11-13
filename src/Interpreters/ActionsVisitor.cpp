@@ -485,7 +485,14 @@ ASTPtr makeNumericNonConstantInReplacement(
             any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
             continue;
         }
-        if ((isDate(left_bare_type) || isDate32(left_bare_type)) && isNumber(element_bare_type))
+        if ((isDate(left_bare_type) || isDate32(left_bare_type))
+            && (isDateTime(element_bare_type) || isDateTime64(element_bare_type)))
+        {
+            candidate = makeASTFunction(
+                "CAST", std::move(candidate),
+                make_intrusive<ASTLiteral>("Nullable(" + left_bare_type->getName() + ")"));
+        }
+        else if ((isDate(left_bare_type) || isDate32(left_bare_type)) && isNumber(element_bare_type))
         {
             auto cast_value = makeASTFunction(
                 "accurateCastOrNull", candidate->clone(), make_intrusive<ASTLiteral>(left_bare_type->getName()));
@@ -1467,17 +1474,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         }
                     }
 
+                    const bool left_is_calendar_date = left_argument_type
+                        && (isDate(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isDate32(removeNullable(removeLowCardinality(left_argument_type))));
                     const bool compare_numeric_sources = use_standard_null_semantics
                         && left_argument_type
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
-                            || isDate(removeNullable(removeLowCardinality(left_argument_type)))
-                            || isDate32(removeNullable(removeLowCardinality(left_argument_type))))
+                            || left_is_calendar_date)
                         && element_types_known
                         && !element_types.empty()
-                        && std::all_of(element_types.begin(), element_types.end(), [](const auto & type)
+                        && std::all_of(element_types.begin(), element_types.end(), [left_is_calendar_date](const auto & type)
                         {
                             const auto bare_type = removeNullable(removeLowCardinality(type));
-                            return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type);
+                            return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
+                                || (left_is_calendar_date && (isDateTime(bare_type) || isDateTime64(bare_type)));
                         });
                     if (compare_numeric_sources)
                         replacement = makeNumericNonConstantInReplacement(
