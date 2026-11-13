@@ -89,12 +89,23 @@ Supported formats:
 - [MySQLDump](/reference/formats/MySQLDump)
 - [Native](/reference/formats/Native)
 
+An `INSERT` that skips a field writes a warning to the server log, see [input_format_warn_on_skipped_unknown_fields](#input_format_warn_on_skipped_unknown_fields).
+
 Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
         {"22.6", false, true, "Optimize reading subset of columns for some input formats"}) \
+    DECLARE(Bool, input_format_warn_on_skipped_unknown_fields, true, R"(
+Write a warning to the server log for each field of the data of an `INSERT` that is skipped because it has no matching column ([input_format_skip_unknown_fields](#input_format_skip_unknown_fields)), at most 10 fields per query. Formats that match fields by name in every row (`JSONEachRow`, `TSKV`, `BSONEachRow`, `Form`) check only the first 100 fields they skip (per asynchronous insert and per part of the data parsed in parallel), so a field skipped only further on is not reported. Applies to the data the server parses: the body of an HTTP request, inline data parsed by the server, `input()`, asynchronous inserts, the input data of a gRPC query and the blocks a client sends over the native protocol.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+)", 0, \
+        {"26.11", false, true, "New setting to log a warning for each field of the data of an `INSERT` that `input_format_skip_unknown_fields` skips."}) \
     DECLARE(Bool, input_format_with_names_use_header, true, R"(
 Enables or disables checking the column order when inserting data.
 

@@ -30,6 +30,7 @@ void JSONCompactRowInputFormat::readPrefix()
         for (const auto & [name, type] : names_and_types)
             column_names.push_back(name);
         column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
+        reportSkippedUnknownFieldsOfColumnMapping();
     }
     else
     {

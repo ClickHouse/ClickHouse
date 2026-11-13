@@ -27,6 +27,7 @@ public:
         , block_missing_values(header->columns())
         , settings(settings_)
         {
+            reader->setSkippedUnknownColumnCallback([this](std::string_view name) { reportSkippedUnknownField(name); });
         }
 
     String getName() const override { return "Native"; }
@@ -57,6 +58,7 @@ public:
     void setReadBuffer(ReadBuffer & in_) override
     {
         reader = std::make_unique<NativeReader>(in_, *header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+        reader->setSkippedUnknownColumnCallback([this](std::string_view name) { reportSkippedUnknownField(name); });
         IInputFormat::setReadBuffer(in_);
     }
 

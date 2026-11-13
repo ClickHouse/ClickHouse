@@ -1683,6 +1683,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
+    const String format_name = getInputFormatNameFromASTInsertQuery(key.query, insert_context);
 
     for (const auto & entry : data->entries)
     {
@@ -1695,6 +1696,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         executor.setQueryParameters(entry->query_parameters);
+        warnAboutSkippedUnknownFields(*format, insert_context, format_name, entry->query_id);
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);

@@ -5,13 +5,18 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/SnappyMode.h>
 #include <cstddef>
+#include <functional>
 #include <memory>
+#include <string_view>
 
 
 namespace DB
 {
 
 class Pipe;
+
+/// Resolves the input format for an INSERT query, including `input_format` / `format` setting overrides.
+String getInputFormatNameFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context);
 
 /// Prepares a input format, which produce data containing in INSERT query.
 InputFormatPtr getInputFormatFromASTInsertQuery(
@@ -20,6 +25,13 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     const Block & header,
     ContextPtr context,
     const ASTPtr & input_function);
+
+/// Logs a warning for each skipped unknown field of the INSERT query `query_id`, once per field across all copies, at most 10 fields.
+/// Empty if `input_format_warn_on_skipped_unknown_fields` is disabled.
+std::function<void(std::string_view)> makeSkippedUnknownFieldWarningCallback(const ContextPtr & context, const String & format_name, const String & query_id);
+
+/// Installs `makeSkippedUnknownFieldWarningCallback` on `format`.
+void warnAboutSkippedUnknownFields(IInputFormat & format, const ContextPtr & context, const String & format_name, const String & query_id);
 
 /// Prepares a pipe from input format got from ASTInsertQuery,
 /// which produce data containing in INSERT query.

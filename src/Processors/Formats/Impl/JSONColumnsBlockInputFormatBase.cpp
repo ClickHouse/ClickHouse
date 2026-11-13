@@ -172,6 +172,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
                 if (!format_settings.skip_unknown_fields)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column found in input data: {}", *column_name);
 
+                reportSkippedUnknownField(*column_name);
                 reader->skipColumn();
                 continue;
             }

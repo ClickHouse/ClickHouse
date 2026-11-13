@@ -120,10 +120,15 @@ std::string_view JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     return current_column_name;
 }
 
-void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref)
+void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref, bool check_name)
 {
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref);
+
+    /// With `input_format_json_ignore_unnecessary_fields`, the fields after all columns are skipped without a lookup,
+    /// so they can be duplicates of known columns.
+    if (check_name && !name_map.contains(name_ref))
+        reportSkippedUnknownField(name_ref);
 
     skipJSONField(*in, name_ref, format_settings.json);
 }
@@ -168,8 +173,15 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         {
             // Keep parsing the remaining fields in case of the json is invalid.
             // But not look up the name in the name_map since the cost cannot be ignored
+            const bool check_name = needToCheckSkippedUnknownField();
+            if (check_name)
+            {
+                /// `name_ref` may point into the buffer, which `skipColon` can refill.
+                current_column_name.assign(name_ref.data(), name_ref.size());
+                name_ref = current_column_name;
+            }
             JSONUtils::skipColon(*in);
-            skipUnknownField(name_ref);
+            skipUnknownField(name_ref, check_name);
             continue;
         }
         const size_t column_index = columnIndex(name_ref, key_index);
@@ -186,7 +198,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             JSONUtils::skipColon(*in);
 
             if (column_index == UNKNOWN_FIELD)
-                skipUnknownField(name_ref);
+                skipUnknownField(name_ref, needToCheckSkippedUnknownField());
             else if (column_index == NESTED_FIELD)
                 readNestedData(std::string{name_ref}, columns);
             else

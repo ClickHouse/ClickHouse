@@ -74,6 +74,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -3196,6 +3197,12 @@ void TCPHandler::initBlockInput(QueryState & state)
             header,
             client_tcp_protocol_version,
             getNativeWireFormatSettings(state.query_context));
+
+        if (!header.empty())
+        {
+            if (auto callback = makeSkippedUnknownFieldWarningCallback(state.query_context, "Native", state.query_context->getCurrentQueryId()))
+                state.block_in->setSkippedUnknownColumnCallback(std::move(callback));
+        }
     }
 }
 

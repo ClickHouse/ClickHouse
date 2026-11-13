@@ -1,0 +1,58 @@
+u_Native 1
+u2_Native 1
+u_JSONEachRow 1
+u2_JSONEachRow 1
+u_TSKV 1
+u2_TSKV 1
+u_BSONEachRow 1
+u2_BSONEachRow 1
+u_JSONColumns 1
+u2_JSONColumns 1
+u_CSVWithNames 1
+u2_CSVWithNames 1
+u_JSONCompact 1
+u2_JSONCompact 1
+u_form 1
+u_mysqldump 1
+u_optout 0
+u_after 1
+u_parallel 1
+u_serial 1
+u_early 1
+u_late 0
+u_aggstate 1
+u_input 1
+u_async 1
+u_async_optout 0
+u_async_fmt 1
+u_read 0
+u_insert_select 0
+dup 0
+ambiguous 0
+cap fields 10
+cap summary 1
+async query id 1
+async format 1
+batch 1 1
+batch 2 1
+1	b_default
+1	b_default
+1	b_default
+1	b_default
+1	b_default
+1	b_default
+1	b_default
+2	b_default
+3	b_default
+4	b_default
+5	y
+6	y
+8	b_default
+9	b_default
+10	b_default
+11	b_default
+12	b_default
+13	b_default
+14	b_default
+1	5
+1	2

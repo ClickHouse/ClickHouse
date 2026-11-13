@@ -462,7 +462,10 @@ void MySQLDumpRowInputFormat::readPrefix()
     readFirstCreateAndInsertQueries(*in, table_name, structure_from_create, column_names);
 
     if (!column_names.empty() && format_settings.mysql_dump.map_column_names)
+    {
         column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
+        reportSkippedUnknownFieldsOfColumnMapping();
+    }
     else
         column_mapping->setupByHeader(getPort().getHeader());
 }
