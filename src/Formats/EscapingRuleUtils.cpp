@@ -1,3 +1,4 @@
+#include <span>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -419,7 +420,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
     }
 }
 
-DataTypes tryInferDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+DataTypes tryInferDataTypesByEscapingRule(std::span<const String> fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
 {
     DataTypes data_types;
     data_types.reserve(fields.size());

@@ -27,6 +27,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ディスク上でのソートおよびjoin操作で使用される一時ファイルの圧縮コーデックを設定します。
 
+ディスクにスピルする `IN` の集合では、この設定の値にかかわらず、ルックアップで読み取るファイルは圧縮されません。
+各ルックアップで読み取るブロックを解凍するコストが、サイズの大きいファイルをそのまま読み取るコストを上回るためです。
+
 設定可能な値:
 
 * LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)) 圧縮が適用されます。

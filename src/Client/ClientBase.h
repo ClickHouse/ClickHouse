@@ -292,7 +292,7 @@ private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
-    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query, bool wait_for_timezone_update);
     bool receiveEndOfQueryForInsert(ASTPtr parsed_query);
     void cancelQuery();
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);
@@ -474,6 +474,8 @@ protected:
     std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
+    /// Set when a buffer the query output ends in (`std_out_wrapper`, the `INTO OUTFILE` file) is canceled.
+    std::atomic<bool> output_buffer_canceled = false;
     /// Wrapper for hooking into the flush event.
     std::unique_ptr<WriteBuffer> std_out_wrapper;
 
