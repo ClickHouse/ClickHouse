@@ -1049,6 +1049,7 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
+    const std::string & google_service_account_key_,
     DB::ContextPtr context_,
     bool allow_server_credentials_in_user_queries_,
     DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
@@ -1060,11 +1061,19 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , google_service_account_key(google_service_account_key_)
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
+    if (!google_service_account_key.empty()
+        && (!google_adc_client_id.empty() || !google_adc_client_secret.empty() || !google_adc_refresh_token.empty()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "BigLake credentials are ambiguous: specify either google_service_account_key or the ADC credentials "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token), not both");
+
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
@@ -1077,9 +1086,9 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
 {
     /// Google Cloud OAuth2 for BigLake.
     /// Uses GCP metadata service or Application Default Credentials to get access token.
-    /// Only use Google OAuth if explicitly configured (google_project_id or google_adc_client_id).
+    /// Only use Google OAuth if explicitly configured (`google_project_id`, `google_adc_client_id` or `google_service_account_key`).
     /// https://developers.google.com/identity/protocols/oauth2
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         auto current = access_token.get();
         if (!current || update_token || current->isExpired())
@@ -1125,15 +1134,34 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
     return token;
 }
 
+AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromServiceAccountKey() const
+{
+    const auto & context = getContext();
+    auto [assertion, token_endpoint] = DB::makeGCPServiceAccountAssertion(google_service_account_key, DB::GCP_CLOUD_PLATFORM_OAUTH_SCOPE);
+    /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
+    context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
+
+    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+    auto result = DB::fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, timeouts);
+
+    AccessToken token;
+    token.token = std::move(result.access_token);
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10);
+    return token;
+}
+
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
     const auto & context = getContext();
 
-    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
-    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
-    /// mint a token with the server's own identity.
+    /// An explicit Application Default Credentials triple or a service account key is a user-supplied credential,
+    /// so it is honored. Fail closed if it does not work: do not fall back to the server's GCP metadata service,
+    /// which would mint a token with the server's own identity.
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return retrieveGoogleCloudAccessTokenFromRefreshToken();
+
+    if (!google_service_account_key.empty())
+        return retrieveGoogleCloudAccessTokenFromServiceAccountKey();
 
     /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
     /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
@@ -1143,8 +1171,8 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
         throw DB::Exception(
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
-            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token)"
+            "metadata service. Provide google_service_account_key or an explicit Google ADC triple "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token)"
 #if CLICKHOUSE_CLOUD
             ".");
 #else
@@ -2003,15 +2031,18 @@ std::optional<std::string> RestCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(*namespace_location) / table_name);
 }
 
-void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+std::string RestCatalog::getCreateTableEndpoint(const CatalogState & catalog_state, const String & namespace_name) const
 {
-    const auto state_snapshot = state.get();
-    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+    return (base_url / catalog_state.config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+}
 
+Poco::JSON::Object::Ptr RestCatalog::buildCreateTableRequestBody(
+    const String & table_name, const std::optional<String> & location, Poco::JSON::Object::Ptr metadata_content) const
+{
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
-    if (!managesTableLocation())
-        request_body->set("location", metadata_content->getValue<String>("location"));
+    if (location)
+        request_body->set("location", *location);
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
@@ -2037,6 +2068,18 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
 
     request_body->set("properties", properties);
+    return request_body;
+}
+
+void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = getCreateTableEndpoint(*state_snapshot, namespace_name);
+
+    std::optional<String> location;
+    if (!managesTableLocation())
+        location = metadata_content->getValue<String>("location");
+    auto request_body = buildCreateTableRequestBody(table_name, location, metadata_content);
 
     try
     {
@@ -2074,8 +2117,27 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
 }
 
+void RestCatalog::createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = getCreateTableEndpoint(*state_snapshot, namespace_name);
+    auto request_body = buildCreateTableRequestBody(table_name, /* location */ std::nullopt, metadata_content);
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
+    try
+    {
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw DB::Exception(
+                DB::ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog: {}", namespace_name, table_name, ex.displayText());
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}.{}: {}", namespace_name, table_name, ex.displayText());
+    }
+}
+
+
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
@@ -2282,6 +2344,7 @@ bool RestCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {

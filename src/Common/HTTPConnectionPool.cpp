@@ -41,7 +41,16 @@
 
 #if USE_SSL
 #include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SSLException.h>
+#endif
+
+#if USE_SILK
+#include <Common/Silk/FiberStreamSocketImpl.h>
+#if USE_SSL
+#include <Common/Silk/SecureFiberStreamSocketImpl.h>
+#include <Poco/Net/SSLManager.h>
+#endif
 #endif
 
 
@@ -63,6 +72,14 @@ namespace ProfileEvents
     extern const Event DiskConnectionsErrors;
     extern const Event DiskConnectionsElapsedMicroseconds;
 
+    extern const Event AmberConnectionsCreated;
+    extern const Event AmberConnectionsReused;
+    extern const Event AmberConnectionsReset;
+    extern const Event AmberConnectionsPreserved;
+    extern const Event AmberConnectionsExpired;
+    extern const Event AmberConnectionsErrors;
+    extern const Event AmberConnectionsElapsedMicroseconds;
+
     extern const Event HTTPConnectionsCreated;
     extern const Event HTTPConnectionsReused;
     extern const Event HTTPConnectionsReset;
@@ -80,6 +97,9 @@ namespace CurrentMetrics
 
     extern const Metric DiskConnectionsStored;
     extern const Metric DiskConnectionsTotal;
+
+    extern const Metric AmberConnectionsStored;
+    extern const Metric AmberConnectionsTotal;
 
     extern const Metric HTTPConnectionsStored;
     extern const Metric HTTPConnectionsTotal;
@@ -121,6 +141,7 @@ static const char * connectionGroupTypeToString(HTTPConnectionGroupType type)
         case HTTPConnectionGroupType::DISK: return "Disk";
         case HTTPConnectionGroupType::STORAGE: return "Storage";
         case HTTPConnectionGroupType::HTTP: return "HTTP";
+        case HTTPConnectionGroupType::AMBER: return "Amber";
     }
 }
 
@@ -157,6 +178,22 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
 }
 
 
+static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForAmberConnectionPool()
+{
+    return IHTTPConnectionPoolForEndpoint::Metrics{
+        .created = ProfileEvents::AmberConnectionsCreated,
+        .reused = ProfileEvents::AmberConnectionsReused,
+        .reset = ProfileEvents::AmberConnectionsReset,
+        .preserved = ProfileEvents::AmberConnectionsPreserved,
+        .expired = ProfileEvents::AmberConnectionsExpired,
+        .errors = ProfileEvents::AmberConnectionsErrors,
+        .elapsed_microseconds = ProfileEvents::AmberConnectionsElapsedMicroseconds,
+        .stored_count = CurrentMetrics::AmberConnectionsStored,
+        .active_count = CurrentMetrics::AmberConnectionsTotal,
+    };
+}
+
+
 static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
@@ -183,6 +220,8 @@ static IHTTPConnectionPoolForEndpoint::Metrics getConnectionPoolMetrics(HTTPConn
             return getMetricsForDiskConnectionPool();
         case HTTPConnectionGroupType::HTTP:
             return getMetricsForHTTPConnectionPool();
+        case HTTPConnectionGroupType::AMBER:
+            return getMetricsForAmberConnectionPool();
     }
 }
 
@@ -357,7 +396,9 @@ public:
     using Ptr = std::shared_ptr<IExtendedPool>;
 
     virtual HTTPConnectionGroupType getGroupType() const = 0;
-    virtual size_t wipeExpired() = 0;
+    /// Appends expired connections to `expired_connections` for the caller to destroy after releasing its locks:
+    /// closing a TLS connection may do socket I/O. Returns the number of connections left.
+    virtual size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) = 0;
 };
 
 
@@ -883,7 +924,7 @@ public:
     /// in order to inherit the socket's identity from the connection it takes over.
     ConnectionPtr getPooledConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
-        std::vector<ConnectionPtr> expired_connections;
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
 
         SCOPE_EXIT({
             MemoryTrackerSwitcher switcher{&total_memory_tracker};
@@ -935,24 +976,19 @@ public:
         return group->getType();
     }
 
-    size_t wipeExpired() override
+    size_t wipeExpired(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) override
     {
-        std::vector<ConnectionPtr> expired_connections;
-
-        SCOPE_EXIT({
-            MemoryTrackerSwitcher switcher{&total_memory_tracker};
-            expired_connections.clear();
-        });
-
         std::lock_guard lock(mutex);
         return wipeExpiredImpl(expired_connections);
     }
 
-    size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
+    size_t wipeExpiredImpl(std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
     {
+        const size_t expired_before = expired_connections.size();
         SCOPE_EXIT({
-            group->releaseStoredConnections(expired_connections.size());
-            ProfileEvents::increment(getMetrics().expired, expired_connections.size());
+            const size_t wiped = expired_connections.size() - expired_before;
+            group->releaseStoredConnections(wiped);
+            ProfileEvents::increment(getMetrics().expired, wiped);
         });
 
         auto is_soft_limit_reached = group->isSoftLimitReached();
@@ -963,9 +999,10 @@ public:
             if (!isExpired(connection, is_soft_limit_reached) && !isStale(*connection))
                 return stored_connections.size();
 
-            stored_connections.pop();
-            connection->markAsExpired();
+            /// Appended before it is removed: if `push_back` throws, the connection stays stored and accounted.
             expired_connections.push_back(connection);
+            connection->markAsExpired();
+            stored_connections.pop();
         }
 
         return stored_connections.size();
@@ -982,6 +1019,30 @@ private:
     }
 
     WeakPtr getWeakFromThis() { return EndpointConnectionPool::weak_from_this(); }
+
+    ConnectionPtr createConnection()
+    {
+#if USE_SILK
+        if (group->getType() == HTTPConnectionGroupType::AMBER)
+        {
+            Poco::Net::StreamSocket socket;
+            if (https)
+#if USE_SSL
+                socket = Poco::Net::StreamSocket(new Silk::SecureFiberStreamSocketImpl(Poco::Net::SSLManager::instance().defaultClientContext()));
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "HTTPS protocol is disabled because poco library was built without NetSSL support.");
+#endif
+            else
+                socket = Poco::Net::StreamSocket(new Silk::FiberStreamSocketImpl);
+            auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), socket);
+            connection->setHost(host);
+            connection->setPort(port);
+            return connection;
+        }
+#endif
+        return PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+    }
 
     bool isExpired(ConnectionPtr connection, bool isSoftLimitReached) TSA_REQUIRES(mutex)
     {
@@ -1049,7 +1110,7 @@ private:
         /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
         /// there would break certificate verification. Routing it through the cache needs a
         /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
-        auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+        auto connection = createConnection();
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
 
@@ -1168,7 +1229,7 @@ private:
                 /// at the group hard limit, before any connect attempt. The catch below calls
                 /// `setUnused` so the destructor records neither success nor failure for an address
                 /// we never connected to.
-                connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+                connection = createConnection();
                 connection->setKeepAlive(true);
 
                 if (!proxy_configuration.isEmpty())
@@ -1286,7 +1347,7 @@ private:
 
         try
         {
-            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+            auto connection_to_store = createConnection();
             connection_to_store->assignFrom(connection);
             connection_to_store->notifySocketInode();
             connection_to_store->markIdle();
@@ -1406,6 +1467,7 @@ private:
     ConnectionGroup::Ptr disk_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::DISK);
     ConnectionGroup::Ptr storage_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::STORAGE);
     ConnectionGroup::Ptr http_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::HTTP);
+    ConnectionGroup::Ptr amber_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::AMBER);
 
     /// If multiple mutexes are held simultaneously,
     /// they should be locked in this order:
@@ -1420,29 +1482,44 @@ public:
     {
         Poco::Timestamp now;
 
+        /// Destroyed after `mutex` is released.
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
+        std::vector<IExtendedPool::Ptr> dropped_pools;
+        SCOPE_EXIT({
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            dropped_pools.clear();
+            expired_connections.clear();
+        });
+
         std::lock_guard lock(mutex);
 
         if (now - last_wipe_time > wipe_timeout)
         {
-            wipeExpired();
+            wipeExpired(expired_connections, dropped_pools);
             last_wipe_time = now;
         }
 
         return getPoolImpl(type, uri, proxy_configuration);
     }
 
-    void setLimits(HTTPConnectionPools::Limits disk, HTTPConnectionPools::Limits storage, HTTPConnectionPools::Limits http)
+    void setLimits(HTTPConnectionPools::Limits disk, HTTPConnectionPools::Limits storage, HTTPConnectionPools::Limits http, HTTPConnectionPools::Limits amber)
     {
         disk_group->setLimits(std::move(disk));
         storage_group->setLimits(std::move(storage));
         http_group->setLimits(std::move(http));
+        amber_group->setLimits(std::move(amber));
     }
 
-    void setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
+    void setSocketBufferSizes(
+        HTTPConnectionPools::SocketBufferSizes disk,
+        HTTPConnectionPools::SocketBufferSizes storage,
+        HTTPConnectionPools::SocketBufferSizes http,
+        HTTPConnectionPools::SocketBufferSizes amber)
     {
         disk_group->setSocketBufferSizes(std::move(disk));
         storage_group->setSocketBufferSizes(std::move(storage));
         http_group->setSocketBufferSizes(std::move(http));
+        amber_group->setSocketBufferSizes(std::move(amber));
     }
 
     HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
@@ -1457,6 +1534,8 @@ public:
                 return storage_group->getSocketBufferSizes();
             case HTTPConnectionGroupType::HTTP:
                 return http_group->getSocketBufferSizes();
+            case HTTPConnectionGroupType::AMBER:
+                return amber_group->getSocketBufferSizes();
         }
     }
 
@@ -1471,13 +1550,22 @@ public:
                 return storage_group->isSoftLimitReached();
             case HTTPConnectionGroupType::HTTP:
                 return http_group->isSoftLimitReached();
+            case HTTPConnectionGroupType::AMBER:
+                return amber_group->isSoftLimitReached();
         }
     }
 
     void dropCache()
     {
+        /// The pools and their stored connections are destroyed after `mutex` is released.
+        decltype(endpoints_pool) dropped_pools;
+        SCOPE_EXIT({
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            dropped_pools.clear();
+        });
+
         std::lock_guard lock(mutex);
-        endpoints_pool.clear();
+        dropped_pools.swap(endpoints_pool);
     }
 
     HTTPConnectionPools::PoolSocketInodes getSocketInodes()
@@ -1502,6 +1590,8 @@ protected:
                 return storage_group;
             case HTTPConnectionGroupType::HTTP:
                 return http_group;
+            case HTTPConnectionGroupType::AMBER:
+                return amber_group;
         }
     }
 
@@ -1520,19 +1610,25 @@ protected:
         return it->second;
     }
 
-    void wipeExpired() TSA_REQUIRES(mutex)
+    /// A pool found empty can store a returned connection before it is erased, so erased pools
+    /// go to `dropped_pools` for the caller to destroy after releasing `mutex`, like expired connections.
+    void wipeExpired(
+        std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> & expired_connections,
+        std::vector<IExtendedPool::Ptr> & dropped_pools) TSA_REQUIRES(mutex)
     {
-        std::vector<EndpointPoolKey> keys_to_drop;
-
-        for (auto & [key, pool] : endpoints_pool)
+        for (auto it = endpoints_pool.begin(); it != endpoints_pool.end();)
         {
-            auto left_connections = pool->wipeExpired();
-            if (left_connections == 0 && pool->getGroupType() != HTTPConnectionGroupType::DISK)
-                keys_to_drop.push_back(key);
-        }
+            const auto & pool = it->second;
+            auto left_connections = pool->wipeExpired(expired_connections);
+            if (left_connections != 0 || pool->getGroupType() == HTTPConnectionGroupType::DISK)
+            {
+                ++it;
+                continue;
+            }
 
-        for (const auto & key : keys_to_drop)
-            endpoints_pool.erase(key);
+            dropped_pools.push_back(pool);
+            it = endpoints_pool.erase(it);
+        }
     }
 
     static bool useSecureConnection(const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
@@ -1579,14 +1675,14 @@ HTTPConnectionPools & HTTPConnectionPools::instance()
     return instance;
 }
 
-void HTTPConnectionPools::setLimits(HTTPConnectionPools::Limits disk, HTTPConnectionPools::Limits storage, HTTPConnectionPools::Limits http)
+void HTTPConnectionPools::setLimits(HTTPConnectionPools::Limits disk, HTTPConnectionPools::Limits storage, HTTPConnectionPools::Limits http, HTTPConnectionPools::Limits amber)
 {
-    impl->setLimits(std::move(disk), std::move(storage), std::move(http));
+    impl->setLimits(std::move(disk), std::move(storage), std::move(http), std::move(amber));
 }
 
-void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
+void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http, HTTPConnectionPools::SocketBufferSizes amber)
 {
-    impl->setSocketBufferSizes(std::move(disk), std::move(storage), std::move(http));
+    impl->setSocketBufferSizes(std::move(disk), std::move(storage), std::move(http), std::move(amber));
 }
 
 HTTPConnectionPools::SocketBufferSizes HTTPConnectionPools::getSocketBufferSizes(HTTPConnectionGroupType type) const

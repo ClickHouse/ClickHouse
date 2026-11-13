@@ -14,19 +14,16 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동으로 생성됩니다.
 
-<div id="iceberg_metadata_compression_method">
-  ## iceberg_metadata_compression_method
-</div>
+## iceberg_metadata_compression_method {#iceberg_metadata_compression_method}
 
 <ExperimentalBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
 `.metadata.json` 파일 압축 방식입니다.
+빈 문자열로 지정하면 첫 번째 메타데이터 파일을 쓸 때 카탈로그(Catalog)가 코덱을 선택합니다. 비압축 메타데이터를 사용하려면 `none`으로 설정하십시오.
 
-<div id="iceberg_metadata_log_level">
-  ## iceberg_metadata_log_level
-</div>
+## iceberg_metadata_log_level {#iceberg_metadata_log_level}
 
 <SettingsInfoBlock type="IcebergMetadataLogLevel" default_value="none" />
 
@@ -44,9 +41,7 @@ Iceberg 테이블의 메타데이터 로깅 수준을 `system.iceberg_metadata_l
 * manifest&#95;file&#95;metadata - 위의 모든 항목 + 탐색한 avro manifest 파일의 메타데이터입니다.
 * manifest&#95;file&#95;entry - 위의 모든 항목 + 탐색한 avro manifest 파일의 항목입니다.
 
-<div id="iceberg_metadata_staleness_ms">
-  ## iceberg_metadata_staleness_ms
-</div>
+## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

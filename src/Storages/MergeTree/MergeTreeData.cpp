@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -3564,6 +3565,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
         }
     }
+
+    /// A read-only disk is written by another server, and the disk object outlives the tables that use it,
+    /// so its metadata may be as old as its last refresh: reload it before listing the parts.
+    for (const auto & disk_ptr : disks)
+        if (!disk_ptr->isBroken() && disk_ptr->isReadOnly())
+            disk_ptr->refresh(/*not_sooner_than_milliseconds=*/ 0);
 
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
     std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
@@ -7238,6 +7245,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
     if (new_storage_policy != getStoragePolicy())
     {
+        /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
             throw Exception(
@@ -12386,7 +12396,7 @@ void MergeTreeData::optimizeDryRun(
         merge_task->cancel();
         throw;
     }
-    auto new_part = merge_task->getFuture().get();
+    auto new_part = merge_task->takeResultPart();
 
     /// This commits a transcation on disk, but doesn't commit the data part.
     if (new_part->getDataPartStorage().hasActiveTransaction())

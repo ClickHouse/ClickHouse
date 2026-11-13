@@ -8,19 +8,17 @@ keywords: ['설치', '자가 관리형', 'linux', 'macos', 'windows', 'docker']
 
 운영하는 플랫폼에 ClickHouse를 설치합니다.
 
-<div id="local-development">
-  ## 로컬 개발
-</div>
+## 로컬 개발 {#local-development}
 
 로컬 머신에서 ClickHouse를 실행해 빌드, 테스트, 실험을 진행합니다.
 
 <CardGroup cols={2}>
   <Card title="빠른 설치" href="/ko/get-started/setup/self-managed/quick-install" icon="bolt">
-    단일 ClickHouse 바이너리를 다운로드하는 한 줄짜리 `curl` 스크립트입니다.
+    단일 ClickHouse 바이너리를 다운로드하고 `clickhousectl`을 설치하는 한 줄짜리 `curl` 스크립트입니다.
   </Card>
 
   <Card title="clickhousectl (CLI)" href="/ko/get-started/setup/self-managed/clickhousectl" icon="terminal">
-    ClickHouse CLI로 로컬 ClickHouse 버전과 서버를 설치하고 관리합니다.
+    ClickHouse CLI로 ClickHouse 버전을 설치하고 로컬 ClickHouse 및 Postgres 서버를 실행합니다.
   </Card>
 
   <Card title="Docker" href="/ko/get-started/setup/self-managed/docker" icon="docker">
@@ -32,9 +30,7 @@ keywords: ['설치', '자가 관리형', 'linux', 'macos', 'windows', 'docker']
   </Card>
 </CardGroup>
 
-<div id="production-server">
-  ## 프로덕션 서버
-</div>
+## 프로덕션 서버 {#production-server}
 
 장기간 운영되는 환경에 배포하려면 패키지 또는 바이너리로 ClickHouse 서버를 설치하십시오.
 

@@ -12,19 +12,18 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを構成するためのもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="skip_binary_checksum_checks">
-  ## skip_binary_checksum_checks
-</div>
+## skip_binary_checksum_checks {#skip_binary_checksum_checks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />ClickHouseバイナリのチェックサムによる整合性チェックをスキップします
 
-<div id="skip_check_for_incorrect_settings">
-  ## skip_check_for_incorrect_settings
-</div>
+## skip_check_for_incorrect_settings {#skip_check_for_incorrect_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 true に設定すると、サーバー設定の正当性はチェックされません。
+
+また、`storage_configuration` 内のディスク定義のチェックも無効になります。このチェックは、その種類のディスクがいずれも読み取らない要素を、無視せずに
+`UNKNOWN_ELEMENT_IN_CONFIG` として報告するものです。
 
 **例**
 
