@@ -118,12 +118,11 @@ merge_result="SELECT errorCodeToName(error), ProfileEvents['S3GetObject'], Profi
     FROM system.part_log WHERE database='${database}' AND table='background_merge'
         AND event_type='MergeParts' AND part_name='${part}' AND event_time_microseconds >= '${merge_paused_at}'"
 deadline=$((SECONDS + 60))
-while true; do
+result=''
+while clickhouse_test_time_left && (( SECONDS < deadline )); do
     result=$(query --query "SYSTEM FLUSH LOGS part_log; ${merge_result}")
-    if [[ -n "$result" ]]; then
-        echo "$result"
-        break
-    fi
-    (( SECONDS < deadline ))
+    [[ -n "$result" ]] && break
     sleep 0.1
 done
+[[ -n "$result" ]]
+printf '%s\n' "$result"
