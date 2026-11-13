@@ -18,6 +18,9 @@
 namespace jemalloc
 {
 
+/// Declared in `Sanitizer.h`, which is too heavy to include here.
+void safetyCheckFail(const char * format, ...) ALLOCATOR_FORMAT_PRINTF(1, 2);
+
 /// jemalloc: rb_node(a_type)
 template <typename T>
 struct ProfilingTreeLink
@@ -167,7 +170,15 @@ private:
 
     static T * removeImpl(T * tree, T * node)
     {
-        ALLOCATOR_ASSERT(tree != nullptr);
+        /// jemalloc: rb_remove_safety_checks
+        if (ALLOCATOR_UNLIKELY(tree == nullptr))
+        {
+            if constexpr (config::option_safety_checks)
+                safetyCheckFail("<jemalloc>: Invalid deallocation detected in %s: attempting to remove node from tree but "
+                                "node was not found. Possibly caused by double free bugs.", "tree_remove");
+            ALLOCATOR_ASSERT(false);
+            return nullptr;
+        }
         if (tree == node)
             return merge(links(node).left, links(node).right);
         if (compare(node, tree) < 0)

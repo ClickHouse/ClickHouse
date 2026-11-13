@@ -30,7 +30,7 @@ foreach (test_source ${TEST_SOURCES})
             target_sources (${test_name} PRIVATE "${ref_source}")
             set_source_files_properties ("${ref_source}" PROPERTIES
                 INCLUDE_DIRECTORIES "${JEMALLOC_CMAKE_DIR}/include;${ALLOCATOR_REFERENCE_INCLUDE};${JEMALLOC_SOURCE_DIR}/include"
-                COMPILE_DEFINITIONS "JEMALLOC_NO_PRIVATE_NAMESPACE;JEMALLOC_NO_RENAME")
+                COMPILE_DEFINITIONS "JEMALLOC_NO_PRIVATE_NAMESPACE;JEMALLOC_NO_RENAME;JEMALLOC_OPT_SAFETY_CHECKS")
         endif ()
         if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${test_name}.cmake")
             # The test links the reference in its own way (e.g. a patched copy of it).

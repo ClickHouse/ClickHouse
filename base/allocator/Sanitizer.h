@@ -13,6 +13,7 @@
 #include <allocator/ExtentMap.h>
 #include <allocator/Mutex.h>
 #include <allocator/Options.h>
+#include <allocator/Pages.h>
 #include <allocator/ThreadState.h>
 
 #include <cstring>
@@ -300,8 +301,43 @@ void safetyCheckFail(const char * format, ...) ALLOCATOR_FORMAT_PRINTF(1, 2);
 /// jemalloc: safety_check_set_abort
 void safetyCheckSetAbort(SafetyCheckAbortHook abort_function);
 
-/// The redzones after sampled small allocations (`safety_check_set_redzone`, `safety_check_verify_redzone`,
-/// `compute_redzone_end`) exist only with `config_opt_safety_checks`, which is never enabled in ClickHouse
-/// (`config::option_safety_checks` is false), so they are not ported.
+/// jemalloc: REDZONE_SIZE
+inline constexpr size_t REDZONE_SIZE = 32;
+/// jemalloc: REDZONE_FILL_VALUE
+inline constexpr unsigned char REDZONE_FILL_VALUE = 0xBC;
+
+/// Normally the redzone extends `REDZONE_SIZE` bytes beyond the end of the allocation. However, it does not extend
+/// onto another OS page, because this would impose additional overhead if that page was not already resident in
+/// memory.
+/// jemalloc: compute_redzone_end
+ALLOCATOR_ALWAYS_INLINE const unsigned char * computeRedzoneEnd(const void * ptr_, size_t usable_size, size_t bumped_usable_size)
+{
+    const unsigned char * ptr = static_cast<const unsigned char *>(ptr_);
+    const unsigned char * redzone_end
+        = usable_size + REDZONE_SIZE < bumped_usable_size ? &ptr[usable_size + REDZONE_SIZE] : &ptr[bumped_usable_size];
+    const unsigned char * page_end = reinterpret_cast<const unsigned char *>(
+        alignmentCeiling(reinterpret_cast<uintptr_t>(&ptr[usable_size]), os_page));
+    return redzone_end < page_end ? redzone_end : page_end;
+}
+
+/// jemalloc: safety_check_set_redzone
+ALLOCATOR_ALWAYS_INLINE void safetyCheckSetRedzone(void * ptr, size_t usable_size, size_t bumped_usable_size)
+{
+    ALLOCATOR_ASSERT(usable_size <= bumped_usable_size);
+    const unsigned char * redzone_end = computeRedzoneEnd(ptr, usable_size, bumped_usable_size);
+    for (unsigned char * current = &static_cast<unsigned char *>(ptr)[usable_size]; current < redzone_end; ++current)
+        *current = REDZONE_FILL_VALUE;
+}
+
+/// jemalloc: safety_check_verify_redzone
+ALLOCATOR_ALWAYS_INLINE void safetyCheckVerifyRedzone(const void * ptr, size_t usable_size, size_t bumped_usable_size)
+{
+    const unsigned char * redzone_end = computeRedzoneEnd(ptr, usable_size, bumped_usable_size);
+    for (const unsigned char * current = &static_cast<const unsigned char *>(ptr)[usable_size]; current < redzone_end; ++current)
+    {
+        if (ALLOCATOR_UNLIKELY(*current != REDZONE_FILL_VALUE))
+            safetyCheckFail("Use after free error\n");
+    }
+}
 
 }

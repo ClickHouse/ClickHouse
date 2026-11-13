@@ -152,7 +152,10 @@ inline constexpr bool profiling = true; /// JEMALLOC_PROF
 inline constexpr bool cache_oblivious = true; /// JEMALLOC_CACHE_OBLIVIOUS (default of `opt.cache_oblivious`)
 inline constexpr bool maps_coalesce = true; /// JEMALLOC_MAPS_COALESCE
 inline constexpr bool background_thread = true; /// JEMALLOC_BACKGROUND_THREAD
-inline constexpr bool option_safety_checks = false;
+/// JEMALLOC_OPT_SAFETY_CHECKS: defined by `contrib/jemalloc-cmake` for every platform except E2K (which the C++
+/// allocator does not support). Cheap checks on the deallocation path: sized deallocation with a wrong size, double
+/// free of a large allocation, inconsistent thread cache metadata, and the redzones after sampled small allocations.
+inline constexpr bool option_safety_checks = true;
 inline constexpr bool option_size_checks = false;
 
 inline constexpr bool use_after_free_detection =

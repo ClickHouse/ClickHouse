@@ -331,8 +331,8 @@ ALLOCATOR_ALWAYS_INLINE void arenaDecayTick(ThreadState * thread_state, Arena * 
     arenaDecayTicks(thread_state, arena, 1);
 }
 
-/// Eagerly detect double free and sized dealloc bugs for large sizes (only with `config_opt_safety_checks`, which
-/// is off). Returns true if the deallocation must be skipped.
+/// Eagerly detect double free and sized dealloc bugs for large sizes (only with `config_opt_safety_checks`). Returns
+/// true if the deallocation must be skipped.
 /// jemalloc: large_dalloc_safety_checks
 ALLOCATOR_ALWAYS_INLINE bool largeDeallocateSafetyChecks(Extent * extent, const void * ptr, size_t input_size)
 {

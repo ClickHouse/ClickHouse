@@ -1,8 +1,7 @@
 /// The `experimental.*` leaves through the public API of the fully initialized allocator (the test links API.cpp,
 /// whose constructor initializes the allocator with `MALLOC_CONF` from the environment; the test is registered twice:
 /// without and with heap profiling). Ports of jemalloc's `test/unit/inspect.c`, `test/unit/batch_alloc.c` (and
-/// `batch_alloc_prof.c`), the public API part of `test/unit/safety_check.c` (the redzone checks themselves only exist
-/// with `config_opt_safety_checks`, which is never enabled), plus `experimental.arenas.<i>.pactivep`,
+/// `batch_alloc_prof.c`), the public API part of `test/unit/safety_check.c`, plus `experimental.arenas.<i>.pactivep`,
 /// `experimental.arenas_create_ext` and `experimental.thread.activity_callback`.
 
 #include <allocator/Arena.h>
@@ -445,9 +444,9 @@ void fakeAbort(const char * message)
 
 }
 
-/// jemalloc: experimental_hooks_safety_check_abort_ctl. The redzone tests of `test/unit/safety_check.c` are skipped
-/// in jemalloc without `config_opt_safety_checks`; here the hook is installed through `mallctl` and the failure path
-/// (`safety_check_fail`) is called directly.
+/// jemalloc: experimental_hooks_safety_check_abort_ctl. The redzone tests of `test/unit/safety_check.c` need every
+/// allocation to be sampled (`safety_check.sh`), which this test does not configure; here the hook is installed
+/// through `mallctl` and the failure path (`safety_check_fail`) is called directly.
 TEST(MallctlExperimentalAPI, SafetyCheckAbortHook)
 {
     const char * node = "experimental.hooks.safety_check_abort";

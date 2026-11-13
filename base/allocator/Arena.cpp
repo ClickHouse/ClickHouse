@@ -600,14 +600,15 @@ static void arenaBinReset(ThreadState & thread_state, Arena * arena, Bin * bin)
 
 /// jemalloc: arena_prof_promote
 void arenaProfilingPromote(
-    ThreadState * thread_state, void * ptr, [[maybe_unused]] size_t usable_size, [[maybe_unused]] size_t bumped_usable_size)
+    ThreadState * thread_state, void * ptr, size_t usable_size, [[maybe_unused]] size_t bumped_usable_size)
 {
     static_assert(config::profiling);
     ALLOCATOR_ASSERT(ptr != nullptr);
     ALLOCATOR_ASSERT(arenaAllocationSize(thread_state, ptr) == bumped_usable_size);
     ALLOCATOR_ASSERT(size_classes::canUseSlab(usable_size));
 
-    /// `config_opt_safety_checks` (redzones) is off.
+    if constexpr (config::option_safety_checks)
+        safetyCheckSetRedzone(ptr, usable_size, bumped_usable_size);
 
     Extent * extent = arena_extent_map_global.extentLookup(thread_state, ptr);
 
@@ -643,9 +644,13 @@ static void arenaDeallocatePromotedImpl(ThreadState * thread_state, void * ptr, 
     static_assert(config::profiling);
     ALLOCATOR_ASSERT(options.profiling);
 
-    [[maybe_unused]] size_t usable_size = extent->usableSize();
+    size_t usable_size = extent->usableSize();
     size_t bumped_usable_size = arenaProfilingDemote(thread_state, extent, ptr);
-    /// `config_opt_safety_checks` (redzone verification) is off.
+    if (config::option_safety_checks && usable_size < SIZE_CLASS_LARGE_MIN_CLASS)
+    {
+        /// Currently, redzoning is only done for small sampled allocations.
+        safetyCheckVerifyRedzone(ptr, usable_size, bumped_usable_size);
+    }
     SizeClassIdx bumped_idx = size_classes::sizeToIndex(bumped_usable_size);
     if (bumped_usable_size >= SIZE_CLASS_LARGE_MIN_CLASS && thread_cache != nullptr && bumped_idx < THREAD_CACHE_NUM_BINS_MAX
         && !threadCacheBinDisabled(bumped_idx, &thread_cache->bins[bumped_idx], thread_cache->thread_cache_slow))
