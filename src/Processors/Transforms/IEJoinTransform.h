@@ -329,8 +329,7 @@ private:
     PaddedPODArray<UInt64> l2_keys_by_position;
     /// One bit per L1 position, set for right-side entries that passed the frontier.
     PaddedPODArray<UInt64> bit_array;
-    /// Summary levels over `bit_array`, lowest first: bit j of a level is set iff word j of the level below is
-    /// non-zero, so `findNextSetBit` skips a run of empty words in O(number of levels).
+    /// Summary levels over `bit_array`, lowest first: bit j of a level is set iff word j of the level below is non-zero.
     VectorWithMemoryTracking<PaddedPODArray<UInt64>> bit_array_summaries;
     /// One past the highest set bit; lets scans stop instead of walking empty words to the end.
     size_t bit_array_end = 0;

@@ -785,8 +785,7 @@ size_t IEJoinAlgorithm::findNextSetBit()
         return level == 0 ? bit_array : bit_array_summaries[level - 1];
     };
 
-    /// Ascend while the rest of the current word is empty: the next set bit is then in a later
-    /// non-empty word, which the level above marks.
+    /// Ascend while the rest of the current word is empty; the level above marks the later non-empty words.
     size_t level = 0;
     size_t index = scan_pos;
     while (true)
