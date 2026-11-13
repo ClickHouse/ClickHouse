@@ -21,6 +21,7 @@ struct __clickhouse_condvar_waiter
 {
     silk::FiberFuture future;
     uint32_t notified = 0;
+    uint32_t claim = 0;
     bool fiber = false;
     __clickhouse_condvar_waiter * prev = nullptr;
     __clickhouse_condvar_waiter * next = nullptr;
@@ -302,7 +303,13 @@ public:
         int result = waitForNotify(waiter, deadline);
         if (result == ETIMEDOUT)
         {
-            if (!WaiterList(storage).remove(waiter))
+            if (tryClaim(waiter, CLAIMED_BY_TIMEOUT))
+            {
+                if (!WaiterList(storage).remove(waiter))
+                    result = 0;
+                std::atomic_ref(waiter.claim).store(TIMEOUT_CLEANUP_DONE, std::memory_order_release);
+            }
+            else
             {
                 /// The notifier thread concurrently removed us from the wait list,
                 /// wait until it calls notify(*waiter) object before we destroy it.
@@ -332,6 +339,17 @@ public:
     }
 
 private:
+    static constexpr uint32_t UNCLAIMED = 0;
+    static constexpr uint32_t CLAIMED_BY_NOTIFIER = 1;
+    static constexpr uint32_t CLAIMED_BY_TIMEOUT = 2;
+    static constexpr uint32_t TIMEOUT_CLEANUP_DONE = 3;
+
+    static bool tryClaim(Waiter & waiter, uint32_t claimant)
+    {
+        uint32_t expected = UNCLAIMED;
+        return std::atomic_ref(waiter.claim).compare_exchange_strong(expected, claimant, std::memory_order_acq_rel);
+    }
+
     static int waitForNotify(Waiter & waiter, uint64_t deadline)
     {
         if (waiter.fiber)
@@ -353,6 +371,12 @@ private:
 
     static void notify(Waiter & waiter)
     {
+        if (!tryClaim(waiter, CLAIMED_BY_NOTIFIER))
+        {
+            while (std::atomic_ref(waiter.claim).load(std::memory_order_acquire) != TIMEOUT_CLEANUP_DONE)
+                silk::cpuPause();
+            return;
+        }
         if (waiter.fiber)
         {
             waiter.future.set(0);
