@@ -1175,10 +1175,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
-        /// Copying subcolumn codecs is a new declaration of them.
-        for (const auto & column : properties.columns)
-            if (!column.subcolumn_codecs.empty())
-                checkSubcolumnCodecsAreEnabled(getContext(), mode);
+        /// The copied columns are a new declaration of them, so they are checked as if they were written in the query.
+        if (isFreshDefinition(mode))
+        {
+            auto copied_columns = make_intrusive<ASTColumns>();
+            copied_columns->set(copied_columns->columns, formatColumns(properties.columns));
+            if (auto codec_declarations = formatCodecDeclarations(properties.columns); !codec_declarations->children.empty())
+                copied_columns->set(copied_columns->codec_declarations, codec_declarations);
+            getColumnsDescription(*copied_columns, getContext(), mode, is_restore_from_backup, /*check_defaults_over_virtual_columns=*/ true);
+        }
 
         if (!create.comment && !as_storage_metadata->comment.empty())
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
