@@ -13,6 +13,8 @@
 #include <Parsers/ASTTupleDataType.h>
 #include <Common/Exception.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -507,18 +509,48 @@ void pullUpTupleElementDefaults(
     if (!built_default)
         return;
 
-    /// A name with the `<column>.` prefix refers to an independent column with a dotted name if a table
-    /// column has exactly this name: an exact column name takes precedence over a subcolumn, as in
-    /// `ColumnsDescription::tryGetColumn`. Otherwise it is a self-reference. Whether the name is a
-    /// subcolumn of the type written here is deliberately not checked: the type is not final yet. It may
-    /// still be wrapped in `Nullable` (by the `NULL` modifier or `data_type_default_nullable`), which adds
-    /// the `null` subcolumn, and a later `MODIFY COLUMN` of the same query may change it while keeping this
-    /// default. A name which is neither a table column nor a subcolumn cannot be resolved in any case, so
-    /// rejecting it does not reject a valid default. `is_table_column` is called only for such a name, so
-    /// it is not called for a default that does not need it.
+    /// A name with the `<column>.` prefix may belong to another column with a dotted name: either it is
+    /// exactly the name of a table column (`c.n`), or a subcolumn of such a column (`c.n.x` of the column
+    /// `c.n`, `c.a.size0` of the column `c.a`). An exact column name takes precedence over a subcolumn, as
+    /// in `ColumnsDescription::tryGetColumn`. Otherwise the name is owned by the column being defined, so it
+    /// is a self-reference. Whether the name is a subcolumn of the type written here is deliberately not
+    /// required: the type is not final yet. It may still be wrapped in `Nullable` (by the `NULL` modifier or
+    /// `data_type_default_nullable`), which adds the `null` subcolumn, and a later `MODIFY COLUMN` of the
+    /// same query may change it while keeping this default. A name which is owned neither by another column
+    /// nor by this one cannot be resolved in any case, so rejecting it does not reject a valid default.
+    /// `is_table_column` is called only for such a name, so it is not called for a default that does not need it.
+    std::optional<DataTypePtr> written_type;
     for (const auto & name : subcolumn_references)
-        if (!(is_table_column && is_table_column(name)))
+    {
+        if (!is_table_column)
             throwSelfReference(col_decl.name);
+
+        if (is_table_column(name))
+            continue;
+
+        /// Look for another column owning the name as its subcolumn: a table column named by a proper
+        /// prefix of the name that ends at a dot and is longer than the name of this column.
+        bool owned_by_other_column = false;
+        for (size_t pos = name.find('.', col_decl.name.size() + 1); pos != String::npos; pos = name.find('.', pos + 1))
+        {
+            if (is_table_column(name.substr(0, pos)))
+            {
+                owned_by_other_column = true;
+                break;
+            }
+        }
+
+        if (!owned_by_other_column)
+            throwSelfReference(col_decl.name);
+
+        /// If the column being defined has such a subcolumn as well, the name is ambiguous: both columns
+        /// register a subcolumn with this name, and which of them it resolves to depends on the order of the
+        /// columns. Reject it rather than risk a self-referential default.
+        if (!written_type)
+            written_type = DataTypeFactory::instance().get(type);
+        if ((*written_type)->hasSubcolumn(name.substr(col_decl.name.size() + 1)))
+            throwSelfReference(col_decl.name);
+    }
 
     if (col_decl.default_specifier != ColumnDefaultSpecifier::Empty || col_decl.getDefaultExpression())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
