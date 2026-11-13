@@ -4965,7 +4965,6 @@ String replaySettingsPrelude(
     /// only where a statement carries it.
     static const std::vector<String> create_gates = {
         "enable_subcolumn_codecs",
-        "enable_elasticsearch",
         "enable_streaming_queries",
         "allow_get_client_http_header",
         "allow_introspection_functions",

@@ -33,6 +33,7 @@ const std::vector<std::string> & allExperimentalSettingNames()
         "allow_deprecated_error_prone_window_functions",
 
         "enable_xgboost",
+        "enable_elasticsearch",
 
         "allow_suspicious_low_cardinality_types",
         "allow_suspicious_fixed_string_types",
