@@ -48,14 +48,16 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT
         ProfileEvents['QueryConditionCacheHits'],
         ProfileEvents['ObjectStorageQueryConditionCacheSkippedRowGroups'] = if(run = 2, row_groups - 1, 0),
-        ProfileEvents['ParquetPrunedRowGroups'] = if(run = 2, row_groups - 1, 0)
+        ProfileEvents['ParquetPrunedRowGroups'] = if(run = 2, row_groups - 1, 0),
+        ProfileEvents['ObjectStorageReadObjects'] > 1
     FROM (SELECT ProfileEvents, toUInt8(right(query_id, 1)) AS run FROM system.query_log
         WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
             AND query_id IN ('${CLICKHOUSE_DATABASE}_05621_qcc_1', '${CLICKHOUSE_DATABASE}_05621_qcc_2'))
     ORDER BY run"
 echo "-- runs 3 and 4"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT ProfileEvents['QueryConditionCacheHits'], ProfileEvents['ObjectStorageQueryConditionCacheSkippedFiles']
+    SELECT ProfileEvents['QueryConditionCacheHits'], ProfileEvents['ObjectStorageQueryConditionCacheSkippedFiles'],
+        ProfileEvents['ObjectStorageReadObjects'] > 1
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
         AND query_id IN ('${CLICKHOUSE_DATABASE}_05621_qcc_3', '${CLICKHOUSE_DATABASE}_05621_qcc_4')
