@@ -295,7 +295,12 @@ refresh_main_worktree()
         note "main checkout: master has no upstream; its files stay as they are"
         return 0
     fi
-    git -C "$MAIN" fetch -q --no-recurse-submodules "${upstream%%/*}" "${upstream#*/}"
+    # The refresh is optional: without the network, the worktree is set up from the main checkout as it is.
+    if ! git -C "$MAIN" fetch -q --no-recurse-submodules "${upstream%%/*}" "${upstream#*/}"
+    then
+        note "main checkout: the fetch of $upstream failed (see above); its files stay as they are"
+        return 0
+    fi
     if ! git -C "$MAIN" merge-base --is-ancestor HEAD "$upstream"
     then
         note "main checkout: master has commits that $upstream does not have; its files stay as they are"
