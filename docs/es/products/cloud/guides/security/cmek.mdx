@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'cifrado', 'CMEK', 'Verificación periódica de la clave de KMS']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
@@ -161,4 +160,12 @@ Las copias de seguridad se cifran con la misma clave que el servicio asociado. C
 
 El cifrado de la base de datos aprovecha la [funcionalidad integrada de sistema de archivos virtual para el cifrado de datos de ClickHouse](/es/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) para cifrar y proteger sus datos. El algoritmo utilizado en esta funcionalidad es `AES_256_CTR` y se prevé que tenga una penalización de rendimiento del 5-15 % según la carga de trabajo:
 
-<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Penalización de rendimiento de CMEK" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Penalización de rendimiento de CMEK](/images/_snippets/cmek-performance.webp)
+
+</Frame>
+
+</div>

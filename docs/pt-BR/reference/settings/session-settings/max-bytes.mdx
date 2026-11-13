@@ -56,6 +56,21 @@ Valores possíveis:
 
 Se for definido com um valor diferente de zero e `join_algorithm` for `hash`, `parallel_hash`, `default` ou `auto`, o hash join será convertido automaticamente em grace hash join para permitir o spill em disco quando os dados do lado direito excederem essa quantidade de bytes. Junto com `max_bytes_ratio_before_external_join`, este é o gatilho de spill baseado em limiar para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, que exige que um dos dois seja diferente de zero. Quando um limiar diferente de zero torna uma junção capaz de realizar spill, `enable_adaptive_memory_spill_scheduler` pode forçá-la a realizar spill sob pressão de memória antes que o limiar seja atingido. Quando definido como `0` (padrão), esse limiar absoluto em bytes fica desabilitado, mas o spill automático ainda pode ocorrer por meio de `max_bytes_ratio_before_external_join` (cujo valor padrão é `0.5`). Com ambas as configurações em `0`, a junção nunca realiza spill, portanto o scheduler não tem nada para acionar. A exceção é `legacy_join_size_limits_trigger_spilling`: quando habilitada, `grace_hash` independente ignora ambas as configurações e realiza spill com base em `max_rows_in_join` / `max_bytes_in_join`. Isso impede a otimização de leitura read in order por meio de join. O limiar também limita o lado direito materializado pelo [block nested loop join](/pt-BR/reference/statements/select/join#join-with-an-arbitrary-on-condition), independentemente do valor definido em `join_algorithm`.
 
+## max_bytes_before_external_set {#max_bytes_before_external_set}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar o spill para o disco do conjunto de `IN` com uma subconsulta quando o uso de memória exceder o limiar especificado em bytes. Se for 0, apenas `max_bytes_ratio_before_external_set` se aplica."}]}]} />
+
+Limiar de memória da consulta, em bytes, a partir do qual é feito o spill para o disco do conjunto de `IN` com uma subconsulta, enquanto o conjunto está
+sendo construído ou enquanto a consulta o utiliza. O uso de memória real pode ultrapassar esse limiar. Um conjunto que ocupa
+menos memória do que esse limiar ou do que 16 MiB, o que for menor, permanece em memória.
+
+`0` desabilita esse limiar. Se `max_bytes_ratio_before_external_set` também definir um limiar, será utilizado
+o menor dos dois. Defina ambas as configurações como `0` para desativar o spill.
+
+Consulte [IN em memória externa](/pt-BR/reference/statements/in#in-in-external-memory).
+
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -76,6 +91,54 @@ Valores possíveis:
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 No caso de ORDER BY com LIMIT, quando o uso de memória for maior que o limite especificado, execute etapas adicionais de mesclagem de blocos antes da mesclagem final para manter apenas as primeiras LIMIT linhas.
+
+## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "A configuração recebeu backport para a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nova configuração para limitar a memória do filtro de Bloom que um conjunto de `IN` em disco mantém para evitar a leitura do disco para valores que não estão no conjunto."}]}]} />
+
+Orçamento de memória, em bytes, para o filtro de Bloom que cada conjunto de `IN` gravado em disco mantém em memória. O
+filtro permite que consultas de valores que não estão no conjunto evitem a leitura do disco. Ele não acelera consultas
+de valores que estão no conjunto.
+
+O filtro de um conjunto ocupa cerca de 1 byte por chave ou o orçamento, o que for menor. As chaves de um
+conjunto são seus valores distintos ou, no caso de `IN` com várias colunas, suas tuplas distintas:
+
+* Se o orçamento for de pelo menos 1 byte por chave, o conjunto recebe o filtro completo, e cerca de 97% das consultas de
+  valores que não estão no conjunto evitam o disco. Por exemplo, um conjunto de 1 milhão de chaves ocupa cerca de 1 MiB.
+* Se o orçamento for menor, o conjunto recebe um filtro mais fraco que caiba no orçamento, e menos consultas de
+  valores que não estão no conjunto evitam o disco. Por exemplo, com um quarto de byte por chave, cerca de 60% dessas
+  consultas evitam o disco, em vez de 97%.
+* Se o orçamento for menor que cerca de 1/7 de byte por chave, o conjunto não recebe filtro, pois um filtro desse tipo
+  permitiria que poucas consultas evitassem o disco, o que não compensaria o custo de construí-lo.
+
+Com o orçamento padrão de 128 MiB, conjuntos de até cerca de 130 milhões de chaves recebem o filtro completo, e conjuntos com
+mais de cerca de 950 milhões de chaves não recebem filtro algum. Aumente o orçamento para conjuntos maiores quando a maioria dos valores
+consultados não estiver no conjunto. Reduza-o quando houver pouca memória ou quando a maioria dos valores consultados estiver no
+conjunto, caso em que o filtro não ajuda. `0` desabilita o filtro.
+
+O filtro é contabilizado no uso de memória da consulta, como em `max_memory_usage`, mas não em
+`max_bytes_in_set`. O orçamento se aplica a cada conjunto, e não à consulta como um todo.
+
+Consulte [IN em memória externa](/pt-BR/reference/statements/in#in-in-external-memory).
+
+## max_bytes_for_external_set_cache {#max_bytes_for_external_set_cache}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "A configuração recebeu backport para a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nova configuração para limitar a memória do cache de blocos mantido por um conjunto de `IN` em disco, para que suas consultas não leiam os mesmos blocos do disco novamente."}]}]} />
+
+Orçamento de memória, em bytes, para o cache de blocos que cada conjunto de `IN` gravado em disco mantém em memória. Uma
+consulta que precisa de um bloco já lido por uma consulta anterior o obtém do cache, em vez de lê-lo
+novamente do disco. O cache é útil quando as consultas precisam repetidamente dos mesmos blocos, como consultas de alguns
+valores frequentes ou muitas consultas em um conjunto que cabe no cache. Ele traz pouco benefício quando as consultas se distribuem
+uniformemente por um conjunto muito maior que o cache. `0` desabilita o cache.
+
+O orçamento se aplica a cada conjunto separadamente. O cache é contabilizado no uso de memória da consulta, como em
+`max_memory_usage`, mas não em `max_bytes_in_set`.
+
+Consulte [IN em memória externa](/pt-BR/reference/statements/in#in-in-external-memory).
 
 ## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
@@ -179,6 +242,21 @@ Por exemplo, se definido como `0.6`, o `JOIN` permitirá usar `60%` da memória 
 Se `max_bytes_before_external_join` e `max_bytes_ratio_before_external_join` estiverem ambos definidos, será usado o menor limiar resultante. Se a razão for `0`, somente a configuração absoluta se aplica.
 
 Tem efeito para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, desde que um caminho temporário de dados esteja configurado.
+
+## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "A alteração do valor padrão para 0.5 recebeu backport para a 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nova configuração para habilitar o spill para o disco do conjunto de `IN` com uma subconsulta quando o uso de memória exceder a razão especificada da memória disponível. Se for 0, apenas `max_bytes_before_external_set` se aplica."}]}]} />
+
+Fração da memória disponível do servidor ou do usuário usada para calcular, no início da execução, o limiar de spill para o disco do conjunto de `IN`
+com uma subconsulta. Por exemplo, `0.5` usa metade da memória disponível.
+
+Os valores devem ser maiores ou iguais a `0` e menores que `1`. `0` desativa esse limiar. Se não houver um limite de memória
+aplicável do servidor ou do usuário, a razão não tem efeito.
+
+`max_memory_usage` não afeta esse cálculo. Para configurar o spill em relação a esse limite,
+use `max_bytes_before_external_set`, deixando margem para uso adicional de memória.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

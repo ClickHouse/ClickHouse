@@ -119,9 +119,11 @@ NameSet checkAccessRights(
     const ContextPtr & query_context);
 
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
+/// `view_source_in_subqueries`: see `SelectQueryOptions`.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
+        bool view_source_in_subqueries,
         bool check_access_rights = false);
 
 /// Build filter for specific table_expression
@@ -141,11 +143,6 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
-
-/// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise return empty.
-/// If the window frame is set in sql, use it anyway.
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 

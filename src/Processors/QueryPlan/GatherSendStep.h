@@ -26,6 +26,8 @@ public:
 
     String getName() const override { return "GatherSend"; }
 
+    const String & getExchangeId() const { return exchange_id; }
+
     bool hasOutputStream() const { return false; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
