@@ -21,6 +21,9 @@ INSERT INTO t_dp_keys SELECT number FROM numbers(10000);
 
 SET use_query_condition_cache = 0;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
+-- `make_distributed_plan` rejects a global GROUP BY limit, and the runner randomizes it.
+SET max_rows_to_group_by = 0;
 -- `make_distributed_plan` turns it off, so turn it off for the control too: both then count the marks
 -- selected by the index analysis.
 SET use_skip_indexes_on_data_read = 0;

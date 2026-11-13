@@ -31,7 +31,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/PreparedSets.h>
-#include <Columns/ColumnSet.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
