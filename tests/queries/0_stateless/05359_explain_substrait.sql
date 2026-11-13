@@ -11,7 +11,7 @@ EXPLAIN SUBSTRAIT SELECT id FROM t_substrait; -- { serverError SUPPORT_IS_DISABL
 SET enable_substrait = 1;
 
 SELECT 'Read, filter and projection serialize';
-EXPLAIN SUBSTRAIT SELECT id + 1 FROM t_substrait WHERE value > 2.0;
+EXPLAIN SUBSTRAIT SELECT id + 1 FROM t_substrait WHERE value > 2.0 FORMAT TSVRaw;
 
 SELECT 'A function without a Substrait mapping blocks';
 EXPLAIN SUBSTRAIT SELECT cityHash64(name) FROM t_substrait; -- { serverError NOT_IMPLEMENTED }
