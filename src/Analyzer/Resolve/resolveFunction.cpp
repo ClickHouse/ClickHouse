@@ -1340,6 +1340,24 @@ static QueryTreeNodePtr buildResolvedFunction(
     return function;
 }
 
+static QueryTreeNodePtr includeMatchingNaNs(
+    QueryTreeNodePtr result,
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const ContextPtr & context)
+{
+    const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
+    const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
+    if (!isFloat(left_type) || !isFloat(right_type))
+        return result;
+
+    auto both_nan = buildResolvedFunction(
+        "and",
+        {buildResolvedFunction("isNaN", {left_argument}, context), buildResolvedFunction("isNaN", {right_argument}, context)},
+        context);
+    return buildResolvedFunction("or", {std::move(result), std::move(both_nan)}, context);
+}
+
 static QueryTreeNodePtr buildPortableNullSafeEquals(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
@@ -1415,7 +1433,11 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
     }
     else
     {
-        result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
+        /// `has` uses the same value comparison as a constant `IN` set, including
+        /// nested `Dynamic` and `Variant` values and wide unsigned/Decimal pairs.
+        auto candidates = buildResolvedFunction("array", {right_argument}, context);
+        result = buildResolvedFunction("has", {std::move(candidates), left_argument}, context);
+        result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context);
     }
 
     if (canContainNull(*left_argument->getResultType()) || canContainNull(*right_argument->getResultType()))
@@ -1566,6 +1588,9 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     {
         result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
     }
+
+    if (compare_nulls)
+        result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context);
 
     if (compare_nulls)
     {
