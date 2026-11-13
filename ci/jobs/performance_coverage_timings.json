@@ -9,7 +9,8 @@
     41966130186,
     42042533306,
     42195391179,
-    43351195939
+    43351195939,
+    43439871405
   ],
   "job_overhead_seconds": 558.5306688947685,
   "estimated_wrapper_seconds": 0.7789540824890082,
@@ -18,7 +19,8 @@
     "Job overhead is the median residual from six complete fresh shards, including fixtures and export.",
     "Missing whole-test walls use measured stage totals plus the median observed wrapper cost.",
     "Mostly single measurements; these are scheduling weights, not guaranteed completion times.",
-    "2026-11-13: refreshed 797 completed XML wall times from the actual nightly archives, without historical backfill rows. limit_zero_primary_key_analysis has only a setup-timeout lower bound; keep it alone until its first full measurement."
+    "2026-11-13: refreshed 797 completed XML wall times from the actual nightly archives, without historical backfill rows.",
+    "2026-11-13: run 43439871405 measured limit_zero_primary_key_analysis at 2890.088363170624 seconds including setup and teardown; replace its timeout lower bound and return it to normal shard balancing."
   ],
   "tests": {
     "ColumnMap.xml": {
@@ -2202,11 +2204,9 @@
       "input_sha256": "08a8c353d00c7b0ec1aa9fd79e98ef4158f8d5b79771f6120befff9e5205c85a"
     },
     "limit_zero_primary_key_analysis.xml": {
-      "seconds": 1817.335472,
-      "kind": "setup_timeout_lower_bound",
-      "input_sha256": "5c80160aebc9a377ec3abe031c025db2a4f74f287d850e9cd7388a8d28e7ca92",
-      "isolate_until_measured": true,
-      "source_job": "https://github.com/ClickHouse/ClickHouse/actions/runs/43351195939/job/131657677373"
+      "seconds": 2890.088363170624,
+      "kind": "measured_wall",
+      "input_sha256": "5c80160aebc9a377ec3abe031c025db2a4f74f287d850e9cd7388a8d28e7ca92"
     },
     "line_as_string_parsing.xml": {
       "seconds": 27.475037097930908,
@@ -4215,7 +4215,7 @@
     }
   },
   "latest_refresh_identity": {
-    "binary_sha256": "62ef0390450451b163e8dfed9597827215bd7896210a09b58cc4855aaab22dab",
-    "source_identity": "02ba4f098f08bd6dcb5b1a7b2ff5d2a6e06179566bec68d5f1fd84abcd3c1d85"
+    "binary_sha256": "f2f6d9a30f7d593bb78002a04419756123180286c1279dcddf4cbd8c373ab845",
+    "source_identity": "89d969f52c5dc23096c6b92f2b8ba95d376c9be1c6f0fe91996c7505a6655aa3"
   }
 }

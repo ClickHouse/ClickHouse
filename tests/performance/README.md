@@ -278,9 +278,12 @@ marked `isolate_until_measured` in the timing table: it gets a dedicated shard
 until a completed run supplies its full wall time. Refreshing that measurement
 removes the isolation flag. The lower bound is not a predicted completion time.
 
-The latest refresh adds 797 whole-test wall measurements from the 2026-11-13
-collection. Older entries without a wall measurement retain measured stage
-totals plus an estimated wrapper cost; they are not release-query medians.
+The 2026-11-13 refresh adds 797 whole-test wall measurements from the nightly
+collection and a completed 48-minute measurement for
+`limit_zero_primary_key_analysis.xml`. That test now shares a shard with other
+tests instead of being isolated. Older entries without a wall measurement retain
+measured stage totals plus an estimated wrapper cost; they are not release-query
+medians.
 
 Discovery defines the test universe, so a newly added XML is included without
 editing the timing table. New tests use the table's upper-quartile runtime as an
