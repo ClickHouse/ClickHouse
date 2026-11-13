@@ -306,9 +306,22 @@ struct SymbolicLink
     std::string target;
 };
 
-/// Resolves the symbolic links in an absolute `path` in the current filesystem, appending every link met on the
-/// way to `links`. Returns the path without links, or nothing if the path does not exist.
-std::optional<std::string> resolvePath(const std::string & path, std::vector<SymbolicLink> & links)
+/// What the paths go through on the way to their real locations, which is recreated in the isolated filesystem, so
+/// that the paths are found there in the same way as outside.
+struct Traversal
+{
+    /// The symbolic links met on the way.
+    std::vector<SymbolicLink> links;
+    /// The directories without symbolic links left with `..`, as the target of `link` in `/srv/link/../data`, which
+    /// is the parent of that target rather than `/srv`. They exist in the isolated filesystem, empty unless they are
+    /// visible, for `..` to lead from them to the same place as outside.
+    std::vector<std::string> directories;
+};
+
+/// Resolves the symbolic links in an absolute `path` in the current filesystem, as the kernel does: a `..` after a
+/// link leads to the parent of its target. Appends every link met and every directory left with `..` on the way to
+/// `traversal`. Returns the path without links, or nothing if the path does not exist.
+std::optional<std::string> resolvePath(const std::string & path, Traversal & traversal)
 {
     std::deque<std::string> components;
     for (const auto & component : fs::path(path).relative_path())
@@ -326,6 +339,8 @@ std::optional<std::string> resolvePath(const std::string & path, std::vector<Sym
             continue;
         if (component == "..")
         {
+            if (resolved != "/")
+                traversal.directories.push_back(resolved);
             resolved = fs::path(resolved).parent_path().string();
             continue;
         }
@@ -353,7 +368,7 @@ std::optional<std::string> resolvePath(const std::string & path, std::vector<Sym
         if (length < 0)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot read the symbolic link {}", candidate);
         target.resize(length);
-        links.push_back({candidate, target});
+        traversal.links.push_back({candidate, target});
 
         const fs::path target_path(target);
         std::vector<std::string> target_components;
@@ -859,7 +874,7 @@ std::string describeAccess(FilesystemIsolationPath::Access access)
 
 /// Resolves the paths, drops the missing ones, and the ones that a mount of a containing directory with the same
 /// access makes visible already. The result is sorted so that a directory is mounted before the paths inside it.
-std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths, std::vector<SymbolicLink> & links)
+std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths, Traversal & traversal)
 {
     std::vector<Mount> resolved;
     for (const auto & path : paths)
@@ -876,7 +891,7 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot create the directory {} ({}): {}", path.path, path.source, error.message());
         }
 
-        auto real_path = resolvePath(path.path, links);
+        auto real_path = resolvePath(path.path, traversal);
         if (!real_path)
             continue;
         /// Visible anyway, and links into them, such as `/etc/mtab`, are recreated.
@@ -978,7 +993,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     }
 
     /// Everything that needs the original filesystem is done before entering the namespaces.
-    std::vector<SymbolicLink> links;
+    Traversal traversal;
     std::vector<FilesystemIsolationPath> all_paths = collect_paths ? collect_paths() : std::vector<FilesystemIsolationPath>{};
     const std::vector<std::string> mapped_files = getMappedFiles();
     for (const auto & file : mapped_files)
@@ -994,9 +1009,9 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
             all_paths.push_back({std::move(directory), FilesystemIsolationPath::Access::ReadOnly, "the sockets of a service of the Name Service Switch"});
 #endif
     }
-    const std::vector<Mount> mounts = planMounts(all_paths, links);
+    const std::vector<Mount> mounts = planMounts(all_paths, traversal);
     for (auto & alias : getLibraryAliases(mapped_files))
-        links.push_back(std::move(alias));
+        traversal.links.push_back(std::move(alias));
 
     std::error_code error;
     const std::string working_directory = fs::current_path(error).string();
@@ -1067,7 +1082,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     }
 
     /// A link inside a bind mount exists there already.
-    for (const auto & link : links)
+    for (const auto & link : traversal.links)
     {
         struct stat st{};
         if (0 == ::lstat(link.path.c_str(), &st))
@@ -1075,6 +1090,14 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
         createDirectories(fs::path(link.path).parent_path());
         if (0 != ::symlink(link.target.c_str(), link.path.c_str()))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create the symbolic link {} in the isolated filesystem", link.path);
+    }
+
+    /// A directory inside a bind mount exists there already.
+    for (const auto & directory : traversal.directories)
+    {
+        struct stat st{};
+        if (0 != ::lstat(directory.c_str(), &st))
+            createDirectories(directory);
     }
 
     /// Relative paths in the configuration keep their meaning: the working directory exists in the new root, empty

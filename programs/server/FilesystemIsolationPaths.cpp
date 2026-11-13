@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdlib>
 #include <filesystem>
+#include <iterator>
 #include <set>
 
 namespace fs = std::filesystem;
@@ -91,7 +92,10 @@ public:
     std::vector<FilesystemIsolationPath> collect() &&
     {
         for (const auto * path : system_paths)
+        {
             add(path, Access::ReadOnly, "system");
+            addLinkTargetDirectories(path, Access::ReadOnly, "system");
+        }
 
         /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`). Only the
         /// socket is visible, not its directory. A socket on a read-only mount can still be sent to. A name starting
@@ -123,15 +127,18 @@ private:
     const fs::path data_path;
     std::vector<FilesystemIsolationPath> paths;
 
+    /// Without `.` and empty components, so that equal paths compare equal, but with `..`: after a symbolic link it
+    /// means the parent of the target of the link, as for `getCanonicalPath`, rather than the directory of the link.
+    /// `resolvePath` follows the links and `..` as the kernel does when the paths are mounted.
     static fs::path absolute(const std::string & path, const fs::path & base)
     {
-        fs::path result(path);
-        if (result.is_relative())
-            result = base / result;
-        result = result.lexically_normal();
-        /// No trailing slash, so that equal directories compare equal.
-        if (result.has_parent_path() && !result.has_filename())
-            result = result.parent_path();
+        fs::path joined(path);
+        if (joined.is_relative())
+            joined = base / joined;
+        fs::path result = joined.root_path();
+        for (const auto & component : joined.relative_path())
+            if (!component.empty() && component != ".")
+                result /= component;
         return result;
     }
 
@@ -164,7 +171,7 @@ private:
             /// its own `/dev` with only a few devices, and the one of the host must stay invisible. A file that does
             /// not exist is not created there, and it cannot be created inside either. The links a device can be
             /// itself, such as `/dev/stdout`, are resolved when it is mounted.
-            if (isSameOrInside(current, "/dev"))
+            if (isSameOrInside(current.lexically_normal(), "/dev"))
             {
                 if (fs::exists(current, error))
                     add(current, access, source);
@@ -180,6 +187,39 @@ private:
             if (target.is_relative())
                 target = fs::canonical(current.parent_path()) / target;
             current = target.lexically_normal();
+        }
+    }
+
+    /// For a system file that is a symbolic link, the directories of the targets of the links in the chain outside
+    /// of `/etc`. A program managing such a file outside of `/etc`, as NetworkManager does with
+    /// `/etc/resolv.conf -> /run/NetworkManager/resolv.conf`, replaces it with a new one, and a mount of only the old
+    /// file would keep the old content forever. A regular file in `/etc` that is replaced stays the old one: `/etc`
+    /// itself is not visible.
+    void addLinkTargetDirectories(const fs::path & path, Access access, const std::string & source)
+    {
+        constexpr size_t max_links = 40;
+        fs::path current = path;
+        for (size_t i = 0; i < max_links && FS::isSymlinkNoThrow(current); ++i)
+        {
+            fs::path target = FS::readSymlink(current);
+            std::error_code error;
+            if (target.is_relative())
+            {
+                const fs::path directory = fs::canonical(current.parent_path(), error);
+                if (error)
+                    return;
+                target = directory / target;
+            }
+            current = target.lexically_normal();
+            /// Nor a top-level directory, such as `/run`, with the sockets of every service in it, or `/dev`.
+            const fs::path directory = current.parent_path();
+            const fs::path real_directory = fs::canonical(directory, error);
+            if (error)
+                return;
+            const fs::path relative = real_directory.relative_path();
+            const auto depth = std::distance(relative.begin(), relative.end());
+            if (depth >= 2 && !isSameOrInside(real_directory, "/etc") && !isSameOrInside(real_directory, "/dev"))
+                add(directory, access, fmt::format("the target of a link in {}", source));
         }
     }
 
