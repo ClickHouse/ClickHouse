@@ -367,7 +367,7 @@ namespace
     {
         if (source.isTwoLevel())
             return DB::getDataVariant<Method>(source).data.impls[bucket].size();
-        return source.indexedCellCount(layout.firstPartition(bucket), layout.firstPartition(bucket + 1));
+        return source.cellIndex().cellCount(layout.firstPartition(bucket), layout.firstPartition(bucket + 1));
     }
 
     /// Visits the cells of `bucket` of a source of a map method like `forEachMappedCellWithHash`.
@@ -378,14 +378,16 @@ namespace
         if (source.isTwoLevel())
             forEachMappedCellWithHash(DB::getDataVariant<Method>(source).data.impls[bucket], callback);
         else
-            source.forEachIndexedCell<Method>(layout.firstPartition(bucket), layout.firstPartition(bucket + 1), callback);
+            source.cellIndex().forEachCell<DB::AdaptiveBucketTable<Method>>(
+                layout.firstPartition(bucket), layout.firstPartition(bucket + 1), callback);
     }
 
-    /// The source cells of the merge units of one bucket (see `DB::Aggregator::mergeAndConvertAdaptiveBucketImpl`), a unit
-    /// being a run of the partitions of the bucket. The partitions of the cell index of a source are those of the layout,
-    /// so an indexed source has the cells of a unit in one run of its index, read in place. A two-level source keeps the
-    /// cells of the bucket in one table, which the constructor routes to the units by the same hash bits that partitioned
-    /// the staged records.
+    /// The source cells of the merge units of one bucket (see
+    /// `DB::Aggregator::mergeAndConvertAdaptiveBucketImpl`), a unit being a run of the partitions of the
+    /// bucket. The partitions of the cell index of a source are those of the layout, so an indexed source has
+    /// the cells of a unit in one run of positions per key class of its index, read in place. A two-level
+    /// source keeps the cells of the bucket in one table, which the constructor routes to the units by the
+    /// same hash bits that partitioned the staged records.
     template <typename Method>
     class AdaptiveUnitSourceCells
     {
@@ -408,7 +410,7 @@ namespace
             {
                 if (!data[i]->isTwoLevel())
                 {
-                    chassert(data[i]->numCellIndexPartitions() == layout.numPartitions());
+                    chassert(data[i]->cellIndex().numPartitions() == layout.numPartitions());
                     continue;
                 }
                 auto & table = DB::getDataVariant<Method>(*data[i]).data.impls[bucket];
@@ -434,7 +436,7 @@ namespace
             {
                 if (data[i]->isTwoLevel())
                     continue;
-                data[i]->forEachIndexedCell<Method>(
+                data[i]->cellIndex().forEachCell<BucketTable>(
                     unit_first_partition,
                     unit_end_partition,
                     [&](const auto & key, [[maybe_unused]] auto && mapped, size_t hash)
@@ -456,13 +458,13 @@ namespace
             size_t cells = routed[unit].size();
             for (size_t i = 1; i < data.size(); ++i)
                 if (!data[i]->isTwoLevel())
-                    cells += data[i]->indexedCellCount(unit_first_partition, unit_first_partition + partitions_per_unit);
+                    cells += data[i]->cellIndex().cellCount(unit_first_partition, unit_first_partition + partitions_per_unit);
             return cells;
         }
 
     private:
         /// The bucket tables of the two-level variant of the method, whose cells the index of a single-level table holds.
-        using BucketTable = std::decay_t<decltype(std::declval<typename Method::Data &>().impls[0])>;
+        using BucketTable = DB::AdaptiveBucketTable<Method>;
 
         struct RoutedCell
         {
