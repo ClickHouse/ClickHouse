@@ -36,6 +36,11 @@
 
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Access/AccessControl.h>
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
 #include <Core/Joins.h>
 #include <base/scope_guard.h>
 #include <ranges>
@@ -440,11 +445,29 @@ void IdentifierResolver::checkAccessToTableMetadata(
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
-    const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    /// The names the rights are checked against.
+    String access_database = storage_id.database_name;
+    String access_table_name = storage_id.table_name;
+#if CLICKHOUSE_CLOUD
+    /// With the log pipeline the tables backing a system log are visible as the log table itself.
+    if (context->getAccessControl().isSystemLogPipelineEnabled())
+    {
+        if (auto access_table = SharedSystemDatabase::getAccessTable(storage_id.database_name, storage_id.table_name); access_table && !access_table->second.empty())
+        {
+            access_database = String(access_table->first);
+            access_table_name = String(access_table->second);
+            /// The implicit grant of `system.user_query_log` is for the storage that filters the rows, not for a
+            /// physical table of the name: only explicit rights make its columns visible, see ContextAccess::checkAccessImpl.
+            if (access_table_name == "user_query_log" && context->getAccessControl().isUserQueryLogEnabled())
+                access_rights = context->getAccess()->getAccessRights();
+        }
+    }
+#endif
     auto is_visible = [&](const String & column_name)
     {
-        return access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column_name)
-            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column_name);
+        return access_rights->isGranted(AccessType::SELECT, access_database, access_table_name, column_name)
+            || access_rights->isGranted(AccessType::SHOW_COLUMNS, access_database, access_table_name, column_name);
     };
     const auto & metadata = *storage_snapshot->metadata;
     const auto & columns = metadata.getColumns();

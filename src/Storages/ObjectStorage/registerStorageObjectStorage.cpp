@@ -25,6 +25,11 @@
 
 #include <algorithm>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 namespace DB
 {
 
@@ -126,14 +131,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
     configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
 
-    /// Server-internal log-pipeline object storage tables live in the `system` database and are named
-    /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
-    /// safe internal marker. These tables must never abort server startup when server-managed credentials are
-    /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
-    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
-    if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
-        && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
+#if CLICKHOUSE_CLOUD
+    /// The tables of the system log pipeline must never abort the startup when server-managed credentials are
+    /// restricted. The catalog builds the current ones with the server credentials.
+    if (SharedSystemDatabase::isPipelineTable(args.table_id))
         configuration->force_anonymous_load_fallback = true;
+#endif
 
     auto storage = std::make_shared<StorageObjectStorage>(
         configuration,

@@ -1725,12 +1725,22 @@ private:
     void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
+#if CLICKHOUSE_CLOUD
+struct CloudLogDescriptor;
+#endif
+
 struct SystemLogSettings
 {
     SystemLogQueueSettings queue_settings;
 
     String engine;
     bool symbolize_traces = false;
+
+#if CLICKHOUSE_CLOUD
+    /// Default keys of the `SharedMergeTree` table of the log pipeline, overridable per log in the config.
+    String pipeline_default_partition_by;
+    String pipeline_default_order_by;
+#endif
 
     /// Settings of the `all_...` union table over the log table, its rotated versions and/or
     /// the same tables across a cluster. See the `create_union_system_log_tables` section
@@ -1783,6 +1793,11 @@ public:
 
     ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
 
+#if CLICKHOUSE_CLOUD
+    /// Describes the log to the SharedMergeTree log pipeline.
+    CloudLogDescriptor makePipelineDescriptor() const;
+#endif
+
     void setManualFlushTargetIndex(ISystemLog::Index target_index) override
     {
         flush_policy->prepareManualFlush(target_index);
@@ -1823,6 +1838,24 @@ private:
     /// or the database engine does not support it, to avoid retrying the creation and polluting
     /// the log on every flush. Reset on rotation of the log table.
     bool union_table_broken = false;
+
+#if CLICKHOUSE_CLOUD
+    String pipeline_default_partition_by;
+    String pipeline_default_order_by;
+    /// Rate limits the recreation of the queue and the view of this log when they went missing.
+    time_t last_consumer_bootstrap_time = 0;
+    /// After a failure `system.<log>` is prepared again at a flush after this time.
+    time_t union_table_retry_time = 0;
+    /// The last table seen under the name `system.<log>`. A table of another UUID is verified again.
+    UUID union_table_checked_uuid = UUIDHelpers::Nil;
+    /// The generation written last. The columns of `system.<log>` follow the generation, so a change
+    /// of it re-arms the check of that table with a definition built from the current columns.
+    String last_generation_hash;
+
+    /// With the log pipeline the table is owned by the bootstrap. A flush reconciles the pipeline of the log
+    /// once per generation and server start, and when the queue or the view consuming its files is missing.
+    void preparePipeline();
+#endif
 
     void savingThreadFunction() override;
 

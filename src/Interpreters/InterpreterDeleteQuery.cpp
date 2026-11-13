@@ -29,6 +29,11 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 
 namespace DB
 {
@@ -99,6 +104,9 @@ BlockIO InterpreterDeleteQuery::execute()
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+#if CLICKHOUSE_CLOUD
+        && !SharedSystemDatabase::isLocalDatabase(table_id.database_name)
+#endif
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
