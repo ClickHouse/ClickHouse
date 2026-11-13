@@ -17,6 +17,7 @@
 #include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Access/DefinerDependencies.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/IDatabase.h>
@@ -1262,6 +1263,24 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// `StorageView::getModificationHash` for the rest of the reasoning. Unlike `system.tables`, this
         /// query-consistency path must use the effective reader context because it describes the rows read.
         auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+
+        /// `readImpl` also requires the effective reader's `SELECT` on the source table of the view, on the
+        /// source columns named like the view columns it reads. The hash describes neither of them, so a
+        /// revoke of that grant (with the target unchanged) would leave the hash unchanged and a cached
+        /// result would be served where an uncached read raises `ACCESS_DENIED`. Fail closed unless the
+        /// effective reader can read every view column from the source table: the columns a cached query
+        /// reads are unknown here, and a partial grant cannot be told apart from a revoked one.
+        const auto & select_table_id = storage_snapshot->metadata->select.select_table_id;
+        if (!select_table_id.empty())
+        {
+            const auto access = effective_context->getAccess();
+            if (!access->isGranted(AccessType::SELECT, select_table_id.database_name, select_table_id.table_name))
+            {
+                for (const auto & column : storage_snapshot->metadata->getColumns())
+                    if (!access->isGranted(AccessType::SELECT, select_table_id.database_name, select_table_id.table_name, column.name))
+                        return {};
+            }
+        }
 
         /// `system.tables.modification_hash` requires only `SELECT` on the materialized view itself, but the
         /// hash covers the whole target table, which for `SQL SECURITY DEFINER` / `NONE` is checked against
