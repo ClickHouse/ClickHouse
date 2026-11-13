@@ -7,6 +7,8 @@
 DROP TABLE IF EXISTS t_dp_marks;
 DROP TABLE IF EXISTS t_dp_keys;
 DROP TABLE IF EXISTS t_dp_final;
+DROP TABLE IF EXISTS t_dp_sample;
+DROP TABLE IF EXISTS t_dp_final_partitions;
 
 CREATE TABLE t_dp_marks (id UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id
@@ -120,6 +122,44 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 10 MINUTE
     AND type = 'QueryFinish' AND is_initial_query = 0 AND initial_query_id = distributed_query;
 
+-- An absolute sample size is turned into a ratio of the rows of the whole table. A worker task, whose
+-- bucket holds fewer rows than the sample size, must still use the coordinator's ratio.
+CREATE TABLE t_dp_sample (k UInt64) ENGINE = MergeTree ORDER BY (intHash64(k), k) SAMPLE BY intHash64(k)
+SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
+INSERT INTO t_dp_sample SELECT number FROM numbers(100000);
+
+SELECT count(), min(_sample_factor), max(_sample_factor) FROM t_dp_sample SAMPLE 10000
+SETTINGS make_distributed_plan = 0;
+SELECT count(), min(_sample_factor), max(_sample_factor) FROM t_dp_sample SAMPLE 10000
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    distributed_plan_fallback_to_local_execution = 0, enable_join_runtime_filters = 0;
+SELECT count(), min(_sample_factor), max(_sample_factor) FROM t_dp_sample SAMPLE 10000 OFFSET 0.2
+SETTINGS make_distributed_plan = 0;
+SELECT count(), min(_sample_factor), max(_sample_factor) FROM t_dp_sample SAMPLE 10000 OFFSET 0.2
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    distributed_plan_fallback_to_local_execution = 0, enable_join_runtime_filters = 0;
+
+-- A FINAL worker task counts against `max_partitions_to_read` only the partitions of the parts it reads:
+-- the primary key excludes partition 1, which the partition key alone cannot prune.
+CREATE TABLE t_dp_final_partitions (p UInt8, k UInt64, v UInt64) ENGINE = ReplacingMergeTree PARTITION BY p ORDER BY k
+SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
+SYSTEM STOP MERGES t_dp_final_partitions;
+INSERT INTO t_dp_final_partitions SELECT 0, number, number FROM numbers(50000);
+INSERT INTO t_dp_final_partitions SELECT 0, number, number + 1 FROM numbers(25000, 25000);
+INSERT INTO t_dp_final_partitions SELECT 1, number + 100000, number FROM numbers(50000);
+
+SELECT count(), sum(v) FROM t_dp_final_partitions FINAL WHERE k < 60000
+SETTINGS make_distributed_plan = 0, max_partitions_to_read = 1;
+SELECT count(), sum(v) FROM t_dp_final_partitions FINAL WHERE k < 60000
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    distributed_plan_fallback_to_local_execution = 0, enable_join_runtime_filters = 0,
+    max_rows_to_group_by = 0, max_partitions_to_read = 1;
+
+DROP TABLE t_dp_final_partitions;
+DROP TABLE t_dp_sample;
 DROP TABLE t_dp_final;
 DROP TABLE t_dp_keys;
 DROP TABLE t_dp_marks;

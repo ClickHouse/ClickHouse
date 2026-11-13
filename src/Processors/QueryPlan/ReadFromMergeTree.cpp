@@ -5507,17 +5507,38 @@ void ReadFromMergeTree::readDistributedReadTaskBuckets(const BuildQueryPipelineS
 
 bool ReadFromMergeTree::pinPartsToReceivedMarks()
 {
-    /// A FINAL read keeps all local parts with their whole ranges: `spreadMarkRangesAmongStreamsFinal`
-    /// resolves each lane's marks against them, so only the presence of a part matters.
-    if (isQueryWithFinal())
+    /// `getSampling` turns an absolute sample size into a ratio of the rows of the parts it is given, so
+    /// it must see the whole snapshot, as on the coordinator. The ranges are pinned after the analysis.
+    if (isQueryWithSampling())
         return false;
 
     /// The coordinator has already analyzed the whole table and this task reads only its share, so the
     /// analysis here starts from the received marks instead of from every part of the snapshot.
-    /// A non-FINAL read has one bucket, which names each part once, with sorted, non-intersecting ranges.
+    /// A non-FINAL read has one bucket, which names each part once. The lanes of a FINAL read can name
+    /// one part several times, and the primary-key-range layers can share a boundary granule, so the
+    /// ranges of a part are merged. `MarkRange::operator<` rejects intersecting ranges, so they are
+    /// sorted by their beginning.
     std::unordered_map<String, MarkRanges> received_ranges;
-    for (const auto & part_desc : distributed_read_task_buckets.front().marks)
-        received_ranges.emplace(part_desc.info.getPartNameV1(), part_desc.ranges);
+    for (const auto & bucket : distributed_read_task_buckets)
+        for (const auto & part_desc : bucket.marks)
+        {
+            auto & ranges = received_ranges[part_desc.info.getPartNameV1()];
+            ranges.insert(ranges.end(), part_desc.ranges.begin(), part_desc.ranges.end());
+        }
+
+    for (auto & [part_name, ranges] : received_ranges)
+    {
+        std::sort(ranges.begin(), ranges.end(), [](const MarkRange & lhs, const MarkRange & rhs) { return lhs.begin < rhs.begin; });
+        MarkRanges merged;
+        for (const auto & range : ranges)
+        {
+            if (!merged.empty() && range.begin <= merged.back().end)
+                merged.back().end = std::max(merged.back().end, range.end);
+            else
+                merged.push_back(range);
+        }
+        ranges = std::move(merged);
+    }
 
     /// Keeps the snapshot order, which the analysis relies on (it matches its result to its input by
     /// `part_index_in_query`), and each part's offsets in the query, which `_part_starting_offset` reads.
@@ -5579,8 +5600,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 {
     /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, whether it
     /// needs a FINAL merge, and (for a merge layer) the borders + index. It is read before the index
-    /// analysis, which then does not repeat the coordinator's. An optimization of the worker's plan may
-    /// have run the analysis already, over the whole snapshot; then it stays as it is.
+    /// analysis, which then does not repeat the coordinator's, except for a read with sampling (see
+    /// `pinPartsToReceivedMarks`). An optimization of the worker's plan may have run the analysis already,
+    /// over the whole snapshot; then it stays as it is.
     bool pinned_parts_to_received_marks = false;
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
@@ -5588,7 +5610,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         if (!analyzed_result_ptr)
         {
             pinned_parts_to_received_marks = pinPartsToReceivedMarks();
-            index_analysis_done_by_coordinator = !workerIndexAnalysisCanPruneReceivedMarks();
+            if (pinned_parts_to_received_marks)
+                index_analysis_done_by_coordinator = !workerIndexAnalysisCanPruneReceivedMarks();
         }
     }
 
@@ -5648,7 +5671,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsPruned, received_parts.size() - scanned_parts.size());
         }
 
-        /// A FINAL worker keeps all local parts and resolves each lane's marks against them in
+        /// A FINAL worker resolves each lane's marks against its parts in
         /// `spreadMarkRangesAmongStreamsFinal`. A non-FINAL read has one bucket: pin its marks here so the
         /// plain read path reads exactly them.
         if (!isQueryWithFinal())
