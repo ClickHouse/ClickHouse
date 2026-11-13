@@ -3099,6 +3099,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// so that conversion would otherwise turn the `NULL` into a default value.
                     const auto source_elements = getArrayElementsForInTupleArguments(
                         tuple_args, in_first_argument, scope, expand_single_tuple_value);
+                    if (left_is_null && use_standard_null_semantics)
+                    {
+                        /// Every value of a `Nullable(Nothing)` operand is `NULL`. Its
+                        /// membership depends only on whether the source set is empty.
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        if (source_elements.empty())
+                            node = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
+                        else
+                            node = std::make_shared<ConstantNode>(
+                                Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+                        return ProjectionNames{proj};
+                    }
                     auto source_null_predicate = makeInSourceNullPredicate(source_elements, in_rhs_has_explicit_null);
                     QueryTreeNodes matchable_elements = source_elements;
                     if (use_standard_null_semantics)
