@@ -288,6 +288,18 @@ void IcebergIterator::ensureDeletesReady()
             LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
             std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
             std::sort(position_deletes_files.begin(), position_deletes_files.end());
+            const auto & path_resolver = persistent_components.path_resolver;
+            std::vector<std::pair<Iceberg::PositionDeleteMatchKey, Iceberg::PositionDeleteMatchKey>> bound_keys;
+            bound_keys.reserve(position_deletes_files.size());
+            for (const auto & position_delete : position_deletes_files)
+            {
+                const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+                const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
+                auto lower_key = lower ? path_resolver.positionDeleteMatchKey(*lower) : Iceberg::PositionDeleteMatchKey{};
+                auto upper_key = upper == lower ? lower_key : (upper ? path_resolver.positionDeleteMatchKey(*upper) : Iceberg::PositionDeleteMatchKey{});
+                bound_keys.emplace_back(std::move(lower_key), std::move(upper_key));
+            }
+            position_delete_bound_keys = std::move(bound_keys);
             deletes_ready = true;
             delete_manifest_parsed.notify_all();
             break;
@@ -482,17 +494,21 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id,
                 Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
+        std::optional<Iceberg::PositionDeleteMatchKey> data_file_key;
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
             const auto & data_file_path = object_info->info.data_object_file_path_key;
             const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
             const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || *lower <= data_file_path)
-                && (!upper.has_value() || *upper >= data_file_path);
+            if (!data_file_key)
+                data_file_key = persistent_components.path_resolver.positionDeleteMatchKey(data_file_path);
+            const auto & [lower_key, upper_key]
+                = position_delete_bound_keys[static_cast<size_t>(&position_delete - position_deletes_files.data())];
+            const auto scope = persistent_components.path_resolver.matchPositionDeleteBounds(
+                lower, lower_key, upper, upper_key, data_file_path, *data_file_key);
             /// Skip position deletes that do not match the data file path.
-            if (!can_contain_data_file_deletes)
+            if (scope == Iceberg::PositionDeleteScope::None)
             {
                 ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles);
                 LOG_TEST(
@@ -520,7 +536,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 if (position_delete->parsed_entry->isDeletionVector())
                     object_info->addDeletionVector(position_delete, resolved_delete_path);
                 else
-                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+                    object_info->addPositionDeleteFile(
+                        position_delete, resolved_delete_path, scope == Iceberg::PositionDeleteScope::ThisFile);
             }
         }
 

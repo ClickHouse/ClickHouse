@@ -1631,22 +1631,26 @@ namespace
 std::optional<UInt64> countDeletedRows(
     const std::vector<ProcessedManifestFileEntryPtr> & data_files,
     const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
+    const IcebergPathResolver & path_resolver,
     LoggerPtr log)
 {
-    /// Keyed by the data file both bounds name, so each data file needs one lookup instead of a pass over the deletes.
-    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
+    /// Keyed by `storageIdentity` of the data file both bounds name: one lookup per data file, not a pass over the deletes.
+    std::unordered_map<String, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
     size_t skipped_delete_files = 0;
     for (const auto & position_delete : position_deletes)
     {
         const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+        std::optional<String> data_file_identity;
         if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
-            deletes_by_data_file[*lower].push_back(position_delete);
+            data_file_identity = path_resolver.storageIdentity(*lower);
+        if (data_file_identity)
+            deletes_by_data_file[*data_file_identity].push_back(position_delete);
         else
             ++skipped_delete_files;
     }
     if (skipped_delete_files)
         LOG_DEBUG(
-            log, "The row estimate does not subtract {} position delete files that cover several data files", skipped_delete_files);
+            log, "The row estimate does not subtract {} position delete files not scoped to one resolvable data file", skipped_delete_files);
 
     UInt64 deleted_rows = 0;
     if (deletes_by_data_file.empty())
@@ -1658,7 +1662,10 @@ std::optional<UInt64> countDeletedRows(
 
     for (const auto & data_file : data_files)
     {
-        const auto it = deletes_by_data_file.find(data_file->parsed_entry->file_path_key);
+        const auto data_file_identity = path_resolver.storageIdentity(data_file->parsed_entry->file_path_key);
+        if (!data_file_identity)
+            continue;
+        const auto it = deletes_by_data_file.find(*data_file_identity);
         if (it == deletes_by_data_file.end())
             continue;
 
@@ -1885,7 +1892,7 @@ IcebergMetadata::estimateRead(
         }
     }
 
-    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, log);
+    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, persistent_components.path_resolver, log);
     if (!deleted_rows)
         return estimate;
     column_statistics.subtractDeletedRows(*deleted_rows);
@@ -2081,7 +2088,10 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context); });
+            {
+                return iceberg_object_info->getPositionDeleteTransformer(
+                    object_storage, persistent_components.path_resolver, header, format_settings, parser_shared_resources, local_context);
+            });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());

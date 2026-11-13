@@ -380,16 +380,28 @@ ExpiredFiles collectExpiredFiles(
     LoggerPtr log,
     Int32 current_schema_id)
 {
+    /// A retained file is matched in every spelling; an unresolvable retained path throws (deletion is irreversible).
+    const auto & path_resolver = persistent_table_components.path_resolver;
+    std::unordered_set<String> retained_identities;
+    for (const auto * paths : {&retained.manifest_list_paths, &retained.manifest_paths, &retained.data_file_paths})
+        for (const auto & path : *paths)
+            retained_identities.insert(path_resolver.storageIdentityOrThrow(path));
+    /// An unresolvable expired path keeps its raw spelling: its deletion then fails and is counted as failed.
+    auto identity_of = [&](const Iceberg::IcebergPathFromMetadata & path)
+    { return path_resolver.storageIdentity(path).value_or(path.serialize()); };
+    auto is_retained = [&](const std::unordered_set<Iceberg::IcebergPathFromMetadata> & retained_paths, const auto & path)
+    { return retained_paths.contains(path) || retained_identities.contains(identity_of(path)); };
+
     ExpiredFiles result;
-    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_list_paths;
-    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_paths;
-    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_file_paths;
+    std::set<String> seen_expired_manifest_list_paths;
+    std::set<String> seen_expired_manifest_paths;
+    std::set<String> seen_expired_file_paths;
     for (const auto & manifest_list_path : expired_manifest_list_paths)
     {
-        if (retained.manifest_list_paths.contains(manifest_list_path))
+        if (is_retained(retained.manifest_list_paths, manifest_list_path))
             continue;
 
-        if (seen_expired_manifest_list_paths.contains(manifest_list_path))
+        if (seen_expired_manifest_list_paths.contains(identity_of(manifest_list_path)))
             continue;
 
         ManifestFileCacheKeys manifest_keys;
@@ -405,10 +417,10 @@ ExpiredFiles collectExpiredFiles(
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            if (retained.manifest_paths.contains(manifest_entry.manifest_file_path))
+            if (is_retained(retained.manifest_paths, manifest_entry.manifest_file_path))
                 continue;
 
-            if (seen_expired_manifest_paths.contains(manifest_entry.manifest_file_path))
+            if (seen_expired_manifest_paths.contains(identity_of(manifest_entry.manifest_file_path)))
                 continue;
 
             try
@@ -420,19 +432,19 @@ ExpiredFiles collectExpiredFiles(
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 {
                     const auto & key = entry->parsed_entry->file_path_key;
-                    if (!retained.data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                    if (!is_retained(retained.data_file_paths, key) && seen_expired_file_paths.insert(identity_of(key)).second)
                         result.push_back({key, FileCategory::DATA_FILE});
                 }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
                 {
                     const auto & key = entry->parsed_entry->file_path_key;
-                    if (!retained.data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                    if (!is_retained(retained.data_file_paths, key) && seen_expired_file_paths.insert(identity_of(key)).second)
                         result.push_back({key, FileCategory::POSITION_DELETE_FILE});
                 }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
                 {
                     const auto & key = entry->parsed_entry->file_path_key;
-                    if (!retained.data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                    if (!is_retained(retained.data_file_paths, key) && seen_expired_file_paths.insert(identity_of(key)).second)
                         result.push_back({key, FileCategory::EQUALITY_DELETE_FILE});
                 }
             }
@@ -442,11 +454,11 @@ ExpiredFiles collectExpiredFiles(
                 continue;
             }
 
-            seen_expired_manifest_paths.insert(manifest_entry.manifest_file_path);
+            seen_expired_manifest_paths.insert(identity_of(manifest_entry.manifest_file_path));
             result.push_back({manifest_entry.manifest_file_path, FileCategory::MANIFEST_FILE});
         }
 
-        seen_expired_manifest_list_paths.insert(manifest_list_path);
+        seen_expired_manifest_list_paths.insert(identity_of(manifest_list_path));
         result.push_back({manifest_list_path, FileCategory::MANIFEST_LIST});
     }
     return result;

@@ -89,6 +89,7 @@ struct DataFilePlan
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
     UInt64 new_bytes_count = 0;
+    Iceberg::PositionDeleteMatchKey match_key; /// positionDeleteMatchKey of the data file path
 };
 
 /// Compaction plan: all data files, the delete files applied to them, and prior metadata.
@@ -112,7 +113,8 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestFileLineage> manifest_file_lineage;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
-    std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
+    /// Keyed by `storageIdentity` of the data file path.
+    std::unordered_map<String, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
 
@@ -240,7 +242,7 @@ static Plan getPlan(
 
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
-    std::unordered_set<Iceberg::IcebergPathFromMetadata> seen_position_delete_files;
+    std::unordered_set<String> seen_position_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
@@ -262,7 +264,9 @@ static Plan getPlan(
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                if (seen_position_delete_files.insert(pos_delete_file->parsed_entry->file_path_key).second)
+                if (seen_position_delete_files
+                        .insert(persistent_table_components.path_resolver.storageIdentityOrThrow(pos_delete_file->parsed_entry->file_path_key))
+                        .second)
                     all_positional_delete_files.push_back(pos_delete_file);
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
@@ -282,7 +286,7 @@ static Plan getPlan(
                 /// file per manifest and the rest of the manifest's data silently disappeared
                 /// from the compacted table. The map still deduplicates the same data file
                 /// referenced from multiple snapshots' manifest lists.
-                const auto & data_file_path = data_file->parsed_entry->file_path_key;
+                const auto data_file_path = persistent_table_components.path_resolver.storageIdentityOrThrow(data_file->parsed_entry->file_path_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(data_file_path))
                 {
@@ -290,7 +294,8 @@ static Plan getPlan(
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .partition_specification = data_file->common_partition_specification,
-                        .patched_path = plan.generator.generateDataFileName()});
+                        .patched_path = plan.generator.generateDataFileName(),
+                        .match_key = persistent_table_components.path_resolver.positionDeleteMatchKey(data_file->parsed_entry->file_path_key)});
                     plan.path_to_data_file[data_file_path] = data_file_ptr;
                     plan.partitions[partition_index].push_back(data_file_ptr);
                 }
@@ -316,6 +321,8 @@ static Plan getPlan(
         /// so a data file outside them has no deleted rows recorded in this delete file.
         const auto & lower = delete_file->parsed_entry->lower_reference_data_file_path;
         const auto & upper = delete_file->parsed_entry->upper_reference_data_file_path;
+        const auto lower_key = lower ? persistent_table_components.path_resolver.positionDeleteMatchKey(*lower) : Iceberg::PositionDeleteMatchKey{};
+        const auto upper_key = upper ? persistent_table_components.path_resolver.positionDeleteMatchKey(*upper) : Iceberg::PositionDeleteMatchKey{};
         const auto & delete_file_specification = *delete_file->common_partition_specification;
 
         for (auto & data_file : plan.partitions[partition_index])
@@ -329,14 +336,15 @@ static Plan getPlan(
                 continue;
 
             const auto & data_file_path = data_file->data_object_info->info.data_object_file_path_key;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || *lower <= data_file_path)
-                && (!upper.has_value() || *upper >= data_file_path);
-            if (!can_contain_data_file_deletes)
+            const auto scope = persistent_table_components.path_resolver.matchPositionDeleteBounds(
+                lower, lower_key, upper, upper_key, data_file_path, data_file->match_key);
+            if (scope == Iceberg::PositionDeleteScope::None)
                 continue;
 
             data_file->data_object_info->addPositionDeleteFile(
-                delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
+                delete_file,
+                persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key),
+                scope == Iceberg::PositionDeleteScope::ThisFile);
         }
     }
     plan.history = std::move(snapshots_info);
@@ -382,6 +390,7 @@ static void writeDataFiles(
                 sample_block,
                 data_file->data_object_info,
                 object_storage,
+                path_resolver,
                 format_settings,
                 // todo make compaction using same FormatParserSharedResources
                 std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),

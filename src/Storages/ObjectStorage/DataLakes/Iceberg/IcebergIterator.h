@@ -76,6 +76,8 @@ private:
     /// Filled under `deletes_mutex` and never mutated after `deletes_ready`, so `next` may read them
     /// unguarded once it has gone through `ensureDeletesReady`.
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
+    /// `positionDeleteMatchKey` of the lower and upper `file_path` bounds of `position_deletes_files[i]`, set once they are sorted.
+    std::vector<std::pair<Iceberg::PositionDeleteMatchKey, Iceberg::PositionDeleteMatchKey>> position_delete_bound_keys;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
     std::mutex deletes_mutex;
     std::condition_variable delete_manifest_parsed;

@@ -39,6 +39,20 @@ extern const int LOGICAL_ERROR;
 namespace DB::Iceberg
 {
 
+namespace
+{
+
+/// The text after the last `/` of `path`, if it names a file. Every spelling of a file ends with its name.
+std::optional<std::string_view> fileNameOf(std::string_view path)
+{
+    auto name = path.substr(path.rfind('/') + 1);
+    if (name.empty() || name == "." || name == "..")
+        return std::nullopt;
+    return name;
+}
+
+}
+
 Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 {
     Poco::JSON::Array::Ptr pos_delete_schema = new Poco::JSON::Array;
@@ -61,12 +75,27 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
+    data_file_identity = path_resolver.storageIdentity(iceberg_object_info->info.data_object_file_path_key);
+
     /// Create filter on the data object to get interested rows
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
-    ASTPtr where_ast = makeASTFunction(
-        "equals",
-        make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
-        make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
+    if (auto name = fileNameOf(iceberg_data_path))
+        data_file_name = String(*name);
+    /// A row group is skipped only if all its `file_path` values continue the data file path's `canonicalPrefix` with a
+    /// byte above `/` and its range excludes the raw path; another scheme, authority or number of leading slashes does not.
+    ASTPtr where_ast;
+    if (auto prefix = IcebergPathResolver::canonicalPrefix(iceberg_data_path))
+    {
+        String pruned_begin = String(*prefix) + '0';
+        String pruned_end(*prefix);
+        pruned_end.back() = '0';
+        auto file_path_column = [] { return make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name); };
+        where_ast = makeASTFunction(
+            "or",
+            makeASTFunction("equals", file_path_column(), make_intrusive<ASTLiteral>(Field(iceberg_data_path))),
+            makeASTFunction("less", file_path_column(), make_intrusive<ASTLiteral>(Field(pruned_begin))),
+            makeASTFunction("greaterOrEquals", file_path_column(), make_intrusive<ASTLiteral>(Field(pruned_end))));
+    }
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
@@ -116,15 +145,15 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log, read_settings));
 
-        auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
-        ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
-        std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
-        std::shared_ptr<const ActionsDAG> actions_dag_ptr = [&actions]()
+        /// A delete file attached as `PositionDeleteScope::ThisFile` holds rows of this data file only.
+        std::shared_ptr<const ActionsDAG> actions_dag_ptr;
+        if (where_ast && !position_deletes_object.reference_data_file_path.has_value())
         {
-            if (actions.has_value())
-                return std::make_shared<const ActionsDAG>(std::move(actions.value()));
-            return std::shared_ptr<const ActionsDAG>();
-        }();
+            auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
+            ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
+            if (std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true))
+                actions_dag_ptr = std::make_shared<const ActionsDAG>(std::move(*actions));
+        }
 
         auto delete_format_filter_info = std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr);
         delete_format_filter_info->need_row_numbers = true;
@@ -173,7 +202,8 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
     {
         const auto file_to_delete = filename_column.getDataAt(i);
         if (file_to_delete == iceberg_uri || file_to_delete == "/" + iceberg_uri
-            || file_to_delete == storage_path || file_to_delete == "/" + storage_path)
+            || file_to_delete == storage_path || file_to_delete == "/" + storage_path
+            || namesDataFileInAnotherSpelling(file_to_delete))
         {
             filter[i] = 1;
             ++num_matched;
@@ -194,6 +224,21 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
         column = column->filter(filter, static_cast<ssize_t>(num_matched));
     chunk.setColumns(std::move(columns), num_matched);
     return num_matched;
+}
+
+bool IcebergPositionDeleteTransform::namesDataFileInAnotherSpelling(std::string_view file_to_delete) const
+{
+    if (!data_file_identity)
+        return false;
+    if (auto name = fileNameOf(file_to_delete); data_file_name && name && *name != *data_file_name)
+        return false;
+    if (file_to_delete != last_checked_file)
+    {
+        last_checked_file = file_to_delete;
+        last_checked_file_matches
+            = path_resolver.storageIdentity(IcebergPathFromMetadata::deserialize(last_checked_file)) == data_file_identity;
+    }
+    return last_checked_file_matches;
 }
 
 void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
@@ -250,12 +295,17 @@ void IcebergStreamingPositionDeleteTransform::initialize()
             .position_index = position_index
         });
         iterator_at_latest_chunks.push_back(0);
+        last_positions.push_back(0);
         latest_chunks.emplace_back();
-        fetchNewChunkFromSource(i);
+        if (!fetchNewChunkFromSource(i))
+        {
+            has_unordered_positions = true;
+            return;
+        }
     }
 }
 
-void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t position_delete_file_index)
+bool IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t position_delete_file_index)
 {
     iterator_at_latest_chunks[position_delete_file_index] = 0;
 
@@ -271,7 +321,7 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t pos
         if (!chunk.hasRows())
         {
             latest_chunks[position_delete_file_index] = std::move(chunk);
-            return;
+            return true;
         }
 
         const auto filename_index = position_delete_file_column_indices[position_delete_file_index].filename_index;
@@ -279,10 +329,18 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t pos
             continue;
 
         const auto position_index = position_delete_file_column_indices[position_delete_file_index].position_index;
-        size_t first_position_value_in_delete_file = chunk.getColumns()[position_index]->get64(0);
-        latest_positions.emplace(first_position_value_in_delete_file, position_delete_file_index);
+        const auto & positions = *chunk.getColumns()[position_index];
+        auto & last_position = last_positions[position_delete_file_index];
+        for (size_t row = 0; row < positions.size(); ++row)
+        {
+            const size_t position = positions.get64(row);
+            if (position < last_position)
+                return false;
+            last_position = position;
+        }
+        latest_positions.emplace(positions.get64(0), position_delete_file_index);
         latest_chunks[position_delete_file_index] = std::move(chunk);
-        return;
+        return true;
     }
 }
 
@@ -325,7 +383,13 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
                     if (iterator_at_latest_chunks[position_delete_file_index] + 1 >= latest_chunks[position_delete_file_index].getNumRows()
                         && latest_chunks[position_delete_file_index].getNumRows() > 0)
                     {
-                        fetchNewChunkFromSource(position_delete_file_index);
+                        if (!fetchNewChunkFromSource(position_delete_file_index))
+                            throw Exception(
+                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                "A position delete file lists the positions of data file '{}' out of order: it is not sorted "
+                                "by file path and position, or names the data file in several spellings. Set "
+                                "use_roaring_bitmap_iceberg_positional_deletes = 1 to apply it",
+                                iceberg_object_info->info.data_object_file_path_key);
                     }
                     else
                     {
