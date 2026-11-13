@@ -1453,6 +1453,53 @@ TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
 }
 
+TEST_F(ConnectionPoolTest, NoConnectAfterResolutionUsesUpDeadline)
+{
+    constexpr UInt16 port = 9874;
+    const String test_host = "slow-resolution-test.invalid";
+    const Poco::Net::IPAddress good_ip("127.0.0.1");
+    Poco::Net::ServerSocket good_server(Poco::Net::SocketAddress(good_ip, port));
+
+    /// The refresh due on the first `resolve` takes 600 ms, longer than the 300 ms deadline.
+    auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
+    auto resolve_func = [resolve_calls, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
+    {
+        if (resolve_calls->fetch_add(1) > 0)
+            sleepForMilliseconds(600);
+        return {good_ip};
+    };
+
+    struct ResolveMock : public DB::HostResolver
+    {
+        using ResolveFunction = DB::HostResolver::ResolveFunction;
+        ResolveMock(String h, Poco::Timespan history_, ResolveFunction f)
+            : DB::HostResolver(std::move(f), std::move(h), history_)
+        {}
+    };
+
+    /// History 3 us: a refresh is due 1 us after the first resolution.
+    DB::HostResolversPool::instance().injectResolverForTest(
+        test_host, std::make_shared<ResolveMock>(test_host, Poco::Timespan(3), std::move(resolve_func)));
+
+    auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(port));
+    auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+
+    try
+    {
+        pool->getConnection(timeouts, nullptr, std::chrono::steady_clock::now() + std::chrono::milliseconds(300));
+        FAIL() << "connected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+
+    ASSERT_EQ(2, resolve_calls->load());
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_FALSE(good_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
+}
+
 TEST_F(ConnectionPoolTest, StoreLimit)
 {
     DB::HTTPConnectionPools::Limits zero_limits {0, 0, 0};

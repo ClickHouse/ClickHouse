@@ -131,6 +131,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
     extern const int HTTP_CONNECTION_LIMIT_REACHED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -1218,13 +1219,28 @@ private:
         UInt64 total_connect_time = 0;
         SCOPE_EXIT({ if (connect_time) *connect_time = total_connect_time; });
 
+        /// No connect and no address refresh starts after the deadline; the error of the last connect, if any, is the reason.
+        auto expired = [&] { return deadline && std::chrono::steady_clock::now() >= *deadline; };
+        auto throw_expired = [&]
+        {
+            if (last_net_error)
+                std::rethrow_exception(last_net_error);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "The deadline passed before connecting to {}", host);
+        };
+
         for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
         {
-            /// Before `resolve`, which can refresh the addresses synchronously.
-            if (deadline && connect_attempts > 0 && std::chrono::steady_clock::now() >= *deadline)
-                break;
+            /// `resolve` can refresh the addresses synchronously.
+            if (expired())
+                throw_expired();
 
             auto address = resolver->resolve();
+            if (expired())
+            {
+                address.setUnused();
+                throw_expired();
+            }
+
             if (!tried_addresses.insert(*address).second)
             {
                 /// Already attempted this address in an earlier iteration. No real network
