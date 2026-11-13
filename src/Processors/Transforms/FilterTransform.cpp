@@ -350,7 +350,7 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
     if (function_name == "and")
         return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
 
-    /// notIn and notNullIn over an empty set are always true, and the -IgnoreSet variants must not fold
+    /// The negative variants never make the filter always false, and the -IgnoreSet variants must not fold
     if (function_name != "in" && function_name != "globalIn" && function_name != "nullIn" && function_name != "globalNullIn")
         return false;
 
