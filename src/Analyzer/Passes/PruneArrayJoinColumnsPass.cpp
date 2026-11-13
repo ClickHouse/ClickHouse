@@ -50,21 +50,20 @@ struct ExpressionUsage
 
     bool hasNested() const { return !nested_subcolumn_names.empty(); }
 
-    /// 'x' and 'x.size0' use the subcolumn `x`. Several names can match, because a name can contain dots. No match keeps all subcolumns.
-    void markUsedByPath(const String & path)
+    /// `type` resolves the name to a substream path, as `getSubcolumn` does. The first tuple element of the path is the used subcolumn.
+    void markUsedBySubcolumn(const IDataType & type, const String & subcolumn_name)
     {
-        bool matched = false;
-        for (const auto & name : nested_subcolumn_names)
+        if (auto info = type.tryGetSubcolumnInfo(subcolumn_name))
         {
-            if (path == name || path.starts_with(name + '.'))
+            auto element = std::ranges::find(info->substreams_path, ISerialization::Substream::TupleElement, &ISerialization::Substream::type);
+            if (element != info->substreams_path.end() && std::ranges::contains(nested_subcolumn_names, element->name_of_substream))
             {
-                used_subcolumns.insert(name);
-                matched = true;
+                used_subcolumns.insert(element->name_of_substream);
+                return;
             }
         }
 
-        if (!matched)
-            fully_used = true;
+        fully_used = true;
     }
 
     bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
@@ -225,9 +224,13 @@ public:
             if (expr_usage->hasNested())
             {
                 const auto & value = constant_node->getValue();
-                if (value.getType() == Field::Types::String)
+                if (function_node->getFunctionName() == "getSubcolumn")
                 {
-                    expr_usage->markUsedByPath(value.safeGet<String>());
+                    expr_usage->markUsedBySubcolumn(*column_node->getColumnType(), value.safeGet<String>());
+                }
+                else if (value.getType() == Field::Types::String)
+                {
+                    expr_usage->used_subcolumns.insert(value.safeGet<String>());
                 }
                 else if (value.getType() == Field::Types::UInt64)
                 {
