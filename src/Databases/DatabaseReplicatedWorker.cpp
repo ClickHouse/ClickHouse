@@ -21,7 +21,6 @@
 #include <Parsers/ASTRenameQuery.h>
 
 #include <algorithm>
-#include <IO/ReadHelpers.h>
 
 namespace fs = std::filesystem;
 
@@ -552,7 +551,6 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     chassert(!task->entry.query.empty());
     chassert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
-    task->query_execution_started_callback = query_context->getQueryExecutionStartedCallback();
     if (flags.run_as_submitting_user && query_context->getUserID())
         task->submitting_user_context = query_context;
 

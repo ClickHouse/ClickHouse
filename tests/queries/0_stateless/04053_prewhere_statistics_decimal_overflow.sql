@@ -5,8 +5,6 @@
 --
 -- Tags: no-fasttest
 
-SET min_marks_per_part_to_load_statistics = 0;
-
 DROP TABLE IF EXISTS test_prewhere_decimal_overflow;
 
 CREATE TABLE test_prewhere_decimal_overflow
@@ -37,6 +35,7 @@ INSERT INTO test_prewhere_decimal_overflow VALUES
 ALTER TABLE test_prewhere_decimal_overflow ADD STATISTICS ts TYPE basic;
 ALTER TABLE test_prewhere_decimal_overflow MATERIALIZE STATISTICS ts SETTINGS mutations_sync = 1;
 
+SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 
 -- Correct result without statistics.

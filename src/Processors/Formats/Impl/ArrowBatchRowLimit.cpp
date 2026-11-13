@@ -17,10 +17,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <algorithm>
+#include <vector>
 
 namespace DB
 {
@@ -108,8 +108,8 @@ size_t maxRowsForVariant(
     /// Within a contiguous row range the offsets of each alternative are contiguous too (see
     /// `ColumnVariant::updateHashWithValueRange`), so [begin, end) maps to the range
     /// [nested_begin, nested_begin + nested_rows) of every alternative.
-    VectorWithMemoryTracking<size_t> nested_begin(num_variants, 0);
-    VectorWithMemoryTracking<size_t> nested_rows(num_variants, 0);
+    std::vector<size_t> nested_begin(num_variants, 0);
+    std::vector<size_t> nested_rows(num_variants, 0);
     for (size_t row = begin; row != end; ++row)
     {
         const auto local_discr = local_discriminators[row];
@@ -120,7 +120,7 @@ size_t maxRowsForVariant(
         ++nested_rows[local_discr];
     }
 
-    VectorWithMemoryTracking<size_t> nested_rows_that_fit(num_variants);
+    std::vector<size_t> nested_rows_that_fit(num_variants);
     bool all_fit = true;
     for (size_t local_discr = 0; local_discr != num_variants; ++local_discr)
     {
@@ -138,7 +138,7 @@ size_t maxRowsForVariant(
         return num_rows;
 
     /// Some alternative cannot take all of its rows: cut at the row where it runs out.
-    VectorWithMemoryTracking<size_t> nested_rows_taken(num_variants, 0);
+    std::vector<size_t> nested_rows_taken(num_variants, 0);
     for (size_t row = begin; row != end; ++row)
     {
         const auto local_discr = local_discriminators[row];

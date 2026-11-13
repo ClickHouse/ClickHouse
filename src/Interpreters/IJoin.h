@@ -218,9 +218,6 @@ public:
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
-    /// Runtime counterpart of `hasDelayedBlocks`: whether the delayed blocks are processed at all.
-    /// Decided at latest in `onBuildPhaseFinish`, after that the returned value should not change.
-    virtual bool isDelayedBlocksProcessingEnabled() const { return hasDelayedBlocks(); }
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
@@ -250,14 +247,8 @@ public:
     /// this to keep the left sort property, so the default is fail-closed: a join has to opt in.
     virtual bool preservesLeftBlockOrder() const { return false; }
 
-    /// Whether the join can guarantee the left stream order if `keepLeftPipelineInOrder` is
-    /// called. Joins that preserve the order only on request override this. The default also
-    /// excludes delayed blocks: they interleave with the main output and break the order
-    /// unconditionally.
-    virtual bool canPreserveLeftBlockOrder() const { return preservesLeftBlockOrder() && !hasDelayedBlocks(); }
-
-    /// Notify the join that the query plan requires the left stream's row order. Must be called
-    /// only when `canPreserveLeftBlockOrder` is true.
+    /// Notify the join that the query plan requires left-side read-in-order preservation.
+    /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
     virtual void keepLeftPipelineInOrder() {}
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.

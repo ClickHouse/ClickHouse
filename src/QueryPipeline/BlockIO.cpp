@@ -64,7 +64,6 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,per
     finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
     finish_callbacks        = std::move(rhs.finish_callbacks);
     exception_callbacks     = std::move(rhs.exception_callbacks);
-    cancel_callbacks        = std::move(rhs.cancel_callbacks);
 
     null_format             = rhs.null_format;
     dispatched              = rhs.dispatched;
@@ -126,10 +125,6 @@ void BlockIO::onCancelOrConnectionLoss()
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
     releaseWorkloadResources();
-
-    /// After the pipeline has been stopped, so that its threads have flushed their counters.
-    for (const auto & callback : cancel_callbacks)
-        callback();
 }
 
 void BlockIO::setAllDataSent() const

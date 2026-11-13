@@ -218,8 +218,6 @@ public:
 
     bool prefersRecursiveRemoval() const override;
 
-    bool supportsAtomicFileCreation() const override;
-
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
 

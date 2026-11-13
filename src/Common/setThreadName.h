@@ -5,7 +5,7 @@
 namespace DB
 {
 
-#define THREAD_NAME_VALUES(M) \
+#define THREAD_NAME_VALUES(M)\
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
@@ -42,6 +42,7 @@ namespace DB
     M(CLUSTER_DISCOVERY, "ClusterDiscover") \
     M(COMPLETED_PIPELINE_EXECUTOR, "QueryCompPipeEx") \
     M(CONFIG_RELOADER, "ConfigReloader") \
+    M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
@@ -71,9 +72,9 @@ namespace DB
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
-    M(HASH_JOIN_DTOR, "HashJoinDtor") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
+    M(ICEBERG_DELETE_DECODE, "IcebergDelDec") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
@@ -103,7 +104,6 @@ namespace DB
     M(MERGETREE_INDEX, "MergeTreeIndex") \
     M(MERGETREE_LOAD_ACTIVE_PARTS, "ActiveParts") \
     M(MERGETREE_LOAD_OUTDATED_PARTS, "OutdatedParts") \
-    M(MERGETREE_LOAD_STATISTICS, "LoadStatistics") \
     M(MERGETREE_LOAD_UNEXPECTED_PARTS, "UnexpectedParts") \
     M(MERGETREE_MOVE, "Move") \
     M(MERGETREE_PARTS_CLEANUP, "PartsCleaning") \
@@ -176,8 +176,6 @@ namespace DB
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \
-    M(VORTEX_DECODER, "VortexDecoder") \
-    M(VORTEX_READER, "VortexReader") \
     M(WORKLOAD_ENTRY_WATCH, "WrkldEntWatch") \
     M(WORKLOAD_RESOURCE_MANAGER, "WorkloadResMgr") \
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
@@ -188,7 +186,7 @@ namespace DB
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
     M(DISK_OBJECT_STORAGE_WRITE_BLOB, "DiskObjStWrBlob") \
     M(DISTRIBUTED_CACHE, "DistribCache") \
-    M(DISTRIBUTED_CACHE_DROP, "DropDistCache")
+    M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
 
 
 enum class ThreadName : uint8_t
@@ -214,9 +212,6 @@ enum class ThreadName : uint8_t
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
-/// The calling thread's cached name, by reference: valid while the thread lives, and current after a
-/// later setThreadName. The macOS query profiler reads it for a stopped thread (StackTrace::SuspendedThread).
-const ThreadName & getThreadNameRef();
 
 std::string_view toString(ThreadName name);
 

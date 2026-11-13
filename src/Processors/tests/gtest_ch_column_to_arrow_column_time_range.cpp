@@ -45,7 +45,7 @@ void convertToArrow(const DataTypePtr & type, const Field & value)
     Columns columns;
     columns.emplace_back(std::move(column));
 
-    Chunks chunks;
+    std::vector<Chunk> chunks;
     chunks.emplace_back(std::move(columns), 1);
 
     CHColumnToArrowColumn converter(header_columns, "Arrow", CHColumnToArrowColumn::Settings{});

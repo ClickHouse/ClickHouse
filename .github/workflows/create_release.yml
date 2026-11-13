@@ -108,8 +108,7 @@ jobs:
 
   create_release:
     runs-on: [self-hosted, amd-release-maker]
-    needs:
-    - config_workflow
+    needs: [config_workflow]
     name: "Create Release"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

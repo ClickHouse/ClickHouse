@@ -1,12 +1,11 @@
 # update-contrib: libraries built by cargo
 
 Read this when the library is built by cargo. Two layouts exist:
-- `contrib/<lib>-cmake/Cargo.toml` exists (`wasmtime`, `pcodec`): a member of the workspace in
-  `contrib/rust-contrib-workspace/`. `Cargo.toml` (dependency path, crate name, enabled features), `CMakeLists.txt`
-  (generated headers, copied headers, CMake target names), plus the shared `contrib/rust-contrib-workspace/Cargo.lock`
+- `rust/workspace/<lib>/` exists (`wasmtime`): `Cargo.toml` (dependency path, crate name, enabled features),
+  `CMakeLists.txt` (generated headers, copied headers, CMake target names), plus the shared `rust/workspace/Cargo.lock`
   and `contrib/rust_vendor/` (a submodule pointing at `github.com/ClickHouse/rust_vendor`).
 - `contrib/<lib>-cmake/CMakeLists.txt` drives cargo itself (`chdig`, `delta-kernel-rs`): the crate lives in the
-  submodule, the `*-cmake/` file runs the build and exports the alias; there is no `contrib/<lib>-cmake/Cargo.toml`.
+  submodule, the `*-cmake/` file runs the build and exports the alias; there is no `rust/workspace/<lib>/`.
 
 Both export `ch_rust::<name>` aliases, not `ch_contrib::*`; the name may differ from the contrib directory
 (`ch_rust::delta_kernel_rs` for `contrib/delta-kernel-rs`). Take the names from the integration file (SKILL.md step 1).
@@ -14,37 +13,37 @@ Both export `ch_rust::<name>` aliases, not `ch_contrib::*`; the name may differ 
 Decide the layout first — the steps below differ:
 
 ```bash
-[ -f "contrib/${LIB}-cmake/Cargo.toml" ] && echo "layout: workspace" || echo "layout: cmake-driven cargo"
+[ -f "rust/workspace/${LIB}/Cargo.toml" ] && echo "layout: workspace" || echo "layout: cmake-driven cargo"
 ```
 
-## Layout A: a member of `contrib/rust-contrib-workspace/` (`wasmtime`, `pcodec`)
+## Layout A: `rust/workspace/<lib>/` (`wasmtime`)
 
 Gather information:
 
 ```bash
-ls contrib/${LIB}-cmake/Cargo.toml contrib/${LIB}-cmake/CMakeLists.txt
-grep -R "contrib/${LIB}\|${LIB}" contrib/${LIB}-cmake/ contrib/rust-contrib-workspace/ --include='Cargo.toml' --include='CMakeLists.txt'
+ls rust/workspace/${LIB}/Cargo.toml rust/workspace/${LIB}/CMakeLists.txt
+grep -R "contrib/${LIB}\|${LIB}" rust/workspace/ --include='Cargo.toml' --include='CMakeLists.txt'
 ```
 
 Inspect `Cargo.toml` (path, crate name, features), `CMakeLists.txt` (generated/copied headers, target names) and
-the shared `contrib/rust-contrib-workspace/Cargo.lock` (what will need regenerating). Diff the surface ClickHouse uses rather than
+the shared `rust/workspace/Cargo.lock` (what will need regenerating). Diff the surface ClickHouse uses rather than
 only the whole upstream tree: `crates/c-api/`, public headers copied into the build tree, Cargo feature lists and
-crate names used by `contrib/<lib>-cmake/Cargo.toml`. If the public C/C++ API changes are additive only, the update
+crate names used by `rust/workspace/<lib>/Cargo.toml`. If the public C/C++ API changes are additive only, the update
 may be low-risk even when the full upstream diff is huge.
 
 Update build integration:
 
-1. Check that `contrib/<lib>-cmake/Cargo.toml` still points to the correct path/package and that the enabled
+1. Check that `rust/workspace/<lib>/Cargo.toml` still points to the correct path/package and that the enabled
    features are still valid.
-2. Check that `contrib/<lib>-cmake/CMakeLists.txt` still matches the upstream public headers and feature flags.
+2. Check that `rust/workspace/<lib>/CMakeLists.txt` still matches the upstream public headers and feature flags.
 3. If headers are copied into the build directory at configure time, changes to submodule headers may require
    re-running CMake or manually refreshing the copied headers for incremental verification.
-4. Regenerate `contrib/rust-contrib-workspace/Cargo.lock` if dependency resolution changed.
+4. Regenerate `rust/workspace/Cargo.lock` if dependency resolution changed.
 5. Re-vendor crates (see "Vendoring" below).
 
 ## Layout B: `contrib/<lib>-cmake/CMakeLists.txt` drives cargo (`chdig`, `delta-kernel-rs`)
 
-There is no `contrib/<lib>-cmake/Cargo.toml` and the library is not a member of the workspace: the crate, its `Cargo.toml`
+There is no `rust/workspace/<lib>/` and the library is not a member of the workspace: the crate, its `Cargo.toml`
 and its own `Cargo.lock` live inside the submodule, and the `*-cmake/` file calls `clickhouse_import_crate` with the
 manifest path and the enabled features, sets cargo environment (`corrosion_set_env_vars`: OpenSSL paths, `LDFLAGS`)
 and exports the `ch_rust::*` alias.
@@ -69,8 +68,8 @@ Update build integration:
 
 ## Vendoring (both layouts)
 
-`contrib/rust-contrib-workspace/vendor.sh` re-vendors everything - the workspace, `contrib/delta-kernel-rs`, `contrib/chdig` and the standard
-library sources - into `contrib/rust_vendor/`, a submodule pointing at `github.com/ClickHouse/rust_vendor`, and can
+`rust/vendor.sh` re-vendors everything — the workspace, `contrib/delta-kernel-rs`, `contrib/chdig` and the standard
+library sources — into `contrib/rust_vendor/`, a submodule pointing at `github.com/ClickHouse/rust_vendor`, and can
 produce hundreds of file changes there. Those changes must be committed inside the `rust_vendor` submodule on a
 branch named `bump-${LIB}-${VERSION}`; then bump the submodule pointer in ClickHouse. Push the `rust_vendor` branch
 only after the user explicitly confirms (pipeline mode: a missing `rust_vendor` branch is a `BLOCKED.md` reason).
@@ -94,7 +93,7 @@ Stage all integration artifacts together:
 
 ```bash
 git add "contrib/$LIB" contrib/rust_vendor                        # both layouts
-git add contrib/rust-contrib-workspace/Cargo.lock "contrib/${LIB}-cmake"   # layout A
+git add rust/workspace/Cargo.lock rust/workspace/${LIB}           # layout A
 git add "contrib/${LIB}-cmake/CMakeLists.txt"                     # layout B, when features/env changed
 ```
 

@@ -27,7 +27,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
-#include <IO/WriteBufferFromVector.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -684,14 +683,12 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
     constexpr size_t dictionary_buffer_size = 16 * 1024;
 
-    /// use_page_cache_lookahead: blocks are read by token and by pattern range, not in file order.
     auto dictionary_stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
         dictionary_substream,
         state.reader_settings,
-        dictionary_buffer_size,
-        /*use_page_cache_lookahead=*/ false);
+        dictionary_buffer_size);
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
@@ -836,11 +833,6 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
 
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
-    const bool intersect_dictionary = analyzer->canIntersectDictionary();
-    using AutomatonResult = TextIndexDictionaryDFA::Cursor::Result;
-    String seek_token;
-    String next_token;
-    bool dictionary_exhausted = false;
 
     size_t postings_to_read = 0;
     std::vector<size_t> matched_indices;
@@ -849,25 +841,6 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     {
         for (size_t block_idx = range_begin; block_idx < range_end; ++block_idx)
         {
-            if (intersect_dictionary)
-            {
-                /// The first key bounds the whole block. A rejected prefix can skip
-                /// compressed blocks without reading either tokens or posting metadata.
-                auto first_token = sparse_index.getToken(block_idx);
-                auto probe = std::max(first_token, std::string_view(seek_token));
-                auto result = analyzer->nextPatternToken(probe, next_token);
-                if (result == AutomatonResult::Exhausted)
-                    return;
-                if (result == AutomatonResult::Seek)
-                    seek_token = next_token;
-                else
-                    seek_token = probe;
-                size_t next_block = sparse_index.upperBound(seek_token);
-                block_idx = std::max(block_idx, next_block ? next_block - 1 : 0);
-                if (block_idx >= range_end)
-                    break;
-            }
-
             /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
             UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
             dictionary_stream.seekToMark({offset_in_file, 0});
@@ -880,47 +853,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
 
             matched_indices.clear();
 
-            if (intersect_dictionary)
-            {
-                auto lower_bound = [&](size_t begin, std::string_view key)
-                {
-                    size_t end = num_tokens;
-                    while (begin < end)
-                    {
-                        size_t middle = begin + (end - begin) / 2;
-                        if (std::string_view(block_tokens.getDataAt(middle)) < key)
-                            begin = middle + 1;
-                        else
-                            end = middle;
-                    }
-                    return begin;
-                };
-                size_t token_idx = lower_bound(0, seek_token);
-                while (token_idx < num_tokens)
-                {
-                    auto token = block_tokens.getDataAt(token_idx);
-                    auto result = analyzer->nextPatternToken(token, next_token);
-                    if (result == AutomatonResult::Exhausted)
-                    {
-                        dictionary_exhausted = true;
-                        break;
-                    }
-                    if (result == AutomatonResult::Seek)
-                    {
-                        seek_token = next_token;
-                        token_idx = lower_bound(token_idx + 1, seek_token);
-                    }
-                    else
-                    {
-                        /// Keep the existing matcher authoritative, including its
-                        /// literal filters, and attach a token to every matching query.
-                        if (analyzer->addTokenToPatterns(token))
-                            matched_indices.push_back(token_idx);
-                        ++token_idx;
-                    }
-                }
-            }
-            else if (filter_tokens_by_literals)
+            if (filter_tokens_by_literals)
             {
                 analyzer->matchTokensByLiterals(block_tokens, candidate_marks, matched_indices);
             }
@@ -935,11 +868,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             }
 
             if (matched_indices.empty())
-            {
-                if (dictionary_exhausted)
-                    return;
                 continue;
-            }
 
             /// Deserialize only the token infos for matched tokens.
             auto infos = TextIndexSerialization::deserializeTokenInfos(*data_buffer, num_tokens, matched_indices);
@@ -961,8 +890,6 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
                 return;
             }
-            if (dictionary_exhausted)
-                return;
         }
     }
 }
@@ -1070,14 +997,12 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     });
 
     const auto postings_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexPostings);
-    /// use_page_cache_lookahead: tokens are read rarest-first, not in file order.
     auto stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
         postings_substream,
         state.reader_settings,
-        largest_segment_bytes,
-        /*use_page_cache_lookahead=*/ false);
+        largest_segment_bytes);
 
     for (const auto & [token, token_info] : tokens_to_read)
     {
@@ -1248,7 +1173,10 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
         auto * positions = postings.getPositions();
         chassert(positions);
 
-        TextIndexSerialization::serializePositions(info, positions_stream->plain_hashing, [&](WriteBuffer & out) { positions->finalize(out); });
+        info.header |= HasPositions;
+        info.position_offset = positions_stream->plain_hashing.count();
+        positions->finalize(positions_stream->plain_hashing);
+        info.position_bytes = positions_stream->plain_hashing.count() - info.position_offset;
     }
 
     /// Tiny posting lists are embedded into the dictionary block
@@ -1292,38 +1220,6 @@ void TextIndexSerialization::serializeRawPostings(std::span<const UInt32> row_id
         writeVarUInt(row_id, ostr);
 }
 
-void TextIndexSerialization::serializePositions(TokenPostingsInfo & info, WriteBuffer & positions_out, const std::function<void(WriteBuffer &)> & finalize)
-{
-    using enum PostingsSerialization::Flags;
-    info.header |= HasPositions;
-
-    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
-    {
-        PODArrayWithStackMemory<char, 64> blob;
-        {
-            WriteBufferFromVector<PODArrayWithStackMemory<char, 64>> out(blob);
-            finalize(out);
-            out.finalize();
-        }
-        info.position_bytes = blob.size();
-
-        if (blob.size() <= info.embedded_positions.size())
-        {
-            info.header |= EmbeddedPositions;
-            std::memcpy(info.embedded_positions.data(), blob.data(), blob.size());
-            return;
-        }
-
-        info.position_offset = positions_out.count();
-        positions_out.write(blob.data(), blob.size());
-        return;
-    }
-
-    info.position_offset = positions_out.count();
-    finalize(positions_out);
-    info.position_bytes = positions_out.count() - info.position_offset;
-}
-
 void TextIndexSerialization::checkTokenSize(size_t token_size)
 {
     if (token_size > SerializationString::MAX_STRING_SIZE)
@@ -1349,13 +1245,7 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     writeVarUInt(token_info.cardinality, ostr);
 
     /// Position metadata is right after (header, cardinality), before posting data.
-    if (token_info.header & EmbeddedPositions)
-    {
-        chassert(token_info.position_bytes <= token_info.embedded_positions.size());
-        writeVarUInt(token_info.position_bytes, ostr);
-        ostr.write(token_info.embedded_positions.data(), token_info.position_bytes);
-    }
-    else if (token_info.header & HasPositions)
+    if (token_info.header & HasPositions)
     {
         writeVarUInt(token_info.position_offset, ostr);
         writeVarUInt(token_info.position_bytes, ostr);
@@ -1485,24 +1375,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
 
     /// Position metadata is always right after (header, cardinality),
     /// before any posting data, to keep the layout consistent for all token types.
-    if (info.header & EmbeddedPositions)
-    {
-        if (!(info.header & HasPositions))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: embedded positions without the positions flag");
-
-        readVarUInt(info.position_bytes, istr);
-        if (info.position_bytes > TextIndexBlockedPositionsCodec::MAX_EMBEDDED_BYTES)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupted data in text index: embedded positions of {} bytes exceed the maximum ({})", info.position_bytes, TextIndexBlockedPositionsCodec::MAX_EMBEDDED_BYTES);
-
-        if (with_postings)
-            istr.readStrict(info.embedded_positions.data(), info.position_bytes);
-        else
-        {
-            istr.ignore(info.position_bytes);
-        }
-    }
-    else if (info.header & HasPositions)
+    if (info.header & HasPositions)
     {
         readVarUInt(info.position_offset, istr);
         readVarUInt(info.position_bytes, istr);
@@ -1586,13 +1459,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     readVarUInt(cardinality, istr);
 
     /// Position metadata (offset, bytes) is right after (header, cardinality).
-    if (header & EmbeddedPositions)
-    {
-        UInt64 position_bytes = 0;
-        readVarUInt(position_bytes, istr);
-        istr.ignore(position_bytes);
-    }
-    else if (header & HasPositions)
+    if (header & HasPositions)
     {
         ignoreVarUInt(istr);
         ignoreVarUInt(istr);
@@ -2463,8 +2330,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 {
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
-        preprocessor, postprocessor, params.enable_positions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
-        automaton_budget);
+        preprocessor, postprocessor, params.enable_positions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)

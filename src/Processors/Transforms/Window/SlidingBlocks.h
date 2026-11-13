@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Common/DequeWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
@@ -36,9 +35,10 @@ struct SlidingBlock
     /// Helper data
     const int64_t rows_count = 0;
     const int64_t block_number = 0;
-    const int64_t begin_position = 0;
-    const int64_t end_position = 0;
     const SlidingIndex index;
+
+    /// Output
+    mutable MutableColumns result_columns;
 };
 
 class SlidingBlocks
@@ -46,7 +46,6 @@ class SlidingBlocks
 public:
     SlidingBlock & add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
     const SlidingBlock & blockAt(int64_t block_number) const;
-    const SlidingBlock & front() const;
     void pop();
 
     RowNumber begin() const;
@@ -54,13 +53,11 @@ public:
     RowNumber next(RowNumber row) const;
     RowNumber prev(RowNumber row) const;
     RowNumber move(RowNumber row, int64_t offset) const;
-    int64_t positionOf(RowNumber row) const;
 
 private:
-    DequeWithMemoryTracking<SlidingBlock> blocks;
+    std::deque<SlidingBlock> blocks;
     int64_t first_block_number = 0;
     int64_t next_block_number = 0;
-    int64_t end_position = 0;
 };
 
 }

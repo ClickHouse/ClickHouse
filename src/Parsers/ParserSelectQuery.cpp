@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
+    extern const int OFFSET_FETCH_WITHOUT_ORDER_BY;
 }
 
 
@@ -357,7 +358,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rows(Keyword::ROWS);
     ParserKeyword s_first(Keyword::FIRST);
     ParserKeyword s_next(Keyword::NEXT);
-    ParserKeyword s_shuffle(Keyword::SHUFFLE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -669,11 +669,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         select_query->order_by_all = order_by_all;
     }
-    /// SHUFFLE is used in place of ORDER BY
-    else if (s_shuffle.ignore(pos, expected))
-    {
-        select_query->shuffle = true;
-    }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occurred = false;
@@ -784,10 +779,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SQL standard FETCH. Only WITH TIES requires ORDER BY.
+    /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
     if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
         && s_fetch.ignore(pos, expected))
     {
+        /// FETCH clause must exist with "ORDER BY"
+        if (!order_expression_list)
+            throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
+
         if (s_first.ignore(pos, expected))
         {
             if (s_next.ignore(pos, expected))
@@ -930,7 +929,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -959,7 +958,6 @@ The expression list immediately after `SELECT` is required; all other clauses ar
 - [WINDOW clause](/reference/functions/window-functions/index)
 - [QUALIFY clause](/reference/statements/select/qualify)
 - [ORDER BY clause](/reference/statements/select/order-by)
-- [SHUFFLE clause](/reference/statements/select/shuffle)
 - [LIMIT BY clause](/reference/statements/select/limit-by)
 - [LIMIT clause](/reference/statements/select/limit)
 - [OFFSET clause](/reference/statements/select/offset)
@@ -1192,7 +1190,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -2379,8 +2377,6 @@ You can enable dumping temporary data to the disk to restrict memory usage durin
 The [max_bytes_before_external_group_by](/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
 Alternatively, you can set [max_bytes_ratio_before_external_group_by](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by), which allows to use `GROUP BY` in external memory only once the query reaches certain threshold of used memory.
 
-If the query is over the threshold because of other operators, for example a hash join that holds a large table, each thread writes every block it aggregates to disk as a separate small file, and reading many small files back costs more memory than the writes saved. The [min_bytes_before_external_group_by](/reference/settings/session-settings/min-bytes#min_bytes_before_external_group_by) setting makes a thread keep aggregating until its own state reaches the given size before it is written out.
-
 When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high (or `max_bytes_ratio_before_external_group_by=0.5`). This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn't dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
 For example, if [max_memory_usage](/reference/settings/session-settings/max-memory-usage#max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
@@ -3118,68 +3114,6 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
         .related = {"SELECT", "LIMIT", "GROUP BY", "ALTER TABLE ... MODIFY ORDER BY"},
     };
 
-    documentation["SHUFFLE"] =
-    {
-        .description = R"DOCS_MD(
-The `SHUFFLE` clause returns the rows of the query result in a uniformly random order. It is used in place of the [ORDER BY](/reference/statements/select/order-by) clause and cannot be combined with it.
-
-It returns the same result as `ORDER BY rand()`, but works in O(n) time instead of O(n * log(n)).
-
-`SHUFFLE` can be used without `LIMIT`, to randomize the order of all rows, or with `LIMIT n`, to take a uniformly random sample of `n` rows (also returned in a random order). With `LIMIT n`, every stream keeps only `n` rows, so the memory usage is O(n) regardless of the number of rows in the query result. `OFFSET` and `LIMIT BY` can be used as with `ORDER BY`.
-
-<Note>
-This is an experimental feature. Enable it with the setting [`allow_experimental_shuffle_query`](/reference/settings/session-settings#allow_experimental_shuffle_query).
-</Note>
-
-## Implementation details {#implementation-details}
-
-The random choices are made just in time: no random values are generated or stored for the rows in advance. Without `LIMIT`, every row is sent to a random one of `max_threads` streams, every stream is shuffled in parallel with the Fisher-Yates algorithm (in parts that fit in the CPU cache), and the streams are concatenated. With `LIMIT n`, every stream keeps a uniformly random sample of `n` rows by reservoir sampling, which skips the rows that cannot get into the sample without looking at them, and the samples are merged: the number of rows taken from every stream is drawn as sampling without replacement from the numbers of rows of the streams. In a distributed query, the remote servers shuffle their data and attach sorted random keys to the rows, and the initiator merges the shuffled streams by the keys, which takes O(1) memory.
-
-Without `LIMIT`, `SHUFFLE` keeps all rows in memory. Unlike `ORDER BY`, it does not spill data to disk.
-
-`ORDER BY rand()` and `ORDER BY rand64()` can be executed the same way as `SHUFFLE` (the setting `query_plan_use_shuffle_for_order_by_rand`) when the random value is not used anywhere else in the query and external sorting is disabled. When external sorting is configured, this optimization is disabled even with a finite `LIMIT`, because the sample may still exceed memory and `SHUFFLE` cannot spill to disk. `ORDER BY rand64()` with a finite limit retains sorting to preserve all bits of the random values.
-
-## Examples {#examples}
-
-```sql
-SET allow_experimental_shuffle_query = 1;
-
-SELECT number FROM numbers(5) SHUFFLE;
-```
-
-```text
-┌─number─┐
-│      3 │
-│      0 │
-│      4 │
-│      1 │
-│      2 │
-└────────┘
-```
-
-A random sample of three rows:
-
-```sql
-SELECT number FROM numbers(1000000) SHUFFLE LIMIT 3;
-```
-
-```text
-┌─number─┐
-│ 493721 │
-│  20857 │
-│ 871324 │
-└────────┘
-```
-
-`SHUFFLE` is a keyword after the `FROM` clause. To use `shuffle` as a table alias, write `AS shuffle`.
-)DOCS_MD",
-        .syntax = R"(
-SELECT ... SHUFFLE [LIMIT [n, ]m] ...
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "ORDER BY", "LIMIT", "SAMPLE"},
-    };
-
     documentation["LIMIT"] =
     {
         .description = R"DOCS_MD(
@@ -3800,8 +3734,6 @@ Example:
 > • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
-`FETCH ... ONLY` works without `ORDER BY`, like `LIMIT`, but the returned rows are not guaranteed to be deterministic.
-`FETCH ... WITH TIES` requires `ORDER BY` to identify rows tied with the last selected row.
 
 The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](/reference/statements/select/limit) clause. For example, the following query
 

@@ -1,13 +1,9 @@
 #pragma once
 
 #include "config.h"
-#include <list>
 
 #if USE_ORC
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>
@@ -93,7 +89,7 @@ protected:
     void onCancel() noexcept override { is_stopped = 1; }
 
 private:
-    static VectorWithMemoryTracking<int> calculateSelectedStripes(int num_stripes, const UnorderedSetWithMemoryTracking<int> & skip_stripes);
+    static std::vector<int> calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes);
 
     void prepareFileReader();
     bool prepareStripeReader();
@@ -106,18 +102,18 @@ private:
     std::shared_ptr<ORC::SearchArgument> sargs;
 
     // indices of columns to read from ORC file
-    VectorWithMemoryTracking<UInt64> include_indices;
+    std::vector<UInt64> include_indices;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
 
     const FormatSettings format_settings;
-    const UnorderedSetWithMemoryTracking<int> & skip_stripes;
+    const std::unordered_set<int> & skip_stripes;
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
     FormatFilterInfoPtr format_filter_info;
 
-    VectorWithMemoryTracking<int> selected_stripes;
+    std::vector<int> selected_stripes;
     size_t read_iterator{};
     size_t prefetch_iterator{};
 
@@ -149,7 +145,7 @@ public:
     using ORCColumnPtr = const ORC::ColumnVectorBatch *;
     using ORCTypePtr = const ORC::Type *;
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
-    using NameToColumnPtr = UnorderedMapWithMemoryTracking<std::string, ORCColumnWithType>;
+    using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
 
     ORCColumnToCHColumn(
         const Block & header_,
@@ -157,7 +153,8 @@ public:
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        std::unordered_set<UInt64> count_only_fields_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -188,6 +185,8 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    /// ORC column ids of the struct fields that are read only for the size and the null map of their struct.
+    const std::unordered_set<UInt64> count_only_fields;
 };
 }
 #endif

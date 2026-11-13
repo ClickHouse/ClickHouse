@@ -22,8 +22,6 @@ macro(set_rust_target)
             set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-loongarch64")
             set(Rust_CARGO_TARGET "loongarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
-        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-s390x")
-            set(Rust_CARGO_TARGET "s390x-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         else()
             message(FATAL_ERROR "Unknown rust target for toolchain ${CMAKE_TOOLCHAIN_FILE}")
         endif()
@@ -39,7 +37,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2026-11-02")
+set(Rust_TOOLCHAIN "nightly-2026-03-22")
 
 macro(find_rust)
     set_rust_target()
@@ -153,7 +151,7 @@ if (CXX_PUBLIC_DEFS)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXX_PUBLIC_DEFS}")
 endif()
 
-if(CCACHE_EXECUTABLE MATCHES "/sccache$")
+if(CCACHE_EXECUTABLE MATCHES "/chcache$" OR CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
     set(RUSTCWRAPPER "${CCACHE_EXECUTABLE}")
 else()
@@ -194,14 +192,6 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
-endif()
-
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
-# defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
-# general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
-# libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
-    list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
 # Force `rustix` to use its libc backend under sanitizers.
@@ -255,10 +245,6 @@ message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
-# Every member of the workspace is imported with exactly this path: corrosion names the cargo target directory
-# after the manifest path string, so this is what makes them share one.
-set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contrib-workspace/Cargo.toml" CACHE INTERNAL "Rust config")
-
 # Sanitizer instrumentation combined with opt-level=3 and the default codegen-units=16
 # causes LLVM to use too much memory while compiling large crates like cranelift-codegen
 # and polyglot-sql (with all-dialects). Set opt-level and codegen-units via the Cargo
@@ -270,9 +256,9 @@ set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contr
 # `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
 # Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
 if (SANITIZE)
-    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
+    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
 codegen-units = 4")
-    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
+    message(STATUS "Rust release profile: unoptimized (opt-level = 0), to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
@@ -374,7 +360,8 @@ function(clickhouse_config_crate_flags target_name)
     #
     # For workspace crates the .a may land in a parent directory rather than
     # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
-    # calling this function if the default path is wrong.
+    # calling this function if the default path is wrong (see wasmtime for an
+    # example).
     get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
     if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
         set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
@@ -406,7 +393,7 @@ function(clickhouse_config_crate_flags target_name)
         # caller of this function.
         set(_localize_ref_libs "")
         set(_localize_ref_deps "")
-        foreach (_ref_target libllvmlibc aor clang_rt_builtins)
+        foreach (_ref_target libllvmlibc clang_rt_builtins)
             if (TARGET ${_ref_target})
                 list(APPEND _localize_ref_libs "$<TARGET_FILE:${_ref_target}>")
                 list(APPEND _localize_ref_deps ${_ref_target})

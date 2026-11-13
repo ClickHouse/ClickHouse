@@ -388,7 +388,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             {} /* projection_merge_list_element */,
             table_lock_holder,
             entry.create_time,
-            task_context,
+            storage.getContext(),
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,

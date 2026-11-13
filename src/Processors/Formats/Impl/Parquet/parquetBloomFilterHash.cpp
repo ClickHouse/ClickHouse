@@ -3,7 +3,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 
 #if USE_PARQUET
@@ -154,7 +153,7 @@ std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<co
 }
 
 template <typename ParquetPhysicalType, typename T>
-static bool tryHashIntegerColumnTyped(const IColumn & column, VectorWithMemoryTracking<uint64_t> & hashes)
+static bool tryHashIntegerColumnTyped(const IColumn & column, std::vector<uint64_t> & hashes)
 {
     const auto * typed = checkAndGetColumn<ColumnVector<T>>(&column);
     if (!typed)
@@ -171,7 +170,7 @@ static bool tryHashIntegerColumnTyped(const IColumn & column, VectorWithMemoryTr
 /// and then narrows to the physical type, which keeps exactly the low bits - the same result as
 /// `static_cast`ing the native value to the physical type directly.
 template <typename ParquetPhysicalType>
-static bool tryHashIntegerColumn(const IColumn & column, VectorWithMemoryTracking<uint64_t> & hashes)
+static bool tryHashIntegerColumn(const IColumn & column, std::vector<uint64_t> & hashes)
 {
     return tryHashIntegerColumnTyped<ParquetPhysicalType, Int8>(column, hashes)
         || tryHashIntegerColumnTyped<ParquetPhysicalType, Int16>(column, hashes)
@@ -204,18 +203,13 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
     }
 }
 
-std::optional<VectorWithMemoryTracking<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
+std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     const IColumn * column = data_column;
     if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column))
-    {
-        /// Bloom filters and dictionaries hold only non-null values, so a NULL can't be looked up in them.
-        if (!memoryIsZero(nullable_column->getNullMapData().data(), 0, nullable_column->size()))
-            return std::nullopt;
         column = nullable_column->getNestedColumnPtr().get();
-    }
 
-    VectorWithMemoryTracking<uint64_t> hashes;
+    std::vector<uint64_t> hashes;
     /// Allocate the exact capacity up front rather than growing geometrically via `emplace_back`.
     /// The dictionary-filter pruning path budgets this vector as exactly `size() * sizeof(UInt64)`
     /// against `input_format_parquet_memory_high_watermark` (see `hashDictionaryValues`); a geometric

@@ -3,9 +3,6 @@
 
 #if USE_PARQUET
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Formats/FormatSettings.h>
@@ -26,8 +23,7 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
-    UnorderedMapWithMemoryTracking<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
-    VectorWithMemoryTracking<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
+    std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
 
 private:
     struct MemoryToken
@@ -77,7 +73,7 @@ private:
     struct RowGroupState
     {
         size_t tasks_in_flight = 0;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnChunk>> column_chunks;
+        std::vector<std::vector<ColumnChunk>> column_chunks;
         size_t num_rows = 0;
     };
 
@@ -107,9 +103,9 @@ private:
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
-    void writeRowGroup(Chunks chunks);
+    void writeRowGroup(std::vector<Chunk> chunks);
     void writeRowGroupInOneThread(Chunk chunk);
-    void writeRowGroupInParallel(Chunks chunks);
+    void writeRowGroupInParallel(std::vector<Chunk> chunks);
 
     void threadFunction(ThreadGroupPtr & thread_group);
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
@@ -121,7 +117,7 @@ private:
     const FormatSettings format_settings;
 
     /// Chunks to squash together to form a row group.
-    Chunks staging_chunks;
+    std::vector<Chunk> staging_chunks;
     size_t staging_rows = 0;
     size_t staging_bytes = 0;
 
@@ -130,8 +126,7 @@ private:
     Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
-    UnorderedMapWithMemoryTracking<String, size_t> column_sizes_on_disk;
-    VectorWithMemoryTracking<UInt64> row_group_offsets;
+    std::unordered_map<String, size_t> column_sizes_on_disk;
     size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;
@@ -147,8 +142,8 @@ private:
     size_t threads_running = 0;
     std::atomic<size_t> bytes_in_flight{0};
 
-    DequeWithMemoryTracking<Task> task_queue;
-    DequeWithMemoryTracking<RowGroupState> row_groups;
+    std::deque<Task> task_queue;
+    std::deque<RowGroupState> row_groups;
     FormatFilterInfoPtr format_filter_info;
 };
 

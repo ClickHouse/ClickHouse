@@ -50,22 +50,6 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
-class ConditionSelectivityEstimator;
-
-/// A read estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
-struct DataLakeReadEstimate
-{
-    /// Pruning by the filter dropped at least one live data file or a whole data manifest.
-    bool pruned_data_files = false;
-    /// The snapshot has live delete files.
-    bool has_delete_files = false;
-    /// The rows of the live data files left after pruning, without the deleted rows the metadata can count; std::nullopt if
-    /// the metadata is malformed.
-    std::optional<UInt64> rows;
-    /// The statistics of the requested columns over these files, with their numbers of distinct values, and the estimate of
-    /// conditions on them; nullptr if no requested column has statistics.
-    std::shared_ptr<const ConditionSelectivityEstimator> estimator;
-};
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -135,7 +119,7 @@ public:
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) const { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
@@ -151,24 +135,10 @@ public:
     /// deferred columns pruned from the main read.
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
-    /// pruned by `filter` as the read prunes them, and the statistics of `column_names`. std::nullopt if this data lake
-    /// gives no estimate.
-    virtual std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, const Names & /*column_names*/, ContextPtr) const
-    {
-        return std::nullopt;
-    }
-
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr, ContextPtr) const { return nullptr; }
-    /// The mapper of the current schema regardless of the table's write format, unlike
-    /// `getColumnMapperForCurrentSchema`, which is only given to the readers of that format.
-    /// The filters of a query use the current column names, and a reader with a per-file mapper
-    /// (see `getColumnMapperForObject`) needs it to translate them to the names of the file.
-    virtual ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr, ContextPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
@@ -234,11 +204,6 @@ public:
 
     virtual void drop(ContextPtr) { }
 
-    virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const
-    {
-        throwNotImplemented("cloneWithNewSettings");
-    }
-
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/, StorageObjectStorage & /*storage_object_storage*/) { return false; }
@@ -255,13 +220,6 @@ protected:
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_,
         UInt64 snapshot_version_) const;
-
-    /// `schema_transforms_` is empty or has the `DataLakeObjectMetadata::schema_transform` of each data file, nullptr for none.
-    ObjectIterator createKeysIterator(
-        Strings && data_files_,
-        std::vector<std::shared_ptr<ActionsDAG>> && schema_transforms_,
-        ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {

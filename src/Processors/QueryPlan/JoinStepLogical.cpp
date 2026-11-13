@@ -902,7 +902,7 @@ static void predicateOperandsToCommonType(
     bool cast_to_subtype = false;
     try
     {
-        common_type = JoinCommon::compareBoolKeysAsUInt8(getLeastSupertype(DataTypes{left_type, right_type}), left_type, right_type);
+        common_type = getLeastSupertype(DataTypes{left_type, right_type});
     }
     catch (Exception & ex)
     {
@@ -911,7 +911,7 @@ static void predicateOperandsToCommonType(
             if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
             {
                 /// A converted key must report a NULL at the top level; see `removeNullableInsideTuple`.
-                subtype = JoinCommon::removeNullableInsideTuple(JoinCommon::compareBoolKeysAsUInt8(subtype, left_type, right_type));
+                subtype = JoinCommon::removeNullableInsideTuple(subtype);
 
                 /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
                 /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
@@ -942,8 +942,7 @@ static void predicateOperandsToCommonType(
         if (cast_to_subtype)
             return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
-        /// By name: a cast into Bool equals one into UInt8, but it maps 2 to true.
-        if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->getName() == common_type->getName())
+        if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
         return &dag.addCast(*arg, common_type, {}, nullptr);
     };
@@ -1032,7 +1031,7 @@ static void preferNullableRightKey(
 }
 
 /// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
-/// of the nested type. NULL matches NULL through the `isNull` key, and the value key is not nullable, so the join skips
+/// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
 /// no row for it, and a fixed-width key stays fixed-width instead of being serialized in a tuple.
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
@@ -1046,7 +1045,7 @@ static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinAction
                 = dag.addColumn(value_type->createColumnConstWithDefaultValue(1), value_type, "__null_safe_key_default_" + value_type->getName());
             const auto & not_null = dag.addFunction(FunctionFactory::instance().get("assumeNotNull", nullptr), {nodes[1]}, {});
             return &dag.addFunction(
-                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false, /*use_low_cardinality_optimisation=*/ false),
+                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false),
                 {nodes[0], &default_value, &not_null},
                 {});
         });
@@ -1153,11 +1152,10 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         {
             auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
             auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
-            /// The value key goes first: merge joins skip runs of rows only by the first key, and `isNull` is constant on non-NULL rows.
-            table_join_clause.addKey(lhs_value.getColumnName(), rhs_value.getColumnName(), /*null_safe_comparison=*/ false);
-            used_expressions.insert(used_expressions.end(), {lhs_value, rhs_value});
-            lhs = std::move(lhs_null);
-            rhs = std::move(rhs_null);
+            table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
+            used_expressions.insert(used_expressions.end(), {lhs_null, rhs_null});
+            lhs = std::move(lhs_value);
+            rhs = std::move(rhs_value);
             null_safe_comparison = false;
         }
         else if (null_safe_nullable)
@@ -1833,6 +1831,7 @@ static void constructPhysicalStep(
         join_settings.min_joined_block_size_bytes,
         optimization_settings.max_threads,
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
+        false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
     join_step->setLogicalJoinInfo(std::move(logical_join_info));
     join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
@@ -1993,8 +1992,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,
     LogicalJoinInfo && logical_join_info,
-    bool disjunctions_optimization_applied,
-    const std::unordered_map<String, ColumnStats> & right_relation_column_stats)
+    bool disjunctions_optimization_applied)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
@@ -2350,22 +2348,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
-                if (prepared_join_storage.storage_key_value)
-                {
-                    /// The whole action is merged into the right-side DAG below, so the DAG gets only its inputs.
-                    std::stack<const ActionsDAG::Node *> stack;
-                    stack.push(action);
-                    while (!stack.empty())
-                    {
-                        const auto * node = stack.top();
-                        stack.pop();
-                        if (node->type == ActionsDAG::ActionType::INPUT)
-                            used_expressions.emplace_back(node, expression_actions);
-                        for (const auto * child : node->children)
-                            stack.push(child);
-                    }
-                    continue;
-                }
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
                 /// toNullable(x) -> x (Input)
@@ -2537,20 +2519,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
     SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
-    const bool right_has_strings = std::any_of(right_sample_block->begin(), right_sample_block->end(), [](const auto & column)
-    {
-        return isString(removeNullable(removeLowCardinality(column.type)));
-    });
-    if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
-    {
-        auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
-            : right_relation_column_stats;
-        QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
-        for (const auto & [name, stats] : right_column_stats)
-            table_join->setRightColumnAvgBytes(name, stats.avg_bytes);
-    }
-
     JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,
@@ -2611,21 +2579,13 @@ void JoinStepLogical::buildPhysicalJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got {}", !join_step ? "nullptr" : "empty children");
     }
 
-    /// The planned algorithm goes first, the user's list stays its fallback.
-    auto join_settings = join_step->join_settings;
-    if (const auto planned = join_step->planned_algorithm)
-    {
-        std::erase(join_settings.join_algorithms, *planned);
-        join_settings.join_algorithms.insert(join_settings.join_algorithms.begin(), *planned);
-    }
-
     UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
     UInt64 join_output_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getJoinOutputCacheKey() : 0;
 
     if (!join_step->join_algorithm_params)
     {
         join_step->join_algorithm_params = std::make_unique<JoinAlgorithmParams>(
-            join_settings,
+            join_step->join_settings,
             optimization_settings.max_threads,
             hash_table_key_hash,
             join_output_key_hash,
@@ -2663,7 +2623,7 @@ void JoinStepLogical::buildPhysicalJoin(
         node.children,
         join_step->join_operator,
         std::move(join_step->expression_actions),
-        join_settings,
+        join_step->join_settings,
         *join_step->join_algorithm_params,
         join_step->sorting_settings,
         join_step->actions_after_join,
@@ -2675,8 +2635,7 @@ void JoinStepLogical::buildPhysicalJoin(
         /// physical step the guard is read off. That read is inert today - `JoinStep` is built without
         /// `use_join_disjunctions_push_down`, so the push-down cannot run on it either way - but the
         /// field is what decides it if that ever changes, and a default `false` would decide it wrong.
-        join_step->isDisjunctionsOptimizationApplied(),
-        join_step->right_relation.column_stats
+        join_step->isDisjunctionsOptimizationApplied()
     );
 
     new_node.cost_estimation = node.cost_estimation;
@@ -2992,9 +2951,6 @@ void JoinStepLogical::serialize(Serialization & ctx) const
             optimizer_flags |= 1;
         if (runtime_filter_declined_small_probe)
             optimizer_flags |= 2;
-        /// Only `full_sorting_merge` is ever planned.
-        if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
-            optimizer_flags |= 4;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3069,8 +3025,6 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
         step->optimized = bool(optimizer_flags & 1);
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
-        if (optimizer_flags & 4)
-            step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
     }
     return step;
 }
@@ -3127,7 +3081,6 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
-    result_step->planned_algorithm = planned_algorithm;
 
     return result_step;
 }

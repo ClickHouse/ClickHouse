@@ -344,63 +344,6 @@ void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
     getOffsetsData().resize_assume_reserved(nested.size - 1);
 }
 
-namespace
-{
-
-/// Counts the rows a filter keeps before rows visited in ascending order, along 64-row words of the filter's bitmask.
-class FilterWordsCursor
-{
-public:
-    FilterWordsCursor(const UInt8 * filt_, size_t size_) : filt(filt_), size(size_), bits(loadWord(0)) {}
-
-    /// The number of kept rows before `row`, and whether `row` itself is kept. `row` must not decrease between calls.
-    std::pair<size_t, bool> seek(size_t row)
-    {
-        const size_t row_word = row / 64;
-        if (row_word != word)
-        {
-            kept_before_word += std::popcount(bits);
-            if (row_word > word + 1)
-                kept_before_word += countBytesInFilter(filt, (word + 1) * 64, row_word * 64);
-            word = row_word;
-            bits = loadWord(word);
-        }
-        const UInt64 row_bit = UInt64(1) << (row % 64);
-        return {kept_before_word + std::popcount(bits & (row_bit - 1)), (bits & row_bit) != 0};
-    }
-
-    /// The number of rows the whole filter keeps.
-    size_t countAll() const
-    {
-        size_t res = kept_before_word + std::popcount(bits);
-        const size_t next_word_begin = (word + 1) * 64;
-        if (next_word_begin < size)
-            res += countBytesInFilter(filt, next_word_begin, size);
-        return res;
-    }
-
-private:
-    UInt64 loadWord(size_t w) const
-    {
-        const size_t begin = w * 64;
-        if (begin + 64 <= size)
-            return bytes64MaskToBits64Mask(filt + begin);
-
-        UInt64 res = 0;
-        for (size_t i = begin; i < size; ++i)
-            res |= static_cast<UInt64>(filt[i] != 0) << (i - begin);
-        return res;
-    }
-
-    const UInt8 * filt;
-    size_t size;
-    size_t word = 0;
-    size_t kept_before_word = 0;
-    UInt64 bits;
-};
-
-}
-
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 {
     if (_size != filt.size())
@@ -421,26 +364,36 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
-    /// Walk the offsets array (small: only non-default rows) along the 64-row words of the filter: O(non_defaults + _size/64).
+    /// Walk the offsets array (small: only non-default rows) and for the runs of default
+    /// rows between offsets accumulate `res_offset` via SIMD popcount over `filt`. This
+    /// is O(non_defaults + _size/64) instead of O(_size).
     const auto & src_offsets_data = getOffsetsData();
     const size_t num_offsets = src_offsets_data.size();
+    const UInt8 * filt_data = filt.data();
 
-    FilterWordsCursor cursor(filt.data(), _size);
+    size_t res_offset = 0;
+    size_t prev = 0;
     for (size_t k = 0; k < num_offsets; ++k)
     {
-        const auto [kept_before, kept] = cursor.seek(src_offsets_data[k]);
-        if (kept)
+        const size_t row = src_offsets_data[k];
+        if (row > prev)
+            res_offset += countBytesInFilter(filt_data, prev, row);
+
+        if (filt_data[row])
         {
-            res_offsets_data.push_back(kept_before);
+            res_offsets_data.push_back(res_offset);
             values_filter.push_back(static_cast<UInt8>(1));
+            ++res_offset;
             ++values_result_size_hint;
         }
         else
         {
             values_filter.push_back(static_cast<UInt8>(0));
         }
+        prev = row + 1;
     }
-    const size_t res_offset = cursor.countAll();
+    if (_size > prev)
+        res_offset += countBytesInFilter(filt_data, prev, _size);
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
@@ -465,23 +418,33 @@ void ColumnSparse::filter(const Filter & filt)
     values_filter.reserve_exact(values->size());
     values_filter.push_back(static_cast<UInt8>(1));
 
-    /// See the const overload. In-place write into `res_offsets_data` is safe because `res_offsets_pos <= k` always.
-    FilterWordsCursor cursor(filt.data(), _size);
+    /// See the const overload for the algorithm: walk the offsets and SIMD-popcount the
+    /// runs of default rows between them. In-place write into `res_offsets_data` is safe
+    /// because `res_offsets_pos <= k` always.
+    const UInt8 * filt_data = filt.data();
+    size_t res_offset = 0;
+    size_t prev = 0;
     for (size_t k = 0; k < num_offsets; ++k)
     {
-        const auto [kept_before, kept] = cursor.seek(res_offsets_data[k]);
-        if (kept)
+        const size_t row = res_offsets_data[k];
+        if (row > prev)
+            res_offset += countBytesInFilter(filt_data, prev, row);
+
+        if (filt_data[row])
         {
-            res_offsets_data[res_offsets_pos] = kept_before;
+            res_offsets_data[res_offsets_pos] = res_offset;
             values_filter.push_back(static_cast<UInt8>(1));
             ++res_offsets_pos;
+            ++res_offset;
         }
         else
         {
             values_filter.push_back(static_cast<UInt8>(0));
         }
+        prev = row + 1;
     }
-    const size_t res_offset = cursor.countAll();
+    if (_size > prev)
+        res_offset += countBytesInFilter(filt_data, prev, _size);
 
     values->filter(values_filter);
     res_offsets_data.resize_assume_reserved(res_offsets_pos);
@@ -584,13 +547,10 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
     if (execute_linear)
     {
-        /// Scatter instead of walking the iterator row by row: that loop compares every row with the next
-        /// offset, and clang-23 compiles it into a `cmov` chain where each row waits for the previous one's
-        /// load of `offsets`. The scatter touches each offset once and has no per-row branch at all.
-        PaddedPODArray<UInt64> values_index(_size, 0);
-        const auto & offsets_data = getOffsetsData();
-        for (size_t i = 0; i < offsets_data.size(); ++i)
-            values_index[offsets_data[i]] = i + 1;
+        PaddedPODArray<UInt64> values_index(_size);
+        auto offset_it = begin();
+        for (size_t i = 0; i < _size; ++i, ++offset_it)
+            values_index[i] = offset_it.getValueIndex();
 
         for (size_t i = 0; i < limit;)
         {
@@ -601,28 +561,7 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     }
     else
     {
-        /// Sorted indexes (e.g. a sparse filter's offsets) gallop forward instead of a binary search over all offsets per row.
-        const auto * offsets_begin = getOffsetsData().begin();
-        const auto * offsets_end = getOffsetsData().end();
-        size_t i = 0;
-        for (const auto * pos = offsets_begin; i < limit && (pos == offsets_begin || pos[-1] < indexes[i]);)
-        {
-            chassert(indexes[i] < _size);
-            size_t run_end = get_run_end(i);
-            size_t step = 1;
-            while (step <= static_cast<size_t>(offsets_end - pos) && pos[step - 1] < indexes[i])
-            {
-                pos += step;
-                step *= 2;
-            }
-            pos = std::lower_bound(pos, pos + std::min<size_t>(step - 1, offsets_end - pos), indexes[i]);
-            const bool found = pos != offsets_end && *pos == indexes[i];
-            pos += found;
-            insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
-            i = run_end;
-        }
-
-        while (i < limit)
+        for (size_t i = 0; i < limit;)
         {
             size_t run_end = get_run_end(i);
             insert_run(getValueIndex(indexes[i]), i, run_end - i);

@@ -43,8 +43,6 @@ class IExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
-class LoadJob;
-using LoadJobPtr = std::shared_ptr<LoadJob>;
 class ThreadStatus;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -132,24 +130,6 @@ protected:
     /// Progress of output stream
     Progress progress_out;
 
-    /// Profile events reported by the remote servers executing parts of this query. They are not
-    /// part of the local counters of `thread_group` and are collected for the quotas over profile
-    /// events; allocated on the first report.
-    mutable std::mutex remote_profile_events_mutex;
-    std::unique_ptr<ProfileEvents::Counters> remote_profile_events TSA_GUARDED_BY(remote_profile_events_mutex);
-
-    /// Profile events of the queries nested in this one that are part of the local counters of `thread_group`,
-    /// but have been charged to the quotas over profile events on their own, so they are excluded from what
-    /// this query is charged with: the flushes of asynchronous inserts run by `SYSTEM FLUSH ASYNC INSERT QUEUE`.
-    /// Allocated on the first exclusion.
-    mutable std::mutex excluded_profile_events_mutex;
-    std::unique_ptr<ProfileEvents::Counters> excluded_profile_events TSA_GUARDED_BY(excluded_profile_events_mutex);
-
-    /// Whether a scalar subquery not exempt from quotas has been executed while this query was analyzed. Such a subquery runs
-    /// in the thread group of this query, so what it consumes is charged to the quotas over profile events with this query,
-    /// even if the query itself is exempt (e.g. `SELECT (SELECT sum(x) FROM t)` reads only `system.one` on its own).
-    std::atomic<bool> executed_non_exempt_scalar_subquery = false;
-
     /// Used to externally check for the query time limits
     /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
     ExecutionSpeedLimits limits;
@@ -172,11 +152,8 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
-    /// Guards this query's transition between waiting for load jobs and not waiting: the first blocked
-    /// thread registers the query in the waiting counters, the last one to wake up unregisters it.
-    std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
-    UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
+    std::atomic<UInt64> waiting_threads{0};
 
     /// For initialization of ProcessListForUser during process insertion.
     void setUserProcessList(ProcessListForUser * user_process_list_);
@@ -236,7 +213,6 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
-    const bool is_ddl_or_on_cluster_internal;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -290,25 +266,6 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    /// Adds the increments of a `ProfileEvents` packet received from a remote server executing a part
-    /// of this query. Gauges and events unknown to this server are skipped. `from_insert` is set for the
-    /// packets of the remote side of a distributed `INSERT`, which does not report its read progress, so
-    /// what it reads is taken from its `SelectedRows` / `SelectedBytes`.
-    void addRemoteProfileEvents(const Block & block, bool from_insert = false);
-
-    /// Returns the sum of the profile events reported by the remote servers, if any were reported.
-    std::optional<ProfileEvents::Counters::Snapshot> getRemoteProfileEvents() const;
-
-    /// Adds the profile events of a nested query charged to the quotas on its own (see `excluded_profile_events`).
-    void addExcludedProfileEvents(const ProfileEvents::Counters::Snapshot & snapshot);
-
-    /// Returns the sum of the excluded profile events, if any were added.
-    std::optional<ProfileEvents::Counters::Snapshot> getExcludedProfileEvents() const;
-
-    /// See `executed_non_exempt_scalar_subquery`.
-    void markNonExemptScalarSubqueryExecuted() { executed_non_exempt_scalar_subquery.store(true, std::memory_order_relaxed); }
-    bool hasExecutedNonExemptScalarSubquery() const { return executed_non_exempt_scalar_subquery.load(std::memory_order_relaxed); }
-
     void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
@@ -337,8 +294,6 @@ public:
 
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
-    /// Same as checkTimeLimit but with `mode` instead of the query's `timeout_overflow_mode`
-    bool checkTimeLimit(OverflowMode mode);
     /// Same as checkTimeLimit but it never throws
     [[nodiscard]] bool checkTimeLimitSoft();
 
@@ -528,18 +483,10 @@ protected:
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
-    /// amount of queries waiting for load jobs, excludes internal queries
-    std::atomic<UInt64> waiting_queries_amount{0};
-
     /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
-
-    /// WARNING: for non-internal queries only. The increase throws if `max_waiting_queries_amount`
-    /// is reached, in which case the query does not become a waiter and must not be decreased.
-    void increaseWaitingQueryAmount();
-    void decreaseWaitingQueryAmount();
 
     /// An unset `expected_user_id` cancels whatever holds the key.
     CancellationCode sendCancelToQueryImpl(
@@ -632,9 +579,6 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    void incrementWaiters(const QueryStatusPtr & status);
-    void decrementWaiters(const QueryStatusPtr & status);
-
     struct OwnQuery
     {
         String user;
@@ -660,12 +604,7 @@ public:
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
-    /// With except_ddl_backups_and_restores, BACKUP and RESTORE parts of ON CLUSTER operations run by the DDL worker are not cancelled.
-    void killAllQueries(bool except_ddl_backups_and_restores = false);
+    void killAllQueries();
 };
-
-/// Waiter callbacks of the global `AsyncLoader`, see `AsyncLoader::setWaiterCallbacks`.
-void onLoadJobWaitersIncrement(const LoadJobPtr & job);
-void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 
 }

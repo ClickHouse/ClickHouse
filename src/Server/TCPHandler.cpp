@@ -86,7 +86,6 @@
 #include <Interpreters/ClientInfo.h>
 
 #include <Server/TCPHandler.h>
-#include <Server/ConnectionRegistry.h>
 
 #include <Common/config_version.h>
 
@@ -235,8 +234,7 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
     // shard_1 receives a message with 'ClickHouse client' client_name
     // shard_1 initiates TCP connection with shard_2 with 'ClickHouse server' client_name.
     // shard_1 sends 'ClickHouse client' client_name in Protocol::Client::Query message to shard_2.
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        || session_client_info.interface == ClientInfo::Interface::TCP_INTERSERVER)
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         return;
 
     if (session_client_info.interface != client_info.interface)
@@ -561,8 +559,6 @@ void TCPHandler::runImpl()
         throw;
     }
 
-    registerConnectionIfNeeded();
-
     while (tcp_server.isOpen())
     {
         /// We don't really have session in interserver mode, new one is created for each query. It's better to reset it now.
@@ -709,7 +705,8 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
             }
 
-            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && shouldSendProfileEvents(*query_state))
+            const auto send_profile_events = query_state->query_context->getSettingsRef()[Setting::send_profile_events];
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && send_profile_events)
             {
                 query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
@@ -763,11 +760,13 @@ void TCPHandler::runImpl()
                 });
 
                 /// Send structure of columns to client for function input()
-                query_state->query_context->setInputInitializer([this, &query_state] (ContextPtr context, const ColumnsDescription & columns, const Block & header)
+                query_state->query_context->setInputInitializer([this, &query_state] (ContextPtr context, const StoragePtr & input_storage)
                 {
 
                     if (context != query_state->query_context)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
+
+                    auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
 
                     std::lock_guard lock(*callback_mutex);
 
@@ -779,11 +778,11 @@ void TCPHandler::runImpl()
                     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                         && query_state->query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
                     {
-                        sendTableColumns(*query_state, columns);
+                        sendTableColumns(*query_state, metadata_snapshot->getColumns());
                     }
 
                     /// Send block to the client - input storage structure.
-                    query_state->input_header = header;
+                    query_state->input_header = metadata_snapshot->getSampleBlock();
                     sendData(*query_state, query_state->input_header);
                     sendTimezone(*query_state);
                     out->sync();
@@ -797,32 +796,22 @@ void TCPHandler::runImpl()
                     if (context != query_state->query_context)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
+                    std::lock_guard lock(*callback_mutex);
+
+                    checkIfQueryCanceled(*query_state);
+
                     try
                     {
-                        std::lock_guard lock(*callback_mutex);
+                        if (receivePacketsExpectData(*query_state))
+                            return query_state->block_for_input;
 
-                        checkIfQueryCanceled(*query_state);
-
-                        try
-                        {
-                            if (receivePacketsExpectData(*query_state))
-                                return query_state->block_for_input;
-
-                            query_state->block_in.reset();
-                            query_state->maybe_compressed_in.reset();
-                            query_state->received_all_data_for_input = true;
-                            return {};
-                        }
-                        catch (...)
-                        {
-                            query_state->stop_query = true;
-                            query_state->received_all_data_for_input = true;
-                            throw;
-                        }
+                        query_state->block_in.reset();
+                        query_state->maybe_compressed_in.reset();
+                        return {};
                     }
                     catch (...)
                     {
-                        killQueryIfStoppedByClient(*query_state);
+                        query_state->stop_query = true;
                         throw;
                     }
                 });
@@ -838,33 +827,25 @@ void TCPHandler::runImpl()
                     Stopwatch watch;
                     CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
 
+                    std::lock_guard lock(*callback_mutex);
+
+                    checkIfQueryCanceled(*query_state);
+
                     try
                     {
-                        std::lock_guard lock(*callback_mutex);
+                        sendReadTaskRequest();
 
-                        checkIfQueryCanceled(*query_state);
+                        ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
 
-                        try
-                        {
-                            sendReadTaskRequest();
+                        auto res = receiveClusterFunctionReadTaskResponse(*query_state);
 
-                            ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
+                        ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
-                            auto res = receiveClusterFunctionReadTaskResponse(*query_state);
-
-                            ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-
-                            return res;
-                        }
-                        catch (...)
-                        {
-                            query_state->stop_query = true;
-                            throw;
-                        }
+                        return res;
                     }
                     catch (...)
                     {
-                        killQueryIfStoppedByClient(*query_state);
+                        query_state->stop_query = true;
                         throw;
                     }
                 });
@@ -878,59 +859,51 @@ void TCPHandler::runImpl()
                         /// Stands in for a follower that is still planning while the initiator gives up on it.
                         fiu_do_on(FailPoints::parallel_replicas_delay_announcement, { sleepForMilliseconds(3000); });
 
+                        std::lock_guard lock(*callback_mutex);
+
+                        /// A `Cancel` during the announcement exchange must stop this replica, not turn into
+                        /// "return what you have": there is no partial result to return before the ranges have
+                        /// even been handed out, and `processCancel` would otherwise return without setting
+                        /// `stop_query`, letting the announcement go out to an initiator that has already
+                        /// disconnected (`Broken pipe`). Secondary queries inherit
+                        /// `partial_result_on_first_cancel` from the initiator, so this has to be turned off
+                        /// explicitly, the same way `readTemporaryTables` does it.
+                        auto off_setting_guard = TurnOffBoolSettingTemporary(query_state->allow_partial_result_on_first_cancel);
+
+                        /// The initiator may have given up on this replica while it was planning, and it
+                        /// stops waiting for this announcement when it does. Look for the `Cancel` packet
+                        /// now rather than at the next interactive-delay tick, so the announcement is not
+                        /// written into a socket nobody reads.
+                        receivePacketsExpectCancel(*query_state, /* force= */ true);
+                        checkIfQueryCanceled(*query_state);
+
                         try
                         {
-                            std::lock_guard lock(*callback_mutex);
+                            const auto announcement_mode = announcement.mode;
+                            const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
+                            sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
+                            ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
+                            ProfileEvents::increment(
+                                ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
-                            /// A `Cancel` during the announcement exchange must stop this replica, not turn into
-                            /// "return what you have": there is no partial result to return before the ranges have
-                            /// even been handed out, and `processCancel` would otherwise return without setting
-                            /// `stop_query`, letting the announcement go out to an initiator that has already
-                            /// disconnected (`Broken pipe`). Secondary queries inherit
-                            /// `partial_result_on_first_cancel` from the initiator, so this has to be turned off
-                            /// explicitly, the same way `readTemporaryTables` does it.
-                            auto off_setting_guard = TurnOffBoolSettingTemporary(query_state->allow_partial_result_on_first_cancel);
+                            /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
+                            if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+                                return std::nullopt;
 
-                            /// The initiator may have given up on this replica while it was planning, and it
-                            /// stops waiting for this announcement when it does. Look for the `Cancel` packet
-                            /// now rather than at the next interactive-delay tick, so the announcement is not
-                            /// written into a socket nobody reads.
-                            receivePacketsExpectCancel(*query_state, /* force= */ true);
-                            checkIfQueryCanceled(*query_state);
+                            /// In `Default` mode the initiator sends the response only when it was asked for the
+                            /// analyzed ranges (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`),
+                            /// which an initiator older than this field cannot have been.
+                            /// Don't block on a packet that will never arrive.
+                            if (announcement_mode == CoordinationMode::Default
+                                && (!wants_analyzed_ranges
+                                    || client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST))
+                                return std::nullopt;
 
-                            try
-                            {
-                                const auto announcement_mode = announcement.mode;
-                                const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
-                                sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
-                                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
-                                ProfileEvents::increment(
-                                    ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-
-                                /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
-                                if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
-                                    return std::nullopt;
-
-                                /// In `Default` mode the initiator sends the response only when it was asked for the
-                                /// analyzed ranges (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`),
-                                /// which an initiator older than this field cannot have been.
-                                /// Don't block on a packet that will never arrive.
-                                if (announcement_mode == CoordinationMode::Default
-                                    && (!wants_analyzed_ranges
-                                        || client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST))
-                                    return std::nullopt;
-
-                                return receiveAllRangesAnnouncementResponse(*query_state);
-                            }
-                            catch (...)
-                            {
-                                query_state->stop_query = true;
-                                throw;
-                            }
+                            return receiveAllRangesAnnouncementResponse(*query_state);
                         }
                         catch (...)
                         {
-                            killQueryIfStoppedByClient(*query_state);
+                            query_state->stop_query = true;
                             throw;
                         }
                     });
@@ -941,35 +914,27 @@ void TCPHandler::runImpl()
                         Stopwatch watch;
                         CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
 
+                        std::lock_guard lock(*callback_mutex);
+
+                        checkIfQueryCanceled(*query_state);
+
                         try
                         {
-                            std::lock_guard lock(*callback_mutex);
+                            sendMergeTreeReadTaskRequest(std::move(request));
 
-                            checkIfQueryCanceled(*query_state);
+                            fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
+                                throw NetException(
+                                    ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
+                            });
 
-                            try
-                            {
-                                sendMergeTreeReadTaskRequest(std::move(request));
-
-                                fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
-                                    throw NetException(
-                                        ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
-                                });
-
-                                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
-                                auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
-                                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-                                return res;
-                            }
-                            catch (...)
-                            {
-                                query_state->stop_query = true;
-                                throw;
-                            }
+                            ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
+                            auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
+                            ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                            return res;
                         }
                         catch (...)
                         {
-                            killQueryIfStoppedByClient(*query_state);
+                            query_state->stop_query = true;
                             throw;
                         }
                     });
@@ -989,35 +954,21 @@ void TCPHandler::runImpl()
                 query_state->query_context->setInteractiveCancelCallback(
                     [this, &query_state]()
                     {
-                        try
-                        {
-                            std::lock_guard lock(*callback_mutex);
+                        std::lock_guard lock(*callback_mutex);
 
-                            if (!query_state->need_receive_data_for_input && !query_state->need_receive_data_for_insert)
-                                receivePacketsExpectCancel(*query_state);
+                        if (!query_state->need_receive_data_for_input && !query_state->need_receive_data_for_insert)
+                            receivePacketsExpectCancel(*query_state);
 
-                            if (query_state->stop_read_return_partial_result)
-                                return true;
+                        if (query_state->stop_read_return_partial_result)
+                            return true;
 
-                            sendInteractiveUpdates(*query_state);
-                            return false;
-                        }
-                        catch (...)
-                        {
-                            killQueryIfStoppedByClient(*query_state);
-                            throw;
-                        }
+                        sendInteractiveUpdates(*query_state);
+                        return false;
                     });
             }
 
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
-
-            /// If `collect_connection_metrics` was `false` after authentication, register the connection now.
-            registerConnectionIfNeeded();
-            /// Set the connection to idle in `system.connections` at each exit from this scope. This includes exceptions.
-            connection_handle.setActive(query_state->query_context->getCurrentQueryId());
-            SCOPE_EXIT(connection_handle.setIdle());
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
@@ -1031,20 +982,11 @@ void TCPHandler::runImpl()
                 query_state->need_receive_data_for_insert = true;
                 processInsertQuery(*query_state);
                 query_state->io.onFinish();
-
-                /// `onFinish` increments some profile events yet (e.g. `QueryTimeMicroseconds`), so send what is
-                /// left of them, for the initiator of a distributed query to charge them to its quotas over profile events.
-                std::lock_guard lock(*callback_mutex);
-                sendInsertProfileEvents(*query_state, /* final_report = */ true);
             }
             else if (query_state->io.pipeline.pulling())
             {
                 processOrdinaryQuery(*query_state);
                 query_state->io.onFinish();
-
-                /// See the comment above.
-                std::lock_guard lock(*callback_mutex);
-                sendSelectProfileEvents(*query_state);
             }
             else if (query_state->io.pipeline.completed())
             {
@@ -1056,9 +998,6 @@ void TCPHandler::runImpl()
                         !query_state->need_receive_data_for_input && callback)
                     {
                         executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
-                        /// The callback sends `ProfileEvents` packets periodically, so the client accepts them
-                        /// at any moment, including right before an `Exception`.
-                        query_state->sending_interactive_updates = true;
                     }
 
                     executor.execute();
@@ -1240,21 +1179,6 @@ void TCPHandler::runImpl()
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
                 sendLogs(*query_state);
-
-                /// Flush the tail of the profile events accumulated since the last periodic report,
-                /// so that the initiator of a distributed query charges them to the quotas over
-                /// profile events even when this query fails. Only do it while streaming the result
-                /// of a `SELECT` or executing a completed pipeline (e.g. a secondary `INSERT SELECT` of
-                /// `parallel_distributed_insert_select`), where `ProfileEvents` packets are already sent
-                /// periodically, or for a secondary `INSERT` that has received all its data: its initiator (`RemoteInserter`)
-                /// is then waiting for the end of the query and accepts the final report, the same as
-                /// on the success path (`sendInsertProfileEvents` checks the query kind and the protocol
-                /// version). In other states the clients do not expect them before the `Exception`.
-                if (query_scope && (query_state->streaming_select_result || query_state->sending_interactive_updates))
-                    sendSelectProfileEvents(*query_state);
-                else if (query_scope && query_state->need_receive_data_for_insert && query_state->read_all_data
-                    && query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-                    sendInsertProfileEvents(*query_state, /* final_report = */ true);
             }
             catch (const Exception & e)
             {
@@ -1419,15 +1343,7 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 bool TCPHandler::receivePacketsExpectDataConcurrentWithExecutor(QueryState & state)
 {
     std::lock_guard lock(*callback_mutex);
-    try
-    {
-        return receivePacketsExpectData(state);
-    }
-    catch (...)
-    {
-        state.stop_query = true;
-        throw;
-    }
+    return receivePacketsExpectData(state);
 }
 
 bool TCPHandler::receivePacketsExpectData(QueryState & state)
@@ -1487,10 +1403,6 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 return receiveQueryPlan(state);
 
             case Protocol::Client::Ping:
-                /// The result is being sent concurrently by another thread, so we cannot write to `out` here.
-                if (state.send_result_while_receiving_data_for_input)
-                    throwUnexpectedPacket(packet_type);
-
                 state.at_packet_boundary = true;  /// no body
                 writeVarUInt(Protocol::Server::Pong, *out);
                 out->finishChunk();
@@ -1668,7 +1580,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
         }
         catch (...)
         {
-            killQueryIfStoppedByClient(state);
             executor.cancel();
             throw;
         }
@@ -1719,7 +1630,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 std::lock_guard lock(*callback_mutex);
                 if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
                     sendProgress(state);
-                sendInsertProfileEvents(state, /* final_report = */ true);
+                sendInsertProfileEvents(state);
             }
             return;
         }
@@ -1742,7 +1653,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
-    sendInsertProfileEvents(state, /* final_report = */ true);
+    sendInsertProfileEvents(state);
 }
 
 
@@ -1764,15 +1675,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         }
     }
 
-    state.streaming_select_result = true;
-
-    /// INSERT ... RETURNING with the data sent by the client: the pipeline reads the data with `input` callbacks,
-    /// and the result is sent while the client is still sending the data - the client reads it between sending the blocks.
-    /// The thread reading the data holds `callback_mutex` while waiting for the data. If we sent the result under this mutex,
-    /// we would not read the data while blocked on sending the result, and the client would not read the result
-    /// while blocked on sending the data. So, until all the data is received, only the result is sent, without the mutex.
-    state.send_result_while_receiving_data_for_input = state.need_receive_data_for_input && !state.received_all_data_for_input;
-
     {
         PullingAsyncPipelineExecutor executor(pipeline);
         pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
@@ -1783,16 +1685,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
-                if (state.send_result_while_receiving_data_for_input && !state.received_all_data_for_input)
-                {
-                    if (!block.empty() && !state.io.null_format && !discard_query_data)
-                    {
-                        sendData(state, block);
-                        out->sync();
-                    }
-                    continue;
-                }
-
                 bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
@@ -1827,7 +1719,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         }
         catch (...)
         {
-            killQueryIfStoppedByClient(state);
             executor.cancel();
             throw;
         }
@@ -1907,7 +1798,8 @@ void TCPHandler::processTablesStatusRequest()
             /// `StringWithMemoryTracking` (as in `processQuery`) routes the digest/hash duplicate of
             /// the potentially large request through the throwing memory-tracker path.
             StringWithMemoryTracking data(salt);
-            data += std::to_string(nonce.value());
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += "TablesStatusRequest";
             data += request.getAuthDigest();
@@ -2065,21 +1957,9 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 }
 
 
-bool TCPHandler::shouldSendProfileEvents(const QueryState & state) const
-{
-    /// The initiator of a distributed query charges the profile events reported by the remote servers to
-    /// the quotas over profile events of the initiating user, so a secondary query reports them regardless
-    /// of `send_profile_events`: the setting could be turned off by the `SETTINGS` clause of the query
-    /// (applied after the settings of the query packet), or by a constraint of the user on this server
-    /// (to which the settings of a secondary query are clamped), and bypass the limits.
-    return query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        || state.query_context->getSettingsRef()[Setting::send_profile_events];
-}
-
-
 void TCPHandler::sendProfileEvents(QueryState & state)
 {
-    if (!shouldSendProfileEvents(state))
+    if (!state.query_context->getSettingsRef()[Setting::send_profile_events])
         return;
 
     Stopwatch stopwatch;
@@ -2114,17 +1994,11 @@ void TCPHandler::sendSelectProfileEvents(QueryState & state)
 }
 
 
-void TCPHandler::sendInsertProfileEvents(QueryState & state, bool final_report)
+void TCPHandler::sendInsertProfileEvents(QueryState & state)
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
         return;
-    /// The initiator of a distributed `INSERT` (`RemoteInserter`) does not read the packets of the remote
-    /// server while it sends the data, so the periodic reports could fill the socket buffers on both sides
-    /// and deadlock. But it waits for the end of the query after sending all the data, and charges the
-    /// final report to the quotas over profile events of the initiating user.
-    /// Older initiators do not expect even the final report and fail on it.
-    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY
-        && (!final_report || client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT))
+    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return;
 
     sendProfileEvents(state);
@@ -2383,15 +2257,8 @@ void TCPHandler::receiveHello()
         }
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
-        {
-            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "Interserver mode is not supported for client protocol revision {}, the minimum is {}",
-                client_tcp_protocol_version, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
-            session = makeSession();
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
-            throw exception; /// NOLINT
-        }
-
+            LOG_WARNING(LogFrequencyLimiter(log, 10),
+                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         processClusterNameAndSalt();
 
         /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
@@ -2851,7 +2718,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        if (!nonce.has_value())
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 && !nonce.has_value())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no nonce)");
             session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
@@ -2864,7 +2731,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         /// would allocate through `allocNoThrow` and could push the server
         /// past `max_server_memory_usage` without throwing.
         StringWithMemoryTracking data(salt);
-        data += std::to_string(nonce.value());
+        // For backward compatibility
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
         data += cluster_secret;
         data += state->query;
         data += state->query_id;
@@ -3304,21 +3173,6 @@ void TCPHandler::processCancel(QueryState & state)
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
-void TCPHandler::killQueryIfStoppedByClient(QueryState & state)
-{
-    {
-        std::lock_guard lock(*callback_mutex);
-        /// `out` is canceled when a write to the client fails.
-        if (!state.stop_query && !out->isCanceled())
-            return;
-    }
-
-    /// Cancelling the executor waits for its threads, and some code they run checks only the process list entry (e.g. `sleep`).
-    /// The client's exception is passed, so that it is the one the query fails with.
-    if (auto process_list_element = state.query_context->getProcessListElementSafe())
-        process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::current_exception());
-}
-
 void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
 {
     if (!force && after_check_cancelled.elapsed() / 1000 < interactive_delay)
@@ -3473,8 +3327,7 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
 
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *columns_buf);
-    /// The client needs only names, types and defaults.
-    writeStringBinary(columns.toString(/* include_comments = */ false, /* include_codecs = */ false), *columns_buf);
+    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
 
     if (columns_buf != out.get())
         columns_buf->next();
@@ -3646,33 +3499,6 @@ void TCPHandler::run()
         tryLogCurrentException(log, "TCPHandler");
         throw;
     }
-}
-
-void TCPHandler::registerConnectionIfNeeded()
-{
-    /// Do not register interserver connections (connections with the cluster secret). These connections are internal.
-    if (connection_handle || is_interserver_mode || !session || !ConnectionRegistry::instance().isEnabled())
-        return;
-
-    const auto & client_info = session->getClientInfo();
-    /// Use `getClientAddress`. `session->authenticate` and `system.processes` use the same function.
-    /// This function uses the PROXY protocol header and `auth_use_forwarded_address`.
-    /// Thus, behind a proxy, the table shows the address of the client, not the address of the proxy.
-    const auto client_addr = getClientAddress(client_info);
-    ConnectionInfo info;
-    info.protocol = "TCP";
-    info.server_port = tcp_server.portNumber();
-    info.client_version_major = client_version_major;
-    info.client_version_minor = client_version_minor;
-    info.client_version_patch = client_version_patch;
-    info.connected_time = connected_time;
-    ConnectionPeer peer;
-    peer.user = client_info.current_user;
-    peer.user_id = session->getUserID();
-    peer.client_address = client_addr.host();
-    peer.client_port = client_addr.port();
-    peer.client_name = client_name;
-    connection_handle = ConnectionRegistry::instance().add(std::move(info), std::move(peer));
 }
 
 bool TCPHandler::connectionLimitReached()

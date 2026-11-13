@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParsedTemplateFormatString.h>
@@ -60,7 +59,7 @@ private:
     const ParsedTemplateFormatString row_format;
 
     bool end_of_stream = false;
-    VectorWithMemoryTracking<size_t> always_default_columns;
+    std::vector<size_t> always_default_columns;
     const char default_csv_delimiter;
 
     const std::string row_between_delimiter;

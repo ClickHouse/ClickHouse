@@ -172,10 +172,6 @@ public:
     /// Space available for reservation (available space minus reserved space).
     virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
-    /// Reserves like `reserve`, and also sets `unreserved_space` to the unreserved space of the disk after the attempt.
-    virtual ReservationPtr reserveAndGetUnreservedSpace(
-        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space);
-
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
 
@@ -487,9 +483,6 @@ public:
 
     /// Whether removing a directory with `removeSharedRecursive` is cheaper than removing its files one by one.
     virtual bool prefersRecursiveRemoval() const { return false; }
-
-    /// Whether a new file written by `writeFile` appears at once: a reader sees either no file or the complete one.
-    virtual bool supportsAtomicFileCreation() const { return false; }
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }

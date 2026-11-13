@@ -9,11 +9,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IPartitionStrategy.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
 
-struct FormatSettings;
 class Block;
 class Chunk;
 class NamesAndTypesList;
@@ -83,7 +83,6 @@ bool isDeterministic(const ActionsDAG::Node * node);
 /// of the threshold's exact trajectory through the run — such granules may be recorded in the
 /// query condition cache, provided the cache key is salted with the TopK plan parameters
 /// (`TopKFilterInfo::condition_hash`) so the entries are only reused under the same TopK plan.
-/// A read whose filter drops the rows equal to the threshold records nothing from then on.
 /// All query condition cache write and read sites for TopK reads must use this same gate,
 /// otherwise their keys diverge.
 bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);
@@ -122,11 +121,9 @@ NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,
-    const std::optional<FormatSettings> & format_settings,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
     std::optional<PartitionStrategyFactory::StrategyType> partition_strategy = std::nullopt,
     const std::string & path = "");
-/// The overloads without format settings exist so that this header does not need the definition of FormatSettings.
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, ContextPtr context);
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
     const ActionsDAG::Node * predicate,
@@ -164,18 +161,21 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
     const std::vector<String> * file_names = nullptr);
-ColumnPtr getFilterByPathAndFileIndexes(
+
+template <typename T>
+void filterByPathOrFile(
+    std::vector<T> & sources,
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context);
-
-template <typename T>
-void filterSourcesByIndexes(std::vector<T> & sources, const ColumnPtr & indexes_column)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::vector<String> * file_names = nullptr)
 {
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings, file_names);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -185,18 +185,6 @@ void filterSourcesByIndexes(std::vector<T> & sources, const ColumnPtr & indexes_
     for (auto index : indexes)
         filtered_sources.emplace_back(std::move(sources[index]));
     sources = std::move(filtered_sources);
-}
-
-template <typename T>
-void filterByPathOrFile(
-    std::vector<T> & sources,
-    const std::vector<String> & paths,
-    const ExpressionActionsPtr & actions,
-    const NamesAndTypesList & virtual_columns,
-    const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
-{
-    filterSourcesByIndexes(sources, getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context));
 }
 
 struct VirtualsForFileLikeStorage
@@ -221,10 +209,7 @@ struct VirtualsForFileLikeStorage
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context,
-    const std::optional<FormatSettings> & format_settings);
-void addRequestedFileLikeStorageVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 /// Returns true if the requested virtual columns contain columns that depend on
 /// per-row information (e.g. _row_number). Such columns are incompatible with

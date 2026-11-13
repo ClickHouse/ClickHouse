@@ -1,9 +1,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/sortBlock.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
@@ -15,22 +13,13 @@ namespace DB
 namespace
 {
 
-/// Sort key columns can be constant only at runtime (e.g. after `optimize_constant_columns_after_filter`),
-/// and a column can be constant in one chunk and full in another. Materialize them for the comparison with the threshold:
-/// `ColumnConst::compareColumn` ignores `row_indexes`, which breaks the multi-column comparison, and `ColumnConst::compareAt`
-/// expects the other column to be `ColumnConst` as well, which a threshold saved from a full column is not.
-/// `holder` keeps the materialized columns alive while the raw pointers are used.
-ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPositions & description, Columns & holder)
+ColumnRawPtrs extractRawColumns(const Block & block, const SortDescriptionWithPositions & description)
 {
     size_t size = description.size();
     ColumnRawPtrs result(size);
-    holder.resize(size);
 
     for (size_t i = 0; i < size; ++i)
-    {
-        holder[i] = block.safeGetByPosition(description[i].column_number).column->convertToFullColumnIfConst();
-        result[i] = holder[i].get();
-    }
+        result[i] = block.safeGetByPosition(description[i].column_number).column.get();
 
     return result;
 }
@@ -97,121 +86,13 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 
 }
 
-TopKThresholdCollector::TopKThresholdCollector(
-    TopKThresholdTrackerPtr tracker_, const SortColumnDescription & description_, size_t limit_)
-    : tracker(std::move(tracker_))
-    , description(description_)
-    , limit(limit_)
-{
-    chassert(tracker);
-    chassert(limit > 0);
-}
-
-bool TopKThresholdCollector::isSupportedType(const IDataType & type)
-{
-    const IDataType * value_type = &type;
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(value_type))
-        value_type = nullable_type->getNestedType().get();
-
-    /// `__topKFilter` drops `nan` rows (https://github.com/ClickHouse/ClickHouse/issues/116705).
-    if (isFloat(*value_type))
-        return false;
-
-    return value_type->isValueRepresentedByNumber() || isStringOrFixedString(*value_type);
-}
-
-int TopKThresholdCollector::compare(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const
-{
-    if (description.collator)
-        return description.direction
-            * lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, description.nulls_direction, *description.collator);
-    return description.direction * lhs.compareAt(lhs_row, rhs_row, rhs, description.nulls_direction);
-}
-
-void TopKThresholdCollector::add(const IColumn & sorted, size_t rows)
-{
-    rows = std::min(rows, limit);
-    if (rows == 0)
-        return;
-
-    MutableColumnPtr to_merge;
-    {
-        std::lock_guard lock(mutex);
-
-        /// Only values before the published one can change it; `sorted` is sorted, so they are a prefix of it.
-        if (boundary)
-        {
-            size_t lo = 0;
-            size_t hi = rows;
-            while (lo < hi)
-            {
-                size_t mid = lo + (hi - lo) / 2;
-                if (compare(sorted, mid, *boundary, 0) < 0)
-                    lo = mid + 1;
-                else
-                    hi = mid;
-            }
-            rows = lo;
-            if (rows == 0)
-                return;
-        }
-
-        if (!values)
-            values = sorted.cloneEmpty();
-        values->insertRangeFrom(sorted, 0, rows);
-
-        if (merging || values->size() < limit + (boundary ? 1 : 0))
-            return;
-
-        to_merge = std::move(values);
-        values = to_merge->cloneEmpty();
-        merging = true;
-    }
-
-    auto direction = description.direction == -1 ? IColumn::PermutationSortDirection::Descending
-                                                 : IColumn::PermutationSortDirection::Ascending;
-    while (to_merge)
-    {
-        IColumn::Permutation perm;
-        if (description.collator)
-            to_merge->getPermutationWithCollation(
-                *description.collator, direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
-        else
-            to_merge->getPermutation(direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
-
-        ColumnPtr best = to_merge->permute(perm, limit);
-
-        Field value;
-        best->get(limit - 1, value);
-        tracker->testAndSet(value);
-
-        std::lock_guard lock(mutex);
-        size_t added_meanwhile = values->size();
-        values->insertRangeFrom(*best, 0, limit);
-        boundary = best->cut(limit - 1, 1);
-
-        /// Other threads did not merge what they added meanwhile because `merging` was set.
-        if (added_meanwhile)
-        {
-            to_merge = std::move(values);
-            values = to_merge->cloneEmpty();
-        }
-        else
-        {
-            to_merge = nullptr;
-            merging = false;
-        }
-    }
-}
-
 PartialSortingTransform::PartialSortingTransform(
     SharedHeader header_, const SortDescription & description_, UInt64 limit_,
-    TopKThresholdTrackerPtr threshold_tracker_, TopKThresholdCollectorPtr threshold_collector_)
+    TopKThresholdTrackerPtr threshold_tracker_)
     : ISimpleTransform(header_, header_, false)
     , description(description_)
     , limit(limit_)
     , threshold_tracker(threshold_tracker_)
-    , threshold_collector(threshold_collector_)
 {
     // Sorting by no columns doesn't make sense.
     chassert(!description_.empty());
@@ -233,9 +114,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
     if (read_rows)
         read_rows->add(chunk.getNumRows());
 
-    /// Sorting reorders the rows, so source row numbers no longer describe them.
-    chunk.getChunkInfos().extract<ChunkInfoRowNumbers>();
-
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     /// Materialize sort key columns that are ColumnReplicated to avoid index indirection during comparison and sorting.
@@ -251,8 +129,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
     if (!sort_description_threshold_columns.empty() && !threshold_tracker)
     {
         UInt64 rows_num = block.rows();
-        Columns block_columns_holder;
-        auto block_columns = extractRawColumns(block, description_with_positions, block_columns_holder);
+        auto block_columns = extractRawColumns(block, description_with_positions);
 
         size_t result_size_hint = getFilterMask(
                 block_columns, sort_description_threshold_columns,
@@ -271,12 +148,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    if (threshold_collector && block.rows())
-        threshold_collector->add(
-            *removeSpecialRepresentations(
-                block.safeGetByPosition(description_with_positions[0].column_number).column->convertToFullColumnIfConst()),
-            block.rows());
-
     /// Check if we can use this block for optimization.
     if ((min_limit_for_partial_sort_optimization <= limit || threshold_tracker) && limit <= block.rows())
     {
@@ -287,8 +158,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
           * If min block value is less than current threshold value, update current threshold value.
           */
         size_t min_row_to_compare = limit - 1;
-        Columns raw_block_columns_holder;
-        auto raw_block_columns = extractRawColumns(block, description_with_positions, raw_block_columns_holder);
+        auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
             compareWithThreshold(raw_block_columns, min_row_to_compare, sort_description_threshold_columns, description))

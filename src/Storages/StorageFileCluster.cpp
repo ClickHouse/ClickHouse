@@ -6,7 +6,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -123,7 +122,7 @@ void StorageFileCluster::updateQueryToSendIfNeeded(
     if (add_structure_and_format)
         TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
-            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
+            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
             format_name,
             context
         );

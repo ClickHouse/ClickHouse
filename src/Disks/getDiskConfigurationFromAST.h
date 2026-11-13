@@ -76,23 +76,6 @@ void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & confi
 /// Persisted in the stored definition of a dynamic S3 disk created with `s3_allow_server_credentials_in_user_queries`.
 inline constexpr auto S3_SERVER_CREDENTIALS_MARKER = "_server_credentials_allowed";
 
-/// Persisted in the stored definition of a dynamic Azure disk created with `s3_allow_server_credentials_in_user_queries`.
-inline constexpr auto AZURE_SERVER_CREDENTIALS_MARKER = "_azure_server_credentials_allowed";
-
-/// Whether a dynamic disk configuration has an Azure backend that authenticates with the server's own identity.
-bool azureDiskUsesServerIdentity(const Poco::Util::AbstractConfiguration & config);
-
-/// Whether the root of a dynamic disk configuration carries `AZURE_SERVER_CREDENTIALS_MARKER`.
-bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & config);
-
-/// Refuse a dynamic Azure disk that resolves to the server's own identity, unless loading from existing metadata
-/// with `s3_load_table_anonymously_if_credentials_restricted`. Run on every resolution, because a disk already
-/// created by a session with the opt-in is reused without building its object storage again. A disk loaded from
-/// existing metadata with `AZURE_SERVER_CREDENTIALS_MARKER`, or of a `system` table with
-/// `s3_allow_server_credentials_for_system_table_disks`, is exempt; the decision is written to the marker in `config`.
-void validateResolvedAzureDiskCredentials(
-    Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
-
 /// Whether a resolved dynamic disk may use the server's own credentials on any of its backends (the root or any
 /// `locations.<name>` child). The disk a wrapper names is not checked here.
 bool diskUsesServerCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);

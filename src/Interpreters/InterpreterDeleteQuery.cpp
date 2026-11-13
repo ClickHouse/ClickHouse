@@ -156,7 +156,6 @@ BlockIO InterpreterDeleteQuery::execute()
         auto validation_context = Context::createCopy(getContext());
         validation_context->setAnalyzingBackgroundExpressions(true);
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, validation_context, mutation_settings).validate();
-        getContext()->onQueryExecutionStarted();
         table->mutate(mutation_commands, getContext());
         return {};
     }
@@ -173,13 +172,11 @@ BlockIO InterpreterDeleteQuery::execute()
             if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "DELETE query is not allowed for table {} because it has projections and its table-level "
-                        "MergeTree setting 'lightweight_mutation_projection_mode' is set to 'throw'. "
-                        "Change this table setting with "
-                        "ALTER TABLE {} MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild' (or 'drop'), "
-                        "or drop all the projections manually before running the query. "
-                        "Note that a query-level or session-level setting with this name has no effect",
-                        table_id.getFullTableName(), table_id.getFullTableName());
+                        "DELETE query is not allowed for table {} because as it has projections and setting "
+                        "lightweight_mutation_projection_mode is set to THROW. "
+                        "User should change lightweight_mutation_projection_mode OR "
+                        "drop all the projections manually before running the query",
+                        table_id.getFullTableName());
         }
 
         /// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host

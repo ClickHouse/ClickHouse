@@ -1,5 +1,4 @@
 #include <Functions/FunctionFactory.h>
-#include <Formats/FormatSettings.h>
 #include <Functions/FunctionsVisitParam.h>
 #include <Functions/FunctionsStringSearchToString.h>
 

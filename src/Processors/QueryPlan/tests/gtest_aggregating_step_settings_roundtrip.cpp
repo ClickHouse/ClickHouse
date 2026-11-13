@@ -35,8 +35,8 @@ using namespace DB;
 namespace
 {
 
-/// Drive the real production path: `serializeSettings` -> `write` -> a FRESH
-/// settings object -> `read`, exactly as `QueryPlan::serialize` and
+/// Drive the real production path: `serializeSettings` -> `writeChangedBinary` -> a FRESH
+/// settings object -> `readBinary`, exactly as `QueryPlan::serialize` and
 /// `QueryPlan::deserialize` do per step. Returns the value the executing node would see.
 bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
@@ -44,23 +44,23 @@ bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 ve
     step.serializeSettings(written, version);
 
     WriteBufferFromOwnString out;
-    written.write(out);
+    written.writeChangedBinary(out);
 
     ReadBufferFromString in(out.str());
     QueryPlanSerializationSettings read;
-    read.read(in);
+    read.readBinary(in);
 
     return read[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte];
 }
 
-/// Whether the name appears in the settings stream written by `QueryPlanSerializationSettings::write`.
+/// Whether the name appears in the binary settings stream written by `writeChangedBinary`.
 bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 version)
 {
     QueryPlanSerializationSettings written;
     step.serializeSettings(written, version);
 
     WriteBufferFromOwnString out;
-    written.write(out);
+    written.writeChangedBinary(out);
 
     return out.str().contains("serialize_string_in_memory_with_zero_byte");
 }
@@ -215,11 +215,11 @@ QueryPlanSerializationSettings writeAndReadSettings(const IQueryPlanStep & step,
     step.serializeSettings(written, version);
 
     WriteBufferFromOwnString out;
-    written.write(out);
+    written.writeChangedBinary(out);
 
     ReadBufferFromString in(out.str());
     QueryPlanSerializationSettings read;
-    read.read(in);
+    read.readBinary(in);
     return read;
 }
 
@@ -287,7 +287,7 @@ TEST(AggregatingStepSettingsRoundTrip, UseAggregationMemoryTrackerNotWrittenToOl
     QueryPlanSerializationSettings written;
     step->serializeSettings(written, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER - 1);
     WriteBufferFromOwnString out;
-    written.write(out);
+    written.writeChangedBinary(out);
     EXPECT_FALSE(out.str().contains("use_aggregation_memory_tracker"));
 
     auto current_peer = writeAndReadSettings(*step, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER);
