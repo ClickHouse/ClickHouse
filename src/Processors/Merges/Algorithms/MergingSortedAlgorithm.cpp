@@ -126,6 +126,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , virtual_row_prefetch_window(virtual_row_prefetch_window_)
     , current_inputs(num_inputs)
     , source_row_filter_masks(num_inputs, nullptr)
+    , source_extra_bytes_per_row(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
 {
@@ -155,6 +156,7 @@ void MergingSortedAlgorithm::addInput()
 {
     current_inputs.emplace_back();
     source_row_filter_masks.emplace_back(nullptr);
+    source_extra_bytes_per_row.emplace_back();
     cursors.emplace_back();
     virtual_row_boundary.emplace_back();
 }
@@ -170,6 +172,12 @@ const IColumnFilter * MergingSortedAlgorithm::resolveRowFilterMask(const Chunk &
     }
 
     return getRowFilterMask(chunk);
+}
+
+void MergingSortedAlgorithm::updateExtraBytesPerRow(size_t source_num)
+{
+    if (sorting_queue_strategy == SortingQueueStrategy::Batch && merged_data.maxBlockSizeBytes())
+        source_extra_bytes_per_row[source_num] = merged_data.extraBytesPerRow(cursors[source_num].all_columns);
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
@@ -203,6 +211,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     current_inputs = std::move(inputs);
     virtual_row_boundary.assign(current_inputs.size(), {});
     source_row_filter_masks.assign(current_inputs.size(), nullptr);
+    source_extra_bytes_per_row.assign(current_inputs.size(), std::nullopt);
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
@@ -212,6 +221,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
         source_row_filter_masks[source_num] = resolveRowFilterMask(chunk);
+        updateExtraBytesPerRow(source_num);
     }
 
     if constexpr (do_debug_checks)
@@ -357,6 +367,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
     source_row_filter_masks[source_num] = resolveRowFilterMask(current_inputs[source_num].chunk);
+    updateExtraBytesPerRow(source_num);
 
     if (!is_virtual_row)
     {
@@ -663,7 +674,8 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             current.impl->all_columns,
             current.impl->getRow(),
             insertable_rows,
-            current.impl->rows);
+            current.impl->rows,
+            source_extra_bytes_per_row[current.impl->order]);
 
         if (rows_before_flush < insertable_rows)
         {

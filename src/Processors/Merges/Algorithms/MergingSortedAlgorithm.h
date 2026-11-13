@@ -104,6 +104,9 @@ private:
     /// and dropped when one is passed through whole.
     VectorWithMemoryTracking<const IColumnFilter *> source_row_filter_masks;
 
+    /// Per source, `MergedData::extraBytesPerRow` of its chunk (batch queue only), refreshed whenever a chunk arrives.
+    VectorWithMemoryTracking<std::optional<size_t>> source_extra_bytes_per_row;
+
     SortingQueueStrategy sorting_queue_strategy;
 
     SortCursorImpls cursors;
@@ -119,6 +122,7 @@ private:
     /// Where the rows to keep come from: the filter column of the header, or the chunk's
     /// `RowFilterInfo`. Resolved once per chunk, so the per-row path is one indexed read.
     const IColumnFilter * resolveRowFilterMask(const Chunk & chunk) const;
+    void updateExtraBytesPerRow(size_t source_num);
     /// Issue read-ahead for the next deferred sources up to the window size.
     void topUpPrefetch();
     /// Mark a deferred source as no longer reading ahead (its real data arrived or it

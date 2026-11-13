@@ -381,11 +381,27 @@ bool MergedData::hasEnoughRows() const
     return merged_rows >= average;
 }
 
+std::optional<size_t> MergedData::extraBytesPerRow(const ColumnRawPtrs & raw_columns) const
+{
+    chassert(columns.size() == raw_columns.size());
+
+    size_t extra_bytes_per_row = 0;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        auto extra = extraBytesPerInsertedRow(*columns[i], *raw_columns[i]);
+        if (!extra)
+            return std::nullopt;
+        extra_bytes_per_row += *extra;
+    }
+    return extra_bytes_per_row;
+}
+
 size_t MergedData::rowsToInsertBeforeFlush(
     const ColumnRawPtrs & raw_columns,
     size_t start_index,
     size_t max_rows,
-    size_t block_size) const
+    size_t block_size,
+    std::optional<size_t> extra_bytes_per_row) const
 {
     chassert(max_rows > 0);
 
@@ -410,17 +426,12 @@ size_t MergedData::rowsToInsertBeforeFlush(
     if (!max_block_size_bytes || rows_to_insert == 1)
         return rows_to_insert;
 
-    chassert(columns.size() == raw_columns.size());
-
+    /// A destination column wrapped in `ColumnReplicated` (see `insertRow`) after the bound was computed makes it stale.
+    if (may_have_replicated_columns)
+        extra_bytes_per_row = extraBytesPerRow(raw_columns);
     /// Without a bound on the growth, let `hasEnoughRows` measure the actual size after inserting one row.
-    size_t extra_bytes_per_row = 0;
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        auto extra = extraBytesPerInsertedRow(*columns[i], *raw_columns[i]);
-        if (!extra)
-            return 1;
-        extra_bytes_per_row += *extra;
-    }
+    if (!extra_bytes_per_row)
+        return 1;
 
     size_t merged_bytes = 0;
     for (const auto & column : columns)
@@ -428,7 +439,7 @@ size_t MergedData::rowsToInsertBeforeFlush(
 
     for (size_t length = 1; length <= rows_to_insert; ++length)
     {
-        merged_bytes += extra_bytes_per_row;
+        merged_bytes += *extra_bytes_per_row;
         const size_t row = start_index + length - 1;
         for (const auto * column : raw_columns)
             merged_bytes += column->byteSizeAt(row);

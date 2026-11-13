@@ -86,7 +86,8 @@ size_t batchRows(const Block & header, const IMergingAlgorithm::Inputs & parts, 
     MergedData merged_data(false, UNLIMITED_BLOCK_SIZE, max_block_size_bytes, {});
     merged_data.initialize(header, parts);
     const size_t rows = parts[part].chunk.getNumRows();
-    return merged_data.rowsToInsertBeforeFlush(rawColumns(parts[part]), 0, rows, rows);
+    const auto raw_columns = rawColumns(parts[part]);
+    return merged_data.rowsToInsertBeforeFlush(raw_columns, 0, rows, rows, merged_data.extraBytesPerRow(raw_columns));
 }
 
 /// How many of the `source` rows are inserted as one batch before the byte limit flushes the block.
