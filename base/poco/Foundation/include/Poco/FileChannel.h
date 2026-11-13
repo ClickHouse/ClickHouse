@@ -249,7 +249,7 @@ protected:
 
 private:
     void unsafeRotate();
-    void unsafeTryRotate();
+    void unsafeRotateIfDue();
     std::unique_ptr<LogFile> newLogFile();
     void archiveCorrupted(const std::string & path);
     bool setNoPurge(const std::string & value);
@@ -271,7 +271,7 @@ private:
     std::unique_ptr<ArchiveStrategy> _pArchiveStrategy;
     std::unique_ptr<PurgeStrategy> _pPurgeStrategy;
     bool _rotationPending = false;
-    std::string _rotationFailure;
+    bool _rotationFailureReported = false;
     FastMutex _mutex;
 };
 

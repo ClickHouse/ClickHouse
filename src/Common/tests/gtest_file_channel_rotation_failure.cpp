@@ -16,6 +16,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -137,6 +138,43 @@ Poco::Message makeMessage(const std::string & text)
 
 constexpr std::string_view rotation_failed = "Log file rotation failed";
 
+/// The channel writes records formatted above it, for example JSON; it must not add lines of its own.
+std::string jsonRecord(std::string_view text)
+{
+    return fmt::format("{{\"message\":\"{}\"}}", text);
+}
+
+bool allLinesAreJsonRecords(const std::string & text)
+{
+    std::istringstream in(text);
+    for (std::string line; std::getline(in, line);)
+        if (!line.empty() && (line.front() != '{' || line.back() != '}'))
+            return false;
+    return true;
+}
+
+/// Captures stderr until `take`. Declare it before `DescriptorTableGuard`: capturing needs free descriptors.
+class StderrCapture
+{
+public:
+    StderrCapture() { testing::internal::CaptureStderr(); }
+
+    ~StderrCapture()
+    {
+        if (!taken)
+            testing::internal::GetCapturedStderr();
+    }
+
+    std::string take()
+    {
+        taken = true;
+        return testing::internal::GetCapturedStderr();
+    }
+
+private:
+    bool taken = false;
+};
+
 size_t countOccurrences(std::string_view text, std::string_view needle)
 {
     size_t count = 0;
@@ -210,9 +248,10 @@ protected:
 TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotation)
 {
     auto channel = makeChannel("1K", /* compress */ false);
-    const std::string old_content(2048, 'x');
+    const std::string old_content = jsonRecord(std::string(2048, 'x'));
     DirectoryChanges changes(dir);
 
+    StderrCapture errors;
     DescriptorTableGuard guard;
     const rlim_t limit = leaveOneFreeDescriptor(guard);
     ASSERT_NO_THROW(channel->open());
@@ -222,7 +261,7 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotation)
 
     /// The new file cannot be opened: logging continues in the current file, and no message fails.
     for (const char * text : {"first message without descriptors", "second message without descriptors", "third message without descriptors"})
-        ASSERT_NO_THROW(channel->log(makeMessage(text)));
+        ASSERT_NO_THROW(channel->log(makeMessage(jsonRecord(text))));
     /// A failed attempt renames nothing, so the current file never disappears.
     EXPECT_EQ(0u, changes.take());
     EXPECT_FALSE(std::filesystem::exists(path + ".0"));
@@ -233,11 +272,13 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotation)
     const std::string current = readFile(path);
     EXPECT_NE(std::string::npos, current.find("first message without descriptors"));
     EXPECT_NE(std::string::npos, current.find("third message without descriptors"));
-    /// The failure is reported once, not with every message.
-    EXPECT_EQ(1u, countOccurrences(current, rotation_failed));
+    /// The failure is reported once to stderr, and the file keeps only the records.
+    EXPECT_EQ(1u, countOccurrences(errors.take(), rotation_failed));
+    EXPECT_EQ(0u, countOccurrences(current, rotation_failed));
+    EXPECT_TRUE(allLinesAreJsonRecords(current));
 
     /// Descriptors are free again, so the next message completes the rotation.
-    const std::string marker = "logged after descriptors were released";
+    const std::string marker = jsonRecord("logged after descriptors were released");
     ASSERT_NO_THROW(channel->log(makeMessage(marker)));
     channel->close();
 
@@ -247,7 +288,7 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotation)
     EXPECT_EQ(std::string::npos, archived.find(marker));
     const std::string after = readFile(path);
     EXPECT_NE(std::string::npos, after.find(marker));
-    EXPECT_EQ(0u, countOccurrences(after, rotation_failed));
+    EXPECT_TRUE(allLinesAreJsonRecords(after));
     EXPECT_FALSE(std::filesystem::exists(path + ".new.incomplete"));
 }
 
@@ -260,6 +301,7 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotateOnOpen)
     auto channel = makeChannel("", /* compress */ false, /* rotate_on_open */ true);
 
     /// The existing file takes the only free descriptor, so the new file cannot be opened.
+    StderrCapture errors;
     DescriptorTableGuard guard;
     leaveOneFreeDescriptor(guard);
     /// The rotation fails, but the channel stays usable with the existing file.
@@ -275,7 +317,8 @@ TEST_F(FileChannelRotation, NoFreeDescriptorsDuringRotateOnOpen)
     EXPECT_NE(std::string::npos, readFile(path + ".0").find("previous run"));
     const std::string current = readFile(path);
     EXPECT_NE(std::string::npos, current.find("logged after descriptors were released"));
-    EXPECT_EQ(1u, countOccurrences(current, rotation_failed));
+    EXPECT_EQ(0u, countOccurrences(current, rotation_failed));
+    EXPECT_EQ(1u, countOccurrences(errors.take(), rotation_failed));
 }
 
 TEST_F(FileChannelRotation, ScheduledRotationRetriedAfterFailure)
@@ -292,6 +335,7 @@ TEST_F(FileChannelRotation, ScheduledRotationRetriedAfterFailure)
     std::this_thread::sleep_until(boundary + std::chrono::milliseconds(100));
 
     /// The schedule fires, but the new file cannot be opened.
+    StderrCapture errors;
     DescriptorTableGuard guard;
     ASSERT_EQ(0, getrlimit(nofile_resource, &guard.original_limit));
     const rlim_t limit = std::min<rlim_t>({guard.original_limit.rlim_cur, guard.original_limit.rlim_max - 1, 1024});
@@ -309,6 +353,38 @@ TEST_F(FileChannelRotation, ScheduledRotationRetriedAfterFailure)
     EXPECT_NE(std::string::npos, archived.find("before the scheduled rotation"));
     EXPECT_NE(std::string::npos, archived.find("at the scheduled time"));
     EXPECT_NE(std::string::npos, readFile(path).find("after descriptors were released"));
+    EXPECT_EQ(1u, countOccurrences(errors.take(), rotation_failed));
+}
+
+TEST_F(FileChannelRotation, NoFreeDescriptorsDuringFirstIntervalCheck)
+{
+    {
+        std::ofstream previous_run(path);
+        previous_run << "previous run\n";
+    }
+    auto channel = makeChannel("daily", /* compress */ false);
+    ASSERT_NO_THROW(channel->open());
+
+    /// The first interval check reads the first line of the file, which needs one more descriptor.
+    StderrCapture errors;
+    DescriptorTableGuard guard;
+    ASSERT_EQ(0, getrlimit(nofile_resource, &guard.original_limit));
+    const rlim_t limit = std::min<rlim_t>({guard.original_limit.rlim_cur, guard.original_limit.rlim_max - 1, 1024});
+    ASSERT_EQ(0, setSoftLimit(limit, guard.original_limit));
+    ASSERT_EQ(EMFILE, fillDescriptorTable(guard));
+    ASSERT_NO_THROW(channel->log(makeMessage("first message without descriptors")));
+    ASSERT_NO_THROW(channel->log(makeMessage("second message without descriptors")));
+
+    guard.release();
+    EXPECT_EQ(1u, countOccurrences(errors.take(), rotation_failed));
+
+    /// The check succeeds now; the file is younger than a day, so it is not rotated.
+    ASSERT_NO_THROW(channel->log(makeMessage("logged after descriptors were released")));
+    channel->close();
+    EXPECT_FALSE(std::filesystem::exists(path + ".0"));
+    const std::string current = readFile(path);
+    for (const char * text : {"previous run", "first message without descriptors", "second message without descriptors", "logged after descriptors were released"})
+        EXPECT_NE(std::string::npos, current.find(text)) << text;
 }
 
 TEST_F(FileChannelRotation, CurrentFileRemovedFromOutside)

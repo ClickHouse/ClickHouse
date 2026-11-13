@@ -25,8 +25,10 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
+#include <cerrno>
 #include <memory>
 #include <utility>
+#include <unistd.h>
 
 
 namespace Poco {
@@ -100,17 +102,10 @@ void FileChannel::log(const Message& msg)
 	FastMutex::ScopedLock lock(_mutex);
 
 	unsafeOpen();
-
-	if (_pArchiveStrategy && (_rotationPending || (_pRotateStrategy && _pRotateStrategy->mustRotate(_pFile.get()))))
-		unsafeTryRotate();
+	unsafeRotateIfDue();
 
 	try
 	{
-		if (!_rotationFailure.empty())
-		{
-			_pFile->write(_rotationFailure, _flush);
-			_rotationFailure.clear();
-		}
 		_pFile->write(msg.getText(), _flush);
     }
     catch (const WriteFileException & e)
@@ -320,7 +315,10 @@ void FileChannel::unsafeOpen()
 	{
 		_pFile = newLogFile();
 		if (_rotateOnOpen && _pFile->size() > 0)
-			unsafeTryRotate();
+		{
+			_rotationPending = true;
+			unsafeRotateIfDue();
+		}
 	}
 }
 
@@ -353,31 +351,59 @@ std::string currentExceptionText()
 		return "unknown error";
 	}
 }
+
+void writeToStderr(const std::string& text)
+{
+	const char* data = text.data();
+	size_t size = text.size();
+	while (size > 0)
+	{
+		ssize_t res = ::write(STDERR_FILENO, data, size);
+		if (res < 0 && errno == EINTR)
+			continue;
+		if (res <= 0)
+			return;
+		data += res;
+		size -= static_cast<size_t>(res);
+	}
+}
 }
 
 
-void FileChannel::unsafeTryRotate()
+void FileChannel::unsafeRotateIfDue()
 {
+	if (!_pArchiveStrategy)
+		return;
+
+	bool rotated = false;
 	try
 	{
-		unsafeRotate();
+		if (_rotationPending || (_pRotateStrategy && _pRotateStrategy->mustRotate(_pFile.get())))
+		{
+			_rotationPending = true;
+			unsafeRotate();
+			_rotationPending = false;
+			rotated = true;
+		}
 	}
 	catch (...)
 	{
-		/// The current file is still open: keep logging into it, report the failure once and retry with the next message.
+		/// The current file is still open: keep logging into it and retry with the next message.
+		/// A pending rotation stays pending; a failed check is simply repeated.
 		if (!_pFile)
 			throw;
-		if (!_rotationPending)
-			_rotationFailure = "Log file rotation failed, logging continues in the current file: " + currentExceptionText();
-		_rotationPending = true;
+		/// Report once per failure, to stderr: the file holds records formatted above this channel, for example JSON.
+		if (!_rotationFailureReported)
+			writeToStderr("Log file rotation failed for " + _path + ", logging continues in the current file: " + currentExceptionText() + "\n");
+		_rotationFailureReported = true;
 		return;
 	}
 
-	_rotationPending = false;
+	_rotationFailureReported = false;
 	// we must call mustRotate() again to give the
 	// RotateByIntervalStrategy a chance to write its timestamp
 	// to the new file.
-	if (_pRotateStrategy)
+	if (rotated && _pRotateStrategy)
 		_pRotateStrategy->mustRotate(_pFile.get());
 }
 
