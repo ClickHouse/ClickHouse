@@ -596,7 +596,6 @@ static bool writeConsolidatedManifestFile(
     struct ResolvedPartitionSpec
     {
         Poco::JSON::Object::Ptr spec;
-        std::vector<String> partition_columns;
         DataTypes partition_types;
     };
     std::map<std::pair<Int32, Int32>, ResolvedPartitionSpec> resolved_specs;
@@ -625,12 +624,11 @@ static bool writeConsolidatedManifestFile(
         resolved.spec = spec;
         auto spec_fields = spec->getArray(f_fields);
 
-        /// Partition field names and the schema source-ids they transform.
+        /// Schema source-ids transformed by the partition fields.
         std::vector<Int32> source_ids;
         for (UInt32 i = 0; i < spec_fields->size(); ++i)
         {
             auto spec_field = spec_fields->getObject(i);
-            resolved.partition_columns.push_back(spec_field->getValue<String>(f_name));
             source_ids.push_back(spec_field->getValue<Int32>(Iceberg::f_source_id));
         }
 
@@ -914,20 +912,19 @@ static bool writeConsolidatedManifestFile(
             ManifestPartitionSummary partition_summary(resolved_spec.partition_types);
             for (const auto & partition_values : pd.file_partition_values)
             {
-                if (partition_values.size() != resolved_spec.partition_columns.size())
+                if (partition_values.size() != resolved_spec.partition_types.size())
                     throw Exception(
                         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                         "Iceberg manifest partition tuple has {} values but partition spec {} defines {} columns",
                         partition_values.size(),
                         pd.partition_spec_id,
-                        resolved_spec.partition_columns.size());
+                        resolved_spec.partition_types.size());
                 partition_summary.add(partition_values);
             }
             entry_partition_summaries.push_back(std::move(partition_summary));
 
             generateManifestFile(
                 metadata_object,
-                resolved_spec.partition_columns,
                 pd.file_partition_values,
                 resolved_spec.partition_types,
                 pd.file_paths,
@@ -1211,12 +1208,7 @@ static bool writeMetadataFiles(
             }
         }
 
-        std::vector<String> partition_columns;
         auto fields_from_partition_spec = partititon_spec->getArray(f_fields);
-        for (UInt32 i = 0; i < fields_from_partition_spec->size(); ++i)
-        {
-            partition_columns.push_back(fields_from_partition_spec->getObject(i)->getValue<String>(f_name));
-        }
         const auto partition_types
             = ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes();
 
@@ -1324,7 +1316,6 @@ static bool writeMetadataFiles(
             }
             generateManifestFile(
                 metadata_object,
-                partition_columns,
                 file_partition_values,
                 partition_types,
                 data_files_vec,

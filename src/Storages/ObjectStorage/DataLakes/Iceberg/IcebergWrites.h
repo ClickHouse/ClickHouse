@@ -95,7 +95,6 @@ Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadat
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
-    const std::vector<String> & partition_columns,
     /// One partition tuple per data file, parallel to `data_file_names`.
     const std::vector<Row> & per_file_partition_values,
     const DataTypes & partition_types,

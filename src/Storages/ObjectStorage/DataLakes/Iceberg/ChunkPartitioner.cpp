@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/isValidUTF8.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -32,6 +33,7 @@ ChunkPartitioner::ChunkPartitioner(
     : sample_block(sample_block_)
     , max_partitions_count(context->getSettingsRef()[Setting::iceberg_insert_max_partitions])
 {
+    std::unordered_set<String> partition_field_names;
     std::unordered_map<Int32, String> id_to_column;
     {
         for (size_t i = 0; i < schema_fields->size(); ++i)
@@ -43,6 +45,12 @@ ChunkPartitioner::ChunkPartitioner(
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
+        auto partition_field_name = partition_specification_field->getValue<String>(Iceberg::f_name);
+        if (!partition_field_names.insert(partition_field_name).second)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot write Iceberg table because partition field name '{}' is used more than once; recreate the table",
+                partition_field_name);
 
         auto transform_name = partition_specification_field->getValue<String>("transform");
         transform_name = Poco::toLower(transform_name);

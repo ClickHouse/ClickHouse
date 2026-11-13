@@ -60,6 +60,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <unordered_set>
 
 #if USE_AVRO
 
@@ -387,17 +388,16 @@ String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent)
 
 static void extendSchemaForPartitions(
     String & schema,
-    const std::vector<String> & partition_columns,
     const DataTypes & partition_types,
     const Poco::JSON::Array::Ptr & partition_spec_fields)
 {
     /// Iceberg projects the manifest `partition` values onto the spec by field-id, so reuse
     /// the persisted spec ids. A legacy v1 spec may omit them; there the spec assigns partition
     /// field-ids sequentially from 1000, so fall back to that default when any id is missing.
-    bool spec_has_all_ids = partition_spec_fields && partition_spec_fields->size() == partition_columns.size();
+    bool spec_has_all_ids = partition_spec_fields && partition_spec_fields->size() == partition_types.size();
     if (spec_has_all_ids)
     {
-        for (size_t i = 0; i < partition_columns.size(); ++i)
+        for (size_t i = 0; i < partition_types.size(); ++i)
         {
             if (!partition_spec_fields->getObject(static_cast<UInt32>(i))->has(Iceberg::f_field_id))
             {
@@ -408,15 +408,16 @@ static void extendSchemaForPartitions(
     }
 
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
-    for (size_t i = 0; i < partition_columns.size(); ++i)
+    for (size_t i = 0; i < partition_types.size(); ++i)
     {
+        auto spec_field = partition_spec_fields->getObject(static_cast<UInt32>(i));
         Int32 field_id = spec_has_all_ids
-            ? partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id)
+            ? spec_field->getValue<Int32>(Iceberg::f_field_id)
             : static_cast<Int32>(1000 + i);
 
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, field_id);
-        field->set(Iceberg::f_name, partition_columns[i]);
+        field->set(Iceberg::f_name, spec_field->getValue<String>(Iceberg::f_name));
         field->set(Iceberg::f_type, getAvroType(partition_types[i], field_id));
         partition_fields->add(field);
     }
@@ -532,7 +533,6 @@ void ManifestPartitionSummary::add(const Row & partition_value)
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
-    const std::vector<String> & partition_columns,
     const std::vector<Row> & per_file_partition_values,
     const DataTypes & partition_types,
     const std::vector<IcebergPathFromMetadata> & data_file_names,
@@ -584,19 +584,28 @@ void generateManifestFile(
             per_file_partition_values.size(),
             data_file_names.size());
 
-    if (partition_types.size() != partition_columns.size())
+    auto partition_spec_fields = partition_spec->getArray(Iceberg::f_fields);
+    if (!partition_spec_fields || partition_spec_fields->size() != partition_types.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Iceberg manifest partition arity mismatch: {} partition columns but {} types",
-            partition_columns.size(),
+            "Iceberg manifest partition arity mismatch: partition spec has {} fields but there are {} partition types",
+            partition_spec_fields ? partition_spec_fields->size() : 0,
             partition_types.size());
 
+    std::vector<String> partition_field_names;
+    partition_field_names.reserve(partition_types.size());
+    for (size_t i = 0; i < partition_types.size(); ++i)
+    {
+        auto name = partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_name);
+        partition_field_names.push_back(std::move(name));
+    }
+
     for (const auto & partition_values : per_file_partition_values)
-        if (partition_values.size() != partition_columns.size())
+        if (partition_values.size() != partition_types.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Iceberg manifest partition arity mismatch: {} partition columns but {} values",
-                partition_columns.size(),
+                "Iceberg manifest partition arity mismatch: {} partition types but {} values",
+                partition_types.size(),
                 partition_values.size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
@@ -610,7 +619,7 @@ void generateManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
 
-    extendSchemaForPartitions(schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields));
+    extendSchemaForPartitions(schema_representation, partition_types, partition_spec_fields);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root(); // NOLINT
@@ -772,14 +781,14 @@ void generateManifestFile(
 
         const Row & partition_values = per_file_partition_values[file_idx];
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
-        for (size_t i = 0; i < partition_columns.size(); ++i)
+        for (size_t i = 0; i < partition_field_names.size(); ++i)
         {
             size_t field_index = 0;
-            if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
+            if (!partition_record.schema()->nameIndex(partition_field_names[i], field_index))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Partition field {} not found in manifest schema",
-                    partition_columns[i]);
+                    partition_field_names[i]);
 
             const avro::NodePtr & field_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
 
@@ -854,7 +863,7 @@ void generateManifestFile(
                     union_field.selectBranch(1);
                     union_field.datum() = make_value_datum(union_schema->leafAt(1));
                 }
-                partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
+                partition_record.field(partition_field_names[i]) = avro::GenericDatum(union_schema, union_field);
             }
             else
             {
@@ -862,8 +871,8 @@ void generateManifestFile(
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Got NULL partition value for non-nullable partition column {}",
-                        partition_columns[i]);
-                partition_record.field(partition_columns[i]) = make_value_datum(field_schema);
+                        partition_field_names[i]);
+                partition_record.field(partition_field_names[i]) = make_value_datum(field_schema);
             }
         }
 
@@ -1737,7 +1746,6 @@ bool IcebergStorageSink::initializeMetadata()
                     StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
                 generateManifestFile(
                     metadata,
-                    partitioner ? partitioner->getColumns() : std::vector<String>{},
                     per_file_partition_values,
                     partitioner ? partitioner->getResultTypes() : DataTypes{},
                     data_file_names,

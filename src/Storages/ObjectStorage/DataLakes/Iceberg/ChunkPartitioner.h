@@ -35,8 +35,6 @@ public:
 
     std::vector<std::pair<PartitionKey, Chunk>> partitionChunk(const Chunk & chunk);
 
-    const std::vector<String> & getColumns() const { return columns_to_apply; }
-
     const DataTypes & getResultTypes() const { return result_data_types; }
 
 private:

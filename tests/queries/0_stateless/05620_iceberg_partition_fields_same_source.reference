@@ -1,0 +1,21 @@
+--- year and hour
+time ts_year,ts_hour
+3
+2	53	464597
+3	54	473357
+10	54	473357
+--- identity and day
+identity ts,ts_day
+2	19724
+--- parameterized transforms
+parameterized x_bucket_4,x_bucket_8,s_trunc_2,s_trunc_3
+2
+--- single transform
+legacy_single ts_year
+2	54
+--- invalid names
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+--- legacy duplicate names
+partition field name 'ts' is used more than once
+0

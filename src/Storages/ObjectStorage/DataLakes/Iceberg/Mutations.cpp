@@ -522,7 +522,6 @@ static bool writeMetadataFiles(
             {
                 generateManifestFile(
                     metadata,
-                    chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
                     {partition_key},
                     chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
                     {data_file.path},

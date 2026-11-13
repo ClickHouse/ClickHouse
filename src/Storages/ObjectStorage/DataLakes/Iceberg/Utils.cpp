@@ -1309,8 +1309,6 @@ static Poco::JSON::Object::Ptr getPartitionField(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with no arguments are not supported in Iceberg.");
 
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
-    result->set(Iceberg::f_name, field.value());
-
     if (!column_name_to_source_id.contains(*field))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", *field);
     result->set(Iceberg::f_source_id, column_name_to_source_id.at(*field));
@@ -1319,26 +1317,31 @@ static Poco::JSON::Object::Ptr getPartitionField(
     const String function_name = normalizeIcebergTransformFunctionName(partition_function->name);
     if (function_name == "identity")
     {
+        result->set(Iceberg::f_name, *field);
         result->set(Iceberg::f_transform, "identity");
         return result;
     }
     else if (function_name == "icebergYear")
     {
+        result->set(Iceberg::f_name, fmt::format("{}_year", *field));
         result->set(Iceberg::f_transform, "year");
         return result;
     }
     else if (function_name == "icebergMonth")
     {
+        result->set(Iceberg::f_name, fmt::format("{}_month", *field));
         result->set(Iceberg::f_transform, "month");
         return result;
     }
     else if (function_name == "icebergDay")
     {
+        result->set(Iceberg::f_name, fmt::format("{}_day", *field));
         result->set(Iceberg::f_transform, "day");
         return result;
     }
     else if (function_name == "icebergHour")
     {
+        result->set(Iceberg::f_name, fmt::format("{}_hour", *field));
         result->set(Iceberg::f_transform, "hour");
         return result;
     }
@@ -1346,6 +1349,7 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
+        result->set(Iceberg::f_name, fmt::format("{}_trunc_{}", *field, *param));
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
@@ -1353,6 +1357,7 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
+        result->set(Iceberg::f_name, fmt::format("{}_bucket_{}", *field, *param));
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
         return result;
     }
@@ -1370,6 +1375,26 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
     /// Partition field ids start at 1000. The first field gets 1000 after the pre-increment.
     Int32 partition_iter = 999;
+    std::unordered_set<String> partition_names;
+    auto add_partition_field = [&](const Poco::JSON::Object::Ptr & partition_field)
+    {
+        const auto name = partition_field->getValue<String>(Iceberg::f_name);
+        const auto source_id = partition_field->getValue<Int32>(Iceberg::f_source_id);
+        const auto transform = partition_field->getValue<String>(Iceberg::f_transform);
+
+        if (const auto schema_field = column_name_to_source_id.find(name);
+            schema_field != column_name_to_source_id.end() && (transform != "identity" || schema_field->second != source_id))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot create Iceberg partition field from name that exists in schema: {}",
+                name);
+
+        if (!partition_names.insert(name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use Iceberg partition field name more than once: {}", name);
+
+        fields->add(partition_field);
+    };
+
     if (partition_by)
     {
         if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
@@ -1380,14 +1405,14 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
                 for (const auto & expression_list_child : expression_list->children)
                 {
                     auto partition_field = getPartitionField(expression_list_child, column_name_to_source_id, partition_iter);
-                    fields->add(partition_field);
+                    add_partition_field(partition_field);
                 }
             }
         }
         else
         {
             auto partition_field = getPartitionField(partition_by, column_name_to_source_id, partition_iter);
-            fields->add(partition_field);
+            add_partition_field(partition_field);
         }
     }
 
