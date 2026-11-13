@@ -150,6 +150,9 @@ private:
 
     void createIterator();
 
+    /// The estimate of a read of plain Parquet files from their footers, see the setting `use_parquet_metadata_statistics`.
+    std::optional<DataLakeReadEstimate> estimatePlainParquetRead() const;
+
     std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey() const;
 
     /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.

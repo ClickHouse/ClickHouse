@@ -32,6 +32,14 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/CompressionMethod.h>
+#include <Processors/Formats/Impl/Parquet/FileStatistics.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/DistinctValuesFromCompressedSize.h>
+#include <Storages/Statistics/Statistics.h>
 
 #include <algorithm>
 
@@ -56,6 +64,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
+    extern const SettingsBool use_statistics;
+    extern const SettingsBool use_parquet_metadata_statistics;
+    extern const SettingsBool estimate_distinct_values_from_metadata;
     extern const SettingsBool s3_validate_etag_on_read;
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
@@ -173,9 +184,150 @@ std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCrea
 {
     /// The initiator assigns the files of this replica, so its own metadata may describe other files.
     if (!data_lake_read_estimate && !distributed_processing)
-        if (auto estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext()))
+    {
+        auto estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext());
+        if (!estimate)
+            estimate = estimatePlainParquetRead();
+        if (estimate)
             data_lake_read_estimate = std::make_shared<const DataLakeReadEstimate>(std::move(*estimate));
+    }
     return data_lake_read_estimate;
+}
+
+std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParquetRead() const
+{
+#if USE_PARQUET
+    /// Each file costs a read of its footer at planning, so a read of more files gets no estimate.
+    constexpr size_t max_files = 100;
+    /// The headers of the dictionary pages cost a read each.
+    constexpr size_t max_dictionary_pages_per_column_and_file = 4;
+
+    const auto context = getContext();
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::use_statistics] || !settings[Setting::use_parquet_metadata_statistics])
+        return std::nullopt;
+    if (configuration->isDataLakeConfiguration() || configuration->isArchive() || !boost::iequals(configuration->format, "Parquet"))
+        return std::nullopt;
+    /// The files are listed with the filter, which cannot be analyzed before its sets are built.
+    if (filter_actions_dag && QueryPlanOptimizations::dagContainsNonReadySet(*filter_actions_dag))
+        return std::nullopt;
+
+    /// An iterator of its own, so that the read lists the files with the filter it ends up with.
+    const ActionsDAG::Node * predicate = filter_actions_dag ? filter_actions_dag->getOutputs().at(0) : nullptr;
+    auto iterator = StorageObjectStorageSource::createFileIterator(
+        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, /*distributed_processing=*/ false,
+        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr,
+        /*file_progress_callback=*/ {}, /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ false);
+
+    ObjectInfos files;
+    while (auto object_info = iterator->next(0))
+    {
+        if (files.size() == max_files)
+            return std::nullopt;
+        /// A compressed or archived file is not read by ranges.
+        if (object_info->isArchive() || object_info->getFileFormat().value_or(configuration->format) != configuration->format
+            || chooseCompressionMethod(object_info->getFileName(), configuration->compression_method) != CompressionMethod::None)
+            return std::nullopt;
+        files.push_back(object_info);
+    }
+
+    /// The requested columns that can have statistics, as for Iceberg.
+    struct Target
+    {
+        String name;
+        DataTypePtr type;
+        UInt64 rows = 0;
+        UInt64 compressed_bytes = 0;
+        /// All files have the column, and all its column chunks are dictionary-encoded.
+        bool fully_dictionary_encoded = true;
+        std::optional<UInt64> max_dictionary_values = {};
+        bool has_statistics = false;
+    };
+    std::vector<Target> targets;
+    Names target_names;
+    for (const auto & name : requiredSourceColumns())
+    {
+        auto column = storage_snapshot->metadata->getColumns().tryGetPhysical(name);
+        if (!column || info.hive_partition_columns_to_read_from_file_path.contains(name))
+            continue;
+        const auto type_id = removeLowCardinalityAndNullable(column->type)->getTypeId();
+        if (type_id == TypeIndex::Tuple || type_id == TypeIndex::Map || type_id == TypeIndex::Array || type_id == TypeIndex::Variant
+            || type_id == TypeIndex::Object || type_id == TypeIndex::Dynamic || type_id == TypeIndex::Nothing)
+            continue;
+        targets.push_back(Target{.name = name, .type = column->type});
+        target_names.push_back(name);
+    }
+
+    const DB::FormatSettings read_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    ReadSettings read_settings = context->getReadSettings();
+    read_settings.remote_fs_settings.random_access = true;
+    const auto log = getLogger("ReadFromObjectStorageStep");
+
+    ConditionSelectivityEstimatorBuilder statistics_builder(context);
+    UInt64 total_rows = 0;
+    for (const auto & object_info : files)
+    {
+        auto & object = object_info->relative_path_with_metadata;
+        if (!object.metadata)
+            object.metadata = getObjectMetadataForRead(*object_storage, object, /*with_tags=*/ false);
+        auto buf = createReadBuffer(object, object_storage, context, log, read_settings, /*allow_page_cache=*/ true);
+        const auto summary = summarizeParquetFile(*buf, object, read_format_settings, context, target_names, max_dictionary_pages_per_column_and_file);
+        total_rows += summary.rows;
+
+        for (auto & target : targets)
+        {
+            const auto it = summary.columns.find(target.name);
+            /// A file without the column has only defaults in it.
+            if (it == summary.columns.end())
+            {
+                target.fully_dictionary_encoded = false;
+                continue;
+            }
+            const auto & column = it->second;
+            target.rows += column.rows;
+            target.compressed_bytes += column.compressed_bytes;
+            target.fully_dictionary_encoded = target.fully_dictionary_encoded && column.fully_dictionary_encoded && column.max_dictionary_values;
+            if (column.max_dictionary_values)
+                target.max_dictionary_values = std::max(target.max_dictionary_values.value_or(0), *column.max_dictionary_values);
+
+            /// As for Iceberg, a file without the NULL count adds no statistics.
+            if (column.nulls)
+            {
+                statistics_builder.addStatistics(
+                    target.name, ColumnStatistics::createBasicFromSummary(target.type, column.rows, Field(), Field(), *column.nulls));
+                target.has_statistics = true;
+            }
+        }
+    }
+
+    DataLakeReadEstimate estimate;
+    estimate.rows = total_rows;
+    statistics_builder.incrementRowCount(total_rows);
+    const auto estimator = statistics_builder.getEstimator();
+    if (!estimator)
+        return estimate;
+
+    for (const auto & target : targets)
+    {
+        if (!target.has_statistics)
+            continue;
+        /// A dictionary page has the distinct values of its column chunk; the row groups and the files mostly share their
+        /// values, so the largest dictionary counts them. Otherwise, the compressed size.
+        std::optional<UInt64> distinct_values;
+        if (target.fully_dictionary_encoded && target.max_dictionary_values)
+            distinct_values = *target.max_dictionary_values;
+        else if (settings[Setting::estimate_distinct_values_from_metadata])
+            distinct_values = estimateDistinctValuesFromCompressedSize(target.rows, target.compressed_bytes);
+        if (!distinct_values)
+            continue;
+        statistics_builder.setCardinality(target.name, std::clamp<UInt64>(*distinct_values, 1, std::max<UInt64>(total_rows, 1)));
+        estimate.distinct_values_from_metadata.insert(target.name);
+    }
+    estimate.estimator = estimator;
+    return estimate;
+#else
+    return std::nullopt;
+#endif
 }
 
 /// Zero means "always preliminary-merge", so it must never reach the group-count division.
