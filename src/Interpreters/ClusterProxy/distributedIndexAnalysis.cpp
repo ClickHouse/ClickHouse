@@ -2,7 +2,6 @@
 #include <Common/CurrentThread.h>
 #include <unordered_map>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
@@ -855,8 +854,6 @@ SharedHeader indexAnalysisSampleBlock()
 
 void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
 {
-    block = convertBLOBColumns(block);
-
     const auto & col_part_name = assert_cast<const ColumnString &>(*block.getByName("part_name").column);
     const auto & col_ranges_array = assert_cast<const ColumnArray &>(*block.getByName("ranges").column);
     const auto & col_ranges_array_offsets = col_ranges_array.getOffsets();

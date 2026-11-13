@@ -1,6 +1,5 @@
 #include <TableFunctions/TableFunctionTraceView.h>
 
-#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -617,7 +616,7 @@ VectorWithMemoryTracking<size_t> replicasWithTable(const Cluster & replicas, con
         else
         {
             for (Block answer = probes[i]->readBlock(); !answer.empty(); answer = probes[i]->readBlock())
-                has_table = convertBLOBColumns(answer).getByPosition(0).column->getBool(0);
+                has_table = answer.getByPosition(0).column->getBool(0);
             probes[i]->finish();
         }
         if (has_table)
