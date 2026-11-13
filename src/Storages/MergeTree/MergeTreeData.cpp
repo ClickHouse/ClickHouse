@@ -6721,7 +6721,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
-    std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
@@ -6847,7 +6846,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     it->second);
             }
 
-            checkAlterKeepsDependentViews(command, name_deps, local_context);
+            checkAlterKeepsDependentViews(commands, command, local_context, share_nested_offsets);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -6857,7 +6856,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// or projections get dropped, it will be checked later in AlterCommands::apply. This
                 /// allows projections with * to drop columns. One example can be found in
                 /// 02691_drop_column_with_projections_replicated.sql.
-                checkAlterKeepsDependentViews(command, name_deps, local_context);
+                checkAlterKeepsDependentViews(commands, command, local_context, share_nested_offsets);
             }
             else
             {

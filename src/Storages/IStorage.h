@@ -316,8 +316,10 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
-    /// Throws if `command` drops or renames a column that a materialized view reads; `name_deps` is filled on first use.
-    void checkAlterKeepsDependentViews(const AlterCommand & command, std::optional<NameDependencies> & name_deps, ContextPtr context) const;
+    /// Throws if `command`, one of `commands`, drops or renames a column so that the query of a materialized view over this table
+    /// fails to analyze or returns other columns.
+    void checkAlterKeepsDependentViews(
+        const AlterCommands & commands, const AlterCommand & command, ContextPtr context, bool share_nested_offsets = true) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     virtual void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const;

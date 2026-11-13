@@ -1488,7 +1488,6 @@ void StorageBuffer::reschedule(size_t min_delay)
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1497,7 +1496,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
-        checkAlterKeepsDependentViews(command, name_deps, local_context);
+        checkAlterKeepsDependentViews(commands, command, local_context);
     }
 }
 

@@ -1,8 +1,12 @@
 #include <Storages/IStorage.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -15,12 +19,14 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageValues.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
@@ -427,22 +433,6 @@ VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
     return result;
 }
 
-namespace
-{
-
-/// Analysis folds some expressions, e.g. scalar subqueries, into constants that keep the expression only as their source.
-void collectConstantSources(const QueryTreeNodePtr & node, QueryTreeNodes & sources)
-{
-    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
-        sources.push_back(constant->getSourceExpression());
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectConstantSources(child, sources);
-}
-
-}
-
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
@@ -454,21 +444,10 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         auto view_metadata = view->getInMemoryMetadataPtr(context, false);
         if (view_metadata->select.inner_query)
         {
-            auto view_context = Context::createCopy(view_metadata->getSQLSecurityOverriddenContext(context));
-            view_context->setSetting("enable_scalar_subquery_optimization", Field(false));
-
-            /// Resolved with scalar subqueries kept, not optimized: the view's query must resolve every column it names.
-            QueryTreeNodes trees{buildQueryTree(view_metadata->select.inner_query, view_context)};
-            QueryAnalysisPass(/*only_analyze_=*/ true).run(trees.front(), view_context);
-
-            NameSet required_columns;
-            for (size_t i = 0; i < trees.size(); ++i)
-            {
-                auto tree = trees[i];
-                for (auto & column : collectSelectedColumnsFromTable(tree, current_storage_id, view_context))
-                    required_columns.insert(std::move(column));
-                collectConstantSources(tree, trees);
-            }
+            const auto & select_query = view_metadata->select.inner_query;
+            auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
+            auto query_tree = interpreter.getQueryTree();
+            Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
 
             for (const auto & col_name : required_columns)
                 name_deps[col_name].push_back(view_id.table_name);
@@ -477,24 +456,137 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
+namespace
+{
+
+/// So that a scalar subquery is kept as the source expression of the constant it folds into, not hashed into `__getScalar`.
+void disableScalarSubqueryOptimization(const QueryTreeNodePtr & node)
+{
+    ContextMutablePtr * context = nullptr;
+    if (auto * query_node = node->as<QueryNode>())
+        context = &query_node->getMutableContext();
+    else if (auto * union_node = node->as<UnionNode>())
+        context = &union_node->getMutableContext();
+
+    if (context)
+    {
+        *context = Context::createCopy(*context);
+        (*context)->setSetting("enable_scalar_subquery_optimization", Field(false));
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            disableScalarSubqueryOptimization(child);
+}
+
+/// The view's query analyzed as an `INSERT` does for rows pushed from a source with `source_metadata`.
+QueryTreeNodePtr analyzeViewQueryForSource(
+    const ASTPtr & query, const StorageID & source_id, const StorageInMemoryMetadata & source_metadata, ContextPtr context)
+{
+    auto view_context = Context::createCopy(context);
+    auto view_source = std::make_shared<StorageValues>(
+        source_id, source_metadata.getColumns(), source_metadata.getSampleBlock(), source_metadata.virtuals);
+    view_context->addViewSource(view_source);
+
+    auto query_tree = buildQueryTree(query, view_context);
+    disableScalarSubqueryOptimization(query_tree);
+    QueryAnalysisPass analysis(
+        /*only_analyze_=*/ true, /*positional_arguments_already_resolved_=*/ false, view_source, /*view_source_in_subqueries_=*/ true);
+    analysis.run(query_tree, view_context);
+    return query_tree;
+}
+
+/// Replaces the constants that analysis folded with the expressions they come from, which `isEqual` does not compare, and renames
+/// the column `from` of the source to `to`, as a rename of the source column alone would change the tree.
+void prepareForComparison(QueryTreeNodePtr & node, const StorageID & source_id, const String & from, const String & to)
+{
+    while (node->getNodeType() == QueryTreeNodeType::CONSTANT && node->as<ConstantNode &>().hasSourceExpression())
+        node = node->as<ConstantNode &>().getSourceExpression();
+
+    if (const auto * column = node->as<ColumnNode>(); column && !from.empty() && column->getColumnName() == from)
+    {
+        auto source = column->getColumnSourceOrNull();
+        if (const auto * table = source ? source->as<TableNode>() : nullptr; table && table->getStorageID() == source_id)
+        {
+            NameAndTypePair renamed{to, column->getColumnType()};
+            if (column->hasExpression())
+                node = std::make_shared<ColumnNode>(std::move(renamed), column->getExpression(), source);
+            else
+                node = std::make_shared<ColumnNode>(std::move(renamed), source);
+        }
+    }
+
+    for (auto & child : node->getChildren())
+        if (child)
+            prepareForComparison(child, source_id, from, to);
+}
+
+}
+
 void IStorage::checkAlterKeepsDependentViews(
-    const AlterCommand & command, std::optional<NameDependencies> & name_deps, ContextPtr context) const
+    const AlterCommands & commands, const AlterCommand & command, ContextPtr context, bool share_nested_offsets) const
 {
     const bool is_drop = command.type == AlterCommand::DROP_COLUMN && !command.clear;
-    if (!is_drop && command.type != AlterCommand::RENAME_COLUMN)
+    if (command.ignore || (!is_drop && command.type != AlterCommand::RENAME_COLUMN))
         return;
 
     /// A replica applies what the initiator committed, even if it has views the initiator does not.
     if (isSecondaryDDLReplay(context))
         return;
 
-    if (!name_deps)
-        name_deps = getDependentViewsByColumn(context);
+    const auto source_id = getStorageID();
+    std::vector<std::pair<StorageID, StorageMetadataHandle>> views;
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(source_id))
+    {
+        auto view = DatabaseCatalog::instance().getTable(view_id, context);
+        auto view_metadata = view->getInMemoryMetadataPtr(context, false);
+        if (view_metadata->select.inner_query)
+            views.emplace_back(view_id, std::move(view_metadata));
+    }
+    if (views.empty())
+        return;
 
-    if (auto it = name_deps->find(command.column_name); it != name_deps->end())
+    /// The metadata as the commands of the ALTER before `command` leave it.
+    const auto current_metadata = getInMemoryMetadataPtr(context, false);
+    auto old_metadata = *current_metadata;
+    for (const auto & previous : commands)
+    {
+        if (&previous == &command)
+            break;
+        if (!previous.ignore)
+            previous.apply(old_metadata, context, share_nested_offsets);
+    }
+    auto new_metadata = old_metadata;
+    command.apply(new_metadata, context, share_nested_offsets);
+
+    Strings broken_views;
+    for (const auto & [view_id, view_metadata] : views)
+    {
+        const auto & query = view_metadata->select.inner_query;
+        auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        auto query_tree = analyzeViewQueryForSource(query, source_id, old_metadata, view_context);
+        prepareForComparison(query_tree, source_id, is_drop ? "" : command.column_name, command.rename_to);
+
+        /// The view is kept only if its query resolves every name as before, e.g. a renamed column's name not to an alias.
+        try
+        {
+            auto new_query_tree = analyzeViewQueryForSource(query, source_id, new_metadata, view_context);
+            prepareForComparison(new_query_tree, source_id, "", "");
+            if (new_query_tree->isEqual(*query_tree))
+                continue;
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(
+                __func__, fmt::format("The query of view {} fails to analyze after the ALTER", view_id.getNameForLogs()), LogsLevel::debug);
+        }
+        broken_views.push_back(view_id.table_name);
+    }
+
+    if (!broken_views.empty())
         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Trying to ALTER {} column {} which is referenced by materialized view {}",
-            is_drop ? "DROP" : "RENAME", backQuoteIfNeed(command.column_name), toString(it->second));
+            is_drop ? "DROP" : "RENAME", backQuoteIfNeed(command.column_name), toString(broken_views));
 }
 
 bool IStorage::isStaticStorage() const

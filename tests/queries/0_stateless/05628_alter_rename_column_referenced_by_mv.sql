@@ -35,6 +35,43 @@ ALTER TABLE t7 RENAME COLUMN d TO d2;
 INSERT INTO t7 VALUES (1, 1, 1, 1, [1, 2]);
 SELECT l FROM mv7;
 
+-- Columns read only by a named window, a subcolumn, or a scalar subquery folded by the view's own settings.
+CREATE TABLE t8 (k Int32, b Int32, c Int32, tup Tuple(x Int32)) ENGINE = MergeTree ORDER BY k;
+CREATE MATERIALIZED VIEW mv8 ENGINE = Memory AS SELECT k FROM t8 WINDOW w AS (PARTITION BY b);
+CREATE MATERIALIZED VIEW mv8s ENGINE = Memory
+    AS SELECT k, (SELECT groupArray(c) FROM t8) AS cs, tup.x FROM t8 SETTINGS enable_scalar_subquery_optimization = 1;
+ALTER TABLE t8 RENAME COLUMN b TO b2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t8 RENAME COLUMN c TO c2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t8 RENAME COLUMN tup TO tup2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+-- The rename rewrites an ALIAS column that the views read, so they keep working.
+CREATE TABLE t9 (k Int32, b Int32, a String ALIAS toTypeName(b)) ENGINE = MergeTree ORDER BY k;
+CREATE MATERIALIZED VIEW mv9 ENGINE = Memory AS SELECT k, a FROM t9;
+CREATE MATERIALIZED VIEW mv9s ENGINE = Memory AS SELECT k, (SELECT groupArray(a) FROM t9) AS ga FROM t9;
+ALTER TABLE t9 RENAME COLUMN b TO b2;
+INSERT INTO t9 VALUES (1, 1);
+SELECT a FROM mv9;
+CREATE TABLE t12 (k Int32, b Int32, a Int32 ALIAS b, aa Int32 ALIAS a) ENGINE = MergeTree ORDER BY k;
+CREATE MATERIALIZED VIEW mv12 ENGINE = Memory AS SELECT k, aa FROM t12;
+ALTER TABLE t12 RENAME COLUMN a TO a2;
+
+-- Renamed, the column a folded scalar subquery reads would resolve to an alias of the query.
+CREATE TABLE t11 (k Int32, b Int32) ENGINE = MergeTree ORDER BY k;
+CREATE MATERIALIZED VIEW mv11 ENGINE = Memory AS WITH toInt32(0) AS b SELECT k, (SELECT groupArray(b) FROM t11) AS bs FROM t11
+    SETTINGS prefer_column_name_to_alias = 1, enable_scalar_subquery_optimization = 1;
+ALTER TABLE t11 RENAME COLUMN b TO b2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+-- A command renames a column that an earlier command of the same ALTER adds.
+CREATE TABLE t10 (k Int32, `n.a` UInt32) ENGINE = MergeTree ORDER BY k SETTINGS share_nested_offsets = 0;
+CREATE MATERIALIZED VIEW mv10 ENGINE = Memory AS SELECT k FROM t10;
+ALTER TABLE t10 ADD COLUMN IF NOT EXISTS n String, RENAME COLUMN n TO n2;
+
+-- A table function argument computed from the source is evaluated on an empty block of it.
+CREATE TABLE t13 (k Int32, x Int32) ENGINE = MergeTree ORDER BY k;
+CREATE MATERIALIZED VIEW mv13 ENGINE = Memory AS SELECT s.k FROM t13 AS s CROSS JOIN numbers(assumeNotNull((SELECT count() FROM t13))) AS n;
+ALTER TABLE t13 RENAME COLUMN x TO x2;
+ALTER TABLE t13 DROP COLUMN x2;
+
 -- Distributed source.
 CREATE TABLE local4 (k Int32, a Int32, b Int32) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE dist4 AS local4 ENGINE = Distributed(test_shard_localhost, currentDatabase(), local4);

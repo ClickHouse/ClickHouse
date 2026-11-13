@@ -50,7 +50,6 @@ The data written to the table will be consumed by the view, but the original raw
 
 void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
-    std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN
@@ -61,7 +60,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
-        checkAlterKeepsDependentViews(command, name_deps, context);
+        checkAlterKeepsDependentViews(commands, command, context);
     }
 }
 
