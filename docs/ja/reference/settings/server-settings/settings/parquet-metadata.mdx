@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse server の構成に使用され、ClickHouse のソースコードから自動生成されています。
 
-<div id="parquet_metadata_cache_max_entries">
-  ## parquet_metadata_cache_max_entries
-</div>
+## parquet_metadata_cache_max_entries {#parquet_metadata_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />Parquet メタデータキャッシュの最大エントリ数。0 は無効を意味します。
 
-<div id="parquet_metadata_cache_policy">
-  ## parquet_metadata_cache_policy
-</div>
+## parquet_metadata_cache_policy {#parquet_metadata_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Parquet メタデータキャッシュのポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Parquet メタデータキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="parquet_metadata_cache_size">
-  ## parquet_metadata_cache_size
-</div>
+## parquet_metadata_cache_size {#parquet_metadata_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" changeable_without_restart="Yes" />Parquet メタデータキャッシュの最大サイズ (バイト単位) 。0 は無効を意味します。
 
-<div id="parquet_metadata_cache_size_ratio">
-  ## parquet_metadata_cache_size_ratio
-</div>
+## parquet_metadata_cache_size_ratio {#parquet_metadata_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Parquet メタデータキャッシュにおける protected queue (SLRU ポリシーの場合) のサイズが、cache の総サイズに占める比率です。
 
