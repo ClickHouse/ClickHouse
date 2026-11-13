@@ -16,7 +16,7 @@ for run in 1 2; do
         SELECT 'run ${run}' FORMAT Null;
         SYSTEM FLUSH LOGS query_log;
         SELECT engine FROM system.databases WHERE name = 'system';
-        SELECT DISTINCT query FROM system.query_log WHERE query LIKE 'SELECT \'run %' AND type = 'QueryFinish' ORDER BY query;
+        SELECT DISTINCT query FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'SELECT \'run %' AND type = 'QueryFinish' ORDER BY query;
     "
 done
 
