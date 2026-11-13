@@ -2564,8 +2564,11 @@ private:
         {
             return conjunct->as<FunctionNode &>().getArguments().getNodes()[1];
         };
+        /// Hashing a whole conjunct also visits the comparison node and its parameter and argument lists.
+        static constexpr size_t comparison_node_hash_work = 3;
         auto contains_conjunct = [&](const ConjunctIndex & index, const QueryTreeNodePtr & operand, const QueryTreeNodePtr & conjunct)
         {
+            and_compare_chain_reused_hash_work += comparison_node_hash_work;
             auto it = index.find(key_of(operand));
             if (it == index.end())
                 return false;
@@ -2575,6 +2578,7 @@ private:
         };
         auto insert_conjunct = [&](ConjunctIndex & index, const QueryTreeNodePtr & operand, const QueryTreeNodePtr & conjunct)
         {
+            and_compare_chain_reused_hash_work += comparison_node_hash_work;
             auto & bucket = index[key_of(operand)][constant_of(conjunct)];
             if (std::ranges::any_of(bucket, [&](const auto & existing) { return existing->isEqual(*conjunct); }))
                 return false;
