@@ -113,7 +113,7 @@ public:
 
     struct FlatSamplesState
     {
-        Samples samples;
+        AggregateFunctionTimeseriesFlatSamples<TimestampType, ValueType> samples;
     };
 
     using State = std::conditional_t<flat_samples, FlatSamplesState, BucketsState>;
@@ -348,6 +348,22 @@ public:
                 bucket.merge(rhs_bucket.getMapped());
             }
         }
+    }
+
+    /// A flat state that is destroyed after the merge gives its buffers away instead of having them copied.
+    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset,
+        ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (flat_samples)
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                data(dst_places[i] + offset)->samples.mergeAndDestroy(data(src_places[i] + offset)->samples);
+                destroy(src_places[i] + offset);
+            }
+        }
+        else
+            Base::mergeAndDestroyBatch(dst_places, src_places, size, offset, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

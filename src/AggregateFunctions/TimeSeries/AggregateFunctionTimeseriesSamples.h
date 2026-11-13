@@ -228,6 +228,24 @@ public:
         f(std::span<const Sample>(buffer.data(), buffer.size()));
     }
 
+    /// Like `withSortedSamples`, for the samples of several states taken together.
+    template <typename F>
+    static void withSortedSamples(std::span<const AggregateFunctionTimeseriesSamples> parts, F && f) requires compacting
+    {
+        if (parts.size() == 1)
+        {
+            parts.front().withSortedSamples(std::forward<F>(f));
+            return;
+        }
+        const Buffer merged = sortedUnion(parts);
+        f(std::span<const Sample>(merged.data(), merged.size()));
+    }
+
+    static void serialize(std::span<const AggregateFunctionTimeseriesSamples> parts, WriteBuffer & buf) requires compacting
+    {
+        withSortedSamples(parts, [&buf](std::span<const Sample> samples) { writeSamples(samples, buf); });
+    }
+
 private:
     /// How many samples `deserialize` reserves before reading the data. Bigger buffers grow while they are read.
     static constexpr size_t MAX_SAMPLES_TO_RESERVE = compacting ? 65536 : 4096;
@@ -248,7 +266,7 @@ private:
         /* N = */ 1,
         AllocatorWithMemoryTracking<std::pair<TimestampType, ValueType>>>;
 
-    static void writeSamples(const Buffer & samples, WriteBuffer & buf)
+    static void writeSamples(std::span<const Sample> samples, WriteBuffer & buf)
     {
         writeBinaryLittleEndian(samples.size(), buf);
         for (const auto & [timestamp, value] : samples)
@@ -379,29 +397,67 @@ private:
     };
     using Runs = absl::InlinedVector<Run, MAX_RUNS_TO_MERGE_INTO>;
 
-    /// Collects the sorted part and the sorted runs of the tail of `buf`; returns false if there are more than `MAX_RUNS_TO_MERGE_INTO` runs.
-    static bool findRuns(const Buffer & buf, size_t unsorted_begin, Runs & runs, bool & has_duplicates)
+    /// Collects the sorted part and the sorted runs of the tail; returns false if there are more than `MAX_RUNS_TO_MERGE_INTO` runs.
+    bool findRuns(Runs & runs, bool & has_duplicates) const
     {
-        const Sample * data = buf.data();
-        runs.assign({{data, data + unsorted_begin}});
+        runs.clear();
         has_duplicates = false;
-        size_t run_begin = unsorted_begin;
-        for (size_t i = unsorted_begin + 1; i < buf.size(); ++i)
+        return appendRuns(runs, has_duplicates, MAX_RUNS_TO_MERGE_INTO + 1);
+    }
+
+    /// Appends the sorted part and the sorted runs of the tail to `runs`; returns false if that makes more than `max_runs` runs.
+    bool appendRuns(Runs & runs, bool & has_duplicates, size_t max_runs) const
+    {
+        if (buffer.empty())
+            return true;
+        const Sample * data = buffer.data();
+        const size_t tail_begin = isSorted() ? buffer.size() : unsorted_begin;
+        size_t run_begin = 0;
+        for (size_t i = tail_begin; i < buffer.size(); ++i)
         {
-            if (data[i].first > data[i - 1].first)
+            if (i != tail_begin && data[i].first > data[i - 1].first)
                 continue;
-            if (data[i].first == data[i - 1].first)
+            if (i != tail_begin && data[i].first == data[i - 1].first)
             {
                 has_duplicates = true;
                 continue;
             }
-            if (runs.size() == MAX_RUNS_TO_MERGE_INTO)
+            if (runs.size() == max_runs)
                 return false;
             runs.push_back({data + run_begin, data + i});
             run_begin = i;
         }
-        runs.push_back({data + run_begin, data + buf.size()});
+        if (runs.size() == max_runs)
+            return false;
+        runs.push_back({data + run_begin, data + buffer.size()});
         return true;
+    }
+
+    /// Returns the samples of all parts sorted and deduplicated: long sorted runs are merged, short ones sorted.
+    static Buffer sortedUnion(std::span<const AggregateFunctionTimeseriesSamples> parts)
+    {
+        size_t total = 0;
+        for (const auto & part : parts)
+            total += part.buffer.size();
+
+        Buffer merged;
+        merged.reserve(total);
+        Runs runs;
+        bool has_duplicates = false;
+        bool long_runs = true;
+        for (const auto & part : parts)
+            long_runs = long_runs && part.appendRuns(runs, has_duplicates, total / MIN_AVERAGE_RUN_LENGTH + parts.size());
+        if (long_runs)
+        {
+            mergeRunsInto(runs, merged, has_duplicates);
+            return merged;
+        }
+
+        for (const auto & part : parts)
+            merged.insert(merged.end(), part.buffer.begin(), part.buffer.end());
+        sortSamples(merged.data(), merged.data() + merged.size());
+        deduplicateSorted(merged);
+        return merged;
     }
 
     /// Writes the samples of the runs to the empty `dst` sorted and deduplicated. The run with the smallest next timestamp gives its samples
@@ -585,7 +641,7 @@ private:
         {
             Runs runs;
             bool has_duplicates = false;
-            if (findRuns(buffer, unsorted_begin, runs, has_duplicates))
+            if (findRuns(runs, has_duplicates))
             {
                 sorted_buffer.reserve(buffer.size());
                 mergeRunsInto(runs, sorted_buffer, has_duplicates);
@@ -619,7 +675,7 @@ private:
         /// When the sorted part alone needs a bigger buffer, a few runs are merged right into it, which costs about as much as growing.
         Runs runs;
         bool has_duplicates = false;
-        if (unsorted_begin + count > buffer.capacity() / 2 && findRuns(buffer, unsorted_begin, runs, has_duplicates))
+        if (unsorted_begin + count > buffer.capacity() / 2 && findRuns(runs, has_duplicates))
         {
             Buffer merged;
             merged.reserve(std::max(buffer.capacity() * 2, buffer.size() + count));
@@ -651,6 +707,65 @@ private:
     Buffer buffer;
     /// 0 while the whole buffer is sorted, else the start of its unsorted tail.
     size_t unsorted_begin = 0;
+};
+
+/// All samples of a state, kept in one or more compacting buffers. A merge with a state that is destroyed right after
+/// moves its buffers over instead of copying them, and the buffers are merged only when the samples are read.
+template <typename TimestampType, typename ValueType>
+class AggregateFunctionTimeseriesFlatSamples
+{
+public:
+    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType, /* compacting = */ true>;
+    using Sample = typename Samples::Sample;
+
+    AggregateFunctionTimeseriesFlatSamples() : parts(1) {}
+
+    void add(TimestampType timestamp, ValueType value) { parts.front().add(timestamp, value); }
+
+    ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps, const ValueType * __restrict values, size_t count)
+    {
+        parts.front().addMany(timestamps, values, count);
+    }
+
+    void merge(const AggregateFunctionTimeseriesFlatSamples & other)
+    {
+        for (const auto & part : other.parts)
+            parts.front().merge(part);
+    }
+
+    /// Takes the samples of `other`, which must be destroyed right after.
+    void mergeAndDestroy(AggregateFunctionTimeseriesFlatSamples & other)
+    {
+        if (parts.size() + other.parts.size() > MAX_PARTS)
+        {
+            merge(other);
+            return;
+        }
+        parts.reserve(parts.size() + other.parts.size());
+        for (auto & part : other.parts)
+            parts.push_back(std::move(part));
+    }
+
+    void serialize(WriteBuffer & buf) const { Samples::serialize(parts, buf); }
+
+    void deserialize(ReadBuffer & buf)
+    {
+        parts.resize(1);
+        parts.front().deserialize(buf);
+    }
+
+    /// Invokes `f` with a span of all samples, in ascending timestamp order with duplicates collapsed.
+    template <typename F>
+    void withSortedSamples(F && f) const
+    {
+        Samples::withSortedSamples(parts, std::forward<F>(f));
+    }
+
+private:
+    /// Reading merges the runs of all buffers, so their number is bounded.
+    static constexpr size_t MAX_PARTS = 64;
+
+    absl::InlinedVector<Samples, 1> parts;
 };
 
 }
