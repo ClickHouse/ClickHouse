@@ -3380,7 +3380,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto source_null_predicate = makeInSourceNullPredicate(source_elements, in_rhs_has_explicit_null);
                     QueryTreeNodes matchable_elements = source_elements;
                     if (use_standard_null_semantics)
+                    {
                         std::erase_if(matchable_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
+                        const auto left_complex_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
+                        if (isArray(left_complex_type) || isMap(left_complex_type))
+                        {
+                            /// A scalar numeric value cannot equal an `Array` or `Map`, but its
+                            /// nullable carrier can still contribute a source `NULL`.
+                            std::erase_if(matchable_elements, [](const auto & arg)
+                            {
+                                const auto source_type = removeNullable(removeLowCardinality(arg->getResultType()));
+                                return canContainNull(*arg->getResultType()) && (isNumber(source_type) || isBool(source_type));
+                            });
+                        }
+                    }
 
                     /// A failed cast may leave `NULL` in the converted array. It cannot
                     /// match a non-null left value; a null left value is handled from
