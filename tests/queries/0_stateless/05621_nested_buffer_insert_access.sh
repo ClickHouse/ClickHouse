@@ -145,7 +145,8 @@ echo -n "batch retained, not discarded:    "; ${CH} --query "SELECT count() FROM
 echo "## Part H: a failure to rebuild the flush context that leaves the identity valid is retained"
 # Rebuilding the buffering user's context checks its default database. With that database detached the flush
 # fails, but the user and its grants are unchanged: the batch must stay buffered, not be discarded as for a
-# dropped user, and be delivered once the database is attached again.
+# dropped user, and be delivered once the database is attached again. home_alias_buf forwards through an `Alias`
+# whose target is in that database, so classifying the failure must not lose the batch either.
 home="user_05621_home_${CLICKHOUSE_DATABASE}"
 home_db="home_05621_${CLICKHOUSE_DATABASE}"
 ${CH} --multiquery <<EOF
@@ -153,18 +154,30 @@ DROP USER IF EXISTS ${home};
 DROP DATABASE IF EXISTS ${home_db};
 CREATE DATABASE ${home_db} ENGINE = Atomic;
 CREATE TABLE ${victim_db}.home_dst (s String) ENGINE = MergeTree ORDER BY s;
+CREATE TABLE ${home_db}.alias_dst (s String) ENGINE = MergeTree ORDER BY s;
+CREATE TABLE ${db}.home_alias ENGINE = Alias('${home_db}', 'alias_dst');
 CREATE TABLE ${db}.home_buf (s String) ENGINE = Buffer(${victim_db}, home_dst, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
+CREATE TABLE ${db}.home_alias_buf (s String) ENGINE = Buffer(${db}, home_alias, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
 CREATE USER ${home} DEFAULT DATABASE ${home_db};
 GRANT INSERT ON ${db}.home_buf TO ${home};
+GRANT INSERT ON ${db}.home_alias_buf TO ${home};
+GRANT INSERT ON ${db}.home_alias TO ${home};
 GRANT INSERT ON ${victim_db}.home_dst TO ${home};
+GRANT INSERT ON ${home_db}.alias_dst TO ${home};
 EOF
-${CLICKHOUSE_CLIENT} --user "${home}" --async-insert 0 --query "INSERT INTO ${db}.home_buf VALUES ('from_home')"
+for buf in home_buf home_alias_buf; do
+    ${CLICKHOUSE_CLIENT} --user "${home}" --async-insert 0 --query "INSERT INTO ${db}.${buf} VALUES ('from_home')"
+done
 ${CH} --query "DETACH DATABASE ${home_db}"
-echo -n "flush without the default database is retained: "
-if ${CH} --query "OPTIMIZE TABLE ${db}.home_buf" 2>&1 | grep -q "retained for retry"; then echo "OK"; else echo "UNEXPECTED"; fi
+for buf in home_buf home_alias_buf; do
+    echo -n "${buf}: flush without the default database is retained: "
+    if ${CH} --query "OPTIMIZE TABLE ${db}.${buf}" 2>&1 | grep -q "retained for retry"; then echo "OK"; else echo "UNEXPECTED"; fi
+done
 ${CH} --query "ATTACH DATABASE ${home_db}"
 ${CH} --query "OPTIMIZE TABLE ${db}.home_buf"
-echo -n "delivered once it is attached again: "; ${CH} --query "SELECT groupArray(s) FROM ${victim_db}.home_dst"
+${CH} --query "OPTIMIZE TABLE ${db}.home_alias_buf"
+echo -n "home_buf: delivered once it is attached again: "; ${CH} --query "SELECT groupArray(s) FROM ${victim_db}.home_dst"
+echo -n "home_alias_buf: delivered once it is attached again: "; ${CH} --query "SELECT groupArray(s) FROM ${home_db}.alias_dst"
 
 ${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}; DROP USER IF EXISTS ${home}" 2>/dev/null
 ${CH} --query "DROP DATABASE IF EXISTS ${home_db}"

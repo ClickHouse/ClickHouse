@@ -49,6 +49,7 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <base/scope_guard.h>
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -1517,6 +1518,27 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     const bool flushed_under_user_identity = buffer.write_identity && buffer.write_identity->user_id.has_value();
 
+    /// A flush triggered by a different user's operation (an insert under another identity, `OPTIMIZE`, `DROP`) must
+    /// not surface the buffering identity's exception to that user; it is replaced below.
+    const auto triggering_context = CurrentThread::tryGetQueryContext();
+    const bool flushed_for_other_user = flushed_under_user_identity && triggering_context
+        && triggering_context->getUserID() != buffer.write_identity->user_id;
+
+    /// The block is out of `buffer.data` now: put it back on any exit unless it was delivered or deliberately
+    /// discarded, so that no failure, including one while classifying a failure, loses an accepted batch.
+    bool block_settled = false;
+    SCOPE_EXIT(
+    {
+        if (!block_settled)
+        {
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+            buffer.data.swap(block_to_write);
+            if (!buffer.first_write_time)
+                buffer.first_write_time = current_time;
+        }
+    });
+
     Stopwatch watch;
     /// Set once writeBlockToDestination has restored the captured identity, to classify a failure below: before
     /// restoration it comes from rebuilding the flush context, after it from the destination pipeline.
@@ -1540,15 +1562,34 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         /// discard; for a REMOTE (`Distributed`) destination they can come from the remote shard with a valid local
         /// identity (local access was already checked when the rows were buffered), so retain for retry after the
         /// remote RBAC/secret is corrected rather than losing an already-accepted batch.
-        const int code = getCurrentExceptionCode();
-        const auto destination = getDestinationTable();
-        const bool destination_is_remote = destination && destination->isRemote();
-        const bool identity_gone = !identity_restored
-            && (code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
-        const bool denied_locally = identity_restored && !destination_is_remote
-            && (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
-        if (flushed_under_user_identity && (identity_gone || denied_locally))
+        const auto is_undeliverable = [&](int code)
         {
+            if (!identity_restored)
+                return code == ErrorCodes::USER_EXPIRED || code == ErrorCodes::ACCESS_ENTITY_NOT_FOUND;
+            if (code != ErrorCodes::ACCESS_DENIED && code != ErrorCodes::ACCESS_ENTITY_NOT_FOUND)
+                return false;
+            const auto destination = getDestinationTable();
+            return !destination || !destination->isRemote();
+        };
+
+        bool undeliverable = false;
+        if (flushed_under_user_identity)
+        {
+            try
+            {
+                undeliverable = is_undeliverable(getCurrentExceptionCode());
+            }
+            catch (...)
+            {
+                /// The failure cannot be classified (e.g. resolving a destination `Alias` whose target database is
+                /// detached): keep the block for retry and rethrow the original exception below.
+                tryLogCurrentException(log, "While classifying a failed flush");
+            }
+        }
+
+        if (undeliverable)
+        {
+            block_settled = true;
             total_writes.rows -= block_rows;
             total_writes.bytes -= block_allocated_bytes_delta;
             /// Deliberately omits the exception text and the buffering user name: a different user's insert may
@@ -1562,33 +1603,20 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
             return true;
         }
 
-        /// Downstream/transient failure, with the local identity still able to deliver: return the block to its place in
-        /// the buffer and retry later.
-        CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-        CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+        /// Downstream/transient failure, with the local identity still able to deliver: the block goes back to its
+        /// place in the buffer (see above) and is retried later. Do not surface the buffering identity's exception
+        /// (its name, required grants, table names) to a different user who triggered the flush; the background
+        /// flush records the cause server-side.
+        if (flushed_for_other_user)
+            throw Exception(
+                getCurrentExceptionCode(),
+                "Could not flush a buffered batch to destination table {}; it is retained for retry.",
+                destination_id.getNameForLogs());
 
-        buffer.data.swap(block_to_write);
-
-        if (!buffer.first_write_time)
-            buffer.first_write_time = current_time;
-
-        /// If a different user's operation triggered this flush of a batch buffered under another identity, do
-        /// not surface that identity's exception (its name, required grants, table names) to them. Replace it
-        /// with a neutral message; the batch is retained, so a background flush records the cause server-side.
-        if (flushed_under_user_identity)
-        {
-            auto triggering_context = CurrentThread::tryGetQueryContext();
-            if (triggering_context && triggering_context->getUserID() != buffer.write_identity->user_id)
-                throw Exception(
-                    getCurrentExceptionCode(),
-                    "Could not flush a buffered batch to destination table {}; it is retained for retry.",
-                    destination_id.getNameForLogs());
-        }
-
-        /// After a while, the next write attempt will happen.
         throw;
     }
 
+    block_settled = true;
     total_writes.rows -= block_rows;
     total_writes.bytes -= block_allocated_bytes_delta;
 
