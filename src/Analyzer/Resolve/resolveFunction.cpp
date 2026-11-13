@@ -3116,12 +3116,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element supertype. Keep each source value in its original type;
                     /// converting a fractional float to an integer could invent a match.
                     const bool numeric_left = isNumber(removeNullable(removeLowCardinality(in_first_argument->getResultType())));
-                    const bool numeric_source = std::all_of(source_elements.begin(), source_elements.end(), [](const auto & element)
+                    const bool has_numeric_source = std::any_of(source_elements.begin(), source_elements.end(), [](const auto & element)
                     {
-                        return element->getResultType()->onlyNull()
-                            || isNumber(removeNullable(removeLowCardinality(element->getResultType())));
+                        return isNumber(removeNullable(removeLowCardinality(element->getResultType())));
                     });
-                    if (use_standard_null_semantics && numeric_left && numeric_source
+                    if (use_standard_null_semantics && numeric_left && has_numeric_source
                         && !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
@@ -3147,13 +3146,46 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             }
 
                             bind_argument(element);
+                            const bool numeric_element = isNumber(removeNullable(removeLowCardinality(element->getResultType())));
+                            QueryTreeNodePtr right_argument = std::make_shared<IdentifierNode>(Identifier{argument_names.back()});
+                            if (!numeric_element)
+                            {
+                                auto cast_type = makeNullableOrLowCardinalityNullableSafe(in_first_argument->getResultType());
+                                auto cast = std::make_shared<FunctionNode>("CAST");
+                                cast->getArguments().getNodes() = {
+                                    std::move(right_argument),
+                                    std::make_shared<ConstantNode>(cast_type->getName(), std::make_shared<DataTypeString>())};
+                                right_argument = std::move(cast);
+                            }
                             auto equals = std::make_shared<FunctionNode>("equals");
                             equals->getArguments().getNodes() = {
                                 std::make_shared<IdentifierNode>(Identifier{argument_names.front()}),
-                                std::make_shared<IdentifierNode>(Identifier{argument_names.back()})};
+                                std::move(right_argument)};
+                            QueryTreeNodePtr comparison = std::move(equals);
+                            if (!numeric_element)
+                            {
+                                /// A failed conversion is a nonmatch; only a source `NULL`
+                                /// contributes an unknown result.
+                                auto if_null = std::make_shared<FunctionNode>("ifNull");
+                                if_null->getArguments().getNodes() = {std::move(comparison), std::make_shared<ConstantNode>(Field{0u})};
+                                comparison = std::move(if_null);
+                            }
                             auto to_nullable = std::make_shared<FunctionNode>("toNullable");
-                            to_nullable->getArguments().getNodes().push_back(std::move(equals));
-                            comparisons.push_back(std::move(to_nullable));
+                            to_nullable->getArguments().getNodes().push_back(std::move(comparison));
+                            comparison = std::move(to_nullable);
+                            if (!numeric_element && canContainNull(*element->getResultType()))
+                            {
+                                auto source_is_null = std::make_shared<FunctionNode>("isNull");
+                                source_is_null->getArguments().getNodes().push_back(
+                                    std::make_shared<IdentifierNode>(Identifier{argument_names.back()}));
+                                auto source_null_result = std::make_shared<FunctionNode>("if");
+                                source_null_result->getArguments().getNodes() = {
+                                    std::move(source_is_null),
+                                    std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())),
+                                    std::move(comparison)};
+                                comparison = std::move(source_null_result);
+                            }
+                            comparisons.push_back(std::move(comparison));
                         }
                         if (in_rhs_has_explicit_null)
                             comparisons.push_back(std::make_shared<ConstantNode>(
