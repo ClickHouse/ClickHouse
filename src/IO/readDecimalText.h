@@ -15,6 +15,28 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+/// Sets `x = x * 10^power + addend` and returns false if the result does not fit `N`. `addend` must be zero or
+/// have the sign of `x`, or `x` must be zero. Exact for the wide integer types too, unlike `common::mulOverflow`,
+/// which never reports overflow for them.
+template <typename N>
+inline bool mulPow10AddChecked(N & x, uint32_t power, N addend)
+{
+    if (x == 0)
+    {
+        x = addend;
+        return true;
+    }
+    /// A nonzero `x` times `10^(digits10 + 1)` does not fit.
+    if (power > static_cast<uint32_t>(std::numeric_limits<N>::digits10))
+        return false;
+    const N multiplier = intExp10OfSize<N>(static_cast<int>(power));
+    if (x > 0 ? x > (std::numeric_limits<N>::max() - addend) / multiplier
+              : x < (std::numeric_limits<N>::min() - addend) / multiplier)
+        return false;
+    x = x * multiplier + addend;
+    return true;
+}
+
 /// Try to read Decimal into underlying type T from ReadBuffer. Throws if 'digits_only' is set and there's unexpected symbol in input.
 /// Returns integer 'exponent' factor that x should be multiplied by to get correct Decimal value: result = x * 10^exponent.
 /// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
@@ -31,6 +53,9 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
     digits = 0;
     uint32_t places = 0;
     typename T::NativeType sign = 1;
+    /// When more digits are allowed than the native integer always holds (`Field` dumps allow any number), the
+    /// mantissa is accumulated with its sign and checked, so it does not wrap and keeps the full native range.
+    const bool check_overflow = max_digits > static_cast<uint32_t>(std::numeric_limits<typename T::NativeType>::digits10);
     bool leading_zeroes = true;
     bool after_point = false;
 
@@ -113,11 +138,21 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (after_point)
                     exponent -= places;
 
-                // TODO: accurate shift10 for big integers
-                x *= intExp10OfSize<typename T::NativeType>(places);
+                if (check_overflow)
+                {
+                    if (!mulPow10AddChecked(x.value, places, sign * static_cast<typename T::NativeType>(byte - '0')))
+                    {
+                        if constexpr (_throw_on_error)
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal value does not fit its native integer type");
+                        return false;
+                    }
+                }
+                else
+                {
+                    x *= intExp10OfSize<typename T::NativeType>(places);
+                    x += (byte - '0');
+                }
                 places = 0;
-
-                x += (byte - '0');
                 break;
             }
             case 'e': [[fallthrough]];
@@ -157,7 +192,8 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
         ++buf.position();
     }
 
-    x *= sign;
+    if (!check_overflow)
+        x *= sign;
     return true;
 }
 

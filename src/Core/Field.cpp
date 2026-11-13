@@ -759,18 +759,17 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     int32_t exponent = 0;
     uint32_t max_digits = static_cast<uint32_t>(-1);
     readDigits<true>(buf, value, max_digits, exponent, true);
-    /// The exponent comes from the text and can be anything in `int32_t`, so check it against the type's
-    /// precision before using it: `scaleMultiplier` saturates instead of overflowing beyond the precision,
-    /// and negating `INT32_MIN` overflows. A negative exponent becomes the scale: an out-of-range one, e.g.
-    /// `Decimal64_'1e-1000'` (in a `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`),
+    /// The exponent comes from the text and can be anything in `int32_t`. A positive one is applied with
+    /// `mulPow10AddChecked`, exact for the wide types too (`common::mulOverflow` never reports overflow for them).
+    /// A negative one becomes the scale; check it before negating, as `-INT32_MIN` overflows. An out-of-range
+    /// scale, e.g. `Decimal64_'1e-1000'` (in a `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`),
     /// later overruns a fixed-size buffer in the decimal text writer, so reject it here, matching
     /// `readDecimalFieldBinary` and `DataTypeDecimalBase`.
     constexpr int32_t max_precision = static_cast<int32_t>(DecimalUtils::max_precision<T>);
     if (exponent > 0)
     {
         scale = 0;
-        if (value.value != 0
-            && (exponent > max_precision || common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value)))
+        if (!mulPow10AddChecked(value.value, static_cast<uint32_t>(exponent), typename T::NativeType(0)))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
     else
