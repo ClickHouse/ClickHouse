@@ -19,6 +19,7 @@
 #include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -54,6 +55,9 @@ struct StorageObjectStorageQuerySettings
     size_t list_object_keys_size;
     bool throw_on_zero_files_match;
     bool ignore_non_existent_file;
+    /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix
+    /// when listing by glob. Tables with hive partition strategy skip them unconditionally.
+    bool skip_hidden_files;
 };
 
 
@@ -124,8 +128,13 @@ public:
      * This list is used to determine the next file name and the set of files that shall be read from remote storage.
      * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
      */
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
+    /// The list is shared by every query on the table, so access goes through these wrappers.
+    /// Returned by value: a reference into the list would outlive the lock that protects it.
+    Paths getPaths() const;
+    void setPaths(const Paths & paths);
+    /// Appends to the current list, not to a copy taken earlier, so a concurrent append is not lost.
+    /// A path that is already listed is not added again.
+    void addPath(const Path & path);
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
@@ -219,6 +228,9 @@ public:
     }
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    /// Request settings given as explicit arguments, which `update` keeps over the server config.
+    virtual std::map<String, String> getExplicitRequestSettings() const { return {}; }
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     /// For a table created on top of a server disk: the config section of the disk that holds the
@@ -288,6 +300,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
     virtual Pipe alterPartition(
+        ObjectStoragePtr /* object_storage */,
         const PartitionCommands & /* commands */,
         ContextPtr /* context */,
         std::shared_ptr<DataLake::ICatalog> /* catalog */,
@@ -436,6 +449,14 @@ public:
     std::optional<String> source_disk_name;
 
 protected:
+    /// Guards the path list, which subclasses store. Never held while acquiring another lock,
+    /// and never across remote I/O.
+    mutable SharedMutex paths_mutex;
+
+    /// Path list storage. Subclasses override these, never the locking wrappers above.
+    virtual const Paths & getPathsImpl() const TSA_REQUIRES_SHARED(paths_mutex) = 0;
+    virtual void setPathsImpl(const Paths & paths) TSA_REQUIRES(paths_mutex) = 0;
+
     void checkFormat() const;
 
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

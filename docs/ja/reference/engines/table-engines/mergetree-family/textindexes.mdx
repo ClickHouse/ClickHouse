@@ -185,7 +185,7 @@ ALTER TABLE table DROP INDEX text_idx;
   `ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。
   たとえば、`tokenizer = sparseGrams(3, 5, 4)` では、内部的には入力文字列から 3-gram、4-gram、5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
 * `array` はトークン化を行いません。つまり、各行の値がトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) を参照) 。他のシステムとの互換性のため、`keyword` は `array` のエイリアスとして使用できます。
-* `keyValuePairs` は、`Map` カラムのキー・バリューのペアを 1 つのトークンにまとめます。これにより、`WHERE map['key'] = 'value'` や `WHERE mapContainsKeyValue(map, 'key', 'value')` のようなキーと値を組み合わせたルックアップを実行しやすくなります ([`keyValuePairs` トークナイザー](#tokenizer-key-value-pairs) を参照) 。
+* `keyValuePairs` は、`Map` カラムのキー・バリューのペアを 1 つのトークンにまとめます。これにより、`WHERE map['key'] = 'value'`、`WHERE map['key'] IN ('value1', 'value2')`、`WHERE mapContainsKeyValue(map, 'key', 'value')` のようなキーと値を組み合わせたルックアップを実行しやすくなります ([`keyValuePairs` トークナイザー](#tokenizer-key-value-pairs) を参照) 。
 
 使用可能なすべてのトークナイザーは [system.tokenizers](/ja/reference/system-tables/tokenizers) に一覧表示されています。
 
@@ -316,7 +316,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 </Note>
 
 関数 [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)、[hasAllTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)、[hasAnyTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)、および [hasPhrase](/ja/reference/functions/regular-functions/string-search-functions#hasPhrase) は、検索語をトークン化する前に、まずプリプロセッサを使用して変換します。
-プリプロセッサはテキスト索引の経路でのみ適用されるため、これらの関数の結果は、テキスト索引を使用するクエリと使用しないクエリ (例: `SETTINGS use_skip_indexes = 0`) で異なる場合があることに注意してください。
+プリプロセッサは索引定義の一部であるため、これらの関数が評価される箇所であればどこでも適用されます。具体的には、`WHERE`/`PREWHERE` フィルタ内でも `SELECT` リスト内でも適用され、索引が読み取られるかどうか (例: `SETTINGS use_skip_indexes = 0`) にかかわらず適用されます。
 
 たとえば、
 
@@ -408,6 +408,11 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
    例: `stem(str, 'en')`
 4. **大文字小文字の正規化**。たとえば [lower](/ja/reference/functions/regular-functions/string-functions#lower) や [lowerUTF8](/ja/reference/functions/regular-functions/string-functions#lowerUTF8) を使って、トークンを小文字化または大文字化し、大文字小文字を区別しないマッチングを可能にします。
    小文字化および大文字化には、ポストプロセッサではなくプリプロセッサを推奨します。
+5. **過度に長いトークンの除外**。自由記述のフィールドには、SHA-256 などの長い 16 進ハッシュのように、検索上の価値はないもののサイズが大きいトークンが含まれることがあります。これらを索引化しても有用な検索語にはならず、領域を浪費するだけです。
+   ポストプロセッサはどのトークナイザーでもトークン単位で適用されるため、テキストの残りの部分には通常の `splitByNonAlpha` によるトークン化をそのまま使用でき、長さのしきい値を超えるトークンだけを空トークンに変換できます。
+   例: `if(length(str) > 32, '', str)` (`length` はバイト数を数えます。文字数を数えるには `lengthUTF8` を使用します)
+   これは値全体ではなく *トークン* をフィルタリングする点に注意してください。`splitByNonAlpha` は句読点で分割するため、句読点を含めた場合にのみ長くなる値には、除外対象となる長いトークンが存在しません。たとえば UUID `550e8400-e29b-41d4-a716-446655440000` はトークン `550e8400`、`e29b`、`41d4`、`a716`、`446655440000` になり、base64 のデータは `+`、`/`、`=` ごとに分割されるため、各断片がしきい値を下回る場合があります。
+   このような値を除外するには、トークン化の前にプリプロセッサで取り除きます。こうすれば、テキストの残りの部分は通常どおりトークン化されます (以下の例を参照)。
 
 ポストプロセッサ式は、[String](/ja/reference/data-types/string) 型のトークンを同じ型のトークンに変換します。
 また、ポストプロセッサ式は、テキスト索引が定義されているカラムまたは式のみを参照する必要があります。
@@ -417,12 +422,12 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
 ポストプロセッサは、索引構築時に生成される各トークンに適用されます (`array` トークナイザーでは、各配列要素がトークンになります)。クエリ時の動作は関数によって異なります:
 
-* `hasToken`、`hasAllTokens`、`hasAnyTokens`、および `hasPhrase` (サポートされている任意のトークナイザーの場合): ポストプロセッサは検索対象のトークンと検索ニードルの両方に適用され、完全に正規化されたマッチング (たとえば、大文字小文字を区別しない検索) を可能にします。`hasPhrase` では、ポストプロセッサ処理後のトークンが密に配置されるため、ポストプロセッサが除外したトークンによって位置の空白は生じず、そのトークンをまたいでフレーズは引き続き一致します。たとえば、`the` を除外するストップワードポストプロセッサでは、`hasPhrase(col, 'see cat')` はドキュメント `see the cat` に一致します。唯一の例外は `splitByRegexp` 索引に対する `hasPhrase` で、ポストプロセッサをサポートしていません (この組み合わせは例外として拒否されます)。
-* その他すべての関数 (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): 索引ヒントのルックアップでは検索ニードルのみがポストプロセッサ処理されます。行レベルの述語では、引き続き元のカラム値と比較されます。
+* `hasToken`、`hasAllTokens`、`hasAnyTokens`、`hasPhrase` (サポートされている任意のトークナイザーを使用する場合) では、ポストプロセッサは検索対象のトークンと検索対象値の両方に適用されるため、完全に正規化された照合 (例: 大文字と小文字を区別しない検索) が可能になります。`hasPhrase` では、ポストプロセッサ適用後のトークンは密に配置されます。そのため、ポストプロセッサによって削除されたトークンは位置のギャップを残さず、フレーズはそのトークンをまたいで一致します。例えば、`the` を削除するストップワード用ポストプロセッサを使用した場合、`hasPhrase(col, 'see cat')` はドキュメント `see the cat` に一致します。唯一の例外は `splitByRegexp` 索引に対する `hasPhrase` で、この場合はポストプロセッサがサポートされません (この組み合わせを指定すると例外が発生し、拒否されます) 。
+* その他のすべての関数 (`=`、`IN`、`has`、`hasAny`、`hasAll`、`mapContains*`) では、索引のヒントによるルックアップのために、検索対象値のみにポストプロセッサが適用されます。row-level の述語では、引き続き元のカラム値との比較が行われます。
 
 例:
 
-* ポストプロセッサ式を使用してストップワードを除去する:
+* ポストプロセッサ式でストップワードを削除します:
 
 ```sql
 CREATE TABLE table
@@ -437,7 +442,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-* ポストプロセッサ式を使用してタイムスタンプを除去します:
+* ポストプロセッサ式でタイムスタンプを削除します:
 
 ```sql
 -- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
@@ -520,6 +525,45 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ```
 
+* ポストプロセッサ式を使用して、長すぎるトークンを除外します:
+
+```sql
+-- Long tokens such as SHA-256 or other hex hashes carry no search value but
+-- still consume index space. The postprocessor runs per token for any tokenizer,
+-- so splitByNonAlpha tokenization is preserved for the rest of the text:
+-- 'error:failed' is still indexed as the tokens 'error' and 'failed'.
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(length(str) > 32, '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+* 句読点を含めて初めて長いトークンになる値を除外します:
+
+```sql
+-- splitByNonAlpha splits a hyphenated UUID into five short tokens (and a base64
+-- blob at every '+', '/' and '='), so a length filter alone never sees the whole
+-- value. The preprocessor removes the whole UUID before tokenization; everything
+-- else is still tokenized by splitByNonAlpha.
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(str, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', ' '),
+        postprocessor = if(length(str) > 32, '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 **関数のサポート**。
 
 テキスト索引を参照する述語では、索引構築時に格納されたものと同じトークンを索引のルックアップで使えるように、グラニュールレベルのチェックの前にプリプロセッサとポストプロセッサが検索値に適用されます。
@@ -575,6 +619,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ディスク上フォーマットはまだ stable ではないため、このパラメータは Experimental であり、将来の release で変更される可能性があります。
 そのため、`support_phrase_search = 1` を指定して索引を作成するには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を有効にする必要があります。
 ポスティングリストのみの保存を維持するには `support_phrase_search = 0` (デフォルト) を設定してください。この引数を指定せずに作成されたテキスト索引には位置情報は含まれません。
+保存された位置情報は、テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) の `positions` カラムで確認できます。
 
 <Warning>
   この引数は Experimental であり、テスト用途でのみ使用してください。
@@ -762,6 +807,10 @@ needle は単語の途中で始まったり終わったりすることがある�
 SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
 ```
 
+`splitByNonAlpha` または `array` トークナイザーを使用し、[use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) が有効になっている場合、needle が 1 つだけの `multiSearchAny` または `multiSearchAnyUTF8` の呼び出し (たとえば `multiSearchAny(comment, ['upport'])`) は、[辞書スキャン](#like-ilike-queries-perf)によって `comment LIKE '%upport%'` として評価されます。そのため、単語の途中にある needle でも索引を利用できます。
+大文字と小文字を区別しないバリアントである `multiSearchAnyCaseInsensitive` と `multiSearchAnyCaseInsensitiveUTF8` が索引を使用するのは、この方法 (`comment ILIKE '%needle%'` としての評価) の場合に限られます。
+複数の needle を指定した呼び出しは、引き続き上記の方法で評価されます。この場合、大文字と小文字を区別しないバリアントおよび `array` トークナイザーでは索引は使用されません。
+
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
 `LIKE` と同様に、関数 [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith) と [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith) も、検索語から完全なトークンを抽出できる場合にのみ、テキスト索引を利用できます。
@@ -909,11 +958,13 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 アクセス[operator[]](/ja/reference/operators/index#access-operators)は、テキスト索引と組み合わせて使用することで、キーと値を絞り込めます。
 テキスト索引が使用されるのは、`Map` カラムに対して [`keyValuePairs`](#tokenizer-key-value-pairs) トークナイザーを使用している場合、または `mapKeys(map)` もしくは `mapValues(map)` の索引式に対して構築されている場合です。
 前者 (`keyValuePairs` トークナイザー) の場合は direct read が使用でき、それ以外の場合はヒント付きの direct read が使用されます。
+`keyValuePairs` 索引は Map の要素に対する `IN` にも対応しており、リスト内の各値につき 1 回のインデックス検索で処理されます。
 
 例:
 
 ```sql
 SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
+SELECT count() FROM table WHERE map['engine'] IN ('clickhouse', 'mergetree');
 ```
 
 テキスト索引で `Array(T)` 型および `Map(K, V)` 型のカラムを使用する方法については、以下の例を参照してください。
@@ -997,7 +1048,10 @@ ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
 -- Finds all error logs:
 SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
 
--- The same, but considering every entry of a repeated key:
+-- Finds all logs of both severities:
+SELECT * FROM logs WHERE attributes['level'] IN ('error', 'warning'); -- one index lookup per value
+
+-- The same as the first query, but considering every entry of a repeated key:
 SELECT * FROM logs WHERE mapContainsKeyValue(attributes, 'level', 'error');
 ```
 
@@ -1014,11 +1068,14 @@ SELECT * FROM logs WHERE mapContainsKeyValue(attributes, 'level', 'error');
   `FixedString` は拒否されます。カラムはパディングバイトを格納する一方、検索対象の定数は格納しないため、行を暗黙のうちに取りこぼすことになるからです。
   `Nullable` は拒否されます。エンコーディングが空の値と `NULL` を区別できないためです。
 * `preprocessor`、`postprocessor`、`support_phrase_search` の各引数はテーブル作成時に拒否されます。
-* 現時点では、マップ要素に対する `=` と `mapContainsKeyValue` のみが索引から回答されます。
-  `mapContainsKey`、`mapContainsValue`、それらの `*Like` バリアント、`IN` など、その他のマップ検索は総当たりスキャンにフォールバックします。
+* 現時点では、マップ要素に対する `=` と `IN`、および `mapContainsKeyValue` のみが索引から回答されます。
+  `mapContainsKey`、`mapContainsValue`、それらの `*Like` バリアントなど、その他のマップ検索は総当たりスキャンにフォールバックします。
   `FixedString` 型の検索文字列も同様です。索引はそのパディングバイトを格納しないためです。
+* `map['key'] IN (...)` が索引を使用するのは、マップ要素が単独で比較される場合のみです。`(map['key'], id) IN (('error', 1))` は総当たりスキャンにフォールバックします。トークンの和集合では、行が同じ集合要素の他のタプル要素にも一致したかどうかを判別できないためです。
+  サブクエリから得られる集合はグラニュールのスキップには使用されますが、直接読み取りには使用されません。
+  `ENGINE = Set` テーブルから得られる集合はまったく使用されません。そのテーブルへの同時実行の `INSERT` によって、クエリ実行中に集合が変化しうるためです。
 * キーが存在しない場合、`map['key']` は値型のデフォルト値を返すため、`map['key'] = ''` はキーを含まずトークンも持たない行に対しても true になります。
-  このような述語は総当たりスキャンにフォールバックします。
+  このような述語は総当たりスキャンにフォールバックします。空文字列を含む `IN` リストも同様です。
   一方、`mapContainsKeyValue(map, 'key', '')` は索引から回答されます。空の値を持つエントリを含む行に対してのみ true になるためです。
 * ある行に同じキーが複数回含まれる場合、`map['key']` は最初に出現した値となり、索引もその出現に一致します。
   これに対し `mapContainsKeyValue` はすべてのエントリを考慮するため、`mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2')` は true になりますが、`map('k', 'v1', 'k', 'v2')['k'] = 'v2'` は true になりません。
@@ -1346,7 +1403,7 @@ direct read は 2 つの設定で制御されます。
 
 direct read 最適化は、`hasToken`、`hasAllTokens`、`hasAnyTokens` 関数をサポートします。
 テキスト索引が `array` トークナイザーで定義されている場合、direct read は `equals`、`has`、`hasAny`、`hasAll`、`mapContainsKey`、`mapContainsValue` 関数でもサポートされます。
-テキスト索引が `keyValuePairs` トークナイザーで定義されている場合、direct read は map の要素に対する `equals` (`map['key'] = 'value'`) および `mapContainsKeyValue` でサポートされます。
+テキスト索引が `keyValuePairs` トークナイザーで定義されている場合、direct read は map の要素に対する `equals` および `IN` (`map['key'] = 'value'`、`map['key'] IN ('value1', 'value2')`) と、`mapContainsKeyValue` でサポートされます。`IN` の場合、集合は定数値のリストである必要があります。
 これらの関数は、`AND`、`OR`、`NOT` 演算子で組み合わせることもできます。
 `WHERE` 句または `PREWHERE` 句には、追加の非テキスト検索関数のフィルタ (テキストカラムまたは他のカラムに対するフィルタ) を含めることもできます。この場合でも direct read 最適化は使用されますが、効果はやや低下します (適用されるのはサポート対象のテキスト検索関数のみです) 。
 
@@ -1410,9 +1467,9 @@ WHERE フィルタ句にテキスト検索関数しか含まれていない場�
 
 この追加フィルタは、ほかのフィルタと組み合わせることで結果セットをさらに絞り込むための選択性を高め、他のカラムから読み取るデータ量の削減に役立ちます。
 
-ヒントとしての direct read は、設定 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ja/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) で制御されます (デフォルトで有効) 。
+ヒントとしての直接読み取りは、設定 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ja/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (デフォルトで有効) で制御されます。
 
-ヒントなしのクエリの例:
+ヒントを使用しないクエリの例:
 
 ```sql
 EXPLAIN actions = 1
@@ -1458,20 +1515,20 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 LIKE/ILIKE のクエリパターンが `%<alpha-numeric-characters-without-spaces>%`、`<alpha-numeric-characters-without-spaces>%`、`%<alpha-numeric-characters-without-spaces>` のいずれかであり、テキスト索引のトークナイザーが `splitByNonAlpha` または `array` である場合、ClickHouse は転置索引を活用して LIKE/ILIKE クエリを大幅に高速化します。このとき ClickHouse は、フルテーブルスキャンではなく転置索引の辞書をスキャンして、一致するパターンを見つけます。
 
-辞書スキャンの結果をどう利用するかは、needle がどこにアンカーされているかによって決まります。
+辞書スキャンの結果をどう利用するかは、検索文字列がどこにアンカーされているかによって決まります。
 
 * `%value%` は、その行のいずれかのトークンに一致する場合にのみ行に一致します。そのため索引だけでクエリを判定でき、元の述語を除去する [direct read (hint なし) ](#direct-read) となります。
-* `value%` と `%value` は needle を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[ヒントとしての direct read](#direct-read) に利用されます。
+* `value%` と `%value` は検索文字列を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[ヒントとしての direct read](#direct-read) に利用されます。
 
-この同じ辞書スキャンは、needle に検索できる完全なトークンが存在しない場合の `startsWith(col, 'value')` と `endsWith(col, 'value')` にも使われます。
+この同じ辞書スキャンは、検索文字列に検索できる完全なトークンが存在しない場合の `startsWith(col, 'value')` と `endsWith(col, 'value')` にも使われます。
 アナライザのパスである [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ja/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (デフォルトで有効) が `col LIKE 'value%'` を `startsWith(col, 'value')` に、`col LIKE '%value'` を `endsWith(col, 'value')` に rewrite するため、実際にはほとんどの `value%` および `%value` パターンがこの経路をたどります。
-複数のトークンにまたがる needle は needle の完全なトークンをそのまま使用するため、辞書スキャンは不要です。
+複数のトークンにまたがる検索文字列は検索文字列の完全なトークンをそのまま使用するため、辞書スキャンは不要です。
 
-特別なケースとして、索引のトークナイザーが `array` の場合は、*あらゆる* パターンがこの最適化の対象となります。アンカー、句読点、`_` の wildcard、`%` で区切られた複数の needle、escape された metacharacter などがすべて含まれます。
+特別なケースとして、索引のトークナイザーが `array` の場合は、*あらゆる* パターンがこの最適化の対象となります。アンカー、句読点、`_` の wildcard、`%` で区切られた複数の検索文字列、escape された metacharacter などがすべて含まれます。
 
 この最適化が有効な場合、LIKE/ILIKE クエリはフルテーブルスキャンよりも大幅に高速になります。ただし、パターンが辞書内のほとんどのトークンに一致する場合は、フルテーブルスキャンより性能が低下することがあります。幸い、これを防ぐための fallback の仕組みがあります。
 
-`value%` や `%value` パターンの高速化はグラニュールのスキップによって得られるため、一致する行の配置状況に依存します。すべてのグラニュールに一致行が存在するような needle では何も prune されず、結局は行われる full scan に加えて辞書スキャンのコストまで支払うことになります。そのような workload では [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) を無効にしてください。
+`value%` や `%value` パターンの高速化はグラニュールのスキップによって得られるため、一致する行の配置状況に依存します。すべてのグラニュールに一致行が存在するような検索文字列では何も prune されず、結局は行われる full scan に加えて辞書スキャンのコストまで支払うことになります。そのような workload では [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) を無効にしてください。
 
 この最適化は次の設定で制御されます。
 
@@ -1482,13 +1539,12 @@ fallback の仕組みは 2 つの設定で制御されます。
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ja/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ja/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-この最適化がサポートするのは、`like`、`ilike`、`startsWith`、`endsWith` の各関数のみです。
+この最適化がサポートするのは、`like`、`ilike`、`startsWith`、`endsWith` の各関数、および検索文字列が 1 つの場合の `multiSearchAny`、`multiSearchAnyUTF8`、`multiSearchAnyCaseInsensitive`、`multiSearchAnyCaseInsensitiveUTF8` の各関数のみです。
 また一般に、プリプロセッサやポストプロセッサを持たない索引が必要です (`ilike` はプリプロセッサ関数として `lower` または `upper` も受け付けます)。
 
-`ilike` の場合、`splitByNonAlpha` トークナイザーと `array` トークナイザーのいずれにおいても、次の 2 つの特殊なケースでは検索がフルテーブルスキャンに falls back します。
+`ilike` の場合、`splitByNonAlpha` トークナイザーと `array` トークナイザーのいずれにおいても、次の 1 つの特殊なケースでは検索がフルテーブルスキャンに falls back します。
 
-* needle に文字 `k` が含まれる場合。`ilike` は `U+212A KELVIN SIGN` を `k` として扱いますが、辞書スキャンはバイト単位で比較するため、その表記の行を取りこぼしてしまいます。`U+212A` は `ilike` が ASCII の英数字に畳み込む唯一の文字であるため、影響を受ける needle 中の文字は `k` のみです。
-* 索引のプリプロセッサ expression に `lowerUTF8` または `upperUTF8` が含まれる場合。これらは非 ASCII 文字を ASCII の文字に書き換える (`ß` を `SS` に、`ſ` を `S` に) ため、`ilike` が一致しない行を索引が報告してしまうことになります。
+* 索引のプリプロセッサ式に `lowerUTF8` または `upperUTF8` が含まれる場合。これらは非 ASCII 文字を ASCII の文字に書き換える (`ß` を `SS` に、`ſ` を `S` に) ため、`ilike` が一致しない行を索引が報告してしまうことになります。
 
 ### 単純なカウントクエリ {#count-queries-perf}
 
@@ -1527,8 +1583,8 @@ Aggregating
 テキスト索引の一部をメモリ上に保持するための、サーバー全体で共有されるさまざまな cache があります ([実装の詳細](#implementation) セクションを参照してください) 。
 現在、I/O を削減するために、テキスト索引のデシリアライズ済みヘッダー、トークン、ポスティングリスト用の cache が用意されています。
 設定 [use&#95;text&#95;index&#95;header&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_tokens_cache)、および [use&#95;text&#95;index&#95;postings&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_postings_cache) を使用すると、クエリによる個々の cache への読み取りと書き込みを無効にできます。
-データパーツに存在しないトークンのキャッシュはデフォルトで有効になっており、[`use_text_index_negative_tokens_cache`](/ja/reference/settings/session-settings/use-text) を使用して個別に制御できます。
-ポスティングリストのしきい値を超えたパターンによる辞書スキャンの結果のキャッシュはデフォルトで有効になっており、`use_text_index_pattern_bypass_cache` を使用して個別に制御できます。
+データパーツに存在しないトークンのキャッシュはデフォルトで有効になっており、[`use_text_index_negative_tokens_cache`](/ja/reference/settings/session-settings/use-text#use_text_index_negative_tokens_cache) を使用して個別に制御できます。
+ポスティングリストのしきい値を超えたパターンによる辞書スキャンの結果のキャッシュはデフォルトで有効になっており、[`use_text_index_pattern_bypass_cache`](/ja/reference/settings/session-settings/use-text#use_text_index_pattern_bypass_cache) を使用して個別に制御できます。
 
 cache をクリアするには、ステートメント [SYSTEM CLEAR TEXT INDEX CACHES](/ja/reference/statements/system#drop-text-index-caches) を使用します。
 
@@ -1651,7 +1707,7 @@ Dictionaryブロックファイル (.dct) には、パーツ内のすべての�
 
 **デバッグ**
 
-テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) を使用すると、テキスト索引の内部を調査できます。
+テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) を使用すると、テキスト索引の内部 (Dictionary、ポスティングリスト、位置) を調査できます。
 
 ## 例: Hacker News データセット {#hacker-news-dataset}
 
