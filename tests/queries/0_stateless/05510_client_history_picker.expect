@@ -1,0 +1,189 @@
+#!/usr/bin/expect -f
+
+# Ctrl-R opens an interactive history search: words match in any order and case (also non-ASCII),
+# Esc leaves the line unchanged, pasted text is used as the search query, control characters
+# from the history are not sent to the terminal, an unmatched query is kept as typed, the query
+# can be edited in the middle, a match beyond the screen width is scrolled into view, Esc keeps
+# the cursor position in the line, and a query typed together with Ctrl-R stays visible.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+# Entries with a terminal control sequence and with non-ASCII letters.
+exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27ПРИВЕТ_unicode\\x27\\n### 2026-01-01 00:00:02.000\\nSELECT \\x27zzba\\x27\\n### 2026-01-01 00:00:03.000\\nSELECT \\x27zzab\\x27\\n### 2026-01-01 00:00:04.000\\nSELECT \\x27[string repeat y 100] long_target_one\\x27\\n### 2026-01-01 00:00:05.000\\nSELECT \\x27[string repeat 😀 60]emoji_target\\x27\\n' > $history_file"
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "stty rows 24 columns 80 ; source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 'alpha_marker_one'\r"
+expect "alpha_marker_one"
+expect "1 row in set"
+expect ":) "
+
+send -- "SELECT 'beta_marker_two'\r"
+expect "beta_marker_two"
+expect "1 row in set"
+expect ":) "
+
+# Search with the words in a different order and case, then pick and run the match.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "MARKER alpha"
+expect -re {1/[0-9]+}
+# Both searched words are highlighted in the match.
+expect -ex "'\033\[38;5;151malpha\033\[38;5;254m_\033\[38;5;151mmarker\033\[38;5;254m_one'"
+send -- "\r"
+expect "SELECT 'alpha_marker_one'"
+send -- "\r"
+expect "alpha_marker_one"
+expect "1 row in set"
+expect ":) "
+
+# Esc closes the search and keeps the (empty) line.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "beta"
+expect -re {1/[0-9]+}
+send -- "\033"
+expect ":) "
+send -- "SELECT 'after_abort'\r"
+expect "after_abort"
+expect "1 row in set"
+expect ":) "
+
+# Pasted text becomes the search query.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "\033\[200~two\033\[201~"
+expect -re {1/[0-9]+}
+send -- "\r"
+expect "SELECT 'beta_marker_two'"
+send -- "\r"
+expect "beta_marker_two"
+expect "1 row in set"
+expect ":) "
+
+# The newest match is selected first; Up moves to the older one.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "marker_"
+expect -re {2/[0-9]+}
+send -- "\033\[A"
+send -- "\r"
+expect "SELECT 'alpha_marker_one'"
+send -- "\r"
+expect "alpha_marker_one"
+expect "1 row in set"
+expect ":) "
+
+# The control characters of an entry are shown as `?`.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "zzctl"
+expect -re {1/[0-9]+}
+expect -ex "'?\]0;"
+send -- "\033"
+expect ":) "
+
+# Case-insensitive for non-ASCII letters too.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "привет"
+expect -re {1/[0-9]+}
+send -- "\033"
+expect ":) "
+
+# Esc also keeps the cursor position in the line: `_` is inserted where it was.
+send -- "SELECT 'cursor' || 'kept'"
+send -- "\033\[D\033\[D\033\[D\033\[D\033\[D"
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "\033"
+expect ":) "
+send -- "_\r"
+expect "cursor_kept"
+expect "1 row in set"
+expect ":) "
+
+# Left moves the cursor: `zzb`, Left, `a` searches for `zzab`.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "zzb"
+expect -re {1/[0-9]+}
+send -- "\033\[D"
+send -- "a"
+expect -re {1/[0-9]+}
+send -- "\r"
+expect "SELECT 'zzab'"
+send -- "\r"
+expect "1 row in set"
+expect ":) "
+
+# A match beyond the screen width is shown with the end of the entry after a `..` marker.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "long_target"
+expect -re {1/[0-9]+}
+expect -re { \.\.y+ }
+expect "_one'"
+send -- "\033"
+expect ":) "
+
+# Emoji take two columns, as in terminals and `replxx`: the entry is clipped to at most 31 of them
+# before the match, and the cursor of four emoji in the query is at column 11 (counting one column
+# per emoji would never reach it).
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "emoji_target"
+expect -re {1/[0-9]+}
+expect -re { \.\.(😀){1,31}\x1b\[[0-9;]*memoji_target}
+send -- "\033"
+expect ":) "
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "😀😀😀😀"
+expect -ex "\033\[11G"
+send -- "\033"
+expect ":) "
+
+# A query typed together with Ctrl-R in one write is shown above the search.
+send -- "SELECT 'coalesced' || '_shown'\022"
+expect -re {coalesced.*_shown.*[0-9]+/[0-9]+}
+send -- "\033"
+expect ":) "
+send -- "\r"
+expect "coalesced_shown"
+expect "1 row in set"
+expect ":) "
+
+# Enter without a match keeps the multi-line query as it was, with its line break after the comment.
+send -- "\033\[200~SELECT 'multi' || 'line' -- comment\n|| '_kept'\033\[201~"
+send -- "\022"
+expect -re {0/[0-9]+}
+send -- "\r"
+send -- "\r"
+expect "multiline_kept"
+expect "1 row in set"
+expect ":) "
+
+send -- "\4"
+expect eof
+
+exec bash -c "rm -f $history_file"

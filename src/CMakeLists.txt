@@ -364,7 +364,7 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
-target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::stringzilla)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::heks)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
@@ -621,7 +621,7 @@ endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
-target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon widechar_width)
 
 if (ENABLE_GPU)
     target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf ch_gpu::cudart ch_contrib::nvcomp)
@@ -1023,10 +1023,6 @@ if (TARGET ch_contrib::prometheus_protobufs)
     target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
-if (TARGET ch_rust::skim)
-    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(dbms PUBLIC ch_rust::skim)
-endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     target_link_libraries(dbms PUBLIC ch_contrib::google_cloud_cpp)
