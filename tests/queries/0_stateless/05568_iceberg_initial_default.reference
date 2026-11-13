@@ -132,6 +132,9 @@ null struct	2	(10,5)
 null struct	1	\N	5
 null struct	2	10	5
 null struct	2
+absent list	[(1,2),(3,9)]	(10,[(1,2),(3,9)])
+absent list	[1,3]	[2,9]	[2,9]
+absent list	1
 ORC
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
@@ -198,6 +201,9 @@ null struct	2	(10,5)
 null struct	1	\N	5
 null struct	2	10	5
 null struct	2
+absent list	[(1,2),(3,9)]	(10,[(1,2),(3,9)])
+absent list	[1,3]	[2,9]	[2,9]
+absent list	1
 Avro
 schema ids	[0]
 1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]

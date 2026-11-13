@@ -1527,7 +1527,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
     {
         for (const auto & column : header)
         {
-            const auto [absent, default_applies] = getORCFieldAbsence(column.name, *column_mapper, file_schema, field_ids_cache);
+            const auto [absent, default_applies] = getORCFieldAbsence(
+                column_mapper->getIcebergFieldPath(column.name), *column_mapper, file_schema, field_ids_cache);
             if (!absent)
                 continue;
             absent_columns.insert(column.name);

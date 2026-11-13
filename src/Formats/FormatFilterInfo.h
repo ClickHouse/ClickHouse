@@ -126,6 +126,7 @@ public:
     }
     /// The `initial-default` of `path` as a value of `type`, the type that a reader reads the field with. It can have only some of
     /// the elements of a struct, at any depth (a read of some of its subcolumns): they are taken from the default by name.
+    /// For a subcolumn of a field (`l.y` of a list of structs `l`), the subcolumn of the field's default.
     std::optional<Field> getIcebergInitialDefault(const String & path, const DataTypePtr & type) const;
     void removeIcebergInitialDefault(const String & path) { iceberg_initial_defaults.erase(path); }
     bool hasIcebergInitialDefaults() const { return !iceberg_initial_defaults.empty(); }
@@ -145,6 +146,8 @@ public:
     }
     /// The path of the struct, list or map that has the field `path`, empty for a top-level field.
     String getIcebergParentPath(const String & path) const;
+    /// The field of the storage encoding that is `path` or has it as a subcolumn (the longest such prefix), empty if none.
+    String getIcebergFieldPath(const String & path) const;
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;

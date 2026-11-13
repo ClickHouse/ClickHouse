@@ -110,6 +110,13 @@ for table, mode in zip(sys.argv[1::2], sys.argv[2::2]):
     elif mode == "null_struct":
         struct = next(f for f in fields if f["name"] == "t")["type"]
         struct["fields"].append({"id": new_id(), "name": "y", "required": False, "type": "int", "initial-default": 5})
+    elif mode == "absent_list":
+        for parent in (fields, next(f for f in fields if f["name"] == "t")["type"]["fields"]):
+            x, y, element = new_id(), new_id(), new_id()
+            parent.append({"id": new_id(), "name": "l", "required": False, "initial-default": [{str(x): 1, str(y): 2}, {str(x): 3}],
+                "type": {"type": "list", "element-id": element, "element-required": False, "element": {"type": "struct", "fields": [
+                    {"id": x, "name": "x", "required": False, "type": "int"},
+                    {"id": y, "name": "y", "required": False, "type": "int", "initial-default": 9}]}}})
     elif mode == "bad_long":
         fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
     elif mode == "bad_timestamp":
@@ -558,6 +565,20 @@ for format in Parquet ORC Avro; do
             SELECT 'null struct', k, t FROM icebergLocal('${table}/') ORDER BY k;
             SELECT 'null struct', k, t.x, t.y FROM icebergLocal('${table}/') ORDER BY k;
             SELECT 'null struct', count() FROM icebergLocal('${table}/') WHERE t.y = 5;"
+    fi
+
+    # A list of structs added to the table and to a struct: a field of its elements, read alone, is taken from its default.
+    if [ "${format}" != Avro ]; then
+        table="${format}_absent_list"
+        create+="
+            CREATE TABLE t_absent_list (k Int32, t Tuple(x Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t_absent_list VALUES (1, (10));"
+        evolve+=("${table}" absent_list)
+        bind+=("${table}")
+        after+="
+            SELECT 'absent list', l, t FROM icebergLocal('${table}/');
+            SELECT 'absent list', l.x, l.y, t.l.y FROM icebergLocal('${table}/');
+            SELECT 'absent list', count() FROM icebergLocal('${table}/') WHERE has(l.y, 9) AND has(t.l.y, 9);"
     fi
 
     ${LOCAL} --allow_insert_into_iceberg=1 -q "${create}"

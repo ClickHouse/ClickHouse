@@ -88,7 +88,8 @@ std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & path,
 {
     if (!column_mapper)
         return {};
-    if (!column_mapper->getIcebergInitialDefault(path) || !isAbsentFromFile(path))
+    const String field = column_mapper->getIcebergFieldPath(path);
+    if (!column_mapper->getIcebergInitialDefault(field) || !isAbsentFromFile(field))
         return {};
     return column_mapper->getIcebergInitialDefault(path, type);
 }
