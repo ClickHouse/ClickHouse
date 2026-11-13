@@ -128,7 +128,18 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
     /// user-supplied value.
-    auto is_indirect_value = [](const std::string & v) { return startsWith(v, "from_env") || startsWith(v, "from_zk"); };
+    /// A value with `${...}` is expanded by `AbstractConfiguration` to another value of the configuration when the disk reads it,
+    /// so it is not the value the checks below see either.
+    auto is_indirect_value = [](const std::string & v)
+    {
+        return startsWith(v, "from_env") || startsWith(v, "from_zk") || v.contains("${");
+    };
+    /// The keys that the disks read as lists (all their occurrences): the headers of S3 disks and the keys of encrypted disks.
+    /// None of them is used by the checks below.
+    auto is_list_key = [](const std::string & k)
+    {
+        return k == "key" || k == "key_hex" || startsWith(k, "header") || startsWith(k, "access_header");
+    };
     auto is_s3_credential_or_auth_field = [](const std::string & k)
     {
         return k == "access_key_id" || k == "secret_access_key" || k == "session_token" || k == "role_arn"
@@ -167,7 +178,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
         /// rejected in a fresh definition. A definition stored before this check may still have one; it is
         /// loaded (on server startup and on short `ATTACH`), and only the first occurrence of each key counts
         /// for the checks, as it does for the disk.
-        const bool is_repeated_key = !seen_keys.insert(key).second;
+        const bool is_repeated_key = !seen_keys.insert(key).second && !is_list_key(key);
         if (is_repeated_key && !is_loading_from_existing_metadata && !stored_definition)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key `{}` is specified more than once in the disk configuration", key);
 
