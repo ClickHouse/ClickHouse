@@ -593,6 +593,29 @@ def test_metrics_without_traceparent_sampled_by_server_settings():
     )
 
 
+def test_query_api_failed_authentication_sampled_by_server_settings():
+    """
+    A request without a traceparent header that fails authentication has no user settings,
+    so it should be traced when the server's default profile samples every request.
+    """
+    marker = f"prometheus-auth-failure-sampling-{uuid.uuid4()}"
+    response = requests.get(
+        f"http://{node_sampled.ip_address}:9093/api/v1/query?query=up&time=1753176757.89",
+        headers={"User-Agent": marker, "X-ClickHouse-User": "no_such_user"},
+    )
+    assert response.status_code != 200
+
+    assert_eq_with_retry(
+        node_sampled,
+        f"SYSTEM FLUSH LOGS opentelemetry_span_log; "
+        f"SELECT count() FROM system.opentelemetry_span_log "
+        f"WHERE operation_name = 'PrometheusRequestHandler' AND parent_span_id = 0 "
+        f"AND attribute['http.user.agent'] = '{marker}' "
+        f"AND attribute['clickhouse.http_status'] = '{response.status_code}'",
+        "1\n",
+    )
+
+
 def test_query_range_api_appears_in_query_log_with_read_rows():
     """
     After a Prometheus query_range API (/api/v1/query_range) request, there should

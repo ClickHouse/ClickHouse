@@ -898,6 +898,17 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         thread_trace_context.reset();
     });
 
+    /// A request that never reached the user's sampling, e.g. one failing authentication, is sampled by the server's settings.
+    const auto start_time_us
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    auto trace_if_not_sampled = [&]
+    {
+        if (thread_trace_context)
+            return;
+        thread_trace_context = startTracing(request, Context::getGlobalContextInstance());
+        thread_trace_context->root_span.start_time_us = start_time_us;
+    };
+
     try
     {
         write_event = write_event_;
@@ -918,6 +929,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
+        trace_if_not_sampled();
 
         fiu_do_on(FailPoints::prometheus_handler_finalize_throw,
         {
@@ -927,8 +939,8 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
     catch (...)
     {
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute(std::current_exception());
+        trace_if_not_sampled();
+        thread_trace_context->root_span.addAttribute(std::current_exception());
 
         tryLogCurrentException(log);
 
