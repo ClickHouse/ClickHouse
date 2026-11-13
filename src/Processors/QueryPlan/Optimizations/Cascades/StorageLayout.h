@@ -25,9 +25,13 @@ class StorageLayoutFunction
 {
 public:
     /// The function of component `component_index` of the partition key. Returns nullptr when the
-    /// component cannot be used: its result depends on something the argument types do not show (the time
-    /// zone of the server), or arguments that compare as equal can give different results (floating-point
-    /// `0.` and `-0.`).
+    /// component is not supported.
+    ///
+    /// A supported component holds only columns, literals and functions whose result depends only on the
+    /// values and the types of the arguments: `cityHash64`, `modulo`, `intDiv`, `toYYYYMM`,
+    /// `toStartOfMonth` and `toDate`, over integers, strings, `Date` and `DateTime` with a time zone in
+    /// its type. For each other component two tables with equal functions could hold different partition
+    /// values for equal arguments.
     static std::shared_ptr<const StorageLayoutFunction> tryCreate(const KeyDescription & partition_key, size_t component_index);
 
     const ActionsDAG & getActionsDAG() const { return dag; }

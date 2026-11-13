@@ -1,16 +1,18 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 
 #include <Columns/ColumnConst.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
 #include <Storages/KeyDescription.h>
 #include <fmt/ranges.h>
@@ -18,6 +20,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -27,20 +34,87 @@ size_t positionOf(const Names & names, const String & name)
     return static_cast<size_t>(std::ranges::find(names, name) - names.begin());
 }
 
-/// A `DateTime` with no time zone in its type uses the time zone of the server, so two tables with equal
-/// expressions can still compute different values.
-bool usesServerTimeZone(const DataTypePtr & type)
+/// The types that a layout function can read and compute. Floating-point types are not here: `0.` and
+/// `-0.` compare as equal, but a hash of them is different.
+bool isSupportedType(const DataTypePtr & type)
 {
-    const auto inner_type = removeLowCardinalityAndNullable(type);
-    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(inner_type.get()))
-        return !date_time->hasExplicitTimeZone();
-    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(inner_type.get()))
-        return !date_time64->hasExplicitTimeZone();
+    const WhichDataType which(type);
+    if (which.isNativeInteger() || which.isString() || which.isFixedString() || which.isDate())
+        return true;
+    /// A `DateTime` with no time zone in its type uses the time zone of the session.
+    const auto * date_time = typeid_cast<const DataTypeDateTime *>(type.get());
+    return date_time && date_time->hasExplicitTimeZone();
+}
+
+bool isNativeInteger(const ActionsDAG::Node * node)
+{
+    return WhichDataType(node->result_type).isNativeInteger();
+}
+
+/// The functions that a layout function can hold. The result of such a function depends only on the
+/// values and the types of its arguments: it reads no setting and no time zone of the session.
+bool isSupportedFunction(const ActionsDAG::Node & node)
+{
+    const auto & name = node.function_base->getName();
+    const auto & arguments = node.children;
+
+    if (name == "cityHash64")
+        return !arguments.empty();
+
+    if (name == "modulo" || name == "moduloLegacy" || name == "intDiv")
+        return arguments.size() == 2 && std::ranges::all_of(arguments, isNativeInteger) && isNativeInteger(&node);
+
+    /// On a number these functions use the time zone of the session. On a `Date`, and on a `DateTime` with
+    /// a time zone in its type, they use only the value.
+    if (name == "toYYYYMM" || name == "toStartOfMonth" || name == "toDate")
+    {
+        if (arguments.size() != 1)
+            return false;
+        const WhichDataType argument_type(arguments.front()->result_type);
+        return argument_type.isDate() || argument_type.isDateTime();
+    }
+
     return false;
 }
 
-/// Walks the function from its output: finds the arguments in a fixed order, checks that every node can
-/// be compared between tables, and hashes the structure.
+/// Checks that a component of a partition key holds only columns, literals and supported functions over
+/// supported types. Each other component can give different values in two tables that look equal: a
+/// function can read a setting or the time zone of the session that writes the rows, and the content
+/// of an `IN` set or of a lambda is not in the structure that the layout compares.
+///
+/// The check follows the text of the key and not only the DAG, because the DAG can hold a constant that
+/// a function computed when the table was loaded, for example `toDate(1767225600)`. An `INSERT` builds a
+/// key with `%` again from its text, with the settings of its session. Without this check two tables
+/// with equal constants in the DAG could hold different partition values.
+bool isSupportedExpression(const IAST & ast, const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS)
+        return isSupportedExpression(ast, *node.children.front());
+
+    if (!isSupportedType(node.result_type))
+        return false;
+
+    if (ast.as<ASTIdentifier>())
+        return node.type == ActionsDAG::ActionType::INPUT;
+    if (ast.as<ASTLiteral>())
+        return node.type == ActionsDAG::ActionType::COLUMN && node.column;
+
+    const auto * function = ast.as<ASTFunction>();
+    if (!function || !function->arguments || function->parameters || node.type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    const auto & ast_arguments = function->arguments->children;
+    if (function->name != node.function_base->getName() || ast_arguments.size() != node.children.size()
+        || !isSupportedFunction(node))
+        return false;
+
+    for (size_t i = 0; i < node.children.size(); ++i)
+        if (!isSupportedExpression(*ast_arguments[i], *node.children[i]))
+            return false;
+    return true;
+}
+
+/// Walks a supported function from its output: finds the arguments in a fixed order and hashes the structure.
 class StructureCollector
 {
 public:
@@ -49,13 +123,8 @@ public:
     {
     }
 
-    bool isUsable() const { return usable; }
-
     void visit(const ActionsDAG::Node & node)
     {
-        if (usesServerTimeZone(node.result_type))
-            usable = false;
-
         hash.update(static_cast<UInt8>(node.type));
         hash.update(node.result_type->getName());
 
@@ -63,10 +132,6 @@ public:
         {
             case ActionsDAG::ActionType::INPUT:
             {
-                /// `0.` and `-0.` compare as equal, but a hash of them is different.
-                if (WhichDataType(removeLowCardinalityAndNullable(node.result_type)).isFloat())
-                    usable = false;
-
                 size_t position = positionOf(argument_names, node.result_name);
                 if (position == argument_names.size())
                 {
@@ -78,11 +143,6 @@ public:
             }
             case ActionsDAG::ActionType::COLUMN:
             {
-                if (!node.column)
-                {
-                    usable = false;
-                    break;
-                }
                 applyVisitor(FieldVisitorHash(hash), node.column->getField());
                 break;
             }
@@ -101,10 +161,7 @@ public:
             }
             case ActionsDAG::ActionType::ARRAY_JOIN:
             case ActionsDAG::ActionType::PLACEHOLDER:
-            {
-                usable = false;
-                break;
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node {} in a storage layout function", node.result_name);
         }
     }
 
@@ -112,7 +169,6 @@ private:
     Names & argument_names;
     DataTypes & argument_types;
     SipHash & hash;
-    bool usable = true;
 };
 
 bool sameStructure(
@@ -172,27 +228,26 @@ String dumpNode(const ActionsDAG::Node & node, const Names & argument_names)
 
 StorageLayoutFunctionPtr StorageLayoutFunction::tryCreate(const KeyDescription & partition_key, size_t component_index)
 {
-    if (!partition_key.expression || component_index >= partition_key.column_names.size())
+    /// The text of the key has one expression for each column name of the key, in the same order.
+    if (!partition_key.expression || !partition_key.expression_list_ast
+        || component_index >= partition_key.column_names.size()
+        || component_index >= partition_key.expression_list_ast->children.size())
         return nullptr;
 
     const auto & key_actions = partition_key.expression->getActionsDAG();
     const auto * component = key_actions.tryFindInOutputs(partition_key.column_names[component_index]);
-    if (!component)
+    if (!component || !isSupportedExpression(*partition_key.expression_list_ast->children[component_index], *component))
         return nullptr;
 
     std::shared_ptr<StorageLayoutFunction> function(new StorageLayoutFunction);
     function->dag = ActionsDAG::cloneSubDAG({component}, /*remove_aliases=*/ true);
-    /// The value of a part was computed when the part was written. A function that is deterministic only
-    /// within one query (`dictGet`, for example) can give another value later or in another table.
-    if (function->dag.hasArrayJoin() || function->dag.hasNonDeterministic() || function->dag.hasStatefulFunctions())
-        return nullptr;
 
     SipHash hash;
     StructureCollector collector(function->argument_names, function->argument_types, hash);
     collector.visit(*function->dag.getOutputs().front());
 
     /// A component with no arguments is a constant: all rows are in one group.
-    if (!collector.isUsable() || function->argument_names.empty())
+    if (function->argument_names.empty())
         return nullptr;
 
     function->structure_hash = hash.get64();

@@ -1,0 +1,65 @@
+-- 1. a supported key: co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by modulo(cityHash64(#0), 8)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_layout_hash_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_layout_hash_right)
+4000	7998000	11990
+4000	7998000	11990
+-- 2. different sets in IN: not co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_layout_set_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_layout_set_right)
+4000	7998000	11990
+4000	7998000	11990
+-- 3. different lambda bodies: not co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_layout_lambda_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_layout_lambda_right)
+4000	7998000	11990
+4000	7998000	11990
+-- 4. toDate of a number, rows written in two time zones: not co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_layout_zone_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_layout_zone_right)
+4000	7998000	11990
+4000	7998000	11990
+-- 5. a constant computed by a function, rows written in two time zones: not co-located
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_layout_folded_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_layout_folded_right)
+4000	7998000	11990
+4000	7998000	11990
