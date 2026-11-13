@@ -6,7 +6,7 @@
 -- why the names Kusto defines but this dialect does not implement stay rejected -- see
 -- 04673_kql_unsupported_is_rejected.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- plain ClickHouse scalar functions --';

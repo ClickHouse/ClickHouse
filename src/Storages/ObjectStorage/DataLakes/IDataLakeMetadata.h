@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <IO/Progress.h>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
@@ -50,16 +51,21 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+class ConditionSelectivityEstimator;
 
-/// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
+/// A read estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
 struct DataLakeReadEstimate
 {
-    /// Rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
-    std::optional<UInt64> rows;
     /// Pruning by the filter dropped at least one live data file or a whole data manifest.
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
+    /// The rows of the live data files left after pruning, without the deleted rows the metadata can count; std::nullopt if
+    /// the metadata is malformed.
+    std::optional<UInt64> rows;
+    /// The statistics of the requested columns over these files, with their numbers of distinct values, and the estimate of
+    /// conditions on them; nullptr if no requested column has statistics.
+    std::shared_ptr<const ConditionSelectivityEstimator> estimator;
 };
 
 class IDataLakeMetadata : boost::noncopyable
@@ -147,8 +153,10 @@ public:
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
-    /// pruned by `filter` as the read prunes them. std::nullopt if this data lake gives no estimate.
-    virtual std::optional<DataLakeReadEstimate> estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, ContextPtr) const
+    /// pruned by `filter` as the read prunes them, and the statistics of `column_names`. std::nullopt if this data lake
+    /// gives no estimate.
+    virtual std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, const Names & /*column_names*/, ContextPtr) const
     {
         return std::nullopt;
     }
@@ -248,6 +256,13 @@ protected:
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_,
         UInt64 snapshot_version_) const;
+
+    /// `schema_transforms_` is empty or has the `DataLakeObjectMetadata::schema_transform` of each data file, nullptr for none.
+    ObjectIterator createKeysIterator(
+        Strings && data_files_,
+        std::vector<std::shared_ptr<ActionsDAG>> && schema_transforms_,
+        ObjectStoragePtr object_storage_,
+        IDataLakeMetadata::FileProgressCallback callback_) const;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {

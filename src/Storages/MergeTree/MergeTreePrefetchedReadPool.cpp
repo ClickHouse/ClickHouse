@@ -525,13 +525,13 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
         LOG_TRACE(
             log,
-            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
+            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, ranges: {}",
             getPartNameForLogging(parts_ranges[i].data_part),
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
             settings[Setting::filesystem_prefetch_step_bytes].value,
             part_stat.prefetch_step_marks,
-            toString(parts_ranges[i].ranges));
+            parts_ranges[i].ranges.size());
     }
 
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;

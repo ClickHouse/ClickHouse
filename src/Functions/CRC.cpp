@@ -1,4 +1,6 @@
 #include <zlib.h>
+#include <lzma.h>
+#include <base/unaligned.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
@@ -10,7 +12,7 @@ namespace
 template <class T>
 struct CRCBase
 {
-    T tab[256];
+    T tab[8][256];
     explicit CRCBase(T polynomial)
     {
         for (size_t i = 0; i < 256; ++i)
@@ -18,8 +20,11 @@ struct CRCBase
             T c = static_cast<T>(i);
             for (size_t j = 0; j < 8; ++j)
                 c = c & 1 ? polynomial ^ (c >> 1) : c >> 1;
-            tab[i] = c;
+            tab[0][i] = c;
         }
+        for (size_t k = 1; k < 8; ++k)
+            for (size_t i = 0; i < 256; ++i)
+                tab[k][i] = (tab[k - 1][i] >> 8) ^ tab[0][tab[k - 1][i] & 0xff];
     }
 };
 
@@ -28,13 +33,29 @@ struct CRCImpl
 {
     using ReturnType = T;
 
-    static T makeCRC(const unsigned char *buf, size_t size)
+    static T makeCRC(const unsigned char *buf, size_t size, T crc = 0)
     {
         static CRCBase<ReturnType> base(polynomial);
 
-        T crc = 0;
-        for (size_t i = 0; i < size; ++i)
-            crc = base.tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
+        while (size >= 8)
+        {
+            /// Low byte of n is the next input byte. A native load is big-endian on s390x.
+            UInt64 n = static_cast<UInt64>(crc) ^ unalignedLoadLittleEndian<UInt64>(buf);
+            crc = base.tab[7][n & 0xff]
+                ^ base.tab[6][(n >> 8) & 0xff]
+                ^ base.tab[5][(n >> 16) & 0xff]
+                ^ base.tab[4][(n >> 24) & 0xff]
+                ^ base.tab[3][(n >> 32) & 0xff]
+                ^ base.tab[2][(n >> 40) & 0xff]
+                ^ base.tab[1][(n >> 48) & 0xff]
+                ^ base.tab[0][(n >> 56) & 0xff];
+            buf += sizeof(UInt64);
+            size -= sizeof(UInt64);
+        }
+
+        while (size--)
+            crc = base.tab[0][(crc ^ *(buf++)) & 0xff] ^ (crc >> 8);
+
         return crc;
     }
 };
@@ -43,12 +64,42 @@ constexpr UInt64 CRC64_ECMA = 0xc96c5795d7870f42ULL;
 struct CRC64ECMAImpl : public CRCImpl<UInt64, CRC64_ECMA>
 {
     static constexpr auto name = "CRC64";
+
+    static UInt64 makeCRC(const unsigned char * buf, size_t size)
+    {
+#if defined(__x86_64__)
+        /// xz uses PCLMUL on x86 and is faster at every length. Elsewhere it has only a slice-by-4 table, slower than ours.
+        /// xz starts from and finally inverts `~0`.
+        return ~lzma_crc64(buf, size, ~0ULL);
+#else
+        return CRCImpl::makeCRC(buf, size);
+#endif
+    }
 };
 
 constexpr UInt32 CRC32_IEEE = 0xedb88320;
+
+/// On x86, zlib-ng uses PCLMUL only from 64 bytes and a byte loop below, where our slicing-by-8 table is faster.
+/// On ARM it uses the CRC32 instructions at every length and is always faster.
+bool useZlibNG([[maybe_unused]] size_t size)
+{
+#if defined(__x86_64__)
+    return size >= 64;
+#else
+    return true;
+#endif
+}
+
 struct CRC32IEEEImpl : public CRCImpl<UInt32, CRC32_IEEE>
 {
     static constexpr auto name = "CRC32IEEE";
+
+    static UInt32 makeCRC(const unsigned char * buf, size_t size)
+    {
+        if (!useZlibNG(size))
+            return CRCImpl::makeCRC(buf, size);
+        return ~static_cast<UInt32>(crc32_z(0xFFFFFFFFUL, buf, size));
+    }
 };
 
 struct CRC32ZLibImpl
@@ -58,6 +109,9 @@ struct CRC32ZLibImpl
 
     static UInt32 makeCRC(const unsigned char *buf, size_t size)
     {
+        /// zlib starts from and finally inverts `0xFFFFFFFF`.
+        if (!useZlibNG(size))
+            return ~CRCImpl<UInt32, CRC32_IEEE>::makeCRC(buf, size, ~0U);
         return static_cast<UInt32>(crc32_z(0L, buf, size));
     }
 };
