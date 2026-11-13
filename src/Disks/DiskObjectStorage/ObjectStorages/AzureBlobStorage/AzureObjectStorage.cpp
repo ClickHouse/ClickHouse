@@ -28,6 +28,9 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
+#include <Common/RemoteHostFilter.h>
+
+#include <Poco/URI.h>
 
 
 namespace CurrentMetrics
@@ -358,6 +361,31 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 bool AzureObjectStorage::supportsAtomicWrite() const
 {
     return !isAdlsGen2Endpoint(connection_params.get()->endpoint);
+}
+
+std::vector<Poco::URI> AzureObjectStorage::getURIsForRemoteHostFilter(const AzureBlobStorage::ConnectionParams & params)
+{
+    std::vector<String> urls{params.getConnectionURL()};
+    /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
+    if (isAdlsGen2Endpoint(params.endpoint))
+        urls.push_back(getAdlsGen2Url(params.endpoint, params.auth_method));
+
+    std::vector<Poco::URI> uris;
+    uris.reserve(urls.size());
+    for (const auto & url : urls)
+    {
+        Poco::URI uri(url);
+        /// The query can carry a SAS token, which an error must not quote.
+        uri.setPathEtc("");
+        uris.push_back(std::move(uri));
+    }
+    return uris;
+}
+
+void AzureObjectStorage::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+{
+    for (const auto & uri : getURIsForRemoteHostFilter(*connection_params.get()))
+        filter.checkURL(uri);
 }
 
 std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient>

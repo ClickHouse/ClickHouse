@@ -14,7 +14,6 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #endif
 
@@ -303,20 +302,11 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// the table load nor the server start.
         if (remote_host_filter_check != RemoteHostFilterCheck::None)
         {
-            auto check_host = [&](const String & url)
-            {
-                Poco::URI uri(url);
-                /// The query can carry a SAS token, which the error must not quote.
-                uri.setPathEtc("");
+            for (const auto & uri : AzureObjectStorage::getURIsForRemoteHostFilter(params))
                 if (!context->getRemoteHostFilter().checkURL(
                         uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
                     warnAboutDiskNotAllowedByRemoteHostFilter(
                         name, uri.getAuthority(), fmt::format("<host>{}</host>", uri.getHost()), context->getGlobalContext());
-            };
-            check_host(params.getConnectionURL());
-            /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
-            if (isAdlsGen2Endpoint(params.endpoint))
-                check_host(getAdlsGen2Url(params.endpoint, params.auth_method));
         }
 
         const bool drop_credentials = params.checkOrDropServerManagedCredentials();

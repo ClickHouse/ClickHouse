@@ -117,6 +117,8 @@ public:
 
     bool isRemote() const override { return true; }
 
+    void checkRemoteHostFilter(const RemoteHostFilter & filter) const override;
+
     bool isReadOnly() const override { return settings->read_only; }
 
     void startup() override { }

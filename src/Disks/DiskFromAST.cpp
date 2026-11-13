@@ -6,7 +6,6 @@
 #include <Disks/ReadOnlyDiskWrapper.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -20,17 +19,7 @@
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
-#include <Poco/URI.h>
-
 #include "config.h"
-
-#if USE_AWS_S3
-#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
-#endif
 
 #include <algorithm>
 #include <memory>
@@ -60,56 +49,20 @@ static void checkCustomDiskRemoteHosts(DiskPtr disk, const ContextPtr & context)
         const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(inner.get());
         if (!object_disk)
         {
+            /// `encrypted`.
             disk = inner->getDelegateDiskIfExists();
-            continue;
         }
-
-        /// A `cache` layer holds copies of the object storages of the disk it wraps, which may come from the server config.
-        if (auto wrapped = object_disk->getWrappedDisk())
+        else if (auto wrapped = object_disk->getWrappedDisk())
         {
+            /// A `cache` layer holds copies of the object storages of the disk it wraps, which may come from the server config.
             disk = std::const_pointer_cast<DiskObjectStorage>(wrapped);
-            continue;
         }
-
-        /// The same hosts as the factory checks when it builds each object storage.
-        for (const auto & [_, storage] : object_disk->getObjectStorages())
+        else
         {
-            switch (storage->getType())
-            {
-                case ObjectStorageType::HDFS:
-                    filter.checkURL(Poco::URI(storage->getDescription()));
-                    break;
-#if USE_AWS_S3
-                case ObjectStorageType::S3:
-                    /// Not `assert_cast`: a `CachedObjectStorage` reports the type of the storage it wraps.
-                    if (const auto * s3_storage = dynamic_cast<const S3ObjectStorage *>(storage.get()))
-                        s3_storage->getURI().checkRemoteHostFilter(filter);
-                    break;
-#endif
-#if USE_AZURE_BLOB_STORAGE
-                case ObjectStorageType::Azure:
-                {
-                    const auto params = storage->getAzureBlobStorageConnectionParams();
-                    const auto check_host = [&](const String & url)
-                    {
-                        Poco::URI uri(url);
-                        /// The query can carry a SAS token, which the error must not quote.
-                        uri.setPathEtc("");
-                        filter.checkURL(uri);
-                    };
-                    check_host(params->getConnectionURL());
-                    /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
-                    if (isAdlsGen2Endpoint(params->endpoint))
-                        check_host(getAdlsGen2Url(params->endpoint, params->auth_method));
-                    break;
-                }
-#endif
-                default:
-                    /// `web` checks every request, `local` has no host.
-                    break;
-            }
+            for (const auto & [_, storage] : object_disk->getObjectStorages())
+                storage->checkRemoteHostFilter(filter);
+            return;
         }
-        return;
     }
 }
 
@@ -265,17 +218,10 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
-    /// A wrapper (`encrypted`, `cache`) takes the disk it names from the map, so no object storage is built for it.
-    const bool is_wrapper = config->has("disk");
-    const auto check_wrapped_disk = [&](const DisksMap & disks_map)
-    {
-        if (auto it = disks_map.find(config->getString("disk")); it != disks_map.end())
-            checkCustomDiskRemoteHosts(it->second, context);
-    };
+    /// A short `ATTACH` is exempt like loading at start: it uses the disks of its own stored definition.
+    const bool check_remote_hosts = !attach && !stored_definition;
 
-    bool created = false;
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
-        created = true;
         /// A wrapper (`encrypted`, `cache`) names a disk another session may have created with the opt-in. It is looked up
         /// in the map the wrapper is created from, so that it cannot be registered in between.
         const auto wrapped = disks_map.find(config->getString(".disk", ""));
@@ -289,9 +235,10 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
 #endif
                 , wrapped->first);
 
-        /// Before the wrapper is built: `cache` starts the wrapped disk, which writes to it.
-        if (!attach && is_wrapper)
-            check_wrapped_disk(disks_map);
+        /// A wrapper takes the disk it names from the map, so no object storage is built (and checked) for it.
+        /// Checked before the wrapper is built: `cache` starts the wrapped disk, which writes to it.
+        if (check_remote_hosts && wrapped != disks_map.end())
+            checkCustomDiskRemoteHosts(wrapped->second, context);
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
@@ -322,9 +269,9 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
 #endif
             , disk_name);
 
-    /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
-    /// Check the disks it holds, not those its definition names now. A short `ATTACH` is exempt like loading at start.
-    if (!created && !attach && !stored_definition)
+    /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load, so check the
+    /// disks it holds, not those its definition names now. For a disk created just now this repeats the factory check.
+    if (check_remote_hosts)
         checkCustomDiskRemoteHosts(disk, context);
 
     return matches;
@@ -584,7 +531,7 @@ std::string DiskFromAST::createCustomDisk(
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }
 
-void DiskFromAST::ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context)
+void DiskFromAST::ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context, bool check_remote_hosts)
 {
     /// A custom disk can be named by another session than the one that created it.
     if (disk->customDiskUsesServerCredentials() && context->shouldRestrictUserQueryS3Credentials())
@@ -595,27 +542,19 @@ void DiskFromAST::ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context)
             " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
             , disk->getName());
+
+    if (check_remote_hosts)
+        checkCustomDiskRemoteHosts(disk, context);
 }
 
-void DiskFromAST::ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context)
+void DiskFromAST::ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context, bool check_remote_hosts)
 {
     /// `__<disk>` is the policy a table on a disk gets, so it names a custom disk as well.
     if (const auto storage_policy = context->tryGetStoragePolicy(storage_policy_name))
     {
         for (const auto & disk : storage_policy->getDisks())
-            ensureDiskIsAllowed(disk, context);
+            ensureDiskIsAllowed(disk, context, check_remote_hosts);
     }
-}
-
-void DiskFromAST::ensureDiskHostsAreAllowed(const DiskPtr & disk, ContextPtr context)
-{
-    checkCustomDiskRemoteHosts(disk, context);
-}
-
-void DiskFromAST::ensureStoragePolicyHostsAreAllowed(const std::string & storage_policy_name, ContextPtr context)
-{
-    for (const auto & disk : context->getStoragePolicy(storage_policy_name)->getDisks())
-        checkCustomDiskRemoteHosts(disk, context);
 }
 
 void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)

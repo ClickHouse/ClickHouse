@@ -104,6 +104,8 @@ public:
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
+    void checkRemoteHostFilter(const RemoteHostFilter & filter) const override { object_storage->checkRemoteHostFilter(filter); }
+
     void removeCacheIfExists(const std::string & path_key_for_cache) override;
 
     bool supportsCache() const override { return true; }

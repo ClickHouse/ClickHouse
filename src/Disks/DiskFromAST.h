@@ -15,13 +15,10 @@ namespace DiskFromAST
 {
     void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
     /// Refuse, for a session without `s3_allow_server_credentials_in_user_queries`, a custom disk that uses the server's own
-    /// credentials, or a storage policy with one. For a table definition selecting a disk or a policy by name.
-    void ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context);
-    void ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context);
-    /// Refuse a custom disk whose endpoint `remote_url_allow_hosts` does not allow.
-    void ensureDiskHostsAreAllowed(const DiskPtr & disk, ContextPtr context);
-    /// Refuse a storage policy with a custom disk whose endpoint `remote_url_allow_hosts` does not allow.
-    void ensureStoragePolicyHostsAreAllowed(const std::string & storage_policy_name, ContextPtr context);
+    /// credentials, or a storage policy with one. With `check_remote_hosts`, also refuse a custom disk with an endpoint that
+    /// `remote_url_allow_hosts` does not allow. For a table definition selecting a disk or a policy by name.
+    void ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context, bool check_remote_hosts);
+    void ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context, bool check_remote_hosts);
     /// `stored_definition`: the definition was read from the metadata the server stored for the table (short `ATTACH`),
     /// so its credentials markers are kept as they are: they keep the identity of the disk, and are not honored unless `attach`.
     std::string createCustomDisk(
