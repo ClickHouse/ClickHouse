@@ -39,11 +39,28 @@ html:not(.dark) .ch-hero-card:hover {
     border-color: #535353 !important;
 }
 /* White use-case artwork is inverted only in light mode. */
-.ch-usecase-icon {
-    filter: invert(1);
+html img.ch-usecase-icon {
+    filter: invert(1) !important;
 }
-.dark .ch-usecase-icon {
-    filter: none;
+html.dark img.ch-usecase-icon {
+    filter: none !important;
+}
+
+html .ch-goal-icon {
+    color: #374151;
+}
+html.dark .ch-goal-icon {
+    color: #FAFF69;
+}
+
+.ch-hero-card .ch-card-external-icon {
+    color: #FCFF74;
+    opacity: 0;
+}
+.ch-hero-card:hover .ch-card-external-icon,
+.ch-hero-card:focus-visible .ch-card-external-icon,
+.ch-hero-card:focus-within .ch-card-external-icon {
+    opacity: 1;
 }
 
 /* Use case section dividers */
