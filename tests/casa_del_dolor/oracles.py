@@ -62,23 +62,29 @@ class ElOraculoDeTablas:
         return f"mytest{self.table_counter}"
 
     def collect_table_hash_before_shutdown(
-        self, cluster: ClickHouseCluster, logger
+        self, cluster: ClickHouseCluster, logger, next_node: ClickHouseInstance
     ) -> Optional[ClickHouseTable]:
-        next_node_name: str = random.choice(list(cluster.instances.keys()))
-        next_node: ClickHouseInstance = cluster.instances[next_node_name]
+        next_node_name: str = next_node.name
         next_tbl: Optional[ClickHouseTable] = None
         client = Client(
             host=next_node.ip_address, port=9000, command=cluster.client_bin_path
         )
 
         try:
-            # Limit to tables only, exclude not deterministic tables, and tables not persisted after restarts
+            # Local engines only, without TTL; Summing/Aggregating FINAL depends on the part layout. RENAME is
+            # local, so replicas outside a Replicated database keep getting inserts under the old name, and
+            # materialized views keep writing into their targets and inner tables.
             tables_str = client.query("""
                 SELECT database, name, engine
                 FROM system.tables
                 WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
                 AND NOT is_temporary
-                AND NOT match(engine, '.*View.*|Dictionary|Merge$|GenerateRandom|Memory|Buffer|.*Set');
+                AND match(engine, '^(Shared|Replicated)?(|Replacing|Coalescing|Collapsing|VersionedCollapsing)MergeTree$|^(Log|TinyLog|StripeLog)$')
+                AND position(create_table_query, ' TTL ') = 0
+                AND (NOT startsWith(engine, 'Replicated') OR database IN (SELECT name FROM system.databases WHERE engine = 'Replicated'))
+                AND NOT startsWith(name, '.inner')
+                AND NOT arrayExists(q -> position(q, name) > 0, (SELECT groupArray(create_table_query) FROM system.tables
+                    WHERE engine = 'MaterializedView' AND position(create_table_query, ' TO ') > 0));
                 """)
             if not isinstance(tables_str, str) or tables_str == "":
                 logger.warn(f"No tables found to fetch on node {next_node.name}")
@@ -147,13 +153,6 @@ class ElOraculoDeTablas:
                     logger.warn(
                         f"Error occurred while hashing a table after restarting server: {ex}"
                     )
-                if isinstance(next_hash, str) and next_hash != next_tbl.first_hash:
-                    message: str = (
-                        f"Hash mismatch for table {next_tbl.get_sql_escaped_full_name()}"
-                    )
-                    logger.warn(message)
-                    raise ValueError(message)
-
             try:
                 # Rename back
                 client.query(
@@ -161,6 +160,13 @@ class ElOraculoDeTablas:
                 )
             except Exception as ex:
                 logger.warn(f"Error while renaming table after restarting server: {ex}")
+
+            if isinstance(next_hash, str) and next_hash != next_tbl.first_hash:
+                message: str = (
+                    f"Hash mismatch for table {next_tbl.get_sql_escaped_full_name()}"
+                )
+                logger.warn(message)
+                raise ValueError(message)
 
     # Errors caused by the data, not the server, e.g. a mutation stuck on `MODIFY COLUMN` to a non-Nullable type
     # over NULLs retries forever. `CANNOT_PARSE_*`, `CANNOT_CONVERT_TYPE`, out of range, `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`

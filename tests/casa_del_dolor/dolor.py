@@ -870,16 +870,19 @@ while all_running and (not reached_limit):
     if (not all_running) or reached_limit:
         break
 
+    kill_server = random.randint(1, 100) <= args.kill_server_prob
+    restart_server = random.randint(1, 100) <= args.restart_clickhouse_prob
+    # Hash a table on the server that gets restarted; an integration restart affects any of them
+    hash_node = random.choice(servers)
     dump_table = (
-        tables_oracle.collect_table_hash_before_shutdown(cluster, logger)
-        if random.randint(1, 100) <= args.compare_table_dump_prob
+        tables_oracle.collect_table_hash_before_shutdown(cluster, logger, hash_node)
+        if (restart_server or len(integrations) > 0)
+        and random.randint(1, 100) <= args.compare_table_dump_prob
         else None
     )
-    kill_server = random.randint(1, 100) <= args.kill_server_prob
-    # Pick one of the servers to restart
     # Restart ClickHouse
-    if random.randint(1, 100) <= args.restart_clickhouse_prob:
-        next_pick = random.choice(servers)
+    if restart_server:
+        next_pick = hash_node
         logger.info(
             f"Restarting the server {next_pick.name} with {'kill' if kill_server else 'manual shutdown'}"
         )
