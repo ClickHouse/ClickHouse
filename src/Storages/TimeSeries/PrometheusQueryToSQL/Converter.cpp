@@ -1,6 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
 
@@ -37,15 +37,16 @@ namespace
     /// The analyzer resolves the table functions of the query with the settings of the query itself, see `cluster()` in fromSelector.cpp.
     void addShardSkipSettings(ASTPtr & select_query, const PrometheusQueryDistributedTarget & target)
     {
-        auto * select = typeid_cast<ASTSelectQuery *>(select_query.get());
-        if (!select || select->settings())
+        auto * select = typeid_cast<ASTSelectWithUnionQuery *>(select_query.get());
+        if (!select || select->settings_ast)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a SELECT query without settings");
 
         auto settings = make_intrusive<ASTSetQuery>();
         settings->is_standalone = false;
         settings->changes.emplace_back("skip_unavailable_shards", target.skip_unavailable_shards);
         settings->changes.emplace_back("skip_unavailable_shards_mode", target.skip_unavailable_shards_mode);
-        select->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
+        select->settings_ast = std::move(settings);
+        select->children.push_back(select->settings_ast);
     }
 
     SQLQueryPiece visitNode(const Node * node, ConverterContext & context)
