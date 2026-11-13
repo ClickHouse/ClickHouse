@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: asserts warm hits of the instance-wide query condition cache, whose entries
+-- concurrent tests can evict between populating and reading them.
 -- Exercise cache reuse with local filter elimination even in the distributed-plan suite.
 SET serialize_query_plan = 0,
     enable_parallel_replicas = 0,
