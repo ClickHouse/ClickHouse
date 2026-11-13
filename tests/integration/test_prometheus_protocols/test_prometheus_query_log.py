@@ -139,6 +139,7 @@ node_sampled = cluster.add_instance(
     "node_sampled",
     main_configs=[
         "configs/prometheus.xml",
+        "configs/prometheus_metrics_handler.xml",
         "configs/config.d/opentelemetry_span_log.xml",
     ],
     user_configs=[
@@ -566,6 +567,29 @@ def test_query_api_without_traceparent_request_can_disable_sampling():
             f"WHERE attribute['clickhouse.query_id'] = '{query_id}'"
         )
         == "0\n"
+    )
+
+
+def test_metrics_without_traceparent_sampled_by_server_settings():
+    """
+    A metrics scrape without a traceparent header should be traced
+    when the server's default profile samples every request.
+    """
+    marker = f"prometheus-metrics-sampling-{uuid.uuid4()}"
+    response = requests.get(
+        f"http://{node_sampled.ip_address}:9093/metrics",
+        headers={"User-Agent": marker},
+    )
+    response.raise_for_status()
+
+    assert_eq_with_retry(
+        node_sampled,
+        f"SYSTEM FLUSH LOGS opentelemetry_span_log; "
+        f"SELECT count() FROM system.opentelemetry_span_log "
+        f"WHERE operation_name = 'PrometheusRequestHandler' AND parent_span_id = 0 "
+        f"AND attribute['http.user.agent'] = '{marker}' "
+        f"AND attribute['clickhouse.http_status'] = '200'",
+        "1\n",
     )
 
 

@@ -906,7 +906,8 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         parseClientTraceContext(request);
         /// A client trace starts before authentication, so that requests failing there are traced too.
-        if (client_trace_context.isTraceEnabled())
+        /// Metrics requests have no user, so the server's settings decide whether to trace them.
+        if (client_trace_context.isTraceEnabled() || config.type == PrometheusRequestHandlerConfig::Type::Metrics)
             thread_trace_context = startTracing(request, Context::getGlobalContextInstance());
 
         /// Make keep-alive works.
