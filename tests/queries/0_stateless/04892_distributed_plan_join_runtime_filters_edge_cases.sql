@@ -84,7 +84,7 @@ SELECT countIf(startsWith(message, 'Registered runtime filter')) >= 1
        AND toUInt64OrZero(extract(message, 'blocks processed (\\d+)'))
            + toUInt64OrZero(extract(message, 'blocks skipped (\\d+)')) > 0) >= 1
 FROM system.text_log
-WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'RuntimeFilter'
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND event_date >= yesterday()
