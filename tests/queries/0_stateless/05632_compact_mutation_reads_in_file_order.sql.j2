@@ -1,0 +1,23 @@
+-- Tags: no-fasttest
+-- no-fasttest: needs S3
+
+-- Mutation reads columns in the order of `NameSet`, but a Compact part should be read in the order of the file,
+-- since each backward seek out of the buffer is a new S3 request that reads the same data again.
+
+DROP TABLE IF EXISTS t_compact_mutation_order;
+
+CREATE TABLE t_compact_mutation_order (key UInt64{% for i in range(200) %}, c{{ i }} UInt64{% endfor %})
+ENGINE = MergeTree ORDER BY key
+SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+
+INSERT INTO t_compact_mutation_order SELECT number{% for i in range(200) %}, rand64({{ i }}){% endfor %} FROM numbers(20000);
+
+ALTER TABLE t_compact_mutation_order DELETE WHERE key % 100 = 0 SETTINGS mutations_sync = 2;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT count() > 0, countIf(part_type != 'Compact' OR ProfileEvents['ReadBufferFromS3Bytes'] >= 2 * size_in_bytes)
+FROM system.part_log
+WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_compact_mutation_order' AND event_type = 'MutatePart';
+
+DROP TABLE t_compact_mutation_order;

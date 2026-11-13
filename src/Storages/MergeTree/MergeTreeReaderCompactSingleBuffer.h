@@ -16,6 +16,7 @@ public:
         : MergeTreeReaderCompact{std::forward<Args>(args)...}
     {
         fillColumnPositions();
+        fillReadOrder();
     }
 
     /// Returns the number of rows has been read or zero if there is no columns to read.
@@ -35,6 +36,12 @@ private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
     void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) override;
     void init();
+    void fillReadOrder();
+
+    /// Indexes in `columns_to_read` in the order of the columns in the data file.
+    /// A granule is read in this order, since a backward seek out of the buffer is a new request
+    /// that reads the data after it again (i.e. mutation reads columns in the order of `NameSet`).
+    std::vector<size_t> read_order;
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStream> stream;
