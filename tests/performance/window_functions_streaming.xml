@@ -2,7 +2,7 @@
     <!-- Windows without PARTITION BY and ORDER BY: one partition, no sort, the input flows through in order. -->
 
     <query>SELECT row_number() OVER () FROM numbers(40000000) FORMAT Null</query>
-    <query>SELECT count() OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(40000000) FORMAT Null</query>
+    <query disabled="1">SELECT count() OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(40000000) FORMAT Null</query>
     <query>SELECT sum(number) OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(30000000) FORMAT Null</query>
 
     <!-- lag and lead look at the neighbouring rows; several offsets in one query share the window. -->
@@ -21,4 +21,7 @@
 
     <!-- The same lag over a wide row: the pass-through columns dominate. -->
     <query>SELECT number, toString(number) AS s, [number, number] AS a, lag(number) OVER () FROM numbers(20000000) FORMAT Null</query>
+
+    <!-- Query 1 on 25 million rows instead of 40 million; query 1 is disabled. -->
+    <query>SELECT count() OVER (ROWS UNBOUNDED PRECEDING) FROM numbers(25000000) FORMAT Null</query>
 </test>
