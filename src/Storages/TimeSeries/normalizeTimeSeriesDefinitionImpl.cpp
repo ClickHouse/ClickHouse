@@ -705,13 +705,15 @@ namespace
     /// The interval id is the timestamp rounded down to a multiple of the interval, toward negative infinity, in the
     /// native ticks of the type: the raw `Int64` of a `DateTime64`, or Unix seconds of a `DateTime` or `UInt32`.
     /// The step is at most `UInt32::max` and the interval divides it, so the modulus stays inside `Int64`.
+    /// A non-zero step from this id to the next id marks the last sample of the interval. The last element has no
+    /// next id, so the shifted difference uses the default 1.
     ASTPtr makeDownsampledSamplesExpression(UInt64 interval_seconds, const DataTypePtr & timestamp_type)
     {
         const auto scale = tryGetDecimalScale(*timestamp_type).value_or(0);
         const Int64 interval_ticks = static_cast<Int64>(interval_seconds) * DecimalUtils::scaleMultiplier<Int64>(scale);
 
         auto samples = [] { return makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)); };
-        /// The operators are marked as such to be formatted as `(s, i) -> ... a[i + 1].1 ...`, the way the parser reads them back.
+        /// The operators are marked as such to be formatted as `s -> ... s.1 ...` and `(s, d) -> d != 0`, the way the parser reads them back.
         auto start_of_interval = [&](ASTPtr sample)
         {
             auto timestamp = [&]()
@@ -728,16 +730,18 @@ namespace
                 makeASTFunction("positiveModulo", ticks(), make_intrusive<ASTLiteral>(static_cast<UInt64>(interval_ticks))));
         };
 
-        auto is_last_in_array = makeASTOperator("equals", make_intrusive<ASTIdentifier>("i"), makeASTFunction("length", samples()));
-        auto next_sample = makeASTOperator("arrayElement", samples(),
-            makeASTOperator("plus", make_intrusive<ASTIdentifier>("i"), make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
-        auto is_last_in_interval = makeASTOperator("notEquals",
-            start_of_interval(std::move(next_sample)), start_of_interval(make_intrusive<ASTIdentifier>("s")));
-
-        auto lambda = makeASTOperator("lambda",
-            makeASTOperator("tuple", make_intrusive<ASTIdentifier>("s"), make_intrusive<ASTIdentifier>("i")),
-            makeASTOperator("or", std::move(is_last_in_array), std::move(is_last_in_interval)));
-        return makeASTFunction("arrayFilter", std::move(lambda), samples(), makeASTFunction("arrayEnumerate", samples()));
+        auto one = [] { return make_intrusive<ASTLiteral>(static_cast<Int64>(1)); };
+        auto differences = makeASTFunction("arrayShiftLeft",
+            makeASTFunction("arrayDifference",
+                makeASTOperator("lambda",
+                    makeASTOperator("tuple", make_intrusive<ASTIdentifier>("s")),
+                    start_of_interval(make_intrusive<ASTIdentifier>("s"))),
+                samples()),
+            one(), one());
+        auto keep = makeASTOperator("lambda",
+            makeASTOperator("tuple", make_intrusive<ASTIdentifier>("s"), make_intrusive<ASTIdentifier>("d")),
+            makeASTOperator("notEquals", make_intrusive<ASTIdentifier>("d"), make_intrusive<ASTLiteral>(static_cast<Int64>(0))));
+        return makeASTFunction("arrayFilter", std::move(keep), samples(), std::move(differences));
     }
 
     /// The generated TTL of an inner samples table with the `samples_downsampling_periods` setting: one `GROUP BY` rule per level.
