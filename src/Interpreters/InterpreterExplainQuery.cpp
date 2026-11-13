@@ -1408,6 +1408,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto optimization_settings = QueryPlanOptimizationSettings(context);
             applySubstraitSerializationSettings(optimization_settings);
             optimization_settings.is_explain = true;
+            optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
             plan.optimize(optimization_settings);
 
             const auto json = serializeQueryPlanToSubstraitJSON(plan);

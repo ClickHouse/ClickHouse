@@ -43,14 +43,14 @@ extern const int NOT_IMPLEMENTED;
 namespace
 {
 
-std::expected<SubstraitSchema, String> convertHeaderToSchema(const Block & header, SubstraitPlanExtensions & extensions)
+std::expected<SubstraitSchema, SubstraitBlockingReason> convertHeaderToSchema(const Block & header, SubstraitPlanExtensions & extensions)
 {
     SubstraitSchema schema;
     for (const auto & column : header)
     {
         auto type = convertTypeToSubstrait(column.type, extensions);
         if (!type)
-            return blocked(fmt::format("column {}: {}", column.name, type.error()));
+            return blocked(fmt::format("column {}: {}", column.name, type.error().text));
         schema.append(column.name, std::move(*type));
     }
     return schema;
@@ -214,7 +214,7 @@ substrait::Type makeAggregateOutputType(std::string_view output_short, bool null
 }
 
 /// Resolves one aggregate call against the table.
-std::expected<ResolvedAggregate, String> mapAggregateFunction(
+std::expected<ResolvedAggregate, SubstraitBlockingReason> mapAggregateFunction(
     const AggregateDescription & description,
     const std::vector<substrait::Type> & argument_types,
     bool has_grouping_keys,
@@ -335,9 +335,10 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
     return states.at(&root).verdict;
 }
 
-std::vector<std::pair<const QueryPlan::Node *, String>> SubstraitPlanSerializer::blockingSteps(const QueryPlan::Node & root) const
+std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>>
+SubstraitPlanSerializer::blockingSteps(const QueryPlan::Node & root) const
 {
-    std::vector<std::pair<const QueryPlan::Node *, String>> result;
+    std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>> result;
     std::vector<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
@@ -348,9 +349,9 @@ std::vector<std::pair<const QueryPlan::Node *, String>> SubstraitPlanSerializer:
         if (verdict.subtree_eligible)
             continue;
 
-        if (!verdict.blocking_reason.empty())
+        if (verdict.blocking_reason)
         {
-            result.emplace_back(node, verdict.blocking_reason);
+            result.emplace_back(node, *verdict.blocking_reason);
             continue;
         }
 
@@ -388,7 +389,7 @@ substrait::Plan SubstraitPlanSerializer::takePlan(const QueryPlan::Node & root)
 
 /// A converter builds its relation by moving parts out of its children's states. So move only after the last check that can fail.
 /// A converter that fails after moving leaves a child eligible but empty, and serializing it later gives an empty plan.
-std::expected<SubstraitPlanSerializer::NodeState, String>
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
 SubstraitPlanSerializer::convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children)
 {
     const IQueryPlanStep * step = node.step.get();
@@ -427,7 +428,8 @@ SubstraitPlanSerializer::convertStep(const QueryPlan::Node & node, std::vector<N
     return blocked("the step has no Substrait representation");
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read)
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
+SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read)
 {
     NodeState out;
 
@@ -470,7 +472,7 @@ std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerialize
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertFilterOrExpression(
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason> SubstraitPlanSerializer::convertFilterOrExpression(
     const ActionsDAG & dag, const Block & output_header, const std::optional<String> & filter_column_name, NodeState & child)
 {
     NodeState out;
@@ -512,7 +514,7 @@ std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerialize
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
 SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating, NodeState & child)
 {
     NodeState out;
@@ -559,7 +561,10 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
 
         auto mapping = mapAggregateFunction(description, argument_types, !params.keys.empty(), extensions);
         if (!mapping)
+        {
+            mapping.error().expression = description.column_name;
             return std::unexpected(std::move(mapping.error()));
+        }
 
         auto * measure = aggregate->add_measures()->mutable_measure();
         measure->set_function_reference(extensions.internFunction(mapping->urn, mapping->signature));
@@ -579,7 +584,7 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
 SubstraitPlanSerializer::convertSorting(const SortingStep & sorting, NodeState & child)
 {
     NodeState out;
@@ -633,7 +638,8 @@ SubstraitPlanSerializer::convertSorting(const SortingStep & sorting, NodeState &
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertLimit(const LimitStep & limit, NodeState & child)
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
+SubstraitPlanSerializer::convertLimit(const LimitStep & limit, NodeState & child)
 {
     NodeState out;
 
@@ -647,7 +653,7 @@ std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerialize
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
 SubstraitPlanSerializer::convertOffset(const OffsetStep & offset, NodeState & child)
 {
     NodeState out;
@@ -660,7 +666,8 @@ SubstraitPlanSerializer::convertOffset(const OffsetStep & offset, NodeState & ch
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertUnion(const std::vector<NodeState *> & children)
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
+SubstraitPlanSerializer::convertUnion(const std::vector<NodeState *> & children)
 {
     NodeState out;
 
@@ -685,7 +692,7 @@ std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerialize
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
 SubstraitPlanSerializer::convertDistinct(const DistinctStep & distinct, NodeState & child)
 {
     NodeState out;
@@ -717,7 +724,7 @@ SubstraitPlanSerializer::convertDistinct(const DistinctStep & distinct, NodeStat
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
+std::expected<SubstraitPlanSerializer::NodeState, SubstraitBlockingReason>
 SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & left, NodeState & right)
 {
     NodeState out;
@@ -778,7 +785,8 @@ SubstraitPlanSerializer::convertJoin(const JoinStepLogical & join, NodeState & l
     SubstraitExpressionConverter converter(combined, extensions);
 
     /// Combines condition conjuncts into one boolean expression.
-    const auto combine_conjuncts = [&](const std::vector<JoinActionRef> & conjuncts) -> std::expected<substrait::Expression, String>
+    const auto combine_conjuncts
+        = [&](const std::vector<JoinActionRef> & conjuncts) -> std::expected<substrait::Expression, SubstraitBlockingReason>
     {
         std::vector<SubstraitExpressionConverter::ConvertedExpression> converted_conjuncts;
         for (const auto & conjunct : conjuncts)
@@ -857,11 +865,17 @@ substrait::Plan serializeQueryPlanToSubstrait(const QueryPlan & plan)
     SubstraitPlanSerializer serializer;
     if (!serializer.visit(*root).subtree_eligible)
     {
-        /// TODO: make this look nicer.
-        std::vector<String> reasons;
+        String blocking_steps;
         for (const auto & [node, reason] : serializer.blockingSteps(*root))
-            reasons.push_back(fmt::format("step {}: {}", node->step->getName(), reason));
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The query plan cannot be serialized to Substrait: {}", fmt::join(reasons, "; "));
+        {
+            blocking_steps += fmt::format("\n  {}", node->step->getName());
+            if (const auto description = node->step->getStepDescription(); !description.empty())
+                blocking_steps += fmt::format(" ({})", description);
+            blocking_steps += fmt::format(": {}", reason.text);
+            if (!reason.expression.empty())
+                blocking_steps += fmt::format(", in {}", reason.expression);
+        }
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The query plan cannot be serialized to Substrait. Blocking steps:{}", blocking_steps);
     }
 
     return serializer.takePlan(*root);

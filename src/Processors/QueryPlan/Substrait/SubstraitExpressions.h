@@ -51,19 +51,20 @@ public:
         const ActionsDAG::Node * node = nullptr;
     };
 
-    std::expected<ConvertedExpression, String> convert(const ActionsDAG::Node & node);
+    std::expected<ConvertedExpression, SubstraitBlockingReason> convert(const ActionsDAG::Node & node);
 
     /// Converts the DAG into a ProjectRel that computes `output_header`. The already converted subtree `child` nests inside it as the input.
     /// A DAG that changes nothing, for example a rename, needs no relation, and `child` comes back unchanged.
-    std::expected<ConvertedRelation, String> convertProjection(const ActionsDAG & dag, const Block & output_header, substrait::Rel child);
+    std::expected<ConvertedRelation, SubstraitBlockingReason>
+    convertProjection(const ActionsDAG & dag, const Block & output_header, substrait::Rel child);
 
 private:
-    std::expected<ConvertedExpression, String> convertNodeImpl(const ActionsDAG::Node & node);
-    std::expected<ConvertedExpression, String> convertFunction(const ActionsDAG::Node & node);
+    std::expected<ConvertedExpression, SubstraitBlockingReason> convertNodeImpl(const ActionsDAG::Node & node);
+    std::expected<ConvertedExpression, SubstraitBlockingReason> convertFunction(const ActionsDAG::Node & node);
 
     /// Brings `arg` to the type named `desired_short_name`. A constant re-encodes as a literal of the target type when its value fits there.
     /// A non-constant gets a Cast, allowed only when lossless (signed int or float widening).
-    std::expected<void, String> coerceArgument(ConvertedExpression & arg, std::string_view desired_short_name);
+    std::expected<void, SubstraitBlockingReason> coerceArgument(ConvertedExpression & arg, std::string_view desired_short_name);
 
     const SubstraitSchema & input_schema;
 

@@ -42,14 +42,14 @@ public:
     struct Verdict
     {
         bool subtree_eligible = false;
-        String blocking_reason;
+        std::optional<SubstraitBlockingReason> blocking_reason;
     };
 
     /// Converts the subtree bottom-up. Returns the root's verdict.
     const Verdict & visit(const QueryPlan::Node & root);
 
     /// Nodes that do not convert while every child subtree does, with reasons. Empty when the whole visited subtree is eligible.
-    std::vector<std::pair<const QueryPlan::Node *, String>> blockingSteps(const QueryPlan::Node & root) const;
+    std::vector<std::pair<const QueryPlan::Node *, SubstraitBlockingReason>> blockingSteps(const QueryPlan::Node & root) const;
 
     /// Builds the final plan for a node with subtree_eligible = true, consuming the subtree's converted relations.
     substrait::Plan takePlan(const QueryPlan::Node & root);
@@ -63,17 +63,17 @@ private:
         bool sort_reaches_output = false; /// Some ClickHouse steps preserve input order while the Substrait equivalents may not.
     };
 
-    std::expected<NodeState, String> convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children);
-    std::expected<NodeState, String> convertReadFromMergeTree(const ReadFromMergeTree & read);
-    std::expected<NodeState, String> convertFilterOrExpression(
+    std::expected<NodeState, SubstraitBlockingReason> convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children);
+    std::expected<NodeState, SubstraitBlockingReason> convertReadFromMergeTree(const ReadFromMergeTree & read);
+    std::expected<NodeState, SubstraitBlockingReason> convertFilterOrExpression(
         const ActionsDAG & dag, const Block & output_header, const std::optional<String> & filter_column_name, NodeState & child);
-    std::expected<NodeState, String> convertAggregation(const AggregatingStep & aggregating, NodeState & child);
-    std::expected<NodeState, String> convertSorting(const SortingStep & sorting, NodeState & child);
-    std::expected<NodeState, String> convertLimit(const LimitStep & limit, NodeState & child);
-    std::expected<NodeState, String> convertOffset(const OffsetStep & offset, NodeState & child);
-    std::expected<NodeState, String> convertUnion(const std::vector<NodeState *> & children);
-    std::expected<NodeState, String> convertDistinct(const DistinctStep & distinct, NodeState & child);
-    std::expected<NodeState, String> convertJoin(const JoinStepLogical & join, NodeState & left, NodeState & right);
+    std::expected<NodeState, SubstraitBlockingReason> convertAggregation(const AggregatingStep & aggregating, NodeState & child);
+    std::expected<NodeState, SubstraitBlockingReason> convertSorting(const SortingStep & sorting, NodeState & child);
+    std::expected<NodeState, SubstraitBlockingReason> convertLimit(const LimitStep & limit, NodeState & child);
+    std::expected<NodeState, SubstraitBlockingReason> convertOffset(const OffsetStep & offset, NodeState & child);
+    std::expected<NodeState, SubstraitBlockingReason> convertUnion(const std::vector<NodeState *> & children);
+    std::expected<NodeState, SubstraitBlockingReason> convertDistinct(const DistinctStep & distinct, NodeState & child);
+    std::expected<NodeState, SubstraitBlockingReason> convertJoin(const JoinStepLogical & join, NodeState & left, NodeState & right);
 
     std::unordered_map<const QueryPlan::Node *, NodeState> states;
     SubstraitPlanExtensions extensions;

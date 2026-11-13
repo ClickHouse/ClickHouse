@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Of each exception only the blocking reasons are printed.
+# Of each exception only the message is printed.
 $CLICKHOUSE_CLIENT --enable_substrait 1 --ignore-error -q "
     DROP TABLE IF EXISTS t_substrait_blocked;
     CREATE TABLE t_substrait_blocked (id Int64, name String) ENGINE = MergeTree ORDER BY id;
@@ -21,4 +21,4 @@ $CLICKHOUSE_CLIENT --enable_substrait 1 --ignore-error -q "
     EXPLAIN SUBSTRAIT SELECT cityHash64(name) FROM t_substrait_blocked UNION ALL SELECT sipHash64(name) FROM t_substrait_blocked;
 
     DROP TABLE t_substrait_blocked;
-" 2>&1 | sed -E '/^Received exception/d; /^\(query:/d; s/^Code: .*cannot be serialized to Substrait: (.*)\. \(NOT_IMPLEMENTED\)$/\1/'
+" 2>&1 | sed -E '/^Received exception/d; /^\(query:/d; s/^Code: .*DB::Exception: //; s/\. \(NOT_IMPLEMENTED\)$//'

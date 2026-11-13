@@ -36,8 +36,18 @@ void addFunctionOptions(const FunctionOptions & options, FunctionMessage & funct
     }
 }
 
-/// The blocking reason as an error, for expected-returning converters.
-inline std::unexpected<String> blocked(String reason) { return std::unexpected(std::move(reason)); }
+/// Why a plan step has no Substrait representation. Such a step blocks the branch of the plan above it.
+struct SubstraitBlockingReason
+{
+    String text;
+    String expression;
+};
+
+/// The blocking reason as an error.
+inline std::unexpected<SubstraitBlockingReason> blocked(String text)
+{
+    return std::unexpected(SubstraitBlockingReason{.text = std::move(text), .expression = {}});
+}
 
 namespace SubstraitExtensionURN
 {

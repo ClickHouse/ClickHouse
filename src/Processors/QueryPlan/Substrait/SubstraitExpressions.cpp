@@ -334,7 +334,7 @@ substrait::Expression makeScalarCall(
 
 /// Converts a constant into a Substrait literal. A non-empty `desired_short_name` encodes the value in that type instead when it fits exactly.
 /// For ClickHouse widening. `a + 1` over Int32 computes in Int64, so `1` re-encodes as i64.
-std::expected<ConvertedLiteral, String> convertFieldToLiteral(
+std::expected<ConvertedLiteral, SubstraitBlockingReason> convertFieldToLiteral(
     const Field & field, const DataTypePtr & ch_type, std::string_view desired_short_name, SubstraitPlanExtensions & extensions)
 {
     ConvertedLiteral out;
@@ -449,7 +449,7 @@ std::expected<ConvertedLiteral, String> convertFieldToLiteral(
 
 }
 
-std::expected<ConvertedRelation, String>
+std::expected<ConvertedRelation, SubstraitBlockingReason>
 SubstraitExpressionConverter::convertProjection(const ActionsDAG & dag, const Block & output_header, substrait::Rel child)
 {
     /// In a header [plus(a, b), c] the DAG computes the first, so `node` points at it.
@@ -539,7 +539,7 @@ SubstraitExpressionConverter::convertProjection(const ActionsDAG & dag, const Bl
     return out;
 }
 
-std::expected<SubstraitExpressionConverter::ConvertedExpression, String>
+std::expected<SubstraitExpressionConverter::ConvertedExpression, SubstraitBlockingReason>
 SubstraitExpressionConverter::convert(const ActionsDAG::Node & node)
 {
     if (const auto it = converted_nodes.find(&node); it != converted_nodes.end())
@@ -548,13 +548,16 @@ SubstraitExpressionConverter::convert(const ActionsDAG::Node & node)
     auto converted = convertNodeImpl(node);
     if (converted)
         converted_nodes.emplace(&node, *converted);
+    /// The innermost failing node gets here first. The nodes above it keep its expression.
+    else if (converted.error().expression.empty())
+        converted.error().expression = node.result_name;
     return converted;
 }
 
-std::expected<SubstraitExpressionConverter::ConvertedExpression, String>
+std::expected<SubstraitExpressionConverter::ConvertedExpression, SubstraitBlockingReason>
 SubstraitExpressionConverter::convertNodeImpl(const ActionsDAG::Node & node)
 {
-    const auto constant_to_literal = [&]() -> std::expected<ConvertedExpression, String>
+    const auto constant_to_literal = [&]() -> std::expected<ConvertedExpression, SubstraitBlockingReason>
     {
         auto literal = convertFieldToLiteral((*node.column)[0], node.result_type, {}, extensions);
         if (!literal)
@@ -571,7 +574,7 @@ SubstraitExpressionConverter::convertNodeImpl(const ActionsDAG::Node & node)
         case ActionsDAG::ActionType::INPUT: {
             const auto position = input_schema.positionByName(node.result_name);
             if (!position)
-                return blocked(fmt::format("input column {} is not present in the child schema", node.result_name));
+                return blocked("input column is not present in the child schema");
             ConvertedExpression out;
             out.node = &node;
             out.expression = makeColumnReference(*position);
@@ -590,7 +593,8 @@ SubstraitExpressionConverter::convertNodeImpl(const ActionsDAG::Node & node)
     }
 }
 
-std::expected<void, String> SubstraitExpressionConverter::coerceArgument(ConvertedExpression & arg, std::string_view desired_short_name)
+std::expected<void, SubstraitBlockingReason>
+SubstraitExpressionConverter::coerceArgument(ConvertedExpression & arg, std::string_view desired_short_name)
 {
     const auto current_short = substraitTypeShortName(arg.type, extensions);
     if (current_short == desired_short_name)
@@ -631,7 +635,7 @@ std::expected<void, String> SubstraitExpressionConverter::coerceArgument(Convert
     return {};
 }
 
-std::expected<SubstraitExpressionConverter::ConvertedExpression, String>
+std::expected<SubstraitExpressionConverter::ConvertedExpression, SubstraitBlockingReason>
 SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
 {
     const String & name = node.function_base->getName();
@@ -659,7 +663,7 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     /// Convert the ClickHouse result type to Substrait, remember result.
     std::optional<substrait::Type> ch_result_type;
     String ch_result_short;
-    const auto result_short = [&]() -> std::expected<std::string_view, String>
+    const auto result_short = [&]() -> std::expected<std::string_view, SubstraitBlockingReason>
     {
         if (!ch_result_type)
         {
@@ -776,8 +780,8 @@ SubstraitExpressionConverter::convertFunction(const ActionsDAG::Node & node)
     {
         /// The computation ran widened. The cast back to the ClickHouse result type.
         const auto widened_type = makeSimpleSubstraitType(coercion_target, isSubstraitTypeNullable(out.type));
-        out.expression = makeCast(
-            out.type, makeScalarCall(overload.urn, signature, std::move(args), widened_type, extensions, overload.options));
+        out.expression
+            = makeCast(out.type, makeScalarCall(overload.urn, signature, std::move(args), widened_type, extensions, overload.options));
     }
     else
         out.expression = makeScalarCall(overload.urn, signature, std::move(args), out.type, extensions, overload.options);

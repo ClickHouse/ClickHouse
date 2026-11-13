@@ -90,7 +90,8 @@ substrait::Type substraitUnsignedType(std::string_view name, bool nullable, Subs
     return result;
 }
 
-std::expected<substrait::Type, String> convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & extensions)
+std::expected<substrait::Type, SubstraitBlockingReason>
+convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & extensions)
 {
     /// LowCardinality is an encoding, not a semantic type. Unwrapping is lossless.
     DataTypePtr nested = removeLowCardinality(type);
@@ -99,10 +100,10 @@ std::expected<substrait::Type, String> convertTypeToSubstrait(const DataTypePtr 
 
     substrait::Type result;
 
-    const auto simple = [&](std::string_view short_name) -> std::expected<substrait::Type, String>
+    const auto simple = [&](std::string_view short_name) -> std::expected<substrait::Type, SubstraitBlockingReason>
     { return makeSimpleSubstraitType(short_name, nullable); };
 
-    const auto unsigned_int = [&](std::string_view name) -> std::expected<substrait::Type, String>
+    const auto unsigned_int = [&](std::string_view name) -> std::expected<substrait::Type, SubstraitBlockingReason>
     { return substraitUnsignedType(name, nullable, extensions); };
 
     if (isBool(nested))

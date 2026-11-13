@@ -15,7 +15,8 @@ namespace DB
 {
 
 /// Maps a ClickHouse type to its exact (never approximate!) Substrait representation. The error is the blocking reason.
-std::expected<substrait::Type, String> convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & extensions);
+std::expected<substrait::Type, SubstraitBlockingReason>
+convertTypeToSubstrait(const DataTypePtr & type, SubstraitPlanExtensions & extensions);
 
 /// The unsigned extension type named `name` ("u8".."u64"), registered in `extensions`.
 substrait::Type substraitUnsignedType(std::string_view name, bool nullable, SubstraitPlanExtensions & extensions);
