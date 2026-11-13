@@ -1,10 +1,11 @@
+import os
+
 from praktika import Workflow
 
 from ci.defs.defs import (
     DOCKERS,
     LOOM_SECRETS,
     SECRETS,
-    WRITES_PUBLIC_PLACES,
     ArtifactConfigs,
     with_long_retention_tags,
 )
@@ -20,6 +21,9 @@ builds_for_release_branch = [
 clickhouse_binaries_with_tags = with_long_retention_tags(
     ArtifactConfigs.clickhouse_binaries
 )
+
+# Reports and CIDB are public; a build that keeps a fix secret must not write to them.
+writes_public_places = os.getenv("GITHUB_REPOSITORY") != "ClickHouse/ClickHouse-internal"
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
@@ -64,8 +68,8 @@ workflow = Workflow.Config(
     secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
-    enable_report=WRITES_PUBLIC_PLACES,
-    enable_cidb=WRITES_PUBLIC_PLACES,
+    enable_report=writes_public_places,
+    enable_cidb=writes_public_places,
     enable_commit_status_on_failure=True,
     enable_slack_feed=True,
     pre_hooks=[

@@ -1,4 +1,3 @@
-import os
 import re
 
 from praktika import Artifact, Docker, Secret
@@ -12,11 +11,6 @@ SYNC = "CH Inc sync"
 GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
 
 S3_BUCKET_NAME = "clickhouse-builds"
-# Builds in other repositories must not write reports, CIDB rows or the changelog to public places
-WRITES_PUBLIC_PLACES = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse").lower() in (
-    "clickhouse/clickhouse",
-    "clickhouse/clickhouse-private",
-)
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
