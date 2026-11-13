@@ -2,7 +2,6 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/StorageID.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -37,12 +36,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// A name is looked up in an enclosing scope only while `enable_global_with_statement` holds in the
-/// subquery's own context, so a CTE name that a subquery does not see is a table name there.
-/// The clause is clamped rather than rejected, so a subquery cannot widen the reader's constraints,
-/// and it is applied to a copy, so the AST keeps the clause as written. This mirrors
-/// `applyQueryLevelSettings` in `QueryTreeBuilder`, including `SETTINGS name = DEFAULT`, which is
-/// parsed into `default_settings` rather than `changes`.
+/// The context of a (sub)query with its own `SETTINGS` clause applied.
 ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & context)
 {
     if (!settings_ast)
@@ -54,10 +48,7 @@ ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & co
     return subquery_context;
 }
 
-/// A trailing `SETTINGS` clause of a set operation with several operands is query-level: it applies
-/// to every operand, not only to the last one, where `ParserSelectQuery` leaves it. This mirrors
-/// `QueryTreeBuilder::buildSelectWithUnionExpression`, so an element is substituted into an operand
-/// exactly when the analyzer resolves the name there as that element.
+/// A trailing `SETTINGS` clause of a set operation applies to every operand, as in `QueryTreeBuilder`.
 ContextPtr getSetOperationContext(const ASTs & operands, const ASTPtr & settings_ast, const ContextPtr & context)
 {
     ContextPtr result = getSubqueryContext(settings_ast, context);
@@ -148,10 +139,23 @@ std::optional<FoldedPath> getFoldedPath(const IAST & node)
     {
         if (!targets->has_folded_table_path)
             return {};
+        const ViewTarget * named = nullptr;
         for (const auto & target : targets->targets)
         {
-            if (!target.table_id.table_name.empty())
-                return makePath(target.table_id.database_name, target.table_id.table_name);
+            if (target.table_id.table_name.empty())
+                continue;
+            if (target.kind == ViewTarget::To)
+            {
+                named = &target;
+                break;
+            }
+            if (!named)
+                named = &target;
+        }
+        if (named)
+            return makePath(named->table_id.database_name, named->table_id.table_name);
+        for (const auto & target : targets->targets)
+        {
             if (const auto * table_ast = target.table_ast ? target.table_ast->as<ASTTableIdentifier>() : nullptr)
                 return FoldedPath{table_ast->name(), table_ast->formatForErrorMessage()};
         }
