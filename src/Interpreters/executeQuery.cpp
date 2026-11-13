@@ -281,7 +281,6 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
-    extern const ServerSettingsBool trust_initial_user_without_interserver_secret;
 }
 
 namespace ErrorCodes
@@ -2577,18 +2576,9 @@ static BlockIO executeQueryImpl(
     }
 
     size_t max_query_size = settings[Setting::max_query_size];
-    /// Don't limit the size of internal queries or a distributed subquery that a server owns.
-    /// `query_kind` alone is client-controlled, so a secondary query is trusted to carry a
-    /// server-formatted (possibly oversized) text only over an authenticated interserver session;
-    /// `Session::makeQueryContextImpl` clears a forged `TCP_INTERSERVER` interface, so it is reliable
-    /// here. A genuine distributed query on a cluster without a `<secret>` instead propagates the
-    /// lifted limit through the ordinary settings channel, which the shard clamps to its constraints,
-    /// unless the (insecure) `trust_initial_user_without_interserver_secret` restores the legacy lift.
+    /// Don't limit the size of internal queries or distributed subquery.
     const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    const bool trust_unauthenticated_secondary_query = is_secondary_query
-        && (client_info.interface == ClientInfo::Interface::TCP_INTERSERVER
-            || context->getServerSettings()[ServerSetting::trust_initial_user_without_interserver_secret]);
-    if (internal || trust_unauthenticated_secondary_query)
+    if (internal || is_secondary_query)
         max_query_size = 0;
     /// `max_parser_depth` / `max_parser_backtracks` are NOT lifted for a secondary query here: `query_kind`
     /// arrives over the wire and can be spoofed by any native client, so keying the parser limits off it would

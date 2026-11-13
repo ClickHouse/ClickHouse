@@ -16,11 +16,6 @@ cluster = ClickHouseCluster(__file__)
 def make_instance(name, *args, **kwargs):
     main_configs = kwargs.pop("main_configs", [])
     main_configs.append("configs/remote_servers.xml")
-    # This module asserts the legacy behavior of a cluster without an interserver <secret>, where the
-    # shard trusts the forwarded initial_user. That is off by default since the forged-initial-user
-    # fix, so opt back into it here (default-secure behavior is covered by the stateless test
-    # 05616_forged_secondary_query_identity).
-    main_configs.append("configs/trust_initial_user.xml")
     user_configs = kwargs.pop("user_configs", [])
     user_configs.append("configs/users.xml")
     return cluster.add_instance(

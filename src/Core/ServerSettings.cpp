@@ -1299,13 +1299,6 @@ By default, it is `false`:
 ```xml
 <validate_tcp_client_information>false</validate_tcp_client_information>
 ```)", 0) \
-    DECLARE(Bool, trust_initial_user_without_interserver_secret, false, R"(Trust the `initial_user` that a client sends in a `SECONDARY_QUERY` even on a connection that is not an authenticated interserver session.
-
-By default (`false`) the server ignores the client-supplied `initial_user` on an ordinary connection and uses the authenticated user for `currentUser()`, row policies and `system.user_query_log`. This restores the legacy behavior in which a shard of a cluster configured without an interserver `<secret>` evaluates these as the initiating user forwarded over the wire.
-
-:::danger
-This is insecure. A connection without an interserver `<secret>` is not authenticated, so with this setting enabled any user who can connect can impersonate any other user for `currentUser()`, row policies and the query log (access-right checks are unaffected). Enable it only on a fully trusted network for backward compatibility; prefer configuring an interserver `<secret>` instead.
-:::)", 0) \
     DECLARE(Bool, storage_metadata_write_full_object_key, true, R"(Write disk metadata files with VERSION_FULL_OBJECT_KEY format. This is enabled by default. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, disk_transaction_wait_for_blob_removal, true, R"(
 Default value for the per-disk `wait_for_blob_removal` setting.

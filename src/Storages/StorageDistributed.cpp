@@ -2822,6 +2822,10 @@ Clusters are configured in the [server configuration file](/concepts/features/co
 
              And also (and which is more important), the initial_user will
              be used as current user for the query.
+
+             Without a secret the query runs on a shard as the user the cluster connects with.
+             The shard takes the initial_user for currentUser and row policies only if that
+             user has the IMPERSONATE privilege for it.
         -->
         <!-- <secret></secret> -->
 

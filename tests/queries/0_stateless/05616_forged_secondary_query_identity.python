@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
-# A raw native-protocol client that logs in as the attacker and sends queries with a chosen
-# `query_kind` and `initial_user`. It is the minimal way to forge these fields: the stock client
-# fills `initial_user` with the authenticated user, so it cannot impersonate anyone.
+# A raw native-protocol client that logs in as a given user and sends queries with a chosen
+# `query_kind`, `initial_user` and `interface`. It is the minimal way to forge these fields: the stock
+# client fills `initial_user` with the authenticated user, so it cannot impersonate anyone.
 #
 # Each probe is an `INSERT ... SELECT` into the observations table, so the client never has to decode
-# a result block; the test reads the observations back with the ordinary client. The max-query-size
-# probe is the one query that may be rejected, so its outcome is itself recorded as a row.
+# a result block; the test reads the observations back with the ordinary client.
 
 import os
 import socket
@@ -20,6 +19,12 @@ CLIENT_NAME = "05616 forged secondary query"
 # A revision before query parameters, per-query ProfileEvents and custom serialization, to keep the
 # packets the client has to build and read minimal.
 REVISION = 54450
+
+INITIAL_QUERY = 1
+SECONDARY_QUERY = 2
+INTERFACE_TCP = 1
+INTERFACE_TCP_INTERSERVER = 7
+INITIAL_ADDRESS = "10.1.2.3"
 
 
 def write_varuint(x, ba):
@@ -64,14 +69,14 @@ class Client:
     def read_string(self):
         return self.read(self.read_varuint()).decode("utf-8", "replace")
 
-    def hello(self, user, password):
+    def hello(self, user, password, database):
         ba = bytearray()
         write_varuint(0, ba)  # Hello
         write_string(CLIENT_NAME, ba)
         write_varuint(24, ba)
         write_varuint(9, ba)
         write_varuint(REVISION, ba)
-        write_string("default", ba)  # database
+        write_string(database, ba)
         write_string(user, ba)
         write_string(password, ba)
         self.s.sendall(ba)
@@ -86,7 +91,7 @@ class Client:
         self.read_string()  # display name
         self.read_varuint()  # version patch
 
-    def send_query(self, query, kind, initial_user):
+    def send_query(self, query, kind, initial_user, interface):
         query_id = uuid.uuid4().hex
         ba = bytearray()
         write_varuint(1, ba)  # Query
@@ -94,18 +99,20 @@ class Client:
         ba.append(kind)  # query_kind: 1 = INITIAL_QUERY, 2 = SECONDARY_QUERY
         write_string(initial_user, ba)
         write_string(query_id, ba)  # initial_query_id
-        write_string("10.1.2.3:4567", ba)  # initial_address, also forged
+        write_string(INITIAL_ADDRESS + ":4567", ba)  # initial_address, also forged
         ba.extend(b"\x00" * 8)  # initial_query_start_time_microseconds
-        ba.append(1)  # interface = TCP
-        write_string("os_user", ba)
-        write_string("host", ba)
-        write_string(CLIENT_NAME, ba)
-        write_varuint(24, ba)
-        write_varuint(9, ba)
-        write_varuint(REVISION, ba)
+        ba.append(interface)
+        if interface == INTERFACE_TCP:  # the only interface that carries these fields
+            write_string("os_user", ba)
+            write_string("host", ba)
+            write_string(CLIENT_NAME, ba)
+            write_varuint(24, ba)
+            write_varuint(9, ba)
+            write_varuint(REVISION, ba)
         write_string("", ba)  # quota key
         write_varuint(0, ba)  # distributed_depth
-        write_varuint(1, ba)  # client version patch
+        if interface == INTERFACE_TCP:
+            write_varuint(1, ba)  # client version patch
         ba.append(0)  # no OpenTelemetry trace
         write_string("", ba)  # end of settings
         write_string("", ba)  # interserver secret hash (empty)
@@ -148,35 +155,41 @@ class Client:
                 raise RuntimeError("unexpected packet {}".format(packet))
 
 
-def probe(user, password, kind, initial_user, query):
+def probe(user, password, database, kind, initial_user, interface, query):
     c = Client()
-    c.hello(user, password)
-    c.send_query(query, kind, initial_user)
+    c.hello(user, password, database)
+    c.send_query(query, kind, initial_user, interface)
     return c.wait_for_end()
 
 
 def main():
-    attacker, password, victim, db = sys.argv[1:5]
-    big_literal = "x" * 5000  # longer than the attacker's max_query_size = 2000
+    attacker, forwarder, password, victim, db = sys.argv[1:6]
 
     scenarios = [
-        ("1_honest_initial", 1, attacker),
-        ("2_forged_victim", 2, victim),
-        ("3_forged_default", 2, "default"),
-        ("4_forged_unknown", 2, "no_such_user"),
-        ("5_forged_empty", 2, ""),
+        ("01_honest_initial", attacker, INITIAL_QUERY, attacker, INTERFACE_TCP),
+        ("02_forged_victim", attacker, SECONDARY_QUERY, victim, INTERFACE_TCP),
+        ("03_forged_default", attacker, SECONDARY_QUERY, "default", INTERFACE_TCP),
+        ("04_forged_unknown", attacker, SECONDARY_QUERY, "no_such_user", INTERFACE_TCP),
+        ("05_forged_empty", attacker, SECONDARY_QUERY, "", INTERFACE_TCP),
+        ("06_forged_address_only", attacker, SECONDARY_QUERY, attacker, INTERFACE_TCP),
+        ("07_forged_interserver", attacker, SECONDARY_QUERY, victim, INTERFACE_TCP_INTERSERVER),
+        # The forwarder has `IMPERSONATE` on the victim and on a name equal to the session database: an
+        # access check of an empty name falls back to the current database, which must not pass for a user.
+        ("08_forwarded_victim", forwarder, SECONDARY_QUERY, victim, INTERFACE_TCP),
+        ("09_forwarded_default", forwarder, SECONDARY_QUERY, "default", INTERFACE_TCP),
+        ("10_forwarded_empty", forwarder, SECONDARY_QUERY, "", INTERFACE_TCP),
     ]
-    for label, kind, initial_user in scenarios:
-        probe(user=attacker, password=password, kind=kind, initial_user=initial_user,
-              query="INSERT INTO {}.obs SELECT '{}', 'current_user', currentUser()".format(db, label))
-        probe(user=attacker, password=password, kind=kind, initial_user=initial_user,
-              query="INSERT INTO {}.obs SELECT '{}', 'policy_rows', "
-                    "arrayStringConcat(arraySort(groupArray(secret)), ',') FROM {}.docs".format(db, label, db))
-        accepted = probe(user=attacker, password=password, kind=kind, initial_user=initial_user,
-                         query="INSERT INTO {}.obs SELECT '{}', 'big_query_scratch', toString(length('{}'))".format(db, label, big_literal))
-        probe(user=attacker, password=password, kind=kind, initial_user=initial_user,
-              query="INSERT INTO {}.obs SELECT '{}', 'max_query_size', '{}'".format(
-                  db, label, "accepted" if accepted else "rejected"))
+    for label, user, kind, initial_user, interface in scenarios:
+        queries = [
+            "SELECT '{label}', 'current_user', currentUser()",
+            "SELECT '{label}', 'policy_rows', arrayStringConcat(arraySort(groupArray(secret)), ',') FROM {db}.docs",
+            "SELECT '{label}', 'client_info', concat(toString(interface), ' ', initial_user,"
+            " if(initial_address = toIPv6('{address}'), ' from {address}', ''))"
+            " FROM system.processes WHERE query_id = queryID()",
+        ]
+        for query in queries:
+            probe(user, password, db, kind, initial_user, interface,
+                  "INSERT INTO {db}.obs ".format(db=db) + query.format(label=label, db=db, address=INITIAL_ADDRESS))
 
 
 if __name__ == "__main__":
