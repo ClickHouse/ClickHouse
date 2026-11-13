@@ -14,6 +14,8 @@ ACCESS_DENIED TABLE ENGINE ON URL
 ACCESS_DENIED TABLE ENGINE ON URL
 -- restore, on cluster
 ACCESS_DENIED TABLE ENGINE ON URL
+-- restore to null
+ACCESS_DENIED TABLE ENGINE ON Null
 -- no table
 0
 -- on cluster, granted
@@ -22,5 +24,7 @@ OK
 OK
 -- restore, granted
 OK
+-- restore to null, granted
+OK
 -- tables created
-3
+4
