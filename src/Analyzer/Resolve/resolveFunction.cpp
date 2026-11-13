@@ -3075,28 +3075,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (use_standard_null_semantics)
                         std::erase_if(matchable_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
 
-                    /// convert tuple to array and rewrite to has()
+                    /// A failed cast may leave `NULL` in the converted array. It cannot
+                    /// match a non-null left value; a null left value is handled from
+                    /// the original source count below.
                     QueryTreeNodePtr array_arg = convertTupleToArray(matchable_elements, in_first_argument, scope, compare_nulls);
-                    if (use_standard_null_semantics)
-                    {
-                        const auto * array_type = typeid_cast<const DataTypeArray *>(array_arg->getResultType().get());
-                        if (array_type && canContainNull(*array_type->getNestedType()))
-                        {
-                            /// A failed cast is `NULL` in the converted array, but is not a
-                            /// source `NULL` and cannot make an unmatched result unknown.
-                            const String lambda_argument_name = "__in_matchable_element";
-                            auto is_not_null = std::make_shared<FunctionNode>("isNotNull");
-                            is_not_null->getArguments().getNodes().push_back(
-                                std::make_shared<IdentifierNode>(Identifier{lambda_argument_name}));
-                            auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{lambda_argument_name});
-                            auto non_null_lambda = std::make_shared<LambdaNode>(
-                                std::move(lambda_arguments), std::move(is_not_null), false /*is_operator*/);
-                            auto filter = std::make_shared<FunctionNode>("arrayFilter");
-                            filter->getArguments().getNodes() = {std::move(non_null_lambda), array_arg};
-                            array_arg = std::move(filter);
-                            resolveFunction(array_arg, scope);
-                        }
-                    }
                     return buildHasExpression(
                         node,
                         array_arg,
