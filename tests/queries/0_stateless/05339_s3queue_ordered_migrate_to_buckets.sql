@@ -95,3 +95,19 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_block/buckets/0' AND nam
 DROP TABLE q_block_holder;
 DROP TABLE q_block;
 DROP TABLE q_unset;
+
+-- 3. A queue that already uses buckets is refused even when `buckets` is unset: `processing_threads_num`
+--    then sets the number of buckets, and when it is not set it defaults to at least 16.
+
+CREATE TABLE q_threads (x UInt64)
+ENGINE = S3Queue('http://localhost:11111/test/05339_threads/', 'username', 'password', CSV)
+SETTINGS mode = 'ordered', keeper_path = '/clickhouse/{database}/q_threads';
+
+ALTER TABLE q_threads MODIFY SETTING buckets = 2; -- { serverError SUPPORT_IS_DISABLED }
+
+SELECT 'threads / buckets setting', count() FROM system.tables
+WHERE database = currentDatabase() AND name = 'q_threads' AND create_table_query LIKE '%buckets =%';
+SELECT 'threads / bucket nodes', count() >= 16 FROM system.zookeeper
+WHERE path = '/clickhouse/' || currentDatabase() || '/q_threads/buckets';
+
+DROP TABLE q_threads;

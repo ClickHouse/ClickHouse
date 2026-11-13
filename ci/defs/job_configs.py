@@ -125,7 +125,6 @@ build_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/relocation_headroom.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
@@ -159,7 +158,6 @@ fast_test_digest_config = Job.CacheDigestConfig(
         "./cmake",
         "./base",
         "./programs",
-        "./rust",
     ],
 )
 
@@ -448,7 +446,10 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[ArtifactNames.CH_AMD_DEBUG],
+            provides=[
+                ArtifactNames.CH_AMD_DEBUG,
+                ArtifactNames.UNITTEST_AMD_DEBUG,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -956,11 +957,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
-    # The selection depends on the merge-queue entry (the tests `master` changed
-    # after the PR's last CI run) and on the attempt (`Targeting.selection_cutoff`),
-    # neither of which is in the digest, so a cached result must not stand in.
-    for job in stateless_tests_targeted_mq_jobs:
-        job.digest_config = None
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -1335,7 +1331,6 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./rust",
             ],
             exclude_paths=test_data_submodules,
             with_git_submodules=True,
@@ -1351,7 +1346,19 @@ class JobConfigs:
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
+    # The sanitizer builds define `SANITIZER` and `DEBUG_OR_SANITIZER_BUILD`, so the suites
+    # under `#if !defined(SANITIZER)` (`DateLUTImpl`, `AllocationInterceptors`) are compiled
+    # only into a plain build. `Build (amd_debug)` already builds `unit_tests_dbms`
+    # (`-DENABLE_TESTS=1`); the `amd_debug` job runs it, so these suites run in pull requests
+    # and not only in `Unit tests (amd_llvm_coverage)`, which pull requests skip without the
+    # `ci-coverage` label. The debug build still defines `DEBUG_OR_SANITIZER_BUILD`, so the
+    # cases under `#ifndef DEBUG_OR_SANITIZER_BUILD` keep running only in the coverage job.
     unittest_jobs = common_unit_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_debug",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_DEBUG],
+        ),
         Job.ParamSet(
             parameter="asan_ubsan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -1675,7 +1682,11 @@ class JobConfigs:
         ),
     )
     # The same for the full integration run: all test modules, including the ones the coverage
-    # run leaves to `excluded_from_llvm`.
+    # run leaves to `excluded_from_llvm`, except the modules that skip themselves on ARM
+    # (`is_arm()`: `test_storage_hdfs`, `test_storage_kafka`, `test_ytsaurus`, ...). Those are
+    # left to the targeted amd jobs, which select them by their per-module coverage;
+    # `test_ytsaurus` gets that coverage from the per-test coverage run only, see
+    # `PER_TEST_COVERAGE_KEEP_PREFIXES` in `integration_tests_configs.py`.
     integration_test_arm_binary_coverage_replacement_pr_jobs = (
         common_integration_test_job_config.parametrize(
             *[
@@ -1707,9 +1718,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_BINARY],
         )
     )
-    # Not cached, for the same reason as `stateless_tests_targeted_mq_jobs`.
-    for job in integration_test_targeted_mq_jobs:
-        job.digest_config = None
     # Keeper stress job config — shared by PR and nightly workflows.
     # Mode (PR vs nightly faults vs nightly no-faults) is determined inside the job
     # script via Info().pr_number and Info().workflow_name.
@@ -1942,7 +1950,28 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
     )
-    performance_comparison_with_master_head_jobs = Job.Config(
+    # Separate instrumented run: no timings, comparison, sampling, or PR gate.
+    # Use the same per-test LLVM build as the stateless and integration collectors.
+    performance_coverage_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command='python3 ./ci/jobs/performance_coverage.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        # Whole instrumented XML files can exceed six hours even when placed
+        # alone. Allow the balanced collector twelve hours, including export.
+        timeout=12 * 3600,
+        digest_config=None,
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_query_coverage, {batch}/16",
+                requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
+            )
+            for batch in range(1, 17)
+        ],
+    )
+
+    performance_comparison_with_master_head_job = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
@@ -1954,6 +1983,12 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/performance_selection.py",
+                "./ci/jobs/scripts/performance_fixed_tests.json",
+                "./ci/jobs/scripts/coverage_selection.py",
+                "./ci/jobs/scripts/test_selection_config.py",
+                "./ci/jobs/scripts/find_tests.py",
+                "./ci/jobs/performance_coverage_sharding.py",
                 "./ci/jobs/scripts/seaweedfs_service.py",
                 "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
@@ -1968,7 +2003,8 @@ class JobConfigs:
         ),
         timeout=2 * 3600,
         result_name_for_cidb="Tests",
-    ).parametrize(
+    )
+    performance_comparison_with_master_head_jobs = performance_comparison_with_master_head_job.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_release, master_head, {batch}/{total_batches}",
@@ -1987,6 +2023,25 @@ class JobConfigs:
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
+    )
+    # One family per architecture: six selected-test shards, or eight full-suite shards.
+    # pr-performance requests the full suite on ARM; ci-force-all does so on both architectures.
+    performance_comparison_pr_job = performance_comparison_with_master_head_job.copy()
+    performance_comparison_pr_job.enable_gh_read_token = True
+    performance_comparison_pr_jobs = performance_comparison_pr_job.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{arch}_release, master_head, {batch}/{total_batches}",
+                runs_on=runner,
+                requires=[artifact],
+            )
+            for arch, runner, artifact in (
+                ("amd", RunnerLabels.FUNC_TESTER_AMD, ArtifactNames.CH_AMD_RELEASE),
+                ("arm", RunnerLabels.FUNC_TESTER_ARM, ArtifactNames.CH_ARM_RELEASE),
+            )
+            for total_batches in (6, 8)
+            for batch in range(1, total_batches + 1)
+        ]
     )
     # The Iceberg configuration: the MergeTree tables of the tests are created as
     # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
@@ -2570,6 +2625,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
+                "./ci/jobs/scripts/filter_coverage_lines.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
             ],
         ),
