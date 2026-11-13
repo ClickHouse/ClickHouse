@@ -55,7 +55,10 @@ INSERT INTO adaptive_budget_1
 SELECT 1, toDateTime('2026-01-01 12:00:00') - INTERVAL number SECOND, number
 FROM numbers(101);
 
--- Three parts, so that no block sleeps longer than the 3 seconds that sleepEachRow allows.
+-- Three parts, so that no block sleeps longer than the 3 seconds that `sleepEachRow` allows. The merges are stopped, as a part
+-- merged from them would be read as one block of 41 rows, even with a smaller `max_block_size`.
+SYSTEM STOP MERGES adaptive_budget_10;
+
 INSERT INTO adaptive_budget_10
 SELECT 10, toDateTime('2026-01-01 12:00:00') - INTERVAL number SECOND, number
 FROM numbers(20);
