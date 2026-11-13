@@ -161,9 +161,8 @@ public:
     /// projections where all entries are valid query-level outputs.
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
 
-    /// The column that is the cheapest to read to find the number of rows: the smallest
-    /// <compressed size, size of value in memory, uncompressed size> among the columns `column_sizes` has,
-    /// otherwise `getSmallestColumn`.
+    /// The column cheapest to read to count rows: the smallest <compressed size, size of value in memory,
+    /// uncompressed size> among the columns in `column_sizes`, otherwise `getSmallestColumn`.
     static NameAndTypePair getCheapestColumnToRead(
         const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns = true);
 
