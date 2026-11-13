@@ -124,15 +124,15 @@ public:
     }
     /// Set by `optimizeAggregationInOrder` for a read by parallel replicas, whose order is decided before the projections.
     void setOrderDecidedBeforeProjections() { order_decided_before_projections = true; }
-    bool isOrderDecidedBeforeProjections() const { return order_decided_before_projections; }
-    bool hasUniqExactInOrder() const { return !uniq_exact_in_order.empty(); }
+    [[nodiscard]] bool isOrderDecidedBeforeProjections() const { return order_decided_before_projections; }
+    [[nodiscard]] bool hasUniqExactInOrder() const { return !uniq_exact_in_order.empty(); }
     void clearUniqExactInOrder()
     {
         uniq_exact_in_order.clear();
         uniq_exact_in_order_layer_prefix = 0;
         uniq_exact_in_order_disjoint_streams = false;
     }
-    size_t getUniqExactInOrderLayerPrefix() const { return uniq_exact_in_order_layer_prefix; }
+    [[nodiscard]] size_t getUniqExactInOrderLayerPrefix() const { return uniq_exact_in_order_layer_prefix; }
     /// Set when the read is split into layers by the key, so that no value of the argument is in two streams.
     void setUniqExactInOrderDisjointStreams() { uniq_exact_in_order_disjoint_streams = true; }
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);

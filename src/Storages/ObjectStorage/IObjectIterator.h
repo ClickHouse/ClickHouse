@@ -127,7 +127,7 @@ public:
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {
@@ -182,7 +182,7 @@ public:
         return (peeked_objects.size() - next_peeked_object) + delegate_count;
     }
 
-    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
     {
@@ -215,7 +215,7 @@ public:
     }
 
     size_t estimatedKeysCount() override { return 1; }
-    std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
+    [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return snapshot_source->getSnapshotVersion(); }
 
 private:
     const ObjectInfoPtr object;

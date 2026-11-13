@@ -34,7 +34,7 @@ public:
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
     /// A String date is parsed by `plus`/`minus`, and its default value, the empty string, is not a valid date.
-    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
     {
         return arguments.empty() || !isString(removeLowCardinalityAndNullable(arguments[0].type));
     }

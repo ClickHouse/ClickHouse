@@ -213,7 +213,7 @@ public:
     [[nodiscard]] bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
 
     /// See `SelectQueryOptions::view_source_in_subqueries`.
-    bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
+    [[nodiscard]] bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
 
 private:
 

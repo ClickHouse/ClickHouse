@@ -91,7 +91,7 @@ public:
 
     /// Whether a URI parameter carries a PromQL expression. Such parameters are hidden in the request URI recorded in spans,
     /// because `query_masking_rules` are not applied to it.
-    virtual bool isQueryTextParameter(const String & /* name */) const { return false; }
+    [[nodiscard]] virtual bool isQueryTextParameter(const String & /* name */) const { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
     [[nodiscard]] virtual bool sendsJSONErrors() const { return false; }
@@ -501,7 +501,7 @@ public:
         return !reserved_param_names.contains(name);
     }
 
-    bool isQueryTextParameter(const String & name) const override
+    [[nodiscard]] bool isQueryTextParameter(const String & name) const override
     {
         /// Case-insensitive, like the `params->get` lookups above.
         return Poco::icompare(name, "query") == 0 || Poco::icompare(name, "match[]") == 0;
@@ -794,7 +794,7 @@ public:
     [[nodiscard]] bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
 
     /// The request URI is recorded before `current_impl` is selected, so the PromQL parameters are hidden for any endpoint.
-    bool isQueryTextParameter(const String & name) const override { return query_impl.isQueryTextParameter(name); }
+    [[nodiscard]] bool isQueryTextParameter(const String & name) const override { return query_impl.isQueryTextParameter(name); }
 
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,

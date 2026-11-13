@@ -44,9 +44,9 @@ struct MergeCheckpointIdentity
     bool vertical_lightweight_delete = false;
 
     /// Fails with the name of the first field that differs.
-    std::expected<void, String> match(const MergeCheckpointIdentity & other) const;
+    [[nodiscard]] std::expected<void, String> match(const MergeCheckpointIdentity & other) const;
 
-    NamesAndTypesList getColumns() const;
+    [[nodiscard]] NamesAndTypesList getColumns() const;
 
     void write(WriteBuffer & out) const;
     static MergeCheckpointIdentity read(ReadBuffer & in);
@@ -82,8 +82,8 @@ public:
 
     virtual ~MergeCheckpoint() = default;
 
-    virtual String getDirectory() const = 0;
-    virtual bool isSaved() const = 0;
+    [[nodiscard]] virtual String getDirectory() const = 0;
+    [[nodiscard]] virtual bool isSaved() const = 0;
 
     virtual void discard(std::string_view reason) = 0;
 

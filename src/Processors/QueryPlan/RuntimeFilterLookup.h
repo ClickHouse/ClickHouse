@@ -480,9 +480,9 @@ public:
     RuntimeFilterPruningPredicate(RuntimeFilterIndexAnalysisDescriptors descriptors_, RuntimeFilterLookupPtr lookup_, ContextPtr context_);
 
     /// nullopt while some filter is not built; then the predicate, or nullptr if no filter gives an `IN` set or a range.
-    std::optional<std::shared_ptr<const ActionsDAG>> tryGet() const;
+    [[nodiscard]] std::optional<std::shared_ptr<const ActionsDAG>> tryGet() const;
 
-    const RuntimeFilterIndexAnalysisDescriptors & getDescriptors() const { return descriptors; }
+    [[nodiscard]] const RuntimeFilterIndexAnalysisDescriptors & getDescriptors() const { return descriptors; }
 
 private:
     const RuntimeFilterIndexAnalysisDescriptors descriptors;

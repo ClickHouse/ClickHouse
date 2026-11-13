@@ -1042,7 +1042,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// The default value of a String date, the empty string, is not a valid date.
-    bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
     {
         return arguments.empty() || !isString(removeLowCardinalityAndNullable(arguments[0].type));
     }
