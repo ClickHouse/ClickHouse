@@ -146,16 +146,18 @@ class ReleaseProgress:
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress):
+    def __init__(self, release_progress, commit_sha=None):
         self.release_progress = release_progress
         self.release_info = None
+        # Only STARTED reads it; passed in because the module-global `args` is unset in-process.
+        self.commit_sha = commit_sha
 
     def __enter__(self):
         if self.release_progress == ReleaseProgress.STARTED:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=args.ref,
+                commit_sha=self.commit_sha,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -886,16 +888,6 @@ def parse_args() -> argparse.Namespace:
         help="Recovery run that only rebuilds docker images for an already-created release",
     )
     parser.add_argument(
-        "--download-packages",
-        action="store_true",
-        help="Downloads all required packages from s3",
-    )
-    parser.add_argument(
-        "--create-gh-release",
-        action="store_true",
-        help="Create GH Release object and attach all packages",
-    )
-    parser.add_argument(
         "--post-status",
         action="store_true",
         help="Post release status (prints summary; Slack integration removed)",
@@ -930,7 +922,9 @@ if __name__ == "__main__":
         _ssh_agent.print_keys()
 
     if args.prepare_release_info:
-        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.STARTED, commit_sha=args.ref
+        ) as release_info:
             assert (
                 args.ref and args.release_type
             ), "--ref and --release-type must be provided with --prepare-release-info"
@@ -940,30 +934,6 @@ if __name__ == "__main__":
                 dry_run=args.dry_run,
                 skip_repo=args.skip_repo,
                 skip_docker=args.skip_docker,
-            )
-
-    if args.download_packages:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            p.run()
-
-    if args.create_gh_release:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.CREATE_GH_RELEASE
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            release_info.create_gh_release(
-                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
             )
 
     if args.post_status:

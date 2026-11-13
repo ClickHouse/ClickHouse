@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import shutil
 import sys
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
@@ -76,6 +77,198 @@ run_test(
     settings={"async_insert": 1, "wait_for_async_insert": 1},
 )
 
-# TODO: add CapnProto and Protobuf
+# One async insert batch parses all its entries with one executor: each entry must be parsed
+# as if it were the only one, whatever the previous entries were.
+batch_settings = {
+    "async_insert": 1,
+    "wait_for_async_insert": 0,
+    "async_insert_use_adaptive_busy_timeout": 0,
+    "async_insert_busy_timeout_min_ms": 100000,
+    "async_insert_busy_timeout_max_ms": 100000,
+}
+
+
+def insert_batch(table, data_format, entries, settings={}):
+    for data in entries:
+        client.query_with_data(
+            "INSERT INTO {} FORMAT {}".format(table, data_format),
+            data,
+            settings={**settings, **batch_settings},
+        )
+    client.query("SYSTEM FLUSH ASYNC INSERT QUEUE {}".format(table))
+
+
+def run_batch_test(data_format, gen_data_template, order_by, settings):
+    client.query("TRUNCATE TABLE t_async_insert")
+    expected = client.query(gen_data_template.format(0, 15, "TSV")).strip()
+    entries = [
+        client.query(
+            gen_data_template.format(start, count, data_format),
+            settings=settings,
+            binary_result=True,
+        )
+        for start, count in ((0, 10), (10, 5))
+    ]
+    insert_batch("t_async_insert", data_format, entries, settings)
+    result = client.query(
+        "SELECT * FROM t_async_insert ORDER BY {} FORMAT TSV".format(order_by)
+    ).strip()
+    if result != expected:
+        print(
+            "Failed for format {} in a batch.\nExpected:\n{}\nGot:\n{}\n".format(
+                data_format, expected, result
+            )
+        )
+
+
+client.query("DROP TABLE IF EXISTS t_async_insert")
+client.query(
+    "CREATE TABLE t_async_insert (id UInt64, s String, arr Array(UInt64)) ENGINE = Memory"
+)
+gen_data_query = "SELECT number AS id, toString(number) AS s, range(number) AS arr FROM numbers({}, {}) FORMAT {}"
+for data_format in formats:
+    run_batch_test(
+        data_format,
+        gen_data_query,
+        "id",
+        settings={
+            "output_format_avro_confluent_subject": "test_subject_02187",
+            "format_avro_schema_registry_url": "http://127.0.0.1:8081",
+        },
+    )
+
+client.query("DROP TABLE IF EXISTS t_async_insert")
+client.query("CREATE TABLE t_async_insert (s String) ENGINE = Memory")
+gen_data_query = "SELECT toString(number) AS s FROM numbers({}, {}) FORMAT {}"
+run_batch_test("LineAsString", gen_data_query, "toUInt64(s)", settings={})
+print("Batches")
+
+
+def select(query):
+    return client.query(query).strip()
+
+
+def gen(query, settings={}):
+    return client.query(query, settings=settings, binary_result=True)
+
+
+client.query("CREATE TABLE t_one (dummy UInt8) ENGINE = Memory")
+insert_batch("t_one", "One", [b"x", b"x", b"x"])
+print("One", select("SELECT count() FROM t_one"))
+
+client.query("CREATE TABLE t_npy (x UInt64) ENGINE = Memory")
+insert_batch(
+    "t_npy",
+    "Npy",
+    [gen("SELECT number AS x FROM numbers(3) FORMAT Npy"), gen("SELECT number + 3 AS x FROM numbers(2) FORMAT Npy")],
+)
+print("Npy", select("SELECT groupArray(x) FROM (SELECT x FROM t_npy ORDER BY x)"))
+
+client.query("CREATE TABLE t_mysqldump (a Int64, b Int64) ENGINE = Memory")
+insert_batch(
+    "t_mysqldump",
+    "MySQLDump",
+    [
+        b"CREATE TABLE `t` (`a` int, `b` int);\nINSERT INTO `t` VALUES (1,10),(2,20);\n",
+        b"CREATE TABLE `t` (`a` int, `b` int);\nINSERT INTO `t` VALUES (3,30);\n",
+        b"INSERT INTO `t` (`b`, `a`) VALUES (40,4);\n",
+    ],
+)
+print("MySQLDump", select("SELECT groupArray((a, b)) FROM (SELECT * FROM t_mysqldump ORDER BY a)"))
+
+# A JSONEachRow-shaped input, then a regular one.
+client.query("CREATE TABLE t_json (id UInt64, s String) ENGINE = Memory")
+insert_batch("t_json", "JSON", [b'{"id": 1, "s": "a"}', gen("SELECT toUInt64(2) AS id, 'b' AS s FORMAT JSON")])
+print("JSON", select("SELECT groupArray((id, s)) FROM (SELECT * FROM t_json ORDER BY id)"))
+
+# Headers of different widths.
+client.query("CREATE TABLE t_custom (id UInt64, s String, arr Array(UInt64)) ENGINE = Memory")
+insert_batch(
+    "t_custom",
+    "CustomSeparatedWithNames",
+    [
+        gen("SELECT number AS id, toString(number) AS s, range(number) AS arr FROM numbers(2) FORMAT CustomSeparatedWithNames"),
+        gen("SELECT number + 2 AS id, toString(id) AS s FROM numbers(2) FORMAT CustomSeparatedWithNames"),
+    ],
+)
+print("CustomSeparatedWithNames", select("SELECT groupArray((id, s, arr)) FROM (SELECT * FROM t_custom ORDER BY id)"))
+
+# An input with a detected header, then an input without one.
+client.query("TRUNCATE TABLE t_custom")
+custom_settings = {"format_custom_row_between_delimiter": "|"}
+insert_batch(
+    "t_custom",
+    "CustomSeparated",
+    [
+        gen("SELECT number AS id, toString(number) AS s, range(number) AS arr FROM numbers(2) FORMAT CustomSeparatedWithNames", custom_settings),
+        gen("SELECT number + 2 AS id, toString(id) AS s, range(id) AS arr FROM numbers(2) FORMAT CustomSeparated", custom_settings),
+    ],
+    custom_settings,
+)
+print("CustomSeparated", select("SELECT groupArray((id, s, arr)) FROM (SELECT * FROM t_custom ORDER BY id)"))
+
+# CSV escaping with a multi-character field delimiter.
+client.query("CREATE TABLE t_custom_csv (b Bool, s String) ENGINE = Memory")
+custom_csv_settings = {"format_custom_escaping_rule": "CSV", "format_custom_field_delimiter": ", "}
+insert_batch("t_custom_csv", "CustomSeparated", [b"true, a\n", b"false, b\n"], custom_csv_settings)
+print("CustomSeparated CSV", select("SELECT groupArray((b, s)) FROM (SELECT * FROM t_custom_csv ORDER BY s)"))
+
+# Unknown columns of different types.
+client.query("CREATE TABLE t_row_binary (id UInt64, s String) ENGINE = Memory")
+insert_batch(
+    "t_row_binary",
+    "RowBinaryWithNamesAndTypes",
+    [
+        gen("SELECT number AS id, toString(number) AS s, toUInt8(1) AS u FROM numbers(2) FORMAT RowBinaryWithNamesAndTypes"),
+        gen("SELECT number + 2 AS id, toString(id) AS s, 'unknown' AS u FROM numbers(2) FORMAT RowBinaryWithNamesAndTypes"),
+    ],
+    {"input_format_skip_unknown_fields": 1},
+)
+print("RowBinaryWithNamesAndTypes", select("SELECT groupArray((id, s)) FROM (SELECT * FROM t_row_binary ORDER BY id)"))
+
+# A line ending with CRLF is rejected in every input.
+client.query("CREATE TABLE t_tsv (id UInt64, s String) ENGINE = Memory")
+insert_batch("t_tsv", "TSV", [b"1\ta\n", b"2\tb\r\n"], {"input_format_tsv_crlf_end_of_line": 0})
+print("TSV", select("SELECT groupArray((id, s)) FROM t_tsv"))
+
+# A CSV field of the prefix after an input whose last column is followed by another delimiter.
+template_files = {
+    "format_template_resultset": ("{}_resultset.tpl".format(os.environ["CLICKHOUSE_TEST_UNIQUE_NAME"]), "${:CSV},${data}"),
+    "format_template_row": ("{}_row.tpl".format(os.environ["CLICKHOUSE_TEST_UNIQUE_NAME"]), "${a:CSV}|${b:CSV};"),
+}
+for file_name, content in template_files.values():
+    with open(os.path.join(os.environ["CLICKHOUSE_SCHEMA_FILES"], file_name), "w") as f:
+        f.write(content)
+client.query("CREATE TABLE t_template (a UInt64, b UInt64) ENGINE = Memory")
+insert_batch(
+    "t_template",
+    "Template",
+    [b"hdr,1|2;\n3|4;", b"hdr,5|6;\n7|8;"],
+    {setting: file_name for setting, (file_name, _) in template_files.items()},
+)
+print("Template", select("SELECT groupArray((a, b)) FROM (SELECT * FROM t_template ORDER BY a)"))
+for file_name, _ in template_files.values():
+    os.remove(os.path.join(os.environ["CLICKHOUSE_SCHEMA_FILES"], file_name))
+
+# An input whose value needs an expression, then DEFAULT in the same column.
+client.query("CREATE TABLE t_values (x UInt64 DEFAULT 42) ENGINE = Memory")
+insert_batch("t_values", "Values", [b"(1 + 1)", b"(DEFAULT)"])
+print("Values", select("SELECT groupArray(x) FROM (SELECT x FROM t_values ORDER BY x)"))
+
+# FileLog reads every line of a file as a separate input.
+file_log_dir = os.environ.get("CLICKHOUSE_USER_FILES_UNIQUE")
+os.makedirs(file_log_dir, exist_ok=True)
+with open(os.path.join(file_log_dir, "data.txt"), "w") as f:
+    f.write("a\nb\nc\n")
+client.query(
+    "CREATE TABLE t_file_log (dummy UInt8) ENGINE = FileLog('{}/', 'One')".format(file_log_dir)
+)
+print(
+    "FileLog",
+    select("SELECT count() FROM t_file_log SETTINGS stream_like_engine_allow_direct_select = 1"),
+)
+client.query("DROP TABLE t_file_log")
+shutil.rmtree(file_log_dir)
+
 
 print("OK")

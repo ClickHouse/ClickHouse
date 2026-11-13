@@ -98,6 +98,10 @@ class Job:
 
         enable_gh_auth: bool = False
 
+        # Pass the GitHub Actions job token to the command as `GITHUB_TOKEN`,
+        # with read-only permissions. Unlike `enable_gh_auth`, this uses no App token.
+        enable_gh_read_token: bool = False
+
         # If False, `actions/checkout` is generated with
         # `persist-credentials: false`, so the workflow token is not written
         # into the local git config (`http.<server>/.extraheader`). Set it for
