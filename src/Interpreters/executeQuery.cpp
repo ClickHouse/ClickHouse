@@ -80,6 +80,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/RejectTablePathsVisitor.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -3202,6 +3203,9 @@ static BlockIO executeQueryImpl(
                 NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
                 NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
             }
+
+            /// A multipart table path needs `allow_experimental_table_namespaces` in its own (sub)query.
+            RejectTablePathsVisitor::visit(out_ast, context);
 
             /// Check the limits.
             checkASTSizeLimits(*out_ast, settings);
