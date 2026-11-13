@@ -360,7 +360,6 @@ bool typesAreStructurallyIdentical(
     return equals(wrapper_first, wrapper_second);
 }
 
-/// Compares the `members` of two schema objects: a struct field, or a list / map type.
 bool membersAreStructurallyIdentical(
     const Poco::JSON::Object & first, const Poco::JSON::Object & second, std::span<const char * const> members,
     const std::unordered_map<String, String> & type_mapping)
