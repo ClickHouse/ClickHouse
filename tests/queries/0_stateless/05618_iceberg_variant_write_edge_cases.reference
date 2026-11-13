@@ -13,7 +13,7 @@ it is out of the range of a variant timestamp with 9 digits of fractional second
 3	String	D182D0B5D0BAD181D182
 the keys of a variant object must be valid UTF-8
 --- Escaped dots in JSON keys
-1	JSON	{"a":{"b":1},"c":{"d":2}}
+1	JSON	{"a.b":1,"c":{"d":2}}
 --- Deep JSON path
 TOO_DEEP_RECURSION
 --- Variants need format version 3

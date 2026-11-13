@@ -320,10 +320,17 @@ struct ObjectLayout
         return res;
     }
 
-    static void serialize(
-        const VectorWithMemoryTracking<UInt32> & ids, const VectorWithMemoryTracking<size_t> & value_offsets, const String & values,
-        String & out)
+    template <typename WriteValue>
+    static void serialize(const VectorWithMemoryTracking<UInt32> & ids, WriteValue && write_value, String & out)
     {
+        String values;
+        VectorWithMemoryTracking<size_t> value_offsets(ids.size());
+        for (size_t i = 0; i < ids.size(); ++i)
+        {
+            value_offsets[i] = values.size();
+            write_value(i, values);
+        }
+
         const bool is_large = ids.size() > 0xFF;
         const UInt8 id_size = unsignedSize(ids.empty() ? 0 : *std::max_element(ids.begin(), ids.end()));
         const UInt8 offset_size = unsignedSize(values.size());
@@ -362,9 +369,18 @@ struct ArrayLayout
         return res;
     }
 
-    static void serialize(const VectorWithMemoryTracking<size_t> & value_offsets, const String & values, String & out)
+    template <typename WriteElement>
+    static void serialize(size_t num_elements, WriteElement && write_element, String & out)
     {
-        const bool is_large = value_offsets.size() > 0xFF;
+        String values;
+        VectorWithMemoryTracking<size_t> value_offsets(num_elements);
+        for (size_t i = 0; i < num_elements; ++i)
+        {
+            value_offsets[i] = values.size();
+            write_element(i, values);
+        }
+
+        const bool is_large = num_elements > 0xFF;
         const UInt8 offset_size = unsignedSize(values.size());
         writeContainerHeader(out, BasicType::Array, static_cast<UInt8>((is_large << 2) | (offset_size - 1)));
         writeUnsigned(out, value_offsets.size(), is_large ? 4 : 1);
@@ -450,9 +466,10 @@ struct UUIDPrimitive
 
     static UUID decode(std::string_view data, size_t pos)
     {
+        const std::string_view bytes = readSlice(data, pos, sizeof(UUID));
         UUID res;
-        UUIDHelpers::getHighBytes(res) = readFixed<UInt64, std::endian::big>(data, pos);
-        UUIDHelpers::getLowBytes(res) = readFixed<UInt64, std::endian::big>(data, pos + sizeof(UInt64));
+        UUIDHelpers::getHighBytes(res) = unalignedLoadBigEndian<UInt64>(bytes.data());
+        UUIDHelpers::getLowBytes(res) = unalignedLoadBigEndian<UInt64>(bytes.data() + sizeof(UInt64));
         return res;
     }
 };
@@ -1105,15 +1122,11 @@ public:
             {
                 const auto & array = assert_cast<const ColumnArray &>(column);
                 const auto & nested_type = *assert_cast<const DataTypeArray &>(type).getNestedType();
-                const auto & offsets = array.getOffsets();
-                String values;
-                VectorWithMemoryTracking<size_t> value_offsets;
-                for (size_t i = offsets[row - 1]; i < offsets[row]; ++i)
-                {
-                    value_offsets.push_back(values.size());
-                    encode(array.getData(), nested_type, i, values);
-                }
-                ArrayLayout::serialize(value_offsets, values, out);
+                const size_t begin = array.getOffsets()[row - 1];
+                ArrayLayout::serialize(
+                    array.getOffsets()[row] - begin,
+                    [&](size_t i, String & values) { encode(array.getData(), nested_type, begin + i, values); },
+                    out);
                 return;
             }
             case TypeIndex::Tuple:
@@ -1121,31 +1134,16 @@ public:
                 const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
                 const auto & tuple = assert_cast<const ColumnTuple &>(column);
                 const auto & element_types = tuple_type.getElements();
-                String values;
-                VectorWithMemoryTracking<size_t> value_offsets;
-                if (!tuple_type.hasExplicitNames())
+                auto write_element = [&](size_t i, String & values) { encode(tuple.getColumn(i), *element_types[i], row, values); };
+                if (tuple_type.hasExplicitNames())
                 {
-                    for (size_t i = 0; i < element_types.size(); ++i)
-                    {
-                        value_offsets.push_back(values.size());
-                        encode(tuple.getColumn(i), *element_types[i], row, values);
-                    }
-                    ArrayLayout::serialize(value_offsets, values, out);
-                    return;
+                    const auto & names = tuple_type.getElementNames();
+                    encodeObject(VectorWithMemoryTracking<std::string_view>(names.begin(), names.end()), write_element, out);
                 }
-
-                const auto & names = tuple_type.getElementNames();
-                VectorWithMemoryTracking<size_t> order(names.size());
-                std::iota(order.begin(), order.end(), 0);
-                std::sort(order.begin(), order.end(), [&](size_t left, size_t right) { return names[left] < names[right]; });
-                VectorWithMemoryTracking<UInt32> ids;
-                for (size_t i : order)
+                else
                 {
-                    ids.push_back(keyId(names[i]));
-                    value_offsets.push_back(values.size());
-                    encode(tuple.getColumn(i), *element_types[i], row, values);
+                    ArrayLayout::serialize(element_types.size(), write_element, out);
                 }
-                ObjectLayout::serialize(ids, value_offsets, values, out);
                 return;
             }
             case TypeIndex::Map:
@@ -1157,29 +1155,13 @@ public:
                 const auto & nested = assert_cast<const ColumnMap &>(column).getNestedColumn();
                 const auto & map_keys = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(0);
                 const auto & map_values = assert_cast<const ColumnTuple &>(nested.getData()).getColumn(1);
-                const auto & offsets = nested.getOffsets();
+                const size_t begin = nested.getOffsets()[row - 1];
 
-                VectorWithMemoryTracking<size_t> order(offsets[row] - offsets[row - 1]);
-                std::iota(order.begin(), order.end(), offsets[row - 1]);
-                std::sort(order.begin(), order.end(), [&](size_t left, size_t right) { return map_keys.getDataAt(left) < map_keys.getDataAt(right); });
-
-                String values;
-                VectorWithMemoryTracking<size_t> value_offsets;
-                VectorWithMemoryTracking<UInt32> ids;
-                for (size_t j = 0; j < order.size(); ++j)
-                {
-                    const std::string_view key = map_keys.getDataAt(order[j]);
-                    if (j != 0 && key == map_keys.getDataAt(order[j - 1]))
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Cannot write a map with the duplicate key '{}' into the Parquet variant column '{}': "
-                            "the keys of a variant object must be unique",
-                            key, column_name);
-                    ids.push_back(keyId(key));
-                    value_offsets.push_back(values.size());
-                    encode(map_values, *map_type.getValueType(), order[j], values);
-                }
-                ObjectLayout::serialize(ids, value_offsets, values, out);
+                VectorWithMemoryTracking<std::string_view> row_keys(nested.getOffsets()[row] - begin);
+                for (size_t i = 0; i < row_keys.size(); ++i)
+                    row_keys[i] = map_keys.getDataAt(begin + i);
+                encodeObject(
+                    row_keys, [&](size_t i, String & values) { encode(map_values, *map_type.getValueType(), begin + i, values); }, out);
                 return;
             }
             case TypeIndex::Variant:
@@ -1344,16 +1326,37 @@ private:
             return;
         }
 
-        String values;
-        VectorWithMemoryTracking<size_t> value_offsets;
-        VectorWithMemoryTracking<UInt32> ids;
+        VectorWithMemoryTracking<std::string_view> names;
+        VectorWithMemoryTracking<size_t> children;
+        names.reserve(node.children.size());
+        children.reserve(node.children.size());
         for (const auto & [name, child] : node.children)
         {
-            ids.push_back(keyId(name));
-            value_offsets.push_back(values.size());
-            writeJSONNode(nodes, child, values);
+            names.push_back(name);
+            children.push_back(child);
         }
-        ObjectLayout::serialize(ids, value_offsets, values, out);
+        encodeObject(names, [&](size_t i, String & values) { writeJSONNode(nodes, children[i], values); }, out);
+    }
+
+    template <typename WriteValue>
+    void encodeObject(const VectorWithMemoryTracking<std::string_view> & names, WriteValue && write_value, String & out)
+    {
+        VectorWithMemoryTracking<size_t> order(names.size());
+        std::iota(order.begin(), order.end(), 0);
+        std::sort(order.begin(), order.end(), [&](size_t left, size_t right) { return names[left] < names[right]; });
+
+        VectorWithMemoryTracking<UInt32> ids(order.size());
+        for (size_t i = 0; i < order.size(); ++i)
+        {
+            if (i != 0 && names[order[i]] == names[order[i - 1]])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot write an object with the duplicate key '{}' into the Parquet variant column '{}': the keys of a "
+                    "variant object must be unique",
+                    names[order[i]], column_name);
+            ids[i] = keyId(names[order[i]]);
+        }
+        ObjectLayout::serialize(ids, [&](size_t i, String & values) { write_value(order[i], values); }, out);
     }
 
     [[noreturn]] void throwJSONPathConflict(std::string_view path) const
