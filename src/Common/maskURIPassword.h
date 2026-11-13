@@ -157,7 +157,7 @@ inline bool maskURIPassword(std::string & uri, std::string_view authority_termin
     std::string result;
     while (true)
     {
-        auto [password_begin, password_end] = findURIPasswordRange(uri.substr(offset), authority_terminators);
+        auto [password_begin, password_end] = findURIPasswordRange(std::string_view(uri).substr(offset), authority_terminators);
         if (password_begin == std::string::npos)
         {
             if (offset > 0)
@@ -303,7 +303,7 @@ inline bool maskURIUserinfo(std::string & url)
         return false;
 
     /// `[^/?#]+@` - the userinfo, greedy, so it ends at the last '@' before the path.
-    size_t authority_end = url.find_first_of("/?#", authority_begin);
+    size_t authority_end = url.find_first_of(URI_AUTHORITY_TERMINATORS, authority_begin);
     if (authority_end == std::string::npos)
         authority_end = url.length();
 
