@@ -1553,7 +1553,8 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
     bool is_not_in,
     bool compare_nulls,
     const ContextPtr & context,
-    bool bind_arguments = true)
+    bool bind_arguments = true,
+    bool match_nullable_nans = true)
 {
     const auto left_type = removeNullable(removeLowCardinality(left_argument->getResultType()));
     const auto right_type = removeNullable(removeLowCardinality(right_argument->getResultType()));
@@ -1583,7 +1584,8 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
             NameAndTypePair{"__in_exact_left", argument_types[0]}, lambda_arguments);
         auto right_value = std::make_shared<ColumnNode>(
             NameAndTypePair{"__in_exact_right", argument_types[1]}, lambda_arguments);
-        auto body = buildNumericScalarInComparison(left_value, right_value, is_not_in, compare_nulls, context, false);
+        auto body = buildNumericScalarInComparison(
+            left_value, right_value, is_not_in, compare_nulls, context, false, match_nullable_nans);
         auto lambda = std::make_shared<LambdaNode>(
             lambda_arguments, body, false /*is_operator*/,
             std::make_shared<DataTypeFunction>(argument_types, body->getResultType()));
@@ -1722,7 +1724,7 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
         result = buildResolvedFunction("equals", {left_argument, right_argument}, context);
     }
 
-    if (compare_nulls)
+    if (compare_nulls && match_nullable_nans)
         result = includeMatchingNaNs(std::move(result), left_argument, right_argument, context);
 
     if (compare_nulls)
@@ -1775,7 +1777,7 @@ static QueryTreeNodePtr buildNumericInComparison(
 
     if (right_arguments.size() == 1)
         return buildNumericScalarInComparison(
-            left_argument, right_arguments.front(), is_not_in, compare_nulls, context);
+            left_argument, right_arguments.front(), is_not_in, compare_nulls, context, true, false);
 
     /// Each scalar comparison refers to the left operand. Bind it with all
     /// candidates once, so nested multi-candidate membership grows linearly.
@@ -1812,7 +1814,7 @@ static QueryTreeNodePtr buildNumericInComparison(
     comparisons.reserve(right_arguments.size());
     for (size_t i = 0; i < right_arguments.size(); ++i)
         comparisons.push_back(buildNumericScalarInComparison(
-            bound_arguments.front(), bound_arguments[i + 1], is_not_in, compare_nulls, context, false));
+            bound_arguments.front(), bound_arguments[i + 1], is_not_in, compare_nulls, context, false, false));
 
     auto body = buildResolvedFunction(is_not_in ? "and" : "or", std::move(comparisons), context);
     auto lambda = std::make_shared<LambdaNode>(
