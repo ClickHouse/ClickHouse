@@ -195,13 +195,13 @@ private:
         const ProjectionNames & arguments_projection_names,
         const ProjectionNames & parameters_projection_names,
         IdentifierResolveScope & scope,
-        bool source_has_null);
+        std::optional<bool> source_is_empty,
+        QueryTreeNodePtr source_null_predicate);
 
     QueryTreeNodePtr convertTupleToArray(
-        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodes & array_elements,
         const QueryTreeNodePtr & in_first_argument,
         IdentifierResolveScope & scope,
-        bool expand_single_tuple_value,
         bool compare_nulls);
 
     QueryTreeNodes getArrayElementsForInTupleArguments(

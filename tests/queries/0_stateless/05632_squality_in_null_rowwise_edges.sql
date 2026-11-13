@@ -15,6 +15,22 @@ SELECT map('a', toUInt64(1)) IN (map('a', number + 1), NULL),
 SELECT map('a', toUInt64(2)) IN (map('a', number + 1), NULL),
     map('a', toUInt64(2)) NOT IN (map('a', number + 1), NULL) FROM numbers(1);
 
+-- A nonempty null-only source stays nonempty after removing matchable values.
+SELECT toNullable(1) IN (NULL), toNullable(1) NOT IN (NULL),
+    toNullable(1) IN (materialize(NULL), NULL),
+    toNullable(1) NOT IN (materialize(NULL), NULL);
+SELECT toUInt8(1) IN (materialize(NULL), NULL),
+    toUInt8(1) NOT IN (materialize(NULL), NULL);
+SELECT k FROM VALUES('k Nullable(UInt8)', (NULL), (1))
+WHERE k NOT IN (materialize(NULL), NULL);
+
+-- Failed casts are excluded from membership without becoming source `NULL`s.
+SELECT toUInt8(1) IN ('256', '257'), toUInt8(1) NOT IN ('256', '257');
+SELECT toUInt8(1) IN (materialize('256'), '257'),
+    toUInt8(1) NOT IN (materialize('256'), '257');
+SELECT number FROM numbers(3)
+WHERE toUInt8(number) NOT IN (materialize('256'), '257') ORDER BY number;
+
 CREATE TABLE squality_in_null_internal_join (k Tuple(UInt64, UInt64), v UInt64)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO squality_in_null_internal_join
