@@ -68,6 +68,7 @@ DEFAULT_LOCAL_TEST_WORKFLOW = "pull_request.py"
 READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
 
 CI_DB_READ_USER = "play"
+CI_DB_READ_URL = "https://xy8c38q4lw.us-east-2.aws.clickhouse-staging.com"
 
 EVENT_FEED_S3_PATH = "clickhouse-test-reports-private/slack_feed"
 CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infrastructure/projects.py"
