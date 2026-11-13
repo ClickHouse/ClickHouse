@@ -65,7 +65,10 @@ SELECT timeSeriesAvgOverGroupMerge(s) FROM (
     FROM numbers(1000) GROUP BY number % 13) SETTINGS max_threads = 8, max_block_size = 10;
 SELECT finalizeAggregation(CAST(unhex(hex(timeSeriesAvgOverGroupState(k, v))), 'AggregateFunction(timeSeriesAvgOverGroup, Array(Tuple(String, String)), Array(Nullable(Float64)))'))
 FROM values('k Array(Tuple(String, String)), v Array(Nullable(Float64))', ([('a', '1')], [1e308, NULL]), ([('a', '2')], [9.988465674311579e307, 3]), ([('b', '1')], [-9.988465674311579e307, NULL]), ([], [-1e308, 5]));
-SELECT finalizeAggregation(CAST(unhex('0105'), 'AggregateFunction(timeSeriesAvgOverGroup, UInt8, Array(Float64))')); -- { serverError CANNOT_READ_ALL_DATA }
+SELECT finalizeAggregation(CAST(unhex('01000105'), 'AggregateFunction(timeSeriesAvgOverGroup, UInt8, Array(Float64))')); -- { serverError CANNOT_READ_ALL_DATA }
+-- The state starts with its format version.
+SELECT hex(timeSeriesAvgOverGroupState(k, v)) FROM values('k UInt8, v Array(Float64)', (7, [1]));
+SELECT finalizeAggregation(CAST(unhex('02000105'), 'AggregateFunction(timeSeriesAvgOverGroup, UInt8, Array(Float64))')); -- { serverError INCORRECT_DATA }
 
 SELECT '-- PromQL avg';
 
@@ -109,6 +112,11 @@ SELECT tags, value FROM prometheusQuery('prometheus', 'avg by (test) (topk witho
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg without (point) (topk by (test) (4, data{test="order2"}))', 60);
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg(topk by (test) (4, data{test=~"order|order2"}))', 60);
 SELECT tags, value FROM prometheusQuery('prometheus', 'avg(topk(4, data{test="order2"})) / count(topk(4, data{test="order2"}))', 60);
+-- Unary operators keep the order of the series, and `-` negates the values.
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(+topk(4, data{test="order2"}))', 60);
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(-topk(4, data{test="order2"}))', 60);
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(-bottomk(4, data{test="order"}))', 60);
+SELECT tags, value FROM prometheusQuery('prometheus', 'avg(-(-topk(4, data{test="order2"})))', 60);
 -- A range query keeps the order of the tags.
 SELECT * FROM prometheusQueryRange('prometheus', 'avg(topk(4, data{test="order2"}))', 60, 120, 60);
 

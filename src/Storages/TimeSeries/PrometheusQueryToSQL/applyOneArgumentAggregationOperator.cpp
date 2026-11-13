@@ -154,7 +154,17 @@ namespace
         if (operator_node->operator_name != "avg" || argument.start_time != argument.end_time)
             return nullptr;
 
+        /// Unary operators keep the order of the series, and `-` reverses the order of their values.
         const auto * child = operator_node->getArguments().at(0);
+        bool negated = false;
+        while (child->node_type == PrometheusQueryTree::NodeType::UnaryOperator)
+        {
+            const auto * unary = static_cast<const PrometheusQueryTree::UnaryOperator *>(child);
+            if (unary->operator_name == "-")
+                negated = !negated;
+            child = unary->getArgument();
+        }
+
         if (child->node_type != PrometheusQueryTree::NodeType::AggregationOperator)
             return nullptr;
 
@@ -169,7 +179,7 @@ namespace
             inner, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, metric_name_dropped);
 
         ASTPtr values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
-        if (is_topk)
+        if (is_topk != negated)
             values = makeASTFunction(
                 "arrayMap",
                 makeASTFunction(

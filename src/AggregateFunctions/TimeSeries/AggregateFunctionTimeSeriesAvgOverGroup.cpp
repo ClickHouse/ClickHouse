@@ -124,6 +124,8 @@ class AggregateFunctionTimeSeriesAvgOverGroup final
     : public IAggregateFunctionDataHelper<TimeSeriesAvgOverGroupData, AggregateFunctionTimeSeriesAvgOverGroup>
 {
 public:
+    static constexpr UInt16 FORMAT_VERSION = 1;
+
     explicit AggregateFunctionTimeSeriesAvgOverGroup(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<TimeSeriesAvgOverGroupData, AggregateFunctionTimeSeriesAvgOverGroup>(
             argument_types_, {}, std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())))
@@ -187,6 +189,7 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const auto & state = data(place);
+        writeBinaryLittleEndian(FORMAT_VERSION, buf);
         writeVarUInt(state.size(), buf);
         writeVarUInt(state.num_steps, buf);
         buf.write(state.keys.data(), state.keys.size());
@@ -199,6 +202,11 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
+        UInt16 format_version = 0;
+        readBinaryLittleEndian(format_version, buf);
+        if (format_version != FORMAT_VERSION)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported format version {} of a state of aggregate function {}", format_version, getName());
+
         size_t num_rows = 0;
         size_t num_steps = 0;
         size_t num_values = 0;
