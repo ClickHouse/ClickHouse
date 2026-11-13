@@ -40,10 +40,11 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
+    /// Must be done before replication: a DDL worker resolves a bare table name in its own current database.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {

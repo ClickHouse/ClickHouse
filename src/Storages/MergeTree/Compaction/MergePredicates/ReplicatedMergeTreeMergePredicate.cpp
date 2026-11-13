@@ -48,7 +48,7 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::
     return MergeCore::canUsePartInMerges(part->name, part->info);
 }
 
-PartsRange ReplicatedMergeTreeBaseMergePredicate::getPatchesToApplyOnMerge(PartsRangeView range) const
+PartsRange ReplicatedMergeTreeBaseMergePredicate::getPatchesToApplyOnMerge(const PartsRange & range) const
 {
     std::lock_guard lock(queue.state_mutex);
     return MergeCore::getPatchesToApplyOnMerge(range);
