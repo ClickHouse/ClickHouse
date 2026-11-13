@@ -219,7 +219,7 @@ private:
             local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
             local_settings[Setting::enable_s3_requests_logging],
-            /* for_disk_s3 = */ false,
+            /* group = */ HTTPConnectionGroupType::STORAGE,
             /* opt_disk_name = */ {},
             request_settings.request_throttler,
             s3_uri.uri.getScheme());
@@ -739,7 +739,7 @@ void BackupWriterS3::removeFiles(const Strings & file_names)
     size_t batch_size = 1000;
 
     deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ true,
-                      s3_capabilities, batch_size, blob_storage_log);
+                      s3_capabilities, s3_settings.request_settings, batch_size, blob_storage_log);
 }
 
 }

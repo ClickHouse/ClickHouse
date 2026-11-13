@@ -92,7 +92,7 @@ static void addImpliedIndexHintInputs(const ActionsDAG::Node & node, NameSet & r
         addImpliedIndexHintInputs(inner, res);
 }
 
-static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node, NameSet & implied_index_hint_inputs)
 {
     NameSet res;
     visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
@@ -101,7 +101,7 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
         if (cur->type == ActionsDAG::ActionType::INPUT)
             res.emplace(cur->result_name);
         else
-            addImpliedIndexHintInputs(*cur, res);
+            addImpliedIndexHintInputs(*cur, implied_index_hint_inputs);
         return VisitResult::Continue;
     });
     return res;
@@ -879,6 +879,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         && !isSensitiveToEvaluationCount(filter->getExpression())
         && filterResultForNotMatchedRows(filter->getExpression(), filter->getFilterColumnName(), Block{}) == FilterResult::FALSE;
 
+    const JoinKind join_kind = logical_join ? logical_join->getJoinOperator().kind : table_join_ptr->kind();
+    const JoinStrictness join_strictness = logical_join ? logical_join->getJoinOperator().strictness : table_join_ptr->strictness();
+    const bool left_stream_only_matched = join_kind == JoinKind::Right && join_strictness != JoinStrictness::Semi;
+    const bool right_stream_only_matched = join_kind == JoinKind::Left && join_strictness != JoinStrictness::Semi;
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -890,6 +895,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column,
         cross_type_equivalent_columns,
+        left_stream_only_matched,
+        right_stream_only_matched,
         filter_is_always_false);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
@@ -1238,6 +1245,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (aggregating || merging_aggregated)
     {
+        auto index_hints = ActionsDAG::PushDownIndexHints::Implied;
+
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
         /// of the grouping sets, we could not push the filter down.
         bool is_grouping_sets = aggregating ? aggregating->isGroupingSets() : merging_aggregated->isGroupingSets();
@@ -1250,11 +1259,19 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions.findInOutputs(filter->getFilterColumnName());
 
-            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
+            NameSet index_hint_inputs;
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node, index_hint_inputs);
 
             const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
+            /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
+            if (std::ranges::any_of(grouping_sets, [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); }))
+                return 0;
             if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
+
+            /// A hint reading a column that some set lacks would prune rows that set aggregates.
+            if (!identifiersIsAmongAllGroupingSets(grouping_sets, index_hint_inputs))
+                index_hints = ActionsDAG::PushDownIndexHints::None;
         }
 
         const auto & params = aggregating ? aggregating->getParams() : merging_aggregated->getParams();
@@ -1269,7 +1286,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, ActionsDAG::PushDownIndexHints::Implied))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, index_hints))
             return updated_steps;
     }
 
