@@ -1775,53 +1775,17 @@ void copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n)
     }
 }
 
-/// An Avro `bytes`/`string`: a `long` length followed by that many bytes.
-void copyAvroString(ReadBuffer & in, String & raw)
-{
-    Int64 len = copyAvroLong(in, raw);
-    if (len < 0)
-        throw Exception(ErrorCodes::AVRO_EXCEPTION, "Negative length in Avro header string");
-    copyAvroBytes(in, raw, static_cast<size_t>(len));
-}
-
-/// Copy the OCF header verbatim (magic + metadata map + 16-byte sync) into `state`.
+/// Copy the OCF header verbatim (magic + metadata map + 16-byte sync) into `state`. Let the Avro
+/// library parse the header instead of hand-rolling the metadata-map format; `readParsedValueIntoString`
+/// captures exactly the bytes the parse consumes, which is the header ending in the 16-byte sync marker.
 void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
 {
-    String & h = state.header;
-    h.clear();
-
-    char magic[4];
-    readAvroStrict(in, magic, sizeof(magic));
-    static constexpr char expected_magic[4] = {'O', 'b', 'j', '\x01'};
-    if (memcmp(magic, expected_magic, sizeof(magic)) != 0)
-        throw Exception(ErrorCodes::AVRO_EXCEPTION, "Not an Avro object container file: magic does not match");
-    h.append(magic, sizeof(magic));
-
-    /// metadata is map<string,bytes>, one or more blocks terminated by a 0 count. A negative count
-    /// -n means n entries preceded by a `long` block byte-length (the external-writer variant).
-    while (true)
+    state.header.clear();
+    readParsedValueIntoString(state.header, in, [](ReadBuffer & buf)
     {
-        Int64 count = copyAvroLong(in, h);
-        if (count == 0)
-            break;
-        if (count < 0)
-        {
-            if (count == std::numeric_limits<Int64>::min())
-                throw Exception(ErrorCodes::AVRO_EXCEPTION, "Avro metadata block count overflow");
-            count = -count;
-            copyAvroLong(in, h); /// block byte-length: copied verbatim, value unused
-        }
-        for (Int64 i = 0; i < count; ++i)
-        {
-            copyAvroString(in, h); /// key
-            copyAvroString(in, h); /// value
-        }
-    }
-
-    char sync[16];
-    readAvroStrict(in, sync, sizeof(sync));
-    h.append(sync, sizeof(sync));
-    memcpy(state.sync.data(), sync, sizeof(sync));
+        avro::DataFileReaderBase reader(std::make_unique<AvroInputStreamReadBufferAdapter>(buf), MAX_AVRO_SCHEMA_DEPTH);
+    });
+    memcpy(state.sync.data(), state.header.data() + state.header.size() - 16, 16);
     state.header_read = true;
 }
 
