@@ -707,11 +707,15 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(const std::vector<size_t> & processors)
 {
     std::lock_guard lock(mutex);
     for (auto & [processor, holders] : bucket_holders)
     {
+        /// Holders of other processors may have uncommitted files.
+        if (std::find(processors.begin(), processors.end(), processor) == processors.end())
+            continue;
+
         std::string buckets_str;
         size_t released_holders = 0;
         for (auto it = holders->begin(); it != holders->end();)
@@ -1145,6 +1149,24 @@ void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStrea
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
+    auto reserve_file = [&]
+    {
+        if (!commit_settings.max_processed_files_before_commit
+            || progress->processed_files.fetch_add(1) < commit_settings.max_processed_files_before_commit)
+            return true;
+
+        LOG_DEBUG(log, "Number of max processed files before commit reached "
+                "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                progress->processed_rows.load(), progress->processed_bytes.load(),
+                progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
+
+        --progress->processed_files;
+        return false;
+    };
+
+    /// In ordered mode without buckets a claimed file must be committed by this INSERT.
+    const bool reserve_before_claim = mode == ObjectStorageQueueMode::ORDERED && !file_iterator->useBucketsForProcessing();
+
     while (true)
     {
         if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
@@ -1238,6 +1260,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 break;
             }
 
+            if (reserve_before_claim && !reserve_file())
+                break;
+
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
@@ -1258,6 +1283,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             if (!reader)
             {
+                if (reserve_before_claim && commit_settings.max_processed_files_before_commit)
+                    --progress->processed_files;
+
                 LOG_TEST(log, "No reader");
                 break;
             }
@@ -1265,20 +1293,10 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
             file_metadata = object_info->file_metadata;
 
-            if (commit_settings.max_processed_files_before_commit)
+            if (!reserve_before_claim && !reserve_file())
             {
-                auto old_processed_files = progress->processed_files.fetch_add(1);
-                if (old_processed_files >= commit_settings.max_processed_files_before_commit)
-                {
-                    LOG_DEBUG(log, "Number of max processed files before commit reached "
-                            "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
-                            progress->processed_rows.load(), progress->processed_bytes.load(),
-                            progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
-
-                    --progress->processed_files;
-                    file_iterator->returnForRetry(reader.getObjectInfo(), file_metadata);
-                    break;
-                }
+                file_iterator->returnForRetry(reader.getObjectInfo(), file_metadata);
+                break;
             }
 
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
