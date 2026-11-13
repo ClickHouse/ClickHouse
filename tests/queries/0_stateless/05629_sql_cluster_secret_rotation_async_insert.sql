@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: creates and drops a global SQL-managed cluster
+-- no-fasttest: Fast test builds ClickHouse without SSL, so inter-server `secret` is disabled
 
 -- The connection pool of an async `Distributed` insert queue signs every request with the cluster `secret`.
 -- `ALTER CLUSTER` that changes only the secret must recreate the queue, otherwise it keeps signing with the old

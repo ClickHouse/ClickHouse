@@ -54,6 +54,13 @@ if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(common PUBLIC ch_contrib::crc32_s390x)
 endif()
 
+if (TARGET ch_contrib::silk_fibers)
+    target_link_libraries(common PRIVATE ch_contrib::silk_fibers)
+    target_compile_definitions(common PRIVATE USE_SILK=1)
+else()
+    target_compile_definitions(common PRIVATE USE_SILK=0)
+endif()
+
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
 
 target_link_libraries (common

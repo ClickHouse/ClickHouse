@@ -1,5 +1,5 @@
 2
--- a user with only CREATE DATABASE cannot take over the name of a SQL cluster
+-- a user with CREATE DATABASE and TABLE ENGINE ON * cannot take over the name of a SQL cluster
 CLUSTER_ALREADY_EXISTS
 -- neither can the administrator
 CLUSTER_ALREADY_EXISTS
