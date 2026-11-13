@@ -1441,6 +1441,11 @@ void registerStorageNATS(StorageFactory & factory)
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
+        /// MATERIALIZED columns are not part of the sink header, so every INSERT would fail.
+        /// Check only on CREATE so that existing tables still attach.
+        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.columns.getMaterialized().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS table engine doesn't support MATERIALIZED columns");
+
         /// Credential validation makes decisions from the effective settings, so it must see the
         /// same macro-expanded values that `StorageNATS` passes to `libnats`. In particular, an
         /// empty macro must not turn a non-empty query credential into an empty replacement after
