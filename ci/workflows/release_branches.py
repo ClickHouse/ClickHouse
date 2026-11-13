@@ -23,7 +23,7 @@ clickhouse_binaries_with_tags = with_long_retention_tags(
 )
 
 # Reports and CIDB are public; a build that keeps a fix secret must not write to them.
-is_internal = os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse-internal"
+writes_public_places = os.getenv("GITHUB_REPOSITORY") != "ClickHouse/ClickHouse-internal"
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
@@ -68,8 +68,8 @@ workflow = Workflow.Config(
     secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
-    enable_report=not is_internal,
-    enable_cidb=not is_internal,
+    enable_report=writes_public_places,
+    enable_cidb=writes_public_places,
     enable_commit_status_on_failure=True,
     enable_slack_feed=True,
     pre_hooks=[
