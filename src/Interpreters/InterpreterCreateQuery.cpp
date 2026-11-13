@@ -4422,11 +4422,6 @@ void InterpreterCreateQuery::checkDictionaryEngineAccess(ASTCreateQuery & create
         auto & function = create.as_table_function->as<ASTFunction &>();
         if (function.name == "dictionary" && function.arguments)
             check(function.arguments->children, server_default_database);
-
-        /// `view` analyzes its query, which may use dictionaries, when the storage is created. With an explicit column list
-        /// that happens later with the global context, see `doCreateTable`, so analyze the query as the user here.
-        if (function.name == "view")
-            TableFunctionFactory::instance().get(create.as_table_function->ptr(), getContext())->getActualTableStructureWithAccess(getContext(), /*is_insert_query=*/ false);
     }
 }
 

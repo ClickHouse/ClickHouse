@@ -243,7 +243,11 @@ ExternalDictionariesLoader::ResolvedDictionary ExternalDictionariesLoader::resol
 {
     auto resolved = resolveDictionaryNameUnchecked(dictionary_name, current_database_name);
 
-    if (!has(resolved.key))
+    /// One lookup decides whether the dictionary exists, so that a dictionary removed concurrently is reported like any
+    /// missing one, after the access check.
+    auto load_result = getLoadResult(resolved.key);
+
+    if (!load_result.object && !load_result.config)
     {
         /// An empty name names no dictionary at all, so there is nothing to check access to.
         if (resolved.qualified_name.table.empty())
@@ -255,16 +259,11 @@ ExternalDictionariesLoader::ResolvedDictionary ExternalDictionariesLoader::resol
 
     query_context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::Dictionary, resolved.qualified_name.getFullName());
 
-    auto load_result = getLoadResult(resolved.key);
-
     if (load_result.object)
     {
         const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result.object);
         return {dictionary_name, std::move(resolved.key), dictionary->getDictionaryID()};
     }
-
-    if (!load_result.config)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
 
     auto dictionary_id = StorageID::fromDictionaryConfig(*load_result.config->config, load_result.config->key_in_config);
     return {dictionary_name, std::move(resolved.key), std::move(dictionary_id)};

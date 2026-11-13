@@ -133,10 +133,9 @@ private:
     void checkExportAccess(const ASTCreateQuery & create) const;
 
     /// A `Dictionary` table, including the inner table of a materialized view and a table created `AS dictionary(...)`,
-    /// needs access to the dictionary it reads, see `StorageDictionary::checkDictionaryAccess`, and a table created
-    /// `AS view(...)` needs access to what its query uses. Checked here, while the query still runs as the user:
-    /// `Replicated` and `ON CLUSTER` replays run with full access, and so does the deferred creation of a table function
-    /// with an explicit column list. Replaces the dictionary name argument with the evaluated name.
+    /// needs access to the dictionary it reads, see `StorageDictionary::checkDictionaryAccess`. Checked here, while the
+    /// query still runs as the user: `Replicated` and `ON CLUSTER` replays run with full access, and so does the deferred
+    /// creation of a table function with an explicit column list. Replaces the dictionary name argument with the evaluated name.
     void checkDictionaryEngineAccess(ASTCreateQuery & create) const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.

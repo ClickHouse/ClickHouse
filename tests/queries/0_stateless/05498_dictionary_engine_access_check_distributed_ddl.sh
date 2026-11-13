@@ -103,15 +103,30 @@ unload
 as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('${CLICKHOUSE_DATABASE}.d')" "&distributed_ddl_entry_format_version=2"
 status
 query "EXISTS TABLE ${cluster_db}.w_function"
-# `view` with an explicit column list analyzes its query only when the table is first used, with the global context.
+# A table function with an explicit column list creates its storage on first use, with the global context. The query of
+# `view` and the table function in `loop` are evaluated only by the query that reads the table, as its user.
 unload
 as_user "CREATE TABLE w_view (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)"
+query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w_view TO ${username}"
+as_user "SELECT * FROM w_view"
 status
-query "EXISTS TABLE w_view"
 unload
 as_user "CREATE TABLE ${cluster_db}.w_view ON CLUSTER test_shard_localhost (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)" "&distributed_ddl_entry_format_version=2"
+query "GRANT SELECT ON ${cluster_db}.w_view TO ${username}"
+as_user "SELECT * FROM ${cluster_db}.w_view"
 status
-query "EXISTS TABLE ${cluster_db}.w_view"
+unload
+as_user "CREATE TABLE w_loop (id UInt64, value String) AS loop(dictionary('${CLICKHOUSE_DATABASE}.d'))"
+query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w_loop TO ${username}"
+as_user "SELECT * FROM w_loop LIMIT 1"
+status
+unload
+as_user "CREATE TABLE w_loop_inferred AS loop(dictionary('${CLICKHOUSE_DATABASE}.d'))"
+status
+# A view over a table that does not exist where the table is created, e.g. on the initiator of `ON CLUSTER`.
+as_user "CREATE TABLE w_missing (x UInt64) AS view(SELECT x FROM ${CLICKHOUSE_DATABASE}.missing_table)"
+as_user "CREATE TABLE ${cluster_db}.w_missing ON CLUSTER test_shard_localhost (x UInt64) AS view(SELECT x FROM ${CLICKHOUSE_DATABASE}.missing_table)"
+query "SELECT count() FROM system.tables WHERE (database, name) IN (('${CLICKHOUSE_DATABASE}', 'w_missing'), ('${cluster_db}', 'w_missing'))"
 # A dictionary name that depends on the context evaluates to an allowed dictionary for the user, but would evaluate to `d`
 # in the global context, so the query of `view` must not be analyzed with it when the storage is created.
 unload
@@ -130,7 +145,6 @@ unload
 as_user "CREATE TABLE w_expression (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))"
 status
 query "GRANT dictGet ON ${CLICKHOUSE_DATABASE}.d TO ${username}"
-as_user "CREATE TABLE w_view (value String) AS view(SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'value', toUInt64(1)) AS value)"
 as_user "CREATE TABLE ${cluster_db}.w_expression ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))"
 # The query sent to the replicas carries the checked name, so a replica does not evaluate the expression again.
 query "
