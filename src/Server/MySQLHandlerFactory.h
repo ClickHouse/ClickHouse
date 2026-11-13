@@ -8,6 +8,7 @@
 #include "config.h"
 
 #include <atomic>
+#include <mutex>
 #include <optional>
 
 #if USE_SSL
@@ -18,6 +19,25 @@ namespace DB
 {
 class TCPServer;
 
+#if USE_SSL
+/// The RSA key pair of the `sha256_password` authentication, with which a client encrypts its password on a
+/// connection without TLS: the private key of the server certificate, or a generated one if there is none.
+/// It is obtained on first use rather than at startup, where generating it took about 0.1 s of CPU for every
+/// MySQL listener, while most servers never get a connection that needs it.
+class MySQLKeyPairHolder
+{
+public:
+    explicit MySQLKeyPairHolder(LoggerPtr log_) : log(std::move(log_)) {}
+
+    KeyPair & get();
+
+private:
+    LoggerPtr log;
+    std::once_flag initialized;
+    std::optional<KeyPair> key_pair;
+};
+#endif
+
 class MySQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
@@ -25,7 +45,7 @@ private:
     LoggerPtr log;
 
 #if USE_SSL
-    KeyPair keypair;
+    MySQLKeyPairHolder keypair;
 
     bool ssl_enabled = true;
 #else
@@ -48,10 +68,6 @@ public:
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
         std::optional<String> default_session_user_ = {});
-
-    void readRSAKeys();
-
-    void generateRSAKeys();
 
     Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
 };
