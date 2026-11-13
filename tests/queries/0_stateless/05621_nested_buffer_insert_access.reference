@@ -20,3 +20,6 @@ partial denied, no leak: OK
 victim after Part E:    ['from_ok','legit_b','original']
 ## Part F: a cross-identity discard does not leak the buffering user to the triggering user
 discard diagnostic hides the buffering user: OK
+## Part G: a non-authorization flush failure is retained, and its error is not leaked cross-identity
+retained-failure error is neutral: OK
+batch retained, not discarded:    1

@@ -114,5 +114,24 @@ echo -n "discard diagnostic hides the buffering user: "
 if echo "$leak" | grep -q "can no longer be flushed under the identity" \
     && ! echo "$leak" | grep -qE "${low}|Not enough privileges|INSERT ON ${victim_db}"; then echo "OK"; else echo "UNEXPECTED"; fi
 
+echo "## Part G: a non-authorization flush failure is retained, and its error is not leaked cross-identity"
+# low buffers a value that violates the destination's CHECK constraint: a non-authorization failure, so (unlike
+# a dropped/expired identity) it is retained for retry, not discarded. ok's synchronous insert flushes low's
+# batch; ok must get a neutral error, not the constraint detail, and low's batch must remain buffered.
+${CH} --multiquery <<EOF
+CREATE TABLE ${victim_db}.constrained (x Int32, CONSTRAINT positive CHECK x > 0) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE ${db}.constrained_buf (x Int32) ENGINE = Buffer(${victim_db}, constrained, 1, 3600, 7200, 1000000, 2000000, 100000000, 200000000);
+GRANT INSERT, SELECT ON ${db}.constrained_buf TO ${low}, ${ok};
+GRANT INSERT ON ${victim_db}.constrained TO ${low}, ${ok};
+EOF
+run_low --async-insert 0 --query "INSERT INTO ${db}.constrained_buf VALUES (-5)"
+retained_err=$(run_ok --async-insert 0 --query "INSERT INTO ${db}.constrained_buf VALUES (7)" 2>&1)
+echo -n "retained-failure error is neutral: "
+# The neutral message replaces the original, so the leak-prone detail (here the constraint name) is gone; the
+# generic message is present only when the cross-identity rethrow fired. (Only the error code is kept.)
+if echo "$retained_err" | grep -q "Could not flush a buffered batch" \
+    && ! echo "$retained_err" | grep -q "positive"; then echo "OK"; else echo "UNEXPECTED"; fi
+echo -n "batch retained, not discarded:    "; ${CH} --query "SELECT count() FROM ${db}.constrained_buf"
+
 ${CH} --query "DROP USER IF EXISTS ${low}; DROP USER IF EXISTS ${ok}; DROP USER IF EXISTS ${tmp}" 2>/dev/null
 ${CH} --query "DROP DATABASE IF EXISTS ${victim_db}"
