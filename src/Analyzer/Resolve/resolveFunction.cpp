@@ -1684,8 +1684,9 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                 {
                     auto truncated = buildResolvedFunction("trunc", {scaled_float}, context);
                     auto scaled_is_integral = buildResolvedFunction("equals", {scaled_float, std::move(truncated)}, context);
-                    result = buildResolvedFunction(
-                        "if", {std::move(scaled_is_integral), std::move(exact_match), build_cast_comparison()}, context);
+                    auto fractional_match = buildResolvedFunction(
+                        "and", {buildResolvedFunction("not", {std::move(scaled_is_integral)}, context), build_cast_comparison()}, context);
+                    result = buildResolvedFunction("or", {std::move(exact_match), std::move(fractional_match)}, context);
                 }
             }
         }
