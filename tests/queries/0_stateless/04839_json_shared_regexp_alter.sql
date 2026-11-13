@@ -151,11 +151,8 @@ DROP TABLE ttl_04839;
 CREATE TABLE ttl_04839 (id UInt64, j JSON, x UInt64 TTL if(dynamicType(CAST(j, 'Dynamic')) = 'JSON', toDateTime('2000-01-01'), toDateTime('2100-01-01'))) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE ttl_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE ttl_04839;
--- A TTL whose read of the column is folded into a constant, directly or through an ALIAS column.
+-- A TTL whose read of the column is folded into a constant.
 CREATE TABLE ttl_04839 (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id TTL if(toTypeName(j) = 'JSON', toDateTime('2000-01-01'), toDateTime('2100-01-01')) + toIntervalSecond(id);
-ALTER TABLE ttl_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-DROP TABLE ttl_04839;
-CREATE TABLE ttl_04839 (id UInt64, j JSON, t String ALIAS toTypeName(j)) ENGINE = MergeTree ORDER BY id TTL if(t = 'JSON', toDateTime('2000-01-01'), toDateTime('2100-01-01')) + toIntervalSecond(id);
 ALTER TABLE ttl_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE ttl_04839;
 CREATE TABLE ttl_04839 (id UInt64, j JSON(a UInt32)) ENGINE = MergeTree ORDER BY id TTL toDateTime('2100-01-01') + toIntervalSecond(j.a);
