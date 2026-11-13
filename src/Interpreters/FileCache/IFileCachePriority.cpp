@@ -1,7 +1,8 @@
-#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
-#include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
+#include <Interpreters/FileCache/Metadata.h>
+#include <base/EnumReflection.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -91,4 +92,13 @@ void IFileCachePriority::IPriorityDump::merge(const IPriorityDump & other)
     infos.insert(infos.end(), other.infos.begin(), other.infos.end());
 }
 
+/// Returns the on-disk paths of file segments of a filesystem cache
+/// `query_max_elements`: Upper bound on returned rows
+/// `query_max_total_size`: upper bound on the sum of size of returned rows; the entry that would cross the bound is not returned.
+/// `query_order`: Defines the order on returned rows
+std::vector<FileSegmentSummaryInfo>
+IFileCachePriority::observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order)
+{
+    return iterate(query_max_elements, query_max_total_size, query_order, /* start_priority_rank */ 1).infos;
+}
 }

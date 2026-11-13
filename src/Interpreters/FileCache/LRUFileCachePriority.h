@@ -4,10 +4,11 @@
 #include <list>
 #include <mutex>
 #include <optional>
-#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
+#include <Common/logger_useful.h>
 
 class FileCacheTest_MoveEvictionPos_Test;
 
@@ -121,6 +122,8 @@ public:
     void shuffle() override;
 
     PriorityDumpPtr dump() override;
+
+    FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank) override;
 
     bool modifySizeLimits(
         size_t max_size_,
@@ -253,6 +256,18 @@ private:
     void addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
+
+    /// Appends the file segments of this queue to `result` in `query_order`, until `result` has `query_max_elements`
+    /// segments or the next one would make `result.total_size` exceed `query_max_total_size`.
+    /// SLRU calls it for both of its sub-queues with the same `result` and its shared lock.
+    /// The appended segments get consecutive ranks starting from `start_priority_rank`.
+    void iterate(
+        UInt64 query_max_elements,
+        UInt64 query_max_total_size,
+        IterationOrder query_order,
+        UInt64 start_priority_rank,
+        FileSegmentSummaryInfos & result,
+        const CachePriorityGuard::ReadLock &);
 
     LRUQueue::iterator iterateImpl(
         LRUQueue::iterator start_pos,

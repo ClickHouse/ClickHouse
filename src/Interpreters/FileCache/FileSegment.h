@@ -18,6 +18,7 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
 
 
 namespace Poco { class Logger; }
@@ -72,7 +73,6 @@ public:
     using Priority = IFileCachePriority;
     using State = FileSegmentState;
     using Info = FileSegmentInfo;
-    using QueueEntryType = IFileCachePriority::QueueEntryType;
     using KeyType = FileSegmentKeyType;
 
     FileSegment(
@@ -193,6 +193,9 @@ public:
     void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
     static FileSegmentInfo getInfo(const FileSegmentPtr & file_segment);
+
+    /// Only the fields returned by `IFileCachePriority::observeFilesystemCache`.
+    static FileSegmentSummaryInfo getSummaryInfo(const FileSegmentPtr & file_segment);
 
     bool isDetached() const;
 

@@ -11,7 +11,7 @@ namespace DB
 
 struct FileCacheOriginInfo
 {
-    using UserID = std::string;
+    using UserID = String;
     using Weight = UInt64;
     using SegmentKeyType = FileSegmentKeyType;
 

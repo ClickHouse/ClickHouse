@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Interpreters/FileCache/FileCacheOriginInfo.h>
-#include <Interpreters/FileCache/FileCacheKey.h>
 #include <Core/Types.h>
-#include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
 
 #include <atomic>
 #include <chrono>
@@ -12,6 +13,7 @@
 #include <memory>
 #include <utility>
 
+#include <base/types.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -20,6 +22,8 @@ struct FileCacheReserveStat;
 class EvictionCandidates;
 class FileSegment;
 struct FileSegmentInfo;
+struct FileSegmentSummaryInfo;
+struct FileSegmentSummaryInfos;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsage;
@@ -43,15 +47,6 @@ public:
         Query, /// Per-query queue
     };
 
-    enum class QueueEntryType : uint8_t
-    {
-        None,
-        LRU,
-        SLRU_Protected,
-        SLRU_Probationary,
-        SplitCache_Data,
-        SplitCache_System,
-    };
     using OriginInfo = FileCacheOriginInfo;
     using UserID = OriginInfo::UserID;
 
@@ -260,6 +255,21 @@ public:
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
     virtual void iterate(IterateFunc func, FileCacheReserveStat & stat) = 0;
 
+    /// Order in which `observeFilesystemCache` selects queue entries.
+    enum class IterationOrder : uint8_t
+    {
+        /// Highest-priority entries first.
+        HOTTEST = 0,
+        /// Next eviction candidates first.
+        COLDEST,
+    };
+
+    std::vector<FileSegmentSummaryInfo>
+    observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order);
+
+    /// Each concrete implementation of IFileCachePriority should know better how to implement this
+    virtual FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank) = 0;
+
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
@@ -309,6 +319,16 @@ public:
 
     virtual PriorityDumpPtr dump() = 0;
 
+protected:
+    /// Whether `observeFilesystemCache` returns the file segment of a queue entry with this state.
+    /// A `PreActive` entry is the copy added to the other SLRU queue during a move:
+    /// the original entry (in `Moving` state) is returned instead.
+    static bool isObservable(Entry::State state)
+    {
+        return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving;
+    }
+
+public:
     /// Which cursor a candidate-collection pass resumes from.
     enum class EvictionCursor
     {

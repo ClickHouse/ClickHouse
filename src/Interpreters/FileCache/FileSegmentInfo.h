@@ -1,9 +1,11 @@
 #pragma once
 #include <cctype>
-#include <Interpreters/FileCache/FileCache_fwd.h>
+#include <vector>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
-#include <Interpreters/FileCache/IFileCachePriority.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -60,6 +62,8 @@ namespace DB
 
     std::string toString(FileSegmentKind kind);
 
+    std::string toString(FileSegmentState state);
+
     struct FileSegmentInfo
     {
         FileCacheKey key;
@@ -75,7 +79,32 @@ namespace DB
         uint64_t cache_hits;
         uint64_t references;
         bool is_unbound;
-        IFileCachePriority::QueueEntryType queue_entry_type;
+        QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
+    };
+
+    struct FileSegmentSummaryInfo
+    {
+        /// 1-based emission counter: 1 is the first row the walk produced. For 'hottest' and 'coldest' it is the priority order;
+        // for 'random' it is filled but carries no meaning
+        UInt64 priority_rank{0};
+        /// Real on-disk file, including the _<size> suffix of downloaded segments
+        String path;
+        /// Cache key
+        String key;
+        /// Segment offset in the source file
+        UInt64 offset;
+        /// Segment size as accounted by the cache
+        UInt64 size;
+        String state;
+        String queue_entry_type;
+        String user_id;
+    };
+
+    struct FileSegmentSummaryInfos
+    {
+        std::vector<FileSegmentSummaryInfo> infos;
+        /// cache total size so that in SplitFileCachePriority we don't need to iterate again before checking system segments
+        UInt64 total_size = 0;
     };
 }

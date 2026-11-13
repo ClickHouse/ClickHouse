@@ -1,12 +1,17 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
+#include <base/types.h>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+
+#include <ranges>
 
 namespace CurrentMetrics
 {
@@ -284,6 +289,81 @@ void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat
     assertNotSealed("iterate");
     auto lock = getPriorityGuard().readLock();
     iterateImpl(queue.begin(), func, stat, lock);
+}
+
+FileSegmentSummaryInfos LRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank)
+{
+    assertNotSealed("iterate");
+    FileSegmentSummaryInfos result;
+    auto lock = getPriorityGuard().readLock();
+    iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, result, lock);
+    return result;
+}
+
+void LRUFileCachePriority::iterate(
+    UInt64 query_max_elements,
+    UInt64 query_max_total_size,
+    IterationOrder query_order,
+    UInt64 start_priority_rank,
+    FileSegmentSummaryInfos & result,
+    const CachePriorityGuard::ReadLock &)
+{
+    /// return early since result is aggregation for e.g probationary and protected queue in the case of SLRUFileCachePriority and
+    /// an aggregation of system cache and data cache in the case of SplitFileCachePriority
+    if (result.infos.size() >= query_max_elements)
+        return;
+
+    UInt64 next_priority_rank = start_priority_rank;
+
+    auto add_entry = [&](const EntryPtr & entry)
+    {
+        /// TODO: (andi) check this
+        /// Check the state without the key lock first, as an optimization.
+        if (!isObservable(entry->getState()) || entry->size.load() == 0)
+            return true;
+
+        auto key_metadata = entry->key_metadata.lock();
+        if (!key_metadata)
+            return true;
+
+        auto locked_key = key_metadata->tryLock();
+        if (!locked_key)
+            return true;
+
+        auto file_segment_metadata = locked_key->tryGetByOffset(entry->offset);
+        if (!file_segment_metadata)
+            return true;
+
+        auto info = FileSegment::getSummaryInfo(file_segment_metadata->file_segment);
+        if (info.size == 0)
+            return true;
+
+        /// don't add an entry which would push over the limit
+        if (info.size > query_max_total_size - result.total_size)
+            return false;
+
+        /// cache size so we don't need to calculate it once again
+        result.total_size += info.size;
+        info.priority_rank = next_priority_rank++;
+        result.infos.push_back(std::move(info));
+
+        /// We should stop when size becomes query_max_elements
+        return result.infos.size() < query_max_elements;
+    };
+
+    auto add_entries = [&](auto && entries)
+    {
+        for (const auto & entry : entries)
+        {
+            if (!add_entry(entry))
+                return;
+        }
+    };
+
+    if (query_order == IterationOrder::COLDEST)
+        add_entries(queue);
+    else
+        add_entries(queue | std::views::reverse);
 }
 
 size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)

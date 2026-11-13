@@ -1,15 +1,16 @@
-#include <Interpreters/FileCache/IFileCachePriority.h>
-#include <Interpreters/FileCache/SLRUFileCachePriority.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <random>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
+#include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/thread_local_rng.h>
-#include <Common/logger_useful.h>
-#include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
-#include <random>
+#include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 
 
 namespace ProfileEvents
@@ -211,6 +212,24 @@ void SLRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & sta
     protected_queue.iterateImpl(protected_queue.queue.begin(), func, stat, lock);
     probationary_queue.iterateImpl(probationary_queue.queue.begin(), func, stat, lock);
 }
+
+FileSegmentSummaryInfos SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank)
+{
+    FileSegmentSummaryInfos result;
+
+    auto lock = getPriorityGuard().readLock();
+
+    /// probationary queue contains colder segments than protected queue
+    auto & first_queue = query_order == IterationOrder::COLDEST ? probationary_queue : protected_queue;
+    auto & second_queue = query_order == IterationOrder::COLDEST ? protected_queue : probationary_queue;
+
+    /// underlying implementation if LRUFileCachePriority will take care of respecting query_max_elements, query_max_total_size and query_order
+    first_queue.iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, result, lock);
+    second_queue.iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank + result.infos.size(), result, lock);
+
+    return result;
+}
+
 
 void SLRUFileCachePriority::resetEvictionPos(EvictionCursor cursor)
 {

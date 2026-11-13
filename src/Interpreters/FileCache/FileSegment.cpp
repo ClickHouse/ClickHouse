@@ -68,6 +68,8 @@ String toString(FileSegmentKind kind)
     return String(magic_enum::enum_name(kind));
 }
 
+String toString(FileSegmentState state) { return String(magic_enum::enum_name(state)); }
+
 namespace
 {
 
@@ -1551,6 +1553,21 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .is_unbound = file_segment->is_unbound,
         .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
         .origin = *key_metadata->origin,
+    };
+}
+
+FileSegmentSummaryInfo FileSegment::getSummaryInfo(const FileSegmentPtr & file_segment)
+{
+    /// `priority_rank` is set by `LRUFileCachePriority::iterate`, which knows the position of the segment in the result.
+    auto lock = file_segment->lock();
+    return FileSegmentSummaryInfo{
+        .path = file_segment->tryGetPath(),
+        .key = file_segment->key().toString(),
+        .offset = file_segment->offset(),
+        .size = file_segment->getDiskAccountedSize(),
+        .state = toString(file_segment->download_state.load()),
+        .queue_entry_type = toString(file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None),
+        .user_id = file_segment->getKeyMetadata()->origin->user_id,
     };
 }
 

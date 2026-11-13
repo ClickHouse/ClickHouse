@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
 #include <Common/logger_useful.h>
 
@@ -97,6 +98,8 @@ public:
         QueueEntryType reservee_queue_type = QueueEntryType::None) override;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
+
+    FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank) override;
 
     bool tryIncreasePriority(
         Iterator & iterator_,
