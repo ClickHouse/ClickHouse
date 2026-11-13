@@ -95,6 +95,17 @@ SELECT o.k, (SELECT intDiv(100, count()) FROM values('k UInt8', (1), (2)) AS i W
 FROM values('k UInt8', (1), (2)) AS o
 ORDER BY o.k;
 
+-- A memory limit either keeps the empty-group value (1 MB fits) or fails the query (1 GB does not), never gives NULL.
+SELECT o.k, (SELECT length(repeat(repeat('a', 1000), if(count() = 0, 1000, 1))) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k
+SETTINGS max_memory_usage = 100000000;
+
+SELECT o.k, (SELECT length(repeat(repeat('a', 1000), if(count() = 0, 1000000, 1))) FROM values('k UInt8', (2)) AS i WHERE i.k = o.k) AS c
+FROM values('k UInt8', (1), (2)) AS o
+ORDER BY o.k
+SETTINGS max_memory_usage = 100000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
+
 -- count(<Nullable column>) over a MergeTree table: optimize_functions_to_subcolumns would rewrite it to
 -- sum(not(col.null)), but not in a correlated subquery, so the empty group is 0 with either setting.
 DROP TABLE IF EXISTS t04630_inner;

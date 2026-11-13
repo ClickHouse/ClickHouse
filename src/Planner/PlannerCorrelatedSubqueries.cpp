@@ -85,6 +85,10 @@ namespace ErrorCodes
 
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
+extern const int QUERY_WAS_CANCELLED;
+extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+extern const int TIMEOUT_EXCEEDED;
 
 }
 
@@ -234,8 +238,12 @@ std::optional<Field> tryGetScalarSubqueryEmptyGroupValue(const QueryTreeNodePtr 
         actions.execute(block, num_rows);
         return (*block.getByName(value_name).column)[0];
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        /// A resource limit or a cancellation must fail the query, not change its result.
+        if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+            throw;
         return {};
     }
 }
