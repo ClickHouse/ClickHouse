@@ -910,7 +910,8 @@ void SSOCredentialsProvider::SetNeedRefresh()
 
 Aws::Auth::AWSBearerToken SSOCredentialsProvider::BearerTokenProvider::GetAWSBearerToken()
 {
-    /// Keep the SDK's cache and refresh policy without its native lock across file and network I/O.
+    /// A copy of `Aws::Auth::SSOBearerTokenProvider::GetAWSBearerToken` without its `ReaderWriterLock`, which it holds
+    /// across file and network I/O: the SDK cache and refresh policy are kept.
     if (m_token.IsEmpty())
         Reload();
 
@@ -1037,6 +1038,8 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
 namespace
 {
 
+/// A copy of `Aws::Auth::ProfileConfigFileAWSCredentialsProvider` that serializes access with `Silk::FiberMutex` instead
+/// of the SDK `ReaderWriterLock` and reads the credentials file inside `Silk::ThreadModeScope`.
 class ProfileConfigFileAWSCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
 {
 public:
