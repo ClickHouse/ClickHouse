@@ -1,0 +1,49 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <create_query>
+        CREATE TABLE object_bulk
+        (
+            typed JSON(n UInt64, s String),
+            dynamic JSON,
+            wide JSON,
+            shared_one JSON(max_dynamic_paths=0),
+            shared_many JSON(max_dynamic_paths=0),
+            mixed JSON(max_dynamic_paths=1, n UInt64)
+        ) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO object_bulk VALUES
+        (
+            '{{"n":42,"s":"repeated"}}',
+            '{{"n":42,"s":"repeated"}}',
+            '{{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":"one","j":"two","k":"three","l":"four","m":"five","n":"six","o":"seven","p":"eight"}}',
+            '{{"s":"repeated"}}',
+            '{{"a":1,"b":2,"c":"three","d":"four"}}',
+            '{{"n":42,"a":"dynamic","b":"shared"}}'
+        )
+    </fill_query>
+
+    <query>SELECT l.number, r.typed FROM numbers(4000000) AS l ANY LEFT JOIN object_bulk AS r ON 1 FORMAT Null</query>
+    <query>SELECT l.number, r.dynamic FROM numbers(2000000) AS l ANY LEFT JOIN object_bulk AS r ON 1 FORMAT Null</query>
+    <query>SELECT l.number, r.wide FROM numbers(1000000) AS l ANY LEFT JOIN object_bulk AS r ON 1 FORMAT Null</query>
+    <query>SELECT l.number, r.shared_one FROM numbers(5000000) AS l ANY LEFT JOIN object_bulk AS r ON 1 FORMAT Null</query>
+    <query>SELECT l.number, r.shared_many FROM numbers(3000000) AS l ANY LEFT JOIN object_bulk AS r ON 1 FORMAT Null</query>
+    <query>SELECT l.number, r.mixed FROM numbers(2000000) AS l ANY LEFT JOIN object_bulk AS r ON 1 FORMAT Null</query>
+
+    <create_query>CREATE TABLE object_bulk_arrays (a Array(JSON)) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO object_bulk_arrays
+        SELECT arrayMap(x -&gt; ('{{"n":' || toString(x) || ',"s":"repeated"}}')::JSON, range(1024))
+        FROM numbers(1024)
+    </fill_query>
+    <query>SELECT arrayFill(x -&gt; 0, a) FROM object_bulk_arrays FORMAT Null</query>
+    <query>SELECT arrayReverseFill(x -&gt; 0, a) FROM object_bulk_arrays FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS object_bulk</drop_query>
+    <drop_query>DROP TABLE IF EXISTS object_bulk_arrays</drop_query>
+</test>
