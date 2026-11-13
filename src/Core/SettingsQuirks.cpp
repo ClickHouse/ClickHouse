@@ -54,7 +54,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
-    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool compile_expressions;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool use_concurrency_control;
@@ -173,11 +172,6 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
     {
         settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
         adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
-    }
-    if (settings[Setting::use_skip_indexes_on_data_read])
-    {
-        settings[Setting::use_skip_indexes_on_data_read] = false;
-        adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
     }
     if (settings[Setting::compile_expressions])
     {
