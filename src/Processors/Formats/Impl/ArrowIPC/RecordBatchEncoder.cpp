@@ -542,7 +542,11 @@ void RecordBatchEncoder::encodeValues(
             nodes.emplace_back(static_cast<Int64>(entries_end - entries_begin), 0);
             appendEmptyBuffer();
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
+            /// An Arrow map key must not be nullable, so a `Variant` key written as text writes NULL as JSON `null`.
+            if (isVariant(map_type.getKeyType()) && settings.arrow.output_variant_as_string)
+                encodeVariantAsJSONText(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end, /*nullable=*/ false);
+            else
+                encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
             encodeField(entries.getColumn(1), map_type.getValueType(), entries_begin, entries_end);
             return;
         }
@@ -652,7 +656,7 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
 
     if (isVariant(type) && settings.arrow.output_variant_as_string)
     {
-        encodeVariantAsJSONText(column, type, begin, end);
+        encodeVariantAsJSONText(column, type, begin, end, /*nullable=*/ true);
         return;
     }
 
@@ -680,17 +684,22 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     encodeValues(*nested, nested_type, begin, end, null_map_column);
 }
 
-void RecordBatchEncoder::encodeVariantAsJSONText(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end)
+void RecordBatchEncoder::encodeVariantAsJSONText(
+    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool nullable)
 {
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
     const size_t num_rows = end - begin;
 
-    auto null_map_column = ColumnUInt8::create(num_rows);
+    /// In a non-nullable field, a NULL value is written as its JSON text `null`.
+    auto null_map_column = ColumnUInt8::create(num_rows, static_cast<UInt8>(0));
     auto & null_map = null_map_column->getData();
-    for (size_t i = 0; i < num_rows; ++i)
-        null_map[i] = variant_column.isNullAt(begin + i);
+    if (nullable)
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+            null_map[i] = variant_column.isNullAt(begin + i);
+    }
 
-    const Int64 null_count = appendValidity(null_map_column.get(), 0, num_rows);
+    const Int64 null_count = appendValidity(nullable ? null_map_column.get() : nullptr, 0, num_rows);
     nodes.emplace_back(static_cast<Int64>(num_rows), null_count);
 
     const auto serialization = type->getDefaultSerialization();

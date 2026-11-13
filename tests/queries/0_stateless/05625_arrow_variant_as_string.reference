@@ -21,3 +21,9 @@ default
 a"b	Variant(Array(UInt8), String, UInt8)
 [1,2]	Variant(Array(UInt8), String, UInt8)
 \N	Variant(Array(UInt8), String, UInt8)
+map key
+m	Map(String, String)
+{'42':'x','null':'y'}
+batch size
+batches>1=1 max_bytes<=16=1
+64	2016	63
