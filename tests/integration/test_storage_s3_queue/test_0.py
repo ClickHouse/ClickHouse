@@ -1468,10 +1468,12 @@ def test_ordered_direct_select_keeps_the_pointer_below_a_rewritten_file(started_
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             first_select = executor.submit(select_rows)
-            wait_failpoint_paused(node, PAUSE_AFTER_LISTING_FAILPOINT)
-            # Both keys are listed; the read of a.csv is pinned to the listed generation and now fails.
-            put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"7,8,9\n")
-            node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+            try:
+                wait_failpoint_paused(node, PAUSE_AFTER_LISTING_FAILPOINT)
+                # Both keys are listed; the read of a.csv is pinned to the listed generation and now fails.
+                put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"7,8,9\n")
+            finally:
+                node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
             rows += first_select.result()
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
