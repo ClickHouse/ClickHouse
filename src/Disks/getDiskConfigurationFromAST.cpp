@@ -18,9 +18,12 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Poco/NumberParser.h>
+#include <Poco/String.h>
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <optional>
 #include <unordered_set>
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
@@ -60,7 +63,30 @@ namespace ServerSetting
         message.empty() ? "" : ": " + message);
 }
 
-Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata, DynamicS3DiskCredentialInfo * info, bool for_system_database)
+/// A Boolean value of a disk setting as the disk reads it (`Poco::Util::AbstractConfiguration::parseBool`):
+/// an integer, or `true`, `yes`, `on`, `false`, `no`, `off` in any case. `std::nullopt` if it is not a Boolean,
+/// in which case the disk does not accept the configuration.
+static std::optional<bool> parseDiskConfigurationBool(const std::string & value)
+{
+    int number = 0;
+    if (Poco::NumberParser::tryParse(value, number))
+        return number != 0;
+    for (const auto * true_value : {"true", "yes", "on"})
+        if (Poco::icompare(value, true_value) == 0)
+            return true;
+    for (const auto * false_value : {"false", "no", "off"})
+        if (Poco::icompare(value, false_value) == 0)
+            return false;
+    return std::nullopt;
+}
+
+Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
+    const ASTs & disk_args,
+    ContextPtr context,
+    bool is_loading_from_existing_metadata,
+    DynamicS3DiskCredentialInfo * info,
+    bool for_system_database,
+    bool stored_definition)
 {
     if (disk_args.empty())
         throwBadConfiguration("expected non-empty list of arguments");
@@ -139,9 +165,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         /// The disk is built from an `XMLConfiguration`, which resolves a repeated key to its first occurrence,
         /// so a later occurrence must not be able to change what the checks below see. A repeated key is
         /// rejected in a fresh definition. A definition stored before this check may still have one; it is
-        /// loaded, and only the first occurrence of each key counts for the checks, as it does for the disk.
+        /// loaded (on server startup and on short `ATTACH`), and only the first occurrence of each key counts
+        /// for the checks, as it does for the disk.
         const bool is_repeated_key = !seen_keys.insert(key).second;
-        if (is_repeated_key && !is_loading_from_existing_metadata)
+        if (is_repeated_key && !is_loading_from_existing_metadata && !stored_definition)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key `{}` is specified more than once in the disk configuration", key);
 
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
@@ -185,7 +212,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "secret_access_key")
             has_secret_access_key = !value_str.empty() && !indirect;
         else if (key == "no_sign_request")
-            has_no_sign_request = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
+            has_no_sign_request = !indirect && parseDiskConfigurationBool(value_str) == true;
         else if (key == "http_client")
             wants_gcp_oauth = !indirect && boost::iequals(value_str, "gcp_oauth");
         else if (key == "google_adc_client_id")
@@ -197,11 +224,11 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "google_service_account_key")
             has_google_service_account_key = !value_str.empty() && !indirect;
         else if (key == "use_environment_credentials")
-            use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
+            use_environment_credentials_off = !indirect && parseDiskConfigurationBool(value_str) == false;
         else if (key == "role_arn")
             has_role_arn = !value_str.empty() && !indirect;
         else if (key == S3_SERVER_CREDENTIALS_MARKER)
-            has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
+            has_server_credentials_marker = !indirect && parseDiskConfigurationBool(value_str) == true;
 
         if (key == "include")
         {
