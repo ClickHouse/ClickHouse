@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS t_patch_parts_many;
 
 CREATE TABLE t_patch_parts_many (id UInt64, v UInt64, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, index_granularity = 128;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, index_granularity = 128, patch_parts_version = 'v1';
 
 SYSTEM STOP MERGES t_patch_parts_many;
 
@@ -24,6 +24,9 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 SELECT count(), sum(v), countIf(s = 'b'), countIf(s = 'c') FROM t_patch_parts_many;
 SELECT id, v, s FROM t_patch_parts_many WHERE id IN (0, 1, 3, 5, 7, 999, 1000, 1999, 2000, 2999) ORDER BY id;
 SELECT count(), sum(v) FROM t_patch_parts_many WHERE id % 3 = 0 AND id % 7 != 0;
+
+-- A filter makes the offsets of the rows to patch non-consecutive.
+SELECT count(), sum(v), countIf(s = 'b'), countIf(s = 'c') FROM t_patch_parts_many PREWHERE id % 2 = 0;
 
 SYSTEM START MERGES t_patch_parts_many;
 OPTIMIZE TABLE t_patch_parts_many FINAL;
