@@ -2508,6 +2508,40 @@ static bool expressionUsesOtherScope(const QueryTreeNodePtr & expression, const 
     return false;
 }
 
+static bool expressionUsesCorrelatedColumn(const QueryTreeNodePtr & expression, const IdentifierResolveScope & scope)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * column = node->as<ColumnNode>())
+        {
+            if (auto column_source = column->getColumnSourceOrNull())
+            {
+                bool crossed_query_scope = false;
+                for (const auto * candidate_scope = &scope; candidate_scope; candidate_scope = candidate_scope->parent_scope)
+                {
+                    if (scopeOwnsMatcherColumnSource(*candidate_scope, column_source))
+                    {
+                        if (crossed_query_scope)
+                            return true;
+                        break;
+                    }
+                    crossed_query_scope |= isQueryOrUnionNode(candidate_scope->scope_node);
+                }
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    return false;
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
@@ -4592,7 +4626,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
 
             if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty()
-                && (node->getNodeType() == QueryTreeNodeType::COLUMN || !expressionUsesOtherScope(node, *scope_ptr)))
+                && (node->getNodeType() == QueryTreeNodeType::COLUMN || !expressionUsesCorrelatedColumn(node, *scope_ptr)))
             {
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
