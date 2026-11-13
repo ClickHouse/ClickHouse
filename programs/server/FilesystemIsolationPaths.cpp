@@ -343,12 +343,34 @@ private:
         if (!fs::exists(file, error))
             return;
 
-        /// The ZooKeeper includes are left unprocessed: there is no ZooKeeper yet, and they do not name local files.
-        auto loaded = ConfigProcessor(file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false).loadConfig(/* allow_zk_includes = */ true);
+        /// These files are loaded by `Server::main` and later, in `runtime_directory`, and `ConfigProcessor` opens
+        /// `include_from` relative to the current directory, so they are loaded there here as well. With `--daemon`,
+        /// the process is not there yet, and the directory may not exist yet: `BaseDaemon::initialize` creates it.
+        const fs::path previous_directory = fs::current_path();
+        const bool change_directory = runtime_directory != previous_directory;
+        if (change_directory)
+        {
+            fs::create_directories(runtime_directory);
+            fs::current_path(runtime_directory);
+        }
+        DB::ConfigProcessor::LoadedConfig loaded;
+        try
+        {
+            /// The ZooKeeper includes are left unprocessed: there is no ZooKeeper yet, and they do not name local files.
+            loaded = ConfigProcessor(file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false).loadConfig(/* allow_zk_includes = */ true);
+        }
+        catch (...)
+        {
+            if (change_directory)
+                fs::current_path(previous_directory);
+            throw;
+        }
+        if (change_directory)
+            fs::current_path(previous_directory);
+
         if (loaded.configuration->has("include_from"))
             if (const auto value = loaded.configuration->getString("include_from"); !value.empty())
-                for (const auto & base : configLoadDirectories())
-                    addLocation(absolute(value, base), Access::ReadOnly, fmt::format("`include_from` of {}", source));
+                addLocation(absolute(value, runtime_directory), Access::ReadOnly, fmt::format("`include_from` of {}", source));
     }
 
     void addConfigFiles()
@@ -599,7 +621,7 @@ private:
             for (const std::string_view type : {"FILE:", "DIR:"})
                 if (cache.starts_with(type))
                     cache = cache.substr(type.size());
-            if (!cache.empty() && cache.find(':') == std::string::npos)
+            if (!cache.empty() && !cache.contains(':'))
                 addLocation(absolute(cache, runtime_directory), Access::ReadWrite, fmt::format("`{}.hadoop_security_kerberos_ticket_cache_path`", section));
         }
     }

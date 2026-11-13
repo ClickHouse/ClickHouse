@@ -6,7 +6,8 @@
 # log, and at its end to the directory of the core dumps, and each relative path is resolved where it is used. A server
 # with `filesystem_isolation` keeps visible the paths it really uses: here `logger.log` relative to the directory of the
 # executable, `core_path` relative to the directory of the log, and `named_collections_storage.path` relative to the
-# directory of the core dumps, each with `..`, so that every one of them is outside the others.
+# directory of the core dumps, each with `..`, so that every one of them is outside the others. The same for the
+# `include_from` of a users configuration, which is loaded in the directory of the core dumps.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,7 +15,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 EXPECTED="log: written
 directory of the core dumps: visible
-named collections: visible"
+named collections: visible
+substitutions of the users configuration: visible"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
 # `tests/config/install.sh`.
@@ -25,11 +27,21 @@ fi
 
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_daemon_directories"
 rm -rf "$DIR"
-mkdir -p "$DIR/bin" "$DIR/conf" "$DIR/data" "$DIR/launch"
+mkdir -p "$DIR/bin" "$DIR/conf" "$DIR/data" "$DIR/launch" "$DIR/runtime/auth"
 # Absolute and without links, as the paths seen through `/proc/<pid>/root`.
 DIR=$(cd "$DIR" && pwd -P)
 # The daemon changes to the directory of the executable as it is named in `argv[0]`, without resolving the link.
 ln -s "$(command -v "$CLICKHOUSE_BINARY")" "$DIR/bin/clickhouse-server"
+
+echo '<clickhouse/>' > "$DIR/runtime/auth/substitutions.xml"
+cat > "$DIR/conf/users.xml" <<EOF
+<clickhouse>
+    <include_from>../auth/substitutions.xml</include_from>
+    <users><default><password></password><profile>default</profile><quota>default</quota></default></users>
+    <profiles><default/></profiles>
+    <quotas><default/></quotas>
+</clickhouse>
+EOF
 
 cat > "$DIR/conf/config.xml" <<EOF
 <clickhouse>
@@ -44,9 +56,7 @@ cat > "$DIR/conf/config.xml" <<EOF
     <!-- Any free port: nothing connects to this server. -->
     <tcp_port>0</tcp_port>
     <filesystem_isolation>enforce</filesystem_isolation>
-    <users><default><password></password><profile>default</profile><quota>default</quota></default></users>
-    <profiles><default/></profiles>
-    <quotas><default/></quotas>
+    <users_config>$DIR/conf/users.xml</users_config>
 </clickhouse>
 EOF
 
@@ -77,6 +87,7 @@ fi
 echo "log: $([ -s "$DIR/log/server.log" ] && echo written || echo missing)"
 echo "directory of the core dumps: $([ -d "/proc/$PID/root$DIR/runtime/cores" ] && echo visible || echo invisible)"
 echo "named collections: $([ -d "/proc/$PID/root$DIR/runtime/collections" ] && echo visible || echo invisible)"
+echo "substitutions of the users configuration: $([ -f "/proc/$PID/root$DIR/runtime/auth/substitutions.xml" ] && echo visible || echo invisible)"
 
 kill "$PID"
 for _ in {1..600}; do
