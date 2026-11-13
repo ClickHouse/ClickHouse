@@ -25,7 +25,7 @@
 
 #include "delta_kernel_ffi.hpp"
 
-namespace DB { namespace ErrorCodes { extern const int NOT_IMPLEMENTED; } }
+namespace DB { namespace ErrorCodes { extern const int NOT_IMPLEMENTED; extern const int ACCESS_DENIED; } }
 
 class DeltaKernelTest : public testing::Test
 {
@@ -97,7 +97,13 @@ TEST(DeltaSchemaJSON, GetSimpleTypeByNameChar)
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Interpreters/Context.h>
+#include <Core/Block.h>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -105,6 +111,7 @@ TEST(DeltaSchemaJSON, GetSimpleTypeByNameChar)
 
 #include <cstdlib>
 #include <optional>
+#include <sstream>
 
 namespace
 {
@@ -475,5 +482,156 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForPrivateLinkHost)
     ASSERT_TRUE(azure_endpoint.has_value());
     ASSERT_EQ(*azure_endpoint, "https://testaccount.privatelink.blob.core.windows.net");
 }
+
+#if USE_PARQUET
+
+namespace
+{
+
+/// A table storage that uses the server's identity, with the shared restriction flag left `false`, as a concurrent
+/// opted-in session leaves it.
+std::shared_ptr<DB::AzureObjectStorage> makeServerIdentityObjectStorage(bool follows_session_restriction)
+{
+    auto params = makeWorkloadIdentityParams();
+    params.follows_session_restriction = follows_session_restriction;
+    params.client_options.Retry.MaxRetries = 0;
+
+    auto container_client = std::make_unique<DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient(
+            params.endpoint.storage_account_url + "/" + params.endpoint.container_name, params.client_options),
+        /* blob_prefix */ "");
+
+    return std::make_shared<DB::AzureObjectStorage>(
+        "azure",
+        std::move(container_client),
+        std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
+        params,
+        /* object_namespace */ params.endpoint.container_name,
+        /* description */ "azure",
+        /* common_key_prefix */ "");
+}
+
+DB::ContextMutablePtr makeSessionContext(bool allow_server_credentials)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->setSetting("s3_allow_server_credentials_in_user_queries", DB::Field(allow_server_credentials));
+    return context;
+}
+
+template <typename F>
+void expectAccessDenied(F && f)
+{
+    try
+    {
+        f();
+        FAIL() << "Expected ACCESS_DENIED";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::ACCESS_DENIED) << e.message();
+    }
+}
+
+/// The check passed: the call reached the kernel, which fails without a federated token file.
+template <typename F>
+void expectNotAccessDenied(F && f)
+{
+    try
+    {
+        f();
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_NE(e.code(), DB::ErrorCodes::ACCESS_DENIED) << e.message();
+    }
+}
+
+}
+
+/// A concurrent opted-in session resets the shared `forbid_implicit_credentials` to `false`, so each entrypoint
+/// must refuse a restricted session by itself, before the snapshot cache or the kernel is used.
+TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSharedFlag)
+{
+    ScopedEnv token_env("AZURE_FEDERATED_TOKEN_FILE", nullptr);
+
+    /// The restriction applies to the server only.
+    const auto previous_application_type = getContext().context->getApplicationType();
+    getContext().context->setApplicationType(DB::Context::ApplicationType::SERVER);
+    SCOPE_EXIT(getContext().context->setApplicationType(previous_application_type));
+
+    /// `totalRows` and `totalBytes` return no value on any error, so tell the refusal apart by what they log.
+    std::ostringstream log_output; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    auto stream_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(log_output));
+    auto metadata_log = getLogger("DeltaLakeMetadata");
+    Poco::AutoPtr<Poco::Channel> previous_channel(metadata_log->getChannel(), /* shared */ true);
+    const int previous_level = metadata_log->getLevel();
+    metadata_log->setChannel(stream_channel.get());
+    metadata_log->setLevel("error");
+    SCOPE_EXIT({
+        metadata_log->setChannel(previous_channel.get());
+        metadata_log->setLevel(previous_level);
+    });
+
+    auto make_table = [](bool follows_session_restriction)
+    {
+        auto object_storage = makeServerIdentityObjectStorage(follows_session_restriction);
+        auto configuration = std::make_shared<DB::StorageAzureDeltaLakeConfiguration>(std::make_shared<DB::DataLakeStorageSettings>());
+        configuration->setRawPath(DB::StorageObjectStorageConfiguration::Path("table/"));
+        configuration->format = "Parquet";
+        auto metadata = std::make_shared<DB::DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
+        return std::make_tuple(object_storage, configuration, metadata);
+    };
+
+    const auto restricted = makeSessionContext(/* allow_server_credentials */ false);
+    const auto allowed = makeSessionContext(/* allow_server_credentials */ true);
+    const DB::StorageID table_id("db", "t");
+
+    {
+        auto [object_storage, configuration, metadata] = make_table(/* follows_session_restriction */ true);
+        ASSERT_FALSE(object_storage->getAzureBlobStorageConnectionParams()->forbid_implicit_credentials);
+
+        expectAccessDenied([&] { metadata->update(restricted); });
+        expectAccessDenied([&] { metadata->getTableSchema(restricted); });
+        expectAccessDenied([&] { metadata->getTableStateSnapshot(restricted); });
+        expectAccessDenied([&] { metadata->buildStorageMetadataFromState(DeltaLake::TableStateSnapshot{}, restricted); });
+        expectAccessDenied([&] { metadata->iterate(nullptr, {}, 1000, nullptr, restricted); });
+        expectAccessDenied([&] { metadata->prepareReadingFromFormat({}, nullptr, restricted, true, true); });
+        expectAccessDenied([&] { metadata->getTableChanges({0, std::nullopt}, DB::Block{}, std::nullopt, restricted); });
+        expectAccessDenied([&]
+        {
+            metadata->write(
+                std::make_shared<const DB::Block>(), table_id, object_storage, configuration, std::nullopt, restricted, nullptr);
+        });
+        expectAccessDenied([&]
+        {
+            DB::DeltaLakeMetadataDeltaKernel::createInitial(
+                object_storage, configuration, restricted, std::nullopt, nullptr, nullptr, false, nullptr, table_id);
+        });
+
+        log_output.str("");
+        ASSERT_FALSE(metadata->totalRows(restricted, std::nullopt).has_value());
+        ASSERT_NE(log_output.str().find("server's own identity"), std::string::npos) << log_output.str();
+        log_output.str("");
+        ASSERT_FALSE(metadata->totalBytes(restricted).has_value());
+        ASSERT_NE(log_output.str().find("server's own identity"), std::string::npos) << log_output.str();
+
+        /// An opted-in session passes the check.
+        expectNotAccessDenied([&] { metadata->update(allowed); });
+        log_output.str("");
+        ASSERT_FALSE(metadata->totalRows(allowed, std::nullopt).has_value());
+        ASSERT_EQ(log_output.str().find("server's own identity"), std::string::npos) << log_output.str();
+    }
+
+    {
+        /// A disk keeps the server's identity for every session.
+        auto [object_storage, configuration, metadata] = make_table(/* follows_session_restriction */ false);
+        expectNotAccessDenied([&] { metadata->update(restricted); });
+        log_output.str("");
+        ASSERT_FALSE(metadata->totalRows(restricted, std::nullopt).has_value());
+        ASSERT_EQ(log_output.str().find("server's own identity"), std::string::npos) << log_output.str();
+    }
+}
+
+#endif
 
 #endif
