@@ -534,7 +534,7 @@ public:
     IndexPtr tryGetIndex() const;
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
-    
+
     /// The path that identifies the part in the caches shared between tables.
     String getPathForCacheKey() const;
 
