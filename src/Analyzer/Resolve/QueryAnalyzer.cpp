@@ -1748,16 +1748,19 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (identifier_lookup.isFunctionLookup())
         return resolve_result;
 
-    CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
-    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+    if (!identifier_resolve_context.defer_matcher_correlation)
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
-            " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
-            identifier_lookup.identifier.getFullName(),
-            resolved_identifier->formatASTForErrorMessage(),
-            fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
-            scope.scope_node->formatASTForErrorMessage());
+        CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
+        if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+        {
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
+                " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+                identifier_lookup.identifier.getFullName(),
+                resolved_identifier->formatASTForErrorMessage(),
+                fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
+                scope.scope_node->formatASTForErrorMessage());
+        }
     }
 
     return resolve_result;
@@ -2518,7 +2521,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
     expression_identifier_lookup.is_matcher_qualifier = true;
-    auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
+    IdentifierResolveContext matcher_resolve_context;
+    matcher_resolve_context.defer_matcher_correlation = true;
+    auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope, matcher_resolve_context);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
     auto * expression_scope = expression_query_tree_node ? findMatcherExpressionScope(expression_query_tree_node, scope) : &scope;
 
@@ -2564,7 +2569,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
                 identifier_resolve_settings.allow_to_check_parent_scopes = false;
 
                 auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, *expression_scope, identifier_resolve_settings).resolved_identifier != nullptr;
+                auto * table_probe_scope = scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier]
+                    ? expression_scope : &scope;
+                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, *table_probe_scope, identifier_resolve_settings).resolved_identifier != nullptr;
             }
 
             if (!prefer_table_expression)
@@ -3613,7 +3620,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    if (matched_expression_scope != &scope)
+    /// The qualifier lookup deferred correlation: only transformed output expressions may
+    /// register outer columns. This also covers a tuple assembled from several scopes.
     {
         CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map};
         if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
