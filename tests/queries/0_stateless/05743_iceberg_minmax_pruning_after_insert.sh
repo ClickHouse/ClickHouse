@@ -31,28 +31,34 @@ FILTERS=(
 )
 for n in "${!FILTERS[@]}"; do echo "filter ${n}: ${FILTERS[n]:-none}"; done
 
-# Runs every filter with pruning off and on under the query id <database>-<table>-<filter>-<off|on>, and
-# checks both return the same rows.
+# Runs every filter with pruning off and on, tagged with the log comment
+# <table>-<filter>-<use_iceberg_partition_pruning>, and checks both return the same rows.
 run()
 {
-    local table="$1" engine="$2" format_version="$3" n query off on
-    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --query "
+    local table="$1" engine="$2" format_version="$3" n pruning queries=""
+    for n in "${!FILTERS[@]}"; do
+        for pruning in 0 1; do
+            queries+="SELECT groupArray(tuple(*)) FROM (SELECT * FROM ${table} ${FILTERS[n]} ORDER BY ALL)
+                SETTINGS use_iceberg_partition_pruning = ${pruning}, ${PARQUET_OFF}, log_comment = '${table}-${n}-${pruning}';"
+        done
+    done
+
+    local results
+    mapfile -t results < <(${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --query "
         DROP TABLE IF EXISTS ${table};
         CREATE TABLE ${table} (tag Int32, date Date32, ts DateTime, name String, number Int64)
             ENGINE = ${engine} SETTINGS iceberg_format_version = ${format_version};
         INSERT INTO ${table} VALUES (1, '2024-01-20', '2024-02-20 10:00:00', 'vasya', 5);
         INSERT INTO ${table} VALUES (2, '2024-02-20', '2024-03-20 15:00:00', 'vasilisa', 6);
         INSERT INTO ${table} VALUES (3, '2025-03-20', '2024-04-30 14:00:00', 'icebreaker', 7);
-        INSERT INTO ${table} VALUES (4, '2025-04-20', '2024-05-30 14:00:00', 'iceberg', 8);"
+        INSERT INTO ${table} VALUES (4, '2025-04-20', '2024-05-30 14:00:00', 'iceberg', 8);
+        ${queries}
+        DROP TABLE ${table};")
 
     for n in "${!FILTERS[@]}"; do
-        query="SELECT * FROM ${table} ${FILTERS[n]} ORDER BY ALL"
-        off=$(${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}-${table}-${n}-off" --query "${query} SETTINGS use_iceberg_partition_pruning = 0, ${PARQUET_OFF}")
-        on=$(${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}-${table}-${n}-on" --query "${query} SETTINGS use_iceberg_partition_pruning = 1, ${PARQUET_OFF}")
-        [ "${off}" == "${on}" ] || echo "results differ for ${table} '${FILTERS[n]}': '${off}' vs '${on}'"
+        [ "${results[2 * n]}" == "${results[2 * n + 1]}" ] \
+            || echo "results differ for ${table} '${FILTERS[n]}': '${results[2 * n]}' vs '${results[2 * n + 1]}'"
     done
-
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
 }
 
 AZURE_URL='http://localhost:10000/devstoreaccount1'
@@ -73,13 +79,13 @@ done
 # Files pruned per table and filter, with pruning off and on.
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
-    SELECT id[2] AS table, toUInt32(id[3]) AS filter,
-        sumIf(pruned, id[4] = 'off') AS pruned_off, sumIf(pruned, id[4] = 'on') AS pruned_on
+    SELECT id[1] AS table, toUInt32(id[2]) AS filter,
+        sumIf(pruned, id[3] = '0') AS pruned_off, sumIf(pruned, id[3] = '1') AS pruned_on
     FROM
     (
-        SELECT splitByChar('-', query_id) AS id, ProfileEvents['IcebergMinMaxIndexPrunedFiles'] AS pruned
+        SELECT splitByChar('-', log_comment) AS id, ProfileEvents['IcebergMinMaxIndexPrunedFiles'] AS pruned
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(query_id, '${CLICKHOUSE_DATABASE}-')
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 't_')
     )
     GROUP BY table, filter
     ORDER BY table, filter"
