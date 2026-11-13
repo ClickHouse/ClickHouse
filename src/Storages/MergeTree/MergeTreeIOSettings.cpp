@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
+    extern const SettingsUInt64 merge_tree_compact_parts_min_granules_to_multibuffer_read;
 }
 
 namespace MergeTreeSetting
@@ -71,6 +72,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
+    extern const MergeTreeSettingsUInt64 compact_parts_max_bytes_to_buffer;
+    extern const MergeTreeSettingsNonZeroUInt64 compact_parts_max_granules_to_buffer;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -99,6 +102,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , rewrite_primary_key(rewrite_primary_key_)
     , save_marks_in_cache(save_marks_in_cache_)
     , save_primary_index_in_memory(save_primary_index_in_memory_)
+    , compact_parts_max_bytes_to_buffer((*storage_settings)[MergeTreeSetting::compact_parts_max_bytes_to_buffer])
+    , compact_parts_max_granules_to_buffer((*storage_settings)[MergeTreeSetting::compact_parts_max_granules_to_buffer])
     , blocks_are_granules_size(blocks_are_granules_size_)
     , query_write_settings(query_write_settings_)
     , low_cardinality_max_dictionary_size(global_settings[Setting::low_cardinality_max_dictionary_size])
@@ -158,10 +163,15 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     return result;
 }
 
-MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
+MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info)
 {
     auto result = createFromContext(context);
+    const auto & settings = context->getSettingsRef();
     result.read_in_order = query_info.input_order_info != nullptr;
+    /// A buffer per column pays off only when a stripe holds enough granules of the column, see `MergeTreeDataPartCompact.h`.
+    result.compact_parts_read_method = storage_settings[MergeTreeSetting::compact_parts_max_granules_to_buffer] >= settings[Setting::merge_tree_compact_parts_min_granules_to_multibuffer_read]
+        ? CompactPartsReadMethod::MultiBuffer
+        : CompactPartsReadMethod::SingleBuffer;
     return result;
 }
 

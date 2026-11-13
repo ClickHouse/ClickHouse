@@ -8540,7 +8540,7 @@ Hard lower limit on the task size (even when the number of granules is low and t
 )", 0, \
         {"24.10", 8, 8, "New setting"}) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+Minimal number of granules in a stripe of a Compact part (the `compact_parts_max_granules_to_buffer` setting of the table) to read the part with a buffer per column, which supports parallel reading and prefetch of columns. Below it all columns are read with a single buffer. When reading from a remote filesystem, a buffer per column increases the number of read requests.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(

@@ -48,6 +48,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
+    extern const MergeTreeSettingsUInt64 compact_parts_merge_max_bytes_to_prefetch_part;
 }
 
 /// Lightweight (in terms of logic) stream for reading single part from
@@ -195,11 +196,35 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
     }
 
+    auto compact_parts_read_method = CompactPartsReadMethod::MultiBuffer;
+    bool adjust_read_buffer_size = true;
+
+    /// A small Compact part read as a whole is read into one buffer of its size at once,
+    /// instead of a buffer per column with a read request per stripe.
+    if (isCompactPart(data_part) && columns_to_read.size() >= data_part->getColumns().size())
+    {
+        size_t compressed_size = data_part->getTotalColumnsSize().data_compressed;
+        size_t bytes_to_prefetch = (*storage.getSettings())[MergeTreeSetting::compact_parts_merge_max_bytes_to_prefetch_part];
+
+        if (compressed_size <= bytes_to_prefetch)
+        {
+            read_settings.remote_fs_settings.buffer_size = compressed_size;
+            read_settings.remote_fs_settings.min_bytes_for_seek = compressed_size;
+            read_settings.remote_fs_settings.large_buffer_size = compressed_size;
+            compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
+            adjust_read_buffer_size = false;
+        }
+    }
+
+    MergeTreeReaderSettings reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings));
+    reader_settings.compact_parts_read_method = compact_parts_read_method;
+    reader_settings.adjust_read_buffer_size = adjust_read_buffer_size;
+
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
-        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
+        .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
     };
 

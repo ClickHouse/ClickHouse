@@ -249,6 +249,60 @@ size_t findNextDifferentMark(const MergeTreeMarksGetter & marks, size_t from, si
     return it == indices.end() ? marks_count : *it;
 }
 
+struct MarkCell
+{
+    MarkInCompressedFile mark;
+    size_t row;
+    size_t column;
+};
+
+/// The first mark greater than `value` where the data after the cell (`row`, `column`) can continue. Marks grow along
+/// rows and columns, so each candidate is found by binary searches. Missing the real next mark only gives a later
+/// right bound, which is still safe.
+std::optional<MarkCell> findFirstMarkGreater(
+    const MergeTreeMarksGetter & marks, size_t marks_count, const MarkInCompressedFile & value, size_t row, size_t column)
+{
+    std::optional<MarkCell> result;
+    auto update = [&](size_t mark_row, size_t mark_column)
+    {
+        auto mark = marks.getMark(mark_row, mark_column);
+        if (!result || mark < result->mark)
+            result = MarkCell{mark, mark_row, mark_column};
+    };
+
+    auto first_greater_in_row = [&](size_t current_row) -> std::optional<size_t>
+    {
+        auto columns = collections::range(0, marks.getNumColumns());
+        auto it = std::partition_point(columns.begin(), columns.end(), [&](size_t current_column) { return marks.getMark(current_row, current_column) <= value; });
+        return it == columns.end() ? std::nullopt : std::optional<size_t>(*it);
+    };
+
+    auto first_greater_in_column = [&](size_t current_column, size_t begin_row, size_t end_row) -> std::optional<size_t>
+    {
+        auto rows = collections::range(begin_row, end_row);
+        auto it = std::partition_point(rows.begin(), rows.end(), [&](size_t current_row) { return marks.getMark(current_row, current_column) <= value; });
+        return it == rows.end() ? std::nullopt : std::optional<size_t>(*it);
+    };
+
+    /// The next column in the granule, or the start of the next column in the stripe.
+    /// The mark in row `row` is greater than `value`, so the column search finds a row.
+    if (auto greater_column = first_greater_in_row(row))
+        update(*first_greater_in_column(*greater_column, 0, row + 1), *greater_column);
+
+    /// The next granule or stripe.
+    if (row + 1 < marks_count)
+    {
+        if (auto greater_column = first_greater_in_row(row + 1))
+            update(row + 1, *greater_column);
+    }
+
+    /// The same column after granules that are empty or share its compressed block.
+    if (auto greater_row = first_greater_in_column(column, row + 1, marks_count))
+        update(*greater_row, *first_greater_in_row(*greater_row));
+
+    return result;
+}
+
 }
 
 bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
@@ -506,37 +560,33 @@ size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t righ
     chassert(right_mark_non_included <= marks_count);
     loadMarks();
 
+    return getRightOffsetByMarks(*marks_getter, marks_count, file_size, right_mark_non_included, column_position);
+}
+
+size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetByMarks(
+    const MergeTreeMarksGetter & marks, size_t num_marks, size_t total_file_size, size_t right_mark_non_included, size_t column_position)
+{
     if (right_mark_non_included == 0)
-        return marks_getter->getMark(right_mark_non_included, column_position).offset_in_compressed_file;
+        return marks.getMark(0, column_position).offset_in_compressed_file;
 
-    size_t right_mark_included = right_mark_non_included - 1;
-    if (right_mark_non_included != marks_count
-        && marks_getter->getMark(right_mark_non_included, column_position).offset_in_decompressed_block != 0)
-         ++right_mark_included;
+    /// The needed data ends where the next data in the file starts.
+    size_t last_row = right_mark_non_included - 1;
+    auto next = findFirstMarkGreater(marks, num_marks, marks.getMark(last_row, column_position), last_row, column_position);
+    if (!next)
+        return total_file_size;
 
-    /// The right bound for case, where there is no smaller suitable mark
-    /// is the start of the next stripe (in which the next column is written)
-    /// because each stripe always start from a new compressed block.
-    const auto & right_mark_in_file = marks_getter->getMark(right_mark_included, column_position);
-    auto next_stripe_right_mark_in_file = getStartOfNextStripeMark(right_mark_included, column_position);
+    /// The next data starts a compressed block, so the needed data ends with the previous block.
+    if (next->mark.offset_in_decompressed_block == 0)
+        return next->mark.offset_in_compressed_file;
 
-    /// Try to find suitable right mark in current stripe.
-    for (size_t mark = right_mark_included + 1; mark < marks_count; ++mark)
-    {
-        const auto & current_mark = marks_getter->getMark(mark, column_position);
-        /// We found first mark that starts from the new compressed block.
-        if (current_mark.offset_in_compressed_file > right_mark_in_file.offset_in_compressed_file)
-        {
-            /// If it is in current stripe return it to reduce amount of read data.
-            if (current_mark < next_stripe_right_mark_in_file)
-                return current_mark.offset_in_compressed_file;
+    /// The next data starts inside the block with the end of the needed data, so the whole block is needed:
+    /// up to the first mark in a later block.
+    MarkInCompressedFile end_of_block{
+        .offset_in_compressed_file = next->mark.offset_in_compressed_file,
+        .offset_in_decompressed_block = std::numeric_limits<size_t>::max()};
 
-            /// Otherwise return start of new stripe as an upper bound.
-            break;
-        }
-    }
-
-    return next_stripe_right_mark_in_file.offset_in_compressed_file;
+    auto after_block = findFirstMarkGreater(marks, num_marks, end_of_block, next->row, next->column);
+    return after_block ? after_block->mark.offset_in_compressed_file : total_file_size;
 }
 
 std::optional<size_t> MergeTreeReaderStreamMultipleColumns::getLeftOffsetOneColumn(size_t mark, size_t column_position)
@@ -661,6 +711,27 @@ std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMar
     size_t sum_range_bytes = 0;
 
     for (size_t i = 0; i < marks_loader->getNumColumns(); ++i)
+    {
+        auto [current_max, current_sum] = estimateMarkRangeBytesOneColumn(mark_ranges, i);
+
+        max_range_bytes = std::max(max_range_bytes, current_max);
+        sum_range_bytes += current_sum;
+    }
+
+    return {max_range_bytes, sum_range_bytes};
+}
+
+size_t MergeTreeReaderStreamRangeOfMultipleColumns::getRightOffset(size_t right_mark_non_included)
+{
+    return getRightOffsetOneColumn(right_mark_non_included, last_column_position);
+}
+
+std::pair<size_t, size_t> MergeTreeReaderStreamRangeOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
+{
+    size_t max_range_bytes = 0;
+    size_t sum_range_bytes = 0;
+
+    for (size_t i = first_column_position; i <= last_column_position; ++i)
     {
         auto [current_max, current_sum] = estimateMarkRangeBytesOneColumn(mark_ranges, i);
 
