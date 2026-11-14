@@ -7,9 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The stress test fuzzes DDL and ignores some DROPs: a `__fuzz_N` copy or an undropped table would name the disks,
-# policies and Keeper nodes removed below, and the server could not start again.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_queries_probability=0"
+# The stress test fuzzes DDL, ignores some DROPs and injects memory faults: a `__fuzz_N` copy or an undropped table
+# would name the disks, policies and Keeper nodes removed below, and the server could not start again.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0 --ignore_drop_queries_probability=0 --memory_tracker_fault_probability=0"
 
 # A session without `s3_allow_server_credentials_in_user_queries` may not wrap, by name, a disk that a session with it
 # created with the server's own credentials, nor a wrapper of such a disk. A `type` read with `from_zk` counts as a
