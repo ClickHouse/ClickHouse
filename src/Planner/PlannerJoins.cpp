@@ -1116,7 +1116,8 @@ PreparedJoinStorage tryGetLookupJoinStorage(
         if (!table_expression_data->getAliasColumnExpressions().empty())
             return {};
 
-        result.column_mapping = table_expression_data->getColumnIdentifierToColumnName();
+        const auto & column_identifier_to_column_name = table_expression_data->getColumnIdentifierToColumnName();
+        result.column_mapping.insert(column_identifier_to_column_name.begin(), column_identifier_to_column_name.end());
 
         /// The lookup-join entity (`MergeTreeTableJoinEntity`) only contains the top-level physical
         /// columns (`getAllPhysicalColumnsForLookupJoin`). The analyzer can still map a right-side
