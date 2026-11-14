@@ -4977,7 +4977,9 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
             /// First remove all covered parts, then remove covering empty part
             /// Avoids resurrection of old parts for MergeTree and issues with unexpected parts for Replicated
-            if (part->rows_count == 0 && !getCoveredOutdatedParts(part, parts_lock).empty())
+            /// While outdated parts are still loading, the covered parts are not all known yet, see `clearEmptyParts`.
+            if (part->rows_count == 0
+                && (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed) || !getCoveredOutdatedParts(part, parts_lock).empty()))
             {
                 part->removal_state.store(DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);

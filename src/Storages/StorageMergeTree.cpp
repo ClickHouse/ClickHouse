@@ -291,6 +291,7 @@ void StorageMergeTree::startup()
     const bool readonly = isTableReadonly();
     if (!readonly)
     {
+        outdateEmptyPartsCoveringDetachedParts();
         clearEmptyParts();
 
         /// Temporary directories contain incomplete results of merges (after forced restart)
@@ -1089,6 +1090,8 @@ void StorageMergeTree::alter(
         {
             FailPointInjection::pauseFailPoint(FailPoints::mt_alter_readonly_pause_after_metadata_commit);
 
+            /// `startup` skips it for a read-only table, and it must run before merges are enabled.
+            outdateEmptyPartsCoveringDetachedParts();
             enableBackgroundWorkers();
             wakeupBackgroundWorkers();
 
@@ -3816,6 +3819,62 @@ void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, Conte
     }
 }
 
+void StorageMergeTree::dropEmptyPartsCoveringDetachedParts(const Strings & empty_part_names)
+{
+    /// An empty part that stays active covers the block range of the part just copied to `detached/`.
+    /// A later `DETACH` would copy that empty part, or a part merged from it, to `detached/` as well,
+    /// and `ATTACH` would then treat the earlier detached part as covered and rename it to `inactive_`.
+    /// It stays on disk until the outdated parts it covers are removed, see `outdateEmptyPartsCoveringDetachedParts`.
+    for (const auto & part_name : empty_part_names)
+    {
+        if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}); part && isPinnedByDeleteBitmap(*part))
+            continue;
+
+        dropPartNoWaitNoThrow(part_name);
+    }
+}
+
+void StorageMergeTree::outdateEmptyPartsCoveringDetachedParts()
+{
+    /// `grabOldParts` removes an empty part only after the outdated parts it covers. If the table is loaded before
+    /// that, the empty part that `dropEmptyPartsCoveringDetachedParts` outdated is active again, and
+    /// `remove_empty_parts = 0` or `empty_parts_lifetime` keep it. So outdate an active empty part that covers
+    /// a part in `detached/` again, before it can be merged or detached. It stays on disk to cover the outdated parts.
+    try
+    {
+        DataPartsVector empty_parts;
+        for (const auto & part : getDataPartsVectorForInternalUsage())
+            if (part->rows_count == 0)
+                empty_parts.push_back(part);
+
+        if (empty_parts.empty())
+            return;
+
+        /// The parts that `tryLoadPartsToAttach` considers for `ATTACH PARTITION`.
+        auto detached_parts = getDetachedParts();
+        std::erase_if(detached_parts, [](const DetachedPartInfo & part_info)
+        {
+            return !part_info.valid_name || !part_info.prefix.empty() || part_info.has_try_suffix;
+        });
+
+        for (const auto & part : empty_parts)
+        {
+            if (std::ranges::none_of(detached_parts, [&](const DetachedPartInfo & part_info) { return part->info.contains(part_info); }))
+                continue;
+
+            if (!part->version->isVisibleByLatestSnapshot() || isPinnedByDeleteBitmap(*part))
+                continue;
+
+            LOG_INFO(log, "Outdating empty part {}, because it covers a detached part", part->name);
+            outdatePart(NO_TRANSACTION_RAW, part->name, /*force=*/ false, /*clear_without_timeout=*/ false);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "while outdating the empty parts that cover detached parts");
+    }
+}
+
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
     assertNotReadonly();
@@ -3899,6 +3958,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        Strings empty_part_names;
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
@@ -3931,7 +3991,11 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
 
                 if (detach)
+                {
                     clonePartsToDetached(removed_parts, query_context);
+                    for (const auto & new_part : new_data_parts)
+                        empty_part_names.push_back(new_part->name);
+                }
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3941,6 +4005,9 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          transaction.getTID());
             }
         }
+
+        if (detach)
+            dropEmptyPartsCoveringDetachedParts(empty_part_names);
     }
 
     clearOldPartsFromFilesystem();
@@ -4007,6 +4074,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        Strings empty_part_names;
 
         if (txn)
         {
@@ -4056,7 +4124,11 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
 
             if (detach)
+            {
                 clonePartsToDetached(removed_parts, query_context);
+                for (const auto & new_part : new_data_parts)
+                    empty_part_names.push_back(new_part->name);
+            }
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -4065,6 +4137,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                      op, parts.size(), future_parts.size(),
                      transaction.getTID());
         }
+
+        if (detach)
+            dropEmptyPartsCoveringDetachedParts(empty_part_names);
     }
 
     clearOldPartsFromFilesystem();
