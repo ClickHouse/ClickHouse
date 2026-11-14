@@ -14,3 +14,4 @@ SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT r
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('xfx'), '^+x', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('xfx'), '^{1,3}x', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('http://www.a.com/x'), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT replaceRegexpAll(materialize('xfx'), '^(?)?x', 'Z');
