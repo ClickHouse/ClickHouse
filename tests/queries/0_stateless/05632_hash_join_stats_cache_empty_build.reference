@@ -5,6 +5,12 @@
 05632_one_key	0	1
 05632_emptied	0	1
 05632_after_empty	1	0
+05632_rows_many	0	1
+05632_rows_few	0	1
+05632_after_rows_few	1	0
+05632_half_one	0	1
+05632_half_emptied	0	1
+05632_half_after	1	0
 05632_log	0	1
 05632_empty_table	1	0
 05632_log_after_empty	0	1

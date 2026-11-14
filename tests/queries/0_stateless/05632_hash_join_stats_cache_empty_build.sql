@@ -32,6 +32,24 @@ ALTER TABLE rhs2 UPDATE b = 0 WHERE 1 SETTINGS mutations_sync = 2;
 SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT a FROM rhs2 WHERE b = 1 UNION ALL SELECT a FROM rhs2 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_emptied' FORMAT Null;
 SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT a FROM rhs2 WHERE b = 1 UNION ALL SELECT a FROM rhs2 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_after_empty' FORMAT Null;
 
+CREATE TABLE rhs4 (a String, b UInt8, n UInt64) ENGINE = MergeTree ORDER BY ();
+INSERT INTO rhs4 SELECT '1', 1, number FROM numbers(3000);
+
+-- One key in 6000 rows, then the same key in 2 rows: only `source_rows` drops, and the next run is serial
+SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT a FROM rhs4 WHERE b = 1 UNION ALL SELECT a FROM rhs4 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_rows_many' FORMAT Null;
+ALTER TABLE rhs4 UPDATE b = 0 WHERE n > 0 SETTINGS mutations_sync = 2;
+SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT a FROM rhs4 WHERE b = 1 UNION ALL SELECT a FROM rhs4 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_rows_few' FORMAT Null;
+SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT a FROM rhs4 WHERE b = 1 UNION ALL SELECT a FROM rhs4 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_after_rows_few' FORMAT Null;
+
+CREATE TABLE rhs5 (a String, b UInt8) ENGINE = MergeTree ORDER BY ();
+INSERT INTO rhs5 VALUES ('1', 1);
+
+-- One row, then none, at `parallel_hash_join_threshold = 1`: 0 is less than half of 1, so the next run is serial
+SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs5 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS parallel_hash_join_threshold = 1, log_comment = '05632_half_one' FORMAT Null;
+ALTER TABLE rhs5 UPDATE b = 0 WHERE 1 SETTINGS mutations_sync = 2;
+SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs5 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS parallel_hash_join_threshold = 1, log_comment = '05632_half_emptied' FORMAT Null;
+SELECT * FROM lhs2 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs5 WHERE b = 1) AS t1 ON t0.a = t1.a SETTINGS parallel_hash_join_threshold = 1, log_comment = '05632_half_after' FORMAT Null;
+
 CREATE TABLE lhs3 (k05632 UInt64) ENGINE = MergeTree ORDER BY ();
 CREATE TABLE empty3 (k05632 UInt64) ENGINE = MergeTree ORDER BY ();
 CREATE TABLE log3 (k05632 UInt64) ENGINE = Log;
@@ -49,5 +67,6 @@ SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, Pr
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05632_empty_cold', '05632_empty_warm', '05632_empty_cold_uint16', '05632_empty_warm_uint16', '05632_one_key', '05632_emptied',
-        '05632_after_empty', '05632_log', '05632_empty_table', '05632_log_after_empty')
+        '05632_after_empty', '05632_rows_many', '05632_rows_few', '05632_after_rows_few', '05632_half_one', '05632_half_emptied',
+        '05632_half_after', '05632_log', '05632_empty_table', '05632_log_after_empty')
 ORDER BY event_time_microseconds;
