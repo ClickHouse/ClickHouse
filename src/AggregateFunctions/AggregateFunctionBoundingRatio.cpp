@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/transformEndianness.h>
 
 
@@ -161,6 +162,63 @@ public:
         const auto x = columns[0]->getFloat64(row_num);
         const auto y = columns[1]->getFloat64(row_num);
         data(place).add(x, y);
+    }
+
+    /// `add` makes two virtual calls per row. Instead, convert the arguments to Float64 in chunks,
+    /// dispatching on the column type once per chunk.
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionDataHelper::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+            return;
+        }
+
+        constexpr size_t chunk_size = 256;
+        Float64 xs[chunk_size];
+        Float64 ys[chunk_size];
+        /// A local copy, which the compiler can keep in registers: it can't prove that `place` doesn't alias the buffers.
+        AggregateFunctionBoundingRatioData state = data(place);
+        for (size_t chunk_begin = row_begin; chunk_begin < row_end; chunk_begin += chunk_size)
+        {
+            const size_t chunk_end = std::min(chunk_begin + chunk_size, row_end);
+            convertToFloat64(*columns[0], chunk_begin, chunk_end, xs);
+            convertToFloat64(*columns[1], chunk_begin, chunk_end, ys);
+            for (size_t i = 0; i < chunk_end - chunk_begin; ++i)
+                state.add(xs[i], ys[i]);
+        }
+        data(place) = state;
+    }
+
+    /// The same values as `IColumn::getFloat64`.
+    static void convertToFloat64(const IColumn & column, size_t begin, size_t end, Float64 * out)
+    {
+        auto try_convert = [&]<typename T>(std::type_identity<T>)
+        {
+            const auto * typed = typeid_cast<const ColumnVector<T> *>(&column);
+            if (!typed)
+                return false;
+            const auto & values = typed->getData();
+            for (size_t i = begin; i < end; ++i)
+                out[i - begin] = static_cast<Float64>(values[i]);
+            return true;
+        };
+
+        if (try_convert(std::type_identity<UInt8>{}) || try_convert(std::type_identity<UInt16>{})
+            || try_convert(std::type_identity<UInt32>{}) || try_convert(std::type_identity<UInt64>{})
+            || try_convert(std::type_identity<Int8>{}) || try_convert(std::type_identity<Int16>{})
+            || try_convert(std::type_identity<Int32>{}) || try_convert(std::type_identity<Int64>{})
+            || try_convert(std::type_identity<Float32>{}) || try_convert(std::type_identity<Float64>{}))
+            return;
+
+        for (size_t i = begin; i < end; ++i)
+            out[i - begin] = column.getFloat64(i);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

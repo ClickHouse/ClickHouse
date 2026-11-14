@@ -320,9 +320,47 @@ private:
 
     bool executeGeneric(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
+        if (executeArrays(columns, out_data, input_rows_count))
+            return true;
+
         for (size_t i = 0; i < input_rows_count; ++i)
             for (const auto * column : columns)
                 out_data.insertFrom(*column, i);
+        return true;
+    }
+
+    /// Elements that are arrays: fill the offsets directly and copy the nested data by ranges, with one virtual
+    /// call per element instead of two (`ColumnArray::insertFrom` and the `insertRangeFrom` of its data).
+    static bool executeArrays(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count)
+    {
+        auto * out_array = typeid_cast<ColumnArray *>(&out_data);
+        if (!out_array)
+            return false;
+
+        VectorWithMemoryTracking<const ColumnArray *> arrays;
+        arrays.reserve(columns.size());
+        for (const auto * column : columns)
+        {
+            const auto * array = typeid_cast<const ColumnArray *>(column);
+            if (!array)
+                return false;
+            arrays.push_back(array);
+        }
+
+        auto & out_offsets = out_array->getOffsets();
+        auto & out_nested = out_array->getData();
+        out_offsets.reserve(out_offsets.size() + input_rows_count * arrays.size());
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            for (const auto * array : arrays)
+            {
+                const auto & offsets = array->getOffsets();
+                const size_t offset = offsets[ssize_t(i) - 1];
+                const size_t size = offsets[i] - offset;
+                out_nested.insertRangeFrom(array->getData(), offset, size);
+                out_offsets.push_back(out_offsets.back() + size);
+            }
+        }
         return true;
     }
 
