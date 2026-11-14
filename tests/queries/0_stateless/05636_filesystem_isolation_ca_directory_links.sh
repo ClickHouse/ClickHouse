@@ -4,14 +4,15 @@
 
 # A server with `filesystem_isolation` and a directory of CA certificates in `openSSL.client.caConfig` whose hashed
 # links, as `c_rehash` makes them, point to certificates in another directory, outside every other mount, keeps that
-# directory visible, so that the links are not dangling inside. The client context of OpenSSL is created only when it
-# is used, so a placeholder for the certificate is enough.
+# directory visible, so that the links are not dangling inside, also for a chain of links through another directory.
+# The client context of OpenSSL is created only when it is used, so a placeholder for the certificate is enough.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-EXPECTED="certificate through the link: visible"
+EXPECTED="certificate through the link: visible
+certificate through two links: visible"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
 # `tests/config/install.sh`.
@@ -22,10 +23,13 @@ fi
 
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_ca_directory_links"
 rm -rf "$DIR"
-mkdir -p "$DIR/conf" "$DIR/data" "$DIR/log" "$DIR/ca" "$DIR/store/certificates"
+mkdir -p "$DIR/conf" "$DIR/data" "$DIR/log" "$DIR/ca" "$DIR/store/certificates" "$DIR/links" "$DIR/other_store"
 DIR=$(cd "$DIR" && pwd -P)
 echo "placeholder" > "$DIR/store/certificates/private_ca.pem"
 ln -s ../store/certificates/private_ca.pem "$DIR/ca/0123abcd.0"
+echo "placeholder" > "$DIR/other_store/second_ca.pem"
+ln -s "$DIR/other_store/second_ca.pem" "$DIR/links/second_ca.pem"
+ln -s "$DIR/links/second_ca.pem" "$DIR/ca/89abcdef.0"
 
 cat > "$DIR/conf/config.xml" <<EOF
 <clickhouse>
@@ -70,3 +74,4 @@ fi
 
 # Through the link, as OpenSSL reads it inside.
 echo "certificate through the link: $([ -f "/proc/$PID/root$DIR/ca/0123abcd.0" ] && echo visible || echo invisible)"
+echo "certificate through two links: $([ -f "/proc/$PID/root$DIR/ca/89abcdef.0" ] && echo visible || echo invisible)"

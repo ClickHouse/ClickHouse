@@ -295,26 +295,34 @@ private:
              !error && it != fs::recursive_directory_iterator() && entries < max_entries;
              it.increment(error), ++entries)
         {
-            if (!FS::isSymlinkNoThrow(it->path()))
-                continue;
-            std::error_code entry_error;
-            fs::path target = FS::readSymlink(it->path());
-            if (target.is_relative())
-                target = fs::canonical(it->path().parent_path(), entry_error) / target;
-            if (entry_error)
-                continue;
-            target = absolute(target.string(), "/");
-            const fs::path real_target = fs::canonical(target, entry_error);
-            if (entry_error)
-                continue; /// A dangling link.
-            const bool is_directory = fs::is_directory(real_target, entry_error);
-            const fs::path real_target_directory = is_directory ? real_target : real_target.parent_path();
-            if (isSameOrInside(real_target_directory, real_directory) || isSameOrInside(real_target_directory, "/dev"))
-                continue;
-            const fs::path relative = real_target_directory.relative_path();
-            if (std::distance(relative.begin(), relative.end()) < 2)
-                continue;
-            targets.insert(is_directory ? target : target.parent_path());
+            /// Every link of the chain, as `root.pem -> /srv/links/root.pem -> /opt/ca/root.pem`: the directory of each
+            /// target, as the link names it, so that the links on the way are recreated.
+            fs::path current = it->path();
+            constexpr size_t max_links = 40;
+            for (size_t link = 0; link < max_links && FS::isSymlinkNoThrow(current); ++link)
+            {
+                std::error_code entry_error;
+                fs::path target = FS::readSymlink(current);
+                if (target.is_relative())
+                    target = fs::canonical(current.parent_path(), entry_error) / target;
+                if (entry_error)
+                    break;
+                target = absolute(target.string(), "/");
+                if (!fs::exists(target, entry_error))
+                    break; /// A dangling link.
+                const bool is_directory = fs::is_directory(target, entry_error);
+                const fs::path location = is_directory ? target : target.parent_path();
+                const fs::path real_location = fs::canonical(location, entry_error);
+                if (entry_error)
+                    break;
+                const fs::path relative = real_location.relative_path();
+                if (!isSameOrInside(real_location, real_directory) && !isSameOrInside(real_location, "/dev")
+                    && std::distance(relative.begin(), relative.end()) >= 2)
+                    targets.insert(location);
+                if (is_directory)
+                    break;
+                current = target;
+            }
         }
         for (const auto & target : targets)
             add(target, Access::ReadOnly, fmt::format("the target of a link in {} ({})", directory.string(), source));
