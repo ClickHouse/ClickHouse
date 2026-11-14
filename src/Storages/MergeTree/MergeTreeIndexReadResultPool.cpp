@@ -159,6 +159,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             vector_similarity_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
+            context->getProcessListElementSafe(),
             log);
 
         ranges = std::move(filtered_ranges);
@@ -271,6 +272,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     vector_similarity_index_cache.get(),
                     /*use_skip_indexes_for_disjunctions=*/false,
                     no_disjunctions,
+                    context->getProcessListElementSafe(),
                     log);
                 ranges = std::move(filtered_ranges);
             }

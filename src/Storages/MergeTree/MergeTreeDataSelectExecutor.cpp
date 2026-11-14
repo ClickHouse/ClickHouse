@@ -1606,6 +1606,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             vector_similarity_index_cache.get(),
                             use_skip_indexes_for_disjunctions,
                             partial_eval_results,
+                            query_status,
                             log);
                     }
 
@@ -3272,6 +3273,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     bool use_skip_indexes_for_disjunctions,
     PartialDisjunctionResult & partial_disjunction_result,
+    const QueryStatusPtr & query_status,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(*part_info, index_helper->getFileName()))
@@ -3433,21 +3435,34 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
     else if (bulk_filtering)
     {
+        IMergeTreeIndexCondition::FilteredGranules filtered_granules;
         MergeTreeIndexBulkGranulesPtr granules;
-        size_t current_granule_num = 0;
+        auto filter_granules = [&]
+        {
+            auto batch = condition->getPossibleGranules(granules);
+            filtered_granules.insert(filtered_granules.end(), batch.begin(), batch.end());
+            granules.reset();
+        };
 
+        size_t current_granule_num = 0;
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
+                if (query_status)
+                    query_status->throwIfKilled();
                 reader.read(index_mark, current_granule_num, granules);
                 ++current_granule_num;
+                /// Evaluate the condition once at least DEFAULT_BLOCK_SIZE values are read, so a killed query stops between batches.
+                if (granules->size() >= DEFAULT_BLOCK_SIZE)
+                    filter_granules();
             }
         }
+        if (granules)
+            filter_granules();
 
-        IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
         if (filtered_granules.empty())
             return {res, read_hints};
 
@@ -3495,6 +3510,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
+                if (query_status)
+                    query_status->throwIfKilled();
+
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 {
                     reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
