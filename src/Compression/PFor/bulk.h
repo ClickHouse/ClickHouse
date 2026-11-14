@@ -109,12 +109,11 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
 
 // With non-null `end`, a corrupt block makes blockDecode return 0, propagated as a 0 return here so the caller can report CORRUPTED_DATA.
 template <typename T>
-inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr) noexcept
+inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr, T prev = 0) noexcept
 {
     if (count == 0)
         return 0;
     const uint8_t * p = in;
-    T prev = 0;
     for (size_t s = 0; s < count; s += BLOCK)
     {
         const unsigned cnt = static_cast<unsigned>((count - s < BLOCK) ? (count - s) : BLOCK);

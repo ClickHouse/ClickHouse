@@ -350,6 +350,8 @@ SELECT accurateCastOrDefault('abc', 'UInt32')
 
 この関数は、[`accurateCast`](#accurateCast) の安全性と、適切なエラーハンドリングを兼ね備えています。
 
+Trino、Spark、Snowflake、SQL Server の SQL方言で使われる構文 `TRY_CAST(x AS T)` は、`accurateCastOrNull(x, 'T')` と同等です。
+
 **構文**
 
 ```sql
@@ -359,7 +361,7 @@ accurateCastOrNull(x, T)
 **引数**
 
 * `x` — 変換する値。[`Any`](/ja/reference/data-types/index)
-* `T` — 変換先のデータ型名。[`String`](/ja/reference/data-types/string)
+* `T` — 変換先の型名。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -367,7 +369,7 @@ accurateCastOrNull(x, T)
 
 **例**
 
-**変換が成功する場合**
+**変換に成功した場合**
 
 ```sql title=Query
 SELECT accurateCastOrNull(42, 'String')
@@ -2879,6 +2881,7 @@ toBool('FALSE'):         false
 
 入力値を [`Date`](/ja/reference/data-types/date) 型に変換します。
 String、FixedString、DateTime、または数値型から変換できます。
+型の範囲外の数値は、[`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定に従って処理されます。デフォルトの `ignore` モードおよび `saturate` モードでは範囲の境界値に収められ、`throw` モードでは例外がスローされます。
 
 **構文**
 
@@ -2933,6 +2936,7 @@ SELECT toDate(20297)
 引数を [Date32](/ja/reference/data-types/date32) データ型に変換します。
 値が `[0000-01-01, 9999-12-31]` の範囲外の場合、`toDate32` は [Date32](/ja/reference/data-types/date32) でサポートされる境界値を返します。
 引数の型が [`Date`](/ja/reference/data-types/date) の場合は、その範囲が考慮されます。
+型の範囲外の数値は、[`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定に従って処理されます。デフォルトの `ignore` モードと `saturate` モードでは範囲の境界値に丸められ、`throw` モードでは例外がスローされます。
 
 **構文**
 
@@ -3242,6 +3246,8 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
   そのため、短い数値文字列 (4 桁以下) のパースは、曖昧さを避けるため明示的に無効化されています。たとえば、文字列 `'1999'` は年 (Date / DateTime の不完全な文字列表現) を表す場合も、unix timestamp を表す場合もあります。より長い数値文字列は使用できます。
 </Note>
 
+型の範囲 (`1970-01-01 00:00:00` から `2106-02-07 06:28:15`) 外の数値は、[`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定に従います。デフォルトの `ignore` モードおよび `saturate` モードでは範囲の境界値に飽和させられ、`throw` モードでは例外がスローされます。
+
 `expr` が [Time](/ja/reference/data-types/time) または [Time64](/ja/reference/data-types/time64) の値の場合、Unix Epoch の開始からの経過秒数として解釈されます。`Time64` の小数部分は負の無限大方向に切り捨てられ、`DateTime` の範囲外の値は `date_time_overflow_behavior` 設定に従います。
 
 **構文**
@@ -3282,8 +3288,8 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 入力値を `DateTime` 型に変換します。
 `String`、`FixedString`、`Date`、`Date32`、`Time`、`Time64`、`DateTime`、`DateTime64`、または数値型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`(U)Int128`、`(U)Int256`、`BFloat16`、`Float32`、`Float64`) からの変換をサポートします。`Decimal` の値はサポートされておらず、例外が発生します。
 `DateTime32` は `DateTime` の alias であり、`1970-01-01 00:00:00` から `2106-02-07 06:28:15` までの日付をサポートします。
-文字列、または上記の飽和する数値型から変換する場合、この範囲外の値は範囲の境界値に飽和されます。非有限の浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
-`Date32`、`DateTime64`、`Time`、`Time64` など、他の日付と時刻型からの変換は、`date_time_overflow_behavior` 設定に従います。デフォルトの `ignore` モードではラップアラウンドした値が生成される場合があり、`saturate` では値が範囲の境界値に制限され、`throw` では例外が発生します。`Time64` の値は、まず負の無限大方向に切り捨てられて整数秒になります。
+文字列から変換する場合、この範囲外の値は範囲の境界値に飽和されます。
+上記の数値型、および `Date32`、`DateTime64`、`Time`、`Time64` など他の日付と時刻型からの変換は、[`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定に従います。デフォルトの `ignore` モードでは、数値は飽和されますが、日付と時刻型の値ではラップアラウンドした値が生成される場合があります。`saturate` では範囲の境界値に制限され、`throw` では例外が発生します。`Time64` の値は、まず負の無限大方向に切り捨てられて整数秒になります。非有限の浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
 
 **構文**
 
@@ -3343,6 +3349,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
 導入バージョン: v20.1.0
 
 入力値を [`DateTime64`](/ja/reference/data-types/datetime64) 型の値に変換します。
+型の範囲外の数値は、[`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定に従って処理されます。デフォルトの `ignore` モードおよび `saturate` モードでは、範囲の境界値 (指定した `scale` で表現可能な最後のティック) に飽和させられ、`throw` モードでは例外がスローされます。
 
 **構文**
 
@@ -6977,8 +6984,8 @@ SELECT
 導入バージョン: v25.5.0
 
 入力値を [Time](/ja/reference/data-types/time) 型に変換します。
-String、FixedString、DateTime、DateTime64、Time64、または深夜からの経過秒数を表す数値型からの変換をサポートします。
-型の範囲外の数値 (`-999:59:59` ～ `999:59:59`、すなわち `-3599999` ～ `3599999` 秒) は範囲の境界値に飽和され、有限でない浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
+String、FixedString、DateTime、DateTime64、Time64、または午前0時からの経過秒数を表す数値型からの変換をサポートします。
+型の範囲外の数値 (`-999:59:59` ～ `999:59:59`、すなわち `-3599999` ～ `3599999` 秒) の扱いは [`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定に従います。デフォルトの `ignore` モードおよび `saturate` モードでは範囲の境界値に飽和され、`throw` モードでは例外がスローされます。有限でない浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
 `Time64` 値は負の無限大方向に整数秒へ切り捨てられ、同じ範囲に飽和されます。
 
 <Note title="レガシー `toTime`">
@@ -7048,8 +7055,9 @@ SELECT toTime(toDateTime(52225, 'UTC'))
 導入バージョン: v25.6.0
 
 入力値を [Time64](/ja/reference/data-types/time64) 型に変換します。
-String、FixedString、DateTime64、または深夜からの経過秒数を表す数値型からの変換をサポートします。
+String、FixedString、DateTime64、または午前0時からの経過秒数を表す数値型からの変換をサポートします。
 時刻値に対して秒未満の精度を提供し、小数点以下の桁数は最大 `scale` 桁です。
+型の範囲 (`-999:59:59.999999999` から `999:59:59.999999999`) 外の数値の扱いは、[`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定に従います。デフォルトの `ignore` モードおよび `saturate` モードでは範囲の境界値に飽和 (クランプ) され、`throw` モードでは例外がスローされます。
 
 **構文**
 
@@ -7090,7 +7098,7 @@ SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 14:30:25.123456
 ```
 
-**Float (午前0時からの秒数) から Time64 への変換**
+**Float (午前0時からの経過秒数) から Time64 への変換**
 
 ```sql title=Query
 SET enable_time_time64_type = 1;

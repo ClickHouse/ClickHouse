@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# `EXPLAIN PLAN tree = 1`: the plan of a query distributed to stateless workers, drawn as boxes, one per step,
-# framed by query fragment. The queries are only explained, never executed.
+# `EXPLAIN PLAN tree = 1`: the plan of a query distributed to stateless workers, drawn as boxes, one per step except
+# `Expression`, framed by query fragment. The queries are only explained, never executed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,11 +16,15 @@ $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $DB"
 
 $CLICKHOUSE_CLIENT --multiquery <<EOF | sed "s/$DB/$PLACEHOLDER/g"
-CREATE TABLE $DB.small(sid UInt64, s Array(Int64)) ENGINE = MergeTree ORDER BY sid;
-CREATE TABLE $DB.big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid;
+-- A read box shows its parts and granules: pin the granularity and the part format, which the test harness randomizes
+-- (the format of a part changes its number of granules), and merge the inserted blocks into one part.
+CREATE TABLE $DB.small(sid UInt64, s Array(Int64)) ENGINE = MergeTree ORDER BY sid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+CREATE TABLE $DB.big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 
 INSERT INTO $DB.small SELECT number, [number] FROM numbers(0, 1000);
+OPTIMIZE TABLE $DB.small FINAL;
 INSERT INTO $DB.big SELECT number, [number] FROM numbers(0, 100000);
+OPTIMIZE TABLE $DB.big FINAL;
 
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global \`max_rows_to_group_by\`, so pin it to 0.
@@ -29,6 +33,8 @@ SET max_rows_to_group_by = 0;
 SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0;
 -- The test harness randomizes these, and they change the join order and so the plan.
 SET join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
+-- Without join reordering the join boxes show no row estimates.
+SET query_plan_optimize_join_order_limit = 10;
 -- In ClickHouse Cloud a scan on shared storage is replaced by \`ReadFromMergeTreeAtWorker\`, which prints no table name.
 SET distributed_plan_prefer_replicas_over_workers = 1;
 
@@ -94,8 +100,9 @@ GROUP BY k;
 
 -- Wide characters take two columns: the boxes and the labels must fit them, and the cut at 40 columns must not split one.
 SELECT '-- wide characters';
-CREATE TABLE $DB.\`大表名字测试数据\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\`;
+CREATE TABLE $DB.\`大表名字测试数据\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\` SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO $DB.\`大表名字测试数据\` SELECT number FROM numbers(0, 100000);
+OPTIMIZE TABLE $DB.\`大表名字测试数据\` FINAL;
 EXPLAIN tree = 1
 SELECT \`键\` % 10 AS k, sum(\`键\`)
 FROM $DB.\`大表名字测试数据\`
@@ -104,7 +111,7 @@ GROUP BY k;
 -- A text without spaces is split between characters, and a wide character that does not fit at the end of a line moves
 -- to the next one: the read box below wraps \`(db_XXXXXXXX.\` and 20 characters of two columns each at 40 columns.
 SELECT '-- long text without spaces';
-CREATE TABLE $DB.\`一二三四五六七八九十一二三四五六七八九十\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\`;
+CREATE TABLE $DB.\`一二三四五六七八九十一二三四五六七八九十\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\` SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO $DB.\`一二三四五六七八九十一二三四五六七八九十\` SELECT number FROM numbers(0, 1000);
 EXPLAIN tree = 1
 SELECT \`键\` % 10 AS k, sum(\`键\`)

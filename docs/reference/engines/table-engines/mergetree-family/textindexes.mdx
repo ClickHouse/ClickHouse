@@ -912,6 +912,16 @@ SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 ```
 
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+A condition on one element of the indexed array uses the index in the same way as `has` and `hasAny`: `arrayJoin(tags) = 'clickhouse'` uses it like `has(tags, 'clickhouse')`, and `arrayJoin(tags) IN (set)` uses it like `hasAny(tags, set)`. This is also true for `GLOBAL IN`, for `IN` with `transform_null_in = 1` when the set has no `NULL`, and for the `ARRAY JOIN` clause. The index only skips granules, and ClickHouse still checks the condition on each element. `LEFT ARRAY JOIN` does not use the index.
+
+Example:
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
+```
+
 #### `mapContains` {#functions-example-mapcontains}
 
 Function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.

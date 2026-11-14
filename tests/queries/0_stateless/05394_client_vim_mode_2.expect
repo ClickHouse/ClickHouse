@@ -1,0 +1,287 @@
+#!/usr/bin/expect -f
+
+# Editing with the `--vim` keymap of the client. Every query is edited so that its result differs
+# from any text displayed while typing it, so that matching the result checks the edit.
+# Escape is followed by a pause much longer than the escape delay of the vim mode (10 ms), so that it
+# is not read as Meta. The pause is short, and the cases are split between `05394_client_vim_mode_{1,2,3,4,5}.expect`,
+# so that each test fits into the time limit of the fast test (60 seconds), also on macOS.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc escape {} {
+    send -- "\033"
+    sleep 0.1
+}
+
+# Ctrl-J submits the query: Enter inserts a new line in the vim mode.
+proc submit {} {
+    send -- "\n"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --vim"
+expect ":) "
+
+# From the start of a line to the start of a previous one, `db` is linewise.
+send -- "SELECT 3300\rgarbage\r+ 6"
+escape
+send -- "0db"
+submit
+expect "3306"
+expect ":) "
+
+# `G` moves to the first non-blank of the last line.
+send -- "SELECT 3400\r  + 23"
+escape
+send -- "ggGi+ 1 -- "
+submit
+expect "3401"
+expect ":) "
+
+# `%` uses the first bracket after the cursor on the line.
+send -- "SELECT 3500 + plus(20, 30)"
+escape
+send -- "0fpc%7"
+submit
+expect "3507"
+expect ":) "
+
+# `~` takes a count and moves the cursor forward.
+send -- "SELECT 'abcd'"
+escape
+send -- "0fa3~"
+submit
+expect "ABCd"
+expect ":) "
+
+send -- "SELECT 'wxyz'"
+escape
+send -- "0fw~~"
+submit
+expect "WXyz"
+expect ":) "
+
+# `2S` changes two lines, like `2cc`.
+send -- "garbage\r+ 23\r+ 45"
+escape
+send -- "gg2SSELECT 3600"
+submit
+expect "3645"
+expect ":) "
+
+# `%` and the bracket text objects ignore brackets inside quotes.
+send -- "SELECT (length(')') + 20) + 3700"
+escape
+send -- "0f(c%5"
+submit
+expect "3705"
+expect ":) "
+
+send -- "SELECT length(')') + 3800"
+escape
+send -- "0f(ci('abc'"
+submit
+expect "3803"
+expect ":) "
+
+# Counted word objects continue across lines.
+send -- "SELECT 3900 - 200\r- 30"
+escape
+send -- "gg0f2d2aw"
+submit
+expect "3870"
+expect ":) "
+
+send -- "SELECT 4000 - 200\r- 30"
+escape
+send -- "gg0f2d3iw"
+submit
+expect "3970"
+expect ":) "
+
+# An empty line is a word for `w`.
+send -- "SELECT 4100\r\r+ 234"
+escape
+send -- "ggwwxi+ 1 -- "
+escape
+submit
+expect "4335"
+expect ":) "
+
+# A line number past the end moves to the first non-blank of the last line.
+send -- "SELECT 4200\r+ 234"
+escape
+send -- "gg99Gi+1 -- "
+escape
+submit
+expect "4201"
+expect ":) "
+
+send -- "SELECT 4300\r+ 345"
+escape
+send -- "gg99ggi+2 -- "
+escape
+submit
+expect "4302"
+expect ":) "
+
+# `j` and `k` keep the column relative to the input text, which does not include the prompt.
+send -- "SELECT 4400\r+ 234"
+escape
+send -- "ggji+1 -- "
+escape
+submit
+expect "4401"
+expect ":) "
+
+send -- "SELECT 4500\r+ 234"
+escape
+send -- "gg7ljkx"
+submit
+expect "734"
+expect ":) "
+
+# `aw` on trailing whitespace takes the line break and the word on the next line.
+send -- "SELECT 4600  \r- 234"
+escape
+send -- "gg\$caw- "
+escape
+submit
+expect "4366"
+expect ":) "
+
+# `aw` on an empty line takes it and the following word.
+send -- "SELECT 4700 +\r\r- 234"
+escape
+send -- "ggjdaw"
+submit
+expect "4934"
+expect ":) "
+
+# Without a count, `aw` on a word takes the trailing whitespace only up to the end of the line.
+send -- "SELECT 1000 -- comment word  \r+ 30"
+escape
+send -- "gg0fwdaw"
+submit
+expect "1030"
+expect ":) "
+
+# `%` does not match comparison operators: it uses the next parenthesis.
+send -- "SELECT 1000 + if(1 > 0, (20 + 3), 40)"
+escape
+send -- "0f>c%, 7"
+escape
+submit
+expect "1007"
+expect ":) "
+
+# A key without a binding cancels the pending operator, so the following motion only moves.
+send -- "SELECT 1000 + 123"
+escape
+send -- "0f1dzwwx"
+submit
+expect "1023"
+expect ":) "
+
+# After `di` or `da`, a key that is not a text object cancels the command instead of running as a motion.
+send -- "SELECT 1000+123"
+escape
+send -- "0f1di\$lx"
+submit
+expect "223"
+expect ":) "
+
+send -- "SELECT 2000+123"
+escape
+send -- "dihx"
+submit
+expect "2012"
+expect ":) "
+
+# `cw` on an empty line keeps the line break.
+send -- "SELECT 1000\r\r+ 123"
+escape
+send -- "ggjcw-- comment"
+escape
+submit
+expect "1123"
+expect ":) "
+
+# An operator applies to the Backspace motion, which wraps to the previous line.
+send -- "SELECT 1000+123"
+escape
+send -- "d\x7f"
+submit
+expect "1013"
+expect ":) "
+
+send -- "SELECT 2000+123"
+escape
+# A separate `send`: old Tcl versions (e.g. on macOS) read all hex digits after `\x`.
+send -- "c\x7f"
+send -- "9"
+escape
+submit
+expect "2193"
+expect ":) "
+
+send -- "SELECT 3000\r456"
+escape
+send -- "0d\x7f"
+submit
+expect "3000456"
+expect ":) "
+
+# A command that is not a motion cancels the pending operator instead of editing the text.
+send -- "SELECT 1000+123"
+escape
+send -- "dxx"
+submit
+expect "1012"
+expect ":) "
+
+send -- "SELECT 2000+123"
+escape
+send -- "dr7"
+submit
+expect "2123"
+expect ":) "
+
+# Deleting the last character of a line followed by the empty last line keeps the cursor on that line.
+send -- "SELECT 1000\r+ 234\r"
+escape
+send -- "k\$xi+1 -- "
+escape
+submit
+expect "1003"
+expect ":) "
+
+# `x` that empties the last line keeps the cursor on that line.
+send -- "SELECT 1000\r+1"
+escape
+send -- "02xi+ 23"
+escape
+submit
+expect "1023"
+expect ":) "
+
+send -- "\4"
+expect eof
