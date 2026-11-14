@@ -2,7 +2,7 @@
 
 #if USE_SILK
 
-#include <IO/SilkFiberStreamSocketImpl.h>
+#include <Common/Silk/FiberStreamSocketImpl.h>
 
 #include <Common/Exception.h>
 
@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 
 #if USE_SSL
-#include <IO/SilkSecureFiberStreamSocketImpl.h>
+#include <Common/Silk/SecureFiberStreamSocketImpl.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>

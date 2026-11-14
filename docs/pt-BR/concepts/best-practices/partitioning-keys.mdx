@@ -7,8 +7,6 @@ keywords: ['chave de particionamento']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <Info>
   **Uma técnica de gerenciamento de dados**
 
@@ -34,7 +32,15 @@ PARTITION BY toStartOfMonth(date)
 
 Sempre que um conjunto de linhas é inserido na tabela, em vez de criar (pelo[ menos](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size)) uma única parte de dados contendo todas as linhas inseridas (como descrito [aqui](/pt-BR/concepts/core-concepts/parts)), o ClickHouse cria uma nova parte de dados para cada valor exclusivo de chave de partição entre as linhas inseridas:
 
-<Image img="/images/bestpractices/partitions.webp" size="lg" alt="Partições" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Partições](/images/bestpractices/partitions.webp)
+
+</Frame>
+
+</div>
 
 O servidor ClickHouse primeiro divide as linhas do insert de exemplo com 4 linhas, ilustrado no diagrama acima, pelo valor da chave de partição `toStartOfMonth(date)`. Em seguida, para cada partição identificada, as linhas são processadas como[ de costume](/pt-BR/concepts/core-concepts/parts), executando várias etapas sequenciais (① Ordenação, ② Divisão em colunas, ③ Compressão, ④ Gravação em disco).
 
@@ -42,7 +48,15 @@ Para uma explicação mais detalhada sobre particionamento, recomendamos [este g
 
 Com o particionamento habilitado, o ClickHouse apenas faz [mesclagens](/pt-BR/concepts/core-concepts/merges) de partes de dados dentro das partições, mas não entre partições. Ilustramos isso para a tabela de exemplo acima:
 
-<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="Partições" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Partições](/images/bestpractices/merges_with_partitions.webp)
+
+</Frame>
+
+</div>
 
 <div id="applications-of-partitioning">
   ## Aplicações do particionamento

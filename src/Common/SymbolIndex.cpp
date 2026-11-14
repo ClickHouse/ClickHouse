@@ -815,29 +815,82 @@ bool collectSymbolsFromELF(
 }
 
 
+struct CollectSymbolsContext
+{
+    SymbolIndex::Data & data;
+    std::exception_ptr exception;
+};
+
 /* Callback for dl_iterate_phdr.
  * Is called by dl_iterate_phdr for every loaded shared lib until something
  * else than 0 is returned by one call of this function.
  */
-int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_ptr)
+int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * context_ptr)
 {
-    SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
+    CollectSymbolsContext & context = *reinterpret_cast<CollectSymbolsContext *>(context_ptr);
+    SymbolIndex::Data & data = context.data;
 
     const size_t initial_symbol_count = data.symbols.size();
     const size_t initial_object_count = data.objects.size();
 
-    collectSymbolsFromProgramHeaders(info, data);
-    if (!collectSymbolsFromELF(info, data))
+    /// An exception must not unwind through the frames of `dl_iterate_phdr`: it is C code, and it holds
+    /// the loader lock while it calls us. Stop the iteration, and rethrow after `dl_iterate_phdr` returns.
+    try
     {
-        /// Offsets of different objects overlap, and only offsets inside the main executable are published.
-        if (data.objects.size() > initial_object_count)
-            data.objects.back().symbols.assign(data.symbols.begin() + initial_symbol_count, data.symbols.end());
-        data.symbols.resize(initial_symbol_count);
+        collectSymbolsFromProgramHeaders(info, data);
+        if (!collectSymbolsFromELF(info, data))
+        {
+            /// Offsets of different objects overlap, and only offsets inside the main executable are published.
+            if (data.objects.size() > initial_object_count)
+                data.objects.back().symbols.assign(data.symbols.begin() + initial_symbol_count, data.symbols.end());
+            data.symbols.resize(initial_symbol_count);
+        }
+    }
+    catch (...)
+    {
+        context.exception = std::current_exception();
+        return 1;
     }
 
     /* Continue iterations */
     return 0;
 }
+
+#if !defined(USE_MUSL)
+struct SelfBuildIDContext
+{
+    bool found = false;
+    String build_id;
+    std::exception_ptr exception;
+};
+
+/// Finds the build id of the main executable, the same way as `collectSymbolsFromELF` does for
+/// `SymbolIndex::Data::self_build_id`. As in `collectSymbols`, an exception must not unwind through the
+/// frames of `dl_iterate_phdr`: it is rethrown after the iteration, and so is the file read there if needed.
+int findSelfBuildID(DynamicLinkingProgramHeaderInfo * info, size_t, void * context_ptr)
+{
+    SelfBuildIDContext & context = *reinterpret_cast<SelfBuildIDContext *>(context_ptr);
+
+    /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison(info, sizeof(*info));
+    __msan_unpoison_string(info->name);
+
+    /// The main executable is the one with an empty name.
+    if (info->name && info->name[0])
+        return 0;
+
+    context.found = true;
+    try
+    {
+        context.build_id = getBuildIDFromProgramHeaders(info);
+    }
+    catch (...)
+    {
+        context.exception = std::current_exception();
+    }
+    return 1;
+}
+#endif
 
 #elif defined(OS_DARWIN)
 
@@ -1073,7 +1126,10 @@ const SymbolIndex::Object * find(const void * address, const std::vector<SymbolI
 void SymbolIndex::load()
 {
 #if defined(__ELF__)
-    dl_iterate_phdr(collectSymbols, &data);
+    CollectSymbolsContext context{data, {}};
+    dl_iterate_phdr(collectSymbols, &context);
+    if (context.exception)
+        std::rethrow_exception(context.exception);
 #elif defined(OS_DARWIN)
     uint32_t image_count = _dyld_image_count();
     for (uint32_t i = 0; i < image_count; ++i)
@@ -1342,19 +1398,55 @@ const SymbolIndex::Object * SymbolIndex::thisObject() const
     return findObject(reinterpret_cast<const void *>(+[]{}));
 }
 
-String SymbolIndex::getBuildIDHex() const
+namespace
+{
+
+String buildIDToHex(const String & build_id)
 {
     String build_id_hex;
-    build_id_hex.resize(data.self_build_id.size() * 2);
+    build_id_hex.resize(build_id.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : data.self_build_id)
+    for (auto c : build_id)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;
     }
 
     return build_id_hex;
+}
+
+}
+
+String SymbolIndex::getBuildIDHex() const
+{
+    return buildIDToHex(data.self_build_id);
+}
+
+String SymbolIndex::getSelfBuildIDHex()
+{
+    if (const SymbolIndex * index = instanceIfInitialized())
+        return index->getBuildIDHex();
+
+#if defined(__ELF__)
+    static const String build_id_hex = []
+    {
+#    if defined(USE_MUSL)
+        return buildIDToHex(Elf("/proc/self/exe").getBuildID());
+#    else
+        SelfBuildIDContext context;
+        dl_iterate_phdr(findSelfBuildID, &context);
+        if (context.exception)
+            std::rethrow_exception(context.exception);
+        if (context.found && context.build_id.empty())
+            context.build_id = Elf("/proc/self/exe").getBuildID();
+        return buildIDToHex(context.build_id);
+#    endif
+    }();
+    return build_id_hex;
+#else
+    return instance().getBuildIDHex();
+#endif
 }
 
 namespace
