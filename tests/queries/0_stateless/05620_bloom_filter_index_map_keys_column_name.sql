@@ -6,8 +6,6 @@ DROP TABLE IF EXISTS t_bf_fixed;
 DROP TABLE IF EXISTS t_bf_lc;
 DROP TABLE IF EXISTS t_bf_real;
 DROP TABLE IF EXISTS t_bf_order;
-DROP TABLE IF EXISTS t_bf_json;
-DROP TABLE IF EXISTS t_bf_json_shadow;
 
 CREATE TABLE t_bf_fixed
 (
@@ -124,48 +122,9 @@ SELECT count() FROM t_bf_order WHERE has(mapKeys(map(`'k'`, 'k')), 'x') SETTINGS
 SELECT count() FROM t_bf_order WHERE concat(`'k'`, 'k') = 'xk' SETTINGS force_data_skipping_indices = 'idx_concat';
 SELECT count() FROM t_bf_order WHERE has(arrayMap(x -> concat(x, `'k'`, 'k'), arr), 'axk') SETTINGS force_data_skipping_indices = 'idx_lambda';
 
--- The same for `JSON` subcolumns.
-CREATE TABLE t_bf_json
-(
-    j JSON,
-    `JSONAllPaths(j)` Array(String),
-    INDEX idx `JSONAllPaths(j)` TYPE bloom_filter
-)
-ENGINE = MergeTree ORDER BY tuple();
-
-INSERT INTO t_bf_json VALUES ('{"a":1}', ['x']);
-
-SELECT count() FROM t_bf_json WHERE j.a = 1;
-SELECT count() FROM t_bf_json WHERE j.a::Int64 = 1;
-SELECT count() FROM t_bf_json WHERE isNotNull(j.a);
-SELECT count() FROM t_bf_json WHERE has(`JSONAllPaths(j)`, 'x') SETTINGS force_data_skipping_indices = 'idx';
-
--- A column named like a `JSON` subcolumn is not that subcolumn.
-CREATE TABLE t_bf_json_shadow
-(
-    j JSON,
-    `j.a` Nullable(String),
-    `j.t` Tuple(c String),
-    `j.n` JSON,
-    INDEX idx JSONAllPaths(j) TYPE bloom_filter,
-    INDEX idx_n JSONAllPaths(`j.n`) TYPE bloom_filter
-)
-ENGINE = MergeTree ORDER BY tuple();
-
-INSERT INTO t_bf_json_shadow VALUES ('{"b":1,"n":{"c":1}}', 'v', tuple('v'), '{"d":1}');
-
-SELECT count() FROM t_bf_json_shadow WHERE `j.a` = 'v';
-SELECT count() FROM t_bf_json_shadow WHERE `j.a` IN ('v');
-SELECT count() FROM t_bf_json_shadow WHERE isNotNull(`j.a`) SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT count() FROM t_bf_json_shadow WHERE j.t.c = 'v';
-SELECT count() FROM t_bf_json_shadow WHERE j.n.c = 1;
-SELECT count() FROM t_bf_json_shadow WHERE j.b = 1 SETTINGS force_data_skipping_indices = 'idx';
-
 DROP TABLE t_bf_fixed;
 DROP TABLE t_bf_lc;
 DROP TABLE t_bf_real;
 DROP TABLE t_bf_array;
 DROP TABLE t_bf_lower;
 DROP TABLE t_bf_order;
-DROP TABLE t_bf_json;
-DROP TABLE t_bf_json_shadow;

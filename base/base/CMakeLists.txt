@@ -14,15 +14,14 @@ set (SRCS
     Decimal.cpp
     getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
-    getL2CacheSize.cpp
     getMemoryAmount.cpp
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp
+    IPv4andIPv6.cpp
     itoa.cpp
     JSON.cpp
     mremap.cpp
-    openpty.cpp
     phdr_cache.cpp
     preciseExp10.cpp
     shift10.cpp
@@ -44,21 +43,12 @@ else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
 
-if (WITH_COVERAGE_DEPTH)
-    target_compile_definitions(common PUBLIC WITH_COVERAGE_DEPTH=1)
-else ()
-    target_compile_definitions(common PUBLIC WITH_COVERAGE_DEPTH=0)
-endif ()
-
 if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(common PUBLIC ch_contrib::crc32_s390x)
 endif()
 
-if (TARGET ch_contrib::silk_fibers)
-    target_link_libraries(common PRIVATE ch_contrib::silk_fibers)
-    target_compile_definitions(common PRIVATE USE_SILK=1)
-else()
-    target_compile_definitions(common PRIVATE USE_SILK=0)
+if (TARGET ch_contrib::numactl)
+    target_link_libraries(common PUBLIC ch_contrib::numactl)
 endif()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")

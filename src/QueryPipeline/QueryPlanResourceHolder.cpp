@@ -4,14 +4,12 @@
 namespace DB
 {
 
-QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourceHolder & rhs)
+QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourceHolder & rhs) noexcept
 {
     table_locks.insert(table_locks.end(), rhs.table_locks.begin(), rhs.table_locks.end());
     storage_holders.insert(storage_holders.end(), rhs.storage_holders.begin(), rhs.storage_holders.end());
     interpreter_context.insert(interpreter_context.end(),
                                rhs.interpreter_context.begin(), rhs.interpreter_context.end());
-    distributed_plan_decision_contexts.insert(distributed_plan_decision_contexts.end(),
-                               rhs.distributed_plan_decision_contexts.begin(), rhs.distributed_plan_decision_contexts.end());
     query_id_holders.insert(query_id_holders.end(), rhs.query_id_holders.begin(), rhs.query_id_holders.end());
     insert_dependencies_holders.insert(insert_dependencies_holders.end(), rhs.insert_dependencies_holders.begin(), rhs.insert_dependencies_holders.end());
     custom_resources.insert(custom_resources.end(), rhs.custom_resources.begin(), rhs.custom_resources.end());
@@ -19,7 +17,7 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourc
     return *this;
 }
 
-QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs) noexcept
 {
     append(rhs);
     return *this;

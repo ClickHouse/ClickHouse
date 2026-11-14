@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
@@ -9,9 +8,9 @@ namespace DB
 class ASTRolesOrUsersSet;
 
 /** SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
-  * SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...] [ON CLUSTER cluster_name]
+  * SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
   */
-class ASTSetRoleQuery : public IAST, public ASTQueryWithOnCluster
+class ASTSetRoleQuery : public IAST
 {
 public:
     enum class Kind : uint8_t
@@ -29,13 +28,6 @@ public:
     ASTPtr clone() const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
-
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override
-    {
-        return removeOnCluster<ASTSetRoleQuery>(clone());
-    }
-
-    void replaceCurrentUserTag(const String & current_user_name) const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

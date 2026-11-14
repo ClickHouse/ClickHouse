@@ -2,22 +2,10 @@
 
 #include <Processors/Formats/Impl/ORC/Type.h>
 
-#include <optional>
-#include <string>
 #include <string_view>
 
 namespace DB::ORC
 {
-
-/// String statistics longer than this are replaced by bounds, as in the reference implementation.
-static constexpr size_t MAX_STRING_STATISTICS_SIZE = 1024;
-
-/// A prefix of at most `MAX_STRING_STATISTICS_SIZE` bytes that does not split a UTF-8 character. Not greater than `value`.
-std::string_view truncateStringLowerBound(std::string_view value);
-
-/// A string of about `MAX_STRING_STATISTICS_SIZE` bytes greater than `value` and every string with the same prefix:
-/// the last character of the truncated prefix is incremented. `std::nullopt` if there is no such string.
-std::optional<std::string> truncateStringUpperBound(std::string_view value);
 
 /// Accumulates the statistics of a column for a row group, a stripe or the whole file,
 /// in the same way as the reference implementation.
@@ -60,14 +48,8 @@ private:
     double double_maximum = 0;
     double double_sum = 0;
 
-    void setStringMinimum(std::string_view value);
-    void setStringMaximum(std::string_view value);
-
-    /// Long values are kept as a truncated lower bound and upper bound (or the exact maximum if it has no upper bound).
     std::string string_minimum;
     std::string string_maximum;
-    bool string_minimum_is_bound = false;
-    bool string_maximum_is_bound = false;
     UInt64 total_length = 0;
 
     UInt64 true_count = 0;

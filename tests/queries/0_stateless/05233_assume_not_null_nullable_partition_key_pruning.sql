@@ -5,11 +5,9 @@
 
 -- Randomized to 0 or 1, and the value changes the plan the EXPLAIN blocks below print.
 SET parallel_replicas_local_plan = 1;
--- Statistics are a part-pruning source of their own; pinning both off keeps the Min-Max and
+-- Statistics are a part-pruning source of their own; pinning it off keeps the Min-Max and
 -- Partition steps the only pruners the EXPLAIN blocks below can attribute a Parts: count to.
 SET use_statistics = 0;
-SET use_statistics_for_part_pruning = 0;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_part;
 DROP TABLE IF EXISTS t_flat;
@@ -46,28 +44,27 @@ SELECT 'the partition step is the sole pruner here, and it now keeps the NULL pa
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1 SELECT c0 FROM t_part WHERE (c0 IS NULL) >= true
     SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0
-) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%';
+) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%MinMax%' OR explain LIKE '%Partition%';
 
 SELECT 'ifNull and coalesce reach the same chain once the rewrite that usually hides them is off';
-SELECT 'ifNull(c0, 0) = 0', (SELECT count() FROM t_flat WHERE ifNull(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE ifNull(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0);
-SELECT 'coalesce(c0, 0) = 0', (SELECT count() FROM t_flat WHERE coalesce(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE coalesce(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0);
+SELECT 'ifNull(c0, 0) = 0', (SELECT count() FROM t_flat WHERE ifNull(c0, 0) = 0), (SELECT count() FROM t_part WHERE ifNull(c0, 0) = 0);
+SELECT 'coalesce(c0, 0) = 0', (SELECT count() FROM t_flat WHERE coalesce(c0, 0) = 0), (SELECT count() FROM t_part WHERE coalesce(c0, 0) = 0);
 -- The rewrite applies only to a non-negated condition, so a negated one reaches the chain with the rewrite on.
-SELECT 'NOT (ifNull(c0, 0) >= 7)', (SELECT count() FROM t_flat WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS allow_key_condition_coalesce_rewrite = 1), (SELECT count() FROM t_part WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS allow_key_condition_coalesce_rewrite = 1);
+SELECT 'NOT (ifNull(c0, 0) >= 7)', (SELECT count() FROM t_flat WHERE NOT (ifNull(c0, 0) >= 7)), (SELECT count() FROM t_part WHERE NOT (ifNull(c0, 0) >= 7));
 
 -- An inner link can also produce a real NULL: `nullIf` maps the exact point 5 to one, and the chain
 -- leaves it untransformed just like an infinity bound. Such a bound compares as both inside and
 -- outside every range, so the negated atom is the form that can wrongly prune it; keep it negated.
-SELECT 'NOT (coalesce(nullIf(c0, 5), 0) = 1)', (SELECT count() FROM t_flat WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1) SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1) SETTINGS allow_key_condition_coalesce_rewrite = 0);
+SELECT 'NOT (coalesce(nullIf(c0, 5), 0) = 1)', (SELECT count() FROM t_flat WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1)), (SELECT count() FROM t_part WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1));
 -- Partition 1 is still pruned, so such a bound costs its own partition and no other.
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1 SELECT c0 FROM t_part WHERE NOT (coalesce(nullIf(c0, 5), 0) = 1)
-    SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0, use_skip_indexes = 0,
-             allow_key_condition_coalesce_rewrite = 0
-) WHERE explain LIKE '%Parts%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%';
+    SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0, use_skip_indexes = 0
+) WHERE explain LIKE '%Parts%' OR explain LIKE '%MinMax%' OR explain LIKE '%Partition%';
 
 DROP TABLE IF EXISTS t_rev;
 CREATE TABLE t_rev (c0 Nullable(Int)) ENGINE = MergeTree PARTITION BY (c0) ORDER BY (c0 DESC)
-SETTINGS allow_nullable_key = 1;
+SETTINGS allow_nullable_key = 1, allow_experimental_reverse_key = 1;
 INSERT INTO t_rev VALUES (NULL), (0), (1), (5), (NULL);
 SELECT 'reverse key', (SELECT count() FROM t_flat WHERE assumeNotNull(c0) = 0), (SELECT count() FROM t_rev WHERE assumeNotNull(c0) = 0);
 
@@ -94,7 +91,7 @@ SELECT 'isZeroOrNull(c0) >= true', count() FROM t_nonull WHERE isZeroOrNull(c0) 
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1 SELECT c0 FROM t_nonull WHERE isZeroOrNull(c0) >= true
     SETTINGS optimize_use_implicit_projections = 0, optimize_use_projections = 0
-) WHERE explain LIKE '%Parts%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%';
+) WHERE explain LIKE '%Parts%' OR explain LIKE '%MinMax%' OR explain LIKE '%Partition%';
 
 SELECT 'control: the primary-key path already rejected the chain and is unchanged';
 DROP TABLE IF EXISTS t_pk;

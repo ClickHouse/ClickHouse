@@ -20,13 +20,6 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArrayFillImpl
 {
-    /// Declarative signature — fills positions where the lambda returns
-    /// false with the previous (or next, for the reverse variant) element;
-    /// element type of the source array is preserved. Lambda return type
-    /// follows the boolean-predicate convention used by `arrayFilter`.
-    static constexpr auto signature =
-        "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Array(T)";
-
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -110,14 +103,6 @@ struct ArrayFillImpl
 
             for (auto in_offset : in_offsets)
             {
-                /// Skip empty sub-arrays: there is nothing to fill, and computing
-                /// `array_end = in_offset - 1` would underflow to SIZE_MAX,
-                /// which can cause out-of-bounds reads in `insertManyFrom` for
-                /// column types that eagerly access the source offsets/chars
-                /// (e.g. `ColumnString`). See issue #12263 for the original report.
-                if (in_offset == array_begin)
-                    continue;
-
                 array_end = in_offset - 1;
 
                 if constexpr (reverse)
@@ -158,8 +143,8 @@ regardless of any condition.
         {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array", {"Array(T)"}};    FunctionDocumentation::Examples examples = {
-        {"Example with single array", "SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1,1,2,2]"},
-        {"Example with two arrays", "SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res", "[5,5,6,6]"}
+        {"Example with single array", "SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1, 1, 2, 2]"},
+        {"Example with two arrays", "SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res", "[5, 5, 6, 6]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
@@ -183,8 +168,8 @@ regardless of any condition.
     };
     FunctionDocumentation::ReturnedValue returned_value_reverse = {"Returns an array with elements of the source array replaced by the results of the lambda.", {"Array(T)"}};
     FunctionDocumentation::Examples examples_reverse = {
-        {"Example with a single array", "SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1,2,2,NULL]"},
-        {"Example with two arrays", "SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res;", "[5,6,6,2]"}
+        {"Example with a single array", "SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res", "[1, 2, 2, NULL]"},
+        {"Example with two arrays", "SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2, 8, 5]) AS res;", "[5, 6, 6, 2]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_reverse = {20, 1};
     FunctionDocumentation::Category category_reverse = FunctionDocumentation::Category::Array;

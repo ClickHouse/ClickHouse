@@ -1,11 +1,9 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <base/unit.h>
-
-#include <limits>
 
 
 namespace DB
@@ -19,7 +17,6 @@ class SettingsChanges;
 /// List of available types supported in DataLakeStorageSettingsSettings object
 #define STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
-    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -29,10 +26,8 @@ class SettingsChanges;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
-    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
-    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
@@ -40,9 +35,7 @@ class SettingsChanges;
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
     M(CLASS_NAME, SchemaInferenceMode) \
-    M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, NonZeroUInt64) \
@@ -71,113 +64,6 @@ Get latest metadata path from version-hint.text file.
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
-    DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
-The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns are mapped to. The stored values are instants and do not depend on this setting, it only changes how they are displayed and how `DateTime64` literals without an explicit time zone are interpreted in queries.
-)", 0) \
-    DECLARE(Bool, paimon_incremental_read, false, R"(
-Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
-in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
-)", 0) \
-    DECLARE(Bool, paimon_incremental_read_append_overwrite, false, R"(
-Like Paimon's `streaming-read-append-overwrite` table option: the incremental read also delivers the data files that
-`OVERWRITE` snapshots add, for example the rows of `INSERT OVERWRITE` and the new versions of rows changed by `UPDATE`.
-For a copy-on-write `DELETE`, `UPDATE` or `MERGE INTO` they include the unchanged rows of every rewritten data file,
-so rows that an earlier read delivered are delivered again. A data file that a later snapshot read by the same query
-removes is not delivered, but `COMPACT` snapshots are not read: when one query reads an `APPEND` snapshot, a `COMPACT`
-that merges the file it added and an `OVERWRITE` that rewrites the merged file, it returns the rows of both the
-original and the rewritten file, so the unchanged rows appear twice and the changed ones in their old and new versions.
-)", 0) \
-    DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
-Background metadata refresh interval for Paimon tables (seconds).
-0 disables background refresh. When >0, a background task periodically calls
-metadata update to pull latest snapshot/schema. Queries still trigger update
-as usual. Use cautiously on many tables to avoid excessive object storage/Keeper I/O.
-Default: 30
-)", 0) \
-    DECLARE(String, paimon_keeper_path, "", R"(
-Keeper path for Paimon incremental read state. Must be unique per table.
-If empty, incremental read is not allowed.
-)", 0) \
-    DECLARE(String, paimon_replica_name, "", R"(
-Replica name for Paimon incremental read state. Must be set and unique per replica.
-)", 0) \
-    DECLARE(String, iceberg_compaction_keeper_path, "", R"(
-No longer used. Background Iceberg compaction is serialized across replicas by a lock in object
-storage, see `iceberg_compaction_lock_lease_seconds`, and no longer needs a Keeper path. Setting
-this to a non-empty value is an error, so that a table is never silently left without the
-cross-replica locking its definition asks for.
-)", 0) \
-    DECLARE(UInt64, iceberg_compaction_lock_lease_seconds, 60, R"(
-Lease period, in seconds, of the lock that serializes background Iceberg compaction across
-replicas, so that several replicas do not repeat the same merge. The lock is an exclusive lease
-`coordination/<table_uuid>/leases/compaction/<server_uuid>-<table>` under the table root and requires no Keeper.
-A replica writes its lease and then lists the leases of the other replicas, giving its own up if any
-of them is live. The replica holding it rewrites its lease while it needs it; a lease that has not
-been rewritten for a whole lease period is ignored by the other replicas.
-Set to 0 to run compaction without the lock, relying solely on the optimistic commit CAS.
-)", 0) \
-    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
-Per-table counterpart of the query-level setting of the same name: allows background compaction and `OPTIMIZE` for this Iceberg table.
-Unlike the query-level setting, this one is stored in the table definition, so it survives a server restart.
-When it is not set explicitly in the table definition, the query-level setting of the context that initializes the table metadata is used instead.
-)", 0) \
-    ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
-Per-table counterpart of the query-level setting of the same name: allows removing old data files after they were merged by compaction,
-together with the snapshots that referenced them.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-The previous name `allow_experimental_cleanup_old_data_files_compaction` is kept as an alias, so the table definitions that use it still load.
-)", 0, allow_experimental_cleanup_old_data_files_compaction) \
-    DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
-Per-table counterpart of the query-level setting of the same name: minimum delay between two background compaction operations.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
-Per-table counterpart of the query-level setting of the same name: the time after which data files replaced by compaction are deleted.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(Bool, iceberg_read_with_snapshot_lease, true, R"(
-Lets a query reading this table lease the snapshot it reads, so that the cleanup after a compaction on any replica does not remove
-the data files of that snapshot while the query still reads them. A lease is an object under `coordination/` in the table
-directory, one per snapshot and replica, shared by all the queries of the replica reading that snapshot and renewed while they run.
-Only takes effect when compaction or the cleanup of old data files is enabled for the table.
-)", 0) \
-    DECLARE(NonZeroUInt64, iceberg_snapshot_lease_seconds, 300, R"(
-Lease period, in seconds, of the lease a replica takes on an Iceberg snapshot its queries read. The replica renews the lease every
-third of this period while the snapshot is read, and a lease that has not been renewed for a whole period is ignored by the
-cleanup after a compaction, so this bounds how long a replica that stopped reading or died delays the cleanup.
-)", 0) \
-    DECLARE(UInt64, iceberg_outdated_snapshot_lifetime_seconds, 15 * 60, R"(
-Time, in seconds, after a compaction during which the cleanup after it does not remove the data files of the snapshots the
-compaction superseded, similar to `old_parts_lifetime` of `MergeTree`. A query reading the current snapshot of the table, that is
-without `iceberg_snapshot_id`, `iceberg_timestamp_ms` or `iceberg_metadata_file_path`, writes its lease only once it has run for
-two thirds of this time, so the queries shorter than that put no lease objects to the object storage. Time travel queries write their
-lease before they start reading. Set to 0 to make every query write its lease before it starts reading.
-)", 0) \
-    DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
-Per-table counterpart of the query-level setting of the same name: number of merged data files accumulated before compaction
-publishes them in a new snapshot.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Per-table counterpart of the query-level setting of the same name: max rows of a data file produced by compaction.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
-Per-table counterpart of the query-level setting of the same name: max bytes of a data file produced by compaction.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
-Per-table counterpart of the query-level setting of the same name: max number of data files considered by a single compaction operation.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
-Per-table counterpart of the query-level setting of the same name: data files smaller than this are selected for compaction.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
-Per-table counterpart of the query-level setting of the same name: data files larger than this are selected for compaction.
-Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-)", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
@@ -185,8 +71,8 @@ Stored in the table definition, so it survives a server restart. Falls back to t
     DECLARE(Bool, storage_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \
     DECLARE(String, storage_warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, storage_auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
-    DECLARE(String, storage_aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
-    DECLARE(String, storage_aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0)           \
+    DECLARE(String, storage_aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
+    DECLARE(String, storage_aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
     DECLARE(String, storage_aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, storage_aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
@@ -217,11 +103,7 @@ struct DataLakeStorageSettings
 
     Field get(const std::string & name);
 
-    bool isChanged(std::string_view name) const;
-
     static bool hasBuiltin(std::string_view name);
-    /// Returns the canonical name of a setting given under one of its aliases.
-    static std::string_view resolveName(std::string_view name);
 
     void serialize(WriteBuffer & out) const;
     static DataLakeStorageSettings deserialize(ReadBuffer & in);
@@ -232,7 +114,6 @@ private:
 
 using DataLakeStorageSettingsPtr = std::shared_ptr<DataLakeStorageSettings>;
 
-/// Expanding this list requires <Core/FormatFactorySettings.h>, not included here to keep this widely used header light.
 #define LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
     DATA_LAKE_STORAGE_RELATED_SETTINGS(M, ALIAS) \
     OBSOLETE_SETTINGS(M, ALIAS) \

@@ -95,9 +95,6 @@ public:
 
     Pipe read(const Names & columns, size_t max_block_size, size_t num_streams) const override;
 
-    /// `read` returns the tree nodes.
-    bool supportsReverseLookup() const override { return false; }
-
     ColumnPtr getColumn(
         const std::string & attribute_name,
         const DataTypePtr & attribute_type,
@@ -106,7 +103,7 @@ public:
         DefaultOrFilter default_or_filter) const override
     {
         bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-        chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+        assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
         if (is_short_circuit)
         {

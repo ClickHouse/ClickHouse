@@ -16,8 +16,6 @@ namespace ErrorCodes
 BrotliWriteBuffer::BrotliStateWrapper::BrotliStateWrapper()
 : state(BrotliEncoderCreateInstance(nullptr, nullptr, nullptr))
 {
-    if (!state)
-        throw Exception(ErrorCodes::BROTLI_WRITE_FAILED, "brotli encoder instance creation failed");
 }
 
 BrotliWriteBuffer::BrotliStateWrapper::~BrotliStateWrapper()

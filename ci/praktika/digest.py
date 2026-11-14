@@ -1,9 +1,7 @@
 import dataclasses
-import functools
 import hashlib
 import json
 import os
-import re
 from hashlib import md5
 from pathlib import Path
 from typing import List
@@ -65,8 +63,10 @@ class Digest:
             hash_md5 = hashlib.md5()
             for i, file_path in enumerate(included_files):
                 hash_md5 = self._calc_file_digest(file_path, hash_md5)
-            submodules_shas = Digest.get_submodule_shas(config)
-            if submodules_shas:
+            if config.with_git_submodules:
+                submodules_shas = Shell.get_output(
+                    "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
+                )
                 hash_md5.update(submodules_shas.encode())
             digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
 
@@ -84,8 +84,7 @@ class Digest:
         drop_fields = [
             "requires",
             "enable_commit_status",
-            "allow_failure",
-            "force_success",
+            "allow_merge_on_failure",
             "digest_config",
         ]
         filtered_job_dict = {
@@ -99,19 +98,6 @@ class Digest:
                     dataclasses.asdict(artifact_configs[a])
                 )
         filtered_job_dict["provides"] = job_provides_artifact_configs
-        # Docker memory limits (`--memory=`, `--memory-reservation=`, and the
-        # budgets derived from them) are computed from the physical memory of
-        # the host that evaluates the job configs. The digest is calculated in
-        # "Config Workflow", whose runner is not the job's one and has a slightly
-        # different amount of memory from run to run, so these values would give
-        # the job a new digest - and a cache miss - on every run, including a
-        # rerun of the same commit. The job applies the limits of its own runner
-        # anyway. Mask byte counts (10+ digits, 1 GB and more) so they do not
-        # affect the digest.
-        if filtered_job_dict.get("run_in_docker"):
-            filtered_job_dict["run_in_docker"] = re.sub(
-                r"=\d{10,}\b", "=<bytes>", filtered_job_dict["run_in_docker"]
-            )
 
         config_digest = hashlib.md5(
             json.dumps(filtered_job_dict, sort_keys=True).encode()
@@ -154,49 +140,6 @@ class Digest:
             _ = self._calc_file_digest(path, hash_md5=hash_md5)
 
         return hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
-
-    @staticmethod
-    def get_submodule_shas(digest_config=None):
-        """
-        Returns the SHAs of all submodules, one per line, or only of those affecting the job
-        with :param digest_config:
-        """
-        if digest_config is None:
-            return Shell.get_output(
-                "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
-            )
-        return "\n".join(
-            sha
-            for sha, path in Digest._get_submodules()
-            if digest_config.is_affected_by_submodule(path)
-        )
-
-    @staticmethod
-    def get_submodule_shas_for_jobs(jobs):
-        """
-        Returns the SHAs of the submodules affecting at least one of :param jobs:, one per line.
-        A job without a digest config is affected by all submodules.
-        """
-        return "\n".join(
-            sha
-            for sha, path in Digest._get_submodules()
-            if any(
-                job.digest_config is None
-                or job.digest_config.is_affected_by_submodule(path)
-                for job in jobs
-            )
-        )
-
-    @staticmethod
-    @functools.cache
-    def _get_submodules():
-        """Returns the list of (sha, path) of all submodules"""
-        return [
-            tuple(line.split(" ", 1))
-            for line in Shell.get_output(
-                "git submodule | awk '{print $1, $2}' | sed 's/^[+-]//'", verbose=True
-            ).splitlines()
-        ]
 
     @staticmethod
     def _calc_file_digest(file_path, hash_md5):

@@ -1,9 +1,8 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
 #include <chrono>
-#include <limits>
 
 #include <pcg_random.hpp>
 #include <filesystem>
@@ -12,8 +11,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <Common/ErrnoException.h>
-#include <Common/ProfileEvents.h>
-#include <Common/filesystemHelpers.h>
 
 #    include <base/MemorySanitizer.h>
 #    include <Dictionaries/DictionaryHelpers.h>
@@ -165,7 +162,7 @@ public:
     /// Returns true if key was written and false if there was not enough place to write key
     bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
     {
-        chassert(cache_key.size > 0);
+        assert(cache_key.size > 0);
 
         if (!enoughtPlaceToWriteKey(cache_key))
             return false;
@@ -194,7 +191,7 @@ public:
 
     bool writeKey(const SSDCacheComplexKey & cache_key, size_t & offset_in_block)
     {
-        chassert(cache_key.size > 0);
+        assert(cache_key.size > 0);
 
         if (!enoughtPlaceToWriteKey(cache_key))
             return false;
@@ -396,7 +393,7 @@ public:
         current_write_block.reset(buffer.m_data + (block_size * current_block_index));
 
         write_in_current_block = current_write_block.writeKey(key, block_offset);
-        chassert(write_in_current_block);
+        assert(write_in_current_block);
 
         index.block_index = current_block_index;
         index.offset_in_block = block_offset;
@@ -482,53 +479,14 @@ public:
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
-        /// Another storage with the same path may still be reading the old file, so it is replaced, not truncated.
-        /// rename(2) overwrites a symlink, not the file it points to, so the link is resolved first.
-        std::filesystem::path target_path = file_path;
-        for (size_t hops = 0; target_path.has_filename() && FS::isSymlinkNoThrow(target_path); ++hops)
-        {
-            if (hops == 40)
-                ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, file_path, ELOOP, "Cannot open file {}", file_path);
-            target_path = target_path.parent_path() / FS::readSymlink(target_path);
-        }
-        const std::string target_file_path = target_path.string();
-
-        /// rename(2) ignores the replaced file's permissions: a file the server cannot read and write must not be replaced.
-        if (::access(target_file_path.c_str(), R_OK | W_OK) != 0 && errno != ENOENT)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot open file {}", target_file_path);
-
-        const std::string new_file_path = (target_path.parent_path() / fmt::format("ssd_cache_{}.tmp", randomSeed())).string();
-
-        #if defined(OS_DARWIN)
-        /// macOS has no O_DIRECT; F_NOCACHE (set below) is the closest equivalent.
-        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL, 0666);
-        #else
-        file.fd = ::open(new_file_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_DIRECT, 0666);
-        #endif
+        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-            ErrnoException::throwFromPath(error_code, file_path, "Cannot create file {} to replace {}", new_file_path, target_file_path);
+            ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
         }
 
-        try
-        {
-            #if defined(OS_DARWIN)
-            if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
-                ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
-            #endif
-
-            allocateSizeForNextPartition();
-
-            if (::rename(new_file_path.c_str(), target_file_path.c_str()) != 0)
-                ErrnoException::throwFromPath(
-                    ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot rename {} to {}", new_file_path, target_file_path);
-        }
-        catch (...)
-        {
-            ::unlink(new_file_path.c_str());
-            throw;
-        }
+        allocateSizeForNextPartition();
     }
 
     void allocateSizeForNextPartition()
@@ -550,7 +508,7 @@ public:
         iocb write_request{};
         iocb * write_request_ptr{&write_request};
 
-        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
+        #if defined(OS_FREEBSD)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
         write_request.aio.aio_buf = reinterpret_cast<volatile void *>(const_cast<char *>(buffer));
@@ -570,7 +528,7 @@ public:
                 throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
         }
 
-        io_event event{};
+        io_event event;
 
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
         {
@@ -584,8 +542,7 @@ public:
         auto bytes_written = eventResult(event);
 
         ProfileEvents::increment(ProfileEvents::AIOWrite);
-        if (bytes_written > 0)
-            ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
+        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
@@ -624,7 +581,7 @@ public:
         iocb request{};
         iocb * request_ptr = &request;
 
-        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
+        #if defined(OS_FREEBSD)
         request.aio.aio_lio_opcode = LIO_READ;
         request.aio.aio_fildes = file.fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(read_buffer_memory.data()));
@@ -710,7 +667,7 @@ public:
 
             char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
-            #if defined(OS_FREEBSD) || defined(OS_DARWIN)
+            #if defined(OS_FREEBSD)
             request.aio.aio_lio_opcode = LIO_READ;
             request.aio.aio_fildes = file.fd;
             request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(buffer_place));
@@ -843,21 +800,7 @@ private:
 
     static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
-        #if defined(OS_DARWIN)
-            /// macOS has neither fallocate nor posix_fallocate. F_PREALLOCATE reserves blocks past EOF
-            /// but does not change the file size, so ftruncate sets the size afterwards. We must match
-            /// fallocate's contract of actually reserving space: if the reservation fails (e.g. ENOSPC)
-            /// we fail here rather than letting ftruncate grow a sparse file and pushing the failure
-            /// into a later write, after cache state (evicted index entries) has already changed.
-            fstore_t store{F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, static_cast<off_t>(len), 0};
-            if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
-            {
-                store.fst_flags = F_ALLOCATEALL;
-                if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
-                    return -1;
-            }
-            return ::ftruncate(fd, static_cast<off_t>(offset + len));
-        #elif defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
         #else
             return fallocate(fd, 0, offset, len);
@@ -868,7 +811,7 @@ private:
     {
         char * result = nullptr;
 
-        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
+        #if defined(OS_FREEBSD)
             result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
         #else
             result = reinterpret_cast<char *>(request.aio_buf);
@@ -879,7 +822,7 @@ private:
 
     static ssize_t eventResult(io_event & event)
     {
-        ssize_t  bytes_written = 0;
+        ssize_t  bytes_written;
 
         #if defined(OS_FREEBSD)
             bytes_written = aio_return(reinterpret_cast<struct aiocb *>(event.udata));
@@ -941,7 +884,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -957,7 +900,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
     }
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
@@ -994,7 +937,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for simple key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
     }
 
     PaddedPODArray<std::string_view> getCachedComplexKeys() const override
@@ -1047,10 +990,10 @@ private:
             default_value
         };
 
-        time_t deadline{};
+        time_t deadline;
         SSDCacheIndex index;
-        size_t in_memory_partition_index{};
-        CellState state{};
+        size_t in_memory_partition_index;
+        CellState state;
 
         bool isInMemory() const { return state == in_memory; }
         bool isOnDisk() const { return state == on_disk; }
@@ -1221,29 +1164,11 @@ private:
 
             auto key = keys[key_index];
 
-            /// Values are prefixed with a header of their serialized sizes,
-            /// so that on fetch the columns that were not requested can be skipped.
-            const size_t sizes_header_size = columns_to_serialize_size * sizeof(UInt32);
-            if (sizes_header_size)
-            {
-                temporary_values_pool.allocContinue(sizes_header_size, block_start);
-                allocated_size_for_columns += sizes_header_size;
-            }
-
             for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
             {
                 auto & column = columns[column_index];
                 temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_values_pool, block_start, nullptr);
                 allocated_size_for_columns += temporary_column_data[column_index].size();
-            }
-
-            char * sizes_header_start = const_cast<char *>(block_start);
-            for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
-            {
-                size_t serialized_size = temporary_column_data[column_index].size();
-                if (serialized_size > std::numeric_limits<UInt32>::max())
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Serialized column value size is too large for SSD cache");
-                unalignedStore<UInt32>(sizes_header_start + column_index * sizeof(UInt32), static_cast<UInt32>(serialized_size));
             }
 
             SSDCacheKeyType ssd_cache_key { key, allocated_size_for_columns, block_start };
@@ -1408,8 +1333,8 @@ private:
                         auto key_to_update = keys_to_update[i];
                         auto * it = index.find(key_to_update);
 
-                        /// Skip absent keys and keys whose live cell is not in this partition's buffer
-                        if (!it || it->getMapped().state != Cell::in_memory || it->getMapped().in_memory_partition_index != current_partition_index)
+                        /// If there are no key to update or key to update not in memory
+                        if (!it || it->getMapped().state != Cell::in_memory)
                             continue;
 
                         /// If there were duplicated keys in memory buffer partition
@@ -1429,7 +1354,7 @@ private:
                     memset(const_cast<char *>(current_memory_buffer_partition.getData()), 0, current_memory_buffer_partition.getSizeInBytes());
 
                     write_into_memory_buffer_result = current_memory_buffer_partition.writeKey(ssd_cache_key, cache_index);
-                    chassert(write_into_memory_buffer_result);
+                    assert(write_into_memory_buffer_result);
 
                     cell.state = Cell::in_memory;
                     cell.index = cache_index;

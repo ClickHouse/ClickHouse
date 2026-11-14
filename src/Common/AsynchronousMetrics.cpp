@@ -1,45 +1,30 @@
-#include <utility>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/UncompressedCache.h>
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
-#include <base/EnumReflection.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
-#include <Common/JemallocJITArena.h>
-#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/Silk/FiberScheduler.h>
-#include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
-#include <charconv>
-#include <cstdlib>
 #include <ranges>
 #include <string_view>
 
 #include "config.h"
-
-#if USE_EMBEDDED_COMPILER
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#endif
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -47,11 +32,6 @@
 
 #if defined(OS_LINUX)
 #    include <netinet/tcp.h>
-#endif
-
-#if defined(OS_DARWIN)
-#    include <sys/sysctl.h>
-#    include <mach/mach.h>
 #endif
 
 
@@ -132,13 +112,10 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
     return {};
 }
 
-std::optional<std::string> AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
-    out.reset();
-    auto path = getCgroupsV2PathContainingFile(filename);
-    if (path)
-        openFileIfExists((path.value() + "/" + filename).c_str(), out);
-    return out ? path : std::nullopt;
+    if (auto path = getCgroupsV2PathContainingFile(filename))
+        openFileIfExists((path.value() + filename).c_str(), out);
 };
 
 #endif
@@ -166,7 +143,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
-    cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -187,10 +164,7 @@ AsynchronousMetrics::AsynchronousMetrics(
             "Will use cgroup reader from '{}' (cgroups version: {})",
             cgroup_path,
             (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
-        if (version == ICgroupsReader::CgroupsVersion::V2)
-            openCgroupv2MemoryFiles(cgroup_path);
-        else
-            cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
     }
     catch (...)
     {
@@ -224,33 +198,6 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
-void AsynchronousMetrics::openCgroupv2MemoryFiles(const std::optional<std::string> & dir) TSA_REQUIRES(data_mutex)
-{
-    cgroupmem_limit_in_bytes.reset();
-    cgroupmem_reader.reset();
-    cgroupmem_dir.reset();
-    if (!dir)
-        return;
-
-    openFileIfExists((*dir + "/memory.max").c_str(), cgroupmem_limit_in_bytes);
-    try
-    {
-        cgroupmem_reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
-    }
-    catch (...)
-    {
-        if (cgroupmem_failed_dir != dir)
-            tryLogCurrentException(log, "cgroups are not available");
-        cgroupmem_failed_dir = dir;
-    }
-
-    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
-    {
-        cgroupmem_dir = dir;
-        cgroupmem_failed_dir.reset();
-    }
-}
-
 void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
@@ -462,185 +409,6 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
 namespace
 {
 
-/// The two parts of the pre-26.8 name of a key-value metric family, surrounding the key.
-struct LegacyMetricName
-{
-    String prefix;
-    String suffix;
-};
-
-/// The metric families that were turned into key-value metrics in version 26.8, and how their keys used to be
-/// mangled into the metric name before that. The table is historical and does not grow: a key-value metric
-/// family introduced later never had a legacy name.
-const std::unordered_map<std::string_view, LegacyMetricName> & getLegacyMetricNames()
-{
-    static const std::unordered_map<std::string_view, LegacyMetricName> result = []
-    {
-        std::unordered_map<std::string_view, LegacyMetricName> res;
-
-        /// The CPU core number was appended to the metric name: `OSUserTimeCPU3`.
-        constexpr std::string_view key_appended_metrics[]
-            = {"OSUserTimeCPU", "OSNiceTimeCPU", "OSSystemTimeCPU", "OSIdleTimeCPU", "OSIOWaitTimeCPU",
-               "OSIrqTimeCPU", "OSSoftIrqTimeCPU", "OSStealTimeCPU", "OSGuestTimeCPU", "OSGuestNiceTimeCPU"};
-
-        for (std::string_view metric : key_appended_metrics)
-            res.emplace(metric, LegacyMetricName{String(metric), ""});
-
-        /// The key was appended to the metric name after an underscore: `BlockReadBytes_sda`.
-        constexpr std::string_view underscore_and_key_appended_metrics[]
-            = {"CPUFrequencyMHz",
-               "BlockReadOps", "BlockWriteOps", "BlockDiscardOps",
-               "BlockReadMerges", "BlockWriteMerges", "BlockDiscardMerges",
-               "BlockReadBytes", "BlockWriteBytes", "BlockDiscardBytes",
-               "BlockReadTime", "BlockWriteTime", "BlockDiscardTime",
-               "BlockInFlightOps", "BlockActiveTime", "BlockQueueTime",
-               "BlockActiveTimePerOp", "BlockQueueTimePerOp",
-               "NetworkReceiveBytes", "NetworkReceivePackets", "NetworkReceiveErrors", "NetworkReceiveDrop",
-               "NetworkSendBytes", "NetworkSendPackets", "NetworkSendErrors", "NetworkSendDrop",
-               "DiskTotal", "DiskUsed", "DiskAvailable", "DiskUnreserved",
-               "DiskPutObjectThrottlerRPS", "DiskPutObjectThrottlerAvailable",
-               "DiskGetObjectThrottlerRPS", "DiskGetObjectThrottlerAvailable"};
-
-        for (std::string_view metric : underscore_and_key_appended_metrics)
-            res.emplace(metric, LegacyMetricName{String(metric) + "_", ""});
-
-        /// The memory controller number was in the middle of the name: `EDAC0_Correctable`.
-        res.emplace("EDACCorrectable", LegacyMetricName{"EDAC", "_Correctable"});
-        res.emplace("EDACUncorrectable", LegacyMetricName{"EDAC", "_Uncorrectable"});
-
-        /// The logging channel name was in the middle of the name: `AsyncLoggingTextLogQueueSize`.
-        res.emplace("AsyncLoggingQueueSize", LegacyMetricName{"AsyncLogging", "QueueSize"});
-
-        /// The disk name was a prefix of the name: `s3_diskDeadBlobsQueueEstimate`.
-        res.emplace("DeadBlobsQueueEstimate", LegacyMetricName{"", "DeadBlobsQueueEstimate"});
-        res.emplace("MissingBlobsQueueEstimate", LegacyMetricName{"", "MissingBlobsQueueEstimate"});
-
-        return res;
-    }();
-
-    return result;
-}
-
-}
-
-String getLegacyAsynchronousMetricName(const String & metric, const String & key)
-{
-    /// `Temperature` merged two families named differently: the thermal zones (`/sys/class/thermal`), whose
-    /// numeric keys were appended right after the name (`Temperature3`), and the hardware monitors
-    /// (`/sys/class/hwmon`), whose names were appended after an underscore (`Temperature_coretemp_Core_0`).
-    if (metric == "Temperature")
-    {
-        if (!key.empty() && std::all_of(key.begin(), key.end(), isNumericASCII))
-            return "Temperature" + key;
-        return "Temperature_" + key;
-    }
-
-    const auto & legacy_names = getLegacyMetricNames();
-    auto it = legacy_names.find(std::string_view{metric});
-    if (it == legacy_names.end())
-        return {};
-
-    return it->second.prefix + key + it->second.suffix;
-}
-
-void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode)
-{
-    if (mode == AsynchronousMetricsKeyValuesMode::KeyValues)
-        return;
-
-    AsynchronousMetricValues legacy_values;
-    std::vector<String> metrics_to_remove;
-
-    for (const auto & [name, value] : values)
-    {
-        if (!value.isMap())
-            continue;
-
-        bool has_legacy_name = false;
-
-        for (const auto & [key, key_value] : value.key_values)
-        {
-            String legacy_name = getLegacyAsynchronousMetricName(name, key);
-            if (legacy_name.empty())
-                continue;
-
-            has_legacy_name = true;
-
-            AsynchronousMetricValue legacy_value;
-            legacy_value.value = key_value;
-            legacy_value.documentation = value.documentation;
-            legacy_value.source = value.source;
-            legacy_values[std::move(legacy_name)] = legacy_value;
-        }
-
-        /// A family that has no legacy name (it appeared after the change) is published as it is,
-        /// because there is nothing else it could be published as.
-        if (has_legacy_name && mode == AsynchronousMetricsKeyValuesMode::LegacyNames)
-            metrics_to_remove.push_back(name);
-    }
-
-    for (const auto & name : metrics_to_remove)
-        values.erase(name);
-
-    /// A legacy name is the name that the very same measurement had before the change, so it never collides
-    /// with the name of another metric.
-    values.merge(legacy_values);
-}
-
-AsynchronousMetricKeyValues readCPUFrequenciesFromProcCPUInfo(ReadBuffer & in)
-{
-    // We need the following lines:
-    // processor : 4
-    // cpu MHz : 4052.941
-    // They contain tabs and are interspersed with other info.
-
-    std::optional<Int32> core_id = 0;
-    AsynchronousMetricKeyValues cpu_frequencies;
-    std::string s;
-    while (!in.eof())
-    {
-        // We don't have any backslash escape sequences in /proc/cpuinfo, so
-        // this function will read the line until EOL, which is exactly what
-        // we need.
-        readEscapedStringUntilEOL(s, in);
-        // It doesn't read the EOL itself, and the last line may have none.
-        checkChar('\n', in);
-
-        static constexpr std::string_view PROCESSOR = "processor";
-        if (s.starts_with(PROCESSOR))
-        {
-            /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
-            /// non s390x example: processor : 0
-            auto core_id_start = std::ssize(PROCESSOR);
-            while (core_id_start < std::ssize(s) && !isNumericASCII(s[core_id_start]))
-                ++core_id_start;
-
-            Int32 parsed = 0;
-            auto [_, ec] = std::from_chars(s.data() + core_id_start, s.data() + s.size(), parsed);
-            if (ec == std::errc())
-                core_id = parsed;
-            else
-                core_id.reset();
-        }
-        else if (s.starts_with("cpu MHz") && core_id)
-        {
-            if (auto colon = s.find(':'); colon != String::npos)
-            {
-                ReadBufferFromString value(std::string_view(s).substr(colon + 1));
-                skipWhitespaceIfAny(value);
-                Float64 mhz = 0;
-                if (tryReadText(mhz, value))
-                    cpu_frequencies[toString(*core_id)] = mhz;
-            }
-        }
-    }
-
-    return cpu_frequencies;
-}
-
-namespace
-{
-
 auto get_next_update_time(std::chrono::seconds update_period)
 {
     using namespace std::chrono;
@@ -709,21 +477,18 @@ uint64_t updateJemallocEpoch()
 }
 
 template <typename Value>
-std::optional<Value> saveJemallocMetricImpl(
+Value saveJemallocMetricImpl(
     AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
-    Value value{};
-    if (!Jemalloc::tryGetValue(jemalloc_full_name.c_str(), value))
-        return std::nullopt;
-
+    auto value = Jemalloc::getValue<Value>(jemalloc_full_name.c_str());
     values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
 
 template<typename Value>
-std::optional<Value> saveJemallocMetric(AsynchronousMetricValues & values,
+Value saveJemallocMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
@@ -732,7 +497,7 @@ std::optional<Value> saveJemallocMetric(AsynchronousMetricValues & values,
 }
 
 template<typename Value>
-std::optional<Value> saveAllArenasMetric(AsynchronousMetricValues & values,
+Value saveAllArenasMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
@@ -741,62 +506,13 @@ std::optional<Value> saveAllArenasMetric(AsynchronousMetricValues & values,
 }
 
 template<typename Value>
-std::optional<Value> saveJemallocProf(AsynchronousMetricValues & values,
+Value saveJemallocProf(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
         fmt::format("prof.{}", metric_name),
         fmt::format("jemalloc.prof.{}", metric_name));
 }
-
-}
-#endif
-
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-
-/// The host memory metrics are reported both from `/proc/meminfo` and from the Mach VM statistics,
-/// so their documentation is shared: `system.documentation` requires one description per metric name.
-#define OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION \
-    "The amount of free memory on the host system, in bytes." \
-    " This does not include the memory used by the OS page cache memory, in bytes." \
-    " The page cache memory is also available for usage by programs, so the value of this metric can be confusing." \
-    " See the `OSMemoryAvailable` metric instead." \
-    " For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable." \
-    " See also https://www.linuxatemyram.com/." \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-
-#define OS_MEMORY_AVAILABLE_DOCUMENTATION \
-    "The amount of memory available to be used by programs, in bytes. This is very similar to the `OSMemoryFreePlusCached` metric." \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-
-#define OS_MEMORY_CACHED_DOCUMENTATION \
-    "The amount of memory used by the OS page cache, in bytes. Typically, almost all available memory is used by the OS page cache - high values of this metric are normal and expected." \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-
-#define OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION \
-    "The amount of free memory plus OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`." \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-
-namespace
-{
-
-#define LOAD_AVERAGE_DOCUMENTATION \
-    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
-    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
-    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
-    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
-
-void saveLoadAverageMetrics(AsynchronousMetricValues & values, Float64 loadavg1, Float64 loadavg5, Float64 loadavg15)
-{
-    values["LoadAverage1"] = { loadavg1,
-        "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
-    values["LoadAverage5"] = { loadavg5,
-        "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
-    values["LoadAverage15"] = { loadavg15,
-        "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
-}
-
-#undef LOAD_AVERAGE_DOCUMENTATION
 
 }
 #endif
@@ -959,9 +675,9 @@ void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
 }
 
 void AsynchronousMetrics::applyCPUMetricsUpdate(
-    AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier)
+    AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
 {
-    new_values["OSUserTime"]
+    new_values["OSUserTime" + cpu_suffix]
         = {static_cast<double>(delta_values.user) * multiplier,
            "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the "
            "host machine, not just clickhouse-server."
@@ -969,19 +685,19 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "stalls, branch mispredictions, running another SMT core)."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSNiceTime"]
+    new_values["OSNiceTime" + cpu_suffix]
         = {static_cast<double>(delta_values.nice) * multiplier,
            "The ratio of time the CPU core was running userspace code with higher priority. This is a system-wide metric, it includes all "
            "the processes on the host machine, not just clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSSystemTime"]
+    new_values["OSSystemTime" + cpu_suffix]
         = {static_cast<double>(delta_values.system) * multiplier,
            "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSIdleTime"]
+    new_values["OSIdleTime" + cpu_suffix]
         = {static_cast<double>(delta_values.idle) * multiplier,
            "The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This "
            "is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
@@ -989,42 +705,42 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "stalls, branch mispredictions, running another SMT core)."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSIOWaitTime"]
+    new_values["OSIOWaitTime" + cpu_suffix]
         = {static_cast<double>(delta_values.iowait) * multiplier,
            "The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as "
            "the processes were waiting for IO. This is a system-wide metric, it includes all the processes on the host machine, not just "
            "clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSIrqTime"]
+    new_values["OSIrqTime" + cpu_suffix]
         = {static_cast<double>(delta_values.irq) * multiplier,
            "The ratio of time spent for running hardware interrupt requests on the CPU. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " A high number of this metric may indicate hardware misconfiguration or a very high network load."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSSoftIrqTime"]
+    new_values["OSSoftIrqTime" + cpu_suffix]
         = {static_cast<double>(delta_values.softirq) * multiplier,
            "The ratio of time spent for running software interrupt requests on the CPU. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " A high number of this metric may indicate inefficient software running on the system."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSStealTime"]
+    new_values["OSStealTime" + cpu_suffix]
         = {static_cast<double>(delta_values.steal) * multiplier,
            "The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is a system-wide "
            "metric, it includes all the processes on the host machine, not just clickhouse-server."
            " Not every virtualized environments present this metric, and most of them don't."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSGuestTime"]
+    new_values["OSGuestTime" + cpu_suffix]
         = {static_cast<double>(delta_values.guest) * multiplier,
            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man "
            "procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
            " This metric is irrelevant for ClickHouse, but still exists for completeness."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSGuestNiceTime"]
+    new_values["OSGuestNiceTime" + cpu_suffix]
         = {static_cast<double>(delta_values.guest_nice) * multiplier,
            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest "
            "was set to a higher priority (See `man procfs`). This is a system-wide metric, it includes all the processes on the host "
@@ -1032,59 +748,6 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            " This metric is irrelevant for ClickHouse, but still exists for completeness."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-}
-
-void AsynchronousMetrics::applyPerCPUMetricsUpdate(AsynchronousMetricValues & new_values, ProcStatPerCPUMaps && per_cpu_maps)
-{
-    if (per_cpu_maps.user.empty())
-        return;
-
-#define PER_CPU_EXPLANATION \
-    " The keys are the CPU core numbers, and the value for every core is in the interval [0..1]." \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-
-    new_values["OSUserTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.user),
-           "The ratio of time every CPU core was running userspace code, same as `OSUserTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSNiceTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.nice),
-           "The ratio of time every CPU core was running userspace code with higher priority, same as `OSNiceTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSSystemTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.system),
-           "The ratio of time every CPU core was running OS kernel (system) code, same as `OSSystemTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSIdleTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.idle),
-           "The ratio of time every CPU core was idle, same as `OSIdleTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSIOWaitTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.iowait),
-           "The ratio of time every CPU core was waiting for IO, same as `OSIOWaitTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSIrqTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.irq),
-           "The ratio of time spent for running hardware interrupt requests on every CPU core, same as `OSIrqTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSSoftIrqTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.softirq),
-           "The ratio of time spent for running software interrupt requests on every CPU core, same as `OSSoftIrqTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSStealTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.steal),
-           "The ratio of time every CPU core spent in other operating systems when running in a virtualized environment, same as `OSStealTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSGuestTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.guest),
-           "The ratio of time every CPU core spent running a virtual CPU for guest operating systems, same as `OSGuestTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-    new_values["OSGuestNiceTimeCPU"]
-        = {"cpu", std::move(per_cpu_maps.guest_nice),
-           "The ratio of time every CPU core spent running a virtual CPU for guest operating systems with higher priority, same as `OSGuestNiceTime` but not summed across the cores."
-           PER_CPU_EXPLANATION};
-
-#undef PER_CPU_EXPLANATION
 }
 
 void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
@@ -1209,7 +872,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
         };
 }
 
-static void readPressureFile(
+void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
     std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
 {
@@ -1240,7 +903,7 @@ static void readPressureFile(
         readStringUntilEquals(skip, in);
         ++in.position();
 
-        uint64_t counter = 0;
+        uint64_t counter;
         readText(counter, in);
 
         String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
@@ -1251,7 +914,7 @@ static void readPressureFile(
 
                 uint64_t delta = counter - prev;
             new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement. "
+                "Microseconds of stall time since last measurement."
                 "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         }
 
@@ -1385,12 +1048,11 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
 void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
 {
     const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
-    const auto * io_wait_ptr = getAsynchronousMetricValue(new_values, "OSIOWaitTimeNormalized");
-    if (!idle_ptr || !io_wait_ptr)
+    if (!idle_ptr)
         return;
 
     /// ensure that the value is always in [0.0, 1.0]
-    const double busy_time = std::clamp(1.0 - idle_ptr->value - io_wait_ptr->value, 0.0, 1.0);
+    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
 
     const auto & cfg = context->getConfigRef();
     const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
@@ -1446,7 +1108,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if HAS_MEMORY_STATISTICS_OS
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1458,37 +1120,15 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // to guarantee fresh statistics. The update_jemalloc_epoch flag is false when MemoryWorker
     // owns epoch advancement on the periodic background path, but an explicit user request
     // should always return up-to-date values.
-    if (update_jemalloc_epoch || force_update)
-    {
-        const auto epoch = updateJemallocEpoch();
-        new_values["jemalloc.epoch"]
-            = {epoch,
-               "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
-               "`jemalloc` metrics."};
-    }
-    else
-    {
-        uint64_t epoch = 0;
-        if (Jemalloc::tryGetValue("epoch", epoch))
-        {
-            new_values["jemalloc.epoch"]
-                = {epoch,
-                   "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
-                   "`jemalloc` metrics."};
-        }
-    }
+    auto epoch = (update_jemalloc_epoch || force_update) ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
+    new_values["jemalloc.epoch"]
+        = {epoch,
+           "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
+           "`jemalloc` metrics."};
 
     // Collect the statistics themselves.
-    auto jemalloc_allocated = saveJemallocMetric<size_t>(new_values, "allocated");
-    auto jemalloc_active = saveJemallocMetric<size_t>(new_values, "active");
-    if (jemalloc_allocated && jemalloc_active)
-    {
-        size_t jemalloc_fragmentation = *jemalloc_allocated < *jemalloc_active ? *jemalloc_active - *jemalloc_allocated : 0;
-        new_values["jemalloc.fragmentation"] = {jemalloc_fragmentation,
-            "The difference between `jemalloc.active` and `jemalloc.allocated` — "
-            "represents internal fragmentation in the memory allocator (active pages that are not fully utilized by allocations)."};
-    }
-
+    saveJemallocMetric<size_t>(new_values, "allocated");
+    saveJemallocMetric<size_t>(new_values, "active");
     saveJemallocMetric<size_t>(new_values, "metadata");
     saveJemallocMetric<size_t>(new_values, "metadata_thp");
     saveJemallocMetric<size_t>(new_values, "resident");
@@ -1508,7 +1148,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetricImpl<size_t>(new_values, "arenas.dirty_decay_ms", "jemalloc.arenas.dirty_decay_ms");
 
     /// Per-arena metrics for the dedicated cache arena (mark cache, uncompressed cache).
-    if (JemallocCacheArena::isEnabled())
     {
         unsigned cache_arena = JemallocCacheArena::getArenaIndex();
         saveJemallocMetricImpl<size_t>(new_values,
@@ -1518,131 +1157,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             fmt::format("stats.arenas.{}.pdirty", cache_arena),
             "jemalloc.cache_arena.pdirty");
     }
-
-    /// jemalloc reports per-arena `pactive`/`pdirty` as a count of jemalloc pages. The
-    /// `*_bytes` variants below multiply by jemalloc's compiled-in page size (read once from
-    /// `arenas.page`), not the OS page size: the two differ on platforms where jemalloc is
-    /// built with `LG_PAGE=16` (64 KiB pages — aarch64, ppc64le, riscv64) but the kernel uses
-    /// 4 KiB pages. Using `getPageSize()` would under-report by 16× there.
-    static const Jemalloc::MibCache<size_t> jemalloc_page_size_mib{"arenas.page"};
-
-    /// Per-arena metrics for the dedicated JIT arena (LLVM bookkeeping: TargetMachine, IR modules,
-    /// optimization passes, RuntimeDyld relocation tables, etc.).
-    if (JemallocJITArena::isEnabled())
-    {
-        unsigned jit_arena = JemallocJITArena::getArenaIndex();
-        auto jit_pactive = saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pactive", jit_arena),
-            "jemalloc.jit_arena.pactive");
-        auto jit_pdirty = saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pdirty", jit_arena),
-            "jemalloc.jit_arena.pdirty");
-
-        if (jit_pactive && jit_pdirty)
-        {
-            const size_t page_size = jemalloc_page_size_mib.getValue();
-            new_values["jemalloc.jit_arena.active_bytes"] = { *jit_pactive * page_size,
-                "Active bytes in the dedicated jemalloc JIT arena. Includes both (a) LLVM heap state "
-                "(TargetMachine and its target-specific Subtarget, IR modules, optimization-pass analyses, "
-                "RuntimeDyld relocation tables) and (b) the page-aligned reserved blocks that "
-                "`JITModuleMemoryManager` allocates via `posix_memalign` for executable/data sections "
-                "(intercepted into `je_posix_memalign`, so it goes through jemalloc). "
-                "`CompiledExpressionCacheBytes` (CurrentMetric) is a *subset* of this — it tracks only the "
-                "reserved page-block capacity for executable/data sections, not the actual code/data bytes "
-                "in use within those blocks."};
-            new_values["jemalloc.jit_arena.dirty_bytes"] = { *jit_pdirty * page_size,
-                "Dirty bytes in the JIT arena that are eligible for purging back to the OS."};
-        }
-    }
-
-    /// Per-arena metrics for the dedicated MergeTree heap arena. Holds long-lived MergeTree state:
-    ///   - per-part metadata (allocations from `IMergeTreeDataPart::setColumns` /
-    ///     `setColumnsSubstreams` / `loadColumnsChecksumsIndexes` / `loadProjections` /
-    ///     `loadChecksums` and from `MergeTreeDataPartBuilder::build`),
-    ///   - per-table metadata (allocations from `MergeTreeData::setProperties`,
-    ///     `resetSerializationHints`, `updateSerializationHints`).
-    new_values["jemalloc.mergetree_arena.count"] = { JemallocMergeTreeArena::getArenaIndices().size(),
-        "Number of dedicated jemalloc arenas for long-lived MergeTree metadata, controlled by the "
-        "`jemalloc_merge_tree_arenas` server setting. 0 means the dedicated arena pool is disabled and "
-        "metadata is allocated in the default per-CPU arenas; 1 is a single shared arena; N > 1 is a "
-        "pool sharded by CPU. See `jemalloc.mergetree_arena.active_bytes`." };
-
-    if (JemallocMergeTreeArena::isEnabled())
-    {
-        /// Sum across every arena in the pool.
-        size_t mt_pactive = 0;
-        size_t mt_pdirty = 0;
-        bool read_ok = true;
-        for (unsigned arena : JemallocMergeTreeArena::getArenaIndices())
-        {
-            size_t pactive = 0;
-            size_t pdirty = 0;
-            if (!Jemalloc::tryGetValue(fmt::format("stats.arenas.{}.pactive", arena).c_str(), pactive)
-                || !Jemalloc::tryGetValue(fmt::format("stats.arenas.{}.pdirty", arena).c_str(), pdirty))
-            {
-                read_ok = false;
-                break;
-            }
-            mt_pactive += pactive;
-            mt_pdirty += pdirty;
-        }
-
-        /// Publish only complete sums: a partial prefix would look like a plausible pool total.
-        if (read_ok)
-        {
-            new_values["jemalloc.mergetree_arena.pactive"] = { mt_pactive,
-                "Active pages summed across the dedicated jemalloc MergeTree arena pool." };
-            new_values["jemalloc.mergetree_arena.pdirty"] = { mt_pdirty,
-                "Dirty pages summed across the dedicated jemalloc MergeTree arena pool." };
-
-            const size_t page_size = jemalloc_page_size_mib.getValue();
-            new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
-                "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
-                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived table state, for every engine "
-                "and not only MergeTree: the storage object and its metadata as built by `StorageFactory::get`, "
-                "and for MergeTree also per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
-                "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
-                "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
-                "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "
-                "(`NamesAndTypesList`, `column_name_to_position`, the `serializations` map and "
-                "`ColumnsSubstreams`, see `SharedPartColumns.h`) plus per-table metadata "
-                "(`StorageInMemoryMetadata` / `ColumnsDescription` / `VirtualColumnsDescription` clones "
-                "set up by `setProperties`, the `serialization_hints` aggregation, and the "
-                "`shared_part_columns_cache`). Active parts and outdated parts pending cleanup both "
-                "contribute. Disjoint from the cache arena and JIT arena. The per-part columns "
-                "`system.parts.primary_key_bytes_in_memory[_allocated]` and "
-                "`system.parts.index_granularity_bytes_in_memory[_allocated]` are subsets of this metric "
-                "(when their values are non-zero). The primary index is allocated here even when it is "
-                "owned by `PrimaryIndexCache` (deliberate: re-homing it at the cache boundary could fail "
-                "after a part is already committed), so `PrimaryIndexCacheBytes` overlaps with this metric."};
-            new_values["jemalloc.mergetree_arena.dirty_bytes"] = { mt_pdirty * page_size,
-                "Dirty bytes summed across the dedicated jemalloc MergeTree arena pool that are eligible "
-                "for purging back to the OS."};
-        }
-    }
-#endif
-
-#if USE_EMBEDDED_COMPILER
-    /// Compiled-expression cache: configured limits (the current usage is exposed via the
-    /// `CompiledExpressionCacheBytes` and `CompiledExpressionCacheCount` CurrentMetrics).
-    /// Note: `CompiledExpressionCacheBytes` is the page-block capacity reserved by
-    /// `JITModuleMemoryManager` for cached compiled functions. Those blocks are allocated via
-    /// `posix_memalign` (intercepted into `je_posix_memalign` in `Common/malloc.cpp`), so they
-    /// go through jemalloc and are accounted within the dedicated JIT arena — i.e. this metric
-    /// is a *subset* of `jemalloc.jit_arena.active_bytes` above, not a separate quantity.
-    if (auto * compiled_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-    {
-        new_values["CompiledExpressionCacheBytesMax"] = { compiled_cache->maxSizeInBytes(),
-            "Configured maximum bytes of the compiled-expression cache. "
-            "Available headroom = this minus `CompiledExpressionCacheBytes` (CurrentMetric)." };
-        new_values["CompiledExpressionCacheCountMax"] = { compiled_cache->maxCount(),
-            "Configured maximum entries of the compiled-expression cache. "
-            "Available headroom = this minus `CompiledExpressionCacheCount` (CurrentMetric)." };
-    }
 #endif
 
     /// Process process memory usage according to OS
-#if HAS_MEMORY_STATISTICS_OS
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1668,20 +1186,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD) && !defined(OS_SUNOS) && !defined(OS_DARWIN)
+#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
-#if !defined(OS_SUNOS) && !defined(OS_DARWIN)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
-#endif
 
         if (update_rss)
             MemoryTracker::updateRSS(data.resident);
@@ -1691,13 +1207,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         struct rusage rusage{};
         if (!getrusage(RUSAGE_SELF, &rusage))
         {
-#if defined(OS_DARWIN)
-            /// Unlike other platforms, on macOS `ru_maxrss` is in bytes, not in KiB.
-            UInt64 max_resident_bytes = rusage.ru_maxrss;
-#else
-            UInt64 max_resident_bytes = rusage.ru_maxrss * 1024 /* KiB -> bytes */;
-#endif
-            new_values["MemoryResidentMax"] = { max_resident_bytes,
+            new_values["MemoryResidentMax"] = { rusage.ru_maxrss * 1024 /* KiB -> bytes */,
                 "Maximum amount of physical memory used by the server process, in bytes." };
         }
         else
@@ -1708,7 +1218,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
-    new_values["UntrackedMemory"] = { DB::UntrackedMemoryRegistry::instance().sum(), "Sum of per-thread buffers of recent allocations and deallocations that have not yet been propagated to TrackedMemory."};
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -1733,7 +1242,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             assertChar('/', *loadavg);
             readText(threads_total, *loadavg);
 
-            saveLoadAverageMetrics(new_values, loadavg1, loadavg5, loadavg15);
+#define LOAD_AVERAGE_DOCUMENTATION \
+    " The load represents the number of threads across all the processes (the scheduling entities of the OS kernel)," \
+    " that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time." \
+    " This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores," \
+    " if the system is overloaded, and many processes are ready to run but waiting for CPU or IO."
+
+            new_values["LoadAverage1"] = { loadavg1,
+                "The whole system load, averaged with exponential smoothing over 1 minute." LOAD_AVERAGE_DOCUMENTATION };
+            new_values["LoadAverage5"] = { loadavg5,
+                "The whole system load, averaged with exponential smoothing over 5 minutes." LOAD_AVERAGE_DOCUMENTATION };
+            new_values["LoadAverage15"] = { loadavg15,
+                "The whole system load, averaged with exponential smoothing over 15 minutes." LOAD_AVERAGE_DOCUMENTATION };
             new_values["OSThreadsRunnable"] = { threads_runnable,
                 "The total number of 'runnable' threads, as the OS kernel scheduler seeing it." };
             new_values["OSThreadsTotal"] = { threads_total,
@@ -1770,19 +1290,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     Float64 max_cpu_cgroups = 0;
-    /// `cpu.max` exists only while the `cpu` controller is enabled in the parent cgroup, so the nearest one can
-    /// move at runtime, and a descriptor to a removed one fails with ENODEV.
-    try
-    {
-        if (getCgroupsV2PathContainingFile("cpu.max") != cgroupcpu_max_dir)
-            cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        cgroupcpu_max.reset();
-        cgroupcpu_max_dir.reset();
-    }
     if (cgroupcpu_max)
     {
         try
@@ -1815,8 +1322,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            cgroupcpu_max.reset();
-            cgroupcpu_max_dir.reset();
         }
     }
     else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
@@ -1921,7 +1426,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             ProcStatValuesOther current_other_values{};
             ProcStatValuesCPU delta_values_all_cpus{};
-            ProcStatPerCPUMaps per_cpu_maps;
 
             while (!proc_stat->eof())
             {
@@ -1953,25 +1457,16 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     {
                         ProcStatValuesCPU delta_values = current_values - prev_values;
 
+                        String cpu_suffix;
                         if (!cpu_num_str.empty())
                         {
+                            cpu_suffix = "CPU" + cpu_num_str;
                             ++num_cpus;
-                            per_cpu_maps.user[cpu_num_str] = static_cast<double>(delta_values.user) * multiplier;
-                            per_cpu_maps.nice[cpu_num_str] = static_cast<double>(delta_values.nice) * multiplier;
-                            per_cpu_maps.system[cpu_num_str] = static_cast<double>(delta_values.system) * multiplier;
-                            per_cpu_maps.idle[cpu_num_str] = static_cast<double>(delta_values.idle) * multiplier;
-                            per_cpu_maps.iowait[cpu_num_str] = static_cast<double>(delta_values.iowait) * multiplier;
-                            per_cpu_maps.irq[cpu_num_str] = static_cast<double>(delta_values.irq) * multiplier;
-                            per_cpu_maps.softirq[cpu_num_str] = static_cast<double>(delta_values.softirq) * multiplier;
-                            per_cpu_maps.steal[cpu_num_str] = static_cast<double>(delta_values.steal) * multiplier;
-                            per_cpu_maps.guest[cpu_num_str] = static_cast<double>(delta_values.guest) * multiplier;
-                            per_cpu_maps.guest_nice[cpu_num_str] = static_cast<double>(delta_values.guest_nice) * multiplier;
                         }
                         else
-                        {
                             delta_values_all_cpus = delta_values;
-                            applyCPUMetricsUpdate(new_values, delta_values, multiplier);
-                        }
+
+                        applyCPUMetricsUpdate(new_values, cpu_suffix, delta_values, multiplier);
                     }
 
                     prev_values = current_values;
@@ -2015,8 +1510,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             if (!first_run)
             {
-                applyPerCPUMetricsUpdate(new_values, std::move(per_cpu_maps));
-
                 ProcStatValuesOther delta_values = current_other_values - proc_stat_values_other;
 
                 new_values["OSInterrupts"] = { delta_values.interrupts, "The number of interrupts on the host machine. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
@@ -2041,18 +1534,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    /// The nearest `memory.max` and `memory.stat` move when the parent toggles the `memory` controller; removed ones give ENODEV.
-    try
-    {
-        if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
-            openCgroupv2MemoryFiles(dir);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        if (cgroupmem_dir)
-            openCgroupv2MemoryFiles({});
-    }
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
@@ -2061,51 +1542,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t limit = 0;
             tryReadText(limit, *cgroupmem_limit_in_bytes);
 
-            /// The best-effort combined read keeps the pre-existing metrics below published even
-            /// if the inactive-file fields of `memory.stat` cannot be parsed; in that case only
-            /// `CGroupMemoryInactiveFile` is skipped for this update cycle.
-            auto stats = cgroupmem_reader->readMemoryUsageAndOptionalInactiveFile();
+            uint64_t usage = cgroupmem_reader->readMemoryUsage();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { stats.usage, "The amount of memory used in cgroup, in bytes. "
-                "On cgroup v2 this is anon + sock + non-reclaimable kernel memory; on cgroup v1 this is RSS. "
-                "In both cases the kernel OS page cache (file-backed cache) is excluded." };
-
-            UInt64 userspace_page_cache_bytes = 0;
-            if (context && context->getPageCache())
-                userspace_page_cache_bytes = context->getPageCache()->sizeInBytes();
-
-            UInt64 cgroup_usage_without_page_cache = (stats.usage > userspace_page_cache_bytes)
-                                                   ? (stats.usage - userspace_page_cache_bytes)
-                                                   : 0;
-
-            new_values["CGroupMemoryUsedWithoutPageCache"] = {
-                cgroup_usage_without_page_cache,
-                "The amount of memory used in cgroup, in bytes, excluding the ClickHouse userspace page cache. "
-                "This is CGroupMemoryUsed minus the userspace page cache size. "
-                "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
-            };
-
-            /// The metric is published only when the kernel actually exposes the statistic
-            /// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1): an absent key
-            /// is not a zero, so it must not be reported as one.
-            if (stats.inactive_file)
-                new_values["CGroupMemoryInactiveFile"] = { *stats.inactive_file,
-                    "The amount of memory used for inactive, file-backed page cache in the same cgroup that CGroupMemoryUsed is read from, in bytes. "
-                    "This is reclaimable memory: the kernel can drop it under memory pressure. "
-                    "Kubernetes and cAdvisor compute the working set size (WSS) by subtracting this value from the raw cgroup memory usage "
-                    "(memory.current on cgroup v2, memory.usage_in_bytes on cgroup v1). "
-                    "Note that CGroupMemoryUsed is not that raw usage, because it already excludes the file-backed page cache. "
-                    "The value matches the one used by kubelet for the container on cgroup v2, and on cgroup v1 when the server runs in a container "
-                    "where the memory controller mount is the container's own cgroup. On cgroup v1 the value is read from the memory controller mount root, "
-                    "so on a host where the server runs in a nested v1 cgroup it covers the whole hierarchy under that root rather than the server's own cgroup. "
-                    "The metric is absent when the kernel does not expose the statistic in memory.stat." };
+            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes (excluding page cache)." };
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            if (cgroupmem_dir)
-                openCgroupv2MemoryFiles({});
         }
     }
     if (meminfo)
@@ -2156,11 +1600,19 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 else if (name == "MemFree:")
                 {
                     free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryFreeWithoutCached"] = { bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
+                    new_values["OSMemoryFreeWithoutCached"] = { bytes,
+                        "The amount of free memory on the host system, in bytes."
+                        " This does not include the memory used by the OS page cache memory, in bytes."
+                        " The page cache memory is also available for usage by programs, so the value of this metric can be confusing."
+                        " See the `OSMemoryAvailable` metric instead."
+                        " For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable."
+                        " See also https://www.linuxatemyram.com/."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "MemAvailable:")
                 {
-                    new_values["OSMemoryAvailable"] = { bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
+                    new_values["OSMemoryAvailable"] = { bytes, "The amount of memory available to be used by programs, in bytes. This is very similar to the `OSMemoryFreePlusCached` metric."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "Buffers:")
                 {
@@ -2170,7 +1622,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 else if (name == "Cached:")
                 {
                     free_plus_cached_bytes += bytes;
-                    new_values["OSMemoryCached"] = { bytes, OS_MEMORY_CACHED_DOCUMENTATION };
+                    new_values["OSMemoryCached"] = { bytes, "The amount of memory used by the OS page cache, in bytes. Typically, almost all available memory is used by the OS page cache - high values of this metric are normal and expected."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "SwapCached:")
                 {
@@ -2181,7 +1634,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 skipToNextLineOrEOF(*meminfo);
             }
 
-            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
+            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, "The amount of free memory plus OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`."
+                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
         }
         catch (...)
         {
@@ -2196,10 +1650,43 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         try
         {
             cpuinfo->rewind();
-            auto cpu_frequencies = readCPUFrequenciesFromProcCPUInfo(*cpuinfo);
-            if (!cpu_frequencies.empty())
-                new_values["CPUFrequencyMHz"] = { "cpu", std::move(cpu_frequencies),
-                    "The current frequency of every CPU core, in MHz, keyed by the CPU core number. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting." };
+
+            // We need the following lines:
+            // processor : 4
+            // cpu MHz : 4052.941
+            // They contain tabs and are interspersed with other info.
+
+            int core_id = 0;
+            while (!cpuinfo->eof())
+            {
+                std::string s;
+                // We don't have any backslash escape sequences in /proc/cpuinfo, so
+                // this function will read the line until EOL, which is exactly what
+                // we need.
+                readEscapedStringUntilEOL(s, *cpuinfo);
+                // It doesn't read the EOL itself.
+                ++cpuinfo->position();
+
+                static constexpr std::string_view PROCESSOR = "processor";
+                if (s.starts_with(PROCESSOR))
+                {
+                    /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
+                    /// non s390x example: processor : 0
+                    auto core_id_start = std::ssize(PROCESSOR);
+                    while (core_id_start < std::ssize(s) && !std::isdigit(s[core_id_start]))
+                        ++core_id_start;
+
+                    core_id = std::stoi(s.substr(core_id_start));
+                }
+                else if (s.starts_with("cpu MHz"))
+                {
+                    if (auto colon = s.find_first_of(':'))
+                    {
+                        auto mhz = std::stod(s.substr(colon + 2));
+                        new_values[fmt::format("CPUFrequencyMHz_{}", core_id)] = { mhz, "The current frequency of the CPU, in MHz. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting." };
+                    }
+                }
+            }
         }
         catch (...)
         {
@@ -2273,24 +1760,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     try
     {
-        AsynchronousMetricKeyValues block_read_ops;
-        AsynchronousMetricKeyValues block_write_ops;
-        AsynchronousMetricKeyValues block_discard_ops;
-        AsynchronousMetricKeyValues block_read_merges;
-        AsynchronousMetricKeyValues block_write_merges;
-        AsynchronousMetricKeyValues block_discard_merges;
-        AsynchronousMetricKeyValues block_read_bytes;
-        AsynchronousMetricKeyValues block_write_bytes;
-        AsynchronousMetricKeyValues block_discard_bytes;
-        AsynchronousMetricKeyValues block_read_time;
-        AsynchronousMetricKeyValues block_write_time;
-        AsynchronousMetricKeyValues block_discard_time;
-        AsynchronousMetricKeyValues block_in_flight_ops;
-        AsynchronousMetricKeyValues block_active_time;
-        AsynchronousMetricKeyValues block_queue_time;
-        AsynchronousMetricKeyValues block_active_time_per_op;
-        AsynchronousMetricKeyValues block_queue_time_per_op;
-
         for (auto & [name, device] : block_devs)
         {
             device->rewind();
@@ -2321,113 +1790,81 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             /// Always in milliseconds according to the docs.
             static constexpr double time_multiplier = 1e-3;
 
-            block_read_ops[name] = static_cast<double>(delta_values.read_ios);
-            block_write_ops[name] = static_cast<double>(delta_values.write_ios);
-            block_discard_ops[name] = static_cast<double>(delta_values.discard_ops);
+#define BLOCK_DEVICE_EXPLANATION \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
+    " Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt"
 
-            block_read_merges[name] = static_cast<double>(delta_values.read_merges);
-            block_write_merges[name] = static_cast<double>(delta_values.write_merges);
-            block_discard_merges[name] = static_cast<double>(delta_values.discard_merges);
+            new_values["BlockReadOps_" + name] = { delta_values.read_ios,
+                "Number of read operations requested from the block device."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteOps_" + name] = { delta_values.write_ios,
+                "Number of write operations requested from the block device."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardOps_" + name] = { delta_values.discard_ops,
+                "Number of discard operations requested from the block device. These operations are relevant for SSD."
+                " Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
 
-            block_read_bytes[name] = static_cast<double>(delta_values.read_sectors * sector_size);
-            block_write_bytes[name] = static_cast<double>(delta_values.write_sectors * sector_size);
-            block_discard_bytes[name] = static_cast<double>(delta_values.discard_sectors * sector_size);
+            new_values["BlockReadMerges_" + name] = { delta_values.read_merges,
+                "Number of read operations requested from the block device and merged together by the OS IO scheduler."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteMerges_" + name] = { delta_values.write_merges,
+                "Number of write operations requested from the block device and merged together by the OS IO scheduler."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardMerges_" + name] = { delta_values.discard_merges,
+                "Number of discard operations requested from the block device and merged together by the OS IO scheduler."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
 
-            block_read_time[name] = static_cast<double>(delta_values.read_ticks) * time_multiplier;
-            block_write_time[name] = static_cast<double>(delta_values.write_ticks) * time_multiplier;
-            block_discard_time[name] = static_cast<double>(delta_values.discard_ticks) * time_multiplier;
+            new_values["BlockReadBytes_" + name] = { delta_values.read_sectors * sector_size,
+                "Number of bytes read from the block device."
+                " It can be lower than the number of bytes read from the filesystem due to the usage of the OS page cache, that saves IO."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteBytes_" + name] = { delta_values.write_sectors * sector_size,
+                "Number of bytes written to the block device."
+                " It can be lower than the number of bytes written to the filesystem due to the usage of the OS page cache, that saves IO."
+                " A write to the block device may happen later than the corresponding write to the filesystem due to write-through caching."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardBytes_" + name] = { delta_values.discard_sectors * sector_size,
+                "Number of discarded bytes on the block device."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
 
-            block_in_flight_ops[name] = static_cast<double>(delta_values.in_flight_ios);
-            block_active_time[name] = static_cast<double>(delta_values.io_ticks) * time_multiplier;
-            block_queue_time[name] = static_cast<double>(delta_values.time_in_queue) * time_multiplier;
+            new_values["BlockReadTime_" + name] = { static_cast<double>(delta_values.read_ticks) * time_multiplier,
+                "Time in seconds spend in read operations requested from the block device, summed across all the operations."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteTime_" + name] = { static_cast<double>(delta_values.write_ticks) * time_multiplier,
+                "Time in seconds spend in write operations requested from the block device, summed across all the operations."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardTime_" + name] = { static_cast<double>(delta_values.discard_ticks) * time_multiplier,
+                "Time in seconds spend in discard operations requested from the block device, summed across all the operations."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
+
+            new_values["BlockInFlightOps_" + name] = { delta_values.in_flight_ios,
+                "This value counts the number of I/O requests that have been issued to"
+                " the device driver but have not yet completed. It does not include IO"
+                " requests that are in the queue but not yet issued to the device driver."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockActiveTime_" + name] = { static_cast<double>(delta_values.io_ticks) * time_multiplier,
+                "Time in seconds the block device had the IO requests queued."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockQueueTime_" + name] = { static_cast<double>(delta_values.time_in_queue) * time_multiplier,
+                "This value counts the number of milliseconds that IO requests have waited"
+                " on this block device. If there are multiple IO requests waiting, this"
+                " value will increase as the product of the number of milliseconds times the"
+                " number of requests waiting."
+                BLOCK_DEVICE_EXPLANATION };
 
             if (delta_values.in_flight_ios)
             {
                 /// TODO Check if these values are meaningful.
 
-                block_active_time_per_op[name] = static_cast<double>(delta_values.io_ticks) * time_multiplier / static_cast<double>(delta_values.in_flight_ios);
-                block_queue_time_per_op[name] = static_cast<double>(delta_values.time_in_queue) * time_multiplier / static_cast<double>(delta_values.in_flight_ios);
+                new_values["BlockActiveTimePerOp_" + name] = { static_cast<double>(delta_values.io_ticks) * time_multiplier / static_cast<double>(delta_values.in_flight_ios),
+                    "Similar to the `BlockActiveTime` metrics, but the value is divided to the number of IO operations to count the per-operation time." };
+                new_values["BlockQueueTimePerOp_" + name] = { static_cast<double>(delta_values.time_in_queue) * time_multiplier / static_cast<double>(delta_values.in_flight_ios),
+                    "Similar to the `BlockQueueTime` metrics, but the value is divided to the number of IO operations to count the per-operation time." };
             }
-        }
-
-#define BLOCK_DEVICE_EXPLANATION \
-    " The keys are the names of the block devices." \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
-    " Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt"
-
-        if (!block_read_ops.empty())
-        {
-            new_values["BlockReadOps"] = { "device", std::move(block_read_ops),
-                "Number of read operations requested from every block device."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteOps"] = { "device", std::move(block_write_ops),
-                "Number of write operations requested from every block device."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardOps"] = { "device", std::move(block_discard_ops),
-                "Number of discard operations requested from every block device. These operations are relevant for SSD."
-                " Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
-
-            new_values["BlockReadMerges"] = { "device", std::move(block_read_merges),
-                "Number of read operations requested from every block device and merged together by the OS IO scheduler."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteMerges"] = { "device", std::move(block_write_merges),
-                "Number of write operations requested from every block device and merged together by the OS IO scheduler."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardMerges"] = { "device", std::move(block_discard_merges),
-                "Number of discard operations requested from every block device and merged together by the OS IO scheduler."
-                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
-
-            new_values["BlockReadBytes"] = { "device", std::move(block_read_bytes),
-                "Number of bytes read from every block device."
-                " It can be lower than the number of bytes read from the filesystem due to the usage of the OS page cache, that saves IO."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteBytes"] = { "device", std::move(block_write_bytes),
-                "Number of bytes written to every block device."
-                " It can be lower than the number of bytes written to the filesystem due to the usage of the OS page cache, that saves IO."
-                " A write to the block device may happen later than the corresponding write to the filesystem due to write-through caching."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardBytes"] = { "device", std::move(block_discard_bytes),
-                "Number of discarded bytes on every block device."
-                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
-
-            new_values["BlockReadTime"] = { "device", std::move(block_read_time),
-                "Time in seconds spend in read operations requested from every block device, summed across all the operations."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteTime"] = { "device", std::move(block_write_time),
-                "Time in seconds spend in write operations requested from every block device, summed across all the operations."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardTime"] = { "device", std::move(block_discard_time),
-                "Time in seconds spend in discard operations requested from every block device, summed across all the operations."
-                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
-
-            new_values["BlockInFlightOps"] = { "device", std::move(block_in_flight_ops),
-                "This value counts the number of I/O requests that have been issued to"
-                " the device driver but have not yet completed, for every block device. It does not include IO"
-                " requests that are in the queue but not yet issued to the device driver."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockActiveTime"] = { "device", std::move(block_active_time),
-                "Time in seconds every block device had the IO requests queued."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockQueueTime"] = { "device", std::move(block_queue_time),
-                "This value counts the number of milliseconds that IO requests have waited"
-                " on every block device. If there are multiple IO requests waiting, this"
-                " value will increase as the product of the number of milliseconds times the"
-                " number of requests waiting."
-                BLOCK_DEVICE_EXPLANATION };
-        }
-
-        if (!block_active_time_per_op.empty())
-        {
-            new_values["BlockActiveTimePerOp"] = { "device", std::move(block_active_time_per_op),
-                "Similar to the `BlockActiveTime` metric, but the value is divided to the number of IO operations to count the per-operation time."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockQueueTimePerOp"] = { "device", std::move(block_queue_time_per_op),
-                "Similar to the `BlockQueueTime` metric, but the value is divided to the number of IO operations to count the per-operation time."
-                BLOCK_DEVICE_EXPLANATION };
         }
     }
     catch (...)
@@ -2459,15 +1896,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             skipToNextLineOrEOF(*net_dev);
             skipToNextLineOrEOF(*net_dev);
 
-            AsynchronousMetricKeyValues network_receive_bytes;
-            AsynchronousMetricKeyValues network_receive_packets;
-            AsynchronousMetricKeyValues network_receive_errors;
-            AsynchronousMetricKeyValues network_receive_drop;
-            AsynchronousMetricKeyValues network_send_bytes;
-            AsynchronousMetricKeyValues network_send_packets;
-            AsynchronousMetricKeyValues network_send_errors;
-            AsynchronousMetricKeyValues network_send_drop;
-
             while (!net_dev->eof())
             {
                 skipWhitespaceIfAny(*net_dev, true);
@@ -2484,7 +1912,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 interface_name.pop_back();
 
                 NetworkInterfaceStatValues current_values{};
-                uint64_t unused = 0;
+                uint64_t unused;
 
                 skipWhitespaceIfAny(*net_dev, true);
                 readText(current_values.recv_bytes, *net_dev);
@@ -2523,49 +1951,32 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (!first_run)
                 {
-                    network_receive_bytes[interface_name] = static_cast<double>(delta_values.recv_bytes);
-                    network_receive_packets[interface_name] = static_cast<double>(delta_values.recv_packets);
-                    network_receive_errors[interface_name] = static_cast<double>(delta_values.recv_errors);
-                    network_receive_drop[interface_name] = static_cast<double>(delta_values.recv_drop);
+                    new_values["NetworkReceiveBytes_" + interface_name] = { delta_values.recv_bytes,
+                        " Number of bytes received via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["NetworkReceivePackets_" + interface_name] = { delta_values.recv_packets,
+                        " Number of network packets received via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["NetworkReceiveErrors_" + interface_name] = { delta_values.recv_errors,
+                        " Number of times error happened receiving via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["NetworkReceiveDrop_" + interface_name] = { delta_values.recv_drop,
+                        " Number of bytes a packet was dropped while received via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
 
-                    network_send_bytes[interface_name] = static_cast<double>(delta_values.send_bytes);
-                    network_send_packets[interface_name] = static_cast<double>(delta_values.send_packets);
-                    network_send_errors[interface_name] = static_cast<double>(delta_values.send_errors);
-                    network_send_drop[interface_name] = static_cast<double>(delta_values.send_drop);
+                    new_values["NetworkSendBytes_" + interface_name] = { delta_values.send_bytes,
+                        " Number of bytes sent via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["NetworkSendPackets_" + interface_name] = { delta_values.send_packets,
+                        " Number of network packets sent via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["NetworkSendErrors_" + interface_name] = { delta_values.send_errors,
+                        " Number of times error (e.g. TCP retransmit) happened while sending via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    new_values["NetworkSendDrop_" + interface_name] = { delta_values.send_drop,
+                        " Number of times a packed was dropped while sending via the network interface."
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
-            }
-
-#define NETWORK_INTERFACE_EXPLANATION \
-    " The keys are the names of the network interfaces." \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-
-            if (!network_receive_bytes.empty())
-            {
-                new_values["NetworkReceiveBytes"] = { "interface", std::move(network_receive_bytes),
-                    "Number of bytes received via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
-                new_values["NetworkReceivePackets"] = { "interface", std::move(network_receive_packets),
-                    "Number of network packets received via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
-                new_values["NetworkReceiveErrors"] = { "interface", std::move(network_receive_errors),
-                    "Number of times error happened receiving via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
-                new_values["NetworkReceiveDrop"] = { "interface", std::move(network_receive_drop),
-                    "Number of bytes a packet was dropped while received via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
-
-                new_values["NetworkSendBytes"] = { "interface", std::move(network_send_bytes),
-                    "Number of bytes sent via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
-                new_values["NetworkSendPackets"] = { "interface", std::move(network_send_packets),
-                    "Number of network packets sent via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
-                new_values["NetworkSendErrors"] = { "interface", std::move(network_send_errors),
-                    "Number of times error (e.g. TCP retransmit) happened while sending via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
-                new_values["NetworkSendDrop"] = { "interface", std::move(network_send_drop),
-                    "Number of times a packed was dropped while sending via every network interface."
-                    NETWORK_INTERFACE_EXPLANATION };
             }
         }
         catch (...)
@@ -2804,8 +2215,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    AsynchronousMetricKeyValues temperatures;
-
     try
     {
         for (size_t i = 0, size = thermal.size(); i < size; ++i)
@@ -2815,7 +2224,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             in.rewind();
             Int64 temperature = 0;
             readText(temperature, in);
-            temperatures[toString(i)] = static_cast<double>(temperature) * 0.001;
+            new_values[fmt::format("Temperature{}", i)] = { static_cast<double>(temperature) * 0.001,
+                "The temperature of the corresponding device in ℃. A sensor can return an unrealistic value. Source: `/sys/class/thermal`" };
         }
     }
     catch (...)
@@ -2854,9 +2264,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 }
 
                 if (sensor_name.empty())
-                    temperatures[hwmon_name] = static_cast<double>(temperature) * 0.001;
+                    new_values[fmt::format("Temperature_{}", hwmon_name)] = { static_cast<double>(temperature) * 0.001,
+                        "The temperature reported by the corresponding hardware monitor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
                 else
-                    temperatures[fmt::format("{}_{}", hwmon_name, sensor_name)] = static_cast<double>(temperature) * 0.001;
+                    new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = { static_cast<double>(temperature) * 0.001,
+                        "The temperature reported by the corresponding hardware monitor and the corresponding sensor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
             }
         }
     }
@@ -2879,17 +2291,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    if (!temperatures.empty())
-        new_values["Temperature"] = { "sensor", std::move(temperatures),
-            "The temperature reported by every sensor, in ℃. A sensor can return an unrealistic value."
-            " The keys are the thermal zone numbers (source: `/sys/class/thermal`)"
-            " or the names of the hardware monitors and their sensors (source: `/sys/class/hwmon`)." };
-
     try
     {
-        AsynchronousMetricKeyValues edac_correctable_errors;
-        AsynchronousMetricKeyValues edac_uncorrectable_errors;
-
         for (size_t i = 0, size = edac.size(); i < size; ++i)
         {
             /// NOTE maybe we need to take difference with previous values.
@@ -2901,7 +2304,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
-                edac_correctable_errors[toString(i)] = static_cast<double>(errors);
+                new_values[fmt::format("EDAC{}_Correctable", i)] = { errors,
+                    "The number of correctable ECC memory errors."
+                    " A high number of this value indicates bad RAM which has to be immediately replaced,"
+                    " because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption."
+                    " Source: `/sys/devices/system/edac/mc/`" };
             }
 
             if (edac[i].second)
@@ -2910,23 +2317,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
-                edac_uncorrectable_errors[toString(i)] = static_cast<double>(errors);
+                new_values[fmt::format("EDAC{}_Uncorrectable", i)] = { errors,
+                    "The number of uncorrectable ECC memory errors."
+                    " A non-zero number of this value indicates bad RAM which has to be immediately replaced,"
+                    " because it indicates potential data corruption."
+                    " Source: `/sys/devices/system/edac/mc/`" };
             }
         }
-
-        if (!edac_correctable_errors.empty())
-            new_values["EDACCorrectable"] = { "mc", std::move(edac_correctable_errors),
-                "The number of correctable ECC memory errors, keyed by the memory controller number."
-                " A high number of this value indicates bad RAM which has to be immediately replaced,"
-                " because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption."
-                " Source: `/sys/devices/system/edac/mc/`" };
-
-        if (!edac_uncorrectable_errors.empty())
-            new_values["EDACUncorrectable"] = { "mc", std::move(edac_uncorrectable_errors),
-                "The number of uncorrectable ECC memory errors, keyed by the memory controller number."
-                " A non-zero number of this value indicates bad RAM which has to be immediately replaced,"
-                " because it indicates potential data corruption."
-                " Source: `/sys/devices/system/edac/mc/`" };
     }
     catch (...)
     {
@@ -2944,187 +2341,77 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 #endif
 
-#if defined(OS_DARWIN)
     {
-        UInt64 memory_total = 0;
-        size_t len = sizeof(memory_total);
-        int mib[2] = {CTL_HW, HW_MEMSIZE};
-        if (0 == sysctl(mib, 2, &memory_total, &len, nullptr, 0))
-            new_values["OSMemoryTotal"] = { memory_total, "The total amount of memory on the host system, in bytes." };
-        else
-            LOG_ERROR(log, "Cannot obtain the total amount of memory via sysctl: {}", errnoToString(errno));
-    }
-
-    {
-        mach_port_t host_port = mach_host_self();
-
-        vm_size_t page_size = 0;
-        vm_statistics64_data_t vm_stats;
-        mach_msg_type_number_t info_count = HOST_VM_INFO64_COUNT;
-
-        kern_return_t res = host_page_size(host_port, &page_size);
-        if (res == KERN_SUCCESS)
-            res = host_statistics64(host_port, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm_stats), &info_count);
-
-        if (res == KERN_SUCCESS)
+        auto threads_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
         {
-            /// External pages are file-backed, i.e. the equivalent of the Linux page cache.
-            UInt64 cached_bytes = static_cast<UInt64>(vm_stats.external_page_count) * page_size;
-            new_values["OSMemoryCached"] = { cached_bytes, OS_MEMORY_CACHED_DOCUMENTATION };
-
-            /// Speculative pages are file-backed readahead, i.e. a part of the page cache, but the kernel counts them inside
-            /// `free_count` (the `vm_stat` utility subtracts them from "Pages free" in the same way). `free_count` and
-            /// `speculative_count` are filled from two separate unlocked reads of the same kernel counter, so a concurrently
-            /// growing speculative list can make the latter the bigger one. Both are 32 bit, so the subtraction would not go
-            /// negative but wrap around into tens of terabytes.
-            if (vm_stats.speculative_count <= vm_stats.free_count)
+            static std::map<String, std::pair<const char *, const char *>> metric_map =
             {
-                UInt64 free_without_cached_bytes = static_cast<UInt64>(vm_stats.free_count - vm_stats.speculative_count) * page_size;
-                /// Purgeable pages are not file-backed, but the kernel is also free to reclaim them at any moment.
-                UInt64 available_bytes = free_without_cached_bytes + cached_bytes + static_cast<UInt64>(vm_stats.purgeable_count) * page_size;
-
-                new_values["OSMemoryFreeWithoutCached"] = { free_without_cached_bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
-                new_values["OSMemoryFreePlusCached"] = { free_without_cached_bytes + cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
-                new_values["OSMemoryAvailable"] = { available_bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
-            }
-            else
-                LOG_WARNING(log, "Inconsistent snapshot from host_statistics64: {} speculative pages for {} free pages",
-                    vm_stats.speculative_count, vm_stats.free_count);
-        }
-        else
-            LOG_ERROR(log, "Cannot obtain memory statistics via host_statistics64: {}", mach_error_string(res));
-
-        processor_set_name_t pset = PROCESSOR_SET_NULL;
-        res = processor_set_default(host_port, &pset);
-        if (res == KERN_SUCCESS)
-        {
-            processor_set_load_info_data_t load_info;
-            mach_msg_type_number_t load_info_count = PROCESSOR_SET_LOAD_INFO_COUNT;
-            res = processor_set_statistics(pset, PROCESSOR_SET_LOAD_INFO,
-                reinterpret_cast<processor_set_info_t>(&load_info), &load_info_count);
-            mach_port_deallocate(mach_task_self(), pset);
-
-            if (res == KERN_SUCCESS)
-                new_values["OSThreadsTotal"] = { static_cast<UInt64>(load_info.thread_count),
-                    "The total number of threads, as the OS kernel scheduler seeing it." };
-            else
-                LOG_ERROR(log, "Cannot obtain the number of threads via processor_set_statistics: {}", mach_error_string(res));
-        }
-        else
-            LOG_ERROR(log, "Cannot obtain the default processor set via processor_set_default: {}", mach_error_string(res));
-
-        mach_port_deallocate(mach_task_self(), host_port);
-    }
-
-    {
-        double loadavg_values[3] = {};
-        if (3 == getloadavg(loadavg_values, 3))
-            saveLoadAverageMetrics(new_values, loadavg_values[0], loadavg_values[1], loadavg_values[2]);
-        else
-            LOG_ERROR(log, "Cannot obtain the load average via getloadavg");
-    }
-#endif
-
-    {
-        /// Metric name and description per protocol. Keyed by the `ServerType::Type` name rather than
-        /// by the config key, so a protocol declared under `<protocols>` is reported under the same
-        /// metrics as the equivalent built-in port. Keeper listeners are not part of `ServerType`; they
-        /// are keyed by their config key. Each entry pairs one key with one metric name and its
-        /// description, which is the shape `utils/generate-async-metrics-docs` extracts the docs from.
-        using MetricNameDoc = std::pair<const char *, const char *>;
-
-        static const std::unordered_map<String, MetricNameDoc> threads_metric_by_protocol =
-        {
-            {"TCP", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
-            {"TCP_SECURE", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
-            {"TCP_WITH_PROXY", {"TCPWithProxyThreads", "Number of threads in the server of the TCP protocol behind a PROXY protocol handler."}},
-            {"TCP_SSH", {"TCPSSHThreads", "Number of threads in the server of the SSH protocol."}},
-            {"HTTP", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
-            {"HTTPS", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
-            {"INTERSERVER_HTTP", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
-            {"INTERSERVER_HTTPS", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
-            {"MYSQL", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
-            {"POSTGRESQL", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
-            {"GRPC", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
-            {"PROMETHEUS", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-            {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
-            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
+                {"tcp_port", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
+                {"tcp_port_secure", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
+                {"http_port", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
+                {"https_port", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
+                {"interserver_http_port", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
+                {"interserver_https_port", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
+                {"mysql_port", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
+                {"postgresql_port", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
+                {"grpc_port", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
+                {"prometheus.port", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+                {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
+                {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
+            };
+            auto it = metric_map.find(name);
+            if (it == metric_map.end())
+                return { nullptr, nullptr };
+            return it->second;
         };
 
-        static const std::unordered_map<String, MetricNameDoc> rejected_connections_metric_by_protocol =
+        auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
         {
-            {"TCP", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
-            {"TCP_SECURE", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
-            {"TCP_WITH_PROXY", {"TCPWithProxyRejectedConnections", "Number of rejected connections for the TCP protocol behind a PROXY protocol handler."}},
-            {"TCP_SSH", {"TCPSSHRejectedConnections", "Number of rejected connections for the SSH protocol."}},
-            {"HTTP", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
-            {"HTTPS", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
-            {"INTERSERVER_HTTP", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
-            {"INTERSERVER_HTTPS", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
-            {"MYSQL", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
-            {"POSTGRESQL", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
-            {"GRPC", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
-            {"PROMETHEUS", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-            {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
-            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
+            static std::map<String, std::pair<const char *, const char *>> metric_map =
+                {
+                    {"tcp_port", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
+                    {"tcp_port_secure", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
+                    {"http_port", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
+                    {"https_port", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
+                    {"interserver_http_port", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
+                    {"interserver_https_port", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
+                    {"mysql_port", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
+                    {"postgresql_port", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
+                    {"grpc_port", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
+                    {"prometheus.port", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+                    {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
+                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
+                };
+            auto it = metric_map.find(name);
+            if (it == metric_map.end())
+                return { nullptr, nullptr };
+            return it->second;
         };
 
-        /// Several servers can share a protocol - one per listen host, or a built-in port and a
-        /// `<protocols>` endpoint of the same type - so the values are summed before being reported.
-        std::unordered_map<String, std::pair<size_t, size_t>> totals;
-
-        for (const auto & server_metric : protocol_server_metrics_func())
+        const auto server_metrics = protocol_server_metrics_func();
+        for (const auto & server_metric : server_metrics)
         {
-            String key{magic_enum::enum_name(server_metric.protocol_type)};
-            if (!threads_metric_by_protocol.contains(key))
-                key = server_metric.port_name;
-            if (!threads_metric_by_protocol.contains(key))
-                continue;
+            if (auto name_doc = threads_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+                new_values[name_doc.first] = { server_metric.current_threads, name_doc.second };
 
-            auto & total = totals[key];
-            total.first += server_metric.current_threads;
-            total.second += server_metric.rejected_connections;
-        }
-
-        for (const auto & [key, total] : totals)
-        {
-            const auto & [threads_name, threads_doc] = threads_metric_by_protocol.at(key);
-            new_values[threads_name] = { total.first, threads_doc };
-            const auto & [rejected_name, rejected_doc] = rejected_connections_metric_by_protocol.at(key);
-            new_values[rejected_name] = { total.second, rejected_doc };
+            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+                new_values[name_doc.first] = { server_metric.rejected_connections, name_doc.second };
         }
     }
 
     new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
 
+    for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
     {
-        AsynchronousMetricKeyValues async_logging_queue_sizes;
-        for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
-            async_logging_queue_sizes[metric.first] = static_cast<double>(metric.second);
-
-        if (!async_logging_queue_sizes.empty())
-            new_values["AsyncLoggingQueueSize"]
-                = {"channel", std::move(async_logging_queue_sizes),
-                   "Number of async messages queued pending for logging, keyed by the logging channel name."};
+        new_values[fmt::format("AsyncLogging{}QueueSize", metric.first)]
+            = {static_cast<double>(metric.second), "Number of async messages queued pending for logging in this channel"};
     }
-
-#if USE_SILK
-    for (const auto & [counter_name, counter_value] : Silk::getRuntimeCounters())
-        new_values[fmt::format("Silk{}", counter_name)] = { counter_value,
-            "Value of the eponymous low-level counter of the silk fiber runtime, accumulated since the fiber scheduler initialization. "
-            "Counters with Time in the name are in nanoseconds." };
-#endif
 
     /// Add more metrics as you wish.
 
     updateImpl(update_time, current_time, force_update, first_run, new_values);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics)." };
-
-    /// Publish the key-value metrics in the form the consumers are configured to expect. This is done once,
-    /// here, so that every consumer of the values (`system.asynchronous_metric_log` below,
-    /// `system.asynchronous_metrics`, the Prometheus endpoint and Graphite) sees a consistent picture.
-    applyAsynchronousMetricsKeyValuesMode(new_values, getAsynchronousMetricsKeyValuesMode(context->getConfigRef()));
 
     logImpl(new_values);
 
@@ -3135,16 +2422,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
 
-        // These methods look at Asynchronous metrics and add, update or remove warnings
-        // which later get inserted into the system.warnings table.
-        // Note: after the swap above, `values` holds the freshly computed metrics and
-        // `new_values` holds the previous cycle's data, so we must read from `values` here.
-        // Passing `new_values` would feed the warning logic the stale snapshot, lagging
-        // system.warnings by one async-metrics cycle (and emitting nothing on the first cycle).
-        processWarningForMutationStats(values);
+        // These methods look at Asynchronous metrics and add,update or remove warnings
+        // which later get inserted into the system.warnings table:
+        processWarningForMutationStats(new_values);
         // server resource overload warnings
-        processWarningForMemoryOverload(values);
-        processWarningForCPUOverload(values);
+        processWarningForMemoryOverload(new_values);
+        processWarningForCPUOverload(new_values);
     }
 }
 

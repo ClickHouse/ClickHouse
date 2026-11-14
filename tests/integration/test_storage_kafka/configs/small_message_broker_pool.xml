@@ -1,3 +1,0 @@
-<clickhouse>
-    <background_message_broker_schedule_pool_size>2</background_message_broker_schedule_pool_size>
-</clickhouse>

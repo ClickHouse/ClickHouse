@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 
 SET send_logs_level = 'fatal';
 

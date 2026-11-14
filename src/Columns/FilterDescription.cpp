@@ -18,7 +18,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), convertColumnToBoolImpl, MULTITARGET_FUNCTION_BODY((const typename ColumnVector<T>::Container & data, IColumnFilter & res)
@@ -37,10 +37,15 @@ ALWAYS_INLINE bool tryConvertColumnToBool(const IColumn & column, IColumnFilter 
     chassert(res.size() == column.size());
 
     auto & data = column_typed->getData();
-#if USE_X86_64_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         convertColumnToBoolImpl_x86_64_v4<T>(data, res);
+        return true;
+    }
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        convertColumnToBoolImpl_x86_64_v3<T>(data, res);
         return true;
     }
 #endif
@@ -60,27 +65,6 @@ bool tryConvertAnyColumnToBool(const IColumn & column, IColumnFilter & res)
         tryConvertColumnToBool<UInt64>(column, res) ||
         tryConvertColumnToBool<Float32>(column, res) ||
         tryConvertColumnToBool<Float64>(column, res);
-}
-
-bool canInplaceFilter(const ColumnPtr & column)
-{
-    if (!column)
-        return true;
-
-    if (column->use_count() > 1)
-        return false;
-
-    bool can_inplace = true;
-    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
-    {
-        if (!can_inplace)
-            return;
-
-        if (!canInplaceFilter(subcolumn))
-            can_inplace = false;
-    });
-
-    return can_inplace;
 }
 
 ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
@@ -126,7 +110,7 @@ static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 
 ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
-    column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    column = column->convertToFullIfNeeded();
 
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
@@ -150,7 +134,7 @@ ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
         IColumn::Filter & res = *column_filter;
 
         const auto size = res.size();
-        chassert(size == null_map.size());
+        assert(size == null_map.size());
         for (size_t i = 0; i < size; ++i)
         {
             auto has_val = static_cast<UInt8>(!!res[i]);

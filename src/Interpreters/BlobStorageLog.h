@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/SharedMutex.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -24,35 +25,21 @@ struct BlobStorageLogElement
         MultiPartUploadWrite = 4,
         MultiPartUploadComplete = 5,
         MultiPartUploadAbort = 6,
-        Read = 7,
-        Copy = 8,
     };
 
-    EventType event_type{};
+    EventType event_type;
 
     String query_id;
     UInt64 thread_id = 0;
-    ThreadName thread_name{};
+    ThreadName thread_name;
 
     String disk_name;
     String bucket;
     String remote_path;
     String local_path;
-    String source_bucket;
-    String source_remote_path;
 
-    size_t data_size{};
-    size_t elapsed_microseconds{};
-
-    /// The HTTP connection this operation went over, and how worn it was. Zero for operations
-    /// that used no HTTP connection (local object storage) and for the tail events of a batch
-    /// that shared one request. See Common/HTTPConnectionInfo.h.
-    UInt64 connection_id = 0;
-    UInt16 connection_local_port = 0;
-    UInt64 connection_socket_inode = 0;
-    UInt32 connection_requests = 0;
-    UInt64 connection_age_microseconds = 0;
-    UInt64 connection_idle_microseconds = 0;
+    size_t data_size;
+    size_t elapsed_microseconds;
 
     Int32 error_code = 0; /// 0 if no error
     String error_message;
@@ -79,8 +66,6 @@ public:
         std::shared_lock lock{prepare_mutex};
         return !prefix_to_ignore.empty() && path.starts_with(prefix_to_ignore);
     }
-
-    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
 
 protected:
     void prepareTable() override;
