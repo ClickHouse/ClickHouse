@@ -48,13 +48,6 @@ BodyBuilder binaryBody(const String & name)
     { return addCall(dag, name, {&arg, &captured}, "body"); };
 }
 
-/// `(x + c) * c`: two chained compilable functions, so JIT replaces them.
-const ActionsDAG::Node & plusTimes(ActionsDAG & dag, const ActionsDAG::Node & arg, const ActionsDAG::Node & captured)
-{
-    const auto & sum = addCall(dag, "plus", {&arg, &captured}, "sum");
-    return addCall(dag, "multiply", {&sum, &captured}, "body");
-}
-
 ExpressionActionsSettings lambdaSettings(bool compile)
 {
     ExpressionActionsSettings settings;
@@ -134,16 +127,6 @@ std::unique_ptr<MappedDag> mapWithFoldedLambda(
 std::unique_ptr<MappedDag> mapWithFoldedLambda(const FunctionOverloadResolverPtr & lambda, const String & constant_name = "c")
 {
     return mapWithFoldedLambda(lambda, constUInt64(10), u64, constant_name);
-}
-
-/// `arrayMap(lambda(c), arr)` with a column `c`: the lambda stays a `FunctionCapture` node.
-std::unique_ptr<MappedDag> mapWithCapturedColumn(const FunctionOverloadResolverPtr & lambda)
-{
-    auto result = std::make_unique<MappedDag>();
-    const auto & array = result->dag.addInput("arr", u64_array);
-    const auto & captured = result->dag.addInput("c", u64);
-    finish(*result, result->dag.addFunction(lambda, {&captured}, "lambda"), array);
-    return result;
 }
 
 const FunctionExpression * foldedExpression(const ActionsDAG::Node & node)
@@ -284,6 +267,23 @@ TEST(MatchTreesLambda, FoldedLambdasCapturingSameSetMatch)
 
 namespace
 {
+
+/// `(x + c) * c`: two chained compilable functions, so JIT replaces them.
+const ActionsDAG::Node & plusTimes(ActionsDAG & dag, const ActionsDAG::Node & arg, const ActionsDAG::Node & captured)
+{
+    const auto & sum = addCall(dag, "plus", {&arg, &captured}, "sum");
+    return addCall(dag, "multiply", {&sum, &captured}, "body");
+}
+
+/// `arrayMap(lambda(c), arr)` with a column `c`: the lambda stays a `FunctionCapture` node.
+std::unique_ptr<MappedDag> mapWithCapturedColumn(const FunctionOverloadResolverPtr & lambda)
+{
+    auto result = std::make_unique<MappedDag>();
+    const auto & array = result->dag.addInput("arr", u64_array);
+    const auto & captured = result->dag.addInput("c", u64);
+    finish(*result, result->dag.addFunction(lambda, {&captured}, "lambda"), array);
+    return result;
+}
 
 bool hasCompiledNode(const ActionsDAG & dag)
 {
