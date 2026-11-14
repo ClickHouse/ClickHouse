@@ -5486,14 +5486,25 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     }
 }
 
-static bool findIdentifier(const FunctionNode & function)
+static bool findIdentifier(const QueryTreeNodePtr & node, const NameSet & lambda_arguments = {})
 {
-    for (const auto & argument : function.getArguments())
+    if (const auto * identifier = node->as<IdentifierNode>())
+        return !lambda_arguments.contains(identifier->getIdentifier().front());
+    /// `COLUMNS` refers to the table function columns too. An asterisk is skipped, because `count(*)` reads no columns.
+    if (const auto * matcher = node->as<MatcherNode>())
+        return !matcher->isAsteriskMatcher();
+    if (const auto * lambda = node->as<LambdaNode>())
     {
-        if (argument->as<IdentifierNode>())
-            return true;
-        if (const auto * f = argument->as<FunctionNode>(); f && findIdentifier(*f))
-            return true;
+        NameSet arguments = lambda_arguments;
+        for (const auto & name : lambda->getArguments().getNames())
+            arguments.insert(name);
+        return findIdentifier(lambda->getExpression(), arguments);
+    }
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        for (const auto & argument : function->getArguments())
+            if (findIdentifier(argument, lambda_arguments))
+                return true;
     }
     return false;
 }
@@ -5905,9 +5916,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                 asterisk = true;
             }
-            else if (auto * function = (*expression)->as<FunctionNode>())
+            else if ((*expression)->as<FunctionNode>() || (*expression)->as<MatcherNode>())
             {
-                if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
+                if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*expression))
                 {
                     use_columns_from_insert_query = false;
                     break;
