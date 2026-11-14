@@ -1,0 +1,13 @@
+# Round trip
+Compact	79
+20000	0	0	0
+# Compressed size of 256-value blocks
+alp_small_blocks_d2	Compact	101	145000	204800
+alp_small_blocks_d3	Compact	101	159770	204800
+1	1
+# Compressed size of 256-value blocks whose samples start with an exception
+Compact	101	167720
+1
+# Compressed size of a block whose samples share their best pair
+Compact	2	216123	1048576
+1
