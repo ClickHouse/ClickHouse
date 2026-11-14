@@ -4,9 +4,11 @@
 -- part statistics on v would remove the last part from the baseline
 SET use_statistics_for_part_pruning = 0;
 
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the baseline marks before the hypothetical
+-- indexes are estimated, so the tables opt out to keep the sampling cases this test checks
 DROP TABLE IF EXISTS t_full_parts;
 CREATE TABLE t_full_parts (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a, b)
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_full_parts;
 -- 30 parts of 16 marks: a window of 12 marks with v = 0 and a window of 4 marks with v = 1
 INSERT INTO t_full_parts SELECT intDiv(number % 16, 12), 0, number % 16 >= 12 FROM numbers(480)

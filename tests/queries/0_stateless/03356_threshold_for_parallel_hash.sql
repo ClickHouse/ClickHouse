@@ -1,8 +1,9 @@
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
-create table lhs(a UInt64) Engine=MergeTree order by ();
-create table rhs(a UInt64) Engine=MergeTree order by ();
+-- Implicit min-max indices would prune `rhs` by `t1.a < 10000` already on a cold run, but the test checks the size estimation without it.
+create table lhs(a UInt64) Engine=MergeTree order by () settings add_minmax_index_for_numeric_columns = 0;
+create table rhs(a UInt64) Engine=MergeTree order by () settings add_minmax_index_for_numeric_columns = 0;
 
 insert into lhs select * from numbers_mt(1e5);
 insert into rhs select * from numbers_mt(1e6);

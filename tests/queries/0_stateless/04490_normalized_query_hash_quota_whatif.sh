@@ -37,9 +37,11 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON *.* TO ${user}"
 
 # One part of 1000 rows in 10 granules. `b` is not in the primary key, so a predicate on `b` does not
 # prune granules and the empirical scan reads the whole part (1000 rows) for every pattern.
+# The implicit min-max index is disabled so that it does not prune granules on `b` either.
 ${CLICKHOUSE_CLIENT} -n -q "
     CREATE TABLE t_04490 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+             add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_04490 SELECT number, number FROM numbers(1000);
 "
 

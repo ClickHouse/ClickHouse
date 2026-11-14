@@ -448,5 +448,6 @@ ALTER TABLE t_carry_col_spill ADD INDEX `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`(s) TY
 ALTER TABLE t_carry_col_spill MATERIALIZE INDEX `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`;
 SELECT 'carry-col-spill-legal', count(), sum(`skp_idx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`) FROM t_carry_col_spill;
 SELECT 'carry-col-spill-index', data_compressed_bytes > 0 FROM system.data_skipping_indices
-WHERE database = currentDatabase() AND table = 't_carry_col_spill';
+WHERE database = currentDatabase() AND table = 't_carry_col_spill'
+    AND name = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 DROP TABLE t_carry_col_spill;

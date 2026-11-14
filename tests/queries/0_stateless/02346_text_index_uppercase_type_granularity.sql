@@ -19,7 +19,7 @@ INSERT INTO tab SELECT number, 'tok' || toString(number % 500) || ' common' FROM
 OPTIMIZE TABLE tab FINAL;
 
 -- Uppercase `TEXT` must get the whole-part granularity default (100000000), same as lowercase `text`.
-SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
+SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab' AND name = 'idx_msg';
 
 -- Prewarming the mark cache must not throw on the whole-part text index. Before the fix this threw
 -- (marks expected 25, marks read 1): CANNOT_READ_ALL_DATA with compressed marks (.cmrk2), or

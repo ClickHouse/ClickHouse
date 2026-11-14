@@ -12,9 +12,11 @@ SET min_marks_per_part_to_load_statistics = 100;
 
 DROP TABLE IF EXISTS statistics_small_reads;
 
+-- No implicit min-max indices: they would prune parts even when the statistics are not loaded.
 CREATE TABLE statistics_small_reads (key UInt64, value UInt64, flag UInt8)
 ENGINE = MergeTree ORDER BY key PARTITION BY intDiv(key, 10000)
-SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic, uniq_v2', prewarm_statistics_cache = 0;
+SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic, uniq_v2', prewarm_statistics_cache = 0,
+    add_minmax_index_for_numeric_columns = 0;
 
 SYSTEM STOP MERGES statistics_small_reads;
 

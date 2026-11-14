@@ -111,7 +111,8 @@ BlockIO createHypotheticalProjection(
     /// `LoadingStrictnessLevel::CREATE` is what a real `ADD PROJECTION` passes, so an invalid
     /// definition is rejected here rather than silently accepted and skipped later
     auto projection_desc = ProjectionDescription::getProjectionFromAST(
-        expanded_projection_decl, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
+        expanded_projection_decl, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE,
+        /*attach_short_syntax=*/ true, metadata.get());
 
     checkHypotheticalObjectIsAddable(merge_tree, metadata, expanded_projection_decl, context);
 

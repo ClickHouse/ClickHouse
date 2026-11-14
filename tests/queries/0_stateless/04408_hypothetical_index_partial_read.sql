@@ -4,7 +4,7 @@
 
 DROP TABLE IF EXISTS t_hypo_partial;
 CREATE TABLE t_hypo_partial (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 -- 100 granules of 100 rows, a >= 9800 prunes the baseline to the last 3 granules (300 rows)
 INSERT INTO t_hypo_partial SELECT number, number FROM numbers(10000);

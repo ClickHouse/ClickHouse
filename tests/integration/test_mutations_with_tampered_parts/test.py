@@ -67,10 +67,17 @@ def test_dynamic_mutation_old_part_no_substreams_file(started_cluster):
     # See https://github.com/ClickHouse/ClickHouse/issues/107561
     node.query("DROP TABLE IF EXISTS t_dyn_old_part")
 
+    # Opt out of the implicit numeric min-max index. This test is about the Dynamic column and the
+    # missing columns_substreams.txt, not about skip indices. Under the default-on implicit index the
+    # whole-part rewrite mutation of the simulated old part leaves an implicit skip-index file
+    # (skp_idx_auto_minmax_index_id.*) that the resulting part's metadata does not account for, so the
+    # final CHECK TABLE reports UNEXPECTED_FILE_IN_DATA_PART. Reconciling the implicit skip indices with
+    # the whole-part rewrite of an old-format Dynamic part is reserved for the companion engine change.
     node.query("""
         CREATE TABLE t_dyn_old_part (id UInt64, s UInt64, y Dynamic(max_types=3))
         ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+                 add_minmax_index_for_numeric_columns = 0
         """)
 
     node.query(
@@ -813,6 +820,10 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
     # for any index living in `skp_idx.packed`, which would make every assertion below vacuous.
     # `support_phrase_search` = 1 plus `allow_experimental_text_index_phrase_search` = 1 are mandatory
     # too - without them the text index declares no `.pos` substream and there is no collision at all.
+    #
+    # The table opts out of `add_minmax_index_for_numeric_columns`: the assertion counting the rows of
+    # `system.data_skipping_indices` for this table expects exactly the two declared indices, which
+    # implicit minmax indices on the numeric columns would inflate.
     def make_corrupted_part(tbl):
         node.query(f"DROP TABLE IF EXISTS {tbl} SYNC")
         node.query(f"""
@@ -831,7 +842,8 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
                      index_granularity = 100, replace_long_file_name_to_hash = 0,
                      escape_index_filenames = 0, packed_skip_index_max_bytes = 0,
                      columns_and_secondary_indices_sizes_lazy_calculation = 0,
-                     allow_experimental_text_index_phrase_search = 1
+                     allow_experimental_text_index_phrase_search = 1,
+                     add_minmax_index_for_numeric_columns = 0
             """)
 
         node.query(

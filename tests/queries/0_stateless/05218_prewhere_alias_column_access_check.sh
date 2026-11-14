@@ -41,7 +41,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
         secret_alias Int32 ALIAS secret,
         secret_alias_expression Int32 ALIAS secret_alias + 1
     )
-    ENGINE = MergeTree ORDER BY secret SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+    ENGINE = MergeTree ORDER BY secret SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
     INSERT INTO t_prewhere_alias (secret, pub) SELECT number * 100, number FROM numbers(8);
 

@@ -19,7 +19,10 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1,
+    -- The test is about the `bloom_filter` indices. An implicit minmax index on `u` would hit a separate bug:
+    -- the analysis of a `minmax` index keeps 2 as is through a `CAST` from `UInt8` to `Bool`.
+    add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab (id, dt, u) VALUES
     (1, toDateTime('2024-01-01 00:00:00', 'UTC'), 0),

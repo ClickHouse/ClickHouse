@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -6,7 +7,9 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/Operators.h>
@@ -261,17 +264,47 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseRaw(cons
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNormalize(
     const String & s,
     const ColumnsDescription & columns,
-    bool add_minmax_index_for_numeric_columns,
-    bool add_minmax_index_for_string_columns,
+    const StorageInMemoryMetadata & table_metadata,
     ContextPtr context)
 {
     auto result = parseRaw(s);
+
+    /// Whether the table's own stored `SETTINGS` clause enables this implicit-index policy. Only that
+    /// proves that a reserved-name index was implicit: an inherited value may differ from the one the
+    /// table was created with, and a user-declared `auto_minmax_index_*` of a table that inherits the
+    /// policy looks exactly the same. This must match the local loader in `registerStorageMergeTree`,
+    /// otherwise the index is explicit locally but stripped here, and the replica cannot attach.
+    const auto stored_and_enabled = [&](std::string_view name, bool enabled)
+    {
+        if (!enabled || !table_metadata.settings_changes)
+            return false;
+        for (const auto & change : table_metadata.settings_changes->as<const ASTSetQuery &>().changes)
+            if (change.name == name)
+                return true;
+        return false;
+    };
+    const bool add_minmax_index_for_numeric_columns
+        = stored_and_enabled("add_minmax_index_for_numeric_columns", table_metadata.add_minmax_index_for_numeric_columns);
+    const bool add_minmax_index_for_string_columns
+        = stored_and_enabled("add_minmax_index_for_string_columns", table_metadata.add_minmax_index_for_string_columns);
+
+    /// The local table has generated this implicit index itself. A replica created from the original
+    /// index-free definition of a table whose policy was inherited (not stored) has no local declaration
+    /// that the Keeper one could belong to, so an identical Keeper declaration is the implicit index of an
+    /// older replica. A local user-declared index of the same name is explicit, so it is not matched here.
+    const auto is_local_implicit = [&](const String & index_name)
+    {
+        return table_metadata.secondary_indices.has(index_name)
+            && table_metadata.secondary_indices.getByName(index_name).isImplicitlyCreated();
+    };
+    const bool has_local_implicit = std::ranges::any_of(
+        table_metadata.secondary_indices, [](const IndexDescription & index) { return index.isImplicitlyCreated(); });
 
     /// Backward compatibility: older replicas (before 25.12) stored implicit indices in Keeper
     /// metadata. Newer replicas only store explicit indices. Strip implicit indices from the
     /// parsed metadata so that all downstream comparisons work against the new format.
     if (result.skip_indices.empty()
-        || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
+        || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns && !has_local_implicit))
         return result;
 
     ParserIndexDeclarationList parser;
@@ -295,7 +328,8 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
                 /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
                 /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
                 is_implicit = ((add_minmax_index_for_numeric_columns && isNumber(col_type))
-                        || (add_minmax_index_for_string_columns && isString(col_type)))
+                        || (add_minmax_index_for_string_columns && isString(col_type))
+                        || is_local_implicit(index_name))
                     && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(column_name)->formatWithSecretsOneLine();
             }
         }
@@ -579,7 +613,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
 
         if (projections_changed)
-            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, &new_metadata.partition_key, context);
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, &new_metadata.partition_key, context, &new_metadata);
 
         if (ttl_table_changed)
         {
@@ -653,13 +687,100 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         new_metadata.secondary_indices = std::move(new_indices);
     }
 
+    /// An implicit index of an expression alias contains values of the alias expression rather
+    /// than those of the physical column. A metadata-only ALTER that redefines such a column -
+    /// including a change of the type alone, which keeps it an expression alias - leaves the
+    /// existing part files stale, so do not recreate the identically named index on a replica
+    /// either. This mirrors the local ALTER path in `AlterCommand`.
+    const auto is_expression_alias = [](const ColumnDescription & column)
+    {
+        return column.default_desc.kind == ColumnDefaultKind::Alias
+            && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+    };
+
+    std::unordered_set<String> stale_implicit_index_columns;
+    std::unordered_map<String, const IndexDescription *> kept_implicit_indices;
+    NameSet redefined_alias_columns;
+    for (const auto & column : new_metadata.columns)
+    {
+        if (!old_metadata.columns.has(column.name))
+            continue;
+
+        const auto & old_column = old_metadata.columns.get(column.name);
+
+        /// A column that keeps its definition keeps its index files valid, so the index policy
+        /// decides alone. Only a redefinition of the column can orphan them, and only for an
+        /// expression alias on either side of it: the files then hold values of a different
+        /// expression than the ones the index would be recreated for.
+        const bool redefined = !old_column.type->equals(*column.type) || !(old_column.default_desc == column.default_desc);
+        if (redefined && (is_expression_alias(old_column) || is_expression_alias(column)))
+            stale_implicit_index_columns.insert(column.name);
+        if (redefined && (old_column.default_desc.kind == ColumnDefaultKind::Alias || column.default_desc.kind == ColumnDefaultKind::Alias))
+            redefined_alias_columns.insert(column.name);
+
+        /// Implicit indices are not stored in Keeper, so every replicated ALTER regenerates them. An
+        /// earlier ALTER may have deliberately dropped the implicit index of a column because the files
+        /// of the existing parts were built for its previous definition - for example, over the
+        /// expression of an alias. Keep it absent while the column keeps its stored data: re-creating it
+        /// on an unrelated ALTER would reuse those stale files and prune wrong. This holds after the column
+        /// becomes physical too (`MODIFY COLUMN b ... DEFAULT 0` of `b ALIAS a + 1`): materializing it
+        /// rewrites only the indices of the current metadata and carries the files of the absent index
+        /// over unchanged. It also holds for a physical column that stays physical and changes only its
+        /// default, or its type in a way that keeps the stored bytes (`UInt32` <-> `DateTime`): no mutation
+        /// rewrites it, so the stale files stay in the parts.
+        /// The local ALTER path keeps the presence or absence of the implicit index by editing the metadata
+        /// in place, and an explicit `minmax` index over the column neither removes nor restores it there.
+        /// Mirror that by looking only at the implicit index itself: an explicit `minmax` index added after
+        /// the drop says nothing about the files under the implicit name, so dropping it again must not bring
+        /// the implicit index back; and an implicit index that coexists with an explicit one is kept.
+        const auto is_physical = [](const ColumnDescription & c)
+        {
+            return c.default_desc.kind != ColumnDefaultKind::Alias && c.default_desc.kind != ColumnDefaultKind::Ephemeral;
+        };
+        const bool keeps_stored_data = !redefined
+            || (is_physical(old_column) && is_physical(column) && isTypeChangeKeepingStoredData(*old_column.type, *column.type));
+        if (keeps_stored_data)
+        {
+            const auto old_implicit_index = std::ranges::find_if(old_metadata.secondary_indices, [&](const IndexDescription & index)
+            {
+                return index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name;
+            });
+            if (old_implicit_index == old_metadata.secondary_indices.end())
+                stale_implicit_index_columns.insert(column.name);
+            else if (!redefined)
+                kept_implicit_indices.emplace(column.name, &*old_implicit_index);
+        }
+    }
+
+    /// The implicit index of an expression alias is built over its expanded expression, so the
+    /// redefinition of an alias it reaches (`b` for `c ALIAS b + 1`) leaves its files stale as well.
+    if (!redefined_alias_columns.empty())
+    {
+        for (const auto & dependent : new_metadata.getExpressionAliasesDependingOn(redefined_alias_columns))
+            stale_implicit_index_columns.insert(dependent);
+    }
+
     /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.
     /// Implicit indices are not stored in ZooKeeper, so they must be recreated locally based on the current
     /// columns and table settings.
     /// Note: addImplicitIndicesForColumn checks for existing minmax indices on each column and won't create
     /// duplicates if an explicit index already exists.
     for (const auto & column : new_metadata.columns)
-        new_metadata.addImplicitIndicesForColumn(column, context);
+    {
+        if (stale_implicit_index_columns.contains(column.name))
+            continue;
+
+        /// `addImplicitIndicesForColumn` does not add the index next to an explicit `minmax` one.
+        if (auto it = kept_implicit_indices.find(column.name);
+            it != kept_implicit_indices.end() && !new_metadata.secondary_indices.has(it->second->name))
+        {
+            IndexDescription index = *it->second;
+            index.recalculateWithNewColumns(new_metadata.columns, context);
+            new_metadata.secondary_indices.push_back(std::move(index));
+        }
+        else
+            new_metadata.addImplicitIndicesForColumn(column, context);
+    }
     new_metadata.addImplicitIndicesForVirtualColumns(context);
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
@@ -670,7 +791,8 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     {
         ProjectionsDescription recalculated_projections;
         for (const auto & projection : new_metadata.projections)
-            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, &new_metadata.partition_key, context));
+            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(
+                projection.definition_ast, new_metadata.columns, &new_metadata.partition_key, context, LoadingStrictnessLevel::ATTACH, /*attach_short_syntax=*/ true, &new_metadata));
         new_metadata.projections = std::move(recalculated_projections);
     }
 
