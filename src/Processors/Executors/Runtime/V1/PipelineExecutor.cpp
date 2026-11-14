@@ -457,6 +457,21 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 break;
             }
 
+            /// A pipeline outside of the process list (e.g. of a merge or a mutation) stops when its thread group is cancelled.
+            if (!process_list_element)
+            {
+                try
+                {
+                    CurrentThread::checkIfNotCancelled();
+                }
+                catch (...)
+                {
+                    context.setException(std::current_exception());
+                    cancelWithException(std::current_exception());
+                    break;
+                }
+            }
+
 #ifndef NDEBUG
             Stopwatch processing_time_watch;
 #endif
