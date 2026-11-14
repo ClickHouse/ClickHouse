@@ -270,7 +270,7 @@ private:
             size_t result_value_data_size = result_value_data.size();
             size_t sorted_keys_values_size = sorted_keys_values.size();
 
-            result_key_data.resize_fill(result_key_data_size + length + 1);
+            result_key_data.resize(result_key_data_size + length + 1);
             result_value_data.resize_fill(result_value_data_size + length + 1);
 
             size_t sorted_values_index = 0;
