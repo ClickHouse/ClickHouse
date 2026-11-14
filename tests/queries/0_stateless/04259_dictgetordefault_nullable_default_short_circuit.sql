@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: Dictionary source tables are not available on parallel-replica workers.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/104511
 -- dictGetOrDefault should not throw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN when

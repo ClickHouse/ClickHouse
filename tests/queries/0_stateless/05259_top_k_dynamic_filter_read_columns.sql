@@ -1,6 +1,9 @@
 -- Tags: no-parallel-replicas
 -- The EXPLAIN controls assert on the local read step, which parallel replicas replace.
 
+-- Disable force_primary_key_reverse_order: the reference pins rows and read columns that depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- A top-N query (`ORDER BY ... LIMIT`) returns the same rows with and without `use_top_k_dynamic_filtering`
 -- when the query is served by a projection that stores `_part_offset` and sorts by `_part_offset`,
 -- and when the table has a column named like the threshold filter over the sort column.

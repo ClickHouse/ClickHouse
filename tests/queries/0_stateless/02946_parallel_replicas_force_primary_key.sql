@@ -1,3 +1,5 @@
+-- Parallel replicas partition key ranges depend on primary key direction
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS t1 SYNC;
 DROP TABLE IF EXISTS t2 SYNC;
 DROP TABLE IF EXISTS t3 SYNC;

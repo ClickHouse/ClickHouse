@@ -3,6 +3,9 @@
 -- `Decimal` result, which must only make the condition unusable for the index, not fail the query: another
 -- condition restricts the rows read to a safe slice of the key.
 
+-- Disable force_primary_key_reverse_order: the reference pins the granule counts, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_decimal_overflow_key;
 CREATE TABLE t_decimal_overflow_key (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 INSERT INTO t_decimal_overflow_key VALUES (0), (1), (2), (3000000000);

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `any` returns the value from the first row in the physical order
+SET force_primary_key_reverse_order = 0;
+
 -- A later `UPDATE a = 'x'` puts `a` in the on-fly chain's overwritten set, while an
 -- earlier `UPDATE b = isNotNull(materialize(a))` step still reads `a` as a function
 -- input. When the query reads `a` too (so the `UPDATE a` is not dropped), `a` must

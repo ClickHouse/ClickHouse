@@ -10,6 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: The test checks that the view is read in order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 db=${CLICKHOUSE_DATABASE}
 reader="reader_${db}_$RANDOM"
 definer="definer_${db}_$RANDOM"

@@ -1,3 +1,5 @@
+-- INTERPOLATE with WITH FILL depends on source row order which changes with reverse key
+SET force_primary_key_reverse_order = 0;
 # Test WITH FILL without INTERPOLATE
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter FROM numbers(10) WHERE number % 3 = 1

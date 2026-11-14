@@ -3,6 +3,8 @@
 -- compared numerically by equality (`[0.0] = [-0.0]` is true), while a dictionary lookup matches them
 -- by representation. The results must be the same with the optimization on and off.
 
+-- Disable force_primary_key_reverse_order: the reference pins the order of rows returned without `ORDER BY`, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
 DROP DICTIONARY IF EXISTS dict_array;
 DROP DICTIONARY IF EXISTS dict_array_composite;
 DROP DICTIONARY IF EXISTS dict_map;

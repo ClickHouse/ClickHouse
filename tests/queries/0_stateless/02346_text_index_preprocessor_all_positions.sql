@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the order of the positions follows the physical order of the rows, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_full_text_index = 1;
 SET enable_lightweight_update = 1;
 SET use_query_condition_cache = 0;

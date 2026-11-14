@@ -7,6 +7,8 @@
 -- (which scatters rows into buckets by hash). The pin makes the read-in-order-through-join
 -- optimization applicable even when the join spills to disk.
 
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;

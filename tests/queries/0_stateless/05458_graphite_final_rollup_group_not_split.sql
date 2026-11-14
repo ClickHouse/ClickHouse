@@ -1,4 +1,6 @@
 -- one rollup group must not be split across FINAL layers, partitions or unmerged parts
+-- Disable force_primary_key_reverse_order: the Graphite rollup takes `Version` from the last row of a group, which depends on the order of `Time` in the key
+SET force_primary_key_reverse_order = 0;
 SET optimize_on_insert = 0;
 SET max_threads = 2;
 

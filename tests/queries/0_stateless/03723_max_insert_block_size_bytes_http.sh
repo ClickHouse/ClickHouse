@@ -16,6 +16,10 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests insert block size via HTTP, creates MergeTree with order-dependent output
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_max_insert_bytes_sh;" 
 $CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_min_insert_rows_bytes_sh;"
 $CLICKHOUSE_CLIENT -q "DROP table IF EXISTS test_min_insert_rows_sh;"

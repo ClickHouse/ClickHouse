@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS constant_sort_key_single;
 -- `identity` prevents constant folding, so the sorting expression remains `ColumnConst`.
 CREATE TABLE constant_sort_key_single (payload UInt64)

@@ -1,6 +1,9 @@
 -- A single-element `IN` on a sorting-key prefix fixes that column, like `=` does,
 -- so `ORDER BY` on the next key column can read in order.
 
+-- Disable force_primary_key_reverse_order: the reference pins the read type, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;
 SET enable_parallel_replicas = 0;

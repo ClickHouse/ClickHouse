@@ -2,6 +2,8 @@
 -- the parts on disk stay physically sorted the old way, so primary key index analysis would
 -- prune the wrong marks and the table would return wrong results. The ASC -> DESC direction is
 -- only reachable through the `clickhouse_json` dialect and is covered by the sibling `.sh` test.
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_desc_key;
 DROP TABLE IF EXISTS t_desc_minimal;

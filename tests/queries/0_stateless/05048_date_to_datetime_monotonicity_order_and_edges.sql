@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks `ReadType: InOrder` in the plan, a descending key reads in reverse order
+SET force_primary_key_reverse_order = 0;
+
 -- These `Date`/`Date32` to `DateTime` conversions preserve order only inside a bounded window of day
 -- numbers. Reading in sorting-key order needs order over the whole column; pruning needs the edges
 -- of the window to be exact.

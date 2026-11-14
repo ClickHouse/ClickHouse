@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests TTL behavior dependent on ORDER BY
+SET force_primary_key_reverse_order = 0;
+
 SELECT 'TTL WHERE';
 DROP TABLE IF EXISTS ttl_where;
 

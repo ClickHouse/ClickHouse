@@ -2,6 +2,8 @@
 -- (added by `ALTER ADD COLUMN` + `MODIFY ORDER BY`, then given a default by `MODIFY COLUMN`)
 -- is left as a null placeholder by `fillMissingColumns`. Reads must evaluate the default
 -- before `MergeOnKey` key comparisons in `readPatches`, otherwise the read crashes.
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
 
 SET enable_lightweight_update = 1;
 SET apply_patch_parts = 1;

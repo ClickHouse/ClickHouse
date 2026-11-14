@@ -1,6 +1,9 @@
 -- Tests for enable_join_runtime_filters_index_analysis on the global row index `_part_starting_offset + _part_offset`:
 -- a self-join on it prunes the probe side to the granules that contain the rows found by the build side.
 
+-- Disable force_primary_key_reverse_order: The asserted granule counts of the runtime filter index analysis depend on the sort order
+SET force_primary_key_reverse_order = 0;
+
 SET allow_reserved_column_names = 1;
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
