@@ -1,0 +1,188 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "83984c52-5cba-42dd-8e30-8eb0d12b3ba5",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_alltypes_part",
+  "last-updated-ms" : 1645023419594,
+  "last-column-id" : 9,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "p_bool",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "p_int",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "p_bigint",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "p_float",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 6,
+      "name" : "p_double",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "p_decimal",
+      "required" : false,
+      "type" : "decimal(6, 3)"
+    }, {
+      "id" : 8,
+      "name" : "p_date",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 9,
+      "name" : "p_string",
+      "required" : false,
+      "type" : "string"
+    } ]
+  },
+  "partition-spec" : [ {
+    "name" : "p_bool",
+    "transform" : "identity",
+    "source-id" : 2,
+    "field-id" : 1000
+  }, {
+    "name" : "p_int",
+    "transform" : "identity",
+    "source-id" : 3,
+    "field-id" : 1001
+  }, {
+    "name" : "p_bigint",
+    "transform" : "identity",
+    "source-id" : 4,
+    "field-id" : 1002
+  }, {
+    "name" : "p_float",
+    "transform" : "identity",
+    "source-id" : 5,
+    "field-id" : 1003
+  }, {
+    "name" : "p_double",
+    "transform" : "identity",
+    "source-id" : 6,
+    "field-id" : 1004
+  }, {
+    "name" : "p_decimal",
+    "transform" : "identity",
+    "source-id" : 7,
+    "field-id" : 1005
+  }, {
+    "name" : "p_date",
+    "transform" : "identity",
+    "source-id" : 8,
+    "field-id" : 1006
+  }, {
+    "name" : "p_string",
+    "transform" : "identity",
+    "source-id" : 9,
+    "field-id" : 1007
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "p_bool",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    }, {
+      "name" : "p_int",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1001
+    }, {
+      "name" : "p_bigint",
+      "transform" : "identity",
+      "source-id" : 4,
+      "field-id" : 1002
+    }, {
+      "name" : "p_float",
+      "transform" : "identity",
+      "source-id" : 5,
+      "field-id" : 1003
+    }, {
+      "name" : "p_double",
+      "transform" : "identity",
+      "source-id" : 6,
+      "field-id" : 1004
+    }, {
+      "name" : "p_decimal",
+      "transform" : "identity",
+      "source-id" : 7,
+      "field-id" : 1005
+    }, {
+      "name" : "p_date",
+      "transform" : "identity",
+      "source-id" : 8,
+      "field-id" : 1006
+    }, {
+      "name" : "p_string",
+      "transform" : "identity",
+      "source-id" : 9,
+      "field-id" : 1007
+    } ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "MIGRATED_TO_ICEBERG" : "true",
+    "last_modified_time" : "1645023419",
+    "EXTERNAL" : "TRUE",
+    "write.format.default" : "parquet",
+    "gc.enabled" : "TRUE",
+    "TRANSLATED_TO_EXTERNAL" : "TRUE",
+    "bucketing_version" : "2",
+    "schema.name-mapping.default" : "[ {\n  \"field-id\" : 1,\n  \"names\" : [ \"i\" ]\n}, {\n  \"field-id\" : 2,\n  \"names\" : [ \"p_bool\" ]\n}, {\n  \"field-id\" : 3,\n  \"names\" : [ \"p_int\" ]\n}, {\n  \"field-id\" : 4,\n  \"names\" : [ \"p_bigint\" ]\n}, {\n  \"field-id\" : 5,\n  \"names\" : [ \"p_float\" ]\n}, {\n  \"field-id\" : 6,\n  \"names\" : [ \"p_double\" ]\n}, {\n  \"field-id\" : 7,\n  \"names\" : [ \"p_decimal\" ]\n}, {\n  \"field-id\" : 8,\n  \"names\" : [ \"p_date\" ]\n}, {\n  \"field-id\" : 9,\n  \"names\" : [ \"p_string\" ]\n} ]",
+    "last_modified_by" : "boroknagyz",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "table_type" : "ICEBERG"
+  },
+  "current-snapshot-id" : 6167994413873848621,
+  "snapshots" : [ {
+    "snapshot-id" : 6167994413873848621,
+    "timestamp-ms" : 1645023419585,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "2",
+      "added-files-size" : "433",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "433",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_alltypes_part/metadata/snap-6167994413873848621-1-283c54cb-5a45-4a2c-bca8-4bfa0e61cdbd.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1645023419585,
+    "snapshot-id" : 6167994413873848621
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1645023419407,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_alltypes_part/iceberg_alltypes_part/metadata/v1.metadata.json"
+  } ]
+}

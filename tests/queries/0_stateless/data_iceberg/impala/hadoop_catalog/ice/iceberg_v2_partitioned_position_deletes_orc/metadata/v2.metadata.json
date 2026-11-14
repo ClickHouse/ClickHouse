@@ -1,0 +1,86 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "72375e0f-f012-4f23-ab77-ee114689e86b",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_partitioned_position_deletes_orc",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1661873942863,
+  "last-column-id" : 4,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "user",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "action",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "event_time",
+      "required" : false,
+      "type" : "timestamp"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "action",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "bucketing_version" : "2",
+    "serialization.format" : "1",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "write.format.default" : "orc"
+  },
+  "current-snapshot-id" : 5416468273053855108,
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 5416468273053855108,
+    "timestamp-ms" : 1661873942863,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "3",
+      "added-records" : "20",
+      "added-files-size" : "1807",
+      "changed-partition-count" : "3",
+      "total-records" : "20",
+      "total-files-size" : "1807",
+      "total-data-files" : "3",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_partitioned_position_deletes_orc/metadata/snap-5416468273053855108-1-588ee1ca-6a85-4af2-8ba2-e595e71712ba.avro",
+    "schema-id" : 0
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1661873942863,
+    "snapshot-id" : 5416468273053855108
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1661873778765,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_partitioned_position_deletes_orc/metadata/00000-79bb9f0f-a28c-431f-9d7b-6afb8362cb1e.metadata.json"
+  } ]
+}

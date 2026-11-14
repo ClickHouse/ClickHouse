@@ -1,0 +1,120 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "580ae1f6-35ec-444a-9a34-623227d05f22",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality",
+  "last-sequence-number" : 2,
+  "last-updated-ms" : 1692789360703,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "identifier-field-ids" : [ 1 ],
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : true,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "data",
+      "required" : true,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "hive-conf-dir" : "/etc/hive/conf",
+    "write.merge.mode" : "merge-on-read",
+    "connector" : "iceberg",
+    "write.delete.mode" : "merge-on-read",
+    "catalog-database" : "test_db",
+    "write.upsert.enabled" : "true",
+    "catalog-type" : "hive",
+    "write.update.mode" : "merge-on-read",
+    "catalog-name" : "iceberg_hive_catalog"
+  },
+  "current-snapshot-id" : 3207673167795000154,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 3207673167795000154,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 361598097944440235,
+    "timestamp-ms" : 1692789360319,
+    "summary" : {
+      "operation" : "overwrite",
+      "flink.job-id" : "a59bb7c5dca5551ff7f1c99e40237364",
+      "flink.max-committed-checkpoint-id" : "9223372036854775807",
+      "added-data-files" : "1",
+      "added-equality-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "1168",
+      "added-equality-deletes" : "1",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "1168",
+      "total-data-files" : "1",
+      "total-delete-files" : "1",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "1"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality/metadata/snap-361598097944440235-1-22029492-dcdb-4ba1-a447-9b9f7200f9e4.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 3207673167795000154,
+    "parent-snapshot-id" : 361598097944440235,
+    "timestamp-ms" : 1692789360703,
+    "summary" : {
+      "operation" : "overwrite",
+      "flink.job-id" : "a59bb7c5dca5551ff7f1c99e40237364",
+      "flink.max-committed-checkpoint-id" : "9223372036854775807",
+      "added-data-files" : "1",
+      "added-equality-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "1166",
+      "added-equality-deletes" : "1",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "2334",
+      "total-data-files" : "2",
+      "total-delete-files" : "2",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "2"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality/metadata/snap-3207673167795000154-2-30efd05a-a329-4420-8592-9fab221add9e.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1692789360319,
+    "snapshot-id" : 361598097944440235
+  }, {
+    "timestamp-ms" : 1692789360703,
+    "snapshot-id" : 3207673167795000154
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1692789322627,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality/metadata/00000-3ffdeeef-5d15-4a42-81cd-659b9ba984b3.metadata.json"
+  }, {
+    "timestamp-ms" : 1692789360319,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality/metadata/00001-4b107021-78a8-4f79-866e-edda2e44591e.metadata.json"
+  } ]
+}

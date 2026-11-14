@@ -1,0 +1,69 @@
+iceberg_v2_delete_positional
+1	a
+3	c
+0
+c
+iceberg_v2_positional_delete_all_rows
+0
+iceberg_v2_positional_delete_all_rows_orc
+0
+iceberg_v2_positional_update_all_rows
+1	A
+2	B
+3	C
+1
+iceberg_v2_positional_not_all_data_files_have_delete_files
+1	a
+2	b
+3	c
+4	d
+5	X
+6	f
+1004	D
+1005	X
+1006	F
+iceberg_v2_positional_not_all_data_files_have_delete_files_orc
+1	a
+2	b
+3	c
+4	d
+5	X
+6	f
+3
+iceberg_v2_partitioned_position_deletes
+2	Lisa	download	2020-01-01 11:00:00.000000
+4	Alex	view	2020-01-01 09:00:00.000000
+6	Alex	view	2020-01-01 09:00:00.000000
+8	Lisa	download	2020-01-01 11:00:00.000000
+10	Alan	click	2020-01-01 10:00:00.000000
+12	Alan	click	2020-01-01 10:00:00.000000
+14	Lisa	download	2020-01-01 11:00:00.000000
+16	Lisa	download	2020-01-01 11:00:00.000000
+18	Alan	click	2020-01-01 10:00:00.000000
+20	Alex	view	2020-01-01 09:00:00.000000
+click	3
+download	4
+view	3
+iceberg_v2_partitioned_position_deletes_orc
+2	Lisa	download	2020-01-01 11:00:00.000000
+4	Alex	view	2020-01-01 09:00:00.000000
+6	Alex	view	2020-01-01 09:00:00.000000
+8	Lisa	download	2020-01-01 11:00:00.000000
+10	Alan	click	2020-01-01 10:00:00.000000
+12	Alan	click	2020-01-01 10:00:00.000000
+14	Lisa	download	2020-01-01 11:00:00.000000
+16	Lisa	download	2020-01-01 11:00:00.000000
+18	Alan	click	2020-01-01 10:00:00.000000
+20	Alex	view	2020-01-01 09:00:00.000000
+click	3
+download	4
+view	3
+10
+12
+18
+iceberg_spark_compaction_with_dangling_delete
+1	10
+2	20
+3	30
+5	50
+4

@@ -1,0 +1,95 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "8368b5fe-0726-4010-869d-cbbdfb5d511b",
+  "location" : "/test-warehouse/iceberg_with_puffin_stats",
+  "last-updated-ms" : 1730125063894,
+  "last-column-id" : 2,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "d",
+      "required" : false,
+      "type" : "decimal(9, 0)"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "d",
+      "required" : false,
+      "type" : "decimal(9, 0)"
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "impala.events.catalogServiceId" : "58de66debfc6442a:9e804e3402019553",
+    "external.table.purge" : "TRUE",
+    "impala.events.catalogVersion" : "845",
+    "write.format.default" : "parquet",
+    "hive.metastore.table.owner" : "danielbecker",
+    "OBJCAPABILITIES" : "EXTREAD,EXTWRITE",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler"
+  },
+  "current-snapshot-id" : 8614787612208071008,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 8614787612208071008,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 8614787612208071008,
+    "timestamp-ms" : 1730125063881,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "2",
+      "added-files-size" : "604",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "604",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_with_puffin_stats/metadata/snap-8614787612208071008-1-989a6a68-ca7b-4339-adc2-cb5ba2656f0c.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1730125063881,
+    "snapshot-id" : 8614787612208071008
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1730124581193,
+    "metadata-file" : "/test-warehouse/iceberg_with_puffin_stats/metadata/00000-e9800290-7a3b-45bb-b0e0-5747e1d43167.metadata.json"
+  } ]
+}
