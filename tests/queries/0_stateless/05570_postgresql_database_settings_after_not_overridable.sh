@@ -19,6 +19,10 @@ NC_KEYS="host = '127.0.0.1', port = 5432, database = 'db', user = 'user', passwo
 
 function cleanup()
 {
+    # A stored definition that failed to load stays detached: unlock the key so that it attaches and is dropped, rather than
+    # left behind over a dropped named collection, which would stop the next start of the server.
+    ${CLICKHOUSE_CLIENT} --query "ALTER NAMED COLLECTION ${NC} SET postgresql_connection_pool_size = 7 OVERRIDABLE" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${DB}" 2>/dev/null
     ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}"
     ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB}_attached"
     ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS ${NC}"
