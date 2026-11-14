@@ -914,7 +914,7 @@ private:
     void dropPartitions(const zkutil::ZooKeeperPtr & zookeeper, const Strings & partition_ids, bool detach, ContextPtr query_context);
     void dropAllPartsInPartitions(zkutil::ZooKeeper & zookeeper, const Strings & partition_ids, std::vector<LogEntryPtr> & entries, ContextPtr query_context, bool detach);
 
-    void dropPartNoWaitNoThrow(const String & part_name) override;
+    void dropPartsNoWaitNoThrow(const Strings & part_names) override;
     void dropPart(const String & part_name, bool detach, ContextPtr query_context) override;
 
     // Partition helpers

@@ -5551,11 +5551,9 @@ size_t MergeTreeData::clearEmptyParts()
         }
     }
 
-    for (auto & name : parts_names_to_drop)
-    {
+    for (const auto & name : parts_names_to_drop)
         LOG_TRACE(log, "Will drop empty part {}", name);
-        dropPartNoWaitNoThrow(name);
-    }
+    dropPartsNoWaitNoThrow(parts_names_to_drop);
 
     return parts_names_to_drop.size();
 }
@@ -5594,10 +5592,8 @@ size_t MergeTreeData::clearUnusedPatchParts()
     }
 
     for (const auto & name : patch_names_to_drop)
-    {
         LOG_INFO(log, "Will drop unused patch part {}", name);
-        dropPartNoWaitNoThrow(name);
-    }
+    dropPartsNoWaitNoThrow(patch_names_to_drop);
 
     return patch_names_to_drop.size();
 }

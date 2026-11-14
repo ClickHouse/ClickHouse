@@ -3546,22 +3546,23 @@ void StorageMergeTree::detachPartAfterFailedFsync(const DataPartPtr & part)
     forcefullyMovePartToDetachedAndRemoveFromMemory(part, "fsync-failed");
 }
 
-void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
+void StorageMergeTree::dropPartsNoWaitNoThrow(const Strings & part_names)
 {
-    if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
+    bool outdated_any = false;
+    for (const auto & part_name : part_names)
     {
-        if (deduplication_log)
+        if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
         {
-            deduplication_log->dropPart(part->info);
+            if (deduplication_log)
+                deduplication_log->dropPart(part->info);
+            outdated_any = true;
         }
-
-        /// Need to destroy part objects before clearing them from filesystem.
-        part.reset();
-
-        clearOldPartsFromFilesystem();
+        /// Else nothing to do, part was removed in some different way
     }
 
-    /// Else nothing to do, part was removed in some different way
+    /// Once per batch: each call scans all outdated parts.
+    if (outdated_any)
+        clearOldPartsFromFilesystem();
 }
 
 struct FutureNewEmptyPart
