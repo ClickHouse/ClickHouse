@@ -726,7 +726,7 @@ void ConfigProcessor::doIncludesRecursive(
             {
                 /// A direct environment substitution is always a plain-text value. Escape XML
                 /// special characters so the scalar remains literal even when it resembles XML.
-                env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
+                env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(env_val) + "</from_env>");
             }
 
             return getRootNode(env_document.get());
