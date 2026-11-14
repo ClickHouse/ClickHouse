@@ -197,6 +197,10 @@ check select_resumed_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV',
 check select_resumed_range_201 "$(error_line "SELECT * FROM url('${URL_RNG_201}', 'CSV', 'x UInt8', ${HDR_RNG})
     SETTINGS max_download_threads = 1, max_read_buffer_size = 4, http_max_tries = 2" 'Cannot read with range')" \
     -"$SIG_RNG" -"$TOK_RNG" -"will retry" +"range: [8, -]" +"reason: [HIDDEN] [HIDDEN])"
+# A POST read cannot be resumed and fails with a plain exception.
+check select_resumed_range_post "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8', ${HDR_RNG}, http_method = 'POST')
+    SETTINGS max_download_threads = 1, max_read_buffer_size = 4, http_max_tries = 2" 'Server does not support resuming')" \
+    -"$SIG_RNG" -"$TOK_RNG" +"from offset 8" +"reason: [HIDDEN] [HIDDEN])"
 # The server log can be sent along with the error, so the bound is per line.
 LINES=$(error_line "SELECT * FROM url('${URL_DUP}', 'CSV', 'x UInt8')")
 LONGEST=$(awk '{ if (length($0) > n) n = length($0) } END { print n + 0 }' <<< "$LINES")

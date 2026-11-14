@@ -61,10 +61,16 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
     {
         res_columns[0]->insert(storage_name);
         String source = key.source;
+        /// A URL read with POST is cached as `POST:<url>`, so the URL after that prefix is masked.
+        size_t url_start = source.starts_with("POST:") ? 5 : 0;
+        String url = source.substr(url_start);
         /// Only a URL can carry a credential. A `File` key is a local path, where the presigned
         /// parameter scan would rewrite a '?' in a file name and swallow everything after it.
-        if (findURIAuthority(source) != String::npos)
-            maskURICredentials(source);
+        if (findURIAuthority(url) != String::npos)
+        {
+            maskURICredentials(url);
+            source = source.substr(0, url_start) + url;
+        }
         res_columns[1]->insert(source);
         res_columns[2]->insert(key.format);
         res_columns[3]->insert(key.additional_format_info);
