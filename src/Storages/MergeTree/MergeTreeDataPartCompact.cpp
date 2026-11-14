@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <DataTypes/NestedUtils.h>
-#include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
+#include <Storages/MergeTree/MergeTreeReaderCompactMultipleBuffers.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -93,7 +93,9 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
+    /// The reader chooses between one buffer for all columns and a buffer per column for the mark ranges of every
+    /// read task, because it is reused for the later tasks of the same part.
+    return std::make_unique<MergeTreeReaderCompactMultipleBuffers>(
         read_info, columns_to_read, virtual_fields,
         storage_snapshot, storage_settings, uncompressed_cache, columns_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
