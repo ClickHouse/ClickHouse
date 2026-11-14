@@ -1434,7 +1434,7 @@ def test_system_named_collections_key_mismatch():
     node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
 
     # node3 does not hold the key the collections were encrypted with: the restore must fail
-    # before anything is restored, with both key fingerprints in the message.
+    # before anything is restored, naming the fingerprint of the missing key in the message.
     expected_error = "encrypted with a key with fingerprint"
     assert expected_error in node3.query_and_get_error(
         f"RESTORE TABLE system.named_collections FROM {backup_name}"

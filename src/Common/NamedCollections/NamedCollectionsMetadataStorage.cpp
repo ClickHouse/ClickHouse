@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
+#include <IO/FileEncryptionKeys.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -14,8 +15,6 @@
 #include <base/sort.h>
 
 #include <mutex>
-#include <boost/algorithm/hex.hpp>
-#include <Common/Hex.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -23,6 +22,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #if CLICKHOUSE_CLOUD
 #include <Core/KMS.h>
@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int DATA_ENCRYPTION_ERROR;
 }
 
 static const std::string named_collections_storage_config_path = "named_collections_storage";
@@ -180,7 +181,7 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(file_name))
+        if (!replace && fs::exists(getPath(file_name)))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
@@ -435,20 +436,8 @@ class NamedCollectionsMetadataStorageEncrypted : public BaseMetadataStorage
 public:
     NamedCollectionsMetadataStorageEncrypted(ContextPtr context_, const std::string & path_)
         : BaseMetadataStorage(context_, path_)
+        , keys(FileEncryption::parseKeysFromConfig(BaseMetadataStorage::getContext()->getConfigRef(), named_collections_storage_config_path))
     {
-        const auto & config = BaseMetadataStorage::getContext()->getConfigRef();
-        auto key_hex = config.getRawString("named_collections_storage.key_hex", "");
-        try
-        {
-            key = boost::algorithm::unhex(key_hex);
-            key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
-        }
-        catch (const std::exception &)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
-        }
-
-        algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
     }
 
     bool isEncrypted() const override { return true; }
@@ -467,10 +456,11 @@ public:
     /// value into a key name, which `SHOW NAMED COLLECTIONS` displays. Inside the server the
     /// entries are covered by the trust in the metadata storage, but a backup is written to a
     /// less trusted medium, so an exported entry carries an HMAC-SHA256 tag computed with a key
-    /// derived from the storage key, and the restore rejects an entry whose tag does not verify.
+    /// derived from the key the entry is encrypted with, and the restore rejects an entry whose
+    /// tag does not verify.
     std::string authenticateStoredForBackup(const std::string & stored) const override
     {
-        const auto mac = calculateBackupMAC(stored);
+        const auto mac = calculateBackupMAC(findKeyForEntry(readHeader(stored)), stored);
         return stored + std::string(reinterpret_cast<const char *>(mac.data()), mac.size());
     }
 
@@ -484,11 +474,11 @@ public:
 
         const std::string stored = data.substr(0, data.size() - backup_mac_size);
 
-        /// The key fingerprint is checked first so that a restore under a different key reports
-        /// the key mismatch rather than a failed authentication (the tag never verifies across keys).
-        checkHeaderKeyFingerprint(stored);
+        /// The key is looked up first so that a restore on a server without the key reports the
+        /// missing key rather than a failed authentication (the tag never verifies across keys).
+        const String key = findKeyForEntry(readHeader(stored));
 
-        const auto expected_mac = calculateBackupMAC(stored);
+        const auto expected_mac = calculateBackupMAC(key, stored);
         chassert(expected_mac.size() == backup_mac_size);
         if (CRYPTO_memcmp(expected_mac.data(), data.data() + stored.size(), backup_mac_size) != 0)
             throw Exception(
@@ -496,23 +486,64 @@ public:
                 "The encrypted named collection entry failed authentication: the entry was modified "
                 "or corrupted after the backup was written");
 
-        return readHook(stored);
+        return decrypt(key, stored);
     }
 
     std::string readHook(const std::string & data) const override
     {
-        ReadBufferFromString in(data);
+        return decrypt(findKeyForEntry(readHeader(data)), data);
+    }
 
+    std::string writeHook(const std::string & data) const override
+    {
+        FileEncryption::Header header{
+            .algorithm = keys.current_algorithm,
+            .key_fingerprint = keys.current_key_fingerprint,
+            .init_vector = FileEncryption::InitVector::random()
+        };
+
+        FileEncryption::Encryptor encryptor(header.algorithm, keys.current_key, header.init_vector);
+        WriteBufferFromOwnString out;
+        header.write(out);
+        encryptor.encrypt(data.data(), data.size(), out);
+        return std::string(out.str());
+    }
+
+private:
+    /// HMAC-SHA256.
+    static constexpr size_t backup_mac_size = 32;
+
+    static FileEncryption::Header readHeader(const std::string & data)
+    {
         FileEncryption::Header header;
         try
         {
+            ReadBufferFromString in(data);
             header.read(in);
         }
         catch (Exception & e)
         {
-            e.addMessage("While reading the header of encrypted data");
+            e.addMessage("While reading the header of an encrypted named collection entry");
             throw;
         }
+        return header;
+    }
+
+    /// The key named by the header of an entry. Any of the configured keys, so that an entry
+    /// written before a key rotation still decrypts (see `FileEncryption::Keys`). Decrypting
+    /// blindly with a different key would hand back garbage.
+    String findKeyForEntry(const FileEncryption::Header & header) const
+    {
+        return keys.findKeyByFingerprint(header.key_fingerprint, "the named collection entry");
+    }
+
+    static std::string decrypt(const String & key, const std::string & data)
+    {
+        ReadBufferFromString in(data);
+
+        /// Validated by `readHeader` already; read again to position the buffer at the ciphertext.
+        FileEncryption::Header header;
+        header.read(in);
 
         Memory<> encrypted_buffer(in.available());
         size_t bytes_read = 0;
@@ -529,50 +560,7 @@ public:
         return decrypted_buffer;
     }
 
-    std::string writeHook(const std::string & data) const override
-    {
-        FileEncryption::Header header{
-            .algorithm = algorithm,
-            .key_fingerprint = key_fingerprint,
-            .init_vector = FileEncryption::InitVector::random()
-        };
-
-        FileEncryption::Encryptor encryptor(header.algorithm, key, header.init_vector);
-        WriteBufferFromOwnString out;
-        header.write(out);
-        encryptor.encrypt(data.data(), data.size(), out);
-        return std::string(out.str());
-    }
-
-private:
-    /// HMAC-SHA256.
-    static constexpr size_t backup_mac_size = 32;
-
-    void checkHeaderKeyFingerprint(const std::string & stored) const
-    {
-        FileEncryption::Header header;
-        try
-        {
-            ReadBufferFromString in(stored);
-            header.read(in);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While reading the header of an encrypted named collection entry");
-            throw;
-        }
-
-        /// `readHook` decrypts blindly and would hand back garbage with the wrong key.
-        if (header.key_fingerprint != key_fingerprint)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The named collection entry is encrypted with a key with fingerprint {}, "
-                "but the key of this storage for named collections has fingerprint {}",
-                getHexUIntLowercase(header.key_fingerprint),
-                getHexUIntLowercase(key_fingerprint));
-    }
-
-    std::vector<uint8_t> calculateBackupMAC(const std::string & stored) const
+    static std::vector<uint8_t> calculateBackupMAC(const String & key, const std::string & stored)
     {
         /// Domain separation from the encryption use of the key.
         const auto auth_key = hmacSHA256(
@@ -580,9 +568,7 @@ private:
         return hmacSHA256(auth_key, stored);
     }
 
-    std::string key;
-    UInt128 key_fingerprint{};
-    FileEncryption::Algorithm algorithm;
+    const FileEncryption::Keys keys;
 };
 
 class NamedCollectionsMetadataStorage::LocalStorageEncrypted : public NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::LocalStorage>
@@ -635,6 +621,22 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
             {
                 LOG_DEBUG(getLogger("NamedCollectionsMetadataStorage"),
                     "Collection '{}' was removed while reading, skipping", collection_name);
+                continue;
+            }
+            throw;
+        }
+        catch (const Exception & e)
+        {
+            /// The entry is encrypted with a key which is not configured, for example a key removed
+            /// after a rotation before every entry was rewritten. The other collections stay available;
+            /// the entry is kept in the storage and loads again once its key is configured.
+            if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
+            {
+                /// The name is for the server log only: this may run in the thread of a query (a reload
+                /// during a restore) whose user has no right to see the names of the collections.
+                CurrentThread::HideLogsFromClientScope hide_logs_from_client;
+                LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
+                    "Cannot read named collection '{}', skipping it: {}", collection_name, e.message());
                 continue;
             }
             throw;
@@ -702,6 +704,11 @@ void NamedCollectionsMetadataStorage::remove(const std::string & collection_name
 bool NamedCollectionsMetadataStorage::removeIfExists(const std::string & collection_name)
 {
     return storage->removeIfExists(getFileName(collection_name));
+}
+
+bool NamedCollectionsMetadataStorage::exists(const std::string & collection_name) const
+{
+    return storage->exists(getFileName(collection_name));
 }
 
 MutableNamedCollectionPtr NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery & query)

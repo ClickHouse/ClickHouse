@@ -98,6 +98,36 @@ To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keepe
 
 An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
 
+#### Key rotation {#named-collections-key-rotation}
+
+Several keys can be configured, each with an `id` attribute, and `current_key_id` selects the key
+that encrypts new entries (`current_key_hex` selects it by value instead). Every configured key is
+used for decryption. A running server does not pick up changes to the keys, not even with
+`SYSTEM RELOAD CONFIG`: a restart is needed. The existing collections stay readable through their
+old key and are re-encrypted with the current key when they are next written: by
+`ALTER NAMED COLLECTION`, `CREATE OR REPLACE NAMED COLLECTION`, or a restore from a backup. A server
+which lacks the key a collection is encrypted with reports an error naming the fingerprint of that
+key, so remove an old key from the configuration only after every collection encrypted with it has
+been rewritten.
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
+To rotate the key of a `local_encrypted` storage, add the new key, make it the current one as in the
+example above, and restart the server. The servers sharing a `keeper_encrypted` or
+`zookeeper_encrypted` storage must all know the new key before any of them writes with it: a server
+restarted with a new current key writes entries that the servers not restarted yet cannot decrypt.
+Rotate the key in two stages: first add the new key while keeping the old one current, and restart
+every server; then make the new key the current one, and restart every server again.
+
 You can inspect the active storage type through `system.server_settings` and `getServerSetting`:
 
 ```sql
