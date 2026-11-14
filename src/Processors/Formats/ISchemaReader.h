@@ -17,6 +17,9 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+class ColumnMapper;
+using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
+
 /// Base class for schema inference for the data in some specific format.
 /// It reads some data from read buffer and tries to determine the schema
 /// from read data.
@@ -37,6 +40,9 @@ public:
 
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
+
+    /// Infer the names `column_mapper` gives to the file's field ids, like `IInputFormat::setColumnMapper`.
+    virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
 
     virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
     virtual size_t getNumRowsRead() const { return 0; }

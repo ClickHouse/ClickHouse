@@ -193,12 +193,14 @@ public:
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
+    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override { column_mapper = column_mapper_; }
 
 private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
     std::shared_ptr<const Parquet::FileFooter> file_footer;
+    ColumnMapperPtr column_mapper;
     bool initialized = false;
 };
 
