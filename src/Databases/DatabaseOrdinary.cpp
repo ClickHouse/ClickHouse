@@ -173,6 +173,24 @@ bool DatabaseOrdinary::hasLeaderElectionAsReplicated(const ASTCreateQuery & crea
     return isBoolSettingEnabledAsReplicated(create_query, local_context, "leader_election", MergeTreeSetting::leader_election);
 }
 
+void DatabaseOrdinary::keepLeaderElectionDisabledAsNotReplicated(ASTCreateQuery & create_query, ContextPtr local_context)
+{
+    /// A `ReplicatedMergeTree` never has `leader_election` on: it refuses to attach with it.
+    if (!local_context->getMergeTreeSettings()[MergeTreeSetting::leader_election])
+        return;
+
+    if (create_query.storage->settings && create_query.storage->settings->changes.tryGet("leader_election"))
+        return;
+
+    if (!create_query.storage->settings)
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        create_query.storage->set(create_query.storage->settings, settings_ast);
+    }
+    create_query.storage->settings->changes.setSetting("leader_election", Field(false));
+}
+
 TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context, bool stores_path_literally)
 {
     /// A conversion mints a path the table never had, so the substituted name is validated as strictly

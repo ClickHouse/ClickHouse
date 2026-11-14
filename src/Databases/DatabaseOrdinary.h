@@ -126,6 +126,14 @@ public:
     /// The same for `leader_election`, which `StorageReplicatedMergeTree` refuses to attach with.
     static bool hasLeaderElectionAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
 
+    /// For a conversion back to a not replicated table (`ATTACH TABLE ... AS NOT REPLICATED`): when the server's
+    /// `merge_tree` defaults enable `leader_election` and the definition does not set it, set `leader_election = 0` in the
+    /// definition. The source `ReplicatedMergeTree` had it off (the `replicated_merge_tree` defaults may override the
+    /// generic ones, and the effective value is not persisted), and the converted table keeps that ownership mode instead
+    /// of inheriting the generic default, which would reject a table on a local disk after its engine has already been
+    /// rewritten, leaving a definition that cannot be attached under the same configuration.
+    static void keepLeaderElectionDisabledAsNotReplicated(ASTCreateQuery & create_query, ContextPtr local_context);
+
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
