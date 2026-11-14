@@ -44,6 +44,7 @@
 #include <Core/Defines.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
@@ -415,6 +416,7 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
+    registerWindowFunctions();
     /// The engines are not registered, so the secrets of their arguments are shown.
     setSecretArgumentsFinder(&NoSecretArgumentsFinder::instance());
 

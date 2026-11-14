@@ -1,10 +1,9 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -47,8 +46,8 @@ public:
 
 }
 
-void registerWindowFunctionDenseRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionDenseRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionDenseRank(WindowFunctionFactory & factory);
+void registerWindowFunctionDenseRank(WindowFunctionFactory & factory)
 {
     factory.registerFunction("denseRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -60,7 +59,7 @@ void registerWindowFunctionDenseRank(AggregateFunctionFactory & factory, const A
                     "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
                     "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
                     name, argument_types.size());
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionDenseRank>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionDenseRank>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Ranks the current row within its partition without gaps. In other words, if the value of any new row encountered is equal to the value of one of the previous rows then it will receive the next successive rank without any gaps in ranking.
 
@@ -125,9 +124,9 @@ FROM salaries;
 7. │ James Henderson │ 140000 │          4 │
    └─────────────────┴────────┴────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}});
 
-    factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("dense_rank", "denseRank", WindowFunctionFactory::Case::Insensitive);
 }
 
 }

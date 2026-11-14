@@ -113,6 +113,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
@@ -1389,6 +1390,7 @@ try
     registerParsers();
     registerFunctions();
     registerAggregateFunctions();
+    registerWindowFunctions();
     registerTableFunctions();
     registerDatabases();
     registerStorages();

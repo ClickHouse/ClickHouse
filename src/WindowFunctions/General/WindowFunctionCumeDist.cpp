@@ -1,9 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -36,13 +35,13 @@ public:
 
 }
 
-void registerWindowFunctionCumeDist(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionCumeDist(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionCumeDist(WindowFunctionFactory & factory);
+void registerWindowFunctionCumeDist(WindowFunctionFactory & factory)
 {
     factory.registerFunction("cume_dist", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionCumeDist>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionCumeDist>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Computes the cumulative distribution of a value within a group of values, i.e., the percentage of rows with values less than or equal to the current row's value. Can be used to determine relative standing of a value within a partition.
 
@@ -115,7 +114,7 @@ cume_dist = (number of rows ≤ current row value) / (total number of rows in pa
 ```
 
 Rows with equal values (peers) receive the same cumulative distribution value, which corresponds to the highest position of the peer group.
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }
