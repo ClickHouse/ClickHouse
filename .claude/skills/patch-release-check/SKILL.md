@@ -178,8 +178,8 @@ For each version flagged `MISSING` in step 3, dispatch `CreateRelease` with
 ⚠️ **Use a CI-green commit SHA, not the bare branch name.** `AutoReleaseInfo` does not
 release branch head — it derives candidates as `git rev-list --first-parent <latest-tag>..origin/<branch>`,
 drops the oldest (version-bump) commit, and among the newest
-`MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8` picks the most recent whose CI
-**completed with no failed statuses**, then passes that SHA to `create_release.yml`.
+`MAX_COMMITS_TO_CONSIDER = 8` picks the most recent whose CI
+**completed with no failed statuses** and whose release build artifacts are all in S3, then passes that SHA to `create_release.yml`.
 Reproduce that exactly — and use **first-parent** `git rev-list`, *not* the GitHub
 `commits?sha=` API: that API returns every reachable commit (side commits off the
 first-parent chain), so it can pick a SHA `AutoReleaseInfo` would never consider and
@@ -193,13 +193,15 @@ TAG=$(git tag --list "v$BR.*" --sort=-v:refname | head -1)
 # Candidate SHAs: first-parent since the tag, drop the oldest (version-bump) commit,
 # newest 8 — exactly AutoReleaseInfo's set.
 CANDS=$(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8)
-# Pick the newest CI-green SHA, mirroring ci_utils.GH exactly:
+# Pick the newest CI-green SHA, mirroring `_wf_completed` and `_failed_statuses` in `ci/jobs/auto_release_job.py`:
 #   check_wf_completed   — /check-runs must be NON-EMPTY and every run "completed"
 #   get_failed_statuses  — paginate /statuses, keep the newest state PER CONTEXT,
 #                          require none non-success
+#   artifacts ready      — every object CreateRelease downloads must be in S3 under
+#                          this SHA
 # (Re-reading the combined /status rollup is insufficient — it is blind to check-runs
 # and to status history, so it both over- and under-reports.) Chosen SHA -> stdout.
-CANDIDATE=$(SHAS="$CANDS" python3 - <<'PY'
+CANDIDATE=$(SHAS="$CANDS" BR="$BR" PYTHONPATH=. python3 - <<'PY'
 import os, sys, json, subprocess
 REPO = "ClickHouse/ClickHouse"
 def gh(args):
@@ -208,11 +210,11 @@ def gh(args):
     if r.returncode != 0:
         raise SystemExit(f"gh api failed ({' '.join(args)}): {r.stderr.strip()}")
     return r.stdout
-def wf_completed(sha):                       # ci_utils.GH.check_wf_completed
+def wf_completed(sha):                       # _wf_completed
     runs = (json.loads(gh([f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"]))
             .get("check_runs") or [])
     return bool(runs) and all(c["status"] == "completed" for c in runs)
-def failed_statuses(sha):                    # ci_utils.GH.get_failed_statuses
+def failed_statuses(sha):                    # _failed_statuses
     out = gh(["--paginate", "--jq", ".[]",
               f"repos/{REPO}/commits/{sha}/statuses?per_page=100"])
     latest = {}
@@ -223,17 +225,22 @@ def failed_statuses(sha):                    # ci_utils.GH.get_failed_statuses
         if c not in latest or latest[c]["updated_at"] < st["updated_at"]:
             latest[c] = st
     return sorted(c for c, d in latest.items() if d["state"] != "success")
+# A CI-cached ("skipped") release build uploads nothing under its own SHA.
+from ci.jobs.auto_release_job import _release_build_artifacts_ready
+BR = os.environ["BR"]
 for sha in os.environ["SHAS"].split():
     done = wf_completed(sha)
     fails = failed_statuses(sha) if done else None
+    ready = _release_build_artifacts_ready(BR, sha) if done and not fails else None
     print(f"  {sha[:12]} completed={done} "
-          f"failed_statuses={fails if fails is not None else 'n/a (CI not completed)'}",
+          f"failed_statuses={fails if fails is not None else 'n/a (CI not completed)'} "
+          f"artifacts_ready={ready if ready is not None else 'n/a (CI not green)'}",
           file=sys.stderr)
-    if done and not fails:
+    if done and not fails and ready:
         print(sha); break
 PY
 )
-echo "release candidate: ${CANDIDATE:?no CI-green commit in the first 8 first-parent commits — investigate; do not release branch head}"
+echo "release candidate: ${CANDIDATE:?no releasable commit in the first 8 first-parent commits — investigate; do not release branch head}"
 ```
 
 After explicit confirmation, dispatch with that SHA (the official runbook also accepts
