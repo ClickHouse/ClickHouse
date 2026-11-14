@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -172,7 +173,7 @@ TEST(CascadesSelectInputImplementation, EvictionGuardKeepsBase)
     /// The cheaper sorted gather wins an unguarded empty-sort lookup ...
     EXPECT_EQ(group.getBestImplementation(propsAt(1), cost_config).expression, sorted_gather);
     /// ... but the base survived eviction and the resolver returns it when the gather is excluded.
-    std::unordered_set<GroupExpression *> active_path{sorted_gather.get()};
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path{sorted_gather.get()};
     auto picked = group.selectInputImplementation(propsAt(1), cost_config, active_path, /*input_is_self_referential=*/true);
     EXPECT_EQ(picked.expression, base);
 }
@@ -192,7 +193,7 @@ TEST(CascadesSelectInputImplementation, FallbackScansPhysicalExpressions)
     auto base = costedExpr(propsAt(1), 100);
     group.physical_expressions.push_back(base);
 
-    std::unordered_set<GroupExpression *> active_path{sorted_gather.get()};
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path{sorted_gather.get()};
     auto picked = group.selectInputImplementation(propsAt(1), cost_config, active_path, /*input_is_self_referential=*/true);
     EXPECT_EQ(picked.expression, base);
 }

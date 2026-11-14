@@ -34,7 +34,8 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新设置。启用将内存数据自适应落盘到外部存储。"}]}]} />
 
-触发处理器将数据自适应落盘到外部存储。目前支持可落盘的哈希连接，包括 `grace_hash` 以及自适应的 `hash` / `parallel_hash` 路径。
+当查询面临内存压力时，将符合条件的聚合、排序、`DISTINCT` 和哈希连接处理器自适应地落盘到外部存储。
+目前支持的哈希连接包括 `grace_hash` 以及自适应的 `hash` / `parallel_hash` 路径。
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -83,6 +84,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 启用查询优化：分析函数和子查询的结果，并在其中包含常量时重写查询
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于控制是否启用实验性的 Elasticsearch 集成（`Elasticsearch` 表引擎和 `elasticsearch` 表函数）。"}]}]} />
+
+启用实验性的 Elasticsearch 集成，包括 `Elasticsearch` 表引擎和 `elasticsearch` 表函数。
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -155,6 +166,23 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 将 WITH 语句应用于 UNION 查询和所有子查询
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：`GROUP BY key [ORDER BY key] LIMIT n` 会将 top-K 堆的边界发布到 `MergeTree` 读取步骤，读取步骤据此过滤行并跳过粒度。当 `compatibility` 低于 26.10 时将禁用该功能。"}]}]} />
+
+此设置作用于 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)：当第一个参与排序的 `GROUP BY` 键是从 `MergeTree` 表中读取的列时，一旦 top-K 堆中已有 `LIMIT` 个键，聚合就会将该堆的边界发布到读取步骤。随后，读取步骤会在读取其他列之前 (`PREWHERE`) 丢弃键值超出边界的行，并利用主键或该列上的 `minmax` 跳过索引，跳过完全超出边界的粒度。
+
+此功能适用于 `GROUP BY key ORDER BY key LIMIT n`，以及不带 `ORDER BY` 的 `GROUP BY key LIMIT n` (此时任意 `n` 个分组都是有效结果) 。
+
+带有 `FINAL` 的读取或使用并行副本的读取不会应用此功能：`FINAL` 必须读取一行的所有版本，而边界不会传递到远程副本上的读取操作。
+
+可选值：
+
+* 0 — 已禁用。
+* 1 — 已启用。
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -212,6 +240,16 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "用于控制查询分析器中标识符解析缓存的新设置"}]}]} />
 
 在查询分析器中启用标识符解析缓存。该缓存会共享已解析的别名节点，以防止同一别名被多次引用时 AST 膨胀。若怀疑结果不正确，可将其设为 false 以禁用缓存。
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于启用实验性的 IP 地址加密函数。"}]}]} />
+
+启用实验性的 IP 地址加密函数 (`ipcryptEncrypt`、`ipcryptDecrypt`、`ipcryptPrefixEncrypt`、`ipcryptPrefixDecrypt`) 。
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -408,6 +446,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 如果为 true，则可根据从表中获得的序列化提示，直接将数据解析到使用自定义序列化 (例如 Sparse) 的列中。
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于启用处于 Beta 阶段的 `PCO` 压缩编解码器。"}]}]} />
+
+启用 `PCO` 压缩编解码器。
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -534,6 +582,18 @@ WHERE (_part, _part_offset) IN (
 被拒绝。这是流式查询功能的总开关；
 其他能力也可能受其各自设置的控制。
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于启用子列的编解码器声明。"}]}]} />
+
+允许为列的子列 (例如 `Tuple` 的元素或 `Map` 的键和值) 声明压缩编解码器，可在 `CREATE TABLE` 中使用 `CODEC name (...)` 条目，或使用 `ALTER TABLE ... MODIFY COLUMN name CODEC(...)` 进行声明。
+已包含此类声明的表不受该设置影响，均可正常使用，且这些声明随时可以移除。
+包含子列编解码器的表无法被旧版本的服务器附加。
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -583,11 +643,11 @@ WHERE (_part, _part_offset) IN (
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于启用 `dialect` 设置的 `trino` 值，该值会转换 Trino SQL 语法，并将 Trino 函数名映射为 ClickHouse 中的等价函数。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于启用 `dialect` 设置的 `trino` 值，该值会转换 Trino SQL 语法，并将 Trino 函数名映射为 ClickHouse 中的等价函数。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`trino` 方言已进入 Beta 阶段。"}]}]} />
 
 启用 `dialect` 设置的 `trino` 值。
 
@@ -669,6 +729,16 @@ WHERE (_part, _part_offset) IN (
 
 * 0 - 禁用
 * 1 - 启用
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于控制是否启用实验性的 XGBoost 集成（`XGBOOST` 字典布局和 `predictXGBoost` 函数）。"}]}]} />
+
+启用实验性的 XGBoost 集成，包括 `XGBOOST` 字典布局和 `predictXGBoost` 函数。
 
 ## enable_zxc_codec {#enable_zxc_codec}
 
