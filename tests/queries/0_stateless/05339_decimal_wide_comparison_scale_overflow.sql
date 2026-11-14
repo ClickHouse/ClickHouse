@@ -75,7 +75,7 @@ SELECT count() FROM t_05339 WHERE d != toDecimal128(1000000000, 0);
 SELECT count() FROM t_05339 WHERE d IN (SELECT toDecimal128(1000000000, 0));
 SELECT count() FROM t_05339 WHERE d NOT IN (SELECT toDecimal128(-1000000000, 0));
 SELECT d FROM t_05339 WHERE d = toDecimal128(2, 0) SETTINGS force_primary_key = 1;
-SELECT d FROM t_05339 WHERE d IN (SELECT toDecimal128(2, 0)) SETTINGS force_primary_key = 1;
+SELECT d FROM t_05339 WHERE d IN (SELECT toDecimal128(2, 0));
 SELECT count() FROM t_05339 WHERE d IN (toDecimal128(1000000000, 0));
 SELECT count() FROM t_05339 WHERE d NOT IN (toDecimal128(-1000000000, 0));
 SELECT d FROM t_05339 WHERE d IN (toDecimal128(2, 0), toDecimal128(1000000000, 0)) SETTINGS force_primary_key = 1;

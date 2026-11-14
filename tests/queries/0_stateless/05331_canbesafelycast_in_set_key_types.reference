@@ -7,6 +7,8 @@ Decimal128(2) -> Decimal32(2)	1
 Decimal32(2) -> Decimal64(4)	1
 UUID -> String	61f0c404-5cb3-11e7-907b-a6006ad3dba0
 IPv4 -> String	1.1.1.1
+UUID -> Int64	0
+IPv4 -> Int64	0
 Map -> Map(Int64, String)	{1:'a'}
 Map -> Array(Tuple(Int64, String))	[(1,'a')]
 Map -> Array(Tuple(String, Int64))	[('a',1)]
