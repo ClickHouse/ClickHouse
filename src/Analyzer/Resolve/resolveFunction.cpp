@@ -1686,10 +1686,17 @@ static QueryTreeNodePtr buildNumericScalarInComparison(
                     five_power *= 5;
                 auto five_power_node = buildResolvedFunction(
                     integer_cast_name, {std::make_shared<ConstantNode>(toString(five_power))}, context);
-                auto remainder = buildResolvedFunction("modulo", {raw_decimal, five_power_node}, context);
+                QueryTreeNodePtr exact_divisor = five_power_node;
+                if (decimal_type->getTypeId() == TypeIndex::Decimal64)
+                {
+                    /// A full divisor lets both guarded exact operations run lazily under
+                    /// the default short-circuit policy. The divisor remains a nonzero power of five.
+                    exact_divisor = buildResolvedFunction("materialize", {std::move(exact_divisor)}, context);
+                }
+                auto remainder = buildResolvedFunction("modulo", {raw_decimal, exact_divisor}, context);
                 auto divisible = buildResolvedFunction(
                     "equals", {std::move(remainder), std::make_shared<ConstantNode>(Field{0u})}, context);
-                auto quotient = buildResolvedFunction("intDiv", {raw_decimal, five_power_node}, context);
+                auto quotient = buildResolvedFunction("intDiv", {raw_decimal, std::move(exact_divisor)}, context);
                 auto float_value = buildResolvedFunction("toFloat64", {numeric_argument}, context);
                 auto scaled_float = buildResolvedFunction(
                     "multiply", {float_value, std::make_shared<ConstantNode>(Field{std::ldexp(1.0, static_cast<int>(scale))})}, context);
