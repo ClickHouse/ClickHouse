@@ -53,6 +53,10 @@ workflow = Workflow.Config(
         # request touches, which is cheap enough for the queue; the full check on
         # `master` still covers the rest of the tree.
         JobConfigs.tidy_changed_files_job,
+        # The cross-compiled builds that pull requests do not run, see
+        # `MERGE_QUEUE_SPECIAL_BUILD_TYPES`. They need nothing but the source,
+        # so they start right away and end before the flaky check.
+        *JobConfigs.special_build_mq_jobs,
     ],
     artifacts=[
         *[
@@ -68,9 +72,7 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     enable_commit_status_on_failure=True,
-    # Config-time skip for the stateless flaky check on PRs that change no
-    # stateless tests, so non-test PRs do not schedule the runner and restore
-    # the binary only for the job to self-skip inside `functional_tests.py`.
+    enable_job_filtering_by_changes=True,
     workflow_filter_hooks=[should_skip_merge_queue_job],
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",

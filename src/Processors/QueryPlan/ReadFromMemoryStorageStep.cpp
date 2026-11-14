@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Analyzer/TableNode.h>
 
@@ -49,6 +50,8 @@
 #include <unordered_set>
 
 #include <fmt/ranges.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -92,7 +95,7 @@ struct MemorySourceFilter
         NamesAndTypesList input_columns;
     };
 
-    std::vector<Step> steps;
+    VectorWithMemoryTracking<Step> steps;
 
     /// The columns of the output header that are requested physical columns, in header order.
     /// Those not produced by the steps are read after all steps, only for the passing rows.
@@ -136,7 +139,7 @@ using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
 static constexpr auto global_row_index_column_name = "__global_row_index";
 
 /// The number of the first row of each block in the snapshot, for the global row index of lazy materialization.
-using BlockStartRows = std::vector<UInt64>;
+using BlockStartRows = VectorWithMemoryTracking<UInt64>;
 using BlockStartRowsPtr = std::shared_ptr<const BlockStartRows>;
 
 static BlockStartRowsPtr makeBlockStartRows(const Blocks & blocks)
@@ -188,8 +191,8 @@ static const ColumnWithTypeAndName * findSizesSource(const Block & src, const Na
 static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns, const Names & nested_arrays)
 {
     NamesAndTypesList columns_without_sizes;
-    std::vector<size_t> positions_without_sizes;
-    std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> offsets_of_sources;
+    VectorWithMemoryTracking<size_t> positions_without_sizes;
+    UnorderedMapWithMemoryTracking<const ColumnWithTypeAndName *, ColumnPtr> offsets_of_sources;
 
     auto column_it = columns_to_read.begin();
     for (size_t i = 0; i < columns.size(); ++i, ++column_it)
@@ -240,7 +243,7 @@ static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesLi
 /// A column that is read together with some of its subcolumns is decompressed once, and the subcolumns are taken from it.
 static Columns readColumnsFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, const Names & nested_arrays)
 {
-    std::unordered_set<String> parents_of_subcolumns;
+    UnorderedSetWithMemoryTracking<String> parents_of_subcolumns;
     for (const auto & column : columns_to_read)
     {
         if (column.isSubcolumn())
@@ -700,7 +703,7 @@ public:
         SharedHeader header,
         NamesAndTypesList columns_,
         std::shared_ptr<const Blocks> data_,
-        std::vector<MemoryLazyBlockRows> block_rows_,
+        VectorWithMemoryTracking<MemoryLazyBlockRows> block_rows_,
         Names nested_arrays_)
         : ISource(std::move(header))
         , columns(std::move(columns_))
@@ -767,7 +770,7 @@ protected:
 private:
     const NamesAndTypesList columns;
     std::shared_ptr<const Blocks> data;
-    std::vector<MemoryLazyBlockRows> block_rows;
+    VectorWithMemoryTracking<MemoryLazyBlockRows> block_rows;
     /// The same as in `MemorySource`, so that a missing member of a `Nested` gets the same sizes in both branches.
     const Names nested_arrays;
 };
@@ -840,13 +843,13 @@ public:
         const auto rows = std::move(lazy_materializing_rows);
         lazy_materializing_rows.reset();
 
-        std::vector<MemoryLazyBlockRows> block_rows = groupRowsByBlock(rows->rows);
+        VectorWithMemoryTracking<MemoryLazyBlockRows> block_rows = groupRowsByBlock(rows->rows);
 
         Processors sources;
         const size_t num_sources = std::min(std::max<size_t>(num_streams, 1), block_rows.size());
         for (size_t i = 0; i < num_sources; ++i)
         {
-            std::vector<MemoryLazyBlockRows> source_block_rows(
+            VectorWithMemoryTracking<MemoryLazyBlockRows> source_block_rows(
                 std::make_move_iterator(block_rows.begin() + i * block_rows.size() / num_sources),
                 std::make_move_iterator(block_rows.begin() + (i + 1) * block_rows.size() / num_sources));
 
@@ -866,9 +869,9 @@ public:
     }
 
 private:
-    std::vector<MemoryLazyBlockRows> groupRowsByBlock(const PaddedPODArray<UInt64> & rows) const
+    VectorWithMemoryTracking<MemoryLazyBlockRows> groupRowsByBlock(const PaddedPODArray<UInt64> & rows) const
     {
-        std::vector<MemoryLazyBlockRows> res;
+        VectorWithMemoryTracking<MemoryLazyBlockRows> res;
         if (rows.empty())
             return res;
 
@@ -1105,7 +1108,7 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
     /// a column with a default expression and the transitive inputs of the expression stay in the main branch.
     const auto & column_defaults = storage_snapshot->metadata->getColumns().getDefaults();
     NameSet names_in_default_expressions;
-    std::vector<String> names_to_visit;
+    VectorWithMemoryTracking<String> names_to_visit;
     for (const auto & column_name : columns_to_read)
     {
         auto column = storage_snapshot->tryGetColumn(options, column_name);
@@ -1230,8 +1233,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
                 query_info.prewhere_info,
                 actions_settings,
                 prewhere_steps,
-                /*force_short_circuit_execution*/ false,
-                &storage_snapshot->metadata->getColumns()))
+                /*force_short_circuit_execution*/ false))
         {
             for (const auto & step : prewhere_steps.steps)
             {

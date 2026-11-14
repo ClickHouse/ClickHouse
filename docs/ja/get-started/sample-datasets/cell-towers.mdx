@@ -6,8 +6,6 @@ keywords: ['example dataset', 'cell towers', 'OpenCelliD', 'geospatial', 'pointI
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このチュートリアルでは、基地局データセットを使用して、ClickHouse を Geo データの分析にどのように活用できるかを見ていきます。
 データセットを ClickHouse Cloud に読み込み、スキーマを確認したうえで、数千万行を対象に集計クエリを実行します。
 続いて、Dictionary を使ってデータを拡充し、`pointInPolygon` 関数でドイツ国内の基地局数を集計したうえで、ClickHouse Agents を使ってその結果を地図上に可視化します。
@@ -226,15 +224,23 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   <Step title="任意：ClickHouse Agents を使ってデータを可視化する">
     次に、このデータを可視化してみましょう。以下は任意の実行例です。ClickHouse Agents はモデル駆動型のベータ機能であるため、計画、ツールのトレース、出力は実行ごとに異なる場合があります。
-    [ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents) を使用すると、SQL やオーケストレーションロジックを自分で記述しなくても、会話を通じて ClickHouse のデータを手軽にクエリ・探索できます。
+    [ClickHouse Agents](/ja/agents) を使用すると、SQL やオーケストレーションロジックを自分で記述しなくても、会話を通じて ClickHouse のデータを手軽にクエリ・探索できます。
     エージェントはユーザーの意図を解釈して手順を計画し、設定済みのツールを呼び出して結果を返します。
 
     左側メニューの下部にある組織名の下の **ClickHouse agents** をクリックして、ClickHouse Agents を開きます。
-    [チャット](/ja/products/cloud/features/ai-ml/agents/chat)から ClickHouse agent にメッセージを送信できます。
+    [チャット](/ja/agents/chat)から ClickHouse agent にメッセージを送信できます。
     「Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables」と入力して送信します。
     ある実行例では、エージェントは次の手順を実行しました。
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="ドイツの基地局密度グリッドを作成するために実行された手順を示す ClickHouse Agent のチャット" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![ドイツの基地局密度グリッドを作成するために実行された手順を示す ClickHouse Agent のチャット](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </Frame>
+
+    </div>
 
     * `mcc_country_dict` でドイツの Mobile Country Code を検索し、MCC が `262` であることを特定しました。
     * `pointInPolygon` を使用して、`germany` のポリゴン内にある `mcc = 262` の基地局を数え、2,588,635 基という結果を得ました。追加の `mcc` フィルタによって、ポリゴン内にあっても他国に登録されている基地局が除外されるため、前述の件数よりわずかに少なくなっています。
@@ -243,7 +249,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     生成されたファイルを開いて結果を確認してください。明るく表示されている集中箇所は、ベルリン、ハンブルク、ミュンヘン、フランクフルトといった主要な大都市圏です。
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="対数カラースケールを用いた 0.1 度グリッド上のドイツにおける基地局密度のヒートマップ" />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![対数カラースケールを用いた 0.1 度グリッド上のドイツにおける基地局密度のヒートマップ](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 
@@ -255,7 +269,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 次のステップとして、以下のようなことを試してみてください。
 
-* **エージェントに追加で質問する。** `LTE` と `GSM` などの無線方式によって密度がどう異なるか、あるいは `NR` の基地局が最も多い都市はどこかを尋ねてみてください。繰り返し使うプロンプトは[プロンプトライブラリ](/ja/products/cloud/features/ai-ml/agents/prompts)に保存できます。また、[エージェントビルダー](/ja/products/cloud/features/ai-ml/agents/builder)で特定用途向けのエージェントを構築することもできます。
+* **エージェントに追加で質問する。** `LTE` と `GSM` などの無線方式によって密度がどう異なるか、あるいは `NR` の基地局が最も多い都市はどこかを尋ねてみてください。繰り返し使うプロンプトは[プロンプトライブラリ](/ja/agents/prompts)に保存できます。また、[エージェントビルダー](/ja/agents/builder)で特定用途向けのエージェントを構築することもできます。
 * **国ごとに比較する。** 他の国のポリゴンを挿入し、それぞれに対して同じ `pointInPolygon` クエリを実行します。作成した Dictionary を使えば、結果に国名のラベルを付けられます。
 * **H3 や geohash で基地局を集計する。** エージェントは単純な丸め処理によるグリッドを使用しました。ClickHouse には [H3](/ja/reference/functions/regular-functions/geo/h3) 関数や [geohash](/ja/reference/functions/regular-functions/geo/geohash) 関数も用意されています。これらは階層的なセルを生成するため、ズーム可能なマップに適しています。
 * **他のデータセットを探索する。** [NYC タクシー](/ja/get-started/sample-datasets/nyc-taxi)データセットにも乗車地点と降車地点の座標が含まれています。そのほかにも、[サンプルデータセット](/ja/get-started/sample-datasets)の一覧に多数のデータセットが掲載されています。

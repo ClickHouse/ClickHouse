@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -72,7 +73,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(SharedHeader header_, std::unique
       format_reader(std::make_unique<TemplateFormatReader>(*buf, ignore_spaces_, format, row_format, row_between_delimiter, settings))
 {
     /// Validate format string for rows
-    std::vector<UInt8> column_in_format(header_->columns(), false);
+    VectorWithMemoryTracking<UInt8> column_in_format(header_->columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         const auto & column_index = row_format.format_idx_to_column_idx[i];
@@ -295,6 +296,8 @@ void TemplateRowInputFormat::resetParser()
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
     row_between_delimiter_already_skipped = false;
+    settings.csv.delimiter = default_csv_delimiter;
+    settings.csv.custom_delimiter.clear();
 }
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -610,7 +613,7 @@ void registerInputFormatTemplate(FormatFactory & factory)
                 fillResultSetFormat(settings),
                 fillRowFormat(settings, idx_getter, true),
                 settings.template_settings.row_between_delimiter);
-        });
+        }, /*supports_reset_parser=*/ true);
     }
 
     factory.setDocumentation("Template", Documentation{
@@ -907,7 +910,7 @@ void registerTemplateSchemaReader(FormatFactory & factory)
             ParsedTemplateFormatString row_format;
             if (!settings.template_settings.row_format.empty())
                 row_format = fillRowFormat(settings, idx_getter, false);
-            std::unordered_set<FormatSettings::EscapingRule> visited_escaping_rules;
+            UnorderedSetWithMemoryTracking<FormatSettings::EscapingRule> visited_escaping_rules;
             String result = fmt::format("row_format={}, resultset_format={}, row_between_delimiter={}",
                 settings.template_settings.row_format,
                 settings.template_settings.resultset_format,

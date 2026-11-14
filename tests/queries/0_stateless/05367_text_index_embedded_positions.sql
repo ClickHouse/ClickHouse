@@ -67,10 +67,24 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT 'Positions read from .pos';
 
-SELECT log_comment, ProfileEvents['TextIndexPositionsBlocksRead'] > 0, ProfileEvents['TextIndexPositionsBytesRead'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05367_embedded', '05367_in_pos')
-ORDER BY log_comment;
+-- Under parallel replicas a remote replica may do the read and its rows have current_database = 'default'.
+WITH initial_queries AS
+(
+    SELECT query_id, log_comment
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND current_database = currentDatabase()
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+      AND log_comment IN ('05367_embedded', '05367_in_pos')
+)
+SELECT q.log_comment, sum(l.ProfileEvents['TextIndexPositionsBlocksRead']) > 0, sum(l.ProfileEvents['TextIndexPositionsBytesRead']) > 0
+FROM system.query_log AS l
+INNER JOIN initial_queries AS q ON l.initial_query_id = q.query_id
+WHERE l.event_date >= yesterday() AND l.event_time >= now() - 600
+  AND l.type = 'QueryFinish'
+GROUP BY q.log_comment
+ORDER BY q.log_comment;
 
 DROP TABLE tab_ref;
 DROP TABLE tab_idx;

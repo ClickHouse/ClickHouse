@@ -4,28 +4,13 @@
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
 #include <WindowFunctions/WindowFunction.h>
-#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace
 {
-
-WindowFrame wholePartitionRangeFrame()
-{
-    WindowFrame frame;
-    frame.type = WindowFrame::FrameType::RANGE;
-    frame.begin_type = WindowFrame::BoundaryType::Unbounded;
-    frame.end_type = WindowFrame::BoundaryType::Unbounded;
-    return frame;
-}
 
 class WindowFunctionCumeDist final : public IGeneralWindowFunction
 {
@@ -37,25 +22,15 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.peers = true, .partition = true};
+        return WindowFunctionRequirements{.peers_end = true, .partition_end = true};
     }
 
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        return wholePartitionRangeFrame();
-    }
-
-    void checkWindowFrameType(const WindowDescription & window) const override
-    {
-        if (window.frame != wholePartitionRangeFrame())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be '{}', '{}' given", getName(), wholePartitionRangeFrame().toString(), window.frame.toString());
-    }
-
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (Int64 i = 0; i < bounds.rows; ++i)
             data.push_back(static_cast<Float64>(bounds.peers_end[i]) / static_cast<Float64>(bounds.partition_end[i]));
+        return bounds.row.back() + 1;
     }
 };
 
@@ -76,12 +51,12 @@ Computes the cumulative distribution of a value within a group of values, i.e., 
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+The function always reads the whole partition; a window frame, if specified, is ignored.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 
