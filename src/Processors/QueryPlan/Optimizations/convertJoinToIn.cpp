@@ -357,7 +357,7 @@ struct SetSourcePrerequisites
         /// holds back their writers. This is the order in which `Planner` stacks the levels.
         for (auto it = ctes.rbegin(); it != ctes.rend(); ++it)
         {
-            auto step = std::make_unique<DelayedMaterializingCTEsStep>(source.getCurrentHeader(), std::vector<MaterializedCTEPtr>{*it});
+            auto step = std::make_unique<DelayedMaterializingCTEsStep>(source.getCurrentHeader(), VectorWithMemoryTracking<MaterializedCTEPtr>{*it});
             step->setStepDescription("Materialize CTE read by JOIN right side");
             source.addStep(std::move(step));
         }
