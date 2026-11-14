@@ -3321,6 +3321,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
                         {
                             auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            if (needsExactCompoundNumericInComparison(
+                                in_first_argument->getResultType(), non_const_set_candidate->getResultType()))
+                            {
+                                node = buildExactCompoundNumericInComparison(
+                                    fn_args[0], fn_args[1], in_first_argument->getResultType(), non_const_set_candidate->getResultType());
+                                resolveFunction(node, scope);
+                                if (is_not_in)
+                                {
+                                    node = createNotWrapper(std::move(node));
+                                    resolveFunction(node, scope);
+                                }
+                                auto to_nullable = std::make_shared<FunctionNode>("toNullable");
+                                to_nullable->getArguments().getNodes().push_back(std::move(node));
+                                node = std::move(to_nullable);
+                                resolveFunction(node, scope);
+                                return ProjectionNames{proj};
+                            }
                             node = buildScalarInComparison(
                                 fn_args[0], fn_args[1], is_not_in, compare_nulls,
                                 scope.context->getSettingsRef()[Setting::in_null_as_unknown]);
@@ -3735,6 +3752,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     const bool use_standard_null_semantics = scope.context->getSettingsRef()[Setting::in_null_as_unknown];
                     const auto left_bare_type = removeNullable(removeLowCardinality(left_type));
                     const auto right_bare_type = removeNullable(removeLowCardinality(non_const_set_candidate->getResultType()));
+                    if (use_standard_null_semantics
+                        && needsExactCompoundNumericInComparison(left_type, non_const_set_candidate->getResultType()))
+                    {
+                        node = buildExactCompoundNumericInComparison(
+                            fn_args[0], fn_args[1], left_type, non_const_set_candidate->getResultType());
+                        resolveFunction(node, scope);
+                        if (is_not_in)
+                        {
+                            node = createNotWrapper(std::move(node));
+                            resolveFunction(node, scope);
+                        }
+                        auto to_nullable = std::make_shared<FunctionNode>("toNullable");
+                        to_nullable->getArguments().getNodes().push_back(std::move(node));
+                        node = std::move(to_nullable);
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
                     if (use_standard_null_semantics
                         && isMap(left_bare_type)
                         && isStringOrFixedString(right_bare_type))
