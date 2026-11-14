@@ -176,6 +176,10 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     if (!initialized)
         initialize(/* attempt */ 0);
 
+    /// An initialized reader without a stream has already buffered all the data.
+    if (!data_stream)
+        return false;
+
     /// Without a right bound, the data ends at the size of the blob that the last response advertised.
     auto end_of_data = [this] { return read_until_position.value_or(blob_size_from_response); };
 
@@ -280,6 +284,11 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         }
     }
 
+    offset += bytes_read;
+
+    /// The stream owns the HTTP session; release it at the end of the data, not of a response that ended before it.
+    if (static_cast<size_t>(offset) >= end_of_data())
+        data_stream.reset();
 
     if (bytes_read == 0)
         return false;
@@ -289,8 +298,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         BufferBase::set(data_ptr, bytes_read, 0);
     else
         BufferBase::setPaddedStorage(tmp_buffer, 0, bytes_read, 0);
-
-    offset += bytes_read;
 
     return true;
 }
