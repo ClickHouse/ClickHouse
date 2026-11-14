@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -91,12 +92,15 @@ struct FragmentExchange
     ExchangeStatistics statistics;
 };
 
+/// The kind of an exchange as `EXPLAIN` names it: `hash`, `broadcast`, `gather`, `any` or `set values`.
+String toString(FragmentExchange::Kind kind);
+
 struct FragmentGraph
 {
     /// Sorted by id; the fragments of the query precede those of its sets, which get ids after the main fragment of the query.
-    std::vector<QueryFragment> fragments;
+    VectorWithMemoryTracking<QueryFragment> fragments;
     /// Sorted by id.
-    std::vector<FragmentExchange> exchanges;
+    VectorWithMemoryTracking<FragmentExchange> exchanges;
 
     /// Throws `LOGICAL_ERROR` when absent.
     [[nodiscard]] const QueryFragment & getFragment(UInt32 id) const;
@@ -120,6 +124,6 @@ void validateFragmentGraph(const FragmentGraph & graph);
 
 /// Fragment ids by topological level, ascending within a level: the first level are the leaves.
 /// A fragment is one level above its deepest producer. Computed on demand for the renderers; validates the graph.
-std::vector<std::vector<UInt32>> computeLevels(const FragmentGraph & graph);
+VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> computeLevels(const FragmentGraph & graph);
 
 }

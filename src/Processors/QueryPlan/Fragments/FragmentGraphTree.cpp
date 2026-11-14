@@ -18,6 +18,9 @@
 #include <limits>
 #include <map>
 #include <unordered_map>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -43,13 +46,13 @@ struct StepBox
     /// The whole text of the step: its name and description.
     String text;
     /// `text` wrapped to `max_step_text_width` columns, one line per inner line of the box.
-    std::vector<String> lines;
+    VectorWithMemoryTracking<String> lines;
     /// The lines `EXPLAIN` prints under the step, drawn under the text.
-    std::vector<String> details;
+    VectorWithMemoryTracking<String> details;
     /// Index in `FragmentGraph::fragments`.
     size_t fragment = 0;
     /// Inputs in the plan, then, for a receive step, the send step of the producer fragment.
-    std::vector<size_t> children;
+    VectorWithMemoryTracking<size_t> children;
     /// Set for the root box of a fragment that is drawn under a receive step: index in `FragmentGraph::exchanges`.
     std::optional<size_t> incoming_exchange;
     size_t width = 0;
@@ -90,7 +93,7 @@ struct NestedPlan
     String owner;
 };
 
-using NestedPlans = std::vector<NestedPlan>;
+using NestedPlans = VectorWithMemoryTracking<NestedPlan>;
 
 struct FragmentFrame
 {
@@ -175,12 +178,12 @@ private:
     const Int64 sibling_gap;
     /// A description is cut to this many bytes, as in `QueryPlan::explainPlan`; 0 means no limit.
     const size_t max_step_description_length;
-    std::unordered_map<UInt32, size_t> fragment_index_by_id;
+    UnorderedMapWithMemoryTracking<UInt32, size_t> fragment_index_by_id;
 
-    std::vector<StepBox> boxes;
-    std::vector<FragmentFrame> frames;
+    VectorWithMemoryTracking<StepBox> boxes;
+    VectorWithMemoryTracking<FragmentFrame> frames;
     /// (fragment index, exchange name) -> the receive step box of that exchange.
-    std::map<std::pair<size_t, String>, size_t> receive_boxes;
+    MapWithMemoryTracking<std::pair<size_t, String>, size_t> receive_boxes;
 
     [[nodiscard]] size_t fragmentIndex(UInt32 id) const
     {
@@ -194,10 +197,10 @@ private:
     /// a second root would never be laid out.
     [[nodiscard]] size_t rootFragment() const
     {
-        std::vector<bool> is_producer(graph.fragments.size(), false);
+        VectorWithMemoryTracking<bool> is_producer(graph.fragments.size(), false);
         for (const auto & exchange : graph.exchanges)
             is_producer[fragmentIndex(exchange.from)] = true;
-        std::vector<UInt32> roots;
+        VectorWithMemoryTracking<UInt32> roots;
         for (size_t i = 0; i < graph.fragments.size(); ++i)
             if (!is_producer[i])
                 roots.push_back(graph.fragments[i].id);
@@ -221,7 +224,7 @@ private:
         if (options.description && !description.empty())
             text += fmt::format(" ({})", description);
 
-        std::vector<String> ids;
+        VectorWithMemoryTracking<String> ids;
         for (const auto * child_plan : step.getChildPlans(/*for_explain=*/ true))
         {
             /// `QueryPlanFormat::buildPrettyNamesPerPlan` skips such plans too.
@@ -236,7 +239,7 @@ private:
     }
 
     /// The lines plain `EXPLAIN` prints under the step with the same options, each cut to `max_detail_width`.
-    std::vector<String> stepDetails(IQueryPlanStep & step, const PrettyNames & names) const
+    VectorWithMemoryTracking<String> stepDetails(IQueryPlanStep & step, const PrettyNames & names) const
     {
         WriteBufferFromOwnString out;
         IQueryPlanStep::FormatSettings settings{
@@ -250,7 +253,7 @@ private:
             .runtime_filter_names = names.runtime_filter_names};
         explainStepDetails(step, settings, options);
 
-        std::vector<String> details;
+        VectorWithMemoryTracking<String> details;
         std::string_view text = out.str();
         while (!text.empty())
         {
@@ -265,7 +268,7 @@ private:
         return details;
     }
 
-    size_t addBox(String text, std::vector<String> details, size_t fragment)
+    size_t addBox(String text, VectorWithMemoryTracking<String> details, size_t fragment)
     {
         StepBox step_box;
         step_box.details = std::move(details);
@@ -320,7 +323,7 @@ private:
     }
 
     /// The distance of a fragment from the root fragment along its longest chain of consumers.
-    size_t fragmentDepth(size_t fragment, std::vector<std::optional<size_t>> & depths) const
+    size_t fragmentDepth(size_t fragment, VectorWithMemoryTracking<std::optional<size_t>> & depths) const
     {
         if (depths[fragment])
             return *depths[fragment];
@@ -346,8 +349,8 @@ private:
     /// The other consumers get a note in their receive step and in the producer's title instead of a second edge.
     void attachProducers()
     {
-        std::vector<std::optional<size_t>> depths(graph.fragments.size());
-        std::vector<std::optional<size_t>> primary_exchange(graph.fragments.size());
+        VectorWithMemoryTracking<std::optional<size_t>> depths(graph.fragments.size());
+        VectorWithMemoryTracking<std::optional<size_t>> primary_exchange(graph.fragments.size());
         for (size_t i = 0; i < graph.exchanges.size(); ++i)
         {
             const auto & exchange = graph.exchanges[i];
@@ -389,10 +392,10 @@ private:
 
     [[nodiscard]] bool crossesFragments(size_t parent, size_t child) const { return boxes[parent].fragment != boxes[child].fragment; }
 
-    [[nodiscard]] std::vector<String> labelLines(size_t exchange_index) const
+    [[nodiscard]] VectorWithMemoryTracking<String> labelLines(size_t exchange_index) const
     {
         const auto & exchange = graph.exchanges[exchange_index];
-        std::vector<String> lines;
+        VectorWithMemoryTracking<String> lines;
         lines.push_back(TextCanvas::cutToWidth(
             fmt::format("{} · {}", exchange.name, prepared.formatExchangeKind(exchange)), max_label_width));
         String mode(PreparedFragmentGraph::formatExchangeMode(exchange.mode));
@@ -507,11 +510,11 @@ private:
     /// drawn under it.
     void layoutRows(size_t fragment, size_t top_box_y)
     {
-        std::vector<size_t> producers;
+        VectorWithMemoryTracking<size_t> producers;
         size_t bottom = 0;
         bool branches_to_producers = false;
 
-        std::vector<std::pair<size_t, size_t>> stack{{frames[fragment].root_box, top_box_y}};
+        VectorWithMemoryTracking<std::pair<size_t, size_t>> stack{{frames[fragment].root_box, top_box_y}};
         while (!stack.empty())
         {
             auto [index, y] = stack.back();
@@ -565,7 +568,7 @@ private:
     }
 
     /// The branch line under a step with several inputs: `┌───┴───┐`, with `┬` above the middle inputs.
-    static void drawBranch(TextCanvas & canvas, size_t y, Int64 parent_center, const std::vector<Int64> & child_centers)
+    static void drawBranch(TextCanvas & canvas, size_t y, Int64 parent_center, const VectorWithMemoryTracking<Int64> & child_centers)
     {
         for (Int64 x = child_centers.front(); x <= child_centers.back(); ++x)
             canvas.put(static_cast<size_t>(x), y, "─");
@@ -587,8 +590,8 @@ private:
         const auto center = static_cast<size_t>(step_box.center);
         canvas.put(center, step_box.bottom(), "▲");
 
-        std::vector<size_t> in_fragment;
-        std::vector<size_t> producers;
+        VectorWithMemoryTracking<size_t> in_fragment;
+        VectorWithMemoryTracking<size_t> producers;
         for (size_t child : step_box.children)
             (crossesFragments(index, child) ? producers : in_fragment).push_back(child);
 
@@ -597,7 +600,7 @@ private:
             canvas.put(center, step_box.bottom() + 1, "│");
             if (in_fragment.size() > 1)
             {
-                std::vector<Int64> centers;
+                VectorWithMemoryTracking<Int64> centers;
                 for (size_t child : in_fragment)
                     centers.push_back(boxes[child].center);
                 drawBranch(canvas, step_box.bottom() + 2, step_box.center, centers);
@@ -619,7 +622,7 @@ private:
         size_t labels_y = frame.bottom + 1;
         if (producers.size() > 1)
         {
-            std::vector<Int64> centers;
+            VectorWithMemoryTracking<Int64> centers;
             for (size_t child : producers)
                 centers.push_back(boxes[child].center);
             drawBranch(canvas, labels_y, step_box.center, centers);

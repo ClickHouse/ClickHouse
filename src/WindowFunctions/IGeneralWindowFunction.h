@@ -6,7 +6,6 @@
 #include <WindowFunctions/Common/WindowFunctionRequirements.h>
 
 #include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -26,8 +25,6 @@ public:
     [[nodiscard]] const DataTypePtr & getResultType() const override;
 
     [[nodiscard]] virtual WindowFunctionRequirements getRequirements(const WindowDescription & window) const = 0;
-    [[nodiscard]] virtual std::optional<WindowFrame> getDefaultFrame() const;
-    virtual void checkWindowFrameType(const WindowDescription & window) const;
 
     [[nodiscard]] virtual size_t sizeOfState() const;
     [[nodiscard]] virtual size_t alignOfState() const;

@@ -45,8 +45,7 @@ public:
     [[nodiscard]] std::string resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
     /// The same, but resolving an unqualified name against the given database rather than the
-    /// current database of a context. Used when the name has to resolve against the database
-    /// owning the definition, e.g. when the metadata of a table is loaded.
+    /// current database of a context.
     [[nodiscard]] QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     [[nodiscard]] DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;

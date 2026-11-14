@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
+#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -30,6 +31,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Returns `n * num_elements` - the number of bytes occupied by `num_elements` values of `FixedString(n)`.
+/// The number of elements may come from array sizes (e.g. in `replicate` for `ARRAY JOIN`), which can be
+/// arbitrarily large without allocating memory, so the multiplication must not silently wrap around.
+size_t fixedStringBytes(size_t n, size_t num_elements)
+{
+    size_t res = 0;
+    if (common::mulOverflow(n, num_elements, res))
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large size of FixedString column: {} elements of size {}",
+            num_elements, n);
+    return res;
+}
+
+}
+
 
 MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 {
@@ -38,7 +58,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
-        new_col.chars.resize_exact(size * n);
+        new_col.chars.resize_exact(fixedStringBytes(n, size));
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
@@ -107,7 +127,9 @@ void ColumnFixedString::doInsertManyFrom(const IColumn & src, size_t position, s
         throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
 
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + n * length;
+    size_t new_size = 0;
+    if (common::addOverflow(old_size, fixedStringBytes(n, length), new_size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large size of FixedString column");
     chars.resize(new_size);
 
     for (size_t offset = old_size; offset < new_size; offset += n)
@@ -497,7 +519,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
         return res;
 
     Chars & res_chars = res->chars;
-    res_chars.resize(n * offsets.back());
+    res_chars.resize_exact(fixedStringBytes(n, offsets.back()));
 
     Offset curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)

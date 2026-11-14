@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <base/types.h>
@@ -22,7 +23,7 @@ using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- must match `Processors` in `IProcessor_fwd.h`
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -30,7 +31,7 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 namespace JSONBuilder { class JSONMap; }
 
 class QueryPlan;
-using QueryPlanRawPtrs = std::list<QueryPlan *>;
+using QueryPlanRawPtrs = ListWithMemoryTracking<QueryPlan *>;
 
 struct QueryPlanSerializationSettings;
 
@@ -169,12 +170,12 @@ public:
         /// The new output header has the remaining columns first, in their former order,
         /// and may append columns of its own after them, such as the dummy column a join adds.
         /// Appended columns are not in `dropped_output_positions`; only the header shows them.
-        std::vector<size_t> dropped_output_positions;
+        VectorWithMemoryTracking<size_t> dropped_output_positions;
     };
 
     /// Per child: the positions of the child's current output header the step does not need.
     /// Always one entry per child; an empty entry means the step needs every column of that child.
-    using UnneededInputPositions = std::vector<std::vector<size_t>>;
+    using UnneededInputPositions = VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>>;
 
     /// What one column of a step's input header is to the step once the unused columns are gone.
     enum class InputColumnUsage : uint8_t
@@ -193,7 +194,7 @@ public:
     /// a child that cannot drop columns drops none, and the step consumes the ones it does not need.
     struct PrunedInput
     {
-        std::vector<size_t> dropped_positions;
+        VectorWithMemoryTracking<size_t> dropped_positions;
         SharedHeader header;
 
         /// A child that did not change.
@@ -208,12 +209,12 @@ public:
     /// The order of the remaining outputs is preserved.
     /// Can be used only if canRemoveUnusedColumns returns true.
     virtual RemoveUnusedColumnsResult removeUnusedColumns(
-        const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & /*inputs*/);
+        const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & /*inputs*/);
 
     /// What removeUnusedColumns would not need of each child once nobody needs these outputs.
     /// The children are to be pruned by that before the step itself is.
     /// Can be used only if canRemoveUnusedColumns returns true, for a step with children.
-    [[nodiscard]] virtual UnneededInputPositions getUnneededColumns(const std::vector<size_t> & /*unneeded_output_positions*/) const;
+    virtual UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/) const;
 
     /// Different Steps have different stages of execution.
     /// For example JoinStep has build and probe stages.
@@ -224,7 +225,7 @@ public:
     /// In order for EXPLAIN ANALYZE to track all the time for every step
     /// redefine the methods below when adding a new step with several stages
     /// Follow the pattern of classes with multi stage execution that already implements these methods
-    [[nodiscard]] virtual std::vector<size_t> getStepGroups() const { return {0}; }
+    virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
     [[nodiscard]] virtual String getStepGroupName(size_t) const { return {}; }
 
     [[nodiscard]] virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
@@ -237,7 +238,7 @@ protected:
     /// stops here. `usages` says what each column of `old_header` is to the step. Returns whether anything
     /// changed.
     static bool alignInputsWithPrunedChild(
-        ActionsDAG & dag, const std::vector<InputColumnUsage> & usages, const Block & old_header, const PrunedInput & pruned);
+        ActionsDAG & dag, const VectorWithMemoryTracking<InputColumnUsage> & usages, const Block & old_header, const PrunedInput & pruned);
 
     virtual void updateOutputHeader() = 0;
 

@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -56,7 +57,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] std::vector<size_t> getStepGroups() const override;
+    [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
     [[nodiscard]] String getStepGroupName(size_t group) const override;
 
     [[nodiscard]] StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;

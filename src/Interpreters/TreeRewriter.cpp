@@ -14,7 +14,7 @@
 #include <Interpreters/ComparisonTupleEliminationVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
-#include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
+#include <Interpreters/ExpressionActions.h> /// getCheapestColumnToRead()
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
@@ -1155,39 +1155,9 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
-        struct ColumnSizeTuple
-        {
-            size_t compressed_size;
-            size_t type_size;
-            size_t uncompressed_size;
-            String name;
-
-            bool operator<(const ColumnSizeTuple & that) const
-            {
-                return std::tie(compressed_size, type_size, uncompressed_size)
-                    < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
-            }
-        };
-
-        std::vector<ColumnSizeTuple> columns;
-        if (storage)
-        {
-            auto column_sizes = storage->getColumnSizes();
-            for (const auto & source_column : columns_for_fallback)
-            {
-                auto c = column_sizes.find(source_column.name);
-                if (c == column_sizes.end())
-                    continue;
-                size_t type_size = source_column.type->haveMaximumSizeOfValue() ? source_column.type->getMaximumSizeOfValueInMemory() : 100;
-                columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
-            }
-        }
-
-        if (!columns.empty())
-            required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!columns_for_fallback.empty())
-            /// If we have no information about columns sizes, choose a column of minimum size of its data type.
-            required.insert(ExpressionActions::getSmallestColumn(columns_for_fallback).name);
+        if (!columns_for_fallback.empty())
+            required.insert(ExpressionActions::getCheapestColumnToRead(
+                columns_for_fallback, storage ? storage->getColumnSizes() : IStorage::ColumnSizeByName{}).name);
     }
     else if (is_select && storage_snapshot && !columns_context.has_array_join)
     {

@@ -31,9 +31,27 @@ TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfssWithProtocol)
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfs)
+{
+    auto storage_type = parseStorageTypeFromString("abfs");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringAbfsWithProtocol)
+{
+    auto storage_type = parseStorageTypeFromString("abfs://");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
 TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocationAzureAbfss)
 {
     auto storage_type = parseStorageTypeFromLocation("abfss://container@account.dfs.core.windows.net/path/to/data");
+    EXPECT_EQ(storage_type, StorageType::Azure);
+}
+
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromLocationAzureAbfs)
+{
+    auto storage_type = parseStorageTypeFromLocation("abfs://container@account.dfs.core.windows.net/path/to/data");
     EXPECT_EQ(storage_type, StorageType::Azure);
 }
 
@@ -57,6 +75,21 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfss)
 
     EXPECT_EQ(metadata.getStorageType(), StorageType::Azure);
     EXPECT_TRUE(metadata.hasLocation());
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfs)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfs://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
+
+    EXPECT_EQ(metadata.getStorageType(), StorageType::Azure);
+    EXPECT_TRUE(metadata.hasLocation());
+
+    /// The scheme is carried through verbatim; it selects the storage engine, never the wire protocol.
+    EXPECT_EQ(metadata.getLocation(), "abfs://mycontainer@mystorageaccount.dfs.core.windows.net/path/to/table");
+    EXPECT_EQ(metadata.getLocationWithEndpoint("https://mystorageaccount.dfs.core.windows.net"),
+              "https://mystorageaccount.dfs.core.windows.net/mycontainer/path/to/table/");
 }
 
 TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationAzureAbfssGetLocation)
@@ -207,6 +240,40 @@ TEST_F(AzureAbfssParsingTest, TableMetadataSetLocationPolarisStyle)
 
     /// `getLocation` without endpoint is always a round-trip regardless of the Polaris flag.
     EXPECT_EQ(metadata.getLocation(), location);
+}
+
+/// A catalog can spell the table location and the metadata location with different ABFS schemes, e.g. the OneLake
+/// catalog reports `abfs://` locations for Fabric-written tables. Both name the same storage, so the metadata location
+/// must still become relative to the table.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationAbfsTableAbfssMetadata)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfs://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t");
+
+    const std::string metadata_file = "abfss://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationAbfssTableAbfsMetadata)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t");
+
+    const std::string metadata_file = "abfs://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), "metadata/v1.metadata.json");
+}
+
+/// Only the two ABFS spellings are equivalent: a scheme of another storage stays and the location is not relativized.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationAbfsTableOtherSchemeMetadata)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfs://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t");
+
+    const std::string metadata_file = "s3://ws@onelake.dfs.fabric.microsoft.com/lh/Tables/t/metadata/v1.metadata.json";
+    EXPECT_EQ(metadata.getMetadataLocation(metadata_file), metadata_file);
 }
 
 TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationEqualStrings)

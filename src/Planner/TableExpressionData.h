@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 

@@ -6,8 +6,6 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse поддерживает широкий выбор алгоритмов JOIN, позволяющих найти баланс между скоростью выполнения и потреблением памяти. Синтаксис и семантика JOIN описаны в [справочнике по предложению `JOIN`](/ru/reference/statements/select/join). Практические рекомендации по оптимизации и подробные примеры см. в разделе [Минимизация и оптимизация JOIN](/ru/concepts/best-practices/minimize-optimize-joins).
 
 ## Выбор алгоритма JOIN {#choosing-a-join-algorithm}
@@ -16,7 +14,15 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="зависимость скорости JOIN от использования памяти" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![зависимость скорости JOIN от использования памяти](/images/guides/joins-2.png)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -26,7 +32,15 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="возможности JOIN" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![возможности JOIN](/images/guides/joins-3.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

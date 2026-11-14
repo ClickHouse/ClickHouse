@@ -4,6 +4,7 @@
 
 #include <string_view>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -54,7 +55,7 @@ public:
     /// `boxHeight(text_lines.size(), details.size())` lines tall: `┌───┐`, then one `│ line │` per line of `text_lines`
     /// with one space of padding on each side; with `details`, a separator `├───┤` and one line per detail under it;
     /// then `└───┘`. The caller computes `width`, usually the widest line plus 4.
-    void box(size_t x, size_t y, size_t width, const std::vector<String> & text_lines, const std::vector<String> & details = {});
+    void box(size_t x, size_t y, size_t width, const VectorWithMemoryTracking<String> & text_lines, const VectorWithMemoryTracking<String> & details = {});
 
     /// The number of lines of a box with `text_lines` lines of text and `details_count` detail lines: the text, the top
     /// and bottom borders and, with details, the separator and the details.
@@ -83,7 +84,7 @@ public:
     /// fits, and a word wider than a line is split between two code points. The spaces at a break are dropped. A
     /// zero-width code point stays with the character before it. Control characters are replaced first (see
     /// `replaceControlCharacters`). An empty text gives one empty line.
-    static std::vector<String> wrapToWidth(std::string_view text, size_t max_width);
+    static VectorWithMemoryTracking<String> wrapToWidth(std::string_view text, size_t max_width);
 
     /// `text` with every ASCII control character (a tab, a newline, ESC, ...) replaced by `�`. A control character has
     /// no width of its own, or one that depends on the terminal or its position, so it would break the measured width
@@ -92,7 +93,7 @@ public:
 
 private:
     /// Cell contents; an empty string is the continuation of a wide character.
-    std::vector<std::vector<String>> lines;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<String>> lines;
 
     String & cell(size_t x, size_t y);
 };

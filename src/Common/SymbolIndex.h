@@ -188,6 +188,11 @@ public:
     [[nodiscard]] String getBuildID() const { return data.self_build_id; }
     [[nodiscard]] String getBuildIDHex() const;
 
+    /// The same as `instance().getBuildIDHex()`, but without building the index if it is not built yet:
+    /// the build id is read from the notes of the loaded executable. Building the index takes about 0.3 s
+    /// with a cold page cache (it reads the symbol table of the executable), and it is not needed to know the build id.
+    static String getSelfBuildIDHex();
+
     struct Data
     {
         uint32_t registerNameSource(NameSource source)

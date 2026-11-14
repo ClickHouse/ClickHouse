@@ -9,7 +9,6 @@ keywords: ['host logs', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability',
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect host syslog files with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without collecting logs from your own host.
@@ -30,7 +29,15 @@ Collect host syslog files with an OpenTelemetry collector and send them to Click
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -312,7 +319,15 @@ Keep the terminal open while the collector exports the sample, and check its out
 
 Open **Search**, select your **Logs** source, filter for `ServiceName:host-demo`, and select **Last 2 days**. Expand a log to inspect its parsed attributes. Stop the collector with **Ctrl+C** after verifying the data.
 
-<Image img="/images/clickstack/observability-host-demo-logs.png" alt="Host demo logs in ClickHouse Observability Search"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Host demo logs in ClickHouse Observability Search](/images/clickstack/observability-host-demo-logs.png)
+
+</Frame>
+
+</div>
 
 </Step>
 </Steps>
@@ -328,7 +343,15 @@ Open **Search**, select your **Logs** source, filter for `ServiceName:host-demo`
 2. Upload `host-logs-dashboard.json`.
 3. Map the charts to your **Logs** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
@@ -337,7 +360,15 @@ The imported dashboard displays your logs for the selected time range. To isolat
 
 The dashboard includes log volume, system units, SSH activity, firewall blocks, and service restarts. Severity is unset unless your ingestion pipeline supplies it.
 
-<Image img="/images/clickstack/observability-host-dashboard.png" alt="Host logs dashboard showing log volume, system units, SSH activity, security events, service restarts, and firewall activity"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Host logs dashboard showing log volume, system units, SSH activity, security events, service restarts, and firewall activity](/images/clickstack/observability-host-dashboard.png)
+
+</Frame>
+
+</div>
 
 <Note>
 For your own logs, remove `ServiceName = 'host-demo' AND` from the aggregation filters in the SSH activity, Firewall blocks, and security-events charts if present. Then use the dashboard's service-name filter to select your host logs.
