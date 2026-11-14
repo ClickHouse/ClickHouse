@@ -20,3 +20,14 @@ SETTINGS in_null_as_unknown = 1;
 SELECT count() FROM numbers(1)
 WHERE map('a', toUInt8(1)) IN materialize(CAST(map('a', toUInt8(1)) AS Dynamic))
 SETTINGS in_null_as_unknown = 1;
+
+SET in_null_as_unknown = 1;
+CREATE TABLE squality_compound_carrier_check
+(
+    m Map(String, UInt8),
+    v Dynamic,
+    CONSTRAINT c CHECK m IN (v, NULL)
+) ENGINE = Memory;
+INSERT INTO squality_compound_carrier_check SELECT map('a', toUInt8(1)), CAST(map('a', toUInt8(1)) AS Dynamic);
+SELECT m IN (v, NULL) FROM squality_compound_carrier_check;
+DROP TABLE squality_compound_carrier_check;
