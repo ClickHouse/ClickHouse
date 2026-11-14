@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FailPoint.h>
@@ -1165,13 +1166,14 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
         stream_settings.is_single_value_per_part = ISerialization::isSingleValuePerPartStream(substream_path);
 
         size_t data_file_size = data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION);
+        auto data_file_hash = getFileHashForCaches(data_part_info_for_read->getChecksums(), stream_name, DATA_FILE_EXTENSION);
 
         auto create_stream = [&]<typename Stream>()
         {
             auto stream = std::make_unique<Stream>(
                 data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
                 num_marks_in_part, all_mark_ranges, stream_settings,
-                uncompressed_cache, data_file_size,
+                uncompressed_cache, data_file_size, data_file_hash,
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
