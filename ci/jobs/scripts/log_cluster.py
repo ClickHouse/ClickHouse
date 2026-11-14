@@ -29,7 +29,7 @@ class MetaColumn:
 
 
 class LogClusterError(Exception):
-    """A read that did not produce a result."""
+    """A query that did not produce a result."""
 
 
 class LogClusterUnavailable(LogClusterError):
@@ -40,8 +40,9 @@ class LogClusterUnavailable(LogClusterError):
     gateway, a proxy, a closed connection), or the server reported one of the
     exception codes that describe its own load rather than the query - the
     shared cluster goes through minutes-long server-wide memory-pressure
-    windows that fail every query with Code 241. Nothing was read, so this says
-    nothing about the caller or about the commit it reports on.
+    windows that fail every query with Code 241. For an INSERT, no readiness
+    probe got any answer. Nothing was read or written, so this says nothing
+    about the caller or about the commit it reports on.
     """
 
 
@@ -213,8 +214,9 @@ class LogCluster:
         # it with an exception, classified like a `select` answer: a
         # LogClusterUnavailable for the codes about its own load, a
         # LogClusterQueryError otherwise (e.g. Code 516 for a rotated
-        # password). None when the probe succeeded or the server did not
-        # answer it (no secret, no connection, a gateway).
+        # password). When the probe got no response at all, its transport
+        # exception. None when the probe succeeded, had no secret, or got
+        # another answer (a gateway).
         self.probe_error = None
 
     def close_session(self):
@@ -248,6 +250,7 @@ class LogCluster:
         params = {
             "query": "SELECT 1",
         }
+        answers = []
         try:
             response = requests.post(
                 url=self.url,
@@ -255,9 +258,14 @@ class LogCluster:
                 data="",
                 headers=self._auth,
                 timeout=3,
+                # Runs when the headers of a response arrived, a redirect
+                # included, before its body is read.
+                hooks={"response": lambda r, **kwargs: answers.append(r)},
             )
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
+            if not answers:
+                self.probe_error = ex
             return False
         if not response.ok:
             print(
@@ -302,6 +310,7 @@ class LogCluster:
 
         response = None
         post_attempted = False
+        unanswered_probes = 0
         for retry in range(retries):
             # is_ready is a cheap `SELECT 1` against the same writer endpoint,
             # so it fails during the same pressure spikes as the INSERT itself.
@@ -310,6 +319,11 @@ class LogCluster:
             # before any POST is attempted. Retry it on the same schedule as
             # `select` below does.
             if not self.is_ready():
+                if isinstance(
+                    self.probe_error,
+                    (requests.exceptions.ConnectionError, requests.exceptions.Timeout),
+                ):
+                    unanswered_probes += 1
                 print("WARNING: LogCluster not ready")
                 time.sleep(5 * (retry + 1))
                 continue
@@ -364,6 +378,12 @@ class LogCluster:
             # ready. Say so, otherwise the caller's fail-close assert reports a
             # lost upload with no reason in the log.
             print("ERROR: LogCluster not ready")
+            if unanswered_probes and unanswered_probes == retries:
+                # Not even the constant `SELECT 1` got an answer (no HTTP
+                # response at all), so nothing about this data was rejected.
+                raise LogClusterUnavailable(
+                    f"no readiness probe got an answer, the last one failed with [{self.probe_error}]"
+                )
         return False
 
     EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
