@@ -60,8 +60,8 @@ constexpr size_t adaptive_argument_staging_batch_rows = 1024;
 constexpr size_t adaptive_miss_batch_max_key_bytes = 256 << 10;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
-/// How much of the next range of records the drain requests ahead of its prefetch cursor: a page, the most a
-/// hardware stream prefetcher covers without a fresh start.
+/// How much of the next range a walk over staged records requests into L2 as it enters a range: a page,
+/// the most a hardware stream prefetcher covers without a fresh start.
 constexpr size_t adaptive_drain_range_prefetch_bytes = 4096;
 /// A merge unit's table is prefetched into only when it is larger than this: below it the table stays in the
 /// cache through the drain, and a prefetch of a cache-resident slot is pure overhead.
@@ -164,8 +164,20 @@ struct AdaptiveAggregationSession
     /// Maps a merge claim to its bucket, ordered by pruning bounds when pruning is enabled.
     UInt32 bucketToMerge(UInt32 claim) const;
 
-    /// Whether some producer froze, which makes the merge adaptive. Read after the finish barrier.
+    /// Whether some producer froze. Read after the finish barrier.
     bool engaged() const { return frozen_producers > 0; }
+
+    /// Whether the tables take the adaptive bucket merge (see `Aggregator::mergeAndConvertAdaptiveBucket`):
+    /// when some producer froze, because only that merge drains the staged records, or when the merge prunes
+    /// by the top-K, which only that merge does (see `Aggregator::prepareAdaptiveTopK`). Otherwise the
+    /// tables take the ordinary merge, which merges single-level tables by partitions through their cell
+    /// indexes when every table has one. Before the preparation `top_k_pruning` is set for every top-K
+    /// query, so the answer is only valid after it.
+    bool mergesByBuckets() const
+    {
+        chassert(top_k_pruning_prepared);
+        return engaged() || top_k_pruning;
+    }
 
     /// The number of producers: the pipeline's aggregation streams.
     const size_t producers;
@@ -182,10 +194,13 @@ struct AdaptiveAggregationSession
     /// and after the finish barrier `Aggregator::prepareAdaptiveTopK` keeps it only for a merge that can
     /// prune. It is kept only together with `top_k_threshold`, whose value it prunes by.
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
+    /// Set by `Aggregator::prepareAdaptiveTopK`.
+    bool top_k_pruning_prepared = false;
 
     /// The threshold of a top-K that the merge threads share (see `AdaptiveTopKThreshold`). It has no role
     /// while the producers run: `Aggregator::prepareAdaptiveTopK` creates it after the finish barrier for
-    /// every merge of a top-K but the external one, whose units output partial states.
+    /// every bucket merge of a top-K (see `mergesByBuckets`) but the external one, whose units output partial
+    /// states.
     std::unique_ptr<AdaptiveTopKThreshold> top_k_threshold;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
@@ -214,6 +229,11 @@ struct AdaptiveAggregationSession
     /// same mutex, they make the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
     size_t frozen_producers = 0;
     size_t thawed_producers = 0;
+
+    /// The cells of the producers' tables, and the single-level tables whose cells they could not index (see
+    /// `AggregatedDataVariants::indexCells`), published under the same mutex.
+    size_t table_cells = 0;
+    size_t unindexed_tables = 0;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
@@ -273,7 +293,7 @@ struct AdaptiveMergeTask
     PaddedPODArray<AggregateDataPtr> places;
     PaddedPODArray<AggregateDataPtr *> source_slots;
     /// The merges of `source_slots` into `places` ordered by their destination, and one destination's states, for the
-    /// pool-parallel merge of a group many producers hold (see `Aggregator::mergeAdaptiveSourceStates`).
+    /// pool-parallel merge of a group many producers hold (see `Aggregator::mergeSourceStates`).
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
     PaddedPODArray<AggregateDataPtr> record_places;

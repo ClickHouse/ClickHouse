@@ -1,0 +1,20 @@
+--- stable after expire
+APPEND	1	0
+OVERWRITE	1	0
+APPEND	1	0
+[3,0]
+APPEND	0	0
+APPEND	1	0
+[2,1]
+--- without snapshot-log
+[1,0]
+[1,1]
+APPEND	1	0
+--- dropped log entry falls back to commit time
+APPEND	1	1000
+APPEND	1	0
+APPEND	1	0
+APPEND	1	0
+--- repeated snapshot id uses the last log entry
+APPEND	1	3000
+APPEND	0	0

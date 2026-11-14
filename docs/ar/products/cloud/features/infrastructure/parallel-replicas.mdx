@@ -6,8 +6,6 @@ description: 'في هذا الدليل، سنناقش أولاً كيف يوزّ
 doc_type: 'مرجع'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="introduction">
   ## المقدمة
 </div>
@@ -31,7 +29,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ستنفّذ كل شظية الاستعلامات المطلوبة. وسيقوم الخادم الذي تم الاستعلام من خلاله عن
 الجدول الموزّع بتجميع البيانات وإرجاع الرد إلى العميل:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="البنية المُجزّأة" />
+<div className="ch-image-md">
+
+<Frame>
+
+![البنية المُجزّأة](/images/deployment-guides/parallel-replicas-1.webp)
+
+</Frame>
+
+</div>
 
 يوضح الشكل أعلاه ما يحدث عندما يرسل عميل استعلامًا إلى جدول موزّع:
 
@@ -72,7 +78,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوضح الشكل أدناه بنية ClickHouse Cloud:
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="بنية غير مُشظّاة" />
+<div className="ch-image-md">
+
+<Frame>
+
+![بنية غير مُشظّاة](/images/deployment-guides/parallel-replicas-2.webp)
+
+</Frame>
+
+</div>
 
 تتيح لنا هذه البنية إضافة النسخ المتماثلة وإزالتها بشكل شبه
 فوري، مما يضمن قابلية توسع عالية جدًا للعنقود. ويضمن عنقود ClickHouse
@@ -99,7 +113,15 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 والآن، لنرَ كيف يعمل ذلك عمليًا بمساعدة الشكل أدناه:
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="النسخ المتماثلة المتوازية" />
+<div className="ch-image-md">
+
+<Frame>
+
+![النسخ المتماثلة المتوازية](/images/deployment-guides/parallel-replicas-3.webp)
+
+</Frame>
+
+</div>
 
 مع النسخ المتماثلة المتوازية:
 
@@ -162,7 +184,15 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 لمعالجة (1) و(2) من القائمة أعلاه، قدّمنا مفهوم
 الإعلان. لنتصوّر كيف يعمل ذلك باستخدام الشكل أدناه:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="الإعلانات" />
+<div className="ch-image-md">
+
+<Frame>
+
+![الإعلانات](/images/deployment-guides/parallel-replicas-4.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -206,7 +236,15 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 يوضّح الشكل أدناه كيفية عمل التنسيق الديناميكي:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="التنسيق الديناميكي - الجزء 1" />
+<div className="ch-image-md">
+
+<Frame>
+
+![التنسيق الديناميكي - الجزء 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -219,7 +257,15 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="التنسيق الديناميكي - الجزء 2" />
+<div className="ch-image-md">
+
+<Frame>
+
+![التنسيق الديناميكي - الجزء 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -232,7 +278,15 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="التنسيق الديناميكي - الجزء 3" />
+<div className="ch-image-md">
+
+<Frame>
+
+![التنسيق الديناميكي - الجزء 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -506,7 +560,15 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN بدون النسخة_المتماثلة_المتوازية" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN بدون النسخة_المتماثلة_المتوازية](/images/deployment-guides/parallel-replicas-8.webp)
+
+</Frame>
+
+</div>
 
 والآن مع النسخ المتماثلة المتوازية:
 
@@ -521,4 +583,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN باستخدام النسخة_المتماثلة_المتوازية" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN باستخدام النسخة_المتماثلة_المتوازية](/images/deployment-guides/parallel-replicas-9.webp)
+
+</Frame>
+
+</div>

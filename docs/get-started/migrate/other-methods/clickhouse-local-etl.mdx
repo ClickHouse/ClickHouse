@@ -7,11 +7,17 @@ description: 'Guide showing how to migrate to ClickHouse using clickhouse-local'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size='lg' alt='Migrating Self-managed ClickHouse'/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrating Self-managed ClickHouse](/images/integrations/migration/ch-local-01.webp)
+
+</Frame>
+
+</div>
 
 You can use ClickHouse, or to be more specific,[`clickhouse-local`](/concepts/features/tools-and-utilities/clickhouse-local)
 as an ETL tool for migrating data from your current database system to ClickHouse Cloud, as long as for your current database system there is either a
@@ -25,7 +31,15 @@ For all other popular database systems, there is JDBC driver or ODBC driver avai
 
 ## What is clickhouse-local? {#what-is-clickhouse-local}
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size='lg' alt='Migrating Self-managed ClickHouse'  />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrating Self-managed ClickHouse](/images/integrations/migration/ch-local-02.webp)
+
+</Frame>
+
+</div>
 
 Typically, ClickHouse is run in the form of a cluster, where several instances of the ClickHouse database engine are running in a distributed fashion on different servers.
 
@@ -88,7 +102,15 @@ In order for the `remoteSecure` function to connect to your ClickHouse Cloud ser
 We will use the [integration table engine](/reference/engines/table-engines/integrations/mysql) (created on-the-fly by the [mysql table function](/reference/functions/table-functions/mysql)) for reading data from the source MySQL database and we will use the [remoteSecure table function](/reference/functions/table-functions/remote)
 for writing the data into a destination table on your ClickHouse cloud service.
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size='lg' alt='Migrating Self-managed ClickHouse'  />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Migrating Self-managed ClickHouse](/images/integrations/migration/ch-local-03.webp)
+
+</Frame>
+
+</div>
 
 ### On the destination ClickHouse Cloud service: {#on-the-destination-clickhouse-cloud-service}
 

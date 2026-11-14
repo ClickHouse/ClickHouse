@@ -5,8 +5,6 @@ description: "Aprende a perfilar ClickHouse con el perfilador de instrumentació
 tags: ['Rendimiento y optimización', 'Herramientas y utilidades']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="types-of-profilers">
   ## Tipos de profilers
 </div>
@@ -52,7 +50,15 @@ Convertimos los datos recopilados en system.trace&#95;log [al formato de Chrome]
 visualizarlos en [Perfetto](https://ui.perfetto.dev). Observe el query&#95;id, cpu&#95;id y la traza de pila de
 cada registro.
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="orden temporal" />
+<div className="ch-image-md">
+
+<Frame>
+
+![orden temporal](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</Frame>
+
+</div>
 
 <div id="profiling-a-native-application-using-xray">
   ## Perfilado de una aplicación nativa con XRay
@@ -162,19 +168,43 @@ para generar un flamegraph y una vista tipo sándwich de tus datos.
   #### Orden temporal
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
+<div className="ch-image-md">
+
+<Frame>
+
+![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+
+</Frame>
+
+</div>
 
 <div id="left-heavy">
   #### Cargado a la izquierda
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="cargado a la izquierda" />
+<div className="ch-image-md">
+
+<Frame>
+
+![cargado a la izquierda](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+
+</Frame>
+
+</div>
 
 <div id="sandwitch">
   #### Sándwich
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="sándwich" />
+<div className="ch-image-md">
+
+<Frame>
+
+![sándwich](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</Frame>
+
+</div>
 
 <div id="check-out-the-docs">
   ## Consulta la documentación
