@@ -102,6 +102,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
     extern const char object_storage_queue_pause_after_commit[];
+    extern const char object_storage_queue_pause_in_direct_select[];
 }
 
 namespace ServerSetting
@@ -772,6 +773,8 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Cannot read from {} with attached materialized views and commit_on_select=1", getName());
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_in_direct_select);
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
 
