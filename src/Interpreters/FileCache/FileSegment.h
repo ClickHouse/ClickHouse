@@ -7,18 +7,17 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
 
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <base/getThreadId.h>
 #include <base/scope_guard.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Interpreters/FileCache/IFileCachePriority.h>
-#include <Interpreters/FileCache/FileSegmentInfo.h>
-#include <Interpreters/FileCache/FileCache_fwd_internal.h>
-#include <Interpreters/FileCache/QueueEntryType.h>
 
 
 namespace Poco { class Logger; }
@@ -193,10 +192,6 @@ public:
     void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
     static FileSegmentInfo getInfo(const FileSegmentPtr & file_segment);
-
-    /// Only the fields returned by `IFileCachePriority::observeFilesystemCache`.
-    /// If `queue_entry_type` is `None`, the type of the segment's own queue entry is reported.
-    static FileSegmentSummaryInfo getSummaryInfo(const FileSegmentPtr & file_segment, QueueEntryType queue_entry_type);
 
     bool isDetached() const;
 

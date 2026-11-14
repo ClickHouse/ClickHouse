@@ -297,25 +297,39 @@ namespace
 {
 
 /// The summary of the file segment of `entry`, or `nullopt` if the segment is gone or empty.
+/// The key lock is held only to find the file segment and to make sure it is still in the cache.
+/// Everything else comes from the queue entry, the key metadata, or atomics of the file segment.
 std::optional<FileSegmentSummaryInfo> tryGetSummaryInfo(const IFileCachePriority::Entry & entry, QueueEntryType queue_entry_type)
 {
     auto key_metadata = entry.key_metadata.lock();
     if (!key_metadata)
         return std::nullopt;
 
-    auto locked_key = key_metadata->tryLock();
-    if (!locked_key)
+    FileSegmentPtr file_segment;
+    {
+        auto locked_key = key_metadata->tryLock();
+        if (!locked_key)
+            return std::nullopt;
+
+        auto file_segment_metadata = locked_key->tryGetByOffset(entry.offset);
+        if (!file_segment_metadata)
+            return std::nullopt;
+        file_segment = file_segment_metadata->file_segment;
+    }
+
+    const size_t size = entry.size.load();
+    if (size == 0)
         return std::nullopt;
 
-    auto file_segment_metadata = locked_key->tryGetByOffset(entry.offset);
-    if (!file_segment_metadata)
-        return std::nullopt;
-
-    auto info = FileSegment::getSummaryInfo(file_segment_metadata->file_segment, queue_entry_type);
-    if (info.size == 0)
-        return std::nullopt;
-
-    return info;
+    return FileSegmentSummaryInfo{
+        .path = key_metadata->getFileSegmentPath(*file_segment),
+        .key = entry.key.toString(),
+        .offset = entry.offset,
+        .size = size,
+        .state = FileSegment::stateToString(file_segment->state()),
+        .queue_entry_type = toString(queue_entry_type),
+        .user_id = key_metadata->origin->user_id,
+    };
 }
 
 }
@@ -329,6 +343,8 @@ void LRUFileCachePriority::iterate(
 {
     assertNotSealed("iterate");
     auto lock = getPriorityGuard().readLock();
+    if (queue_entry_type == QueueEntryType::None)
+        queue_entry_type = QueueEntryType::LRU;
     iterate(query_max_elements, query_max_total_size, query_order, queue_entry_type, result, lock);
 }
 
@@ -351,9 +367,9 @@ void LRUFileCachePriority::iterate(
     /// Returns false to stop the walk on a limit
     auto add_entry = [&](const EntryPtr & entry)
     {
-        /// TODO: (andi) check this
-        /// Check the state without the key lock first, as an optimization.
-        if (!isObservable(entry->getState()) || entry->size.load() == 0)
+        /// We need isObservable check because otherwise we could see two entries for the same segment
+        /// in SLRU queue
+        if (!isObservable(entry->getState()))
             return true;
 
         /// For random sampling we walk through the whole queue

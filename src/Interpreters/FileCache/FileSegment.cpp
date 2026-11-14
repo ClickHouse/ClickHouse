@@ -1554,24 +1554,6 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
     };
 }
 
-FileSegmentSummaryInfo FileSegment::getSummaryInfo(const FileSegmentPtr & file_segment, QueueEntryType queue_entry_type)
-{
-    /// `priority_rank` is set by `LRUFileCachePriority::iterate`, which knows the position of the segment in the result.
-    auto lock = file_segment->lock();
-    /// `queue_entry_type` is sent from SplitCachePriority, otherwise we would always see LRU queue type
-    if (queue_entry_type == QueueEntryType::None && file_segment->queue_iterator)
-        queue_entry_type = file_segment->queue_iterator->getType();
-    return FileSegmentSummaryInfo{
-        .path = file_segment->tryGetPath(),
-        .key = file_segment->key().toString(),
-        .offset = file_segment->offset(),
-        .size = file_segment->getDiskAccountedSize(),
-        .state = stateToString(file_segment->download_state.load()),
-        .queue_entry_type = toString(queue_entry_type),
-        .user_id = file_segment->getKeyMetadata()->origin->user_id,
-    };
-}
-
 bool FileSegment::isDetached() const
 {
     /// Keep the lock: `complete` uses `isDetached` to confirm a benign concurrent detach when
