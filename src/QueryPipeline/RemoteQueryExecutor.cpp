@@ -622,7 +622,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     /// sending a plan would silently lose them. Use the original SQL request for old replicas: it
     /// carries the query settings and lets the remote server build a plan with the same limits.
     /// This keeps `serialize_query_plan` usable while a cluster is being upgraded.
+    /// A coordinated distributed Top-K read cannot be sent as SQL: its query text names the `Distributed`
+    /// table, which need not exist on the shard, and the shard would not take part in the candidate exchange.
+    /// Such a plan is always sent, and a replica that cannot read it is rejected when the plan is serialized
+    /// for it (`QueryPlan::serialize` refuses versions below `DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION`).
+    const bool is_distributed_top_k_participant = extension && extension->distributed_top_k_coordinator;
     if (query_plan
+        && !is_distributed_top_k_participant
         && (query_plan->getMaxThreads() || query_plan->getConcurrencyControl())
         && !connections->supportsQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS))
     {

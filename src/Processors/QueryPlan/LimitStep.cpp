@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -189,9 +190,11 @@ void LimitStep::serialize(Serialization & ctx) const
     /// final ones instead of taking part in the candidate exchange.
     if (distributed_top_k_candidate_sort_description && ctx.step_version < 1)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot serialize a distributed Top-K candidate limit for a peer with query plan serialization version {}",
-            ctx.version);
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot send a distributed Top-K candidate limit to a peer with query plan serialization version {}, "
+            "it requires version {}. Disable `query_plan_optimize_distributed_lazy_materialization` until all servers are upgraded",
+            ctx.version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SHARD_LIMIT);
 
     UInt8 flags = 0;
     if (always_read_till_end)
