@@ -17,5 +17,12 @@ SELECT (s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%') AS r, coun
 WITH if(s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%', s, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r FROM t_or_like_shared GROUP BY r ORDER BY r;
 SELECT (s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%') AS r, indexHint(r) FROM t_or_like_shared GROUP BY r ORDER BY r;
 SELECT (s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%') AS r, count() FROM t_or_like_shared GROUP BY r ORDER BY ALL SETTINGS enable_identifier_resolve_cache = 0;
+WITH if(s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%', s, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r, count() FROM t_or_like_shared WHERE h != '' GROUP BY r ORDER BY r;
+WITH if(s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%', s, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r, max(h) FROM t_or_like_shared GROUP BY r ORDER BY r;
+WITH if(ns LIKE '%a%' OR ns LIKE '%b%' OR ns LIKE '%c%' OR ns LIKE '%1%', ns, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r, count() FROM t_or_like_shared WHERE h != '' GROUP BY r ORDER BY r;
+WITH if(ls LIKE '%a%' OR ls LIKE '%b%' OR ls LIKE '%c%' OR ls LIKE '%1%', ls, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r, count() FROM t_or_like_shared WHERE h != '' GROUP BY r ORDER BY r;
+WITH if(s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%', s, 'z') AS h1, if(h1 LIKE '%a%' OR h1 LIKE '%b%' OR h1 LIKE '%c%' OR h1 LIKE '%2%', 'x', 'y') AS h2 SELECT (h2 LIKE '%a%' OR h2 LIKE '%b%' OR h2 LIKE '%y%' OR h2 LIKE '%x%') AS r, count() FROM t_or_like_shared WHERE h1 != '' GROUP BY r ORDER BY r;
+WITH if(s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%', s, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r, count() FROM t_or_like_shared GROUP BY h ORDER BY r;
+SELECT count() > 0 FROM (EXPLAIN actions = 1 WITH if(s LIKE '%a%' OR s LIKE '%b%' OR s LIKE '%c%' OR s LIKE '%1%', s, 'z') AS h SELECT (h LIKE '%a%' OR h LIKE '%b%' OR h LIKE '%c%' OR h LIKE '%1%') AS r, count() FROM t_or_like_shared WHERE h != '' GROUP BY r) WHERE explain LIKE '%multiSearchAny(if((multiSearchAny(%) AND indexHint(), %) AND indexHint()%';
 
 DROP TABLE t_or_like_shared;
