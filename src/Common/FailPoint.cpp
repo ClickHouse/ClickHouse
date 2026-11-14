@@ -238,6 +238,8 @@ static struct InitFiu
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(trigger_sanitizer_error) \
+    ONCE(segfault_read_access) \
+    ONCE(segfault_write_access) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
@@ -318,6 +320,7 @@ static struct InitFiu
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
+    PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
     PAUSEABLE_ONCE(iceberg_metadata_prefetch_pause) \
