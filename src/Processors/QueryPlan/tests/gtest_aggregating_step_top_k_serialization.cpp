@@ -211,7 +211,8 @@ TEST(AggregatingStepTopKSerialization, OlderPeerOmitsTopK)
 
     const UInt64 version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K - 1;
     ASSERT_EQ(stepRegistry().versionToWrite(step_name, version), 0u);
-    ASSERT_EQ(stepRegistry().versionToWrite(step_name, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K), 1u);
+    /// Version 2 (the partial aggregate cache key) also carries top-K and may share the same global version.
+    ASSERT_GE(stepRegistry().versionToWrite(step_name, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K), 1u);
 
     const String with_top_k = serializeStep(*makeStep(makeTopK(2, {-1, 1}, {-1, 1})), version);
     const String without_top_k = serializeStep(*makeStep(std::nullopt), version);

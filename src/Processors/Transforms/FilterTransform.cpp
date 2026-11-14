@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Cache/PartialAggregatePlanHitInfo.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -643,7 +644,8 @@ void FilterTransform::doTransform(Chunk & chunk)
     ColumnPtr filter_column = columns[filter_column_position];
     ConstantFilterDescription constant_filter_description(*filter_column);
 
-    if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
+    if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk)
+        || chunk.getChunkInfos().get<PartialAggregatePlanHitInfo>())
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
         if (constant_filter_description.always_true && !on_totals && !isVirtualRow(chunk))
