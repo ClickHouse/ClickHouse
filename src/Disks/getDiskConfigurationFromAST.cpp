@@ -69,8 +69,9 @@ namespace ServerSetting
 /// A Boolean value of a disk setting as the disk reads it (`Poco::Util::AbstractConfiguration::parseBool`):
 /// an integer, or `true`, `yes`, `on`, `false`, `no`, `off` in any case. `std::nullopt` if it is not a Boolean,
 /// in which case the disk does not accept the configuration.
-static std::optional<bool> parseDiskConfigurationBool(const std::string & value)
+static std::optional<bool> parseDiskConfigurationBool(std::string_view view)
 {
+    const std::string value(view);
     int number = 0;
     if (Poco::NumberParser::tryParse(value, number))
         return number != 0;
@@ -133,9 +134,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
     /// user-supplied value.
     /// A value with `${...}` is expanded by `AbstractConfiguration` to another value of the configuration when the disk reads it,
     /// so it is not the value the checks below see either.
-    auto is_indirect_value = [](const std::string & v)
+    auto is_indirect_value = [](std::string_view v)
     {
-        return startsWith(v, "from_env") || startsWith(v, "from_zk") || v.contains("${");
+        return v.starts_with("from_env") || v.starts_with("from_zk") || v.contains("${");
     };
     /// The keys that the disks read as lists (all their occurrences): the headers of S3 disks and the keys of encrypted disks.
     /// None of them is used by the checks below.
