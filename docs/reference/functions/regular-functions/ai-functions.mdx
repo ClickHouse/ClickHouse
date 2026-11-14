@@ -84,7 +84,7 @@ ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
+| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`, `'openrouter'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
 | `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text functions; the embedding functions (`aiEmbed`, `aiSimilarity`) require `model` as a positional argument and error if `model` is specified in the named collection. |
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
@@ -221,6 +221,7 @@ For a materialized view, the settings must go on the `INSERT` that feeds the vie
 |----------|-----------------|----------------|-------|
 | OpenAI | `'openai'` | Yes | Default provider. |
 | Anthropic | `'anthropic'` | Yes | Uses `/v1/messages` endpoint. |
+| OpenRouter | `'openrouter'` | Yes | OpenAI-compatible. Use `https://openrouter.ai/api/v1/chat/completions` for chat functions and `https://openrouter.ai/api/v1/embeddings` for `aiEmbed` and `aiSimilarity`. |
 
 ## Observability {#observability}
 

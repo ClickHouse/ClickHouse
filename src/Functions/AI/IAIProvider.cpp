@@ -74,13 +74,13 @@ AIProviderPtr createAIProvider(
     const ContextPtr & context, const String & provider_name, const String & endpoint, const String & api_key, const String & api_version)
 {
     AIProviderPtr provider;
-    if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
+    if (provider_name == "openai" || provider_name == "openrouter" || provider_name == "huggingface" || provider_name == "tei")
         provider = std::make_unique<OpenAIProvider>(endpoint, api_key);
     else if (provider_name == "anthropic")
         provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
+            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'openrouter', 'huggingface', 'tei'", provider_name);
 
     /// Rejects forbidden headers and CR/LF in values (the key comes from a named collection).
     auto headers = provider->getHeaders();

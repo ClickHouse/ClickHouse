@@ -9,7 +9,7 @@ namespace DB
   * https://developers.openai.com/api/reference/resources/chat
   * https://developers.openai.com/api/reference/resources/embeddings
   *
-  * Also used for OpenAI-compatible APIs (vLLM, Ollama, LiteLLM, HuggingFace TEI)
+  * Also used for OpenAI-compatible APIs (vLLM, Ollama, LiteLLM, HuggingFace TEI, OpenRouter)
   * which implement the same request/response format.
   *
   * Chat request:
