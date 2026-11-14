@@ -3,8 +3,13 @@
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
+#include <Core/Field.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
+
+#include <list>
+#include <mutex>
+#include <unordered_map>
 
 namespace DB
 {
@@ -139,6 +144,19 @@ public:
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
+    /// A variant of a condition with bounds whose entries are stored under `condition_hash`, see
+    /// `ConditionBounds`. The entries written for one variant can be used by a query with another
+    /// variant of the same condition (the same `structure_hash`), but it has to know the keys of the
+    /// earlier variants. These are remembered here, the most recent first.
+    struct BoundsVariant
+    {
+        UInt64 condition_hash = 0;
+        std::vector<Field> values;
+    };
+
+    void addBoundsVariant(const UUID & table_id, UInt64 structure_hash, BoundsVariant variant);
+    std::vector<BoundsVariant> getBoundsVariants(const UUID & table_id, UInt64 structure_hash) const;
+
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
 
@@ -150,6 +168,24 @@ public:
 private:
     Cache cache;
     LoggerPtr logger = getLogger("QueryConditionCache");
+
+    /// The number of remembered variants of a condition. A query uses the first of them with an entry for a part.
+    static constexpr size_t max_bounds_variants = 4;
+    /// The number of conditions with remembered variants, the least recently used are forgotten.
+    static constexpr size_t max_bounds_conditions = 10000;
+    /// The remembered variants take at most this part of the memory of the cache. They are useless
+    /// without entries in the cache, so nothing is remembered when the cache is disabled.
+    static constexpr size_t bounds_variants_size_ratio = 16;
+
+    using BoundsVariants = std::pair<Key, std::vector<BoundsVariant>>;
+    static size_t boundsVariantsWeight(const BoundsVariants & variants);
+    void evictBoundsVariants() TSA_REQUIRES(bounds_mutex);
+
+    mutable std::mutex bounds_mutex;
+    size_t bounds_variants_bytes TSA_GUARDED_BY(bounds_mutex) = 0;
+    size_t max_bounds_variants_bytes TSA_GUARDED_BY(bounds_mutex) = 0;
+    std::list<BoundsVariants> bounds_variants TSA_GUARDED_BY(bounds_mutex);
+    std::unordered_map<Key, std::list<BoundsVariants>::iterator, UInt128TrivialHash> bounds_variants_index TSA_GUARDED_BY(bounds_mutex);
 
     friend class StorageSystemQueryConditionCache;
 };
