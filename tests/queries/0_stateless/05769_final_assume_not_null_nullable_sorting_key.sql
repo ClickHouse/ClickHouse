@@ -41,6 +41,10 @@ SELECT 'skip index expand', countIf(explain ILIKE '%PrimaryKeyExpand%')
 FROM (EXPLAIN indexes = 1 SELECT ver FROM t_final_nullable_key_index FINAL WHERE n = 0 AND assumeNotNull(k) = 1 SETTINGS optimize_move_to_prewhere = 0);
 SELECT 'skip index expand kept off', countIf(explain ILIKE '%PrimaryKeyExpand%')
 FROM (EXPLAIN indexes = 1 SELECT ver FROM t_final_nullable_key_index FINAL WHERE n = 0 AND k = 1 SETTINGS optimize_move_to_prewhere = 0);
+-- the constraint optimization adds indexHint(assumeNotNull(k) = 1), which only the indexes read
+ALTER TABLE t_final_nullable_key_index ADD CONSTRAINT c CHECK assumeNotNull(k) = ver;
+SELECT 'skip index hint', groupArray(ver) FROM t_final_nullable_key_index FINAL WHERE n = 0 AND ver = 1
+SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, optimize_append_index = 1, force_data_skipping_indices = 'ik';
 DROP TABLE t_final_nullable_key_index;
 
 DROP TABLE IF EXISTS t_final_nullable_key_partition;

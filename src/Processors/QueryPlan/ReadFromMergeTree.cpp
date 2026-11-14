@@ -3501,11 +3501,12 @@ void ReadFromMergeTree::buildIndexes(
                                                     && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
                                                         indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
+    /// `filter_dag` is what the skip indexes analyze, with the arguments of `indexHint` expanded into it
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
                                                         && (!areAllSkipIndexColumnsInPrimaryKey(primary_key, skip_indexes)
-                                                            || (filter_actions_dag_ && QueryPlanOptimizations::dagReadsUnspecifiedValueUnderNull(*filter_actions_dag_)));
+                                                            || (filter_dag.dag && QueryPlanOptimizations::dagReadsUnspecifiedValueUnderNull(*filter_dag.dag)));
 
     indexes->skip_indexes = std::move(skip_indexes);
 }
