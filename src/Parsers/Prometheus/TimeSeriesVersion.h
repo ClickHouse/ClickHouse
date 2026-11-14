@@ -48,6 +48,13 @@ namespace DB
 ///       `recent_samples_index_granularity_bytes` were introduced, and the defaults of `samples_index_granularity` and
 ///       `recent_samples_index_granularity` changed. Tables of earlier versions stored one sample per row in the columns
 ///       `timestamp` and `value`.
+///  12 - The "samples" and "recent samples" target tables store native histogram samples in the column `histograms` of the same
+///       rows as the float samples: an array of tuples `(timestamp, flags, counter_reset_hint, schema, zero_threshold, sum,
+///       count_int, zero_count_int, count_float, zero_count_float, positive_int, negative_int, positive_float, negative_float,
+///       custom_values)` sorted by timestamp and merged by `timeSeriesGroupArray`. A histogram is stored as it was sent:
+///       integer and float histograms keep their own count types, the buckets are pairs of the bucket index and the count.
+///       The outer columns `histograms.*` and the setting `histograms_max_buckets` were introduced. Tables of earlier
+///       versions store no histograms.
 namespace TimeSeriesVersion
 {
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
@@ -107,11 +114,16 @@ namespace TimeSeriesVersion
     /// The earlier versions stored one sample per row.
     constexpr UInt64 MIN_WITH_BUCKETED_SAMPLES = 11;
 
+    /// The first version storing native histogram samples in the rows of the "samples" and "recent samples" target tables
+    /// (see the version history above). The earlier versions store no histograms, and a table of an earlier version must not have
+    /// the settings of the histograms: an older server wouldn't understand them.
+    constexpr UInt64 MIN_WITH_NATIVE_HISTOGRAMS = 12;
+
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 11;
+    constexpr UInt64 LATEST = 12;
 
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
@@ -121,6 +133,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_DEDUPLICATION_CACHES <= LATEST);
     static_assert(MIN_WITH_TIME_RANGES_TARGET <= LATEST);
     static_assert(MIN_WITH_UTC_PARTITION_KEY <= LATEST);
+    static_assert(MIN_WITH_NATIVE_HISTOGRAMS <= LATEST);
     static_assert(MIN_WITHOUT_EXTERNAL_TARGETS <= LATEST);
     static_assert(MIN_WITH_BUCKETED_SAMPLES <= LATEST);
     static_assert((MIN_WITH_ID_TYPE_SETTING <= MIN_WITHOUT_ID_SETTINGS) && (MIN_WITHOUT_ID_SETTINGS <= LATEST));

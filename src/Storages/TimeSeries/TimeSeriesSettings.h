@@ -63,6 +63,10 @@ struct TimeSeriesSettings
     /// The tables of earlier versions store one sample per row.
     bool hasBucketedSamples() const;
 
+    /// Whether the "samples" and "recent samples" tables store native histogram samples in the column `histograms` of the rows
+    /// with buckets of samples (tables of version MIN_WITH_NATIVE_HISTOGRAMS or later, see TimeSeriesVersion.h).
+    bool hasHistogramsInSamples() const;
+
     /// Whether the "tags" table stores the columns `min_time` and `max_time`: tables of earlier versions
     /// with the `store_min_time_and_max_time` setting enabled (see TimeSeriesVersion.h).
     bool hasMinTimeAndMaxTimeInTagsTable() const;

@@ -28,18 +28,25 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/detectTimeSeriesHistogramResets.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/validateTimeSeriesHistograms.h>
 #include <base/EnumReflection.h>
 #include <base/sort.h>
 
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -50,6 +57,7 @@ namespace DB
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsUInt64 histograms_max_buckets;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsUInt64 recent_samples_bucket_step_seconds;
     extern const TimeSeriesSettingsUInt64 samples_bucket_step_seconds;
@@ -188,13 +196,20 @@ namespace
         return {min_value, max_value};
     }
 
-    /// Fills columns id, min_time and max_time for the "time ranges" table.
+    /// The timestamps of one kind of samples (the float samples or the histogram samples) in the outer columns of the input block:
+    /// `offsets[i]` is the end of the range of row `i` in `timestamps`.
+    struct TimestampsArray
+    {
+        const ColumnArray::Offsets & offsets;
+        const IColumn & timestamps;
+    };
+
+    /// Fills columns id, min_time and max_time for the "time ranges" table: the time range of a series covers every kind of samples.
     /// Time series without samples are skipped: they have no time range.
     void fillTimeRangesColumns(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
-        const ColumnArray::Offsets & ts_offsets,
-        const IColumn & ts_timestamps,
+        std::span<const TimestampsArray> timestamps_arrays,
         IColumn & out_id_column,
         IColumn & out_min_time_column,
         IColumn & out_max_time_column)
@@ -205,30 +220,46 @@ namespace
             if (!filter[i])
                 continue;
 
-            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
-            size_t ts_end = ts_offsets[i];
-
-            if (ts_start != ts_end)
+            std::optional<std::pair<Field, Field>> min_max;
+            for (const auto & array : timestamps_arrays)
             {
-                auto [min_time, max_time] = findMinMax(ts_timestamps, ts_start, ts_end);
+                const size_t ts_start = (i == 0) ? 0 : array.offsets[i - 1];
+                const size_t ts_end = array.offsets[i];
+                if (ts_start == ts_end)
+                    continue;
+
+                auto [min_time, max_time] = findMinMax(array.timestamps, ts_start, ts_end);
+                if (!min_max)
+                {
+                    min_max.emplace(std::move(min_time), std::move(max_time));
+                    continue;
+                }
+                if (min_time < min_max->first)
+                    min_max->first = std::move(min_time);
+                if (max_time > min_max->second)
+                    min_max->second = std::move(max_time);
+            }
+
+            if (min_max)
+            {
                 out_id_column.insertFrom(id_column, id_index);
-                out_min_time_column.insert(min_time);
-                out_max_time_column.insert(max_time);
+                out_min_time_column.insert(min_max->first);
+                out_max_time_column.insert(min_max->second);
             }
 
             ++id_index;
         }
     }
 
-    /// Builds a block for the time ranges table (the columns `id`, `min_time`, `max_time`) from the series in the input block.
+    /// Builds a block for the time ranges table (the columns `id`, `min_time`, `max_time`) from the series in the input block:
+    /// `timestamps_arrays` are the timestamps of each kind of samples present (see TimestampsArray), the range covers them all.
     /// `num_time_series` is the number of the series in the input block, used to reserve the columns.
     Block makeTimeRangesBlock(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
         const DataTypePtr & id_type,
-        const IColumn & ts_timestamps,
+        std::span<const TimestampsArray> timestamps_arrays,
         const DataTypePtr & timestamp_type,
-        const ColumnArray::Offsets & ts_offsets,
         size_t num_time_series)
     {
         auto out_id = id_type->createColumn();
@@ -240,7 +271,7 @@ namespace
         auto out_max_time = timestamp_type->createColumn();
         out_max_time->reserve(num_time_series);
 
-        fillTimeRangesColumns(filter, id_column, ts_offsets, ts_timestamps, *out_id, *out_min_time, *out_max_time);
+        fillTimeRangesColumns(filter, id_column, timestamps_arrays, *out_id, *out_min_time, *out_max_time);
 
         Block time_ranges_block;
         time_ranges_block.insert(ColumnWithTypeAndName{std::move(out_id), id_type, TimeSeriesColumnNames::ID});
@@ -279,10 +310,11 @@ namespace
     }
 
     /// Throws if a row without a metric name and tags has samples: such samples can't be stored.
-    void checkNoSamplesWithoutTimeSeries(size_t num_samples)
+    /// `kind` names the kind of samples in the message: "samples" or "histogram samples".
+    void checkNoSamplesWithoutTimeSeries(size_t num_samples, std::string_view kind)
     {
         if (num_samples > 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} samples without a metric name or tags", num_samples);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} {} without a metric name or tags", num_samples, kind);
     }
 
     /// Fills columns id, timestamp, value for the "samples" table of a table storing one sample per row
@@ -306,7 +338,7 @@ namespace
 
             if (!filter[i])
             {
-                checkNoSamplesWithoutTimeSeries(num_samples);
+                checkNoSamplesWithoutTimeSeries(num_samples, "samples");
                 continue;
             }
 
@@ -321,16 +353,18 @@ namespace
         }
     }
 
-    /// Sorts the samples of each time series by timestamp and removes the samples with duplicate timestamps
-    /// (the sample with the greatest value is kept, a NaN value loses to any other value).
-    /// The result is stored as indexes of the samples in the nested columns of the outer column with samples:
+    /// Sorts the samples of each time series by timestamp and removes the samples with duplicate timestamps: of a run of equal
+    /// timestamps the sample preferred by `new_sample_wins(kept_index, new_index)` is kept (see TimeSeriesDuplicateTimestampRule).
+    /// The function works for the float samples and for the histogram samples (`kind` names them in the error messages).
+    /// The result is stored as indexes of the samples in the nested columns of the outer columns:
     /// `sorted_indices` contains the indexes, and `sorted_offsets[i]` is the end of the range of row `i` in `sorted_indices`.
-    template <typename TimestampColumn>
+    template <typename TimestampColumn, typename NewSampleWins>
     void sortSamples(
         const PaddedPODArray<UInt8> & filter,
         const ColumnArray::Offsets & ts_offsets,
         const TimestampColumn & ts_timestamps,
-        const IColumn & ts_values,
+        const NewSampleWins & new_sample_wins,
+        std::string_view kind,
         PaddedPODArray<size_t> & sorted_indices,
         PaddedPODArray<size_t> & sorted_offsets)
     {
@@ -349,7 +383,7 @@ namespace
 
             if (!filter[i])
             {
-                checkNoSamplesWithoutTimeSeries(num_samples);
+                checkNoSamplesWithoutTimeSeries(num_samples, kind);
                 sorted_offsets.push_back(sorted_indices.size());
                 continue;
             }
@@ -365,17 +399,7 @@ namespace
             if (!std::is_sorted(row_data, row_data + num_samples, less_by_timestamp))
                 ::sort(row_data, row_data + num_samples, less_by_timestamp);
 
-            /// Collapse each run of equal timestamps into one sample: the sample with the greatest value,
-            /// where a NaN value loses to any other value.
-            auto new_sample_wins = [&](size_t kept_index, size_t new_index)
-            {
-                Float64 kept_value = ts_values.getFloat64(kept_index);
-                Float64 new_value = ts_values.getFloat64(new_index);
-                if (isNaN(new_value))
-                    return false;
-                return isNaN(kept_value) || (new_value > kept_value);
-            };
-
+            /// Collapse each run of equal timestamps into one sample.
             size_t last_unique = 0;
             for (size_t k = 1; k < num_samples; ++k)
             {
@@ -396,6 +420,30 @@ namespace
         }
     }
 
+    /// The rules for the samples with the same timestamp, as `new_sample_wins` of sortSamples: those of TimeSeriesDuplicateTimestampRule,
+    /// shared with the aggregate functions merging the rows of the samples tables.
+    auto makeFloatSampleWins(const IColumn & ts_values)
+    {
+        return [&ts_values](size_t kept_index, size_t new_index)
+        {
+            return TimeSeriesDuplicateTimestampRule::floatSampleWins(ts_values.getFloat64(kept_index), ts_values.getFloat64(new_index));
+        };
+    }
+
+    /// The histogram comparator also marks in `duplicate_hints_differ` (indexed like the nested columns of `view`) the kept sample
+    /// of a pair the rule considers equal but with different counter hints: its stored hint is made unknown (see
+    /// detectTimeSeriesHistogramResets), as `timeSeriesGroupArray` does, so that it doesn't depend on which one was kept.
+    auto makeHistogramSampleWins(const TimeSeriesHistogramsColumnsView & view, PaddedPODArray<UInt8> & duplicate_hints_differ)
+    {
+        return [&view, &duplicate_hints_differ](size_t kept_index, size_t new_index)
+        {
+            const int comparison = TimeSeriesDuplicateTimestampRule::compareHistograms(view, new_index, kept_index);
+            if ((comparison == 0) && (view.counter_reset_hint.getData()[kept_index] != view.counter_reset_hint.getData()[new_index]))
+                duplicate_hints_differ[kept_index] = 1;
+            return comparison > 0;
+        };
+    }
+
     /// Returns the start of the bucket containing a timestamp: the timestamp rounded down to a multiple of the bucket step.
     /// The timestamp, the step and the result have the scale of the timestamp type.
     Decimal64 getBucket(Decimal64 timestamp, Decimal64 bucket_step)
@@ -405,25 +453,16 @@ namespace
         return Decimal64(DateLUTImpl::roundDownToMultiple(timestamp.value, bucket_step.value));
     }
 
-    /// Copies the samples `indices[begin, end)` of `ts_timestamps` and `ts_values` to the columns of the `samples` array.
-    void insertSamplesByIndices(
-        const size_t * indices, size_t begin, size_t end,
-        const IColumn & ts_timestamps, const IColumn & ts_values,
-        IColumn & out_timestamps, IColumn & out_values)
+    /// The timestamps of the histogram samples with the type of the timestamps of the float samples: the outer columns share it
+    /// (checked once in TimeSeriesSink::initTagsAndSamplesPipelines, so the cast here is the typed accessor).
+    template <typename TimestampColumn>
+    const TimestampColumn & getHistogramTimestamps(const TimeSeriesHistogramsColumnsView & histograms)
     {
-        /// The indices are increasing, so the samples are copied by ranges:
-        /// usually the input is already sorted and a bucket is one range.
-        size_t range_start = begin;
-        while (range_start < end)
-        {
-            size_t range_end = range_start + 1;
-            while ((range_end < end) && (indices[range_end] == indices[range_end - 1] + 1))
-                ++range_end;
-            size_t first_index = indices[range_start];
-            out_timestamps.insertRangeFrom(ts_timestamps, first_index, range_end - range_start);
-            out_values.insertRangeFrom(ts_values, first_index, range_end - range_start);
-            range_start = range_end;
-        }
+        const auto * timestamps = typeid_cast<const TimestampColumn *>(&histograms.timestamps);
+        if (!timestamps)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} of timestamps in the column `{}`",
+                histograms.timestamps.getName(), TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp));
+        return *timestamps;
     }
 
     /// Converts a timestamp to `Decimal64` with the scale of the timestamp type.
@@ -456,8 +495,138 @@ namespace
             DataTypes{timestamp_type, value_type}, Strings{TimeSeriesColumnNames::Timestamp, TimeSeriesColumnNames::Value}));
     }
 
-    /// Builds a block for a samples table from the sorted samples of the series in the input block (see sortSamples).
-    /// A row of the block contains the samples of one series within one bucket of `bucket_step` (with the scale of the timestamp type).
+    /// One kind of samples of the input block, the float samples or the histogram samples, sorted and deduplicated per series (see
+    /// sortSamples): the typed timestamps, the nested columns of the outer arrays in the order of the elements of the stored tuple
+    /// (the timestamps first), the sorted indices, and the name and the type of the array column of the samples block they make
+    /// (`samples` or `histograms`). A kind without columns is absent from the INSERT: a table storing histograms gets an empty
+    /// `histograms` array in every row then.
+    template <typename TimestampColumn>
+    class SortedSamples
+    {
+    public:
+        SortedSamples(const TimestampColumn * timestamps_, std::vector<const IColumn *> columns_, String column_name_, DataTypePtr array_type_)
+            : timestamps(timestamps_), columns(std::move(columns_)), column_name(std::move(column_name_)), array_type(std::move(array_type_))
+        {
+        }
+
+        template <typename NewSampleWins>
+        void sort(const PaddedPODArray<UInt8> & filter, const ColumnArray::Offsets & offsets, const NewSampleWins & new_sample_wins, std::string_view kind)
+        {
+            sortSamples(filter, offsets, *timestamps, new_sample_wins, kind, sorted_indices, sorted_offsets);
+        }
+
+        bool isAbsent() const { return columns.empty(); }
+
+        const TimestampColumn * const timestamps;
+        const std::vector<const IColumn *> columns;
+        const String column_name;
+        const DataTypePtr array_type;
+        PaddedPODArray<size_t> sorted_indices;
+        PaddedPODArray<size_t> sorted_offsets;
+    };
+
+    /// Writes the samples of one kind (see SortedSamples) into its array column of a samples block, a row per series and bucket of
+    /// `bucket_step`: makeSamplesBlock feeds it row by row, a writer per samples table (the tables have their own bucket steps).
+    template <typename TimestampColumn>
+    class SamplesArrayWriter
+    {
+    public:
+        SamplesArrayWriter(const SortedSamples<TimestampColumn> & source_, Decimal64 bucket_step_)
+            : source(source_), bucket_step(bucket_step_)
+        {
+            /// The output columns are empty clones of the input ones: the rows are copied as they are with insertRangeFrom.
+            for (const IColumn * column : source.columns)
+            {
+                destinations.push_back(column->cloneEmpty());
+                destinations.back()->reserve(source.sorted_indices.size());
+            }
+        }
+
+        /// Starts the sorted samples of row `row` of the input block.
+        void startRow(size_t row)
+        {
+            if (source.isAbsent())
+                return;
+            cursor = (row == 0) ? 0 : source.sorted_offsets[row - 1];
+            row_end = source.sorted_offsets[row];
+        }
+
+        /// Whether the row has samples left; they are sorted, so their buckets go in increasing order.
+        bool hasMore() const { return cursor < row_end; }
+        Decimal64 nextBucket() const { return bucketAt(cursor); }
+
+        /// Appends the array of the row being emitted: the samples of `bucket`, none if the next sample is in a later bucket.
+        /// Returns the time range of the appended samples, unset for none.
+        std::optional<std::pair<Decimal64, Decimal64>> emitBucket(Decimal64 bucket)
+        {
+            const size_t begin = cursor;
+            while (hasMore() && (bucketAt(cursor) == bucket))
+                ++cursor;
+
+            /// A row has an array of every kind, empty for a kind without samples in the bucket: an offset is pushed either way.
+            if (begin == cursor)
+            {
+                offsets->getData().push_back(num_appended);
+                return std::nullopt;
+            }
+
+            appendSamples(begin, cursor);
+            offsets->getData().push_back(num_appended);
+            return std::pair{timestampAt(begin), timestampAt(cursor - 1)};
+        }
+
+        /// The array column with the rows emitted so far. An absent kind gets its empty nested column from the type.
+        ColumnWithTypeAndName finish()
+        {
+            MutableColumnPtr nested;
+            if (destinations.empty())
+                nested = assert_cast<const DataTypeArray &>(*source.array_type).getNestedType()->createColumn();
+            else
+                nested = ColumnTuple::create(std::move(destinations));
+            return {ColumnArray::create(std::move(nested), std::move(offsets)), source.array_type, source.column_name};
+        }
+
+    private:
+        Decimal64 timestampAt(size_t position) const { return toDecimal64(source.timestamps->getData()[source.sorted_indices[position]]); }
+        Decimal64 bucketAt(size_t position) const { return getBucket(timestampAt(position), bucket_step); }
+
+        /// Copies the samples `sorted_indices[begin, end)` of every column of the kind to the output columns.
+        void appendSamples(size_t begin, size_t end)
+        {
+            const size_t * const indices = source.sorted_indices.data();
+
+            /// The indices are increasing, so the samples are copied by ranges:
+            /// usually the input is already sorted and a bucket is one range.
+            size_t range_start = begin;
+            while (range_start < end)
+            {
+                size_t range_end = range_start + 1;
+                while ((range_end < end) && (indices[range_end] == indices[range_end - 1] + 1))
+                    ++range_end;
+                const size_t first_index = indices[range_start];
+                for (size_t c = 0; c != destinations.size(); ++c)
+                    destinations[c]->insertRangeFrom(*source.columns[c], first_index, range_end - range_start);
+                range_start = range_end;
+            }
+            num_appended += end - begin;
+        }
+
+        const SortedSamples<TimestampColumn> & source;
+        const Decimal64 bucket_step;
+        MutableColumns destinations;
+        ColumnArray::ColumnOffsets::MutablePtr offsets = ColumnArray::ColumnOffsets::create();
+
+        /// The samples appended so far: the next offset.
+        size_t num_appended = 0;
+
+        /// The sorted samples of the current row left to emit: `sorted_indices[cursor, row_end)`.
+        size_t cursor = 0;
+        size_t row_end = 0;
+    };
+
+    /// Builds a block for a samples table from the sorted samples of each kind of the series in the input block (see SortedSamples).
+    /// A row holds the samples of one series within one bucket of `bucket_step` (with the scale of the timestamp type): the array of
+    /// each kind (all but one may be empty), `bucket`, and `min_time`/`max_time` over the samples of every kind.
     template <typename TimestampColumn>
     Block makeSamplesBlock(
         const PaddedPODArray<UInt8> & filter,
@@ -465,28 +634,23 @@ namespace
         const DataTypePtr & id_type,
         const TimestampColumn & ts_timestamps,
         const DataTypePtr & timestamp_type,
-        const IColumn & ts_values,
-        const DataTypePtr & value_type,
-        const PaddedPODArray<size_t> & sorted_indices,
-        const PaddedPODArray<size_t> & sorted_offsets,
+        std::span<const SortedSamples<TimestampColumn>> kinds,
         Decimal64 bucket_step)
     {
-        const auto & timestamps = ts_timestamps.getData();
-        size_t total_samples = sorted_indices.size();
-
         auto out_id = id_type->createColumn();
-        auto out_timestamps = ts_timestamps.cloneEmpty();
-        auto out_values = ts_values.cloneEmpty();
-        auto out_offsets = ColumnArray::ColumnOffsets::create();
-        auto out_min_time = ts_timestamps.cloneEmpty();
-        auto out_max_time = ts_timestamps.cloneEmpty();
 
         /// `cloneEmpty` keeps the scale of `DateTime64`.
         auto out_bucket = ts_timestamps.cloneEmpty();
+        auto out_min_time = ts_timestamps.cloneEmpty();
+        auto out_max_time = ts_timestamps.cloneEmpty();
         auto & bucket_data = assert_cast<TimestampColumn &>(*out_bucket).getData();
+        auto & min_time_data = assert_cast<TimestampColumn &>(*out_min_time).getData();
+        auto & max_time_data = assert_cast<TimestampColumn &>(*out_max_time).getData();
 
-        out_timestamps->reserve(total_samples);
-        out_values->reserve(total_samples);
+        std::vector<SamplesArrayWriter<TimestampColumn>> writers;
+        writers.reserve(kinds.size());
+        for (const auto & kind : kinds)
+            writers.emplace_back(kind, bucket_step);
 
         /// The filtered-in rows and the rows of `id_column` correspond one-to-one.
         size_t id_index = 0;
@@ -495,37 +659,51 @@ namespace
             if (!filter[i])
                 continue;
 
-            size_t row_begin = (i == 0) ? 0 : sorted_offsets[i - 1];
-            size_t row_end = sorted_offsets[i];
+            for (auto & writer : writers)
+                writer.startRow(i);
 
-            /// The samples are sorted, so the samples of one bucket are adjacent.
-            size_t bucket_begin = row_begin;
-            while (bucket_begin < row_end)
+            /// The samples of each kind are sorted, so the buckets go in increasing order:
+            /// the next row gets the earliest bucket which has samples of any kind left.
+            for (;;)
             {
-                Decimal64 bucket = getBucket(toDecimal64(timestamps[sorted_indices[bucket_begin]]), bucket_step);
-                size_t bucket_end = bucket_begin + 1;
-                while ((bucket_end < row_end) && (getBucket(toDecimal64(timestamps[sorted_indices[bucket_end]]), bucket_step) == bucket))
-                    ++bucket_end;
+                std::optional<Decimal64> bucket;
+                for (const auto & writer : writers)
+                {
+                    if (writer.hasMore() && (!bucket || (writer.nextBucket() < *bucket)))
+                        bucket = writer.nextBucket();
+                }
+                if (!bucket)
+                    break;
 
                 out_id->insertFrom(id_column, id_index);
-                insertSamplesByIndices(sorted_indices.data(), bucket_begin, bucket_end, ts_timestamps, ts_values, *out_timestamps, *out_values);
-                out_offsets->getData().push_back(out_timestamps->size());
-                bucket_data.push_back(toTimestamp<TimestampColumn>(bucket));
-                out_min_time->insertFrom(ts_timestamps, sorted_indices[bucket_begin]);
-                out_max_time->insertFrom(ts_timestamps, sorted_indices[bucket_end - 1]);
+                bucket_data.push_back(toTimestamp<TimestampColumn>(*bucket));
 
-                bucket_begin = bucket_end;
+                /// The time range of the row covers its samples of every kind.
+                std::optional<std::pair<Decimal64, Decimal64>> time_range;
+                for (auto & writer : writers)
+                {
+                    const auto range = writer.emitBucket(*bucket);
+                    if (!range)
+                        continue;
+                    if (!time_range)
+                        time_range = range;
+                    else
+                        time_range = std::pair{std::min(time_range->first, range->first), std::max(time_range->second, range->second)};
+                }
+
+                /// `time_range` must have value, since at least one writer promised to emit a bucket.
+                chassert(time_range.has_value());
+                min_time_data.push_back(toTimestamp<TimestampColumn>(time_range->first));
+                max_time_data.push_back(toTimestamp<TimestampColumn>(time_range->second));
             }
 
             ++id_index;
         }
 
-        auto samples_column = ColumnArray::create(
-            ColumnTuple::create(Columns{std::move(out_timestamps), std::move(out_values)}), std::move(out_offsets));
-
         Block samples_block;
         samples_block.insert(ColumnWithTypeAndName{std::move(out_id), id_type, TimeSeriesColumnNames::ID});
-        samples_block.insert(ColumnWithTypeAndName{std::move(samples_column), makeSamplesType(timestamp_type, value_type), TimeSeriesColumnNames::Samples});
+        for (auto & writer : writers)
+            samples_block.insert(writer.finish());
         samples_block.insert(ColumnWithTypeAndName{std::move(out_bucket), timestamp_type, TimeSeriesColumnNames::Bucket});
         samples_block.insert(ColumnWithTypeAndName{std::move(out_min_time), timestamp_type, TimeSeriesColumnNames::MinTime});
         samples_block.insert(ColumnWithTypeAndName{std::move(out_max_time), timestamp_type, TimeSeriesColumnNames::MaxTime});
@@ -570,9 +748,9 @@ namespace
         std::optional<Block> recent_samples_block;
     };
 
-    /// Builds the blocks for the samples tables from the series in the input block: the samples of each series
-    /// are sorted once (see sortSamples), then split into the buckets of each table (see makeSamplesBlock).
-    /// `recent_samples_bucket_step` is unset if there is no recent samples table.
+    /// Builds the blocks for the samples tables from the series in the input block: the samples of each kind (the float samples, and
+    /// the histogram samples if `histograms` is set) are sorted once (see SortedSamples), then split into the buckets of each table
+    /// (see makeSamplesBlock). `recent_samples_bucket_step` is unset if there is no recent samples table.
     template <typename TimestampColumn>
     SamplesBlocks makeSamplesBlocksForTimestampType(
         const PaddedPODArray<UInt8> & filter,
@@ -583,16 +761,60 @@ namespace
         const IColumn & ts_values,
         const DataTypePtr & value_type,
         const ColumnArray::Offsets & ts_offsets,
+        const TimeSeriesHistogramsColumnsView * histograms,
+        const DataTypePtr & histograms_array_type,
         Decimal64 samples_bucket_step,
         std::optional<Decimal64> recent_samples_bucket_step)
     {
-        PaddedPODArray<size_t> sorted_indices;
-        PaddedPODArray<size_t> sorted_offsets;
-        sortSamples(filter, ts_offsets, ts_timestamps, ts_values, sorted_indices, sorted_offsets);
+        /// The two kinds of samples: the float samples, and the `histograms` array of every row of a table storing histogram samples
+        /// (the histogram samples of the INSERT if it has them, otherwise empty arrays: an absent kind). A table without the column
+        /// (`histograms_array_type` is null) uses the first kind only.
+        std::vector<const IColumn *> histogram_columns;
+        if (histograms)
+        {
+            const auto stored_columns = histograms->getColumnsInStoredOrder();
+            histogram_columns.assign(stored_columns.begin(), stored_columns.end());
+        }
+        std::array<SortedSamples<TimestampColumn>, 2> kinds{
+            SortedSamples<TimestampColumn>{
+                &ts_timestamps, {&ts_timestamps, &ts_values}, TimeSeriesColumnNames::Samples, makeSamplesType(timestamp_type, value_type)},
+            SortedSamples<TimestampColumn>{
+                histograms ? &getHistogramTimestamps<TimestampColumn>(*histograms) : nullptr,
+                std::move(histogram_columns),
+                TimeSeriesColumnNames::Histograms,
+                histograms_array_type}};
+        kinds[0].sort(filter, ts_offsets, makeFloatSampleWins(ts_values), "samples");
+        PaddedPODArray<UInt8> duplicate_hints_differ(histograms ? histograms->timestamps.size() : 0, 0);
+        if (histograms)
+            kinds[1].sort(filter, *histograms->outer_offsets, makeHistogramSampleWins(*histograms, duplicate_hints_differ), "histogram samples");
+        const std::span<const SortedSamples<TimestampColumn>> used_kinds = std::span(kinds.data(), histograms_array_type ? 2 : 1);
+
+        ColumnPtr normalized_histogram_hints;
+        const auto make_block = [&](Decimal64 bucket_step)
+        {
+            auto block = makeSamplesBlock(filter, id_column, id_type, ts_timestamps, timestamp_type, used_kinds, bucket_step);
+            if (histograms)
+            {
+                /// The writer creates fresh columns, so mutation does not copy their data. Both tables have the same flattened
+                /// sample order: detect resets once, then share the corrected hint column even when their bucket sizes differ.
+                auto & column = block.getByName(TimeSeriesColumnNames::Histograms).column;
+                auto mutable_column = IColumn::mutate(std::move(column));
+                auto & tuple = assert_cast<ColumnTuple &>(assert_cast<ColumnArray &>(*mutable_column).getData());
+                auto & hints = tuple.getColumnPtr(TimeSeriesHistogramsColumns::getTuplePosition(TimeSeriesHistogramsColumn::CounterResetHint));
+                if (normalized_histogram_hints)
+                    hints = normalized_histogram_hints;
+                else
+                {
+                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_offsets, kinds[1].sorted_indices, duplicate_hints_differ);
+                    normalized_histogram_hints = hints;
+                }
+                column = std::move(mutable_column);
+            }
+            return block;
+        };
 
         SamplesBlocks res;
-        res.samples_block = makeSamplesBlock(
-            filter, id_column, id_type, ts_timestamps, timestamp_type, ts_values, value_type, sorted_indices, sorted_offsets, samples_bucket_step);
+        res.samples_block = make_block(samples_bucket_step);
 
         if (recent_samples_bucket_step)
         {
@@ -601,8 +823,7 @@ namespace
             if (*recent_samples_bucket_step == samples_bucket_step)
                 res.recent_samples_block = res.samples_block;
             else
-                res.recent_samples_block = makeSamplesBlock(
-                    filter, id_column, id_type, ts_timestamps, timestamp_type, ts_values, value_type, sorted_indices, sorted_offsets, *recent_samples_bucket_step);
+                res.recent_samples_block = make_block(*recent_samples_bucket_step);
         }
 
         return res;
@@ -613,7 +834,9 @@ namespace
     /// each bucket makes a row with the columns `id`, `samples`, `bucket`, `min_time`, `max_time` (see makeSamplesBlocksForTimestampType).
     /// For a table of an earlier version every sample makes a row with the columns `id`, `timestamp`, `value`,
     /// then `samples_bucket_step` is zero (see makeSamplesBlockWithOneSamplePerRow).
-    /// `recent_samples_bucket_step` is unset if there is no recent samples table.
+    /// `histograms` are the histogram samples of the input block (the `histograms.*` outer columns) when the INSERT has them, and
+    /// `histograms_array_type` is the type of the `histograms` column of a table storing histogram samples (see makeSamplesBlock);
+    /// both are null for a table without that column. `recent_samples_bucket_step` is unset if there is no recent samples table.
     SamplesBlocks makeSamplesBlocks(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
@@ -624,11 +847,16 @@ namespace
         const DataTypePtr & value_type,
         const ColumnArray::Offsets & ts_offsets,
         size_t total_samples,
+        const TimeSeriesHistogramsColumnsView * histograms,
+        const DataTypePtr & histograms_array_type,
         Decimal64 samples_bucket_step,
         std::optional<Decimal64> recent_samples_bucket_step)
     {
         if (!samples_bucket_step.value)
         {
+            /// Tables storing one sample per row are older than the ones storing histogram samples.
+            chassert(!histograms && !histograms_array_type);
+
             /// The recent samples table stores the same rows (a Block copy is cheap: it only copies column pointers).
             SamplesBlocks res;
             res.samples_block = makeSamplesBlockWithOneSamplePerRow(
@@ -639,10 +867,14 @@ namespace
         }
 
         if (const auto * decimal_timestamps = typeid_cast<const ColumnDecimal<DateTime64> *>(&ts_timestamps))
-            return makeSamplesBlocksForTimestampType(filter, id_column, id_type, *decimal_timestamps, timestamp_type, ts_values, value_type, ts_offsets, samples_bucket_step, recent_samples_bucket_step);
+            return makeSamplesBlocksForTimestampType(
+                filter, id_column, id_type, *decimal_timestamps, timestamp_type, ts_values, value_type, ts_offsets,
+                histograms, histograms_array_type, samples_bucket_step, recent_samples_bucket_step);
 
         if (const auto * uint32_timestamps = typeid_cast<const ColumnUInt32 *>(&ts_timestamps))
-            return makeSamplesBlocksForTimestampType(filter, id_column, id_type, *uint32_timestamps, timestamp_type, ts_values, value_type, ts_offsets, samples_bucket_step, recent_samples_bucket_step);
+            return makeSamplesBlocksForTimestampType(
+                filter, id_column, id_type, *uint32_timestamps, timestamp_type, ts_values, value_type, ts_offsets,
+                histograms, histograms_array_type, samples_bucket_step, recent_samples_bucket_step);
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} of timestamps in the column with samples", ts_timestamps.getName());
     }
@@ -847,9 +1079,30 @@ TimeSeriesSink::TimeSeriesSink(
         return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end());
     };
 
+    /// The `histograms.*` columns exist in tables storing histogram samples only (see TimeSeriesSettings::hasHistogramsInSamples).
+    has_histograms_column = time_series_settings->hasHistogramsInSamples();
+    if (has_histograms_column)
+    {
+        const String histograms_timestamp_column = TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp);
+        insert_histograms = is_insert_column(histograms_timestamp_column);
+
+        /// The other columns of the group get default values aligned with the inserted ones (see addMissingDefaults),
+        /// but a histogram sample without a timestamp makes no sense.
+        if (!insert_histograms)
+        {
+            for (const auto & column : TimeSeriesHistogramsColumns::getOuterPayloadColumns())
+            {
+                if (is_insert_column(column.name))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Column `{}` must be inserted together with column `{}`", column.name, histograms_timestamp_column);
+            }
+        }
+    }
+
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()));
+        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()))
+        || insert_histograms;
 
     insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)
@@ -1010,6 +1263,25 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     {
         /// A row contains the samples of one series within one time bucket.
         samples_header.insert(ColumnWithTypeAndName{makeSamplesType(timestamp_type, value_type), TimeSeriesColumnNames::Samples});
+
+        if (has_histograms_column)
+        {
+            /// The row also contains the histogram samples of the series within the bucket. The type of the `histograms` column is the
+            /// registry's: the insert pipeline converts the `histograms.*` outer columns to the table's declared types, which are the
+            /// registry's too (see normalizeTimeSeriesDefinition), and the view over the columns checks them per block; only the type
+            /// of the timestamps depends on the table, so it is checked here once. The column is in the block of every INSERT, filled
+            /// with empty arrays when the `histograms.*` columns are not inserted (see makeSamplesBlock).
+            const auto & histograms_timestamp_column = getHeader().getByName(TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp));
+            const auto * histograms_timestamp_array_type = typeid_cast<const DataTypeArray *>(histograms_timestamp_column.type.get());
+            if (!histograms_timestamp_array_type || !histograms_timestamp_array_type->getNestedType()->equals(*timestamp_type))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have type Array({}), got {}",
+                    histograms_timestamp_column.name, timestamp_type->getName(), histograms_timestamp_column.type->getName());
+
+            histograms_array_type = TimeSeriesHistogramsColumns::makeHistogramsArrayType(timestamp_type);
+            histograms_max_buckets = settings[TimeSeriesSetting::histograms_max_buckets];
+            samples_header.insert(ColumnWithTypeAndName{histograms_array_type, TimeSeriesColumnNames::Histograms});
+        }
+
         samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Bucket});
         samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MinTime});
         samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MaxTime});
@@ -1023,6 +1295,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     else
     {
         /// A row contains one sample (tables of earlier versions), the steps of the buckets are zero.
+        chassert(!has_histograms_column);
         samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
         if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
@@ -1163,17 +1436,30 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
 
+    /// The histogram samples of the rows are in the `histograms.*` outer columns (see TimeSeriesHistogramsColumns): arrays sharing
+    /// the offsets of `histograms.timestamp`, which the view checks along with the types of the columns. They are validated before
+    /// anything is pushed, so an invalid histogram leaves no partial data behind.
+    const std::optional<TimeSeriesHistogramsColumnsView> histograms_view
+        = insert_histograms ? std::make_optional<TimeSeriesHistogramsColumnsView>(block) : std::nullopt;
+    const size_t total_histograms = histograms_view ? getTotalSamples(*histograms_view->outer_offsets) : 0;
+    if (total_histograms)
+        validateTimeSeriesHistograms(block, histograms_max_buckets);
+    const TimeSeriesHistogramsColumnsView * const histograms = histograms_view ? &*histograms_view : nullptr;
+
     PaddedPODArray<UInt8> filter;
     size_t num_time_series = findRowsWithMetricNameOrTags(*metric_name_col.column, tags_offsets, filter);
 
     if (!num_time_series)
     {
         /// All rows have empty metric names and no tags - samples must also be empty.
-        checkNoSamplesWithoutTimeSeries(total_samples);
+        checkNoSamplesWithoutTimeSeries(total_samples, "samples");
+        checkNoSamplesWithoutTimeSeries(total_histograms, "histogram samples");
 
         /// Nothing to insert.
         return;
     }
+
+    total_samples += total_histograms;
 
     const auto & tags_tuple = assert_cast<const ColumnTuple &>(tags_map_nested.getData());
     chassert(tags_tuple.tupleSize() == 2);
@@ -1204,7 +1490,15 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// are filtered by their timestamps anyway), while samples outside of the stored time range of their
     /// time series would be invisible to queries filtering time series by time.
     if (time_ranges_pipeline && total_samples)
-        time_ranges_pipeline->push(makeTimeRangesBlock(filter, *id_column, id_type, ts_timestamps, timestamp_type, ts_offsets, num_time_series));
+    {
+        /// The time range of a series covers its samples of both kinds.
+        std::vector<TimestampsArray> timestamps_arrays;
+        timestamps_arrays.push_back({ts_offsets, ts_timestamps});
+        if (histograms)
+            timestamps_arrays.push_back({*histograms->outer_offsets, histograms->timestamps});
+
+        time_ranges_pipeline->push(makeTimeRangesBlock(filter, *id_column, id_type, timestamps_arrays, timestamp_type, num_time_series));
+    }
 
     /// Step 5. Assemble and push the samples blocks.
     /// The samples table is written before the recent samples table: if the insert fails between
@@ -1213,9 +1507,11 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// visible in the TTL window and then disappear, which looks like data loss.
     if (total_samples)
     {
+        /// A table storing histogram samples gets them from the `histograms.*` columns of the INSERT, or empty arrays when the
+        /// INSERT has none (`histograms_array_type` is null for a table without the `histograms` column).
         SamplesBlocks samples_blocks = makeSamplesBlocks(
             filter, *id_column, id_type, ts_timestamps, timestamp_type, ts_values, value_type, ts_offsets, total_samples,
-            samples_bucket_step, recent_samples_bucket_step);
+            histograms, histograms_array_type, samples_bucket_step, recent_samples_bucket_step);
 
         samples_pipeline->push(std::move(samples_blocks.samples_block));
         if (samples_blocks.recent_samples_block)

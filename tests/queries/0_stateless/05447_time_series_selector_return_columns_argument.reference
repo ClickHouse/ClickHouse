@@ -1,6 +1,7 @@
 -- the returned columns for each layout of the table
 id	Tuple(UInt64, LowCardinality(UUID))					
 samples	Array(Tuple(DateTime64(3), Float64))					
+histograms	Array(Tuple(timestamp DateTime64(3), flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))					
 id	Tuple(UInt64, LowCardinality(UUID))					
 timestamp	DateTime64(3)					
 value	Float64					

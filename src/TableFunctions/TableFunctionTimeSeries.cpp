@@ -239,7 +239,14 @@ in the columns chosen by the argument `return_columns`:
 - `'samples'` - the column `samples` with the samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
   The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
   Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
-- `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
+  For a table of version 12 or later, which stores native histogram samples, also the column `histograms` with the histogram samples
+  of the same rows: an array of the tuples of the `histograms` column of the samples table
+  (see the [TimeSeries engine](/reference/engines/table-engines/integrations/time-series#samples-table)), sorted by timestamp and cut to
+  the time range. A row has an empty `histograms` array when the series has no histogram samples in its bucket, and an empty `samples`
+  array when it has no float samples there. Use the same aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
+  Only the requested columns are read from the samples table, except the timestamps of a column which isn't requested: they tell the
+  rows with samples of either kind in the time range, so the rows returned don't depend on the requested columns.
+- `'timestamp_and_value'` - the columns `timestamp` and `value` with one float sample per row; the histogram samples are not returned.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
 The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
@@ -258,6 +265,14 @@ GROUP BY id
 ```sql
 SELECT id, timestamp, value
 FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'timestamp_and_value')
+```
+
+The float samples and the native histogram samples of each time series of a table storing histograms:
+
+```sql
+SELECT id, timeSeriesGroupArray(samples) AS samples, timeSeriesGroupArray(histograms) AS histograms
+FROM timeSeriesSelector(mytable, 'http_request_duration_seconds{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'samples')
+GROUP BY id
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
@@ -316,7 +331,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Histogram | `histogram_quantile` |
 | Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported: PromQL queries evaluate the float samples of the selected time series only and ignore their native histogram samples. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
@@ -397,7 +412,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Histogram | `histogram_quantile` |
 | Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported: PromQL queries evaluate the float samples of the selected time series only and ignore their native histogram samples. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 

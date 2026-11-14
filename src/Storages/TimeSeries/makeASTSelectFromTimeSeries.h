@@ -12,17 +12,16 @@ class StorageTimeSeries;
 struct SelectQueryInfo;
 struct TimeSeriesSettings;
 
-/// Builds an internal `SELECT` query that produces the requested outer columns of a TimeSeries table
-/// by reading from its target tables "tags", "samples", "metric families". Only the target tables required by
-/// `requested_columns` are read; when none of them requires another table (e.g. for `SELECT count()`
-/// the planner requests just the smallest column, `metric_name`), the "tags" table is read, so the
-/// count equals the number of series.
+/// Builds an internal `SELECT` query that produces the requested outer columns of a TimeSeries table by reading from its
+/// target tables "tags", "samples" (the column `samples` and, for a table storing native histograms, the `histograms.*`
+/// columns) and "metric families". Only the target tables required by `requested_columns` are read; when none of them
+/// requires another table (e.g. `SELECT count()` requests just `metric_name`), the "tags" table is read, so `count()`
+/// counts the series.
 ///
-/// `query_info` provides the query tree (when the query and the filters applied outside it — a row
-/// policy, `additional_table_filters` — use `tags` only as `tags['<const key>']`, a reduced `tags` Map
-/// with just those keys is built) and the `FINAL` flag (with `FINAL` unmerged rows of the
-/// "tags" table are deduplicated so a series is returned exactly once; without it a series may be
-/// returned once per unmerged part, but the read is cheaper).
+/// `query_info` provides the query tree (when the query and the filters applied outside it, such as a row policy, use
+/// `tags` only as `tags['<const key>']`, a reduced `tags` Map with just those keys is built) and the `FINAL` flag: with
+/// `FINAL` unmerged rows of the "tags" table are deduplicated so a series is returned exactly once, without it a series
+/// may be returned once per unmerged part.
 ASTPtr makeASTSelectFromTimeSeries(
     const StorageTimeSeries & storage,
     const NameSet & requested_columns,

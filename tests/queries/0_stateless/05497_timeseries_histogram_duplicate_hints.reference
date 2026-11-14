@@ -1,0 +1,15 @@
+-- the aggregate: two arrays in either order, and one array with both samples
+gauge_vs_no	[(3,0)]	[(3,0)]	[(3,0)]
+gauge_vs_no_schema	[(3,0)]	[(3,0)]	[(3,0)]
+no_vs_no	[(2,0)]	[(2,0)]	[(2,0)]
+reset_vs_no	[(0,0)]	[(0,0)]	[(0,0)]
+unknown_vs_reset	[(0,0)]	[(0,0)]	[(0,0)]
+unknown_vs_reset_schema	[(1,1)]	[(1,1)]	[(1,1)]
+-- the sink: one sample per series after the deduplication, the first, which keeps the common hint or gets an unknown one
+gauge_first	[3]
+gauge_last	[3]
+no_both	[2]
+no_first	[0]
+no_last	[0]
+unknown_first	[0]
+unknown_last	[0]

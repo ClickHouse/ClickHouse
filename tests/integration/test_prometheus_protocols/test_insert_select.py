@@ -231,13 +231,14 @@ def test_select_metric_name_and_tags_and_metric_family():
         ["queue_count",                  "{'__name__':'queue_count','q':'jobs'}",                   "queue_count",           "gauge"],
     ])
 
-    # Unmatched rows keep an empty metric_name: the orphan family, the histogram's absent
-    # '_count'/'_sum' members, and the counters' absent members ('errors_total_total' and
+    # Unmatched rows keep an empty `metric_name`: the orphan family, the histogram's absent
+    # native family member and `_count`/`_sum` members, and the counters' absent members ('errors_total_total' and
     # the bare 'http_requests').
     assert node.query(
         "SELECT metric_family, type FROM prometheus WHERE metric_name = '' ORDER BY metric_family"
     ) == TSV([
         ["errors_total",          "counter"],
+        ["http_request_duration", "histogram"],
         ["http_request_duration", "histogram"],
         ["http_request_duration", "histogram"],
         ["http_requests",         "counter"],

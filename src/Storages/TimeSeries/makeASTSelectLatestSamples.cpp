@@ -8,7 +8,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <base/defines.h>
