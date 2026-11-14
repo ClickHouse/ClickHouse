@@ -1,0 +1,8 @@
+1	String	UInt32	LowCardinality(String)
+2	String	UInt32	LowCardinality(String)
+1	1
+2	1
+3	String	UInt32	LowCardinality(String)
+4	String	UInt32	LowCardinality(String)
+3	Mage
+4	1
