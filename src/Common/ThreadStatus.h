@@ -97,6 +97,10 @@ public:
     const ContextWeakPtr query_context;
     const ContextWeakPtr global_context;
 
+    /// False for a group from `createWithoutQueryContext` and the groups nested in it: attaching them does not set up
+    /// query profilers, so detaching keeps the profilers of the thread (e.g. the global profiler of a pool thread).
+    const bool with_query_context = true;
+
     const FatalErrorCallback fatal_error_callback;
 
     const Int32 os_threads_nice_value;
@@ -156,6 +160,10 @@ public:
     /// server total, in every thread of the group, unlike `MemoryTrackerBlockerInThread`.
     static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
 
+    /// For background work outside of any query (e.g. a system log flush): the threads of the group share its memory
+    /// tracker, but get no query context and so none of the query settings (e.g. the profilers).
+    static ThreadGroupPtr createWithoutQueryContext(ContextPtr global_context_);
+
     /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
     bool isNested() const { return parent != nullptr; }
 
@@ -188,6 +196,7 @@ private:
 
     explicit ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent = true);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
+    explicit ThreadGroup(const ContextWeakPtr & global_context_);
 };
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).

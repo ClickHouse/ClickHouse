@@ -10,6 +10,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -367,6 +369,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
     }
 
     readSystemLogQueueSettingsFromConfig<TSystemLog>(log_settings.queue_settings, config, config_prefix);
+
+    log_settings.flush_overcommit_wait_time_microseconds
+        = getSystemTableOption<size_t>("flush_overcommit_wait_time_microseconds", config, config_prefix).value_or(5'000'000);
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
@@ -840,6 +845,7 @@ SystemLog<LogElement>::SystemLog(
     , storage_def(settings_.engine)
     , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
     , union_table_cluster(settings_.union_table_cluster)
+    , flush_overcommit_wait_time_microseconds(settings_.flush_overcommit_wait_time_microseconds)
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(getSystemTableSkipAliasColumnsOption(context_->getConfigRef())))
 {
     for (const auto * column : {"clickhouse_version", "system_processor"})
@@ -933,6 +939,18 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepareTable();
         prepare_table_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
+
+        /// With its own thread group, the flush (also in pool threads that inherit the group) asks the overcommit tracker
+        /// to stop another query when the server memory limit is reached, instead of failing. It is not in `ProcessList`,
+        /// so it is never stopped itself.
+        ThreadGroupPtr flush_thread_group;
+        if (flush_overcommit_wait_time_microseconds != 0)
+        {
+            flush_thread_group = ThreadGroup::createWithoutQueryContext(getContext());
+            flush_thread_group->memory_tracker.setDescription("System log flush");
+            flush_thread_group->memory_tracker.setOvercommitWaitingTime(flush_overcommit_wait_time_microseconds);
+        }
+        ThreadGroupSwitcher thread_group_switcher(flush_thread_group, ThreadName::SYSTEM_LOG_FLUSH);
 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
