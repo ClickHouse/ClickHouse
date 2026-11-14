@@ -2050,6 +2050,48 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
     }
 }
 
+namespace
+{
+
+/// The text of a `DateTime` has no time zone. For a cast from JSON returns the types to write it and to parse it into `to` with,
+/// in which the `DateTime` typed paths of both are in UTC; that does not change their columns. A path below another typed path
+/// is kept, because an object at that typed path can be written or read whole.
+std::pair<DataTypePtr, DataTypePtr> withDateTimeTypedPathsInUTC(const DataTypePtr & from_type, const DataTypeObject & to)
+{
+    const auto * from = checkAndGetDataType<DataTypeObject>(from_type.get());
+    if (!from)
+        return {};
+    auto to_utc = [](const DataTypePtr & node) -> DataTypePtr
+    {
+        if (isDateTime(node))
+            return std::make_shared<DataTypeDateTime>("UTC");
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(node.get()))
+            return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
+        return node;
+    };
+    auto is_date_time = [](const DataTypePtr & type) { return isDateTimeOrDateTime64(removeLowCardinalityAndNullable(type)); };
+    auto from_paths = from->getTypedPaths();
+    auto to_paths = to.getTypedPaths();
+    for (auto & [path, type] : from_paths)
+    {
+        auto it = to_paths.find(path);
+        auto is_below = [&](const auto & typed_path) { return path.starts_with(typed_path.first + "."); };
+        if (it == to_paths.end() || !is_date_time(type) || !is_date_time(it->second) || std::ranges::any_of(from_paths, is_below)
+            || std::ranges::any_of(to_paths, is_below))
+            continue;
+        type = rewriteTypeTree(type, to_utc, CustomizationPolicy::Keep);
+        it->second = rewriteTypeTree(it->second, to_utc, CustomizationPolicy::Keep);
+    }
+    auto with_typed_paths = [](const DataTypeObject & object, DataTypeObject::TypedPathsMap typed_paths) -> DataTypePtr
+    {
+        return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
+            object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
+    };
+    return {with_typed_paths(*from, std::move(from_paths)), with_typed_paths(to, std::move(to_paths))};
+}
+
+}
+
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
     /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
@@ -2084,13 +2126,14 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        auto [text_from_type, text_to_type] = withDateTimeTypedPathsInUTC(from_type, *to_object);
+        return [this, requested_result_is_nullable, text_from_type, text_to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
             ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
             auto & write_buffer = write_helper.getWriteBuffer();
             FormatSettings format_settings = settings.format_settings;
-            auto serialization = arguments[0].type->getDefaultSerialization();
+            auto serialization = (text_from_type ? text_from_type : arguments[0].type)->getDefaultSerialization();
             format_settings.json.quote_64bit_integers = false;
             /// JSON has no number for inf and nan, unquoted they would be written as null.
             format_settings.json.quote_denormals = true;
@@ -2102,10 +2145,11 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+            const auto & parse_type = text_to_type ? text_to_type : result_type;
             if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
+                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(parse_type), nullable_source, input_rows_count, settings);
 
-            return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
+            return ConvertImplGenericFromString<true>::execute(args_with_json_string, parse_type, nullable_source, input_rows_count, settings);
         };
     }
 
