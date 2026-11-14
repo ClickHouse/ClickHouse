@@ -64,6 +64,16 @@ protected:
     /// outside runs too.
     bool sourcesHaveRunsWorthSkipping() const;
 
+    /// Set by a derived algorithm before `initialize` to also enable batch detection when `sourcesHaveLongBatchesOfUniqueKeys`.
+    bool uses_batches_of_unique_keys = false;
+
+    static constexpr size_t min_batch_size_to_take = 8;
+    /// At most 1 / `max_share_of_rows_to_check` of the rows is sampled.
+    static constexpr size_t max_share_of_rows_to_check = 8;
+
+    /// Whether most of the first rows come in batches of at least `min_batch_size_to_take` rows of sources with unique keys.
+    bool sourcesHaveLongBatchesOfUniqueKeys() const;
+
     /// Whether the queue detects batches longer than one row (decided in `initialize`).
     /// A batch of more than one row is not by itself evidence that the detection ran: with a
     /// single cursor left in the queue there is nothing to compare against, so its whole
@@ -90,11 +100,15 @@ protected:
 
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
     bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
+
+    /// A part with a non-zero level is taken to have no duplicate sorting keys.
+    bool sourceHasUniqueKeys(size_t source_num) const { return sources_origin_merge_tree_part_level[source_num] > 0; }
+
     bool rowsHaveDifferentSortColumns(const RowRef & lhs, const RowRef & rhs)
     {
         /// By the time this method is called, `sources_origin_merge_tree_part_level[lhs.source_stream_index]` must have been
         /// initialized in either `initialize` or `consume`
-        if (lhs.source_stream_index == rhs.source_stream_index && sources_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
+        if (lhs.source_stream_index == rhs.source_stream_index && sourceHasUniqueKeys(lhs.source_stream_index))
             return true;
 
         auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);

@@ -105,6 +105,14 @@ private:
     void flushCurrentRowSources(bool keep_selected_row);
     void insertChunk(size_t source_num, Chunk chunk);
 
+    /// Writes the group of the current row and the following rows of the batch in one go. Returns false if nothing was taken.
+    bool takeUniqueRowsOfBatch(SortCursor * current_ptr, size_t batch_size);
+
+    bool take_batches_of_unique_keys = false;
+    template <bool take_batches>
+    Status mergeImpl();
+    void insertUniqueRows(const SortCursor & current, size_t begin, size_t end);
+
     /// Method for using in skipping FINAL logic
     /// Skipping FINAL doesn't merge rows to new chunks but marks selected rows in input chunks and emit them
 
