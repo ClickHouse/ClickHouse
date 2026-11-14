@@ -43,6 +43,10 @@ void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & no
 /// already meant to be off must not surface a parallel-replicas-only exception.
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context);
 
+/// The column to read when a query needs no column of `storage`, only its row count.
+NameAndTypePair chooseSmallestColumnToReadFromStorage(
+    const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select);
+
 /// Build JOIN TREE query plan for query node
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,

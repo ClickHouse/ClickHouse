@@ -59,6 +59,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -1183,6 +1184,17 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     QueryStatusPtr query_status = context->getProcessListElementSafe();
 
+    /// The planner reads this column only to count the rows, see `TableExpressionData::getRowCountOnlyColumnIdentifier`.
+    /// A filter the planner attaches to this read is built later and may read it too.
+    const bool has_planner_filter = query_info.prewhere_info || query_info.row_level_filter || query_info.additional_filter_ast
+        || getEffectiveRowPolicyFilter(*storage_merge, context) || context->canUseParallelReplicasCustomKey();
+    std::optional<String> row_count_only_column;
+    if (!has_planner_filter && common_processed_stage == QueryProcessingStage::FetchColumns && query_info.planner_context && query_info.table_expression)
+        if (const auto * data = query_info.planner_context->getTableExpressionDataOrNull(query_info.table_expression))
+            if (const auto & identifier = data->getRowCountOnlyColumnIdentifier())
+                if (const auto * column_name = data->getColumnNameOrNull(*identifier); column_name && common_header->has(*column_name))
+                    row_count_only_column = *column_name;
+
     /// Settings will be modified when planning children tables.
     for (const auto & table : selected_tables)
     {
@@ -1320,6 +1332,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
+            /// The child's row policy may read the carrier (`extendNames` does not add a name twice), then it is read as usual.
+            const String * column_to_skip = row_count_only_column && !(row_policy_data_opt && row_policy_data_opt->readsColumn(*row_count_only_column))
+                ? &*row_count_only_column : nullptr;
+
             SelectQueryInfo modified_query_info;
 
             /// Try to reuse cached modified_query_info for tables with the same column structure.
@@ -1388,7 +1404,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             else
             {
                 modified_query_info
-                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases, column_to_skip);
 
                 if (can_cache)
                 {
@@ -1418,7 +1434,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_query_info.row_level_filter = std::move(row_level_filter_copy);
             }
 
+            /// A child counts its rows like `SELECT count()` from it does; a carrier it does not stream gets the default of its type in `convertAndFilterSourceStream`.
+            /// `column_names_as_aliases` lists the carrier only when another ALIAS column of the child reads it.
+            if (column_to_skip)
+                std::erase(real_column_names, *column_to_skip);
+
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
+
+            if (column_to_skip && is_smallest_column_requested)
+            {
+                column_names_to_read.clear();
+                is_smallest_column_requested = false;
+            }
 
             /// A name the child declares neither as a column nor as a subcolumn is dropped here and
             /// filled with the default value by `convertAndFilterSourceStream`. The exception is a
@@ -1449,6 +1476,28 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 }
 
                 column_names_to_read = std::move(resolved_column_names);
+            }
+
+            if (column_to_skip && column_names_to_read.empty())
+            {
+                const auto child_id = storage->getStorageID();
+                NameSet allowed;
+                /// With `SELECT` on the whole table every column is selectable, except through an `Alias`, which checks its target's columns.
+                if (storage->as<StorageAlias>()
+                    || !modified_context->getAccess()->getAccessRightsWithImplicit()->isGranted(AccessType::SELECT, child_id.database_name, child_id.table_name))
+                    allowed = getColumnsSelectableByTrivialQuery(storage, child_id, nested_storage_snapshot->metadata->getColumns(), modified_context);
+                auto carrier = chooseSmallestColumnToReadFromStorage(storage, nested_storage_snapshot, allowed);
+                column_names_to_read.push_back(carrier.name);
+
+                /// A child that is itself a `Merge` table does the same for its children.
+                if (modified_query_info.planner_context && modified_query_info.table_expression)
+                {
+                    auto & child_data = modified_query_info.planner_context->getOrCreateTableExpressionData(modified_query_info.table_expression);
+                    const auto & carrier_identifier = modified_query_info.planner_context->getGlobalPlannerContext()->createColumnIdentifierOrGet(carrier, modified_query_info.table_expression);
+                    if (!child_data.hasColumn(carrier.name))
+                        child_data.addColumn(carrier, carrier_identifier);
+                    child_data.setRowCountOnlyColumnIdentifier(carrier_identifier);
+                }
             }
 
             auto child = createPlanForTable(
@@ -1707,7 +1756,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     Names required_column_names,
     Names & column_names_as_aliases,
     bool & is_smallest_column_requested,
-    Aliases & aliases) const
+    Aliases & aliases,
+    const String * row_count_only_column) const
 {
     const auto & [database_name, storage, storage_lock, table_name, _] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
@@ -1806,6 +1856,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             auto filter_actions_dag = std::make_shared<ActionsDAG>();
             for (const auto & required_column_name : required_column_names)
             {
+                if (row_count_only_column && required_column_name == *row_count_only_column)
+                    continue;
+
                 String column = required_column_name;
 
                 /// Try to resolve column, including subcolumns (e.g. JSON sub-paths like json.x).
@@ -2263,6 +2316,11 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
     {
         std::copy(added_names.begin(), added_names.end(), std::back_inserter(names));
     }
+}
+
+bool ReadFromMerge::RowPolicyData::readsColumn(const String & column_name) const
+{
+    return std::ranges::contains(filter_actions->getRequiredColumns(), column_name);
 }
 
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const
