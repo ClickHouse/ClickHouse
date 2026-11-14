@@ -20,6 +20,10 @@ struct MergeTreeDeduplicationLogNameDescription
 
     /// How many entries we have in log
     size_t entries_count{};
+
+    /// How many of them are DROP records. A DROP record cancels an earlier ADD record,
+    /// so it takes one entry away from the deduplication window instead of adding one.
+    size_t drop_entries_count{};
 };
 
 /// Simple string-key HashTable with fixed size based on STL containers.
