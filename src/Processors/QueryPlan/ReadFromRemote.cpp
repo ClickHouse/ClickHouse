@@ -478,6 +478,9 @@ ASTPtr tryBuildAdditionalFilterAST(
                         temporary_table_name = table_identifier->name();
 
                     auto & external_table = (*external_tables)[temporary_table_name];
+                    /// The set fills one table, sent by every remote read the filter is pushed into (e.g. one per `UNION ALL` branch).
+                    if (!external_table && set_from_subquery->getSetAndKey()->external_table_holder)
+                        external_table = set_from_subquery->getSetAndKey()->external_table_holder->getTable();
                     if (!external_table)
                     {
                         /// Here we create a new temporary table and attach it to the FutureSetFromSubquery.
@@ -498,15 +501,15 @@ ASTPtr tryBuildAdditionalFilterAST(
                         makeUniqueColumnNamesInBlock(header_with_unique_names);
                         NamesAndTypesList columns = header_with_unique_names.getNamesAndTypesList();
 
-                        auto external_storage_holder = TemporaryTableHolder(
+                        auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
                             context,
                             ColumnsDescription{columns},
                             ConstraintsDescription{},
                             nullptr /*query*/,
                             true /*create_for_global_subquery*/);
 
-                        external_table = external_storage_holder.getTable();
-                        set_from_subquery->setExternalTable(external_table);
+                        external_table = external_storage_holder->getTable();
+                        set_from_subquery->setExternalTable(external_storage_holder);
 
                         context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
