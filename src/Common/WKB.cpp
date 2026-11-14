@@ -58,16 +58,21 @@ void checkCount(UInt32 count, UInt32 limit, const char * what)
 
 }
 
-inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
+inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 dimensions)
 {
     Float64 x = 0;
     Float64 y = 0;
     readBinaryEndian(x, in_buffer, endian_to_read);
     readBinaryEndian(y, in_buffer, endian_to_read);
+    for (UInt32 i = 2; i < dimensions; ++i)
+    {
+        Float64 ignored = 0;
+        readBinaryEndian(ignored, in_buffer, endian_to_read);
+    }
     return CartesianPoint(x, y);
 }
 
-inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
+inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit, UInt32 dimensions)
 {
     UInt32 num_points = 0;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
@@ -77,11 +82,11 @@ inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endia
     line.reserve(num_points);
 
     for (UInt32 i = 0; i < num_points; ++i)
-        line.push_back(readPointWKB(in_buffer, endian_to_read));
+        line.push_back(readPointWKB(in_buffer, endian_to_read, dimensions));
     return line;
 }
 
-inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
+inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit, UInt32 dimensions)
 {
     UInt32 num_points = 0;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
@@ -91,11 +96,11 @@ inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endi
     ring.reserve(num_points);
 
     for (UInt32 i = 0; i < num_points; ++i)
-        ring.push_back(readPointWKB(in_buffer, endian_to_read));
+        ring.push_back(readPointWKB(in_buffer, endian_to_read, dimensions));
     return ring;
 }
 
-inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
+inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit, UInt32 dimensions)
 {
     UInt32 num_rings = 0;
     readBinaryEndian(num_rings, in_buffer, endian_to_read);
@@ -107,9 +112,9 @@ inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endia
     for (UInt32 i = 0; i < num_rings; ++i)
     {
         if (i == 0)
-            polygon.outer() = readRingWKB(in_buffer, endian_to_read, limit);
+            polygon.outer() = readRingWKB(in_buffer, endian_to_read, limit, dimensions);
         else
-            polygon.inners().push_back(readRingWKB(in_buffer, endian_to_read, limit));
+            polygon.inners().push_back(readRingWKB(in_buffer, endian_to_read, limit, dimensions));
     }
     return polygon;
 }
@@ -190,14 +195,37 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count)
     UInt32 geom_type = 0;
     readBinaryEndian(geom_type, in_buffer, endian_to_read);
 
-    switch (static_cast<WKBGeometry>(geom_type))
+    constexpr UInt32 z_flag = 0x80000000;
+    constexpr UInt32 m_flag = 0x40000000;
+    constexpr UInt32 srid_flag = 0x20000000;
+    UInt32 base_type = geom_type & ~(z_flag | m_flag | srid_flag);
+    UInt32 dimensions = 2;
+    if (geom_type & (z_flag | m_flag | srid_flag))
+    {
+        dimensions += bool(geom_type & z_flag) + bool(geom_type & m_flag);
+        if (geom_type & srid_flag)
+        {
+            UInt32 srid = 0;
+            readBinaryEndian(srid, in_buffer, endian_to_read);
+        }
+    }
+    else
+    {
+        const UInt32 dimensional_type = base_type / 1000;
+        if (dimensional_type > 3)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geometry type {}", geom_type);
+        dimensions += (dimensional_type == 3 ? 2 : dimensional_type != 0);
+        base_type %= 1000;
+    }
+
+    switch (static_cast<WKBGeometry>(base_type))
     {
         case WKBGeometry::Point:
-            return readPointWKB(in_buffer, endian_to_read);
+            return readPointWKB(in_buffer, endian_to_read, dimensions);
         case WKBGeometry::LineString:
-            return readLineWKB(in_buffer, endian_to_read, limit);
+            return readLineWKB(in_buffer, endian_to_read, limit, dimensions);
         case WKBGeometry::Polygon:
-            return readPolygonWKB(in_buffer, endian_to_read, limit);
+            return readPolygonWKB(in_buffer, endian_to_read, limit, dimensions);
         case WKBGeometry::MultiPoint:
             return readMultiPointWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::MultiLineString:

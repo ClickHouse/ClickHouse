@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/geometryConverters.h>
+#include <Common/WKT.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/geometry/core/tags.hpp>
@@ -54,9 +55,10 @@ bool isEmptyPointWKT(const String & str)
 template <typename T>
 void readWKT(const String & str, T & out)
 {
+    auto normalized = normalizeWKTDimensions(str);
     try
     {
-        boost::geometry::read_wkt(str, out);
+        boost::geometry::read_wkt(normalized ? *normalized : str, out);
     }
     catch (std::exception & e)
     {
@@ -315,6 +317,7 @@ REGISTER_FUNCTION(ReadWKT)
 {
     FunctionDocumentation::Description description_point = R"(
 The `readWKTPoint` function in ClickHouse parses a Well-Known Text (WKT) representation of a Point geometry and returns a point in the internal ClickHouse format.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_point = "readWKTPoint(wkt_string)";
     FunctionDocumentation::Arguments arguments_point = {{"wkt_string", "The input WKT string representing a Point geometry.", {"String"}}};
@@ -328,6 +331,7 @@ The `readWKTPoint` function in ClickHouse parses a Well-Known Text (WKT) represe
 
     FunctionDocumentation::Description description_linestring = R"(
 Parses a Well-Known Text (WKT) representation of a LineString geometry and returns it in the internal ClickHouse format.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_linestring = "readWKTLineString(wkt_string)";
     FunctionDocumentation::Arguments arguments_linestring = {
@@ -363,6 +367,7 @@ Parses a Well-Known Text (WKT) representation of a LineString geometry and retur
 
     FunctionDocumentation::Description description_multipoint = R"(
 Parses a Well-Known Text (WKT) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_multipoint = "readWKTMultiPoint(wkt_string)";
     FunctionDocumentation::Arguments arguments_multipoint = {
@@ -397,6 +402,7 @@ Parses a Well-Known Text (WKT) representation of a MultiPoint geometry and retur
 
     FunctionDocumentation::Description description_multilinestring = R"(
 Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_multilinestring = "readWKTMultiLineString(wkt_string)";
     FunctionDocumentation::Arguments arguments_multilinestring = {
@@ -432,6 +438,7 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
 
     FunctionDocumentation::Description description_ring = R"(
 Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns a ring (closed linestring) in the internal ClickHouse format.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_ring = "readWKTRing(wkt_string)";
     FunctionDocumentation::Arguments arguments_ring = {{"wkt_string", "The input WKT string representing a Polygon geometry.", {"String"}}};
@@ -445,6 +452,7 @@ Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns 
 
     FunctionDocumentation::Description description_polygon = R"(
 Converts a WKT (Well Known Text) MultiPolygon into a Polygon type.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_polygon = "readWKTPolygon(wkt_string)";
     FunctionDocumentation::Arguments arguments_polygon = {{"wkt_string", "String starting with `POLYGON`", {"String"}}};
@@ -471,6 +479,7 @@ Polygon	[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
 
     FunctionDocumentation::Description description_multipolygon = R"(
 Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_multipolygon = "readWKTMultiPolygon(wkt_string)";
     FunctionDocumentation::Arguments arguments_multipolygon = {{"wkt_string", "String starting with `MULTIPOLYGON`", {"String"}}};
@@ -497,6 +506,7 @@ MultiPolygon	[[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4
 
     FunctionDocumentation::Description description_common = R"(
 Parses a Well-Known Text (WKT) representation of Geometry and returns it in the internal ClickHouse format.
+Explicit `Z`, `M`, and `ZM` dimensions are accepted; only the XY coordinates are retained.
     )";
     FunctionDocumentation::Syntax syntax_common = "readWKT(wkt_string)";
     FunctionDocumentation::Arguments arguments_common = {{"wkt_string", "The input WKT string representing a LineString geometry.", {"String"}}};
