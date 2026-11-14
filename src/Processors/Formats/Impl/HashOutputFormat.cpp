@@ -1,11 +1,9 @@
 #include <Processors/Formats/Impl/HashOutputFormat.h>
 
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Columns/canonicalizeNegativeZero.h>
 #include <Common/Arena.h>
 #include <Core/Block.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
@@ -37,27 +35,19 @@ void HashOutputFormat::consume(Chunk chunk)
     /// `nullptr` for a column without a negative zero, which is by far the most common case.
     Columns canonical_columns(num_columns);
     Columns full_columns(num_columns);
-    /// The column whose serialized values tell the two zeros apart: `convertToFullIfWrapped` keeps
-    /// `LowCardinality`, whose dictionary can hold a negative zero as well, and `canonicalizeNegativeZero`
-    /// does not look into it, so the check is done on the column without `LowCardinality`.
-    Columns value_columns(num_columns);
     const Block & header = getPort(PortKind::Main).getHeader();
     for (size_t j = 0; j < num_columns; ++j)
     {
         full_columns[j] = columns[j]->convertToFullIfWrapped();
 
-        /// Removing `LowCardinality` materializes every value of the column, so it is done only when
-        /// a negative zero can be there: never for a type without floating point values, such as
-        /// `LowCardinality(String)`, and for a top-level `LowCardinality` column only when its
-        /// dictionary has a negative zero.
+        /// `convertToFullIfWrapped` keeps `LowCardinality`, whose dictionary can hold a negative zero as well, so the
+        /// check looks into the dictionaries, also nested ones, such as in `Tuple(LowCardinality(String), Float64)`.
+        /// A dictionary is expanded only if it has a negative zero, so that a wide `LowCardinality(String)` is not.
+        /// A `LowCardinality` value is serialized as its dictionary value, so the serialized values are the same
+        /// as those of the column without `LowCardinality`.
         if (!mayContainNegativeZero(*header.getByPosition(j).type))
             continue;
-        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(full_columns[j].get());
-            low_cardinality && !canonicalizeNegativeZero(*low_cardinality->getDictionary().getNestedColumn()))
-            continue;
-
-        value_columns[j] = recursiveRemoveLowCardinality(full_columns[j]);
-        canonical_columns[j] = canonicalizeNegativeZero(*value_columns[j]);
+        canonical_columns[j] = canonicalizeNegativeZeroThroughLowCardinality(*full_columns[j]);
     }
 
     Arena arena;
@@ -71,7 +61,7 @@ void HashOutputFormat::consume(Chunk chunk)
                 continue;
 
             const char * begin = nullptr;
-            const std::string_view value = value_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
+            const std::string_view value = full_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
             begin = nullptr;
             const std::string_view canonical_value = canonical_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
             if (value != canonical_value)
