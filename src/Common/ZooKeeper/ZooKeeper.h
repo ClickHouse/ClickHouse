@@ -11,6 +11,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Coordination/KeeperConstants.h>
 
+#include <expected>
 #include <functional>
 #include <future>
 #include <memory>
@@ -541,6 +542,10 @@ public:
     /// rewritten between the read and the removal.
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
     void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
+
+    /// Same, but returns the error message instead of throwing REPLICA_ALREADY_EXISTS. Keeper errors still throw.
+    std::expected<void, String> tryDeleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
+    std::expected<void, String> tryDeleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
     Coordination::ReconfigResponse reconfig(
         const std::string & joining,

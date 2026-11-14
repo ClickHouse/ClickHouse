@@ -115,6 +115,28 @@ TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesForeignHolder)
     EXPECT_TRUE(zk->exists("/foreign"));
 }
 
+TEST(ZooKeeperTest, TryDeleteEphemeralNodeIfContentMatchesForeignHolder)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/try_foreign", "someone-else", zkutil::CreateMode::Persistent);
+
+    std::expected<void, String> removed;
+    EXPECT_NO_THROW(removed = zk->tryDeleteEphemeralNodeIfContentMatches("/try_foreign", "me"));
+
+    ASSERT_FALSE(removed.has_value());
+    EXPECT_NE(removed.error().find("still exists"), String::npos);
+    EXPECT_TRUE(zk->exists("/try_foreign"));
+}
+
+TEST(ZooKeeperTest, TryDeleteEphemeralNodeIfContentMatchesOwnNode)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/try_mine", "me", zkutil::CreateMode::Persistent);
+
+    EXPECT_TRUE(zk->tryDeleteEphemeralNodeIfContentMatches("/try_mine", "me").has_value());
+    EXPECT_FALSE(zk->exists("/try_mine"));
+}
+
 TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesOwnNode)
 {
     auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
