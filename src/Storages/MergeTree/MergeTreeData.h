@@ -1396,8 +1396,15 @@ public:
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
-    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
-    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
+    /// `local_context` is the context of the query: a replica that replays a committed DDL of a `Replicated` database
+    /// (`isSecondaryDDLReplay`) does not check the time zones of the columns of the key expressions: the initiator, possibly of an
+    /// older version, already decided.
+    MergeTreeData & checkStructureAndGetMergeTreeData(
+        const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot,
+        const ContextPtr & local_context = nullptr) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(
+        IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot,
+        const ContextPtr & local_context = nullptr) const;
 
     /// Level for a part adopted from `source_data` (ATTACH/REPLACE PARTITION FROM, CLONE AS,
     /// MOVE PARTITION TO TABLE). Preserve the source level only when this table merges parts

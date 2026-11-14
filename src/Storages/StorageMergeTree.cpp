@@ -4189,7 +4189,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
-    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
+    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot, local_context);
     DataPartsVector src_parts;
     DataPartsVector src_patch_parts;
 
@@ -4450,7 +4450,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
-    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
+    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot, local_context);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts;
