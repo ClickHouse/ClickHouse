@@ -3201,7 +3201,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UNLOCK SNAPSHOT 'snapshot_id' [FROM 
 
 `FROM` names the destination of the snapshot. It can be omitted when the destination was stored in ClickHouse Keeper when the snapshot was created.
 
-Requires the `ALTER UNLOCK SNAPSHOT` privilege on the table.
+Requires the `ALTER UNLOCK SNAPSHOT` privilege on the table. Opening the snapshot's destination also requires its `READ` [source privilege](/reference/statements/grant#sources) (`S3` or `AZURE`) and, for a named collection, the `NAMED COLLECTION` privilege.
 )DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]table [ON CLUSTER cluster] UNLOCK SNAPSHOT 'snapshot_id' [FROM destination]

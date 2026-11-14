@@ -759,7 +759,7 @@ Each element can end with `EXCEPT DATA FROM TABLE[S] [db.]table [, ...]` (introd
 | `Memory('name')` | In the memory of the current session, until the session ends. | v25.1.0 |
 | `Null` | Nowhere: the backup is written and discarded, and cannot be restored. For testing. | v25.1.0 |
 
-With a named collection, `key = value` arguments override the parameters of the collection, see [Named collections](/concepts/features/configuration/server-config/named-collections). `extra_credentials(role_arn = 'arn' [, role_session_name = 'name'] [, external_id = 'id'])` passes an IAM role for role-based access in ClickHouse Cloud, see [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely).
+With a named collection, `key = value` arguments override the parameters of the collection; overriding a parameter the collection stores requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on it, see [Named collections](/concepts/features/configuration/server-config/named-collections). `extra_credentials(role_arn = 'arn' [, role_session_name = 'name'] [, external_id = 'id'])` passes an IAM role for role-based access in ClickHouse Cloud, see [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely).
 
 A path ending with `.zip`, `.zipx`, `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzst`, `.tar.xz`, `.tar.bz2` or `.tar.lzma` stores the backup as one archive of that format instead of a directory. ZIP archives are not supported on `S3` and `AzureBlobStorage`, nor on a `Disk` backed by S3 or Azure object storage. Archives cannot be used with `ON CLUSTER`.
 
@@ -767,7 +767,7 @@ A path ending with `.zip`, `.zipx`, `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzs
 
 Introduced in: v22.5.0
 
-Runs the backup on every host of `cluster`, coordinated through ClickHouse Keeper. See [Distributed DDL](/reference/statements/distributed-ddl). The settings `shard_num` and `replica_num` restrict it to one shard or one replica.
+Runs the backup on every host of `cluster`, coordinated through ClickHouse Keeper. See [Distributed DDL](/reference/statements/distributed-ddl). The settings `shard_num` and `replica_num` restrict it to one shard or one replica. The hosts run the backup outside the current session, so `Memory` destinations and the temporary tables of the current session cannot be used with `ON CLUSTER`, and `ALL` does not include those temporary tables.
 
 ## ASYNC and SYNC {#async}
 
@@ -811,13 +811,13 @@ One row with the columns `id` (`String`: the `id` setting, or a generated UUID) 
 | `data_file_name_prefix_length` | `3` | With `data_file_name_generator = 'checksum'`, the length of the checksum prefix used as a directory name. The server setting `backups.data_file_name_prefix_length` changes the default. |
 | `backup_data_from_refreshable_materialized_view_targets` | `0` | Also stores the data of the target tables of refreshable materialized views without `APPEND`; the data of other targets is always stored. |
 | `backup_named_collections` | unset | Whether to store the named collections created with SQL. See [Named collections](/concepts/features/backup-restore/named-collections). |
-| `experimental_lightweight_snapshot` | `0` | Experimental, ClickHouse Cloud only: creates a snapshot backup. See [Snapshot backup](/concepts/features/backup-restore/snapshot). |
+| `experimental_lightweight_snapshot` | `0` | Experimental, ClickHouse Cloud only: creates a snapshot backup, which cannot be created with `ON CLUSTER` and cannot be the `base_backup` of an incremental backup. See [Snapshot backup](/concepts/features/backup-restore/snapshot). |
 
 Any other setting in the clause applies to the statement as a query-level setting, for example the [`backup_restore_*` settings](/reference/settings/session-settings/backup-restore); an unknown setting is an error. `setting = DEFAULT` resets a setting to its default value.
 
 ## Privileges {#privileges}
 
-`BACKUP` requires the `BACKUP` privilege on every table, view and dictionary it backs up (on `db.*` for `DATABASE`, on `*.*` for `ALL`); temporary tables require none. It also requires the `WRITE` [source privilege](/reference/statements/grant#sources) of the destination (`FILE`, `DISK`, `S3` or `AZURE`), the `READ` source privilege of the `base_backup` setting's destination, and the `NAMED COLLECTION` privilege on a named collection used as a destination. `Memory` and `Null` require no source privilege. Exporting SQL-created named collections requires more privileges, see [Named collections](/concepts/features/backup-restore/named-collections).
+`BACKUP` requires the `BACKUP` privilege on every table, view and dictionary it backs up (on `db.*` for `DATABASE`, on `*.*` for `ALL`); temporary tables require none. It also requires the `WRITE` [source privilege](/reference/statements/grant#sources) of the destination (`FILE`, `DISK`, `S3` or `AZURE`), the `READ` source privilege of the `base_backup` setting's destination, and the `NAMED COLLECTION` privilege on a named collection used by either of these destinations. `Memory` and `Null` require no source privilege. Exporting SQL-created named collections requires more privileges, see [Named collections](/concepts/features/backup-restore/named-collections).
 
 ## BACKUP FROM SNAPSHOT {#backup-from-snapshot}
 
@@ -830,7 +830,7 @@ Introduced in: v26.3.0
 BACKUP FROM SNAPSHOT snapshot_destination [ON CLUSTER cluster] TO destination [SETTINGS ...] [ASYNC | SYNC]
 ```
 
-Creates a backup at `destination` from the snapshot backup at `snapshot_destination`, an `S3` or `AzureBlobStorage` backup created with the setting `experimental_lightweight_snapshot`. The experimental setting [`resumable_backup_from_snapshot`](/reference/settings/session-settings/other#resumable_backup_from_snapshot) makes a failed attempt resumable. With it, the `BACKUP` settings `resumable_backup_batch_size` (default `50000`) and `resumable_backup_batch_size_bytes` (default 10 GiB) bound the number of files and of new data bytes between two checkpoints in ClickHouse Keeper; both must be greater than 0.
+Creates a backup at `destination` from the snapshot backup at `snapshot_destination`, an `S3` or `AzureBlobStorage` backup created with the setting `experimental_lightweight_snapshot`. The experimental setting [`resumable_backup_from_snapshot`](/reference/settings/session-settings/other#resumable_backup_from_snapshot) makes a failed attempt resumable. With it, the `BACKUP` settings `resumable_backup_batch_size` (default `50000`) and `resumable_backup_batch_size_bytes` (default 10 GiB) bound the number of files and of new data bytes between two checkpoints in ClickHouse Keeper; both must be greater than 0. Reading `snapshot_destination` requires its `READ` [source privilege](/reference/statements/grant#sources), as for `base_backup`.
 
 ## Examples {#examples}
 
@@ -928,7 +928,7 @@ The elements are those of [`BACKUP`](/reference/statements/backup#elements). The
 
 ## Existing objects {#existing-objects}
 
-By default a missing table is created, and an existing table is restored into if it is empty and its definition matches the one in the backup. A different definition fails unless `allow_different_table_def = 1`, and a non-empty table fails unless `allow_non_empty_tables = 1`. Databases are handled the same way, with `create_database` and `allow_different_database_def`.
+By default a missing table is created, and an existing table is restored into if it is empty and its definition matches the one in the backup. A different definition fails unless `allow_different_table_def = 1`, and a non-empty table fails unless `allow_non_empty_tables = 1`. Databases are handled the same way, with `create_database` and `allow_different_database_def`. Some engines cannot be recreated by `RESTORE`, for example a standalone `MaterializedPostgreSQL` table, see [Engines that `RESTORE` cannot recreate](/concepts/features/backup-restore/overview#engines-restore-cannot-recreate).
 
 `RESTORE` does not roll back on failure: see [Restore atomicity](/reference/system-tables/backups#restore-atomicity).
 
@@ -972,7 +972,7 @@ Any other setting in the clause applies to the statement as a query-level settin
 
 ## Privileges {#privileges}
 
-`RESTORE` requires the `READ` [source privilege](/reference/statements/grant#sources) of the destination and of the base backup's destination (the one recorded in the backup, or the `base_backup` setting), the `NAMED COLLECTION` privilege on a named collection used as a destination, and the privileges to create and fill what it restores, for example `CREATE TABLE` and `INSERT` on a restored table.
+`RESTORE` requires the `READ` [source privilege](/reference/statements/grant#sources) of the destination and of the base backup's destination (the one recorded in the backup, or the `base_backup` setting), the `NAMED COLLECTION` privilege on a named collection used by any of these destinations, and the privileges to create and fill what it restores, for example `CREATE TABLE` and `INSERT` on a restored table.
 
 ## Examples {#examples}
 
