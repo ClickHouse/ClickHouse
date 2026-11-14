@@ -1372,6 +1372,10 @@ private:
     /// hash tables have already been detached from these states, so nothing else will destroy them).
     void destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept;
 
+    /// Destroy the states of the aggregate functions from `first_function` on of the detached source rows `src_places`,
+    /// except, with `skip_compiled`, those of the compiled functions (see `mergeAndDestroyDetachedBatch`).
+    void destroyDetachedSources(PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, bool skip_compiled) const noexcept;
+
     /// Merge NULL key data from hash table `src` into `dst`.
     /// `deferred` is the same as for `mergeDataImpl`.
     template <typename Method, typename Table>
