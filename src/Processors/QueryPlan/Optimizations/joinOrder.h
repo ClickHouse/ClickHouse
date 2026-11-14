@@ -105,7 +105,7 @@ struct QueryGraph
     /// rather than a conjunct of the step's ON clause: a `WHERE` condition merged into the graph by
     /// `query_plan_merge_filters_into_join`. Such a filter reading the null-supplying side of the step
     /// is applied only after the step, on its padded rows.
-    std::vector<UInt8> edge_above_conflict_op;
+    VectorWithMemoryTracking<UInt8> edge_above_conflict_op;
 
     /// Operators of the original join tree, in tree (not enumeration) order. Populated during
     /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
