@@ -9,6 +9,7 @@
 #include <mysqlxx/Pool.h>
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
@@ -355,6 +356,8 @@ void Pool::Entry::forceConnected() const
     bool first = true;
     while (!tryForceConnected())
     {
+        DB::CurrentThread::checkIfNotCancelled();
+
         if (first)
             first = false;
         else
@@ -386,6 +389,7 @@ void Pool::Entry::forceConnected() const
         {
             pool->online = false;
             pool->removeConnection(data);
+            DB::CurrentThread::checkIfNotCancelled();
             throw;
         }
         pool->online = true;
