@@ -1,0 +1,54 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_wide_integer
+        (
+            k UInt64,
+            d64 Decimal64(2),
+            i128 Int128,
+            u128 UInt128,
+            d128 Decimal128(4),
+            i256 Int256,
+            u256 UInt256,
+            d256 Decimal256(10),
+            small_i128 Int128
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_wide_integer SELECT
+            number % 100000,
+            toDecimal64(toInt64(cityHash64(number, 1)) % 100000000000, 2),
+            toInt128(bitShiftLeft(toUInt128(cityHash64(number, 3)), 64) + cityHash64(number, 4)),
+            bitShiftLeft(toUInt128(cityHash64(number, 5)), 64) + cityHash64(number, 6),
+            toDecimal128(toInt64(cityHash64(number, 7)) % 100000000000000, 4),
+            toInt256(bitShiftLeft(toUInt256(cityHash64(number, 8)), 192) + bitShiftLeft(toUInt256(cityHash64(number, 9)), 128)
+                + bitShiftLeft(toUInt256(cityHash64(number, 10)), 64) + cityHash64(number, 11)),
+            bitShiftLeft(toUInt256(cityHash64(number, 12)), 192) + bitShiftLeft(toUInt256(cityHash64(number, 13)), 128)
+                + bitShiftLeft(toUInt256(cityHash64(number, 14)), 64) + cityHash64(number, 15),
+            toDecimal256(toInt64(cityHash64(number, 16)) % 100000000000000, 10),
+            toInt128(toInt64(cityHash64(number, 17)))
+        FROM numbers(5000000)
+    </fill_query>
+
+    <!-- sum over wide-integers -->
+    <query>SELECT sum(d64) FROM t_wide_integer FORMAT Null</query>
+    <query>SELECT sum(u128), sum(i128), sum(d128) FROM t_wide_integer FORMAT Null</query>
+    <query>SELECT sum(u256), sum(i256), sum(d256) FROM t_wide_integer FORMAT Null</query>
+    <query>SELECT sumIf(d128, k % 3 = 0) FROM t_wide_integer FORMAT Null</query>
+    <query>SELECT sumIf(d256, k % 3 = 0) FROM t_wide_integer FORMAT Null</query>
+    <query>SELECT k, sum(d128), sum(d256), sum(small_i128) FROM t_wide_integer GROUP BY k FORMAT Null</query>
+
+    <!-- Row-wise addition and subtraction -->
+    <query>SELECT count() FROM t_wide_integer WHERE NOT ignore(i128 + small_i128)</query>
+    <query>SELECT count() FROM t_wide_integer WHERE NOT ignore(i128 - small_i128)</query>
+    <query>SELECT count() FROM t_wide_integer WHERE NOT ignore(u128 - k)</query>
+    <query>SELECT count() FROM t_wide_integer WHERE NOT ignore(i256 + small_i128)</query>
+    <query>SELECT count() FROM t_wide_integer WHERE NOT ignore(i256 - small_i128)</query>
+    <query>SELECT count() FROM t_wide_integer WHERE NOT ignore(u256 - k)</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_wide_integer</drop_query>
+</test>
