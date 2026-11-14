@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -360,9 +361,53 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
     return true;
 }
 
+/// Returns false, after reporting the error, if the file cannot be fully written.
+bool writeFile(const std::string & path, const std::string & content)
+{
+    std::ofstream f(path);
+    f << content;
+    f.close();
+    if (f)
+        return true;
+    const int error = errno;
+    std::cerr << "docker-init: error: failed to write " << path << ": " << strerror(error) << "\n"; // NOLINT(concurrency-mt-unsafe)
+    return false;
+}
+
+/// Reads the first line of the file, without the newline.
+/// Returns 0, or the errno of the failed open or read.
+int readFirstLine(const std::string & path, std::string & line)
+{
+    const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return errno;
+
+    std::string content;
+    char buf[4096];
+    int error = 0;
+    while (!content.contains('\n'))
+    {
+        const ssize_t n = read(fd, buf, sizeof(buf));
+        if (n > 0)
+            content.append(buf, static_cast<size_t>(n));
+        else if (n == 0)
+            break;
+        else if (errno != EINTR)
+        {
+            error = errno;
+            break;
+        }
+    }
+    (void)close(fd);
+
+    if (error == 0)
+        line = content.substr(0, content.find('\n'));
+    return error;
+}
+
 /// Write the user management XML to `/etc/clickhouse-server/users.d/default-user.xml`.
 /// Returns false if a user-requested setup (CLICKHOUSE_USER/PASSWORD/ACCESS_MANAGEMENT)
-/// is invalid — caller should treat this as fatal.
+/// is invalid or the file cannot be written; caller should treat this as fatal.
 bool manageClickHouseUser(
     const std::string & config_file,
     const std::string & clickhouse_user,
@@ -455,7 +500,7 @@ bool manageClickHouseUser(
         }
 
         {
-            std::ofstream f(default_user_xml);
+            std::ostringstream f; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             f << "<clickhouse>\n"
               << "  <!-- Docs: <https://clickhouse.com/docs/operations/settings/settings_users/> -->\n"
               << "  <users>\n"
@@ -474,8 +519,8 @@ bool manageClickHouseUser(
               << "    </" << clickhouse_user << ">\n"
               << "  </users>\n"
               << "</clickhouse>\n";
-            if (!f.good())
-                std::cerr << "docker-init: error: failed to write " << default_user_xml << "\n";
+            if (!writeFile(default_user_xml, f.str()))
+                return false;
         }
     }
     else if (clickhouse_default_changed)
@@ -487,7 +532,7 @@ bool manageClickHouseUser(
         std::cerr << "docker-init: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, "
                      "disabling network access for user 'default'\n";
         {
-            std::ofstream f(default_user_xml);
+            std::ostringstream f; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             f << "<clickhouse>\n"
               << "  <!-- Docs: <https://clickhouse.com/docs/operations/settings/settings_users/> -->\n"
               << "  <users>\n"
@@ -500,8 +545,8 @@ bool manageClickHouseUser(
               << "    </default>\n"
               << "  </users>\n"
               << "</clickhouse>\n";
-            if (!f.good())
-                std::cerr << "docker-init: error: failed to write " << default_user_xml << "\n";
+            if (!writeFile(default_user_xml, f.str()))
+                return false;
         }
     }
     return true;
@@ -1033,12 +1078,15 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     std::string password_file = getEnv("CLICKHOUSE_PASSWORD_FILE");
     if (!password_file.empty())
     {
-        std::ifstream pf(password_file);
-        if (pf.is_open())
-            std::getline(pf, clickhouse_password);
-        else
-            std::cerr << "docker-init: warning: cannot read CLICKHOUSE_PASSWORD_FILE '"
-                      << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+        if (const int error = readFirstLine(password_file, clickhouse_password))
+        {
+            /// A missing file is ignored like in entrypoint.sh; an unreadable one must not leave the user without a password.
+            const bool fatal = error != ENOENT && error != ENOTDIR;
+            std::cerr << "docker-init: " << (fatal ? "error" : "warning") << ": cannot read CLICKHOUSE_PASSWORD_FILE '"
+                      << password_file << "': " << strerror(error) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            if (fatal)
+                return 1;
+        }
     }
 
     std::string access_management = getEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "0");
