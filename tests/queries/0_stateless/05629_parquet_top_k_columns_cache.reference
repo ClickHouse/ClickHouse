@@ -40,3 +40,10 @@ with the cache, three times
 142856	311778
 142856	369698
 142856	415695
+the warm reads hit the columns cache
+asc_1	1
+asc_2	1
+asc_3	1
+desc_1	1
+desc_2	1
+desc_3	1
