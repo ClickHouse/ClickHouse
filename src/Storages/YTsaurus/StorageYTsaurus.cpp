@@ -185,6 +185,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
     SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"oauth_token"}},
     {
         .supports_settings = true,
+        .supports_deferred_load = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
         .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
     },

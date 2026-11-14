@@ -1,2 +1,2 @@
-stand-in	TableProxy
-still stand-in	TableProxy
+stand-in	MergeTree	0
+still stand-in	MergeTree	0

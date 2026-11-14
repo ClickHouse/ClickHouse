@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154
+
+# The second half of the operations of `lazy_load_tables_merge_tree_operations.lib`.
+
+echo "- nested columns"
+# `share_nested_offsets` comes from the engine settings, and defaulting it to true would allow alters
+# of the whole `Nested` group that the setting rules out.
+query "
+    CREATE TABLE t (id UInt64, nest Nested(a UInt8, b String)) ENGINE = $engine_def ORDER BY id
+    SETTINGS share_nested_offsets = 0;
+    INSERT INTO t VALUES (1, [1], ['x']);"
+reload
+loaded t
+query "ALTER TABLE t RENAME COLUMN nest TO other" 2>&1 | grep -o -m1 NOT_FOUND_COLUMN_IN_BLOCK
+reload
+query "ALTER TABLE t DROP COLUMN nest" 2>&1 | grep -o -m1 NOT_FOUND_COLUMN_IN_BLOCK
+query "DROP TABLE t SYNC"
+
+echo "- async insert"
+# The table-level `async_insert` setting is read through `areAsynchronousInsertsEnabled`.
+query "CREATE TABLE t (id UInt64) ENGINE = $engine_def ORDER BY id SETTINGS async_insert = 1"
+reload
+loaded t
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_async_insert_$engine"
+$CLICKHOUSE_CLIENT --query_id "$query_id" -q "USE \`$DB\`; INSERT INTO t SETTINGS async_insert = 0, wait_for_async_insert = 1 VALUES (1)"
+query "SYSTEM FLUSH LOGS asynchronous_insert_log"
+query "SELECT count() FROM system.asynchronous_insert_log WHERE query_id = '$query_id'"
+query "DROP TABLE t SYNC"
+
+echo "- planner"
+# The planner asks the storage whether it is a `MergeTree` and whether trivial count applies.
+query "
+    CREATE TABLE t (id UInt64, v UInt64) ENGINE = $engine_def ORDER BY id;
+    INSERT INTO t SELECT number, number * 2 FROM numbers(1000);"
+reload
+query "EXPLAIN SELECT count() FROM t SETTINGS optimize_trivial_count_query = 1" | grep -c 'Optimized trivial count'
+reload
+# `automatic_parallel_replicas_mode` would let the planner decide on its own and skip parallel replicas.
+query "EXPLAIN SELECT sum(v) FROM t SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
+    parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0" | grep -c -m1 'ParallelReplicas'
+query "DROP TABLE t SYNC"
+
+echo "- populate"
+# `POPULATE` pins a snapshot of the source, and the snapshot of a stand-in has none of its data.
+query "
+    CREATE TABLE src (id UInt64, n UInt32) ENGINE = $engine_def ORDER BY id;
+    INSERT INTO src SELECT number, number % 5 FROM numbers(100);"
+reload
+loaded src
+query "CREATE MATERIALIZED VIEW mv ENGINE = $engine_def ORDER BY n POPULATE AS SELECT n, count() AS c FROM src GROUP BY n"
+query "SELECT sum(c) FROM mv"
+query "DROP TABLE mv SYNC; DROP TABLE src SYNC"
+
+echo "- backup"
+# `IStorage::backupData` does nothing, so a stand-in that does not forward it backs up nothing and the
+# incremental backup then diffs against an empty base.
+query "
+    CREATE TABLE t (d Date, id UInt64) ENGINE = $engine_def PARTITION BY toYYYYMM(d) ORDER BY id;
+    INSERT INTO t SELECT '2024-01-01', number FROM numbers(100);
+    INSERT INTO t SELECT '2024-02-01', number FROM numbers(30);"
+reload
+loaded t
+base="${CLICKHOUSE_TEST_UNIQUE_NAME}_${engine}_base"
+incremental="${CLICKHOUSE_TEST_UNIQUE_NAME}_${engine}_incremental"
+partition="${CLICKHOUSE_TEST_UNIQUE_NAME}_${engine}_partition"
+whole_database="${CLICKHOUSE_TEST_UNIQUE_NAME}_${engine}_database"
+query "BACKUP TABLE t TO Disk('backups', '$base') FORMAT Null"
+query "INSERT INTO t SELECT '2024-01-01', number + 100 FROM numbers(50)"
+reload
+query "BACKUP TABLE t TO Disk('backups', '$incremental') SETTINGS base_backup = Disk('backups', '$base') FORMAT Null"
+reload
+# Partition-level backup also needs `supportsBackupPartition` from the real storage.
+query "BACKUP TABLE t PARTITIONS '202401' TO Disk('backups', '$partition') FORMAT Null"
+reload
+$CLICKHOUSE_CLIENT -q "BACKUP DATABASE \`$DB\` TO Disk('backups', '$whole_database') FORMAT Null"
+# Restoring under another name would reuse the coordination path of the replicated table.
+query "DROP TABLE t SYNC"
+query "RESTORE TABLE t FROM Disk('backups', '$incremental') FORMAT Null"
+query "SELECT 'incremental', count() FROM t"
+query "DROP TABLE t SYNC"
+query "RESTORE TABLE t FROM Disk('backups', '$partition') FORMAT Null"
+query "SELECT 'partition', count() FROM t"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE \`$DB\` SYNC"
+$CLICKHOUSE_CLIENT -q "RESTORE DATABASE \`$DB\` FROM Disk('backups', '$whole_database') FORMAT Null"
+query "SELECT 'database', count() FROM t"

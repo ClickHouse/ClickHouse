@@ -3,7 +3,8 @@
 1
 1
 1
-TableProxy
-S3Queue
-TableProxy
-TableProxy
+S3Queue	0
+S3Queue	1
+S3Queue	0
+S3Queue	1
+1

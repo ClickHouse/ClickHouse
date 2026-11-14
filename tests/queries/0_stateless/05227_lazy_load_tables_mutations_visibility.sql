@@ -18,13 +18,13 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 -- Reading a system table only inspects tables and must not load them.
 SELECT 'in system.mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't';
 
 SELECT 'rows', count() FROM t;
 
-SELECT 'loaded', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'loaded', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 SELECT 'in system.mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

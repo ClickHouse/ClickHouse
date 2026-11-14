@@ -5,8 +5,9 @@
 # another uses the loaded storage. While a query that loaded the table through the proxy is still
 # running, the proxy stays. Once that query is gone, the next lookup replaces it.
 #
-# The proxy does not forward `totalBytesUncompressed`, so `system.tables.total_bytes_uncompressed`
-# tells the proxy (NULL) from the loaded `MergeTree` (not NULL).
+# The proxy reports the engine from the `CREATE` query and forwards the size of the loaded storage, so
+# `system.tables` does not tell the proxy from the loaded storage, only whether the table is loaded. The
+# test checks that the lookups while the proxy is held and after it is released keep working.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +31,7 @@ ${CLICKHOUSE_CLIENT} -m -q "
 "
 
 state() {
-    ${CLICKHOUSE_CLIENT} -q "SELECT engine, total_bytes_uncompressed IS NOT NULL FROM system.tables WHERE database = '${DB}' AND name = 't'"
+    ${CLICKHOUSE_CLIENT} -q "SELECT engine, is_loaded FROM system.tables WHERE database = '${DB}' AND name = 't'"
 }
 
 echo "cold: $(state)"
@@ -42,11 +43,11 @@ echo "cold: $(state)"
 ${CLICKHOUSE_CLIENT} --query_id "${CLICKHOUSE_DATABASE}_reader" --function_sleep_max_microseconds_per_block 0 -q "
     SELECT sleepEachRow(1) FROM \`${DB}\`.t FORMAT Null" >/dev/null 2>&1 &
 
-# Wait until the reader has loaded the table, i.e. the engine is known.
+# Wait until the reader has loaded the table.
 for _ in {1..600}
 do
     [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${CLICKHOUSE_DATABASE}_reader'")" = 1 ] \
-        && [ "$(${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${DB}' AND name = 't'")" = MergeTree ] \
+        && [ "$(${CLICKHOUSE_CLIENT} -q "SELECT is_loaded FROM system.tables WHERE database = '${DB}' AND name = 't'")" = 1 ] \
         && break
     sleep 0.1
 done

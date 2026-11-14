@@ -1,5 +1,5 @@
-stand-in	TableProxy
+stand-in	MergeTree	0
 in system.mutations	0
 rows	1
-loaded	MergeTree
+loaded	MergeTree	1
 in system.mutations	1

@@ -3,6 +3,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
+#include <base/isSharedPtrUnique.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -38,8 +39,13 @@ public:
 
     StoragePtr tryGetNested() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested;
+        return nestedIfResolved();
+    }
+
+    bool isNestedInUse() const override
+    {
+        std::lock_guard lock{resolved_nested_mutex};
+        return nested && !isSharedPtrUnique(nested);
     }
 
     StoragePtr getNestedImpl() const
@@ -50,8 +56,13 @@ public:
 
         auto nested_storage = get_nested();
         nested_storage->startup();
-        nested_storage->renameInMemory(getStorageID());
-        nested = nested_storage;
+        {
+            /// Renamed under the same lock as `renameInMemory` below, so that a concurrent `RENAME` either sees
+            /// the new storage or is seen by it.
+            std::lock_guard resolved_lock{resolved_nested_mutex};
+            nested_storage->renameInMemory(getStorageID());
+            nested = nested_storage;
+        }
         get_nested = {};
         return nested;
     }
@@ -72,6 +83,37 @@ public:
     /// Reported by the table function itself, so that the check does not execute it.
     bool hasUnreplicatedTableDataOnDisk() const override { return has_unreplicated_table_data_on_disk; }
     bool supportsReplication() const override { return false; }
+
+    /// `RENAME` calls this with the database mutex held, and resolving a table function there can look up
+    /// a table in the same database (`view` analyzes its query) and deadlock. No storage a table function
+    /// yields restricts a rename, so an unresolved one has nothing to check.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        if (auto storage = nestedIfResolved())
+            storage->checkTableCanBeRenamed(new_name);
+    }
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        if (auto storage = nestedIfResolved())
+            storage->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+    }
+
+    /// A table defined from a table function keeps no data of its own, so `BACKUP` and `RESTORE` store and recreate only
+    /// its definition. Forwarding these would run the table function, which fails while its source is missing.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        IStorage::applyMetadataChangesToCreateQueryForBackup(create_query); // NOLINT(bugprone-parent-virtual-call)
+    }
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        IStorage::backupData(backup_entries_collector, data_path_in_backup, partitions); // NOLINT(bugprone-parent-virtual-call)
+    }
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        IStorage::restoreDataFromBackup(restorer, data_path_in_backup, partitions); // NOLINT(bugprone-parent-virtual-call)
+    }
+    bool supportsBackupPartition() const override { return false; }
+    void finalizeRestoreFromBackup() override {}
 
     /// A table function that has not been resolved yet holds no data and has started no background
     /// activity, so size and lock queries have a correct answer that does not require resolving it.
@@ -175,12 +217,33 @@ public:
             proxy_columns.modify(nested_column.name, copy_default);
         }
 
-        if (changed)
+        /// A data lake pins the table state selected for the query (e.g. by `iceberg_snapshot_id`) in its metadata here.
+        /// Carry it in the metadata of the proxy, which the query is analyzed with, so that `read` passes it back to
+        /// the nested storage: two `SELECT`s of one query can pin different states.
+        const bool has_state = nested_metadata->datalake_table_state || proxy_metadata->datalake_table_state;
+
+        if (changed || has_state)
         {
             StorageInMemoryMetadata updated_metadata = *proxy_metadata;
-            updated_metadata.setColumns(std::move(proxy_columns));
+            if (changed)
+                updated_metadata.setColumns(std::move(proxy_columns));
+            updated_metadata.datalake_table_state = nested_metadata->datalake_table_state;
             setInMemoryMetadata(updated_metadata);
         }
+    }
+
+    /// The metadata of the proxy is the cached column contract rather than the metadata of `nested`,
+    /// so only the data lake state pinned during analysis is taken from it.
+    StorageSnapshotPtr getNestedSnapshot(const StoragePtr & storage, const StorageSnapshotPtr & proxy_snapshot, ContextPtr context) const override
+    {
+        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        if (proxy_snapshot && proxy_snapshot->metadata && proxy_snapshot->metadata->datalake_table_state)
+        {
+            auto pinned_metadata = std::make_shared<StorageInMemoryMetadata>(*nested_metadata);
+            pinned_metadata->setDataLakeTableState(*proxy_snapshot->metadata->datalake_table_state);
+            return storage->getStorageSnapshot(pinned_metadata, context);
+        }
+        return storage->getStorageSnapshot(nested_metadata, context);
     }
 
     void drop() override
@@ -240,9 +303,7 @@ public:
             size_t num_streams) override
     {
         auto storage = getNested();
-        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
-        auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
-        storage->read(query_plan, column_names, nested_snapshot, query_info, context,
+        storage->read(query_plan, column_names, getNestedSnapshot(storage, storage_snapshot, context), query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
         {
@@ -282,13 +343,13 @@ public:
         return storage->write(query, metadata_snapshot, context, async_insert);
     }
 
+    /// `RENAME` calls this with the database mutex held, so it must not take `nested_mutex`, see `nestedIfResolved`.
     void renameInMemory(const StorageID & new_table_id) override
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
+        IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
         if (nested)
-            StorageProxy::renameInMemory(new_table_id);
-        else
-            IStorage::renameInMemory(new_table_id); /// NOLINT
+            nested->renameInMemory(new_table_id);
     }
 
     bool isView() const override { return false; }
@@ -302,13 +363,20 @@ private:
     /// The nested storage if the table function has already been resolved, otherwise null.
     /// Never forward while holding `nested_mutex`: a nested size query can read remote metadata,
     /// and every read and write of this table takes the same mutex.
+    /// Takes only `resolved_nested_mutex`, not `nested_mutex`: callers may hold the database mutex
+    /// (`RENAME` does), while `getNestedImpl` holds `nested_mutex` when the table function looks up
+    /// a table in the same database (`view` analyzes its query), so taking it here inverts the lock order.
     StoragePtr nestedIfResolved() const
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
         return nested;
     }
 
+    /// Serializes resolving the table function and the operations on the nested storage.
     mutable std::recursive_mutex nested_mutex;
+    /// Guards `nested` for readers that must not wait for the resolution. `nested` is written while holding
+    /// both mutexes. Nothing that may take `nested_mutex` or a database mutex is called while holding it.
+    mutable std::mutex resolved_nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;

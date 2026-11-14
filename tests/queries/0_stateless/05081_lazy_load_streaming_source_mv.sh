@@ -58,9 +58,9 @@ wait_for_count 1
 ${CLICKHOUSE_CLIENT} --query "detach database ${DB}"
 ${CLICKHOUSE_CLIENT} --query "attach database ${DB}"
 
-# The source of the materialized view must not be a stand-in: its consumer has to be running without
-# anyone reading it. The one without a materialized view must still be a stand-in.
-${CLICKHOUSE_CLIENT} --query "select name, engine from system.tables where database = '${DB}' and name in ('q', 'unused') order by name"
+# The source of the materialized view must be loaded, its consumer has to run without anyone reading it.
+# The one without a materialized view must still be a stand-in, which only `is_loaded` tells apart.
+${CLICKHOUSE_CLIENT} --query "select name, engine, is_loaded from system.tables where database = '${DB}' and name in ('q', 'unused') order by name"
 
 echo 2 > "${DIR}/with_mv/b.csv"
 wait_for_count 2

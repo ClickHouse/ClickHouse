@@ -1,4 +1,4 @@
 ACCESS_DENIED
-log	TableProxy
+log	Log	0
 ACCESS_DENIED
-mt	TableProxy
+mt	MergeTree	0

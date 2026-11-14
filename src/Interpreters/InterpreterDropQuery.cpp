@@ -245,6 +245,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
+            /// Authorize before classifying the table below: for a lazily loaded table that loads it, which must not be
+            /// possible for a user without the right to drop it.
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
+
             ast_drop_query.sync = false;
             /// A real DROP of an object storage, table function or non-truncatable table does not delete its data, so do not TRUNCATE it.
             /// The proxy is checked first: its `supportsTruncate` resolves the table function.
@@ -256,8 +261,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             StoragePtr inner_table;
             if (materialized_view && materialized_view->hasInnerTable())
                 inner_table = materialized_view->tryGetTargetTable();
+            if (inner_table)
+                inner_table = resolveStorageProxyLoading(inner_table);
 
-            if (table->storesDataOnDisk() || keeps_data_on_drop(*table) || (inner_table && keeps_data_on_drop(*inner_table)))
+            /// The stand-in of a deferred table answers `storesDataOnDisk` and `isObjectStorage` without loading it,
+            /// e.g. both are false for an `S3` table, so the decision is made on the real storage.
+            const StoragePtr storage_to_classify = resolveStorageProxyLoading(table);
+            if (storage_to_classify->storesDataOnDisk() || keeps_data_on_drop(*storage_to_classify)
+                || (inner_table && keeps_data_on_drop(*inner_table)))
             {
                 LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
                 return {};

@@ -1,2 +1,2 @@
-stand-in	TableProxy
+stand-in	MergeTree	0
 rows	2

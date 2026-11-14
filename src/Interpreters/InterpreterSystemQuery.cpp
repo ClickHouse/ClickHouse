@@ -354,7 +354,14 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 table->onActionLockRemove(action_type);
             }
             else
+            {
+                /// A deferred table has no lock to take until it is loaded, so the command would do nothing and
+                /// the background work would start once the table is first accessed. Naming the table pays the
+                /// load cost, like the other `SYSTEM` commands addressed to a table. The lock is still kept for
+                /// the catalog object, so that `SYSTEM START` on the same table finds it.
+                resolveStorageProxyLoading(table);
                 manager->add(table, action_type);
+            }
         }
     }
     else

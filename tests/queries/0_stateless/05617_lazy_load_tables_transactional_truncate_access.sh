@@ -39,5 +39,5 @@ do
         BEGIN TRANSACTION;
         TRUNCATE TABLE \`${DB}\`.${table};
     " 2>&1 | grep -o -m1 -e ACCESS_DENIED -e NOT_IMPLEMENTED
-    ${CLICKHOUSE_CLIENT} -q "SELECT name, engine FROM system.tables WHERE database = '${DB}' AND name = '${table}'"
+    ${CLICKHOUSE_CLIENT} -q "SELECT name, engine, is_loaded FROM system.tables WHERE database = '${DB}' AND name = '${table}'"
 done

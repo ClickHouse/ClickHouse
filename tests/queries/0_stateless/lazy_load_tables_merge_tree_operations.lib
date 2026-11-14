@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154,SC2034
+
+# The body of the `lazy_load_tables_merge_tree_operations` tests, which run it for `MergeTree` and
+# `ReplicatedMergeTree`. The operations are split into two halves, `lazy_load_tables_merge_tree_operations_part_1.lib`
+# and `lazy_load_tables_merge_tree_operations_part_2.lib`, so that every test stays well within the time limit
+# under sanitizers. The caller sources `shell_config.sh` and sets `engine` and `part` before sourcing this file.
+
+# With `lazy_load_tables` the catalog holds a stand-in for a table until something uses it. Every operation
+# below is run on a stand-in, and each of them reaches the real storage through a cast or a hook that the
+# stand-in has to forward: an unforwarded one answers for the stand-in, which has no parts, no keys and no
+# settings, and either refuses the operation or silently does nothing.
+
+DB="${CLICKHOUSE_DATABASE}_lazy"
+
+function query()
+{
+    $CLICKHOUSE_CLIENT -q "USE \`$DB\`; $1"
+}
+
+# Re-reading the metadata is what turns the tables back into stand-ins.
+function reload()
+{
+    # A background task, such as the end of a mutation, can hold a table for a moment longer, and the database
+    # refuses to be detached until it lets go.
+    local error
+    for _ in {1..600}; do
+        error=$($CLICKHOUSE_CLIENT -q "DETACH DATABASE \`$DB\`" 2>&1) && break
+        if [[ $error != *DATABASE_NOT_EMPTY* ]]; then
+            echo "$error" >&2
+            break
+        fi
+        sleep 0.1
+    done
+    $CLICKHOUSE_CLIENT -q "ATTACH DATABASE \`$DB\`"
+}
+
+function loaded()
+{
+    query "SELECT is_loaded FROM system.tables WHERE database = currentDatabase() AND name = '$1'"
+}
+
+if [ "$engine" = ReplicatedMergeTree ]; then
+    engine_def="ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/{database}/{table}', 'r1')"
+else
+    engine_def="MergeTree"
+fi
+
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$DB\` SYNC"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$DB\` ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+
+# shellcheck source=/dev/null
+. "$CUR_DIR/lazy_load_tables_merge_tree_operations_part_$part.lib"
+
+$CLICKHOUSE_CLIENT -q "DROP DATABASE \`$DB\` SYNC"

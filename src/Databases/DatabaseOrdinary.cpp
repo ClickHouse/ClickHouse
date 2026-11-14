@@ -34,7 +34,10 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/isDiskFunction.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
@@ -620,24 +623,6 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
-/// These engines run their ingestion in a background job that only `startup` starts.
-static bool isPushSourceEngine(const String & engine_name)
-{
-    static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
-
-    return push_source_engines.contains(engine_name);
-}
-
-/// Background work that deferring would cancel, or nothing to load, so these are never deferred.
-static bool isEagerEngine(const String & engine_name)
-{
-    static const std::unordered_set<std::string_view> eager_engines
-        = {"Distributed", "Buffer", "MaterializedPostgreSQL", "Merge", "Memory"};
-
-    return eager_engines.contains(engine_name);
-}
-
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -657,29 +642,29 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
         return false;
 
-    if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
-        return false;
-
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
         return false;
 
-    /// A push source starts the background job that feeds its materialized views in its own `startup`,
-    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
-    /// never start and the ingestion would stall silently until the table is read by hand. Load it
-    /// eagerly, as views are - but only when it really has a materialized view to feed, so that an
-    /// unused source table still costs nothing to load.
-    ///
-    /// `TablesLoader` publishes the view dependencies of everything it is about to load into
-    /// `DatabaseCatalog` before it creates the loading jobs, so the graph is already complete here,
-    /// and it also holds the views of the databases that were loaded earlier. A view created later
-    /// resolves its source table, and that materializes and starts up the stand-in on the spot,
-    /// through `StorageProxy::getStorageSnapshot`.
-    if (query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name)
-        && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
+    if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
         return false;
 
-    if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
+    if (!query.storage || !query.storage->engine)
+        return false;
+
+    /// An engine opts in with `supports_deferred_load`. Unregistered engines are not deferred, so
+    /// the real error surfaces from the factory when the table is created.
+    const auto * features = StorageFactory::instance().tryGetStorageFeatures(query.storage->engine->name);
+    if (!features || !features->supports_deferred_load)
+        return false;
+
+    /// Its background job only feeds views, so a table without any costs nothing to defer. The view graph
+    /// is published before the load jobs run, and a view created later loads its source when it resolves it.
+    if (features->defers_only_without_dependent_views && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
+        return false;
+
+    /// The columns of a replicated table with no column list would have to be read from ZooKeeper.
+    if (!query.columns_list || !query.columns_list->columns)
         return false;
 
     return true;
@@ -695,6 +680,8 @@ void DatabaseOrdinary::loadTableLazy(
 
     LOG_TRACE(log, "Lazy-loading table {}", name.getFullName());
 
+    /// The proxy reports only the columns. The rest of the structure is unknown until the real
+    /// storage exists, which `system.tables.is_loaded` reflects.
     ColumnsDescription columns;
     if (query.columns_list && query.columns_list->columns)
         columns = InterpreterCreateQuery::getColumnsDescription(
@@ -726,7 +713,7 @@ void DatabaseOrdinary::loadTableLazy(
     };
 
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns));
+        table_id, std::move(get_nested), std::move(columns), query.storage->engine->name);
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }

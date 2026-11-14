@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-shared-merge-tree, no-replicated-database, no-ordinary-database
+# Tags: zookeeper, no-shared-merge-tree, no-replicated-database, no-ordinary-database, no-parallel
+# Tag no-parallel: `/replicas_status` loads every deferred replicated table on the server, which breaks the other tests
+# that check that their replicated tables in databases with `lazy_load_tables` are still stand-ins.
 # Tag zookeeper: the page under test reports on replicated tables.
 # Tag no-shared-merge-tree: a replica left read-only by an empty Keeper path is a ReplicatedMergeTree state; the private CI rewrites the engine.
 # Tag no-replicated-database: a Replicated database assigns table UUIDs itself, so the ATTACH below cannot name one.

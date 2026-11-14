@@ -362,6 +362,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
         SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password"}},
         {
             .supports_schema_inference = true,
+            .supports_deferred_load = true,
             .source_access_type = AccessTypeObjects::Source::ARROW_FLIGHT,
         },
         Documentation{

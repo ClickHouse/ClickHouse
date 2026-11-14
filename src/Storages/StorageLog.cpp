@@ -1463,6 +1463,7 @@ void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
+        .supports_deferred_load = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
         .stores_data_on_disk = true,
         .supports_temporary = true,

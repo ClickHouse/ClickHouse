@@ -2,6 +2,7 @@
 
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 

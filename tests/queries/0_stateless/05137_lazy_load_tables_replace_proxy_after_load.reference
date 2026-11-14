@@ -1,4 +1,4 @@
-cold engine	TableProxy
+cold engine	MergeTree	0
 select	4
 engine	MergeTree
 parts	1
@@ -11,4 +11,4 @@ cold rejected lightweight delete	2
 projection parts	1
 stopped merges parts	2
 started merges parts	1
-engine after start merges	TableProxy
+engine after start merges	MergeTree	0
