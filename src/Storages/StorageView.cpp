@@ -4,6 +4,7 @@
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/ContextAccess.h>
@@ -92,6 +93,15 @@ namespace ErrorCodes
 
 namespace
 {
+
+SelectQueryDescription getViewSelectQuery(const ASTCreateQuery & query)
+{
+    SelectQueryDescription description;
+    description.inner_query = query.select->ptr();
+    NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
+    NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
+    return description;
+}
 
 bool isNullableOrLcNullable(DataTypePtr type)
 {
@@ -535,15 +545,9 @@ StorageView::StorageView(
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
-    SelectQueryDescription description;
-
-    description.inner_query = query.select->ptr();
-
-    NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
-    NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
 
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
-    storage_metadata.setSelectQuery(description);
+    storage_metadata.setSelectQuery(getViewSelectQuery(query));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
@@ -854,6 +858,16 @@ void StorageView::alter(
     else
         instance.removeDependencies(table_id);
 
+    setInMemoryMetadata(new_metadata);
+}
+
+void StorageView::updateReferencedTables(const ASTCreateQuery & create, ContextPtr local_context)
+{
+    auto metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ true);
+    StorageInMemoryMetadata new_metadata = *metadata;
+    new_metadata.setSelectQuery(getViewSelectQuery(create));
+    if (!is_parameterized_view && create.columns_list && create.columns_list->columns)
+        new_metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(*create.columns_list, local_context, LoadingStrictnessLevel::ATTACH));
     setInMemoryMetadata(new_metadata);
 }
 

@@ -407,6 +407,11 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
+void IStorage::updateReferencedTables(const ASTCreateQuery &, ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage {} does not support updating its references to other tables", getName());
+}
+
 bool IStorage::hasUniqueKey() const
 {
     return metadata.get()->hasUniqueKey();

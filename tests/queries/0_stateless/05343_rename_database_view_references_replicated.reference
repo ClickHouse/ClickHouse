@@ -1,0 +1,23 @@
+-- views of the renamed Replicated database
+_r2.dest: 3
+_r2.inline_mv: 3
+_r2.pv: 3
+['inline_mv','mv','pv']
+1
+_r2.dest: 6
+_r2.inline_mv: 6
+_r2.pv: 6
+1
+-- views of a Replicated database over a renamed Atomic database
+_ext.v: 4
+_ext.d: 4
+['mv','v']
+1
+-- a view of the renamed Replicated database over another database
+the definition in Keeper is unchanged
+_u2.v: 4
+1
+-- Keeper holds a definition this replica has not applied yet
+the newer definition in Keeper is kept
+_nw.v: 1
+1
