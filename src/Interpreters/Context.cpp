@@ -530,6 +530,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 namespace
@@ -9392,7 +9393,13 @@ void Context::setInputInitializer(InputInitializer && initializer)
 void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
 {
     if (!input_initializer_callback)
+    {
+        /// The server sets both callbacks together and resets only the initializer once `input` is read, so the
+        /// blocks reader without the initializer means a second read of the same input, e.g. from a view in RETURNING.
+        if (input_blocks_reader)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function can be read only once per query");
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
+    }
 
     input_initializer_callback(shared_from_this(), columns, header);
     /// Reset callback
