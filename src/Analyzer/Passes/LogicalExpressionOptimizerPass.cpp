@@ -1431,6 +1431,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 /// Rebuild the root of a logical operator as an `and` over `arguments`, converted to `result_type`.
 /// A lone argument is still wrapped in `and(arg, 1)`, because the plain `_CAST(arg, UInt8)` below
 /// would map values like `0.5` to `0` where the enclosing operator read them as true.
+/// Returns nullptr when the result is not `Nothing` but `result_type` is: no value converts to `Nothing`.
 static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, const DataTypePtr & result_type, const ContextPtr & context)
 {
     if (arguments.size() == 1 && arguments.front()->getResultType()->equals(*result_type))
@@ -1446,7 +1447,11 @@ static QueryTreeNodePtr buildAndNodeWithResultType(QueryTreeNodes arguments, con
 
     QueryTreeNodePtr result = std::move(and_function_node);
     if (!result->getResultType()->equals(*result_type))
+    {
+        if (isNothing(result_type))
+            return nullptr;
         result = buildCastFunction(result, result_type, context);
+    }
     return result;
 }
 
@@ -1462,7 +1467,8 @@ static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const Cont
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context);
+        if (auto new_node = buildAndNodeWithResultType(std::move(new_root_arguments), node->getResultType(), context))
+            node = std::move(new_node);
     }
 }
 
@@ -1500,7 +1506,8 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
     if (!extracted_something)
         return;
 
-    node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context);
+    if (auto new_node = buildAndNodeWithResultType(std::move(new_top_level_arguments), node->getResultType(), context))
+        node = std::move(new_node);
 }
 
 static void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
