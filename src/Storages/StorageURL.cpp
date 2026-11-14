@@ -48,6 +48,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
+#include <Common/encodeSpacesInURI.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
@@ -189,8 +190,9 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
-String getSampleURI(String uri, ContextPtr context)
+String getSamplePath(const String & uri, ContextPtr context)
 {
+    String sample_uri = uri;
     if (urlWithGlobs(uri))
     {
         /// Only the first address is needed, to read the hive partitioning and the virtual columns off
@@ -199,9 +201,10 @@ String getSampleURI(String uri, ContextPtr context)
             uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
         String first_uri;
         if (generator.next(first_uri))
-            return first_uri;
+            sample_uri = std::move(first_uri);
     }
-    return uri;
+    /// Parse as the reader does, or the inferred hive partition values differ from the read ones (`a b` vs `a%20b`).
+    return Poco::URI(sample_uri, context->getSettingsRef()[Setting::enable_url_encoding]).getPath();
 }
 
 static bool maskURLCredentials(String & url);
@@ -268,7 +271,7 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    const auto sample_path = getSampleURI(uri, context_);
+    const auto sample_path = getSamplePath(uri, context_);
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
         sample_path,
@@ -354,6 +357,7 @@ public:
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
         , filter_context(context)
+        , enable_url_encoding(context->getSettingsRef()[Setting::enable_url_encoding])
     {
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
         /// would break it. It still goes through this iterator, for the `_path` / `_file` filter.
@@ -536,8 +540,10 @@ private:
 
         std::vector<String> paths;
         paths.reserve(uris.size());
+        /// Parse the address exactly as the reader does, or the filter sees another `_path` / `_file`
+        /// than the one the reader materializes and wrongly drops the address.
         for (const auto & uri : uris)
-            paths.push_back(Poco::URI(uri).getPath());
+            paths.push_back(Poco::URI(uri, enable_url_encoding).getPath());
 
         VirtualColumnUtils::filterByPathOrFile(
             uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
@@ -556,6 +562,7 @@ private:
     const NamesAndTypesList filter_virtual_columns;
     const NamesAndTypesList filter_hive_columns;
     const ContextPtr filter_context;
+    const bool enable_url_encoding;
 
     Strings batch TSA_GUARDED_BY(mutex);
     size_t batch_index TSA_GUARDED_BY(mutex) = 0;
@@ -1521,7 +1528,8 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+        /// The partition ID comes from the data, so it can hold spaces even though `uri` cannot.
+        std::string partition_path = encodeSpacesInURI(partition_strategy->getPathForWrite(uri, partition_id));
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
@@ -2658,6 +2666,16 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
+String StorageURL::encodeSpacesInHTTPURL(const String & url, const String & request_method)
+{
+    if (classifyURLScheme(url) != URLSchemeTarget::URL)
+        return url;
+    /// The index-page backend splits off the archive path, whose ` :: ` separator holds spaces, and encodes the rest itself.
+    if (request_method.empty() && urlPathHasListableGlobs(url))
+        return url;
+    return encodeSpacesInURI(url);
+}
+
 bool StorageURL::isAbsoluteURL(const String & url)
 {
     /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
@@ -2970,12 +2988,16 @@ void StorageURL::overrideURLInEngineArgs(
     if (skip_userinfo && urlHasUserInfo(resolved_url))
         return;
 
+    /// The spaces of the resolved URL are encoded when it enters the configuration, and again on every load,
+    /// so a URL that differs only in them is the same one. Persisting it would turn the encoding into an
+    /// explicit `url` override, which a named collection may forbid.
+    const auto is_same_url = [&](const String & url) { return encodeSpacesInURI(url) == encodeSpacesInURI(resolved_url); };
+
     /// Positional form: `URL('url', ...)` — replace the first literal argument.
     if (const auto * existing_literal = args[0]->as<ASTLiteral>();
         existing_literal && existing_literal->value.getType() == Field::Types::String)
     {
-        const auto & current_url = existing_literal->value.safeGet<String>();
-        if (current_url != resolved_url)
+        if (!is_same_url(existing_literal->value.safeGet<String>()))
             args[0] = make_intrusive<ASTLiteral>(resolved_url);
         return;
     }
@@ -2987,7 +3009,7 @@ void StorageURL::overrideURLInEngineArgs(
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
             args, context, /*throw_unknown_collection=*/false, nullptr, nullptr, /* settings= */ nullptr, is_replayed_definition))
     {
-        if (named_collection->getOrDefault<String>("url", "") == resolved_url)
+        if (is_same_url(named_collection->getOrDefault<String>("url", "")))
             return;
     }
 
@@ -3048,6 +3070,7 @@ StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, cons
     /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     configuration.url = resolveURLBase(configuration.url, url_base);
+    configuration.url = encodeSpacesInHTTPURL(configuration.url, configuration.http_method);
 
     if (configuration.format == "auto")
     {

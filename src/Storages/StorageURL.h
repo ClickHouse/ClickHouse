@@ -165,7 +165,8 @@ private:
 
 bool urlWithGlobs(const String & uri);
 
-String getSampleURI(String uri, ContextPtr context);
+/// The path of the first address of `uri`, as the reader materializes it.
+String getSamplePath(const String & uri, ContextPtr context);
 
 /// The `URL` engine and the `url` table function act as a unified wrapper on top of the
 /// File and object-storage engines: they dispatch to the right backend based on the URL scheme.
@@ -451,6 +452,12 @@ public:
 
     /// Returns true if `url` starts with `scheme://`, so that `resolveURLBase` returns it unchanged for any base.
     static bool isAbsoluteURL(const String & url);
+
+    /// `Poco::URI` rejects spaces, but they are common in object keys (e.g. `a b.csv`). Percent-encodes them
+    /// once, where the user URL enters the configuration, so every consumer sees the same valid URL.
+    /// Returns `url` unchanged when `StorageURL` does not read it: URLs of other schemes are handled by
+    /// the backends they dispatch to, and the HTTP index-page backend encodes it after the archive split.
+    static String encodeSpacesInHTTPURL(const String & url, const String & request_method);
 
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.

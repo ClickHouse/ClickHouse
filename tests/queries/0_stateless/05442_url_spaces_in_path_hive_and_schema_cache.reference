@@ -1,0 +1,7 @@
+hive
+1	2026-10-22%2012:00:00	LowCardinality(String)	a%20b
+1	2026-10-22 12:00:00	DateTime	a b
+1	2026-10-22 12:00:00	DateTime	a b
+1	2026-10-22 12:00:00	DateTime	a b
+schema cache
+1

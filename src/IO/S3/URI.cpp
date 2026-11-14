@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+#include <Common/encodeSpacesInURI.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
@@ -80,6 +81,12 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     else
         uri_str = uri_;
 
+    const String uri_without_archive_path = uri_str;
+
+    /// `Poco::URI` rejects spaces, which are common in object keys. Encode them once, after the archive split,
+    /// whose ` :: ` separator holds spaces. `uri_str` is also the source-access URI, so it is encoded as well.
+    uri_str = encodeSpacesInURI(uri_str);
+
     uri = Poco::URI(uri_str);
     /// Keep a copy of how Poco parsed the original string before any mapping
     Poco::URI original_uri(uri_str);
@@ -138,10 +145,11 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
             has_version_id = true;
         }
     }
-    if (!has_version_id && !looks_like_presigned && uri_.contains('?'))
+    /// Not `uri_str`: `Poco::URI::encode` also encodes the `%` of its encoded spaces.
+    if (!has_version_id && !looks_like_presigned && uri_without_archive_path.contains('?'))
     {
         String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
+        Poco::URI::encode(uri_without_archive_path, "?", uri_with_question_mark_encode);
         uri = Poco::URI(uri_with_question_mark_encode);
         if (!mapper.empty())
             URIConverter::modifyURI(uri, mapper);
