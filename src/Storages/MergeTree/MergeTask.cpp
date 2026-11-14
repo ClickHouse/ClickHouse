@@ -39,6 +39,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/NestedElementsValidationTransform.h>
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -249,6 +250,43 @@ private:
     std::shared_ptr<BuildStatisticsTransform> transform;
 };
 
+class ValidateNestedArraySizesStep : public ITransformingStep
+{
+public:
+    explicit ValidateNestedArraySizesStep(SharedHeader input_header_)
+        : ITransformingStep(input_header_, input_header_, getTraits())
+    {
+    }
+
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        pipeline.addSimpleTransform([](const SharedHeader & header) { return std::make_shared<NestedElementsValidationTransform>(header); });
+    }
+
+    void updateOutputHeader() override
+    {
+        output_header = input_headers.front();
+    }
+
+    String getName() const override { return "ValidateNestedArraySizes"; }
+
+private:
+    static Traits getTraits()
+    {
+        return Traits
+        {
+            {
+                .returns_single_stream = true,
+                .preserves_number_of_streams = true,
+                .preserves_sorting = true,
+            },
+            {
+                .preserves_number_of_rows = true,
+            }
+        };
+    }
+};
+
 static void throwIfPipelineCancelled(const QueryPipeline & pipeline)
 {
     const auto process_list_element = pipeline.getProcessListElement();
@@ -285,6 +323,28 @@ static void addMissedColumnsToSerializationInfos(
         new_info->addDefaults(num_rows_in_parts);
         new_infos.emplace(column.name, std::move(new_info));
     }
+}
+
+/// Whether `part` stores a `Nested` array member as another type: its sizes after the conversion on read are then
+/// not the sizes stored for the other members, which share one sizes stream with it in the merged part.
+static bool storesNestedMemberAsNonArray(
+    const MergeTreeDataPartPtr & part, const AlterConversions & conversions, const NamesAndTypesList & storage_columns)
+{
+    const auto & columns_in_part = part->getColumnsDescription();
+    for (const auto & column : storage_columns)
+    {
+        if (!isArray(column.type) || Nested::splitName(column.name).second.empty())
+            continue;
+
+        String name_in_part = conversions.isColumnRenamed(column.name) ? conversions.getColumnOldName(column.name) : column.name;
+        if (conversions.isColumnDropped(name_in_part, /*share_nested_offsets=*/ true))
+            continue;
+
+        auto column_in_part = columns_in_part.tryGetPhysical(name_in_part);
+        if (column_in_part && !isArray(column_in_part->type))
+            return true;
+    }
+    return false;
 }
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
@@ -3743,6 +3803,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->context,
             ctx->log);
 
+        if ((*merge_tree_settings)[MergeTreeSetting::share_nested_offsets]
+            && storesNestedMemberAsNonArray(part, *global_ctx->alter_conversions[i], global_ctx->storage_columns))
+            plan_for_part->addStep(std::make_unique<ValidateNestedArraySizesStep>(plan_for_part->getCurrentHeader()));
+
         /// Add step for building missed text indexes and statistics for single parts.
         /// If merge may reduce rows, we will rebuild index and statistics
         /// for the resulting part in the end of the pipeline.
@@ -4089,6 +4153,16 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     bool enough_total_bytes = total_size_bytes_uncompressed >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_bytes_to_activate];
 
     bool no_parts_overflow = global_ctx->future_part->parts.size() <= RowSourcePart::MAX_PARTS;
+
+    if ((*merge_tree_settings)[MergeTreeSetting::share_nested_offsets])
+    {
+        /// The array sizes of a Nested member converted on read are checked against the other members in one block.
+        for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
+        {
+            if (storesNestedMemberAsNonArray(global_ctx->future_part->parts[i], *global_ctx->alter_conversions[i], global_ctx->storage_columns))
+                return MergeAlgorithm::Horizontal;
+        }
+    }
 
     auto merge_alg = (is_supported_storage && enough_total_rows && enough_total_bytes && enough_ordinary_cols && no_parts_overflow) ?
                         MergeAlgorithm::Vertical : MergeAlgorithm::Horizontal;
