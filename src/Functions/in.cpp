@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -345,6 +346,22 @@ public:
 
         ColumnsWithTypeAndName columns_of_key_columns;
         auto set_types = set->getDataTypes();
+
+        if (in_null_as_unknown && set_types.size() == 1)
+        {
+            const auto left_type = removeNullable(removeLowCardinality(left_arg.type));
+            const auto key_type = removeNullable(removeLowCardinality(set_types[0]));
+            const bool mixed_temporal_types = !left_type->equals(*key_type)
+                && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_type)
+                    || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
+            const bool incompatible_numeric_types = isNumber(left_type) && isNumber(key_type)
+                && !tryGetLeastSupertype(DataTypes{left_type, key_type});
+            if (mixed_temporal_types || incompatible_numeric_types)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a prepared set of {} in function {}",
+                    left_arg.type->getName(), set_types[0]->getName(), getName());
+        }
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
         {
