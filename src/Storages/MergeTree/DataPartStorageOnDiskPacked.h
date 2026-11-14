@@ -31,6 +31,8 @@ public:
         const ReadSettings & read_settings_,
         bool initialize_ = true);
 
+    ~DataPartStorageOnDiskPacked() override;
+
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Packed; }
 
     MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
@@ -88,6 +90,9 @@ public:
 
     /// Finalizes writer and writes buffered data into transaction.
     void precommitTransaction() override;
+    void startPrecommitTransaction() override;
+    void cancelPrecommitTransaction() override;
+    size_t getPendingPrecommitBytes() const override { return pending_writer_finalization ? pending_writer_finalization->size : 0; }
     void undoTransaction() override;
 
     void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & tmp_data, size_t max_bytes_in_memory) override;
@@ -127,6 +132,18 @@ private:
 
     /// Writer is initialized after creating a disk transaction.
     std::optional<PackedFilesWriter> writer;
+
+    struct PendingWriterFinalization
+    {
+        std::unique_ptr<WriteBufferFromFileBase> buffer;
+        PackedFilesIO::Index index;
+        String archive_path;
+        size_t size;
+        bool need_sync;
+        bool replace_archive;
+    };
+
+    std::optional<PendingWriterFinalization> pending_writer_finalization;
 
     /// Where the writer moves the buffered data of the active transaction, see setTemporaryDataForTransaction.
     struct TemporaryDataForTransaction
@@ -183,6 +200,7 @@ private:
 
     void resetReader(const ReadSettings & read_settings);
     void resetWriterFromTransaction();
+    void preFinalizeWriter();
     void finalizeWriter();
     void setTemporaryDataToWriter();
 
