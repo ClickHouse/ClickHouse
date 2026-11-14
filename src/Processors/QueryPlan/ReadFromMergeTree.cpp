@@ -5578,7 +5578,7 @@ void ReadFromMergeTree::readDistributedReadTaskBuckets(const BuildQueryPipelineS
             readVarUInt(border_arity, buf);
             size_t num_borders = 0;
             readVarUInt(num_borders, buf);
-            bucket.borders.assign(num_borders, std::vector<Field>(border_arity));
+            bucket.borders.assign(num_borders, VectorWithMemoryTracking<Field>(border_arity));
             for (auto & border : bucket.borders)
                 for (size_t i = 0; i < border_arity; ++i)
                     primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
