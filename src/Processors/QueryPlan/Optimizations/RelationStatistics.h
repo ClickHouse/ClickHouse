@@ -58,7 +58,7 @@ namespace QueryPlanOptimizations
 /// them now only while they are enclosing bounds, so such a reader never sees a range the estimator used to clear
 /// unless the range still bounds the produced values. Call it after the site has recorded all of its transformations.
 void keepOnlyEnclosingValueRange(ColumnStats & stats);
-void keepOnlyEnclosingValueRanges(std::unordered_map<String, ColumnStats> & column_stats);
+void keepOnlyEnclosingValueRanges(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats);
 
 /// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
 /// An output inherits an input's stats when it is that input, an alias of it, or a deterministic

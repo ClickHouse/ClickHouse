@@ -31,7 +31,7 @@ void keepOnlyEnclosingValueRange(ColumnStats & stats)
     stats.max_value.reset();
 }
 
-void keepOnlyEnclosingValueRanges(std::unordered_map<String, ColumnStats> & column_stats)
+void keepOnlyEnclosingValueRanges(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats)
 {
     for (auto & [_, stats] : column_stats)
         keepOnlyEnclosingValueRange(stats);
