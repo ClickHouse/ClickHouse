@@ -1036,16 +1036,28 @@ public:
                     break;
                 }
 
-                // Fallback to original conversion if string parsing fails
-                // This ensures backward compatibility and robustness
-                value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale);
+                /// Use the non-throwing conversion so that an out-of-range number degrades to the default value,
+                /// matching the `STRING` case below and the best-effort contract of `JSONExtract`.
+                if (!tryConvertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale, value))
+                {
+                    error = fmt::format("cannot convert double value {} to Decimal", element.getDouble());
+                    return false;
+                }
                 break;
             }
             case ElementType::UINT64:
-                value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), scale);
+                if (!tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), scale, value))
+                {
+                    error = fmt::format("cannot convert UInt64 value {} to Decimal", element.getUInt64());
+                    return false;
+                }
                 break;
             case ElementType::INT64:
-                value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(element.getInt64(), scale);
+                if (!tryConvertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(element.getInt64(), scale, value))
+                {
+                    error = fmt::format("cannot convert Int64 value {} to Decimal", element.getInt64());
+                    return false;
+                }
                 break;
             case ElementType::STRING:
             {
@@ -1245,7 +1257,12 @@ public:
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale);
+                    /// Use the non-throwing conversion so that an out-of-range number degrades to the default value.
+                    if (!tryConvertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale, value))
+                    {
+                        error = fmt::format("cannot convert double value {} to Time64", element.getDouble());
+                        return false;
+                    }
                     break;
                 case ElementType::UINT64:
                     value.value = element.getUInt64();
