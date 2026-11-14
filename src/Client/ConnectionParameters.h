@@ -28,6 +28,10 @@ struct ConnectionParameters
     std::string default_database;
     std::string user;
     std::string password;
+    /// Set when `password` carries a time-based one-time password after a '+'. The server accepts every such
+    /// code once, so a session opened later (a background job) needs a fresh one: see `renewSecondFactor`.
+    bool has_second_factor = false;
+    std::string password_without_second_factor;
     std::string proto_send_chunked = "notchunked";
     std::string proto_recv_chunked = "notchunked";
     std::string quota_key;
@@ -56,6 +60,17 @@ struct ConnectionParameters
     ConnectionParameters() = default;
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config_, const Host & host_, const Database & database_);
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config_, const Host & host_, const Database & database_, std::optional<UInt16> port_);
+
+#if USE_JWT_CPP && USE_SSL
+    /// Replaces `jwt` with the current token of `jwt_provider`, which refreshes it when it is expired or about to expire.
+    /// For parameters copied from a login that happened a while ago, e.g. by a background job.
+    void refreshJWT();
+#endif
+
+    /// Replaces the one-time password of `password` with a freshly entered one. Asks on the terminal, so call it
+    /// from the thread that owns it. Returns false if there is nothing to ask with (no terminal) or nothing was entered.
+    /// Does nothing and returns true if the login did not use a one-time password.
+    bool renewSecondFactor();
 
     static UInt16 getPortFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host);
 

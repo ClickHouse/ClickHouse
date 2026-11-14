@@ -1,0 +1,39 @@
+#!/usr/bin/expect -f
+
+# With TERM=dumb the line editor reads the prompt with getline, so a statement typed during a query
+# must stay in the terminal and run at the next prompt.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# CLICKHOUSE_CLIENT_EXPECT_OPT keeps the progress table toggle off, the case the interceptor is not needed for.
+set history_file $CLICKHOUSE_TMP/$basename.history
+spawn bash -c {
+    source "$1/../shell_config.sh"
+    TERM=dumb ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --history_file="$2"
+} bash $basedir $history_file
+expect ":) "
+
+send -- "SELECT sleep(2) FORMAT Null\r"
+expect -ex "SELECT sleep(2) FORMAT Null\r\n"
+sleep 0.5
+send -- "SELECT 'typed-ahead-05406' FORMAT TabSeparatedRaw;\r"
+expect -ex "typed-ahead-05406\r\n"
+expect ":) "
+
+send -- "\4"
+expect eof

@@ -1,7 +1,11 @@
 #pragma once
 
+#include <BackgroundQuery.h>
 #include <Client/ClientApplicationBase.h>
 #include <Common/QueryScope.h>
+
+#include <atomic>
+#include <span>
 
 
 namespace BuzzHouse
@@ -55,6 +59,17 @@ protected:
 
     void processConfig() override;
 
+    bool tryProcessInteractiveClientCommand(std::string_view input) override;
+    std::span<const std::string_view> getInteractiveClientCommandNames() const override
+    {
+        static constexpr std::string_view names[]{"\\bg", "\\cancel", "\\fg", "\\jobs"};
+        return names;
+    }
+
+    bool tryExecuteDetachableQuery(std::string_view query, const ASTPtr & parsed_query, size_t insert_query_without_data_length) override;
+    bool supportsQueryDetachment() const override { return true; }
+    void requestQueryDetachment() override { query_detachment_requested.store(true, std::memory_order_release); }
+
     void readArguments(
         int argc,
         char ** argv,
@@ -87,6 +102,8 @@ private:
     std::vector<String> loadWarningMessages();
 
     QueryScope query_scope;
+    BackgroundQueryManager background_queries;
+    std::atomic_bool query_detachment_requested{false};
 
 #if USE_JWT_CPP && USE_SSL
     std::shared_ptr<JWTProvider> jwt_provider;

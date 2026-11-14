@@ -1,0 +1,94 @@
+#!/usr/bin/expect -f
+
+# A background `INTO OUTFILE` without a `FORMAT` clause or a recognized file extension must write the same
+# file as the foreground does: TabSeparated, not a Pretty table that is cut to 1000 displayed rows.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+set background_file $CLICKHOUSE_TMP/$basename.background_export
+set foreground_file $CLICKHOUSE_TMP/$basename.foreground_export
+file delete -force $background_file $foreground_file
+
+log_user 0
+set timeout 60
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# Give replxx time to consume text before sending carriage return on loaded machines.
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+proc read_file {path} {
+    set handle [open $path r]
+    set content [read $handle]
+    close $handle
+    return $content
+}
+
+# `\jobs` is the synchronization point for completion, retry to stay deterministic under heavy CI load.
+proc wait_for_job_success {job_id} {
+    set done_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed)} $job_id]
+    set waiting_re [format {(?i)\[%s\][^\r\n]*(starting|running)} $job_id]
+    set failed_re [format {(?i)\[%s\][^\r\n]*(failed|cancel+ed)} $job_id]
+    for {set attempt 0} {$attempt < 200} {incr attempt} {
+        submit {\jobs}
+        expect {
+            -re $done_re {
+                expect ":) "
+                return
+            }
+            -re $waiting_re {
+                expect ":) "
+                after 100
+            }
+            -re $failed_re {
+                exit 1
+            }
+        }
+    }
+    exit 1
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+submit [format {\bg SELECT number FROM numbers(1001) INTO OUTFILE '%s'} $background_file]
+expect -re {(?i)(job[^\r\n]*1[^\r\n]*start|start[^\r\n]*job[^\r\n]*1)}
+expect ":) "
+wait_for_job_success 1
+
+submit {\fg 1}
+expect -re {Background job[[:space:]]+1[[:space:]]+(succeeded|completed)}
+expect ":) "
+
+submit [format {SELECT number FROM numbers(1001) INTO OUTFILE '%s'} $foreground_file]
+expect ":) "
+
+set background_content [read_file $background_file]
+set foreground_content [read_file $foreground_file]
+
+# All 1001 rows, one value per line, as the foreground wrote them.
+set lines [split [string trimright $foreground_content "\n"] "\n"]
+if {[llength $lines] != 1001 || [lindex $lines 0] ne "0" || [lindex $lines end] ne "1000"} {
+    exit 1
+}
+if {$background_content ne $foreground_content} {
+    exit 1
+}
+
+send -- "\4"
+expect eof
+
+file delete -force $history_file $background_file $foreground_file
