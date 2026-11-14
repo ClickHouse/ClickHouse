@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserStringAndSubstitution.h>
+#include <Parsers/PartialASTCapture.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/typeid_cast.h>
 
@@ -22,6 +24,23 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int SYNTAX_ERROR;
+}
+
+namespace
+{
+
+/// The `db` of a `db.` that `parseDatabaseAndTableName` read and then cleared, because no table name
+/// followed it; `name_pos` is where the name starts. Only the partial AST uses it, to keep what parsed.
+String databaseOfIncompleteTableName(IParser::Pos name_pos)
+{
+    Expected scratch;
+    ASTPtr database;
+    String database_name;
+    if (ParserIdentifier().parse(name_pos, database, scratch) && ParserToken(TokenType::Dot).ignore(name_pos))
+        tryGetIdentifierNameInto(database, database_name);
+    return database_name;
+}
+
 }
 
 bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -187,6 +206,64 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_snapshot_desc;
     ASTPtr command_refresh;
 
+    /// The members stay in the locals above until the whole command has parsed, and a branch sets the
+    /// type, and some flags, only at its end, so the fragment a failure captures is assembled from the
+    /// locals with the type and flags of its branch; see `Parsers/PartialASTCapture.h`.
+    /// `table_name_pos` is where a `[db.]table` name that failed starts, if one did. `parseDatabaseAndTableName`
+    /// clears the `db` of a `db.` that no table name followed, and the partial command keeps it.
+    auto command_so_far = [&](ASTAlterCommand::Type type,
+                              void (*set_flags)(ASTAlterCommand &) = nullptr,
+                              const IParser::Pos * table_name_pos = nullptr) -> ASTPtr
+    {
+        auto partial = boost::static_pointer_cast<ASTAlterCommand>(command->clone());
+        partial->type = type;
+        if (set_flags)
+            set_flags(*partial);
+        if (table_name_pos)
+            (type == ASTAlterCommand::MOVE_PARTITION ? partial->to_database : partial->from_database)
+                = databaseOfIncompleteTableName(*table_name_pos);
+        auto add = [&](IAST *& member, const ASTPtr & local)
+        {
+            if (local)
+                member = partial->children.emplace_back(local).get();
+        };
+        add(partial->col_decl, command_col_decl);
+        add(partial->column, command_column);
+        add(partial->order_by, command_order_by);
+        add(partial->sample_by, command_sample_by);
+        add(partial->index_decl, command_index_decl);
+        add(partial->index, command_index);
+        add(partial->constraint_decl, command_constraint_decl);
+        add(partial->constraint, command_constraint);
+        add(partial->projection_decl, command_projection_decl);
+        add(partial->projection, command_projection);
+        add(partial->statistics_decl, command_statistics_decl);
+        add(partial->partition, command_partition);
+        add(partial->partitions, command_partitions);
+        add(partial->predicate, command_predicate);
+        add(partial->update_assignments, command_update_assignments);
+        add(partial->comment, command_comment);
+        add(partial->ttl, command_ttl);
+        add(partial->settings_changes, command_settings_changes);
+        add(partial->settings_resets, command_settings_resets);
+        if (command_add_enum_values)
+            partial->add_enum_values = partial->children.emplace_back(command_add_enum_values);
+        add(partial->select, command_select);
+        add(partial->sql_security, command_sql_security);
+        add(partial->rename_to, command_rename_to);
+        add(partial->snapshot_desc, command_snapshot_desc);
+        add(partial->refresh, command_refresh);
+        return partial;
+    };
+    const auto set_part = [](ASTAlterCommand & partial) { partial.part = true; };
+    const auto set_detach = [](ASTAlterCommand & partial) { partial.detach = true; };
+    const auto set_detach_part = [](ASTAlterCommand & partial) { partial.part = partial.detach = true; };
+    const auto set_clear_column = [](ASTAlterCommand & partial) { partial.clear_column = true; };
+    const auto set_clear_index = [](ASTAlterCommand & partial) { partial.clear_index = true; };
+    const auto set_clear_projection = [](ASTAlterCommand & partial) { partial.clear_projection = true; };
+    const auto set_no_replace = [](ASTAlterCommand & partial) { partial.replace = false; };
+    const auto set_move_to_table = [](ASTAlterCommand & partial) { partial.move_destination_type = DataDestinationType::TABLE; };
+
     if (with_round_bracket)
     {
         if (!parser_opening_round_bracket.ignore(pos, expected))
@@ -200,13 +277,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (s_modify_setting.ignore(pos, expected))
             {
                 if (!parser_settings.parse(pos, command_settings_changes, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(
+                        expected, command_so_far(ASTAlterCommand::MODIFY_DATABASE_SETTING), pos, "settings_changes");
                     return false;
+                }
                 command->type = ASTAlterCommand::MODIFY_DATABASE_SETTING;
             }
             else if (s_modify_comment.ignore(pos, expected))
             {
                 if (!parser_string_literal.parse(pos, command_comment, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_DATABASE_COMMENT), pos, "comment");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_DATABASE_COMMENT;
             }
@@ -222,14 +306,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_not_exists = true;
 
                 if (!parser_col_decl.parse(pos, command_col_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_COLUMN), pos, "col_decl");
                     return false;
+                }
 
                 if (s_first.ignore(pos, expected))
                     command->first = true;
                 else if (s_after.ignore(pos, expected))
                 {
                     if (!parser_name.parse(pos, command_column, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_COLUMN), pos, "column");
                         return false;
+                    }
                 }
 
                 command->type = ASTAlterCommand::ADD_COLUMN;
@@ -240,20 +330,32 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_column, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::RENAME_COLUMN), pos, "column");
                     return false;
+                }
 
                 if (!s_to.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::RENAME_COLUMN), pos, "rename_to");
                     return false;
+                }
 
                 if (!parser_name.parse(pos, command_rename_to, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::RENAME_COLUMN), pos, "rename_to");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::RENAME_COLUMN;
             }
             else if (s_materialize_column.ignore(pos, expected))
             {
                 if (!parser_name.parse(pos, command_column, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MATERIALIZE_COLUMN), pos, "column");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MATERIALIZE_COLUMN;
                 command->detach = false;
@@ -261,20 +363,29 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MATERIALIZE_COLUMN), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_drop_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_PARTITION), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
             }
             else if (s_drop_part.ignore(pos, expected))
             {
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_PARTITION, set_part), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
                 command->part = true;
@@ -282,21 +393,31 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_forget_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FORGET_PARTITION), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::FORGET_PARTITION;
             }
             else if (s_drop_detached_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_DETACHED_PARTITION), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_DETACHED_PARTITION;
             }
             else if (s_drop_detached_part.ignore(pos, expected))
             {
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(
+                        expected, command_so_far(ASTAlterCommand::DROP_DETACHED_PARTITION, set_part), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_DETACHED_PARTITION;
                 command->part = true;
@@ -307,7 +428,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_column, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_COLUMN), pos, "column");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_COLUMN;
                 command->detach = false;
@@ -318,7 +442,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_column, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_COLUMN, set_clear_column), pos, "column");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_COLUMN;
                 command->clear_column = true;
@@ -327,7 +454,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(
+                            expected, command_so_far(ASTAlterCommand::DROP_COLUMN, set_clear_column), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_add_index.ignore(pos, expected))
@@ -336,14 +467,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_not_exists = true;
 
                 if (!parser_idx_decl.parse(pos, command_index_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_INDEX), pos, "index_decl");
                     return false;
+                }
 
                 if (s_first.ignore(pos, expected))
                     command->first = true;
                 else if (s_after.ignore(pos, expected))
                 {
                     if (!parser_name.parse(pos, command_index, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_INDEX), pos, "index");
                         return false;
+                    }
                 }
 
                 command->type = ASTAlterCommand::ADD_INDEX;
@@ -354,7 +491,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_index, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_INDEX), pos, "index");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_INDEX;
                 command->detach = false;
@@ -365,7 +505,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_index, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_INDEX, set_clear_index), pos, "index");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_INDEX;
                 command->clear_index = true;
@@ -374,7 +517,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(
+                            expected, command_so_far(ASTAlterCommand::DROP_INDEX, set_clear_index), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_materialize_index.ignore(pos, expected))
@@ -383,7 +530,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_index, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MATERIALIZE_INDEX), pos, "index");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MATERIALIZE_INDEX;
                 command->detach = false;
@@ -391,7 +541,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MATERIALIZE_INDEX), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_add_statistics.ignore(pos, expected))
@@ -400,14 +553,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_not_exists = true;
 
                 if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_STATISTICS), pos, "statistics_decl");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::ADD_STATISTICS;
             }
             else if (s_modify_statistics.ignore(pos, expected))
             {
                 if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_STATISTICS), pos, "statistics_decl");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_STATISTICS;
             }
@@ -417,7 +576,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_STATISTICS), pos, "statistics_decl");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_STATISTICS;
             }
@@ -433,12 +595,18 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         command->if_exists = true;
 
                     if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_STATISTICS), pos, "statistics_decl");
                         return false;
+                    }
 
                     if (s_in_partition.ignore(pos, expected))
                     {
                         if (!parser_partition.parse(pos, command_partition, expected))
+                        {
+                            PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_STATISTICS), pos, "partition");
                             return false;
+                        }
                     }
                 }
             }
@@ -452,12 +620,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         command->if_exists = true;
 
                     if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(
+                            expected, command_so_far(ASTAlterCommand::MATERIALIZE_STATISTICS), pos, "statistics_decl");
                         return false;
+                    }
 
                     if (s_in_partition.ignore(pos, expected))
                     {
                         if (!parser_partition.parse(pos, command_partition, expected))
+                        {
+                            PARTIAL_AST_CAPTURE_FRAGMENT(
+                                expected, command_so_far(ASTAlterCommand::MATERIALIZE_STATISTICS), pos, "partition");
                             return false;
+                        }
                     }
                 }
             }
@@ -467,14 +643,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_not_exists = true;
 
                 if (!parser_projection_decl.parse(pos, command_projection_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_PROJECTION), pos, "projection_decl");
                     return false;
+                }
 
                 if (s_first.ignore(pos, expected))
                     command->first = true;
                 else if (s_after.ignore(pos, expected))
                 {
                     if (!parser_name.parse(pos, command_projection, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_PROJECTION), pos, "projection");
                         return false;
+                    }
                 }
 
                 command->type = ASTAlterCommand::ADD_PROJECTION;
@@ -485,7 +667,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_projection, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_PROJECTION), pos, "projection");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_PROJECTION;
                 command->detach = false;
@@ -496,7 +681,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_projection, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(
+                        expected, command_so_far(ASTAlterCommand::DROP_PROJECTION, set_clear_projection), pos, "projection");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_PROJECTION;
                 command->clear_projection = true;
@@ -505,7 +694,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(
+                            expected, command_so_far(ASTAlterCommand::DROP_PROJECTION, set_clear_projection), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_materialize_projection.ignore(pos, expected))
@@ -514,7 +707,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_projection, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MATERIALIZE_PROJECTION), pos, "projection");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MATERIALIZE_PROJECTION;
                 command->detach = false;
@@ -522,7 +718,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MATERIALIZE_PROJECTION), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_modify_projection.ignore(pos, expected))
@@ -531,14 +730,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_projection_decl.parse(pos, command_projection_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_PROJECTION), pos, "projection_decl");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_PROJECTION;
             }
             else if (s_move_part.ignore(pos, expected))
             {
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MOVE_PARTITION, set_part), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MOVE_PARTITION;
                 command->part = true;
@@ -552,18 +757,29 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->move_destination_type = DataDestinationType::SHARD;
                 }
                 else
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(
+                        expected, command_so_far(ASTAlterCommand::MOVE_PARTITION, set_part), pos, "move_destination_name");
                     return false;
+                }
 
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(
+                        expected, command_so_far(ASTAlterCommand::MOVE_PARTITION, set_part), pos, "move_destination_name");
                     return false;
+                }
 
                 command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
             }
             else if (s_move_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MOVE_PARTITION), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MOVE_PARTITION;
 
@@ -573,18 +789,30 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->move_destination_type = DataDestinationType::VOLUME;
                 else if (s_to_table.ignore(pos, expected))
                 {
+                    const auto name_pos = pos;
                     if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(
+                            expected, command_so_far(ASTAlterCommand::MOVE_PARTITION, set_move_to_table, &name_pos), pos, "to_table");
                         return false;
+                    }
                     command->move_destination_type = DataDestinationType::TABLE;
                 }
                 else
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MOVE_PARTITION), pos, "move_destination_name");
                     return false;
+                }
 
                 if (command->move_destination_type != DataDestinationType::TABLE)
                 {
                     ASTPtr ast_space_name;
                     if (!parser_string_literal.parse(pos, ast_space_name, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(
+                            expected, command_so_far(ASTAlterCommand::MOVE_PARTITION), pos, "move_destination_name");
                         return false;
+                    }
 
                     command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
                 }
@@ -595,7 +823,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_not_exists = true;
 
                 if (!parser_constraint_decl.parse(pos, command_constraint_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ADD_CONSTRAINT), pos, "constraint_decl");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::ADD_CONSTRAINT;
             }
@@ -605,7 +836,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_constraint_decl.parse(pos, command_constraint_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_CONSTRAINT), pos, "constraint_decl");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_CONSTRAINT;
             }
@@ -615,7 +849,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_constraint, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_CONSTRAINT), pos, "constraint");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_CONSTRAINT;
                 command->detach = false;
@@ -623,7 +860,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_detach_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DROP_PARTITION, set_detach), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
                 command->detach = true;
@@ -631,7 +871,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_detach_part.ignore(pos, expected))
             {
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(
+                        expected, command_so_far(ASTAlterCommand::DROP_PARTITION, set_detach_part), pos, "partition");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
                 command->part = true;
@@ -640,12 +884,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_attach_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ATTACH_PARTITION), pos, "partition");
                     return false;
+                }
 
                 if (s_from.ignore(pos, expected))
                 {
+                    const auto name_pos = pos;
                     if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(
+                            expected, command_so_far(ASTAlterCommand::REPLACE_PARTITION, set_no_replace, &name_pos), pos, "from_table");
                         return false;
+                    }
 
                     command->replace = false;
                     command->type = ASTAlterCommand::REPLACE_PARTITION;
@@ -658,13 +910,24 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_replace_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::REPLACE_PARTITION), pos, "partition");
                     return false;
+                }
 
                 if (!s_from.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::REPLACE_PARTITION), pos, "from_table");
                     return false;
+                }
 
+                const auto name_pos = pos;
                 if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(
+                        expected, command_so_far(ASTAlterCommand::REPLACE_PARTITION, nullptr, &name_pos), pos, "from_table");
                     return false;
+                }
 
                 command->replace = true;
                 command->type = ASTAlterCommand::REPLACE_PARTITION;
@@ -672,13 +935,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_attach_part.ignore(pos, expected))
             {
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ATTACH_PARTITION, set_part), pos, "partition");
                     return false;
+                }
 
                 if (s_from.ignore(pos, expected))
                 {
                     ASTPtr ast_from;
                     if (!parser_string_literal.parse(pos, ast_from, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::ATTACH_PARTITION, set_part), pos, "from");
                         return false;
+                    }
 
                     command->from = ast_from->as<ASTLiteral &>().value.safeGet<String>();
                 }
@@ -689,14 +958,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_fetch_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FETCH_PARTITION), pos, "partition");
                     return false;
+                }
 
                 if (!s_from.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FETCH_PARTITION), pos, "from");
                     return false;
+                }
 
                 ASTPtr ast_from;
                 if (!parser_string_literal.parse(pos, ast_from, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FETCH_PARTITION), pos, "from");
                     return false;
+                }
 
                 command->from = ast_from->as<ASTLiteral &>().value.safeGet<String>();
                 command->type = ASTAlterCommand::FETCH_PARTITION;
@@ -704,14 +982,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_fetch_part.ignore(pos, expected))
             {
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FETCH_PARTITION, set_part), pos, "partition");
                     return false;
+                }
 
                 if (!s_from.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FETCH_PARTITION, set_part), pos, "from");
                     return false;
+                }
 
                 ASTPtr ast_from;
                 if (!parser_string_literal.parse(pos, ast_from, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FETCH_PARTITION, set_part), pos, "from");
                     return false;
+                }
                 command->from = ast_from->as<ASTLiteral &>().value.safeGet<String>();
                 command->part = true;
                 command->type = ASTAlterCommand::FETCH_PARTITION;
@@ -721,7 +1008,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::FREEZE_PARTITION), pos, "partition");
                         return false;
+                    }
 
                     command->type = ASTAlterCommand::FREEZE_PARTITION;
                 }
@@ -734,11 +1024,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_with.ignore(pos, expected))
                 {
                     if (!s_name.ignore(pos, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(command->type), pos, "with_name");
                         return false;
+                    }
 
                     ASTPtr ast_with_name;
                     if (!parser_string_literal.parse(pos, ast_with_name, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(command->type), pos, "with_name");
                         return false;
+                    }
 
                     command->with_name = ast_with_name->as<ASTLiteral &>().value.safeGet<String>();
                 }
@@ -748,7 +1044,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UNFREEZE_PARTITION), pos, "partition");
                         return false;
+                    }
 
                     command->type = ASTAlterCommand::UNFREEZE_PARTITION;
                 }
@@ -761,16 +1060,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_with.ignore(pos, expected))
                 {
                     if (!s_name.ignore(pos, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(command->type), pos, "with_name");
                         return false;
+                    }
 
                     ASTPtr ast_with_name;
                     if (!parser_string_literal.parse(pos, ast_with_name, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(command->type), pos, "with_name");
                         return false;
+                    }
 
                     command->with_name = ast_with_name->as<ASTLiteral &>().value.safeGet<String>();
                 }
                 else
                 {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(command->type), pos, "with_name");
                     return false;
                 }
             }
@@ -778,7 +1084,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 ASTPtr ast_snapshot_name;
                 if (!parser_string_literal.parse(pos, ast_snapshot_name, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UNLOCK_SNAPSHOT), pos, "snapshot_name");
                     return false;
+                }
 
                 command->snapshot_name = ast_snapshot_name->as<ASTLiteral &>().value.safeGet<String>();
                 command->type = ASTAlterCommand::UNLOCK_SNAPSHOT;
@@ -786,7 +1095,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_from.ignore(pos, expected))
                 {
                     if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_snapshot_desc, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UNLOCK_SNAPSHOT), pos, "snapshot_desc");
                         return false;
+                    }
                     command_snapshot_desc->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
                 }
             }
@@ -799,7 +1111,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     parser_modify_col_decl.enableCheckTypeKeyword();
 
                 if (!parser_modify_col_decl.parse(pos, command_col_decl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_COLUMN), pos, "col_decl");
                     return false;
+                }
 
                 /// A trailing NULL / NOT NULL modifier needs an explicit column type to apply it
                 /// to, the same way ADD COLUMN / CREATE TABLE do. A type-less MODIFY / ALTER COLUMN
@@ -842,21 +1157,30 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     else if (s_settings.ignore(pos, expected))
                         command->remove_property = toStringView(Keyword::SETTINGS);
                     else
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_COLUMN), pos, "remove_property");
                         return false;
+                    }
                 }
                 else if (s_modify_setting.ignore(pos, expected))
                 {
                     check_no_type(s_modify_setting.getName());
 
                     if (!parser_settings.parse(pos, command_settings_changes, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_COLUMN), pos, "settings_changes");
                         return false;
+                    }
                 }
                 else if (s_reset_setting.ignore(pos, expected))
                 {
                     check_no_type(s_reset_setting.getName());
 
                     if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_COLUMN), pos, "settings_resets");
                         return false;
+                    }
                 }
                 else if (s_add_enum_values.ignore(pos, expected))
                 {
@@ -867,7 +1191,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                     if (!open.ignore(pos, expected) || !parser_add_enum_values.parse(pos, command_add_enum_values, expected)
                         || !close.ignore(pos, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_COLUMN), pos, "add_enum_values");
                         return false;
+                    }
                 }
                 else
                 {
@@ -876,7 +1203,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     else if (s_after.ignore(pos, expected))
                     {
                         if (!parser_name.parse(pos, command_column, expected))
+                        {
+                            PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_COLUMN), pos, "column");
                             return false;
+                        }
                     }
                 }
                 command->type = ASTAlterCommand::MODIFY_COLUMN;
@@ -891,14 +1221,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_modify_order_by.ignore(pos, expected))
             {
                 if (!parser_exp_elem.parse(pos, command_order_by, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_ORDER_BY), pos, "order_by");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_ORDER_BY;
             }
             else if (s_modify_sample_by.ignore(pos, expected))
             {
                 if (!parser_exp_elem.parse(pos, command_sample_by, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_SAMPLE_BY), pos, "sample_by");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
             }
@@ -914,7 +1250,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
                     ASTPtr partition_list_ast;
                     if (!partition_list_parser.parse(pos, partition_list_ast, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DELETE), pos, "partition");
                         return false;
+                    }
 
                     auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
                     if (partition_list.children.size() == 1)
@@ -924,10 +1263,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 }
 
                 if (!s_where.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DELETE), pos, "predicate");
                     return false;
+                }
 
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DELETE), pos, "predicate");
                     return false;
+                }
 
                 /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
                 /// does not expect an alias after the expression. However, in certain cases,
@@ -939,14 +1284,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 /// (1 AS x)
                 /// which we should not allow as well.
                 if (!command_predicate->tryGetAlias().empty())
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::DELETE), pos, "predicate");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::DELETE;
             }
             else if (s_update.ignore(pos, expected))
             {
                 if (!parser_assignment_list.parse(pos, command_update_assignments, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UPDATE), pos, "update_assignments");
                     return false;
+                }
 
                 if (s_in_partition.ignore(pos, expected))
                 {
@@ -954,7 +1305,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
                     ASTPtr partition_list_ast;
                     if (!partition_list_parser.parse(pos, partition_list_ast, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UPDATE), pos, "partition");
                         return false;
+                    }
 
                     auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
                     if (partition_list.children.size() == 1)
@@ -964,10 +1318,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 }
 
                 if (!s_where.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UPDATE), pos, "predicate");
                     return false;
+                }
 
                 if (!parser_exp_elem.parse(pos, command_predicate, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UPDATE), pos, "predicate");
                     return false;
+                }
 
                 /// ParserExpression, in contrast to ParserExpressionWithOptionalAlias,
                 /// does not expect an alias after the expression. However, in certain cases,
@@ -979,7 +1339,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 /// (1 AS x)
                 /// which we should not allow as well.
                 if (!command_predicate->tryGetAlias().empty())
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::UPDATE), pos, "predicate");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::UPDATE;
             }
@@ -989,10 +1352,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->if_exists = true;
 
                 if (!parser_name.parse(pos, command_column, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::COMMENT_COLUMN), pos, "column");
                     return false;
+                }
 
                 if (!parser_string_literal.parse(pos, command_comment, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::COMMENT_COLUMN), pos, "comment");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::COMMENT_COLUMN;
             }
@@ -1003,10 +1372,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_materialize.checkWithoutMoving(pos, expected) ||
                     s_remove.checkWithoutMoving(pos, expected) ||
                     s_modify.checkWithoutMoving(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_TTL), pos, "ttl");
                     return false;
+                }
 
                 if (!parser_ttl_list.parse(pos, command_ttl, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_TTL), pos, "ttl");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_TTL;
             }
@@ -1021,7 +1396,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MATERIALIZE_TTL), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_rewrite_parts.ignore(pos, expected))
@@ -1031,51 +1409,75 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::REWRITE_PARTS), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_modify_setting.ignore(pos, expected))
             {
                 if (!parser_settings.parse(pos, command_settings_changes, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_SETTING), pos, "settings_changes");
                     return false;
+                }
                 command->type = ASTAlterCommand::MODIFY_SETTING;
             }
             else if (s_reset_setting.ignore(pos, expected))
             {
                 if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::RESET_SETTING), pos, "settings_resets");
                     return false;
+                }
                 command->type = ASTAlterCommand::RESET_SETTING;
             }
             else if (s_modify_query.ignore(pos, expected))
             {
                 if (!select_p.parse(pos, command_select, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_QUERY), pos, "select");
                     return false;
+                }
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
             else if (s_modify_sql_security.checkWithoutMoving(pos, expected))
             {
                 s_modify.ignore(pos, expected);
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_SQL_SECURITY), pos, "sql_security");
                     return false;
+                }
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
             }
             else if (s_modify_definer.checkWithoutMoving(pos, expected))
             {
                 s_modify.ignore(pos, expected);
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_SQL_SECURITY), pos, "sql_security");
                     return false;
+                }
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
             }
             else if (s_modify_refresh.ignore(pos, expected))
             {
                 if (!refresh_p.parse(pos, command_refresh, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_REFRESH), pos, "refresh");
                     return false;
+                }
                 command->type = ASTAlterCommand::MODIFY_REFRESH;
             }
             else if (s_modify_comment.ignore(pos, expected))
             {
                 if (!parser_string_literal.parse(pos, command_comment, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::MODIFY_COMMENT), pos, "comment");
                     return false;
+                }
 
                 command->type = ASTAlterCommand::MODIFY_COMMENT;
             }
@@ -1086,7 +1488,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::APPLY_DELETED_MASK), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_apply_patches.ignore(pos, expected))
@@ -1096,7 +1501,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
+                    {
+                        PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::APPLY_PATCHES), pos, "partition");
                         return false;
+                    }
                 }
             }
             else if (s_execute.ignore(pos, expected))
@@ -1106,11 +1514,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 ParserIdentifier command_name_parser;
                 ASTPtr command_name_ast;
                 if (!command_name_parser.parse(pos, command_name_ast, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::EXECUTE_COMMAND), pos, "execute_command_name");
                     return false;
+                }
                 command->execute_command_name = getIdentifierName(command_name_ast);
 
                 if (!parser_opening_round_bracket.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::EXECUTE_COMMAND), pos, "execute_args");
                     return false;
+                }
 
                 ASTPtr execute_args_list;
                 ParserList args_parser(
@@ -1118,10 +1532,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     std::make_unique<ParserToken>(TokenType::Comma),
                     /* allow_empty = */ true);
                 if (!args_parser.parse(pos, execute_args_list, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::EXECUTE_COMMAND), pos, "execute_args");
                     return false;
+                }
 
                 if (!parser_closing_round_bracket.ignore(pos, expected))
+                {
+                    PARTIAL_AST_CAPTURE_FRAGMENT(expected, command_so_far(ASTAlterCommand::EXECUTE_COMMAND), pos, "execute_args");
                     return false;
+                }
 
                 if (execute_args_list)
                     command->execute_args = command->children.emplace_back(std::move(execute_args_list)).get();
@@ -1210,7 +1630,11 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         ASTPtr command;
         if (!p_command.parse(pos, command, expected))
+        {
+            /// The commands that parsed, then the one that failed.
+            PARTIAL_AST_CAPTURE_LIST_ELEMENT(expected, command_list, pos);
             return false;
+        }
 
         command_list->children.push_back(command);
     }
@@ -1241,29 +1665,50 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
+    /// The database, the table and the cluster go into `query` as they parse; the object type is set
+    /// only at the end. See `Parsers/PartialASTCapture.h`.
+    auto tree_so_far = [&]() -> ASTPtr
+    {
+        auto partial = query->clone();
+        partial->as<ASTAlterQuery &>().alter_object = alter_object_type;
+        return partial;
+    };
+
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         if (!parseDatabaseAsAST(pos, expected, query->database))
+        {
+            PARTIAL_AST_CAPTURE(expected, tree_so_far(), pos, "database_ast");
             return false;
+        }
 
         String cluster_str;
         if (ParserKeyword(Keyword::ON).ignore(pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            {
+                PARTIAL_AST_CAPTURE(expected, tree_so_far(), pos, "cluster");
                 return false;
+            }
         }
         query->cluster = cluster_str;
     }
     else
     {
         if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        {
+            PARTIAL_AST_CAPTURE(expected, tree_so_far(), pos, "table_ast");
             return false;
+        }
 
         String cluster_str;
         if (ParserKeyword(Keyword::ON).ignore(pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            {
+                PARTIAL_AST_CAPTURE(expected, tree_so_far(), pos, "cluster");
                 return false;
+            }
         }
         query->cluster = cluster_str;
     }
@@ -1271,7 +1716,10 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserAlterCommandList p_command_list(alter_object_type);
     ASTPtr command_list;
     if (!p_command_list.parse(pos, command_list, expected))
+    {
+        PARTIAL_AST_CAPTURE(expected, tree_so_far(), pos, "command_list");
         return false;
+    }
 
     query->set(query->command_list, command_list);
     query->alter_object = alter_object_type;

@@ -17,6 +17,7 @@ namespace DB
 {
 
 struct LiteralTokenMap;
+struct PartialASTState;
 struct FailedKeywordReadings;
 
 namespace ErrorCodes
@@ -88,6 +89,9 @@ struct Expected
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
 
+    /// Capture of the tree built so far when a statement parser fails, for the standalone WebAssembly
+    /// parser; see `Parsers/PartialASTCapture.h`. Off while null. The caller owns the state.
+    PartialASTState * partial_ast = nullptr;
     /// Positions of CASE and INTERVAL tokens whose keyword reading failed in this parse; copies share it.
     std::shared_ptr<FailedKeywordReadings> failed_keyword_readings;
 
