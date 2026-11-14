@@ -1,0 +1,3 @@
+status:       applicable
+status:       not_applicable
+reason:       Hypothetical index no longer matches the table: the default of column `c` changed. Run CREATE HYPOTHETICAL INDEX again

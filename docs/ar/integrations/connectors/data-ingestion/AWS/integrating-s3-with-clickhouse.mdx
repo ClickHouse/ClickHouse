@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/ar/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يمكنك إدراج البيانات من S3 إلى ClickHouse، كما يمكنك استخدام S3 أيضًا كوجهة للتصدير، مما يتيح التفاعل مع معماريات &quot;بحيرة البيانات&quot;. علاوة على ذلك، يمكن أن يوفّر S3 طبقات تخزين &quot;باردة&quot; ويساعد في فصل التخزين عن موارد المعالجة. في الأقسام التالية، نستخدم مجموعة بيانات سيارات الأجرة في مدينة نيويورك لشرح عملية نقل البيانات بين S3 وClickHouse، بالإضافة إلى تحديد معلمات التكوين الرئيسية وتقديم إرشادات لتحسين الأداء.
 
 ## دوال الجداول S3 {#s3-table-functions}
@@ -234,11 +232,13 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
   لتنفيذ ذلك عبر اتصال SSL آمن، استخدم الدالة `remoteSecure`.
 </Note>
 
-<div id="exporting-data">
-  ### تصدير البيانات
-</div>
+### تصدير البيانات {#exporting-data}
 
 يمكنك الكتابة إلى ملفات في S3 باستخدام دالة الجدول `s3`. ويتطلب ذلك الأذونات المناسبة. نمرّر بيانات الاعتماد اللازمة مع الطلب، ولكن راجع صفحة [إدارة بيانات الاعتماد](#managing-credentials) للاطلاع على مزيد من الخيارات.
+
+<Warning>
+  عند التصدير من ClickHouse Cloud إلى Amazon S3، استخدم نقطة نهاية S3 الإقليمية الخاصة بالحاوية، مثل `https://my-bucket.s3.eu-west-1.amazonaws.com/...`، بدلًا من نقطة النهاية العامة `https://s3.amazonaws.com/...`؛ إذ قد يترتب على استخدام نقطة النهاية العامة رسوم نقل بيانات إضافية.
+</Warning>
 
 في المثال البسيط أدناه، نستخدم دالة الجدول كوجهة بدلًا من مصدر. هنا نرسل 10,000 صفًا من جدول `trips` إلى حاوية، مع تحديد ضغط `lz4` ونوع الإخراج `CSV`:
 
@@ -700,7 +700,8 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 يمكن تنفيذ النسخ المتماثل مع أقراص S3 باستخدام محرك الجدول `ReplicatedMergeTree`. راجع دليل [نسخ شظية واحدة عبر منطقتين من AWS باستخدام تخزين الكائنات في S3](#s3-multi-region) للاطّلاع على التفاصيل.
 
-### القراءة والكتابة {#read--writes}
+<a id="read--writes" />
+### القراءة والكتابة
 
 تتناول الملاحظات التالية كيفية تنفيذ تفاعلات S3 مع ClickHouse. ورغم أنها معلوماتية في الغالب، فقد تساعد القرّاء عند [تحسين الأداء](#s3-optimizing-performance):
 
@@ -781,7 +782,8 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-### الاختبار {#testing}
+<a id="testing" />
+### الاختبار
 
 1. اتصل باستخدام `ClickHouse client`، كما في المثال التالي
 
@@ -859,7 +861,15 @@ SELECT * FROM s3_table1;
 6. في وحدة تحكم AWS، انتقل إلى الحاويات وحدد الحاوية الجديدة والمجلد.
    ينبغي أن ترى شيئًا مشابهًا لما يلي:
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="عرض حاوية S3 في وحدة تحكم AWS يوضح ملفات بيانات ClickHouse المخزنة في S3" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![عرض حاوية S3 في وحدة تحكم AWS يوضح ملفات بيانات ClickHouse المخزنة في S3](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</Frame>
+
+</div>
 
 <div id="s3-multi-region">
   ## تكرار شظية واحدة عبر منطقتين في AWS باستخدام تخزين الكائنات في S3
@@ -1166,7 +1176,8 @@ zk_synced_followers     2
 sudo service clickhouse-server start
 ```
 
-#### تحقّق من خادم ClickHouse {#verify-clickhouse-server}
+<a id="verify-clickhouse-server" />
+#### تحقّق من خادم ClickHouse
 
 عند إضافة [إعدادات العنقود](#define-a-cluster)، جرى تعريف جزء بيانات واحد مكرّر عبر عقدتَي ClickHouse. في خطوة التحقّق هذه، ستتأكد من أن العنقود قد أُنشئ عند بدء تشغيل ClickHouse، ثم ستنشئ جدولًا مكرّرًا باستخدام ذلك العنقود.
 
@@ -1237,7 +1248,8 @@ sudo service clickhouse-server start
   يمكنك تخصيص مسار ZooKeeper `'clickhouse/tables/{uuid}/{shard}` الظاهر أعلاه من خلال ضبط `default_replica_path` و`default_replica_name`. تتوفر الوثائق [هنا](/ar/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
-### التحقق {#testing-1}
+<a id="testing-1" />
+### التحقق
 
 ستتحقق هذه الاختبارات من أن البيانات تُكرَّر بين الخادمين، وأنها مخزَّنة في حاويات S3 وليس على القرص المحلي.
 
@@ -1298,9 +1310,25 @@ sudo service clickhouse-server start
 
   تحقّق من بيانات S3 في كل حاوية S3 (لا تظهر القيم الإجمالية، لكن كلتا الحاويتين تحتويان على نحو 36 MiB من البيانات المخزَّنة بعد عمليات الإدراج):
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="حجم البيانات في حاوية S3 الأولى مع إظهار مقاييس استخدام التخزين" />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="حجم البيانات في حاوية S3 الثانية مع إظهار مقاييس استخدام التخزين" />
+<Frame>
+
+![حجم البيانات في حاوية S3 الأولى مع إظهار مقاييس استخدام التخزين](/images/integrations/data-ingestion/s3/bucket1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![حجم البيانات في حاوية S3 الثانية مع إظهار مقاييس استخدام التخزين](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</Frame>
+
+</div>
 
 <div id="s3express">
   ## S3Express

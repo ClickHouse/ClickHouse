@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом руководстве описано, как включить удалённый MCP-сервер ClickHouse Cloud и настроить его для работы с распространёнными инструментами разработки.
 
 **Необходимые условия**
@@ -25,11 +23,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Выберите **Connect with MCP**:
 
-<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="Выберите MCP в окне Connect" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Выберите MCP в окне Connect](/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp)
+
+</Frame>
+
+</div>
 
 Включите переключатель, чтобы активировать MCP для сервиса. Чтобы включить или отключить MCP, требуется разрешение `control-plane:service:manage-mcp` (см. [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles#console-permissions)):
 
-<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="Включить MCP-сервер" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Включить MCP-сервер](/images/use-cases/AI_ML/MCP/2enable_mcp.webp)
+
+</Frame>
+
+</div>
 
 Скопируйте отображаемый URL — он совпадает с приведённым ниже:
 
@@ -49,6 +63,15 @@ https://mcp.clickhouse.cloud/mcp
 
 1. В консоли ClickHouse Cloud откройте свою организацию и выберите **API Keys**.
 2. Создайте ключ с минимальным набором ролей и разрешений, необходимых MCP-клиенту для доступа к нужным организациям и сервисам, затем скачайте ID ключа и секрет.
+
+   Чтобы вместо этого создать ключ с помощью [`clickhousectl`](/ru/concepts/features/interfaces/cli), найдите ID роли, а затем создайте ключ со списком разрешённых IP-адресов для MCP-хоста. Для работы `clickhousectl` нужен уже существующий ключ API с разрешением на создание ключей:
+
+   ```bash
+   clickhousectl cloud org role list
+   clickhousectl cloud key create --name mcp-headless --role-id <role_id> --ip-allow <host_ip>/32
+   ```
+
+   Команда выводит ID нового ключа и секрет только один раз — сохраните их в своём менеджере секретов. Без `--ip-allow` список разрешённых IP-адресов ключа остаётся пустым, и любой доступ запрещается.
 3. На удалённом хосте передайте учётные данные через используемую систему управления секретами и сформируйте значение для авторизации HTTP Basic:
 
 ```bash
@@ -124,7 +147,7 @@ export CH_AUTH="Basic $(
 
 Переменная `CH_AUTH` должна быть доступна в каждом сеансе клиента. Не коммитьте ключ API, секрет или значение `CH_AUTH` в систему контроля версий. Кодирование Base64 не шифрует учётные данные.
 
-При аутентификации по ключу API не нужен ни браузер, ни отдельный вход через `clickhousectl`.
+При аутентификации по ключу API не нужен ни браузер, ни отдельный вход через `clickhousectl`. Если вы также используете `clickhousectl` на том же хосте, он считывает те же переменные `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`, и они имеют приоритет над входом через браузер.
 
 <div id="claude-code">
   ### Claude Code

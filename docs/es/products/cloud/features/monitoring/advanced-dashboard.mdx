@@ -8,8 +8,6 @@ title: 'Dashboard avanzado en ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Supervisar su sistema de bases de datos en un entorno de producción es vital para
 comprender el estado de su implementación, de modo que pueda prevenir o resolver caídas del servicio.
 
@@ -30,7 +28,15 @@ Se puede acceder al dashboard avanzado desde:
 * Panel lateral izquierdo
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![dashboard avanzado](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Acceso al dashboard avanzado nativo
@@ -45,12 +51,28 @@ Se puede acceder al dashboard avanzado nativo navegando hasta:
 Esto abrirá el dashboard avanzado nativo en una nueva pestaña. Deberás
 autenticarte para acceder al dashboard.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="dashboard avanzado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![dashboard avanzado](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 Cada visualización tiene una consulta SQL asociada que la genera. Puedes
 editar esta consulta haciendo clic en el icono del lápiz.
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="dashboard avanzado" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![dashboard avanzado](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</Frame>
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## Visualizaciones preconfiguradas
@@ -137,7 +159,15 @@ operaciones de merge.
 Las métricas clave para detectar inserciones subóptimas son **Inserted Rows/sec** y
 **máx. de partes por partición**
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Inserciones sin lotes" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Inserciones sin lotes](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</Frame>
+
+</div>
 
 El ejemplo anterior muestra dos picos en **Inserted Rows/sec** y **máx. de partes por partición**
 entre las 13 h y las 14 h. Esto indica que se están ingiriendo datos a una velocidad razonable.
@@ -163,7 +193,15 @@ avanzado.
 A continuación se muestra un ejemplo de un pico en el uso de CPU sin que cambie significativamente la
 cantidad de consultas por segundo ejecutadas.
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="Consulta con uso intensivo de recursos" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Consulta con uso intensivo de recursos](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</Frame>
+
+</div>
 
 <div id="bad-primary-key-design">
   ### Mal diseño de la clave primaria
@@ -179,7 +217,15 @@ es **Selected Rows per second**. Un pico repentino en el número de filas selecc
 indicar tanto un aumento general del volumen total de consultas como consultas que
 seleccionan una gran cantidad de filas para ejecutarse.
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="consulta con uso intensivo de recursos" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![consulta con uso intensivo de recursos](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</Frame>
+
+</div>
 
 Usando el timestamp como filtro, puedes encontrar las consultas ejecutadas en el momento
 del pico en la tabla `system.query_log`.
