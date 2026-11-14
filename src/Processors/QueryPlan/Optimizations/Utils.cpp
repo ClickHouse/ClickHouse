@@ -224,6 +224,11 @@ bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
     return false;
 }
 
+bool nodeFunctionReadsUnspecifiedValueUnderNull(const ActionsDAG::Node & node)
+{
+    return !allNodeFunctions(node, valueUnderNullMapIsNotRead);
+}
+
 bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag)
 {
     /// `assumeNotNull` returns the value stored under the null map, and for a NULL that value is
