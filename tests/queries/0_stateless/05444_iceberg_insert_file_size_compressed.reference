@@ -1,4 +1,6 @@
 compressible	0	4096	0
 incompressible	1	4096	0
+incompressible_parallel	1	20000	0
 4096	4194304
 4096	4194304
+20000	20480000
