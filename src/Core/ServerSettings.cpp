@@ -3827,7 +3827,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 namespace
 {
 
-using ChangeableSettingsMap = std::unordered_map<String, std::pair<String, ServerSettings::ChangeableWithoutRestart>>;
+/// The live value is empty for a setting whose component is not built in, so its configured value is shown.
+using ChangeableSettingsMap = std::unordered_map<String, std::pair<std::optional<String>, ServerSettings::ChangeableWithoutRestart>>;
 
 /// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
 /// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
@@ -3970,10 +3971,15 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 #if USE_GPU
             {"gpu_expression_kernel_cache_size", {std::to_string(context->getGPUKernelCacheLimits().first), ChangeableWithoutRestart::Yes}},
             {"gpu_expression_kernel_cache_elements_size", {std::to_string(context->getGPUKernelCacheLimits().second), ChangeableWithoutRestart::Yes}},
+#else
+            {"gpu_expression_kernel_cache_size", {std::nullopt, ChangeableWithoutRestart::Yes}},
+            {"gpu_expression_kernel_cache_elements_size", {std::nullopt, ChangeableWithoutRestart::Yes}},
 #endif
 #if ENABLE_DISTRIBUTED_CACHE
             {"distributed_cache_write_pool_size",
              {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
+#else
+            {"distributed_cache_write_pool_size", {std::nullopt, ChangeableWithoutRestart::Yes}},
 #endif
             {"max_io_thread_pool_size",
              {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
@@ -4123,9 +4129,10 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
         const auto & changeable_settings_it = changeable_settings.find(setting_name);
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
+        const bool has_live_value = is_changeable && changeable_settings_it->second.first.has_value();
 
         res_columns[0]->insert(setting_path.empty() ? setting_name : setting_path);
-        res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString(/* show_secrets */ true));
+        res_columns[1]->insert(has_live_value ? *changeable_settings_it->second.first : setting.getValueString(/* show_secrets */ true));
         res_columns[2]->insert(setting.getDefaultValueString(/* show_secrets */ true));
         res_columns[3]->insert(setting.isValueChanged());
         res_columns[4]->insert(setting.getDescription());

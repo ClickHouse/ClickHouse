@@ -1,0 +1,4 @@
+distributed_cache_write_pool_size	Yes
+gpu_expression_kernel_cache_elements_size	Yes
+gpu_expression_kernel_cache_size	Yes
+1	1
