@@ -1,0 +1,66 @@
+orcfmt
+4
+orcfmt	0
+1	alpha
+3	charlie
+4	delta
+5	echo
+1	0
+3	2
+4	0
+5	1
+3
+4
+5
+4
+orcfmt	1
+1	alpha
+3	charlie
+4	delta
+5	echo
+1	0
+3	2
+4	0
+5	1
+3
+4
+5
+4
+avrofmt
+4
+avrofmt	0
+1	alpha
+3	charlie
+4	delta
+5	echo
+1	0
+3	2
+4	0
+5	1
+3
+4
+5
+4
+avrofmt	1
+1	alpha
+3	charlie
+4	delta
+5	echo
+1	0
+3	2
+4	0
+5	1
+3
+4
+5
+4
+orcfmt OPTIMIZE refused
+1	alpha
+3	charlie
+4	delta
+5	echo
+avrofmt OPTIMIZE refused
+1	alpha
+3	charlie
+4	delta
+5	echo

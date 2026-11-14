@@ -309,6 +309,57 @@ def test_optimize_mixed_format_position_delete_reference_bounds(
     )
 
 
+@pytest.mark.parametrize("delete_format", ["orc", "avro"])
+def test_optimize_refuses_orc_avro_position_deletes(started_cluster_iceberg_with_spark, delete_format):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = f"test_optimize_{delete_format}_position_delete_" + get_uuid_str()
+
+    # A Parquet data file with an ORC or Avro position delete, and a newer ORC data file that the delete does not apply to.
+    # After the rename, compaction would rewrite the ORC data file by column name and lose its `renamed_data` values.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'write.delete.mode' = 'merge-on-read',
+            'write.format.default' = 'parquet',
+            'write.delete.format.default' = '{delete_format}'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(0, 10)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 5")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} SET TBLPROPERTIES ('write.format.default' = 'orc')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 20)")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN data TO renamed_data")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    files = instance.query(
+        f"""
+        SELECT content, lower(file_format) FROM system.iceberg_files
+        WHERE database = currentDatabase() AND table = '{TABLE_NAME}' ORDER BY ALL FORMAT TSV
+        """
+    )
+    assert files == f"DATA\torc\nDATA\tparquet\nPOSITION_DELETE\t{delete_format}\n", files
+
+    expected = instance.query("SELECT number, char(number + 97) FROM numbers(20) WHERE number != 5")
+    assert instance.query(f"SELECT id, renamed_data FROM {TABLE_NAME} ORDER BY id") == expected
+
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME}", settings={"allow_experimental_iceberg_compaction": 1}
+    )
+    assert "NOT_IMPLEMENTED" in error, error
+    assert instance.query(f"SELECT id, renamed_data FROM {TABLE_NAME} ORDER BY id") == expected
+
+
 def get_latest_metadata(instance, table_path):
     latest = instance.exec_in_container(
         ["bash", "-c", f"ls -v {table_path}/metadata/v*.metadata.json | tail -1"]

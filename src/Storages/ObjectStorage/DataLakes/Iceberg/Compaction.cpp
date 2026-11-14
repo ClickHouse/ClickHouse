@@ -33,6 +33,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
@@ -335,6 +336,17 @@ static Plan getPlan(
             if (!can_contain_data_file_deletes)
                 continue;
 
+            /// Compaction reads the data files under the current schema, which the ORC and Avro readers resolve by name, not by field id.
+            const auto & data_file_format = data_file->data_object_info->info.file_format;
+            const auto & delete_file_format = delete_file->parsed_entry->file_format;
+            if (Poco::toUpper(data_file_format) != "PARQUET" || Poco::toUpper(delete_file_format) != "PARQUET")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Compaction of Iceberg tables with position deletes is supported only for data and delete files of Parquet format, "
+                    "but got a data file of format {} with a delete file of format {}",
+                    data_file_format,
+                    delete_file_format);
+
             data_file->data_object_info->addPositionDeleteFile(
                 delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
         }
@@ -371,11 +383,8 @@ static void writeDataFiles(
 
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
-        /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
-        /// to delete, and only the Parquet input formats attach it. Data files with attached
-        /// position deletes are guaranteed to be Parquet by `addPositionDeleteFile`, but a data
-        /// file without them (e.g. an ORC file newer than all position deletes) may be in any
-        /// format, so the transform must be skipped for it.
+        /// Only data files with position deletes need the transform; `addPositionDeleteFile` admits
+        /// only formats whose readers attach `ChunkInfoRowNumbers`.
         std::shared_ptr<IcebergBitmapPositionDeleteTransform> delete_file_transform;
         if (data_file->data_object_info->info.hasPositionDeletes())
             delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
