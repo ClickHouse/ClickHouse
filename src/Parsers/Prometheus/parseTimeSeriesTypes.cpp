@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 
@@ -217,6 +218,31 @@ namespace
         return !offset || !common::subOverflow(result.value, getFromInt<DateTime64>(*offset, scale).value, result.value);
     }
 
+    /// Whether the text has the shape of a number: '5', '-1.5', '1_000', '2023e6' or '0x1F'.
+    bool looksLikeNumber(std::string_view str)
+    {
+        if (str.starts_with('+') || str.starts_with('-'))
+            str.remove_prefix(1);
+        while (!str.empty() && isWhitespaceASCII(str.front()))
+            str.remove_prefix(1);
+
+        if (str.starts_with("0x") || str.starts_with("0X"))
+            return true;
+
+        size_t mantissa_size = std::min(str.find_first_not_of("0123456789._"), str.size());
+        if (mantissa_size == 0)
+            return false;
+        if (mantissa_size == str.size())
+            return true;
+        if (str[mantissa_size] != 'e' && str[mantissa_size] != 'E')
+            return false;
+
+        std::string_view exponent = str.substr(mantissa_size + 1);
+        if (exponent.starts_with('+') || exponent.starts_with('-'))
+            exponent.remove_prefix(1);
+        return exponent.find_first_not_of("0123456789") == std::string_view::npos;
+    }
+
     template <is_decimal T>
     T parseFromString(std::string_view str, UInt32 scale)
     {
@@ -226,11 +252,26 @@ namespace
 
         if constexpr (std::is_same_v<T, DateTime64>)
         {
-            if (PrometheusQueryParsingUtil::tryParseTimestamp(
+            /// Like Prometheus, a time with leading or trailing whitespace is an error.
+            if (!str.empty() && (isWhitespaceASCII(str.front()) || isWhitespaceASCII(str.back())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse a timestamp from string {}: Leading or trailing whitespace", quoteString(str));
+
+            /// No number has two decimal points, so a dotted date like '14.11.2023' is not read as Unix seconds.
+            bool may_be_number = std::ranges::count(str, '.') < 2;
+            if (!may_be_number)
+                error_message = "Too many decimal points";
+            else if (PrometheusQueryParsingUtil::tryParseTimestamp(
                     str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
                 return result;
 
             if (tryParseDateTime(str, scale, result))
+                return result;
+
+            /// Otherwise accept any date-time text parseDateTimeBestEffort understands, e.g. 'Tue, 14 Nov 2023 22:13:20 GMT'.
+            /// A number is always Unix seconds, so one that failed above (too big) is not read as a date.
+            bool is_number = may_be_number && looksLikeNumber(str);
+            ReadBufferFromString buf{str};
+            if (!is_number && tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
                 return result;
         }
         else
