@@ -1420,6 +1420,10 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+
+                        /// Skip value of this path.
+                        auto tmp_column = typed_column->cloneEmpty();
+                        typed_it->second->deserializeBinary(*tmp_column, istr, settings);
                     }
                     else
                     {
@@ -1434,9 +1438,15 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                    }
 
-                    dynamic_serialization->deserializeBinary(*dynamic_it->second, istr, settings);
+                        /// Skip value of this path.
+                        Field tmp;
+                        dynamic_serialization->deserializeBinary(tmp, istr, settings);
+                    }
+                    else
+                    {
+                        dynamic_serialization->deserializeBinary(*dynamic_it->second, istr, settings);
+                    }
                 }
                 /// Try to add a new dynamic paths.
                 else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(path))
