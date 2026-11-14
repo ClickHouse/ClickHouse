@@ -163,7 +163,9 @@ protected:
                 expression,
                 /*input_columns=*/ {},
                 planner_context,
-                empty_correlated_columns_set);
+                empty_correlated_columns_set,
+                /*use_column_identifier_as_action_node_name=*/ true,
+                makeIsStorageColumnName(fake_table_expression));
             correlated_subtrees.assertEmpty("in constant expression without query context");
 
             auto subquery_options = SelectQueryOptions{}.subquery();
