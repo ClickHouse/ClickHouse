@@ -101,6 +101,7 @@ namespace Setting
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
     extern const SettingsBool analyzer_inline_views;
+    extern const SettingsBool array_join_use_nulls;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsBool asterisk_include_virtual_columns;
@@ -6100,6 +6101,9 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
             result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
 
+            if (array_join_node_typed.isLeft() && scope.context->getSettingsRef()[Setting::array_join_use_nulls])
+                result_type = makeNullableOrLowCardinalityNullableSafe(result_type);
+
             String array_join_column_name;
 
             if (!array_join_expression_alias.empty())
@@ -6940,6 +6944,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         subquery_columns = union_node->computeProjectionColumns();
 
     bool needs_type_conversion = false;
+    bool became_nullable = false;
     if (view_columns.size() == subquery_columns.size())
     {
         for (size_t i = 0; i < view_columns.size(); ++i)
@@ -6947,10 +6952,18 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
             if (!view_columns[i].type->equals(*subquery_columns[i].type))
             {
                 needs_type_conversion = true;
-                break;
+                if (subquery_columns[i].type->isNullable() && !view_columns[i].type->isNullable())
+                    became_nullable = true;
             }
         }
     }
+
+    /// A `LEFT ARRAY JOIN` under `array_join_use_nulls` makes a column `Nullable` that the view stores as not `Nullable`.
+    /// Casting it back would silently change the result or fail on the padded `NULL`s, so do not inline the view and
+    /// let `StorageView::readImpl` reject the mismatch the same way as without inlining.
+    if (became_nullable
+        && hasLeftArrayJoinWithUseNulls(*storage_snapshot->metadata->getSelectQuery().inner_query, view_context->getSettingsRef()[Setting::array_join_use_nulls]))
+        return;
 
     TableExpressionNodePtr result_node;
 

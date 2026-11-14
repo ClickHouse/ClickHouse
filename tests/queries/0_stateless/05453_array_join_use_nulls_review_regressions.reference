@@ -1,0 +1,13 @@
+index
+1
+1
+fused
+2	5	Nullable(UInt8)
+3	7	Nullable(UInt8)
+1	\N
+not fused
+2	5	Nullable(UInt8)
+3	7	Nullable(UInt8)
+1	\N
+view
+1	UInt8
