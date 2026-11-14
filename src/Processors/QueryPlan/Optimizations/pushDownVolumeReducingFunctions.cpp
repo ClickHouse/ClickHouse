@@ -322,7 +322,7 @@ collectFunctionsReplacingTheirArgument(const ActionsDAG & actions, IsCandidate &
 
 }
 
-std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
+UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
 collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
 {
     return collectFunctionsReplacingTheirArgument(
@@ -737,8 +737,8 @@ struct SubcolumnsPathStep
     std::optional<ActionsDAG> new_actions;
     /// For a join: the side the columns come from, the positions of their outputs and of the columns in the side's input.
     std::optional<JoinTableSide> join_side;
-    std::vector<size_t> join_output_positions;
-    std::vector<size_t> join_input_positions;
+    VectorWithMemoryTracking<size_t> join_output_positions;
+    VectorWithMemoryTracking<size_t> join_input_positions;
 };
 
 /// A column crossing the path instead of a read column.
@@ -811,7 +811,7 @@ private:
 /// returns at `output_positions` and reads for nothing else. The carried columns go first, so that the join always keeps
 /// an output of its own. Returns whether exactly those outputs went away.
 bool replaceJoinPassThroughColumns(
-    JoinStepLogical & join, JoinTableSide side, const std::vector<size_t> & input_positions, const std::vector<size_t> & output_positions,
+    JoinStepLogical & join, JoinTableSide side, const VectorWithMemoryTracking<size_t> & input_positions, const VectorWithMemoryTracking<size_t> & output_positions,
     const ColumnsWithTypeAndName & carried)
 {
     const size_t index = JoinStepLogical::getInputIndex(side);
@@ -825,7 +825,7 @@ bool replaceJoinPassThroughColumns(
     headers.at(index) = std::make_shared<const Block>(std::move(header_with_carried));
     join.updateInputHeaders(headers);
 
-    std::vector<IQueryPlanStep::PrunedInput> pruned;
+    VectorWithMemoryTracking<IQueryPlanStep::PrunedInput> pruned;
     for (size_t i = 0; i < headers.size(); ++i)
     {
         if (i != index)
@@ -900,7 +900,7 @@ String getCarriedColumnName(const SubcolumnRead & read)
 /// input header has, and the other inputs stay so that the columns they match do not pass the step unmatched.
 void removeInputsOfReadColumn(ActionsDAG & actions, const NameSet & column_names)
 {
-    std::unordered_set<const ActionsDAG::Node *> kept_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> kept_inputs;
     for (const auto * input : actions.getInputs())
         if (!column_names.contains(input->result_name))
             kept_inputs.insert(input);
@@ -913,7 +913,7 @@ void removeInputsOfReadColumn(ActionsDAG & actions, const NameSet & column_names
 std::optional<ActionsDAG> replaceSubcolumnReads(
     const ActionsDAG & actions, const std::vector<SubcolumnRead> & reads, const std::unordered_map<const ActionsDAG::Node *, FunctionBasePtr> & residuals)
 {
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> split_nodes;
     for (const auto & read : reads)
         split_nodes.insert(read.node);
 

@@ -4886,7 +4886,7 @@ std::vector<bool> ReadFromMergeTree::canReadSubcolumnsOfColumns(const std::vecto
 
     const auto & unsafe_columns = getColumnsUnsafeForSubcolumnReads();
     std::vector<size_t> checked;
-    std::vector<size_t> output_positions;
+    VectorWithMemoryTracking<size_t> output_positions;
     std::vector<size_t> storage_positions_of_checked;
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -4939,7 +4939,7 @@ void ReadFromMergeTree::readSubcolumnsInsteadOfColumns(const Names & columns, co
 {
     addReadColumns(subcolumns);
 
-    std::vector<size_t> output_positions;
+    VectorWithMemoryTracking<size_t> output_positions;
     for (const auto & column : columns)
         output_positions.push_back(output_header->getPositionByName(column));
     std::ranges::sort(output_positions);
