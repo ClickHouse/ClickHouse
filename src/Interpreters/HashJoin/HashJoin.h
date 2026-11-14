@@ -303,6 +303,8 @@ public:
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
+    /// `getTotalByteCount` with the JOIN maps and their memory pools counted twice: the next insert can double them.
+    size_t getSpillByteCount() const;
     /// Number of right-side rows ingested into the build.
     size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
     /// Peak bytes the build occupied
@@ -654,17 +656,24 @@ public:
         /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build threads
         /// update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
+        /// `total_bytes` with `bucket_bytes` counted twice (the maps and their arenas can double on the next insert,
+        /// the stored blocks cannot), in one atomic for the same reason. `SpillingHashJoin` switches on it.
+        std::atomic<size_t> spill_bytes = 0;
+
+        size_t spillWeight(const std::atomic<size_t> & part) const { return &part == &bucket_bytes ? 2 : 1; }
 
         /// Add `total_bytes` first so a concurrent size-limit check cannot under-count.
         void addBytes(std::atomic<size_t> & part, size_t n)
         {
             total_bytes.fetch_add(n, std::memory_order_relaxed);
+            spill_bytes.fetch_add(n * spillWeight(part), std::memory_order_relaxed);
             part.fetch_add(n, std::memory_order_relaxed);
         }
 
         void subBytes(std::atomic<size_t> & part, size_t n)
         {
             part.fetch_sub(n, std::memory_order_relaxed);
+            spill_bytes.fetch_sub(n * spillWeight(part), std::memory_order_relaxed);
             total_bytes.fetch_sub(n, std::memory_order_relaxed);
         }
 
@@ -672,9 +681,15 @@ public:
         {
             const size_t old = part.exchange(n, std::memory_order_relaxed);
             if (n >= old)
+            {
                 total_bytes.fetch_add(n - old, std::memory_order_relaxed);
+                spill_bytes.fetch_add((n - old) * spillWeight(part), std::memory_order_relaxed);
+            }
             else
+            {
+                spill_bytes.fetch_sub((old - n) * spillWeight(part), std::memory_order_relaxed);
                 total_bytes.fetch_sub(old - n, std::memory_order_relaxed);
+            }
         }
 
         /// Whether the right table reranged by key

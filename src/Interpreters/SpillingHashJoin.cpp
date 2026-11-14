@@ -142,14 +142,9 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
         return addBlockToExternalJoin(block, num_rows, context);
     }
 
-    /// The hash table buffer grows in power-of-two steps. Doubling from X to 2X allocates the new
-    /// buffer while the old one is still alive, transiently using 3X memory. We must trigger the
-    /// switch BEFORE the inner `addBlockToJoin` runs (and possibly doubles the buffer); a check
-    /// that runs after the call would race with the doubling and observe the OOM only as an
-    /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
-    /// the switch the live buffer (already at half) plus the conversion peak still fit under the
-    /// configured cap.
-    if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+    /// Checked before the insert, which can grow the maps: a map doubles its buffer and an arena adds a chunk up
+    /// to the size it holds, while the stored blocks keep their size. Switch before that growth crosses the threshold.
+    if (hash_join->getSpillByteCount() >= max_bytes_before_external_join)
         switchToExternalJoin(context);
 
     /// Re-check: we may have just switched.
@@ -272,11 +267,12 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
 
         LOG_DEBUG(
             log,
-            "{}, switching to {}: {} holds {} bytes in {} rows",
+            "{}, switching to {}: {} holds {} bytes ({} with the hash tables counted twice) in {} rows",
             spill_immediately ? "Spill requested under memory pressure" : "Memory spill threshold reached",
             keep_left_block_order ? "MergeJoin (the plan requires the left block order)" : "GraceHashJoin",
             hash_join->getName(),
             hash_join->getTotalByteCount(),
+            hash_join->getSpillByteCount(),
             hash_join->getTotalRowCount());
         ProfileEvents::increment(switch_event);
 
@@ -350,8 +346,9 @@ void SpillingHashJoin::onBuildPhaseFinish()
         {
             LOG_DEBUG(
                 log,
-                "All blocks fit in memory ({} bytes, {} rows), promoting HashJoin",
+                "All blocks fit in memory ({} bytes, {} with the hash tables counted twice, {} rows), promoting HashJoin",
                 total_bytes,
+                hash_join->getSpillByteCount(),
                 hash_join->getTotalRowCount());
             chosen_join = hash_join;
             state.store(State::IN_MEMORY_JOIN, std::memory_order_release);
