@@ -245,6 +245,8 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
+        /// A part of the outer query: plan it from the same snapshot.
+        insert_context->shareQueryMaxThreadsSnapshot(*getContext());
         if (getContext()->hasQueryContext())
             insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
