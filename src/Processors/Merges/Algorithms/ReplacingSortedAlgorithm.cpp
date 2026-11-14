@@ -408,8 +408,7 @@ void ReplacingSortedAlgorithm::emitLongWaitingSelections()
         if (!chunk || !chunk->replace_final_selection)
             continue;
 
-        /// A chunk of an input holding 1/num_inputs of the keys is merged within about num_inputs * rows selected rows; such chunks
-        /// keep leaving the merge in one piece, without a copy when all their rows are selected.
+        /// A chunk of an input holding 1/num_inputs of the keys is merged within about num_inputs * rows selected rows.
         const size_t max_wait = std::max<size_t>(merged_data->maxBlockSize(), 2 * sources.size() * chunk->getNumRows());
         if (num_selected_rows - chunk->replace_final_selection_start < max_wait)
             continue;

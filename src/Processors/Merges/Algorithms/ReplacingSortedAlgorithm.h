@@ -91,8 +91,7 @@ private:
 
     QueueWithMemoryTracking<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
-    /// Vertical FINAL: rows selected so far, the count at which the waiting selections are checked next,
-    /// and the selections of chunks still being merged that waited too long (see `emitLongWaitingSelections`).
+    /// Vertical FINAL: rows selected so far and the selections of chunks still being merged that waited too long.
     size_t num_selected_rows = 0;
     size_t next_waiting_selections_check = 0;
     QueueWithMemoryTracking<Chunk> waiting_selections;
