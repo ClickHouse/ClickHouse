@@ -218,8 +218,6 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
         /* has_layout_complex= */ false,
         Documentation{
             .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # XGBoost dictionaries
 
 <CloudNotSupportedBadge/>

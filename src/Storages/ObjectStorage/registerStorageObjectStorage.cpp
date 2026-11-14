@@ -861,8 +861,6 @@ static void registerStorageHDFS(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # HDFS table engine
 
 <CloudNotSupportedBadge/>

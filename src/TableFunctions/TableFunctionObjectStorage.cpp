@@ -332,9 +332,6 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<S3Definition, StorageS3Configuration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Provides a table-like interface to select/insert files in [Amazon S3](https://aws.amazon.com/s3/) and [Google Cloud Storage](https://cloud.google.com/storage/). This table function is similar to the [hdfs function](/reference/functions/table-functions/hdfs), but provides S3-specific features.
 
 If you have multiple replicas in your cluster, you can use the [s3Cluster function](/reference/functions/table-functions/s3Cluster) instead to parallelize inserts.
@@ -1026,9 +1023,6 @@ As a result, the data is written into three files in different buckets: `my_buck
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](/reference/functions/table-functions/s3).
 
 ## Syntax {#syntax}
@@ -1302,9 +1296,6 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 #if USE_HDFS
     factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Creates a table from files in HDFS. This table function is similar to the [url](/reference/functions/table-functions/url) and [file](/reference/functions/table-functions/file) table functions.
 
 ## Syntax {#syntax}
@@ -2286,8 +2277,6 @@ void registerTableFunctionPaimon(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimon>(
          {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 <ExperimentalBadge />
 
 Provides a read-only table-like interface to Apache [Paimon](https://paimon.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.

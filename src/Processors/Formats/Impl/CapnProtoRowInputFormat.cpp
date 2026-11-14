@@ -169,8 +169,6 @@ void registerInputFormatCapnProto(FormatFactory & factory)
 
     factory.setDocumentation("CapnProto", Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 | Input | Output | Alias |

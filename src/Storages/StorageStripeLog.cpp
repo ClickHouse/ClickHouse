@@ -808,8 +808,6 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.getContext());
     }, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # StripeLog table engine
 
 <CloudNotSupportedBadge/>

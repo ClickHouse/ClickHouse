@@ -174,8 +174,6 @@ void registerInputFormatProtobufList(FormatFactory & factory)
 
     factory.setDocumentation("ProtobufList", Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 | Input | Output | Alias |

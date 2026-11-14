@@ -208,8 +208,6 @@ void registerStorageElasticsearch(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 <ExperimentalBadge/>
 
 The `Elasticsearch` engine allows reading documents from an index in [Elasticsearch](https://www.elastic.co/elasticsearch). Each document is returned as one row: its `_source` is exposed as a single column of the [JSON](/reference/data-types/newjson) type, and the document id and index name are available as virtual columns.

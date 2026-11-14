@@ -578,8 +578,6 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 | Input | Output | Alias |

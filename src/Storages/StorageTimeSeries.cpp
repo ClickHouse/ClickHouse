@@ -960,8 +960,6 @@ void registerStorageTimeSeries(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-
 # TimeSeries table engine
 
 <PrivatePreviewBadge/>

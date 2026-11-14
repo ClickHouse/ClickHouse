@@ -1647,8 +1647,6 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 
     factory.registerStorage("EmbeddedRocksDB", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # EmbeddedRocksDB table engine
 
 <CloudNotSupportedBadge />

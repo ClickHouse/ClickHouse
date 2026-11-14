@@ -1323,9 +1323,6 @@ void registerStorageMergeTree(StorageFactory & factory)
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # MergeTree table engine
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree`) are the most commonly used and most robust table engines in ClickHouse.

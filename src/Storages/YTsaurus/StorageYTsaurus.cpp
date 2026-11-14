@@ -190,9 +190,6 @@ void registerStorageYTsaurus(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 # YTsaurus table engine
 
 <ExperimentalBadge/>
