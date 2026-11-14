@@ -1,0 +1,111 @@
+{
+  "format-version": 2,
+  "table-uuid": "9a8b8e3e-22a1-3275-c2f5-138584e94d98",
+  "location": "file:///iceberg-geo-testbed/v2_bbox_struct",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1700000001000,
+  "last-column-id": 2,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "schema-id": 0,
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "bbox",
+          "required": false,
+          "type": {
+            "type": "struct",
+            "fields": [
+              {
+                "id": 5,
+                "name": "xmin",
+                "required": false,
+                "type": "double"
+              },
+              {
+                "id": 6,
+                "name": "ymin",
+                "required": false,
+                "type": "double"
+              },
+              {
+                "id": 7,
+                "name": "xmax",
+                "required": false,
+                "type": "double"
+              },
+              {
+                "id": 8,
+                "name": "ymax",
+                "required": false,
+                "type": "double"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "schema.name-mapping.default": "[{\"field-id\": 1, \"names\": [\"id\"]}, {\"field-id\": 2, \"names\": [\"bbox\"], \"fields\": [{\"field-id\": 5, \"names\": [\"xmin\"]}, {\"field-id\": 6, \"names\": [\"ymin\"]}, {\"field-id\": 7, \"names\": [\"xmax\"]}, {\"field-id\": 8, \"names\": [\"ymax\"]}]}]"
+  },
+  "current-snapshot-id": 1700000001000,
+  "refs": {
+    "main": {
+      "snapshot-id": 1700000001000,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "snapshot-id": 1700000001000,
+      "sequence-number": 1,
+      "timestamp-ms": 1700000001000,
+      "manifest-list": "file:///iceberg-geo-testbed/v2_bbox_struct/metadata/snap-1700000001000-manifest-list.avro",
+      "schema-id": 0,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "10",
+        "added-records": "10000",
+        "added-files-size": "382488",
+        "total-data-files": "10",
+        "total-records": "10000",
+        "total-files-size": "382488",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-position-deletes": "0",
+        "changed-partition-count": "1"
+      }
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 1700000001000,
+      "timestamp-ms": 1700000001000
+    }
+  ],
+  "metadata-log": []
+}
