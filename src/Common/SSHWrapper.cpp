@@ -12,6 +12,7 @@
 #    include <cctype>
 #    include <cstring>
 #    include <memory>
+#    include <mutex>
 #    include <string>
 #    include <pwd.h>
 #    include <unistd.h>
@@ -38,6 +39,13 @@ namespace
 
 /// The namespace of the signatures, as defined by the `SSHSIG` format. The server expects exactly this one.
 constexpr const char * SIGNATURE_NAMESPACE = "clickhouse";
+
+/// Serializes `sshsig_verify`. When a signature is invalid, libssh logs the OpenSSL error with
+/// `ERR_error_string(ERR_get_error(), NULL)` (`pki_verify_data_signature` in `contrib/libssh/src/pki_crypto.c`),
+/// which writes the text into a static buffer shared by all threads, so two connections failing
+/// `ssh_key` authentication at the same time race on it (reported by ThreadSanitizer).
+/// Verifications are rare and short, so the lock costs nothing in practice.
+std::mutex sshsig_verify_mutex;
 
 struct SSHStringDeleter
 {
@@ -398,7 +406,11 @@ bool SSHKey::verifySignature(std::string_view signature, std::string_view origin
 {
     ssh_key verify_key = nullptr;
     String sig_str(signature);
-    int rc = sshsig_verify(original.data(), original.size(), sig_str.c_str(), SIGNATURE_NAMESPACE, &verify_key);
+    int rc = SSH_ERROR;
+    {
+        std::lock_guard lock(sshsig_verify_mutex);
+        rc = sshsig_verify(original.data(), original.size(), sig_str.c_str(), SIGNATURE_NAMESPACE, &verify_key);
+    }
     if (rc != SSH_OK)
     {
         if (verify_key != nullptr)

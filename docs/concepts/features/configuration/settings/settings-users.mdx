@@ -203,6 +203,8 @@ The `ssh_key` element is expected to be
 
 Substitute `ssh-ed25519` with `ssh-rsa` or `ecdsa-sha2-nistp256` for the other supported algorithms.
 
+On the secure native port (`tcp_port_secure`), the signature the client makes is bound to its TLS session, so it is only valid on the connection it was made on. This requires a client and a server that both support it, and TLS 1.3 or TLS 1.2 with the Extended Master Secret extension. A plaintext connection has no such binding, so prefer the secure port for SSH key authentication. A proxy or load balancer that terminates TLS in front of the server, rather than passing it through, starts a second TLS session, so SSH key authentication through it fails.
+
 ### Multiple Authentication Methods {#multiple-authentication-methods}
 
 A single user can be configured with multiple authentication methods using the `<auth_methods>` element. This allows a user to authenticate with any one of the listed methods — for example, a user could have both a password and an LDAP credential, and logging in with either one would succeed.

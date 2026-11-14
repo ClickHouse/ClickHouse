@@ -35,6 +35,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/randomSeed.h>
+#include <Common/SSHKeyAuthChannelBinding.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
@@ -616,6 +617,7 @@ void Connection::sendAddendum()
 void Connection::performHandshakeForSSHAuth()
 {
     String challenge;
+    bool with_channel_binding = false;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
         out->next();
@@ -624,30 +626,52 @@ void Connection::performHandshakeForSSHAuth()
             throw Poco::Net::NetException("Connection reset by peer");
 
         readVarUInt(packet_type, *in);
-        if (packet_type == Protocol::Server::SSHChallenge)
+        if (packet_type == Protocol::Server::SSHChallengeWithBinding)
+        {
+            with_channel_binding = true;
+            readStringBinary(challenge, *in);
+        }
+        else if (packet_type == Protocol::Server::SSHChallenge)
         {
             readStringBinary(challenge, *in);
         }
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
+            throwUnexpectedPacket(packet_type, "SSHChallengeWithBinding, SSHChallenge or Exception");
     }
 
-    writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
-
-    auto pack_string_for_ssh_sign = [&](String challenge_)
+    String to_sign;
+    if (with_channel_binding)
     {
-        String message;
-        message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
-        message.append(default_database);
-        message.append(user);
-        message.append(challenge_);
-        return message;
-    };
+        /// A server that knows `DBMS_MIN_REVISION_WITH_SSH_CHANNEL_BINDING` sends `SSHChallengeWithBinding`.
+        /// The binding is derived from our own socket, never from what the server tells us,
+        /// so the signature is only valid on this TLS session.
+        to_sign = buildSSHKeyAuthMessage(
+            DBMS_TCP_PROTOCOL_VERSION, default_database, user, challenge, getSSHKeyAuthChannelBinding(socket->impl()));
+    }
+    else
+    {
+        /// An older server sends `SSHChallenge` and verifies the legacy message.
+        /// Answering it with the legacy message cannot be used to downgrade a newer server:
+        /// the newer server has received our protocol version (which is at least `DBMS_MIN_REVISION_WITH_SSH_CHANNEL_BINDING`)
+        /// and always requires the bound message from such a client. A peer that lowers the version in our `Hello`
+        /// to make the server accept the legacy message changes the version in the message the server verifies,
+        /// which then no longer matches the one we have signed.
+        auto pack_string_for_ssh_sign = [&](String challenge_)
+        {
+            String message;
+            message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
+            message.append(default_database);
+            message.append(user);
+            message.append(challenge_);
+            return message;
+        };
+        to_sign = pack_string_for_ssh_sign(challenge);
+    }
 
-    String to_sign = pack_string_for_ssh_sign(challenge);
     String signature = ssh_private_key.signString(to_sign);
+    writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
     writeStringBinary(signature, *out);
     out->next();
 }

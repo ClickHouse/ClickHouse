@@ -61,6 +61,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/SettingSource.h>
+#include <Common/SSHKeyAuthChannelBinding.h>
 #include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
@@ -2484,8 +2485,16 @@ void TCPHandler::receiveHello()
             return encodeSHA256(&rand, sizeof(rand));
         };
 
+        /// A client with `DBMS_MIN_REVISION_WITH_SSH_CHANNEL_BINDING` must sign the message bound to the TLS session,
+        /// a legacy message from such a client is never accepted. This also prevents downgrades:
+        /// the protocol version is part of the signed message, so if a peer in the middle lowers the version
+        /// in the forwarded `Hello` to get the legacy message accepted, the message we verify no longer
+        /// matches the one the client has signed. If it sends `SSHChallenge` to the client instead,
+        /// the client signs the legacy message, which we do not accept.
+        const bool with_channel_binding = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SSH_CHANNEL_BINDING;
+
         String challenge = create_challenge();
-        writeVarUInt(Protocol::Server::SSHChallenge, *out);
+        writeVarUInt(with_channel_binding ? Protocol::Server::SSHChallengeWithBinding : Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
         out->sync();
 
@@ -2505,7 +2514,13 @@ void TCPHandler::receiveHello()
             return output;
         };
 
-        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
+        /// The binding is derived from our own socket, never from what the client tells us.
+        String to_verify = with_channel_binding
+            ? buildSSHKeyAuthMessage(
+                client_tcp_protocol_version, default_database, user, challenge, getSSHKeyAuthChannelBinding(socket().impl()))
+            : prepare_string_for_ssh_validation(user, challenge);
+
+        auto cred = SshCredentials(user, signature, to_verify);
         session->authenticate(cred, getClientAddress(client_info), socket().peerAddress());
         return;
     }
