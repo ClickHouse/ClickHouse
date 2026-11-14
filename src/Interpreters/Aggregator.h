@@ -1227,6 +1227,13 @@ private:
     template <typename Method, typename Table, typename ForEachCell, typename Filter>
     void adoptSourceCells(Table & table, const ForEachCell & for_each_cell, const Filter & filter, AdaptiveMergeTask & task) const;
 
+    /// Takes the NULL keys of the sources of a merge unit into `table` as `adoptSourceCells` takes their
+    /// cells, for a method that keeps the key in a slot of its own (see `keeps_null_key_slot`).
+    /// `for_each_source_table(f)` calls `f(source_table)` for every source table whose slot holds the key.
+    /// The caller calls it after `adoptSourceCells`, which resets `task.places` and `task.source_slots`.
+    template <typename Method, typename Table, typename ForEachSourceTable>
+    void adoptSourceNullKeys(Table & table, const ForEachSourceTable & for_each_source_table, AdaptiveMergeTask & task) const;
+
     /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
     /// cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every partition
     /// `for_each_in_memory_partition` hands out and the records of every spilled block `for_each_spilled_block` reads
