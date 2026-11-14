@@ -945,4 +945,29 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     return {};
 }
 
+String getReplicatedDatabaseNameForCluster(const String & cluster_name)
+{
+    if (cluster_name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
+        return cluster_name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
+    return cluster_name;
+}
+
+bool isReplicatedDatabaseClusterName(const String & cluster_name)
+{
+    String name = getReplicatedDatabaseNameForCluster(cluster_name);
+    if (name.empty())
+        return false;
+
+    return dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()) != nullptr;
+}
+
+DDLGuardPtr getDDLGuardForReplicatedDatabaseClusterName(const String & cluster_name)
+{
+    String name = getReplicatedDatabaseNameForCluster(cluster_name);
+    if (name.empty())
+        return nullptr;
+
+    return DatabaseCatalog::instance().getDDLGuard(name, "", nullptr);
+}
+
 }

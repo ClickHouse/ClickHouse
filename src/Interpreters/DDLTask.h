@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DDLGuard.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
@@ -316,5 +317,18 @@ public:
 bool isSecondaryDDLReplay(const ContextPtr & context);
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
+
+/// Whether `cluster_name` belongs to a `Replicated` database, i.e. `tryGetReplicatedDatabaseCluster` would look it up
+/// in an existing database. True even if the database cannot build its cluster at the moment (e.g. Keeper is unavailable).
+bool isReplicatedDatabaseClusterName(const String & cluster_name);
+
+/// The name of the database that would own `cluster_name` if it were a `Replicated` database: `cluster_name` itself,
+/// or the name without the all-groups prefix. Empty if there is no such name.
+String getReplicatedDatabaseNameForCluster(const String & cluster_name);
+
+/// The database-level `DDLGuard` for the database that would own `cluster_name` (see `getReplicatedDatabaseNameForCluster`),
+/// or nullptr if there is no such name. `CREATE`, `ATTACH` and `RENAME DATABASE` take this guard, so holding it while
+/// checking `isReplicatedDatabaseClusterName` and installing a SQL cluster excludes a concurrent database creation.
+DDLGuardPtr getDDLGuardForReplicatedDatabaseClusterName(const String & cluster_name);
 
 }

@@ -39,6 +39,7 @@
 #include <GPU/GPUKernelCache.h>
 #endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLClusters/SQLClusterFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
@@ -47,6 +48,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
@@ -526,6 +528,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int CLUSTER_ALREADY_EXISTS;
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
@@ -953,6 +956,11 @@ struct ContextSharedPart : boost::noncopyable
     /// while shutdown() destroys trace_collector, so it must be atomic rather than optional::has_value().
     std::atomic<bool> has_trace_collector = false;
 
+    /// Serializes changes of the cluster namespace (`setClustersConfig` and installing a SQL-managed cluster).
+    /// Locked before `clusters_mutex`. It lets `installSQLCluster` write metadata to disk or Keeper without
+    /// holding `clusters_mutex`, which every cluster lookup needs, while a concurrent config reload still
+    /// cannot take the name between the namespace check and the publication.
+    std::mutex clusters_namespace_mutex;
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
@@ -1291,6 +1299,7 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
+        SQLClusterFactory::instance().shutdown();
         SQLDefinedHandlersFactory::instance().shutdown();
 
         std::unique_ptr<ThreadPool> delete_background_query_pool;
@@ -8029,6 +8038,27 @@ bool Context::resolveWriteThroughDistributedCache() const
     return getSettingsRef()[Setting::force_write_through_distributed_cache].valueOr(getWriteThroughDistributedCache());
 }
 
+namespace
+{
+
+/// `sql_cluster` was found by a name that may contain macros, while a `Replicated` database is looked up by the literal
+/// name. Check the database by the canonical (expanded) name of the SQL cluster, so that `cluster('c_{replica}')` and
+/// `cluster('c_r1')` resolve to the same cluster. A `Replicated` database owns its name even if its cluster is
+/// unavailable (e.g. Keeper was unreachable at startup): never fall back to the SQL cluster in this case.
+ClusterPtr resolveSQLClusterAgainstReplicatedDatabase(ClusterPtr sql_cluster)
+{
+    if (!sql_cluster)
+        return nullptr;
+
+    const String & name = sql_cluster->getName();
+    if (isReplicatedDatabaseClusterName(name))
+        return tryGetReplicatedDatabaseCluster(name);
+
+    return sql_cluster;
+}
+
+}
+
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     if (auto res = tryGetCluster(cluster_name))
@@ -8049,6 +8079,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
     /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
     /// the other sources already account for `treat_local_port_as_remote` on construction (see
     /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
+    std::shared_ptr<Cluster> sql_cluster;
     {
         std::lock_guard lock(shared->clusters_mutex);
 
@@ -8057,8 +8088,9 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
         if (config.has(config_prefix))
             return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
 
-        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
-            return res;
+        sql_cluster = getClustersImpl(lock)->getCluster(cluster_name);
+        if (sql_cluster && sql_cluster->getSourceId() != Cluster::SourceId::SQL)
+            return sql_cluster;
 
         if (shared->cluster_discovery)
         {
@@ -8067,7 +8099,11 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
         }
     }
 
+    /// A SQL-managed cluster never shadows a discovered or a `Replicated` database cluster with the same name.
     if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
+        return res;
+
+    if (auto res = resolveSQLClusterAgainstReplicatedDatabase(std::move(sql_cluster)))
         return res;
 
     throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
@@ -8077,10 +8113,15 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
+    std::shared_ptr<Cluster> sql_cluster = nullptr;
 
     {
         std::lock_guard lock(shared->clusters_mutex);
         res = getClustersImpl(lock)->getCluster(cluster_name);
+
+        /// A SQL-managed cluster never shadows a discovered or a `Replicated` database cluster with the same name.
+        if (res && res->getSourceId() == Cluster::SourceId::SQL)
+            std::swap(res, sql_cluster);
 
         if (res == nullptr && shared->cluster_discovery)
             res = shared->cluster_discovery->getCluster(cluster_name);
@@ -8088,6 +8129,9 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 
     if (res == nullptr)
         res = tryGetReplicatedDatabaseCluster(cluster_name);
+
+    if (res == nullptr)
+        res = resolveSQLClusterAgainstReplicatedDatabase(std::move(sql_cluster));
 
     return res;
 }
@@ -8098,23 +8142,79 @@ void Context::reloadClusterConfig() const
     while (true)
     {
         ConfigurationPtr cluster_config;
+        std::vector<std::pair<String, ClusterPtr>> sql_clusters;
         {
             std::lock_guard lock(shared->clusters_mutex);
             cluster_config = shared->clusters_config;
+            if (shared->clusters)
+            {
+                for (const auto & [name, cluster] : shared->clusters->getContainer())
+                {
+                    if (cluster->getSourceId() == Cluster::SourceId::SQL)
+                        sql_clusters.emplace_back(name, cluster);
+                }
+            }
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
 
+        /// Rebuild SQL clusters outside `clusters_mutex`: `rematerialize` resolves hosts, and
+        /// config clusters are already built without that lock. Keep the original `ClusterPtr`
+        /// so a concurrent `ALTER`/`DROP` is not overwritten or resurrected on the swap below.
+        std::vector<std::pair<ClusterPtr, ClusterPtr>> rematerialized;
+        rematerialized.reserve(sql_clusters.size());
+        for (const auto & [name, cluster] : sql_clusters)
+            rematerialized.emplace_back(cluster, SQLClusterFactory::rematerialize(*cluster, getGlobalContext()));
+
+        bool clusters_reloaded = false;
         {
             std::lock_guard lock(shared->clusters_mutex);
             if (shared->clusters_config.get() == cluster_config.get())
             {
+                if (shared->clusters)
+                {
+                    for (const auto & [name, live] : shared->clusters->getContainer())
+                    {
+                        if (live->getSourceId() != Cluster::SourceId::SQL)
+                            continue;
+
+                        /// Config and SQL cluster names must not collide. Reject here so a newly
+                        /// added `<remote_servers>` entry cannot silently hide behind an existing
+                        /// SQL cluster (and later vanish from view after `DROP CLUSTER`).
+                        if (new_clusters->getCluster(name))
+                        {
+                            throw Exception(
+                                ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                                "Cannot load SQL cluster `{}`: a cluster with the same name already exists in server configuration",
+                                name);
+                        }
+
+                        ClusterPtr rebuilt = live;
+                        for (const auto & [original, rematerialized_cluster] : rematerialized)
+                        {
+                            if (original.get() == live.get())
+                            {
+                                rebuilt = rematerialized_cluster;
+                                break;
+                            }
+                        }
+                        new_clusters->setCluster(name, rebuilt);
+                    }
+                }
+
                 shared->clusters = std::move(new_clusters);
-                return;
+                ++shared->clusters_version;
+                clusters_reloaded = true;
             }
 
             // Clusters config has been suddenly changed, recompute clusters
+        }
+
+        if (clusters_reloaded)
+        {
+            notifyDDLWorkerAfterClustersChange();
+            return;
         }
     }
 }
@@ -8140,7 +8240,12 @@ std::map<String, ClusterPtr> Context::getClusters() const
     {
         const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
         for (const auto & [name, cluster] : cluster_discovery_map)
-            clusters.emplace(name, cluster);
+        {
+            /// A discovered cluster takes precedence over a SQL-managed cluster with the same name.
+            auto [it, inserted] = clusters.emplace(name, cluster);
+            if (!inserted && it->second->getSourceId() == Cluster::SourceId::SQL)
+                it->second = cluster;
+        }
     }
     return clusters;
 }
@@ -8169,6 +8274,7 @@ void Context::startClusterDiscovery()
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     {
+        std::lock_guard namespace_lock(shared->clusters_namespace_mutex);
         std::lock_guard lock(shared->clusters_mutex);
         if (enable_discovery && !shared->cluster_discovery)
         {
@@ -8184,21 +8290,29 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         if (shared->clusters && shared->clusters_config && isSameConfiguration(*config, *shared->clusters_config, config_name))
             return;
 
+        /// Publish `clusters_config` only after the in-memory map is consistent.
+        /// Assigning it first made a failed `updateClusters` (for example a
+        /// SQL/config name collision) look like a successful reload on retry:
+        /// `isSameConfiguration` matched the already-stored config and skipped
+        /// the keys that had not been installed.
         auto old_clusters_config = shared->clusters_config;
-        shared->clusters_config = config;
 
         if (!shared->clusters)
-            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+            shared->clusters = std::make_shared<Clusters>(*config, *settings, getMacros(), config_name);
         else
-            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+            shared->clusters->updateClusters(*config, *settings, config_name, old_clusters_config.get());
 
+        shared->clusters_config = config;
         ++shared->clusters_version;
     }
-    {
-        SharedLockGuard lock(shared->mutex);
-        if (shared->ddl_worker)
-            shared->ddl_worker->notifyHostIDsUpdated();
-    }
+    notifyDDLWorkerAfterClustersChange();
+}
+
+void Context::notifyDDLWorkerAfterClustersChange() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (shared->ddl_worker)
+        shared->ddl_worker->notifyHostIDsUpdated();
 }
 
 size_t Context::getClustersVersion() const
@@ -8208,14 +8322,138 @@ size_t Context::getClustersVersion() const
 }
 
 
+namespace
+{
+
+[[noreturn]] void throwClusterNameOccupied(const String & cluster_name, Cluster::SourceId source)
+{
+    if (source == Cluster::SourceId::CONFIG)
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cluster `{}` already exists in server configuration", cluster_name);
+    if (source == Cluster::SourceId::SQL)
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "SQL cluster `{}` already exists", cluster_name);
+    throw Exception(
+        ErrorCodes::CLUSTER_ALREADY_EXISTS,
+        "Cluster `{}` already exists (source: {})",
+        cluster_name,
+        Cluster::formatSourceIdForSystemTable(source));
+}
+
+}
+
 void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
 {
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        getClustersImpl(lock)->setCluster(cluster_name, cluster);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+}
+
+void Context::installSQLCluster(
+    const String & cluster_name,
+    const std::shared_ptr<Cluster> & cluster,
+    std::function<void()> persist,
+    bool allow_replace_sql)
+{
+    {
+        /// The namespace lock keeps `setClustersConfig` from taking the name until the cluster is published.
+        /// `clusters_mutex` is released while `persist` writes the metadata, so a slow Keeper or disk write
+        /// does not block lookups of unrelated clusters.
+        std::lock_guard namespace_lock(shared->clusters_namespace_mutex);
+
+        {
+            std::lock_guard lock(shared->clusters_mutex);
+            auto clusters = getClustersImpl(lock);
+
+            if (auto existing = clusters->getCluster(cluster_name))
+            {
+                if (existing->getSourceId() != Cluster::SourceId::SQL)
+                    throwClusterNameOccupied(cluster_name, existing->getSourceId());
+                if (!allow_replace_sql)
+                    throwClusterNameOccupied(cluster_name, Cluster::SourceId::SQL);
+            }
+
+            if (shared->cluster_discovery)
+            {
+                if (auto discovered = shared->cluster_discovery->getCluster(cluster_name))
+                    throwClusterNameOccupied(cluster_name, discovered->getSourceId());
+            }
+        }
+
+        persist();
+
+        std::lock_guard lock(shared->clusters_mutex);
+        /// `reloadClusterConfig` may have replaced the map meanwhile (with the same config, so with the same
+        /// names); publish into the current one.
+        getClustersImpl(lock)->setCluster(cluster_name, cluster);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+}
+
+bool Context::trySetSQLCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+{
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        auto clusters = getClustersImpl(lock);
+
+        if (shared->cluster_discovery)
+        {
+            if (shared->cluster_discovery->getCluster(cluster_name))
+                return false;
+        }
+
+        if (auto existing = clusters->getCluster(cluster_name); existing && existing->getSourceId() != Cluster::SourceId::SQL)
+            return false;
+
+        clusters->setCluster(cluster_name, cluster);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+    return true;
+}
+
+void Context::checkReplicatedDatabaseNameIsNotSQLCluster(const String & database_name) const
+{
+    /// `tryGetReplicatedDatabaseCluster` resolves both the database name and the name with the all-groups prefix.
+    /// Look the names up in the map directly: `Clusters::getCluster` would expand macros in the database name.
+    const std::array<String, 2> names{database_name, DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + database_name};
+
     std::lock_guard lock(shared->clusters_mutex);
-
     if (!shared->clusters)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clusters are not set");
+        return;
 
-    shared->clusters->setCluster(cluster_name, cluster);
+    const auto clusters = shared->clusters->getContainer();
+    for (const auto & name : names)
+    {
+        auto it = clusters.find(name);
+        if (it != clusters.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+            throw Exception(
+                ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                "Cannot use name `{}` for a `Replicated` database: it would replace the topology of SQL cluster `{}`",
+                database_name, name);
+    }
+}
+
+bool Context::removeSQLCluster(const String & cluster_name)
+{
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        if (!shared->clusters)
+            return false;
+
+        /// The source is checked under the same lock as the removal: a cluster from the server configuration
+        /// with the same name must survive `DROP CLUSTER` of a SQL cluster defined on another server.
+        auto cluster = shared->clusters->getCluster(cluster_name);
+        if (!cluster || cluster->getSourceId() != Cluster::SourceId::SQL)
+            return false;
+
+        shared->clusters->removeCluster(cluster_name);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+    return true;
 }
 
 

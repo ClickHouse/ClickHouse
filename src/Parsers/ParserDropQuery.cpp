@@ -371,6 +371,31 @@ DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 CREATE HANDLER my_handler URL '/my_handler' AS SELECT version();
 DROP HANDLER my_handler;
 ```
+
+## DROP CLUSTER {#drop-cluster}
+
+Deletes a [SQL-managed cluster](/concepts/features/configuration/server-config/sql-clusters) created by [CREATE CLUSTER](/reference/statements/create/cluster).
+
+Requires the global `DROP CLUSTER` grant (`GRANT DROP CLUSTER ON *.*`).
+
+**Syntax**
+
+```sql
+DROP CLUSTER [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), a single-node `DROP CLUSTER` is sufficient. `ON CLUSTER` is ignored when `ignore_on_cluster_for_replicated_sql_cluster_queries` is enabled (the default).
+
+**Example**
+
+```sql
+CREATE CLUSTER my_cluster (
+    user = 'default',
+    SHARD (REPLICA (host = '127.0.0.1', port = 9000))
+);
+
+DROP CLUSTER my_cluster;
+```
 )DOCS_MD",
         .syntax = R"(
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
@@ -386,6 +411,7 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM 
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
+DROP CLUSTER [IF EXISTS] name [ON CLUSTER cluster]
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
     };

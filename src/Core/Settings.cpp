@@ -3475,6 +3475,10 @@ Ignore ON CLUSTER clause for replicated named collections management queries.
 Ignore ON CLUSTER clause for replicated handler management queries.
 )", 0, \
         {"26.8", false, false, "New setting to ignore the ON CLUSTER clause for handler management queries when handlers are backed by replicated (Keeper) storage."}) \
+    DECLARE(Bool, ignore_on_cluster_for_replicated_sql_cluster_queries, true, R"(
+Ignore `ON CLUSTER` for `CREATE CLUSTER`, `ALTER CLUSTER` and `DROP CLUSTER` when SQL cluster metadata is stored in Keeper. Those statements update a shared znode set, so running them on every replica fails with `CLUSTER_ALREADY_EXISTS` or `CLUSTER_DOESNT_EXIST`. Local file storage still uses `ON CLUSTER` to write a metadata file on each node. Default 1, because `ON CLUSTER` is optional with Keeper storage.
+)", 0, \
+        {"26.11", true, true, "New setting to ignore ON CLUSTER for SQL-managed cluster DDL when metadata is stored in Keeper. Default 1, because ON CLUSTER is optional with Keeper storage."}) \
     /** Settings for testing hedged requests */ \
     DECLARE(Milliseconds, sleep_in_send_tables_status_ms, 0, R"(
 Time to sleep in sending tables status response in TCPHandler

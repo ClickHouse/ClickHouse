@@ -1952,6 +1952,22 @@ public:
 
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
+    /// Recheck occupancy, persist, and insert a SQL-managed cluster. A concurrent `SYSTEM RELOAD CONFIG`
+    /// cannot occupy the name in between, but `persist` runs without `clusters_mutex`, so lookups are not blocked.
+    /// `allow_replace_sql` is true for `ALTER CLUSTER` (replace an existing SQL cluster).
+    void installSQLCluster(
+        const String & cluster_name,
+        const std::shared_ptr<Cluster> & cluster,
+        std::function<void()> persist,
+        bool allow_replace_sql);
+    /// Insert or replace a SQL-managed cluster unless another source already owns the name.
+    bool trySetSQLCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
+    /// Removes the cluster only if it is SQL-managed. Returns whether it was removed.
+    bool removeSQLCluster(const String & cluster_name);
+    /// Throws `CLUSTER_ALREADY_EXISTS` if a `Replicated` database named `database_name` would take over the name of
+    /// a SQL-managed cluster. Lookups prefer the database cluster, so creating, attaching or renaming such a database
+    /// would replace the topology of the SQL cluster without the `SQL CLUSTER ADMIN` privilege.
+    void checkReplicatedDatabaseNameIsNotSQLCluster(const String & database_name) const;
     void reloadClusterConfig() const;
 
     bool isDistributedCacheServer() const;
@@ -2411,6 +2427,8 @@ private:
 
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
+
+    void notifyDDLWorkerAfterClustersChange() const;
 
     WasmModuleManager * initWasmModuleManager();
 

@@ -1,5 +1,6 @@
 
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
@@ -73,9 +74,15 @@ namespace Setting
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
+namespace FailPoints
+{
+    extern const char ddl_worker_quote_entry_query[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int NOT_A_LEADER;
@@ -298,6 +305,15 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         /// Stage 3.1: parse query
         task->parseQueryFromEntry(context);
+
+        /// An upgraded worker parses the entry, but an older worker on the same `ON CLUSTER` target
+        /// rejects it and quotes `entry.query` (including `secret` and `password`) in the syntax error
+        /// the initiator reads back. The failpoint writes that shape of status through the parse-failure path.
+        fiu_do_on(FailPoints::ddl_worker_quote_entry_query,
+        {
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error: {}", task->entry.query);
+        });
+
         /// Stage 3.2: check cluster and find the host in cluster
         task->setClusterInfo(context, log);
         /// Stage 3.3: output rewritten query back to string

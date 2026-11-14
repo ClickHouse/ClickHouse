@@ -6,6 +6,10 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/ParserSQLClusterQuery.h>
+#include <Parsers/parseQuery.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -31,6 +35,8 @@ namespace Setting
     extern const SettingsSeconds distributed_replica_error_half_life;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
@@ -45,10 +51,21 @@ namespace ErrorCodes
     extern const int NO_SUCH_REPLICA;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int CLUSTER_ALREADY_EXISTS;
 }
 
 namespace
 {
+
+/// Values of SQL-managed clusters are literals of the `CREATE CLUSTER` statement and are used verbatim,
+/// while values from the server configuration go through Poco's `${...}` property expansion.
+String getClusterConfigString(
+    const Poco::Util::AbstractConfiguration & config, const String & key, const String & default_value, bool expand_config_values)
+{
+    if (expand_config_values)
+        return config.getString(key, default_value);
+    return config.getRawString(key, default_value);
+}
 
 /// Default shard weight.
 constexpr UInt32 default_weight = 1;
@@ -102,21 +119,22 @@ Cluster::Address::Address(
         const String & cluster_secret_,
         UInt32 shard_index_,
         UInt32 replica_index_,
-        bool treat_local_port_as_remote)
+        bool treat_local_port_as_remote,
+        bool expand_config_values)
     : cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , shard_index(shard_index_)
     , replica_index(replica_index_)
 {
-    host_name = config.getString(config_prefix + ".host");
+    host_name = expand_config_values ? config.getString(config_prefix + ".host") : config.getRawString(config_prefix + ".host");
     if (config.has(config_prefix + ".user"))
         user_specified = true;
 
-    user = config.getString(config_prefix + ".user", "default");
-    password = config.getString(config_prefix + ".password", "");
-    default_database = config.getString(config_prefix + ".default_database", "");
+    user = getClusterConfigString(config, config_prefix + ".user", "default", expand_config_values);
+    password = getClusterConfigString(config, config_prefix + ".password", "", expand_config_values);
+    default_database = getClusterConfigString(config, config_prefix + ".default_database", "", expand_config_values);
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    bind_host = config.getString(config_prefix + ".bind_host", "");
+    bind_host = getClusterConfigString(config, config_prefix + ".bind_host", "", expand_config_values);
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
 
     proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
@@ -319,6 +337,12 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
     impl[cluster_name] = cluster;
 }
 
+void Clusters::removeCluster(const String & cluster_name)
+{
+    std::lock_guard lock(mutex);
+    impl.erase(cluster_name);
+}
+
 
 void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config)
 {
@@ -342,30 +366,42 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
     std::lock_guard lock(mutex);
 
+    /// Apply deletions and insertions on a copy so a throw (a SQL/config name
+    /// collision, a cluster name with a dot, or a constructor error) cannot
+    /// leave `impl` with only a prefix of the new keys. The caller then sees
+    /// the previous topology and can retry after fixing the configuration.
+    Impl new_impl = impl;
+    auto new_automatic_clusters = automatic_clusters;
+
     /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
     if (old_config)
     {
         for (const auto & key : deleted_keys)
         {
-            if (!automatic_clusters.contains(key))
-                impl.erase(key);
+            if (!new_automatic_clusters.contains(key))
+            {
+                auto it = new_impl.find(key);
+                if (it != new_impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+                    continue;
+
+                new_impl.erase(key);
+            }
         }
     }
     else
     {
-        if (!automatic_clusters.empty())
-            std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
+        if (!new_automatic_clusters.empty())
+            std::erase_if(new_impl, [&](const auto & e) { return new_automatic_clusters.contains(e.first); });
         else
-            impl.clear();
+            std::erase_if(new_impl, [](const auto & e) { return e.second->getSourceId() != Cluster::SourceId::SQL; });
     }
-
 
     for (const auto & key : new_config_keys)
     {
         if (new_config.has(config_prefix + "." + key + ".discovery"))
         {
             /// Handled in ClusterDiscovery
-            automatic_clusters.insert(key);
+            new_automatic_clusters.insert(key);
             continue;
         }
 
@@ -374,8 +410,23 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
-            impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+        {
+            auto it = new_impl.find(key);
+            if (it != new_impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+            {
+                throw Exception(
+                    ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                    "Cannot load cluster `{}` from server configuration: "
+                    "an SQL-managed cluster with the same name already exists",
+                    key);
+            }
+
+            new_impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+        }
     }
+
+    impl = std::move(new_impl);
+    automatic_clusters = std::move(new_automatic_clusters);
 }
 
 Clusters::Impl Clusters::getContainer() const
@@ -392,7 +443,12 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
     const String & cluster_name,
-    bool treat_local_port_as_remote) : name(cluster_name)
+    bool treat_local_port_as_remote,
+    SourceId source_id_,
+    String create_query_)
+    : name(cluster_name)
+    , source_id(source_id_)
+    , create_query(std::move(create_query_))
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -401,7 +457,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     config_prefix += ".";
 
-    secret = config.getString(config_prefix + "secret", "");
+    /// String literals of SQL-managed clusters are not subject to `${...}` substitution.
+    const bool expand_config_values = source_id != SourceId::SQL;
+
+    secret = getClusterConfigString(config, config_prefix + "secret", "", expand_config_values);
     std::erase(config_keys, "secret");
 
     allow_distributed_ddl_queries = config.getBool(config_prefix + "allow_distributed_ddl_queries", true);
@@ -476,7 +535,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         {
             /// Shard without replicas.
             Addresses addresses;
-            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1, treat_local_port_as_remote);
+            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1, treat_local_port_as_remote, expand_config_values);
             const auto & address = addresses.back();
             shard_keys.push_back(use_shards_names ? shard_name : shard_key_from_addresses(addresses));
 
@@ -541,7 +600,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                         secret,
                         current_shard_num,
                         current_replica_num,
-                        treat_local_port_as_remote);
+                        treat_local_port_as_remote,
+                        expand_config_values);
                     ++current_replica_num;
                 }
                 else
@@ -600,13 +660,32 @@ String Cluster::makeKeeperScopeKey(const String & zookeeper_name, const String &
     return toString(zookeeper_name.size()) + ':' + zookeeper_name + zookeeper_path;
 }
 
+String Cluster::formatSourceIdForSystemTable(SourceId source_id)
+{
+    switch (source_id)
+    {
+        case SourceId::CONFIG:
+            return "CONFIG";
+        case SourceId::SQL:
+            return "SQL";
+        case SourceId::DISCOVERY:
+            return "DISCOVERY";
+        case SourceId::REPLICATED_DATABASE:
+            return "REPLICATED_DATABASE";
+        case SourceId::NONE:
+            return {};
+    }
+}
+
 Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,
     const ClusterConnectionParameters & params,
     const Strings & shard_keys,
-    const String & shard_scope_key)
-    : shard_scope_identity(
+    const String & shard_scope_key,
+    SourceId source_id_)
+    : source_id(source_id_)
+    , shard_scope_identity(
           makeShardScopeIdentity(HOSTS_BY_SHARD_SCOPE, shard_scope_key.empty() ? params.cluster_name : shard_scope_key, shard_keys))
 {
     /// A missing key would be silently taken for a shorter cluster, so a partial list is not accepted.
@@ -676,8 +755,10 @@ Cluster::Cluster(
     const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
     const ClusterConnectionParameters & params,
     bool internal_replication,
-    const String & shard_scope_key)
-    : shard_scope_identity(makeShardScopeIdentity(
+    const String & shard_scope_key,
+    SourceId source_id_)
+    : source_id(source_id_)
+    , shard_scope_identity(makeShardScopeIdentity(
           REPLICAS_BY_SHARD_SCOPE,
           shard_scope_key.empty() ? params.cluster_name : shard_scope_key,
           getShardNamesForScopeIdentity(infos)))
@@ -955,6 +1036,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
     replicas_as_shards = true;
     /// Every replica became a shard of its own, so a shard number here denotes a different shard than the same
     /// number does in `from`. The identity is left empty, and an empty identity authenticates nothing.
@@ -979,6 +1062,8 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
     /// `shards_info.emplace_back(from_shard)` above keeps each shard's `shard_num`, so a shard number
     /// still denotes the same shard as in `from` and the identity carries over.
     shard_scope_identity = from.shard_scope_identity;
@@ -995,6 +1080,8 @@ Cluster::Cluster(Cluster::RemoteReplicasTag, const Cluster & from, const Setting
 
     secret = from.secret;
     name = from.name;
+    source_id = from.source_id;
+    create_query = from.create_query;
 
     UInt32 current_shard_num = 1;
     for (size_t shard_index : collections::range(0, from.addresses_with_failover.size()))
@@ -1100,6 +1187,32 @@ bool Cluster::maybeCrossReplication() const
                 return true;
 
     return false;
+}
+
+String Cluster::getCreateStatement(bool show_secrets) const
+{
+    if (source_id != SourceId::SQL || create_query.empty())
+        return {};
+
+    const auto context = Context::getGlobalContextInstance();
+    const auto & settings = context->getSettingsRef();
+
+    ParserCreateSQLClusterQuery parser;
+    const auto ast = parseQuery(
+        parser,
+        create_query,
+        "SQL cluster " + name,
+        /*max_query_size=*/0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
+
+    return ast->formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        show_secrets,
+        /*print_pretty_type_names=*/false,
+        IdentifierQuotingRule::WhenNecessary,
+        IdentifierQuotingStyle::Backticks);
 }
 
 }

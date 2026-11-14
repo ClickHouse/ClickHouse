@@ -2072,11 +2072,23 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
 
+    /// `Address::operator==` does not compare the inter-server secret, but the connection pool of the queue
+    /// signs every request with it, so rotating only the secret (e.g. with `ALTER CLUSTER`) must recreate the queue.
+    auto addresses_changed = [](const Cluster::Addresses & lhs, const Cluster::Addresses & rhs)
+    {
+        if (lhs != rhs)
+            return true;
+        for (size_t i = 0; i < lhs.size(); ++i)
+        {
+            if (lhs[i].cluster != rhs[i].cluster || lhs[i].cluster_secret != rhs[i].cluster_secret)
+                return true;
+        }
+        return false;
+    };
+
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
-    if (!node_data.directory_queue
-        || (node_data.clusters_version < getContext()->getClustersVersion() && node_data.addresses != parseAddresses(name)))
+    if (!node_data.directory_queue)
     {
         node_data.addresses = parseAddresses(name);
         node_data.clusters_version = getContext()->getClustersVersion();
@@ -2086,6 +2098,19 @@ std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDir
             node_data.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
+    }
+    else if (const auto clusters_version = getContext()->getClustersVersion(); node_data.clusters_version < clusters_version)
+    {
+        /// If the node changes, only replace the connection pool of the existing queue. A new queue over the same
+        /// directory would start a second sender, which could send a file that the old one is still sending.
+        auto addresses = parseAddresses(name);
+        if (addresses_changed(node_data.addresses, addresses))
+        {
+            node_data.addresses = std::move(addresses);
+            node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
+            node_data.directory_queue->updatePool(node_data.connection_pool);
+        }
+        node_data.clusters_version = clusters_version;
     }
     return node_data.directory_queue;
 }
@@ -2809,7 +2834,9 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
-Clusters are configured in the [server configuration file](/concepts/features/configuration/server-config/configuration-files):
+Clusters can be defined in the [server configuration file](/concepts/features/configuration/server-config/configuration-files) or with SQL using [`CREATE CLUSTER`](/reference/statements/create/cluster). SQL-managed clusters are stored in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters) and appear in [`system.clusters`](/reference/system-tables/clusters) with `source = 'SQL'`.
+
+The XML format below is still supported:
 
 ```xml
 <remote_servers>
@@ -2889,7 +2916,7 @@ You can specify as many clusters as you wish in the configuration.
 
 To view your clusters, use the `system.clusters` table.
 
-The `Distributed` engine allows working with a cluster like a local server. However, the cluster's configuration cannot be specified dynamically, it has to be configured in the server config file. Usually, all servers in a cluster will have the same cluster config (though this is not required). Clusters from the config file are updated on the fly, without restarting the server.
+The `Distributed` engine allows working with a cluster like a local server. Config-defined clusters are updated on the fly, without restarting the server. SQL-managed clusters are loaded at startup and updated immediately when created, altered, or dropped with DDL. Usually, all servers in a cluster will have the same cluster config (though this is not required).
 
 If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](/reference/functions/table-functions/index).
 

@@ -1263,6 +1263,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_database", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_handler_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_named_collections_queries", trueOrFalseSettingNoOracle},
+    {"ignore_on_cluster_for_replicated_sql_cluster_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_udf_queries", trueOrFalseSettingNoOracle},
     {"implicit_select", trueOrFalseSettingNoOracle},
     {"inject_random_order_for_select_without_order_by", trueOrFalseSettingNoOracle},

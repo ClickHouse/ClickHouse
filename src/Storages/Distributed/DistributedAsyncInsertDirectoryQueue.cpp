@@ -167,6 +167,18 @@ DistributedAsyncInsertDirectoryQueue::~DistributedAsyncInsertDirectoryQueue()
     }
 }
 
+void DistributedAsyncInsertDirectoryQueue::updatePool(ConnectionPoolWithFailoverPtr new_pool)
+{
+    std::lock_guard lock{pool_mutex};
+    pool = std::move(new_pool);
+}
+
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::getPool() const
+{
+    std::lock_guard lock{pool_mutex};
+    return pool;
+}
+
 void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & settings_changes)
 {
     if (pending_files.isFinished())
@@ -463,8 +475,9 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-        auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+        const auto current_pool = getPool();
+        auto results = current_pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto result = current_pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
