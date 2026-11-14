@@ -916,7 +916,8 @@ void registerInputFormatFreeform(FormatFactory & factory)
     factory.registerInputFormat(
         "Freeform",
         [](ReadBuffer & buf, const Block & header, const RowInputFormatParams & params, const FormatSettings & settings)
-        { return std::make_shared<FreeformRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings); });
+        { return std::make_shared<FreeformRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings); },
+        /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Freeform", Documentation{
         .description = R"DOCS_MD(
