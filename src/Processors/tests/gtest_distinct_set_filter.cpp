@@ -1080,16 +1080,18 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
     const auto u32 = std::make_shared<DataTypeUInt32>();
     const auto u64 = std::make_shared<DataTypeUInt64>();
     const std::vector<DataTypes> key_types{
-        {u8}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64}, {u64, u64, u64},
+        {u8}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64}, {u64, u64, u64}, {u32, u64, u64},
         {std::make_shared<DataTypeNullable>(u8), u64},
         {std::make_shared<DataTypeNullable>(u64), u64},
+        {std::make_shared<DataTypeNullable>(u64), u64, u64},
         {std::make_shared<DataTypeFixedString>(3), u64},
+        {std::make_shared<DataTypeFixedString>(3), u8, u32},
         {std::make_shared<DataTypeLowCardinality>(u64), u64},
         {std::make_shared<DataTypeArray>(u64)}};
 
     for (const auto & types : key_types)
     {
-        for (const size_t rows : {0, 1, 256})
+        for (const size_t rows : {0, 1, 256, 1 << 20})
         {
             Columns columns;
             ColumnRawPtrs key_columns;
@@ -1111,6 +1113,10 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
                 size_t actual_bytes = 0;
                 if constexpr (requires { state.prepared_keys; })
                 {
+                    /// A state may pack its keys when the first row is asked for.
+                    Arena arena;
+                    if (rows)
+                        state.getKeyHolder(0, arena);
                     /// An empty array uses shared static padding without allocating a batch buffer.
                     if (!state.prepared_keys.empty())
                         actual_bytes = state.prepared_keys.allocated_bytes();

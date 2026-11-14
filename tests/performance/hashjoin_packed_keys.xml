@@ -34,8 +34,31 @@
     <!-- keys32 under parallel_hash -->
     <query>SELECT l.a FROM keys32_probe AS l INNER JOIN keys32_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
 
+    <!--
+        A FixedString(3), UInt8 key (keys32) and the same bytes as UInt16, UInt8, UInt8: 1M build keys, half of the
+        50M probe rows match.
+    -->
+    <create_query>CREATE TABLE fs3_build (f FixedString(3), u UInt8) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE fs3_probe (f FixedString(3), u UInt8) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE u16u8_build (w UInt16, v UInt8, u UInt8) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE u16u8_probe (w UInt16, v UInt8, u UInt8) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO fs3_build SELECT toFixedString(reinterpretAsString(toUInt32(2 * (number % 500000))), 3), intDiv(number, 500000) FROM numbers_mt(1000000)</fill_query>
+    <fill_query>INSERT INTO fs3_probe SELECT toFixedString(reinterpretAsString(toUInt32(number % 1000000)), 3), number % 2 FROM numbers_mt(50000000)</fill_query>
+    <fill_query>INSERT INTO u16u8_build SELECT bitAnd(2 * (number % 500000), 65535), bitShiftRight(2 * (number % 500000), 16), intDiv(number, 500000) FROM numbers_mt(1000000)</fill_query>
+    <fill_query>INSERT INTO u16u8_probe SELECT bitAnd(number % 1000000, 65535), bitShiftRight(number % 1000000, 16), number % 2 FROM numbers_mt(50000000)</fill_query>
+
+    <query>SELECT l.u FROM fs3_probe AS l INNER JOIN fs3_build AS r ON l.f = r.f AND l.u = r.u SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial' FORMAT Null</query>
+    <query>SELECT l.u FROM fs3_probe AS l INNER JOIN fs3_build AS r ON l.f = r.f AND l.u = r.u SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
+    <query>SELECT l.u FROM u16u8_probe AS l INNER JOIN u16u8_build AS r ON l.w = r.w AND l.v = r.v AND l.u = r.u SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial' FORMAT Null</query>
+    <query>SELECT l.u FROM u16u8_probe AS l INNER JOIN u16u8_build AS r ON l.w = r.w AND l.v = r.v AND l.u = r.u SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS keys64_build</drop_query>
     <drop_query>DROP TABLE IF EXISTS keys64_probe</drop_query>
     <drop_query>DROP TABLE IF EXISTS keys32_build</drop_query>
     <drop_query>DROP TABLE IF EXISTS keys32_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fs3_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fs3_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS u16u8_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS u16u8_probe</drop_query>
 </test>

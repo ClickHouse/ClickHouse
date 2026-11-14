@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
@@ -17,6 +18,34 @@ namespace DB
 /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
 /// Returns the threshold (in bytes) above which prefetching is enabled in JOIN.
 size_t getMinBytesForPrefetchInJoin();
+
+/// The rows of the block a key getter is asked about: the rows of the selector.
+inline ColumnsHashing::RowRange joinKeyRows(const ScatteredBlock::Selector & selector)
+{
+    if (selector.size() == 0)
+        return {.begin = 0, .end = 0};
+    return {.begin = selector[0], .end = selector[selector.size() - 1] + 1, .skips_rows = !selector.isContinuousRange()};
+}
+
+/// The rows of the selector, without those with a NULL key or filtered out by the ON section.
+inline ColumnsHashing::RowRange joinKeyRows(
+    ConstNullMapPtr null_map, const JoinCommon::JoinMask & join_mask, const ScatteredBlock::Selector & selector)
+{
+    ColumnsHashing::RowRange rows = joinKeyRows(selector);
+    rows.skips_rows = rows.skips_rows || join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue
+        || (null_map && !memoryIsZero(null_map->data(), rows.begin, rows.end));
+    return rows;
+}
+
+/// A key getter over `columns`; `rows` are the rows it is asked about, for a getter that takes them.
+template <typename KeyGetter>
+KeyGetter makeJoinKeyGetter(const ColumnRawPtrs & columns, const Sizes & sizes, ColumnsHashing::RowRange rows)
+{
+    if constexpr (std::is_constructible_v<KeyGetter, const ColumnRawPtrs &, const Sizes &, std::nullptr_t, ColumnsHashing::RowRange>)
+        return KeyGetter(columns, sizes, nullptr, rows);
+    else
+        return KeyGetter(columns, sizes, nullptr);
+}
 
 /// Inserting an element into a hash table of the form `key -> reference to a row`, which will then be used by JOIN.
 template <typename HashMap, typename KeyGetter>

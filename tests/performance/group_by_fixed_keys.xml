@@ -34,5 +34,27 @@
     <!-- nullable_keys256_two_level -->
     <query>select e, f, i from group_by_fk group by e, f, i format Null</query>
 
+    <!-- 100100 values of `n`; `f3` holds the bytes of `w, v` -->
+    <create_query>create table group_by_fk_chunks(f3 FixedString(3), w UInt16, v UInt8, u UInt8, q UInt32, a Int64, b Int64, c Int64, cn Nullable(Int64), cnn Nullable(Int64)) engine=MergeTree order by tuple()</create_query>
+
+    <fill_query>insert into group_by_fk_chunks select toFixedString(reinterpretAsString(toUInt32(n)), 3), bitAnd(n, 65535), bitShiftRight(n, 16), number % 5, number % 3, n, n * 7, n * 13, n * 13, if(number % 10 = 3, NULL, n * 13) from (select number, number % 100100 as n from numbers_mt(1e8)) settings max_insert_threads=8</fill_query>
+
+    <!-- keys64 and keys32 with a FixedString(3) key, and the same bytes as UInt16, UInt8 -->
+    <query>select f3, u, q from group_by_fk_chunks group by f3, u, q format Null</query>
+    <query>select w, v, u, q from group_by_fk_chunks group by w, v, u, q format Null</query>
+    <query>select f3, u from group_by_fk_chunks group by f3, u format Null</query>
+    <query>select w, v, u from group_by_fk_chunks group by w, v, u format Null</query>
+    <!-- nullable_keys256 -->
+    <query>select a, b, cn from group_by_fk_chunks group by a, b, cn format Null</query>
+    <query>select count() from (select distinct a, b, cn from group_by_fk_chunks)</query>
+    <!-- keys256: about 91K groups with a key narrower than 8 bytes, keys256_two_level with one, and 100100 groups -->
+    <query>WITH toUInt32(number % 9091) AS k1, toUInt64(number % 10) AS k2, toUInt64(number % 5) AS k3 SELECT k1, k2, k3, count() FROM numbers_mt(100000000) GROUP BY k1, k2, k3 FORMAT Null</query>
+    <query>select a, e, f from group_by_fk group by a, e, f format Null</query>
+    <query>select a, b, c from group_by_fk_chunks group by a, b, c format Null</query>
+    <query>select count() from (select distinct a, b, c from group_by_fk_chunks)</query>
+    <!-- keys256 IN over a Nullable key with 10% NULLs: the set skips the rows with NULLs -->
+    <query>select count() from group_by_fk_chunks where (a, b, cnn) in (select a, b, c from group_by_fk_chunks where a % 3 = 0 and q = 1 limit 50000)</query>
+
     <drop_query>drop table group_by_fk</drop_query>
+    <drop_query>drop table group_by_fk_chunks</drop_query>
 </test>
