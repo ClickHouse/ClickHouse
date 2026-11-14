@@ -194,6 +194,11 @@ public:
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
 
+    /// The size of the streams a read of all columns touches, so a second representation of the same data, such as
+    /// the copy of the shared data of Object, is not counted; the constant granularity of merges and mutations is
+    /// sized by it.
+    ColumnSize getTotalColumnsReadSize() const { return calculateTotalColumnsReadSize(); }
+
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSecondaryIndicesSize() const;
 
@@ -895,6 +900,10 @@ protected:
 
     /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
     virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
+
+    /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
+    /// in streams of their own.
+    virtual ColumnSize calculateTotalColumnsReadSize() const { return getTotalColumnsSize(); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 

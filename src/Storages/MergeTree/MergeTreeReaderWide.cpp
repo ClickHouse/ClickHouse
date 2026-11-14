@@ -1306,35 +1306,40 @@ void MergeTreeReaderWide::deserializePrefix(
             };
         }
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
-        deserialize_settings.has_uniform_marks_callback =
-            [&](const ISerialization::SubstreamPath & substream_path,
-                size_t max_transitions) -> bool
+        /// A sample read only lists the streams and their sizes, so it must not enable this callback's prefix-time
+        /// optimizations: they read column data a sample read never uses.
+        if (!settings.read_only_column_sample)
         {
-            /// Wide parts with a final mark have a trailing position after the
-            /// suffix, so a single per-part dictionary shows up as <= 2 distinct
-            /// positions in the dictionary stream (data mark + final mark).
-            /// Without a final mark, the same check must be stricter: a true
-            /// single-dictionary part has only one distinct position, while a part
-            /// with one dictionary in the main stream and another in the suffix can
-            /// still look like "2 positions".
-            /// This is only a necessary condition; `SerializationLowCardinality`
-            /// still checks the `DictionaryKeys` stream reaches EOF after the
-            /// first dictionary.
-            const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
-            const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
-                ? max_transitions
-                : max_transitions - 1;
+            deserialize_settings.has_uniform_marks_callback =
+                [&](const ISerialization::SubstreamPath & substream_path,
+                size_t max_transitions) -> bool
+            {
+                /// Wide parts with a final mark have a trailing position after the
+                /// suffix, so a single per-part dictionary shows up as <= 2 distinct
+                /// positions in the dictionary stream (data mark + final mark).
+                /// Without a final mark, the same check must be stricter: a true
+                /// single-dictionary part has only one distinct position, while a part
+                /// with one dictionary in the main stream and another in the suffix can
+                /// still look like "2 positions".
+                /// This is only a necessary condition; `SerializationLowCardinality`
+                /// still checks the `DictionaryKeys` stream reaches EOF after the
+                /// first dictionary.
+                const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
+                const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
+                    ? max_transitions
+                    : max_transitions - 1;
 
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                name_and_type, substream_path, ".bin",
-                data_part_info_for_read->getChecksums(), storage_settings);
-            if (!stream_name)
-                return false;
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type, substream_path, ".bin",
+                    data_part_info_for_read->getChecksums(), storage_settings);
+                if (!stream_name)
+                    return false;
 
-            /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
-            auto & stream = getOrAddStream(substream_path, *stream_name);
-            return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
-        };
+                /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
+                auto & stream = getOrAddStream(substream_path, *stream_name);
+                return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
+            };
+        }
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }
