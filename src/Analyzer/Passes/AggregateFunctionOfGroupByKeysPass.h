@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/IQueryTreePass.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 
 namespace DB
 {
@@ -13,6 +14,8 @@ namespace DB
 class AggregateFunctionOfGroupByKeysPass final : public IQueryTreePass
 {
 public:
+    explicit AggregateFunctionOfGroupByKeysPass(UsableGroupByKeys usable_keys_) : usable_keys(usable_keys_) {}
+
     String getName() override { return "AggregateFunctionOfGroupByKeys"; }
 
     String getDescription() override
@@ -22,6 +25,8 @@ public:
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
+private:
+    const UsableGroupByKeys usable_keys;
 };
 
 }

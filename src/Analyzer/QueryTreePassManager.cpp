@@ -59,6 +59,7 @@
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/TruncateOrderByAfterGroupByKeysPass.h>
+#include <Analyzer/Passes/UnifyGroupByKeysPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Utils.h>
@@ -316,7 +317,7 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 
     /// should before AggregateFunctionsArithmeticOperationsPass
-    manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
+    manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>(UsableGroupByKeys::BEFORE_REPLACEMENTS));
 
     manager.addPass(std::make_unique<AggregateFunctionsArithmeticOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
@@ -338,7 +339,7 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
-    manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
+    manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>(UsableGroupByKeys::BEFORE_REPLACEMENTS));
     manager.addPass(std::make_unique<OptimizeGroupByInjectiveFunctionsPass>());
 
     /// The order here is important as we want to keep collapsing in order
@@ -370,6 +371,14 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
+
+    /// After all passes that can rewrite an expression over a function, see `UsableGroupByKeys`.
+    manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>(UsableGroupByKeys::AFTER_REPLACEMENTS));
+    manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>(UsableGroupByKeys::AFTER_REPLACEMENTS));
+    manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
+
+    /// After all passes that replace expressions with keys, or remove keys.
+    manager.addPass(std::make_unique<UnifyGroupByKeysPass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 

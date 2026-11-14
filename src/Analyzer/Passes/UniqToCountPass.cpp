@@ -7,7 +7,9 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
@@ -48,7 +50,7 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
 
         for (size_t i = 0; i < projection_columns.size(); i++)
         {
-            if (projection_nodes[i]->isEqual(*group_by_element))
+            if (projection_nodes[i]->isEqual(*group_by_element) && areConstantsWrittenAlike(projection_nodes[i], group_by_element))
             {
                 result.push_back(projection_columns[i]);
                 break;
@@ -156,7 +158,30 @@ public:
         if (!matchFnUniq(function_node->getFunctionName()))
             return;
 
+        /// A window function also processes subtotals, and totals of the subquery, which can be equal.
+        if (function_node->isWindowFunction() && (query_node->hasGroupBy() || subquery_node->isGroupByWithTotals()))
+            return;
+
+        /// `count` has no parameters.
+        if (!function_node->getParameters().getNodes().empty())
+            return;
+
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
+
+        /// The arguments must be different columns of the subquery.
+        QueryTreeNodePtrWithHashSet unique_arguments;
+        for (const auto & uniq_argument_node : uniq_arguments_nodes)
+        {
+            const auto * column_node = uniq_argument_node->as<ColumnNode>();
+            if (!column_node || column_node->getColumnSourceOrNull().get() != subquery_node
+                || !unique_arguments.emplace(uniq_argument_node).second)
+                return;
+        }
+
+        /// `arrayJoin` repeats the rows of the subquery.
+        for (const auto & clause : query_node->getChildren())
+            if (clause && clause != query_node->getJoinTreeNode() && hasFunctionNode(clause, "arrayJoin"))
+                return;
 
         /// `uniq` does not count a NULL, but an argument-less `count()` counts the row that
         /// `SELECT DISTINCT` or `GROUP BY` emits for it, so replacing `uniq(x)` with `count()`
@@ -172,10 +197,14 @@ public:
         if (any_argument_can_contain_null && uniq_arguments_nodes.size() != 1)
             return;
 
+        /// Some variants return NULL if all arguments are NULL, or if there are none.
+        if (canContainNull(*function_node->getResultType()))
+            return;
+
         /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)'
         auto match_subquery_with_distinct = [&]() -> bool
         {
-            if (!subquery_node->isDistinct())
+            if (!subquery_node->isDistinct() || canHaveEqualRowsAfterDistinct(*subquery_node))
                 return false;
 
             /// uniq expression list == subquery projection columns
@@ -195,6 +224,9 @@ public:
             /// which `count()` would count as additional distinct values.
             if (subquery_node->isGroupByWithRollup() || subquery_node->isGroupByWithCube()
                 || subquery_node->isGroupByWithTotals() || subquery_node->isGroupByWithGroupingSets())
+                return false;
+
+            if (canHaveSeveralRowsPerGroup(*subquery_node))
                 return false;
 
             /// uniq argument node list == subquery group by node list

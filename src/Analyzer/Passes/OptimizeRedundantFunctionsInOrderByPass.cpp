@@ -45,6 +45,10 @@ public:
         if (!query->hasOrderBy())
             return;
 
+        /// A function of a key can be another key, which has a default value in subtotals.
+        if (query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets())
+            return;
+
         auto & order_by = query->getOrderBy();
         for (auto & elem : order_by.getNodes())
         {
@@ -58,7 +62,8 @@ public:
 
         for (auto & elem : order_by.getNodes())
         {
-            auto & order_by_expr = elem->as<SortNode>()->getExpression();
+            auto & sort_node = elem->as<SortNode &>();
+            auto & order_by_expr = sort_node.getExpression();
             switch (order_by_expr->getNodeType())
             {
                 case QueryTreeNodeType::FUNCTION:
@@ -69,7 +74,9 @@ public:
                 }
                 case QueryTreeNodeType::COLUMN:
                 {
-                    existing_keys.insert(order_by_expr);
+                    /// Different values can be equal with a collation, and functions of them can differ.
+                    if (!sort_node.getCollator())
+                        existing_keys.insert(order_by_expr);
                     break;
                 }
                 default:

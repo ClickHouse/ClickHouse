@@ -170,6 +170,9 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 /// grouping by them yields contiguous groups.
 SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header);
 
+/// Returns true if the comparison of values of this type cannot tell some different values apart, such as `-0.0` and `0.0`.
+bool comparisonCanMergeDistinctValues(const IDataType & type);
+
 /// True when every key of `description` is constant in `header`, so all rows compare equal under it.
 bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header);
 
