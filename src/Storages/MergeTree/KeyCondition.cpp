@@ -53,6 +53,7 @@
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -80,7 +81,6 @@ namespace Setting
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
@@ -104,7 +104,7 @@ namespace
 
 size_t getMaxThreadsForIndexAnalysis(const Settings & settings)
 {
-    size_t max_threads = settings[Setting::max_threads];
+    size_t max_threads = getEffectiveMaxThreads(settings);
     if (settings[Setting::max_threads_for_indexes])
         max_threads = std::min<size_t>(max_threads, settings[Setting::max_threads_for_indexes]);
     return max_threads;
