@@ -52,7 +52,8 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.LOONGARCH64: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-loongarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_BUZZHOUSE=1",
     # WebAssembly, through the Emscripten toolchain: `emcmake` points CMAKE_TOOLCHAIN_FILE at
     # Emscripten's own toolchain file, which supplies `emcc`/`em++`, so no compiler is passed
-    # here. `emcc` is a Python driver that sccache cannot cache, hence the cache is disabled.
+    # here. `emcc` is a Python driver that sccache cannot wrap, so CMake gets no compiler launcher;
+    # the build runs emcc's clang through sccache with `EM_COMPILER_WRAPPER` instead (see `main`).
     BuildTypes.WASM64: f"       emcmake cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DCOMPILER_CACHE=disabled -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.ARM_FUZZERS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=0 -DPARALLEL_LINK_JOBS=2",  # TODO: fix build with -DSANITIZE_COVERAGE=1
 }
@@ -558,6 +559,11 @@ def main():
             )
         elif shard:
             build_command = lambda: build_tidy_shard(*shard)
+        elif build_type == BuildTypes.WASM64:
+            build_command = (
+                f"EM_COMPILER_WRAPPER={repo_path_normalized}/ci/jobs/scripts/emcc_sccache.sh"
+                f" command time -v ninja {targets}"
+            )
         else:
             build_command = f"command time -v ninja {targets}"
 
@@ -604,8 +610,10 @@ def main():
                 results.append(retry_cmake)
 
         run_shell_with_output("sccache stats", "sccache --show-stats")
-        # wasm64 disables the cache (emcc is uncacheable), so sccache sees zero compilations on a healthy build
-        if not reference_build and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
+        # wasm64 configures CMake without a compiler cache, but its compilations go through sccache (EM_COMPILER_WRAPPER above)
+        if not reference_build and (
+            build_type == BuildTypes.WASM64 or "-DCOMPILER_CACHE=disabled" not in cmake_cmd
+        ):
             warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")

@@ -142,6 +142,13 @@ build_digest_config = Job.CacheDigestConfig(
     with_git_submodules=True,
 )
 
+# Inputs of one special build that the shared build digest does not cover (see JobConfigs.special_build_jobs).
+special_build_digest_paths = {
+    BuildTypes.ARM_FUZZERS: ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+    # emcc runs every compilation of this build through the wrapper (see build_clickhouse.py)
+    BuildTypes.WASM64: ["./ci/jobs/scripts/emcc_sccache.sh"],
+}
+
 fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./ci/jobs/fast_test.py",
@@ -724,12 +731,12 @@ class JobConfigs:
             job.set_digest_config(
                 Job.CacheDigestConfig(
                     include_paths=build_digest_config.include_paths
-                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+                    + special_build_digest_paths[job.parameter],
                     exclude_paths=build_digest_config.exclude_paths,
                     with_git_submodules=True,
                 )
             )
-            if job.parameter == BuildTypes.ARM_FUZZERS
+            if job.parameter in special_build_digest_paths
             else job
         )
         for job in special_build_jobs
