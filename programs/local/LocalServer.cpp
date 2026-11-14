@@ -442,6 +442,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     /// throw from a lazy read at the use site).
     validateClientConfiguration();
 
+    /// A local process normally shares its cgroup with the rest of the login session.
+    /// Keep explicit configuration, but do not charge that session's memory to this process by default.
+    if (!config().has("memory_worker_use_cgroup"))
+        config().setBool("memory_worker_use_cgroup", false);
+
     server_settings.loadSettingsFromConfig(config());
 
 #if USE_JEMALLOC

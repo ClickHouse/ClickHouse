@@ -1496,7 +1496,11 @@ The correction does not hide the drift. `MemoryTrackingUncorrected` keeps the va
 
 Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative.
 )", 0) \
-    DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
+    DECLARE(Bool, memory_worker_use_cgroup, true, R"(
+Use current cgroup memory usage information to correct memory tracking. This assumes that the cgroup is dedicated to ClickHouse. Defaults to `false` in `clickhouse-local`, which commonly shares a cgroup with other processes. When disabled, the worker uses jemalloc's resident statistics, or process RSS when jemalloc is unavailable.
+
+Cgroup limits still constrain the dynamic memory limit independently of this setting.
+)", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
 On each `MemoryWorker` tick, reserve an additional
 `ratio * min(resident - previous_resident, resident - tracked)` on top of
