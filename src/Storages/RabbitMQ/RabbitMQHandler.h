@@ -36,6 +36,7 @@ class RabbitMQHandler : public AMQP::LibUvHandler
 
 public:
     RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_);
+    ~RabbitMQHandler() override;
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void onReady(AMQP::TcpConnection * connection) override;
@@ -71,6 +72,8 @@ private:
     std::atomic<bool> connection_running, loop_running;
     std::atomic<UInt8> loop_state;
     std::mutex startup_mutex;
+    /// Bounds each blocking wait of startLoop(), so that it sees a stop request. On the heap: it is closed by the loop.
+    uv_timer_t * wake_timer;
 };
 
 using RabbitMQHandlerPtr = std::shared_ptr<RabbitMQHandler>;

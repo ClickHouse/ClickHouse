@@ -2121,6 +2121,73 @@ def test_rabbitmq_vhost(rabbitmq_cluster, db, unique):
         )
 
 
+def test_rabbitmq_trickle_does_not_spin_event_loop(rabbitmq_cluster, db, unique):
+    # A trickle of messages must not keep a core busy: the event loop blocks in the poller.
+    if instance.is_built_with_sanitizer():
+        pytest.skip("CPU-tick bound is meaningless under sanitizers; covered by gtest IdleLoopThreadDoesNotSpin")
+    instance.query(
+        f"""
+        CREATE TABLE {db}.trickle (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}_trickle',
+                     rabbitmq_queue_base = '{unique}_trickle',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 2000,
+                     rabbitmq_max_block_size = 1000;
+        CREATE TABLE {db}.view (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT * FROM {db}.trickle;
+        """
+    )
+
+    def server_cpu_ticks():
+        # utime + stime of the whole server, in clock ticks (100/s).
+        return int(instance.exec_in_container(
+            ["bash", "-c", "pid=$(awk '/^PID:/{print $2}' /var/lib/clickhouse/status); "
+             "sed 's/.*) //' /proc/$pid/stat | awk '{print $12+$13}'"],
+            user="root",
+        ))
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    def publish(key):
+        channel.basic_publish(
+            exchange=f"{unique}_trickle", routing_key="", body=json.dumps({"key": key, "value": key})
+        )
+
+    # One message first, so the measurement starts with streaming already active.
+    publish(0)
+    check_expected_result_polling(1, f"SELECT count() FROM {db}.view")
+
+    # Idle window first: only the difference counts, so a slow (sanitizer) build does not fail the test.
+    before = server_cpu_ticks()
+    time.sleep(10)
+    idle = server_cpu_ticks() - before
+
+    before = server_cpu_ticks()
+    for key in range(1, 51):
+        publish(key)
+        time.sleep(0.2)
+    busy = server_cpu_ticks() - before
+    connection.close()
+
+    check_expected_result_polling(51, f"SELECT count() FROM {db}.view")
+
+    # ~10 s window: a spinning loop adds most of a core (~1000 ticks).
+    logging.info(f"CPU ticks in 10 s: {idle} idle, {busy} while consuming")
+    assert busy - idle < 300, (
+        f"the server used {busy} CPU ticks while consuming 50 messages over 10 s and {idle} idle; "
+        "the event loop is spinning instead of blocking in the poller"
+    )
+
+
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     instance.query(
         f"""

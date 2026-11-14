@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 
 #include <chrono>
+#include <ctime>
 #include <thread>
 
 using namespace DB;
@@ -78,6 +79,35 @@ TEST(RabbitMQHandler, BlockingLoopHonoursTimeoutAfterIdlePeriod)
     /// Only a lower bound is asserted: a loaded machine can overshoot the timeout, but it cannot
     /// make the wait end early.
     EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 400);
+}
+
+/// The looping task must block between events instead of spinning, see a stop request within its wake
+/// interval, and leave no active handle behind, so the non-blocking loops used elsewhere are unaffected.
+TEST(RabbitMQHandler, LoopingTaskBlocksAndStops)
+{
+    UVLoop loop;
+    RabbitMQHandler handler(loop.getLoop(), getLogger("RabbitMQHandlerTest"));
+    handler.updateLoopState(Loop::RUN);
+
+    UInt64 loop_cpu_ms = 0;
+    std::thread looping([&]
+    {
+        handler.startLoop();
+        timespec ts{};
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+        loop_cpu_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    const auto stop_requested = std::chrono::steady_clock::now();
+    handler.stopLoop();
+    looping.join();
+    const auto stop_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - stop_requested).count();
+
+    /// A spinning loop would burn ~500 ms.
+    EXPECT_LT(loop_cpu_ms, 100);
+    EXPECT_LT(stop_ms, 1000);
+    EXPECT_EQ(handler.iterateLoop(), 0);
 }
 
 #endif
