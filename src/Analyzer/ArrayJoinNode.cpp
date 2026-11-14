@@ -27,6 +27,9 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     buffer << std::string(indent, ' ') << "ARRAY_JOIN id: " << format_state.getNodeId(this);
     buffer << ", is_left: " << is_left;
 
+    if (isUnnest())
+        buffer << ", unnest_alias: " << unnest_alias;
+
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
@@ -40,17 +43,21 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
 bool ArrayJoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ArrayJoinNode &>(rhs);
-    return is_left == rhs_typed.is_left;
+    return is_left == rhs_typed.is_left && unnest_alias == rhs_typed.unnest_alias;
 }
 
 void ArrayJoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_left);
+    state.update(unnest_alias.size());
+    state.update(unnest_alias);
 }
 
 QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
 {
-    return std::make_shared<ArrayJoinNode>(getTableExpressionNode(), getJoinExpressionsNode(), is_left);
+    auto result = std::make_shared<ArrayJoinNode>(getTableExpressionNode(), getJoinExpressionsNode(), is_left);
+    result->unnest_alias = unnest_alias;
+    return result;
 }
 
 ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const

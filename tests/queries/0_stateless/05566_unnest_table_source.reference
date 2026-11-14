@@ -1,0 +1,308 @@
+-- issue examples
+1
+2
+3
+1	1
+1	2
+2	1
+2	2
+1	2
+2	2
+a	1
+b	2
+-- standalone
+1
+2
+1
+2
+unnest	UInt8					
+x	UInt8					
+1
+2
+1
+2
+1
+2
+1
+2
+0
+[1,2]
+[3]
+1	a
+2	b
+unnest1	UInt8					
+unnest2	String					
+unnest	String					
+ordinality	UInt64					
+x	String					
+ordinality	UInt64					
+t	String					
+ordinality	UInt64					
+1	a
+2	
+1	a	1
+2		2
+2	2
+3	3
+-- errors
+-- lateral
+1	10
+1	20
+3	30
+1	10
+1	20
+3	30
+1	10
+1	20
+3	30
+1	10
+1	20
+3	30
+1	10
+1	20
+3	30
+1	10
+1	20
+3	30
+1	10
+1	20
+3	30
+1	10
+1	20
+2	0
+3	30
+1	10
+1	20
+2	0
+3	30
+1	10
+1	20
+2	\N
+3	30
+1	10
+1	20
+2	\N
+3	30
+1	[1,2]	Array(UInt8)
+2	[]	Array(UInt8)
+3	[]	Array(UInt8)
+1	20
+3	30
+0	1
+10	2
+3	30
+1	20
+1	10
+1	[10,20]	['a','b']	a
+1	[10,20]	['a','b']	b
+2	[]	['c']	c
+id	UInt32					
+arr	Array(UInt32)					
+tags	Array(String)					
+tag	String					
+t.id	UInt32					
+arr	Array(UInt32)					
+tags	Array(String)					
+u.id	UInt32					
+1	10	10
+1	20	20
+3	30	30
+a
+b
+c
+1	[10,20]	['a','b']
+1	[10,20]	['a','b']
+2	[]	['c']
+['a','b']	a
+['a','b']	b
+['c']	c
+1	10	a
+1	20	b
+2	0	c
+3	30	
+1	10	1
+1	20	2
+3	30	1
+1	10	a	1
+1	20	b	2
+2	0	c	1
+3	30		1
+1	10	10
+1	20	20
+3	30	30
+-- on
+1	20
+3	30
+1	20
+2	0
+3	30
+1	10
+1	20
+2	0
+3	0
+1	20	2
+2	0	0
+3	30	1
+1	0
+2	0
+3	0
+1	a
+1	b
+2	c
+1	a
+2	c
+1	a
+1	10	a
+1	20	b
+2	0	c
+3	30	
+1	10
+1	20
+1	20
+1	10
+1	20
+1	20
+3	30
+1	20
+3	30
+1	20
+1	20
+3	30
+1	10	a
+1	10	b
+1	20	a
+1	20	b
+1	10
+1	20
+3	30
+1	20
+3	30
+1	20
+3	40
+1	[(10,1),(20,2)]
+2	[]
+-- precedence of a Tuple column over the unnest alias, as for a table alias
+7
+7
+1
+2
+7
+7
+1
+2
+id	t.u	arr	x
+1	(7)	[1,2]	1
+1	(7)	[1,2]	2
+-- unnest columns with the same name as other columns
+0	1	3
+0	1	4
+0	2	3
+0	2	4
+x	u.x
+1	2
+x	u.x
+5	1
+5	2
+0	1	3
+0	1	4
+0	2	3
+0	2	4
+a.b	u.a.b
+5	1
+5	2
+-- the unnest columns on the hidden side of a SEMI JOIN
+1
+3
+-- chains
+1	10
+1	20
+3	30
+1	a	A
+1	a	A
+UInt64	UInt64
+UInt64	UInt64	UInt64	UInt64
+1	10	a
+1	10	b
+1	20	a
+1	20	b
+1
+2
+3
+10
+20
+30
+1	[10,20]	['a','b']	10
+1	[10,20]	['a','b']	20
+3	[30]	[]	30
+-- other join kinds
+0	5
+1	1
+3	3
+1
+3
+-- correlated
+1
+1	[10,20]
+2	[]
+3	[30]
+[1]
+-- distributed
+1	20
+1	20
+3	30
+3	30
+1	20
+1	20
+2	0
+2	0
+3	30
+3	30
+1
+1
+3
+3
+-- views
+1	10
+1	20
+3	30
+1	5
+1	6
+1	0
+a	1
+b	2
+1	0
+u.x	v.x
+1	3
+1	4
+2	3
+2	4
+number	u.x	v.x
+0	1	3
+0	1	4
+0	2	3
+0	2	4
+u.a.b	v.a.b
+1	3
+1	4
+2	3
+2	4
+number	x	u.a.b	v.a.b
+0	p	1	3
+0	p	1	4
+1
+2
+1	5
+1	6
+3	7
+1
+2
+refreshed
+1	0
+-- syntax
+SELECT x, n FROM unnest([1]) WITH ORDINALITY AS u(x, n)
+SELECT x FROM unnest([1]) WITH ORDINALITY AS x
+SELECT x FROM t, unnest(t.arr) AS x
+SELECT x FROM t LEFT JOIN unnest(t.arr) AS x ON true
+SELECT x, n FROM unnest([1]) WITH ORDINALITY AS u(x, n)
+1
+2

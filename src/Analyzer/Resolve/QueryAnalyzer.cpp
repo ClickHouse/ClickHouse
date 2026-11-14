@@ -2213,6 +2213,47 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     return matched_column_nodes_with_names;
 }
 
+/// As for a table column, an unnest column is named `<unnest alias>.<column>` when its name also binds to a table, an alias or another ARRAY JOIN.
+QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedUnnestColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
+    const QueryTreeNodePtr & unnest_node,
+    const IdentifierResolveScope & scope)
+{
+    auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
+    const auto & unnest_node_typed = unnest_node->as<ArrayJoinNode &>();
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const auto & qualify_scope = nearest_query_scope ? *nearest_query_scope : scope;
+
+    auto binds_elsewhere = [&](Identifier identifier)
+    {
+        IdentifierLookup identifier_lookup{std::move(identifier), IdentifierLookupContext::EXPRESSION};
+        return IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, /*table_expression_node=*/ nullptr, qualify_scope)
+            || IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, qualify_scope)
+            || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, qualify_scope, unnest_node.get());
+    };
+
+    QueryTreeNodesWithNames matched_column_nodes_with_names;
+    for (const auto & array_join_expression : unnest_node_typed.getJoinExpressions().getNodes())
+    {
+        const auto & array_join_column = array_join_expression->as<ColumnNode &>();
+        const auto & column_name = array_join_column.getColumnName();
+        if (!matcher_node_typed.isMatchingColumn(column_name))
+            continue;
+
+        auto column_node = std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource());
+
+        /// A dotted name `a.b` can also bind as one part, to an alias or another unnest column named `a.b`.
+        Identifier column_identifier(column_name);
+        bool is_compound = column_identifier.isCompound();
+        if (binds_elsewhere(std::move(column_identifier))
+            || (is_compound && binds_elsewhere(Identifier(std::vector<std::string>{column_name}))))
+            node_to_projection_name.emplace(column_node, unnest_node_typed.getUnnestAlias() + '.' + column_name);
+
+        matched_column_nodes_with_names.emplace_back(std::move(column_node), column_name);
+    }
+
+    return matched_column_nodes_with_names;
+}
+
 
 /// Columns resolved from a matcher can also be JOIN USING keys, whose type the join changes
 /// (the supertype of both sides, and Nullable when an OUTER side makes the data Nullable).
@@ -2429,6 +2470,55 @@ static void checkSemiAntiJoinTableAccess(
     }
 }
 
+/// The resolved `unnest(...)` ARRAY JOIN of the nearest query whose unnest alias is `qualifier`.
+static QueryTreeNodePtr findUnnestArrayJoinNode(
+    const Identifier & qualifier, const IdentifierResolveScope & scope, bool * is_resolving_its_expressions = nullptr)
+{
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const auto * query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+    if (qualifier.getPartsSize() != 1 || !query_node || !query_node->getJoinTreeNode())
+        return nullptr;
+
+    QueryTreeNodes nodes_to_process{query_node->getJoinTreeNode()};
+    while (!nodes_to_process.empty())
+    {
+        auto node = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        if (const auto * array_join_node = node->as<ArrayJoinNode>())
+        {
+            if (array_join_node->isUnnest() && array_join_node->getUnnestAlias() == qualifier.getFullName())
+            {
+                if (is_resolving_its_expressions)
+                    *is_resolving_its_expressions = nearest_query_scope->resolving_join_on_expression == node.get();
+                return nearest_query_scope->table_expressions_in_resolve_process.contains(node.get()) ? nullptr : node;
+            }
+            nodes_to_process.push_back(array_join_node->getTableExpressionNode());
+        }
+        else if (const auto * join_node = node->as<JoinNode>())
+        {
+            nodes_to_process.push_back(join_node->getLeftTableExpressionNode());
+            nodes_to_process.push_back(join_node->getRightTableExpressionNode());
+        }
+        else if (const auto * cross_join_node = node->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+                nodes_to_process.push_back(table_expression);
+        }
+    }
+
+    return nullptr;
+}
+
+/// In the arguments and the `ON` mask of `unnest`, a matcher would not see the unnest columns.
+[[noreturn]] static void throwMatcherInUnnestExpressions(const QueryTreeNodePtr & matcher_node, const String & unnest_alias)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "{} is not supported in the arguments or the ON condition of unnest(...) AS {}, name the columns instead",
+        matcher_node->formatASTForErrorMessage(),
+        unnest_alias);
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
@@ -2487,7 +2577,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 identifier_resolve_settings.allow_to_check_database_catalog = false;
 
                 auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings).resolved_identifier != nullptr;
+                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings).resolved_identifier != nullptr
+                    || findUnnestArrayJoinNode(matcher_node_typed.getQualifiedIdentifier(), scope) != nullptr;
             }
 
             if (!prefer_table_expression)
@@ -2518,6 +2609,23 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 return matched_expression_nodes_with_column_names;
             }
         }
+    }
+
+    /// The qualifier of `unnest(...) AS u` names the unnest columns, like a table alias names the table columns.
+    bool unnest_is_resolving_its_expressions = false;
+    auto unnest_node = findUnnestArrayJoinNode(matcher_node_typed.getQualifiedIdentifier(), scope, &unnest_is_resolving_its_expressions);
+    if (unnest_is_resolving_its_expressions)
+        throwMatcherInUnnestExpressions(matcher_node, matcher_node_typed.getQualifiedIdentifier().getFullName());
+
+    if (unnest_node)
+    {
+        checkSemiAntiJoinTableAccess(unnest_node, scope, matcher_node);
+
+        auto matched_column_nodes_with_names = getMatchedUnnestColumnNodesWithNames(matcher_node, unnest_node, scope);
+        updateMatchedColumnsFromJoinUsing(
+            matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
+
+        return matched_column_nodes_with_names;
     }
 
     /// Try to resolve qualified matcher for table expression
@@ -2723,7 +2831,12 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     "Expected at least 1 table expressions on stack before ARRAY JOIN processing");
 
             if (table_expression_in_resolve_process)
+            {
+                if (const auto & array_join_node = table_expression->as<ArrayJoinNode &>();
+                    array_join_node.isUnnest() && nearest_query_scope->resolving_join_on_expression == table_expression.get())
+                    throwMatcherInUnnestExpressions(matcher_node, array_join_node.getUnnestAlias());
                 continue;
+            }
 
             auto & table_expression_column_nodes_with_names = table_expressions_column_nodes_with_names_stack.back();
 
@@ -2734,6 +2847,13 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         scope);
                 if (array_join_resolved_expression)
                     table_expression_column_node = std::move(array_join_resolved_expression);
+            }
+
+            /// The columns of `unnest(...)` in `FROM` are a relation, so `*` includes them.
+            if (table_expression->as<ArrayJoinNode &>().isUnnest())
+            {
+                for (auto & unnest_column_with_name : getMatchedUnnestColumnNodesWithNames(matcher_node, table_expression, scope))
+                    table_expression_column_nodes_with_names.push_back(std::move(unnest_column_with_name));
             }
 
             continue;
@@ -6003,6 +6123,20 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     auto & array_join_node_typed = array_join_node->as<ArrayJoinNode &>();
     resolveQueryJoinTreeNode(array_join_node_typed.getTableExpressionNode(), scope, expressions_visitor);
 
+    /// As in PostgreSQL, the alias of `unnest` cannot name a preceding table.
+    if (array_join_node_typed.isUnnest())
+    {
+        for (const auto & table_expression : extractTableExpressions(array_join_node_typed.getTableExpressionNodeTyped()))
+        {
+            auto it = scope.table_expression_node_to_data.find(table_expression);
+            if (it != scope.table_expression_node_to_data.end() && it->second.table_name == array_join_node_typed.getUnnestAlias())
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "Multiple table expressions with same alias {}. In scope {}",
+                    array_join_node_typed.getUnnestAlias(),
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+    }
+
     std::unordered_set<String> array_join_column_names;
 
     /// Wrap array join expressions into column nodes, where array join expression is inner expression
@@ -6081,11 +6215,23 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             }
         }
 
-        auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
+        auto process_array_join_expression = [&](QueryTreeNodePtr expression)
         {
             auto result_type = expression->getResultType();
             bool is_array_type = isArray(result_type);
             bool is_map_type = isMap(result_type);
+
+            /// `t LEFT JOIN unnest(t.arr) ON ...` gives `NULL` for a row without elements, as any `LEFT JOIN`.
+            if (array_join_node_typed.isUnnest() && array_join_node_typed.isLeft() && scope.join_use_nulls && is_array_type)
+            {
+                auto element_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
+                if (JoinCommon::canBecomeNullable(element_type))
+                {
+                    expression = buildCastFunction(
+                        expression, std::make_shared<DataTypeArray>(makeNullableOrLowCardinalityNullable(element_type)), scope.context);
+                    result_type = expression->getResultType();
+                }
+            }
 
             if (!is_array_type && !is_map_type)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,

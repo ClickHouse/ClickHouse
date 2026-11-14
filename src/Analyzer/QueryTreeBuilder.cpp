@@ -25,6 +25,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Core/Streaming/CursorTree.h>
 
 #include <Parsers/ASTSampleRatio.h>
@@ -67,6 +68,7 @@ namespace Setting
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
+    extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 max_query_size;
@@ -85,6 +87,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -119,6 +122,320 @@ Names getColumnAliasNames(const ASTPtr & column_aliases)
     }
 
     return result;
+}
+
+/// `unnest(e1, ..., en) [WITH ORDINALITY] [[AS] alias[(c1, ...)]]` in `FROM`.
+struct UnnestTableExpression
+{
+    ASTs arguments;
+    bool with_ordinality = false;
+    String table_alias;
+    /// One name per argument, then the ordinality column.
+    Names column_names;
+};
+
+std::optional<UnnestTableExpression> tryGetUnnestTableExpression(const ASTTableExpression & table_expression)
+{
+    if (!table_expression.table_function)
+        return {};
+
+    const auto & function = table_expression.table_function->as<const ASTFunction &>();
+    if (Poco::toLower(function.name) != "unnest")
+        return {};
+
+    UnnestTableExpression result;
+    if (function.arguments)
+        result.arguments = function.arguments->children;
+
+    if (result.arguments.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function {} requires at least one argument",
+            function.formatForErrorMessage());
+
+    for (const auto & argument : result.arguments)
+        if (!dynamic_cast<const ASTWithAlias *>(argument.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} expects expressions as arguments, got {}",
+                function.formatForErrorMessage(), argument->formatForErrorMessage());
+
+    result.with_ordinality = table_expression.with_ordinality;
+    result.table_alias = function.tryGetAlias();
+    if (result.table_alias.empty())
+        result.table_alias = "unnest";
+
+    size_t arguments_size = result.arguments.size();
+    size_t columns_size = arguments_size + result.with_ordinality;
+
+    Names listed_names;
+    if (table_expression.column_aliases)
+        listed_names = getColumnAliasNames(table_expression.column_aliases);
+
+    if (listed_names.size() > columns_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} has {} columns, but {} column aliases are specified",
+            function.formatForErrorMessage(), columns_size, listed_names.size());
+
+    NameSet unique_names;
+    for (size_t i = 0; i < columns_size; ++i)
+    {
+        String name;
+        if (i < listed_names.size())
+            name = listed_names[i];
+        else if (i == arguments_size)
+            name = "ordinality";
+        else if (arguments_size == 1)
+            name = result.table_alias;
+        else
+            name = "unnest" + std::to_string(i + 1);
+
+        if (!unique_names.insert(name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} has multiple columns with name {}",
+                function.formatForErrorMessage(), backQuote(name));
+
+        result.column_names.push_back(std::move(name));
+    }
+
+    return result;
+}
+
+/// The joins after which `unnest(...)` is evaluated for each row of the preceding tables, as in PostgreSQL.
+bool isLateralUnnestJoin(const ASTTableJoin & table_join)
+{
+    bool is_lateral_kind = table_join.kind == JoinKind::Comma || table_join.kind == JoinKind::Cross
+        || table_join.kind == JoinKind::Inner || table_join.kind == JoinKind::Left;
+
+    return is_lateral_kind
+        && (table_join.strictness == JoinStrictness::Unspecified || table_join.strictness == JoinStrictness::All)
+        && table_join.locality == JoinLocality::Unspecified
+        && !table_join.is_natural
+        && !table_join.using_expression_list;
+}
+
+/// Every identifier part and alias in `ast`, including subqueries and lambda parameters.
+void collectNames(const ASTPtr & ast, NameSet & names)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        names.insert(identifier->name_parts.begin(), identifier->name_parts.end());
+
+    if (auto alias = ast->tryGetAlias(); !alias.empty())
+        names.insert(std::move(alias));
+
+    for (const auto & child : ast->children)
+        collectNames(child, names);
+}
+
+String makeFreshName(String name, NameSet & used_names)
+{
+    while (used_names.contains(name))
+        name = "_" + name;
+
+    used_names.insert(name);
+    return name;
+}
+
+ASTPtr makeSelectWithUnionQuery(ASTPtr select_expression_list, ASTPtr from_select_with_union_query)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
+
+    if (from_select_with_union_query)
+    {
+        auto table_expression = make_intrusive<ASTTableExpression>();
+        table_expression->subquery = make_intrusive<ASTSubquery>(std::move(from_select_with_union_query));
+        table_expression->children.push_back(table_expression->subquery);
+
+        auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+        table_element->table_expression = table_expression;
+        table_element->children.push_back(table_element->table_expression);
+
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+        tables->children.push_back(std::move(table_element));
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    }
+
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select_query));
+
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->children.push_back(std::move(list_of_selects));
+    select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+    return select_with_union_query;
+}
+
+/// `length(e1)`; for several arrays the longest one counts.
+ASTPtr buildUnnestLength(const ASTs & arguments)
+{
+    if (arguments.size() == 1)
+        return makeASTFunction("length", arguments.front()->clone());
+
+    auto greatest = makeASTFunction("greatest");
+    for (const auto & argument : arguments)
+        greatest->arguments->children.push_back(makeASTFunction("length", argument->clone()));
+    return greatest;
+}
+
+/// `range(1, length(e1) + 1)`.
+ASTPtr buildUnnestOrdinalityArray(const ASTs & arguments)
+{
+    return makeASTFunction("range",
+        make_intrusive<ASTLiteral>(UInt64(1)),
+        makeASTOperator("plus", buildUnnestLength(arguments), make_intrusive<ASTLiteral>(UInt64(1))));
+}
+
+/// With `enable_unaligned_array_join`, several arrays are padded to the longest one.
+ASTs buildUnnestArrays(const ASTs & arguments, bool pad_unaligned)
+{
+    ASTs arrays;
+    for (const auto & argument : arguments)
+    {
+        if (pad_unaligned && arguments.size() > 1)
+            arrays.push_back(makeASTFunction("arrayResize", argument->clone(), buildUnnestLength(arguments)));
+        else
+            arrays.push_back(argument->clone());
+    }
+    return arrays;
+}
+
+/// Standalone `unnest(...)`: `SELECT arrayJoin(e1) AS c1`, or one `arrayJoin` of the zipped arrays whose
+/// tuple elements are the columns.
+ASTPtr buildUnnestSubquery(const UnnestTableExpression & unnest, bool pad_unaligned)
+{
+    if (unnest.arguments.size() == 1 && !unnest.with_ordinality)
+    {
+        auto select_expression_list = make_intrusive<ASTExpressionList>();
+        select_expression_list->children.push_back(
+            setAlias(makeASTFunction("arrayJoin", unnest.arguments.front()->clone()), unnest.column_names.front()));
+        return makeSelectWithUnionQuery(std::move(select_expression_list), nullptr);
+    }
+
+    NameSet used_names(unnest.column_names.begin(), unnest.column_names.end());
+    for (const auto & argument : unnest.arguments)
+        collectNames(argument, used_names);
+    auto element_name = makeFreshName("__unnest_element", used_names);
+
+    auto zipped_arrays = makeASTFunction("arrayZip");
+    for (auto & array : buildUnnestArrays(unnest.arguments, pad_unaligned))
+        zipped_arrays->arguments->children.push_back(std::move(array));
+    if (unnest.with_ordinality)
+        zipped_arrays->arguments->children.push_back(buildUnnestOrdinalityArray(unnest.arguments));
+
+    auto inner_select_expression_list = make_intrusive<ASTExpressionList>();
+    inner_select_expression_list->children.push_back(setAlias(makeASTFunction("arrayJoin", std::move(zipped_arrays)), element_name));
+
+    auto select_expression_list = make_intrusive<ASTExpressionList>();
+    for (size_t i = 0; i < unnest.column_names.size(); ++i)
+    {
+        auto element = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(element_name), make_intrusive<ASTLiteral>(UInt64(i + 1)));
+        select_expression_list->children.push_back(setAlias(std::move(element), unnest.column_names[i]));
+    }
+
+    return makeSelectWithUnionQuery(std::move(select_expression_list), makeSelectWithUnionQuery(std::move(inner_select_expression_list), nullptr));
+}
+
+/// `ON 1` and `ON true` keep every element.
+bool isTrivialUnnestJoinCondition(const ASTPtr & on_expression)
+{
+    if (!on_expression)
+        return true;
+
+    const auto * literal = on_expression->as<ASTLiteral>();
+    return literal && (literal->value.getType() == Field::Types::UInt64 || literal->value.getType() == Field::Types::Bool)
+        && literal->value.safeGet<UInt64>() == 1;
+}
+
+bool isLambdaWithParameter(const ASTPtr & ast, const String & name)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !(function->isLambdaFunction() || isASTLambdaFunction(*function)))
+        return false;
+
+    const auto & lambda_arguments = function->arguments->children.at(0)->as<ASTFunction &>();
+    if (lambda_arguments.arguments)
+        for (const auto & lambda_argument : lambda_arguments.arguments->children)
+            if (const auto * lambda_argument_identifier = lambda_argument->as<ASTIdentifier>();
+                lambda_argument_identifier && lambda_argument_identifier->name() == name)
+                return true;
+
+    return false;
+}
+
+/// Replaces `u.c[.rest]`, where `u` is `table_alias` and `c` has a binder, with `binder[.rest]`, except inside
+/// subqueries and inside a lambda with a parameter named `u`.
+void replaceUnnestQualifiedColumns(ASTPtr & ast, const String & table_alias, const std::unordered_map<String, String> & column_to_binder)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const auto & name_parts = identifier->name_parts;
+        if (name_parts.size() < 2 || name_parts[0] != table_alias)
+            return;
+
+        auto it = column_to_binder.find(name_parts[1]);
+        if (it == column_to_binder.end())
+            return;
+
+        std::vector<String> replacement_name_parts{it->second};
+        replacement_name_parts.insert(replacement_name_parts.end(), name_parts.begin() + 2, name_parts.end());
+        auto replacement = make_intrusive<ASTIdentifier>(std::move(replacement_name_parts));
+        replacement->setAlias(identifier->tryGetAlias());
+        ast = std::move(replacement);
+        return;
+    }
+
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
+        return;
+
+    if (isLambdaWithParameter(ast, table_alias))
+        return;
+
+    for (auto & child : ast->children)
+        replaceUnnestQualifiedColumns(child, table_alias, column_to_binder);
+}
+
+/** `t, unnest(e1, ..., en) AS u(c1, ...)` is `t ARRAY JOIN e1 AS c1, ...`. A non-trivial `ON c` filters every array
+  * with the per-row mask `arrayMap((c1, ..., ck, Q1, ..., Qk) -> c, A1, ..., Ak, A1, ..., Ak)`, where `u.ci` in `c` is
+  * replaced by the fresh name `Qi`, so that no lambda in `c` can capture it.
+  */
+ASTPtr buildUnnestArrayJoinExpressions(const UnnestTableExpression & unnest, const ASTPtr & on_expression, bool pad_unaligned)
+{
+    bool has_condition = !isTrivialUnnestJoinCondition(on_expression);
+
+    /// Without a condition this is a plain `ARRAY JOIN`, which pads by itself.
+    ASTs arrays = buildUnnestArrays(unnest.arguments, pad_unaligned && has_condition);
+    if (unnest.with_ordinality)
+        arrays.push_back(buildUnnestOrdinalityArray(unnest.arguments));
+
+    if (has_condition)
+    {
+        NameSet used_names(unnest.column_names.begin(), unnest.column_names.end());
+        collectNames(on_expression, used_names);
+
+        Strings mask_parameters = unnest.column_names;
+        std::unordered_map<String, String> column_to_binder;
+        for (size_t i = 0; i < unnest.column_names.size(); ++i)
+        {
+            auto binder = makeFreshName("__unnest_column_" + std::to_string(i + 1), used_names);
+            column_to_binder.emplace(unnest.column_names[i], binder);
+            mask_parameters.push_back(std::move(binder));
+        }
+
+        auto condition = on_expression->clone();
+        replaceUnnestQualifiedColumns(condition, unnest.table_alias, column_to_binder);
+
+        auto mask = makeASTFunction("arrayMap", makeASTLambda(mask_parameters, std::move(condition)));
+        for (size_t i = 0; i < 2; ++i)
+            for (const auto & array : arrays)
+                mask->arguments->children.push_back(array->clone());
+
+        for (auto & array : arrays)
+            array = makeASTFunction("arrayFilter",
+                makeASTLambda({"__unnest_element", "__unnest_match"}, make_intrusive<ASTIdentifier>("__unnest_match")),
+                std::move(array),
+                mask->clone());
+    }
+
+    auto array_join_expressions = make_intrusive<ASTExpressionList>();
+    for (size_t i = 0; i < arrays.size(); ++i)
+        array_join_expressions->children.push_back(setAlias(std::move(arrays[i]), unnest.column_names[i]));
+
+    return array_join_expressions;
 }
 
 class QueryTreeBuilder
@@ -1045,10 +1362,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
     auto & tables = tables_in_select_query->as<ASTTablesInSelectQuery &>();
 
     QueryTreeNodes table_expressions;
+    bool pad_unaligned = context->getSettingsRef()[Setting::enable_unaligned_array_join];
 
     for (const auto & table_element_untyped : tables.children)
     {
         const auto & table_element = table_element_untyped->as<ASTTablesInSelectQueryElement &>();
+
+        std::optional<UnnestTableExpression> unnest;
+        if (table_element.table_expression)
+            unnest = tryGetUnnestTableExpression(table_element.table_expression->as<ASTTableExpression &>());
+        bool is_lateral_unnest = unnest && table_element.table_join && isLateralUnnestJoin(table_element.table_join->as<ASTTableJoin &>());
 
         if (table_element.table_expression)
         {
@@ -1087,7 +1410,26 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
             }
 
-            if (table_expression.database_and_table_name)
+            if (unnest)
+            {
+                if (table_expression_modifiers)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Table expression modifiers {} are not supported for {}",
+                        table_expression_modifiers->formatForErrorMessage(),
+                        table_expression.table_function->formatForErrorMessage());
+
+                /// A lateral `unnest` becomes an ARRAY JOIN of the preceding tables, built with the join below.
+                if (!is_lateral_unnest)
+                {
+                    auto subquery = buildUnnestSubquery(*unnest, pad_unaligned);
+                    auto node = buildSelectWithUnionExpression(subquery, true /*is_subquery*/, {} /*cte_data*/, select_query.aliases(), context);
+                    node->setAlias(unnest->table_alias);
+                    node->setOriginalAST(subquery);
+
+                    table_expressions.push_back(std::move(node));
+                }
+            }
+            else if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
                 throwIfQueryParameter(table_identifier_typed);
@@ -1168,6 +1510,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             }
             else if (table_expression.table_function)
             {
+                if (table_expression.with_ordinality)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH ORDINALITY is supported only for unnest, not for {}",
+                        table_expression.table_function->formatForErrorMessage());
+
                 auto node = buildTableFunction(table_expression.table_function, context);
 
                 if (table_expression_modifiers)
@@ -1182,6 +1528,22 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}",
                                 table_element.table_expression->formatForErrorMessage());
             }
+        }
+
+        if (is_lateral_unnest)
+        {
+            const auto & table_join = table_element.table_join->as<ASTTableJoin &>();
+
+            auto left_table_expression = std::move(table_expressions.back());
+            table_expressions.pop_back();
+
+            auto array_join_expressions = buildUnnestArrayJoinExpressions(*unnest, table_join.on_expression, pad_unaligned);
+            auto array_join_node = std::make_shared<ArrayJoinNode>(
+                std::move(left_table_expression), buildExpressionList(array_join_expressions, context), table_join.kind == JoinKind::Left);
+            array_join_node->setUnnestAlias(unnest->table_alias);
+
+            table_expressions.push_back(std::move(array_join_node));
+            continue;
         }
 
         if (table_element.table_join)

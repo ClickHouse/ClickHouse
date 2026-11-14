@@ -242,6 +242,10 @@ private:
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
+    QueryTreeNodesWithNames getMatchedUnnestColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
+        const QueryTreeNodePtr & unnest_node,
+        const IdentifierResolveScope & scope);
+
     void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, bool is_qualified_matcher, const Identifier & matched_qualified_identifier, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);

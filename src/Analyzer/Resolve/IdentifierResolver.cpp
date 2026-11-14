@@ -34,6 +34,7 @@
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -576,6 +578,27 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
 }
 
+static void throwIfUnnestColumnHidden(const String & argument_name, IdentifierResolveScope & scope)
+{
+    const auto * query_scope = scope.getNearestQueryScope();
+    if (!query_scope || !query_scope->resolving_join_on_expression)
+        return;
+
+    const auto * array_join_node = query_scope->resolving_join_on_expression->as<ArrayJoinNode>();
+    if (!array_join_node || !array_join_node->isUnnest()
+        || !query_scope->table_expressions_in_resolve_process.contains(query_scope->resolving_join_on_expression))
+        return;
+
+    for (const auto & node : array_join_node->getJoinExpressions().getNodes())
+    {
+        if (node->getAlias() == argument_name)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "{} in an alias is ambiguous in the arguments or the ON condition of unnest(...) AS {}: it names a column of unnest and a column of a preceding table, write the expression in the ON condition itself",
+                backQuote(argument_name),
+                array_join_node->getUnnestAlias());
+    }
+}
+
 /** Resolve identifier from expression arguments.
   *
   * Expression arguments can be initialized during lambda analysis or they could be provided externally.
@@ -609,7 +632,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
     /// The argument is invisible while an expression written outside of this lambda is resolved through it.
     if (scope.hidden_expression_arguments.contains(it->first))
+    {
+        throwIfUnnestColumnHidden(it->first, scope);
         return {};
+    }
 
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
@@ -785,20 +811,25 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
     return can_bind_identifier_to_table_expression;
 }
 
-bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup,
+    const IdentifierResolveScope & scope,
+    const IQueryTreeNode * array_join_node_to_ignore)
 {
     bool result = false;
 
     for (const auto & table_expression : scope.registered_table_expression_nodes)
     {
         auto * array_join_node = table_expression->as<ArrayJoinNode>();
-        if (!array_join_node)
+        if (!array_join_node || table_expression.get() == array_join_node_to_ignore)
             continue;
 
         /// The aliases of an ARRAY JOIN on a hidden SEMI/ANTI JOIN side are not visible here either,
         /// so they must not make a name of the preserved side ambiguous (see `tryBindIdentifierToTableExpressions`).
         if (isTableExpressionHiddenBySemiAntiJoin(table_expression.get(), scope))
             continue;
+
+        if (array_join_node->isUnnest() && identifier_lookup.identifier.front() == array_join_node->getUnnestAlias())
+            return true;
 
         for (const auto & array_join_expression : array_join_node->getJoinExpressions())
         {
@@ -1744,6 +1775,8 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
+            if (!database_qualified && arr.isUnnest() && arr.getUnnestAlias() == qualifier)
+                return true;
             return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier, scope, database_qualified);
         }
         default:
@@ -2350,6 +2383,40 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
     const auto & array_join_column_expressions_nodes = array_join_column_expressions.getNodes();
+
+    /** `u.x` names the column `x` of `unnest(...) AS u(x)`. As for a table alias, a same-named subcolumn
+      * of the preceding tables wins unless `analyzer_compatibility_prefer_alias_over_subcolumn` is set.
+      */
+    const auto & identifier = identifier_lookup.identifier;
+    if (from_array_join_node.isUnnest() && identifier.getPartsSize() > 1 && identifier.front() == from_array_join_node.getUnnestAlias()
+        && (!resolve_result.resolved_identifier || scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]))
+    {
+        Identifier column_identifier(std::vector<String>(identifier.begin() + 1, identifier.end()));
+
+        for (const auto & array_join_column_expression : array_join_column_expressions_nodes)
+        {
+            auto & array_join_column_expression_typed = array_join_column_expression->as<ColumnNode &>();
+            auto prefix_size = getCompoundIdentifierPrefixSize(column_identifier, array_join_column_expression_typed.getColumnName());
+            if (!prefix_size)
+                continue;
+
+            auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
+                array_join_column_expression_typed.getColumnSource());
+            if (*prefix_size == column_identifier.getPartsSize())
+                return { .resolved_identifier = array_join_column, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+
+            auto compound_expr = tryResolveIdentifierFromCompoundExpression(
+                identifier,
+                *prefix_size + 1 /*identifier_bind_size*/,
+                array_join_column,
+                {} /* compound_expression_source */,
+                scope,
+                true /* can_be_not_found */);
+
+            if (compound_expr)
+                return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        }
+    }
 
     /** Allow JOIN with USING with ARRAY JOIN.
       *
