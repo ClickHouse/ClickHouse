@@ -6455,6 +6455,95 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 const auto * old_column = it != old_names.end() && it->second ? old_metadata.columns.tryGet(*it->second) : nullptr;
                 check(old_column ? old_column->ttl : nullptr, column.ttl, "TTL");
             }
+
+            /// A stored column may not newly take the name of a subcolumn of another stored column (`a.size0` of an
+            /// `Array` column `a`, `t.x` of a `Tuple` column `t`, or any `j.x` of a `JSON` column `j`). The existing parts
+            /// do not hold one of the two columns, or hold the other column with a type that has no such subcolumn, so the
+            /// name would be read from a different source, while their keys, skip indices, projections, statistics and TTL
+            /// infos were computed from the old one. Such a pair of columns may appear from either side: by adding or
+            /// renaming the column with the dotted name, by adding or renaming its prefix column, or by changing the type
+            /// of the prefix column. So every pair after the `ALTER` is checked, and a pair is allowed only if both columns
+            /// were stored before under the same names and the old type of the prefix column had this subcolumn. An
+            /// `ALIAS` column is not stored.
+            auto was_stored_as_is = [&](const String & name) -> std::optional<NameAndTypePair>
+            {
+                auto it = old_names.find(name);
+                if (it == old_names.end() || it->second != name)
+                    return std::nullopt;
+                return old_metadata.columns.tryGetPhysical(name);
+            };
+
+            const auto & new_columns = new_metadata.getColumns();
+            for (const auto & column : new_columns.getAllPhysical())
+            {
+                for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(column.name))
+                {
+                    auto other_column = new_columns.tryGetPhysical(String(prefix));
+                    if (!other_column || !other_column->type->tryGetSubcolumnType(subcolumn))
+                        continue;
+
+                    if (was_stored_as_is(column.name))
+                    {
+                        auto old_other_column = was_stored_as_is(other_column->name);
+                        auto old_subcolumn_type = old_other_column ? old_other_column->type->tryGetSubcolumnType(subcolumn) : nullptr;
+                        if (old_subcolumn_type)
+                        {
+                            /// The pair existed before, but the names of deeper subcolumns (`a.x.UInt64` of a column `a.x`
+                            /// next to a `Tuple(x ...)` column `a`) are resolved through the prefix column only if the type
+                            /// of its subcolumn has them. Changing that type (`Tuple(x UInt64)` to `Tuple(x Dynamic)`) would
+                            /// move them from one column to the other, so it must stay the same.
+                            if (old_subcolumn_type->equals(*other_column->type->getSubcolumnType(subcolumn)))
+                                continue;
+
+                            throw Exception(
+                                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Cannot alter the table: the type of subcolumn {} of column {} would change from {} to {}, "
+                                "while there is a column with this name, so the names of its subcolumns could be read "
+                                "from a different column",
+                                backQuoteIfNeed(column.name),
+                                backQuoteIfNeed(other_column->name),
+                                old_subcolumn_type->getName(),
+                                other_column->type->getSubcolumnType(subcolumn)->getName());
+                        }
+                    }
+
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot alter the table: the name of column {} would be the name of a subcolumn of column {}. "
+                        "Use another name or an ALIAS column",
+                        backQuoteIfNeed(column.name),
+                        backQuoteIfNeed(other_column->name));
+                }
+            }
+
+            /// The same holds in the other direction: a pair that existed before may not disappear while the column with
+            /// the dotted name stays. The names of its subcolumns (`a.x.y` of a column `a.x` next to a `JSON` column `a`)
+            /// were resolved through the prefix column, and would be resolved through the column itself after the prefix
+            /// column is dropped, renamed or changed to a type without this subcolumn (`MODIFY COLUMN a String`).
+            for (const auto & old_column : old_metadata.columns.getAllPhysical())
+            {
+                auto it = old_names.find(old_column.name);
+                if (it == old_names.end() || it->second != old_column.name || !new_columns.hasPhysical(old_column.name))
+                    continue;
+
+                for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(old_column.name))
+                {
+                    auto old_other_column = old_metadata.columns.tryGetPhysical(String(prefix));
+                    if (!old_other_column || !old_other_column->type->tryGetSubcolumnType(subcolumn))
+                        continue;
+
+                    auto other_column = was_stored_as_is(old_other_column->name) ? new_columns.tryGetPhysical(old_other_column->name) : std::nullopt;
+                    if (other_column && other_column->type->tryGetSubcolumnType(subcolumn))
+                        continue;
+
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot alter the table: the name of column {} would no longer be the name of a subcolumn of column {}, "
+                        "so the names of its subcolumns would be read from a different column",
+                        backQuoteIfNeed(old_column.name),
+                        backQuoteIfNeed(old_other_column->name));
+                }
+            }
         }
 
         bool changes_order_by = false;
@@ -9894,11 +9983,16 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
+    /// A column of the table that shadows a subcolumn of another column (e.g. `a.size0` next to an
+    /// `Array` column `a`) is not taken for that subcolumn in the parts that do not hold it.
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto & table_columns = metadata_snapshot->getColumns();
+
     for (const auto & part : parts)
     {
         for (const auto & col_name : subcolumn_names)
         {
-            auto column = part->tryGetColumn(col_name);
+            auto column = part->tryGetColumnForTable(col_name, table_columns);
             if (column && column->isSubcolumn())
                 result[col_name].add(part->getSubcolumnSize(col_name));
         }

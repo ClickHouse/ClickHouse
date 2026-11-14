@@ -345,17 +345,29 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
 
     for (const auto & [column, metadata_type] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
     {
+        /// A name is resolved with the identity that the metadata gives it: a column in its own right is held
+        /// by the part only under that exact name, and a subcolumn only by the same subcolumn of the same
+        /// parent. For a column `a.size0` next to an `Array` column `a` (created by `CREATE TABLE` or added
+        /// by an older version), a granule written over the sizes of `a` in a part that does not hold the
+        /// column must not be taken for a granule of the column, and for a column `a.x` next to a `JSON`
+        /// column `a`, a granule over the path `x.y` of `a` must not be taken for one of the subcolumn `a.x.y`.
+        auto part_column = part.tryGetColumnForTable(column, metadata_columns);
+
         /// When the granules were built against a type that differs from the part's own column (an
         /// index materialized over a not-yet-materialized type hint), the part records that type. It
         /// is authoritative for decodability: the granules are readable iff it equals the current type.
+        /// It certifies only the type, not which storage column supplied the values, so it is consulted
+        /// after the name has been resolved through the parent that the metadata gives it: after
+        /// `ADD COLUMN `j.a`` next to a `JSON` column `j`, a granule built over the path `a` of `j`
+        /// is not a granule of the new column, even if the recorded type matches.
         if (auto built_type = getSecondaryIndexColumnTypes(part).tryGetBuiltType(skip_index.index.name, column))
         {
+            if (!part_column && !isSerializationDefinedSubcolumn(metadata_columns, part_columns, column))
+                return false;
             if (*built_type == metadata_type->getName())
                 continue;
             return false;
         }
-
-        auto part_column = part.tryGetColumn(column);
 
         /// The column is in the metadata but not in this part's column list, so there is no
         /// part-side type to compare against. That does NOT mean the part holds no granule: a part

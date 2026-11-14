@@ -6,10 +6,9 @@
 -- dropped column itself reads is a separate matter, see issue #114588.)
 
 DROP TABLE IF EXISTS t_merge_drops_offsets;
-CREATE TABLE t_merge_drops_offsets (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO t_merge_drops_offsets VALUES ([10, 20, 30]), ([40]);
-ALTER TABLE t_merge_drops_offsets ADD COLUMN `a.size0` UInt64;
+CREATE TABLE t_merge_drops_offsets (a Array(UInt64), `a.size0` UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1;
+INSERT INTO t_merge_drops_offsets (a) VALUES ([10, 20, 30]), ([40]);
 OPTIMIZE TABLE t_merge_drops_offsets FINAL;
 
 SELECT 'the array survives the merge';
@@ -18,15 +17,15 @@ SELECT sum(length(a)) FROM t_merge_drops_offsets;
 
 -- The same for a `Nested` column, whose offsets are shared by its elements.
 DROP TABLE IF EXISTS t_merge_drops_nested_offsets;
-CREATE TABLE t_merge_drops_nested_offsets (n Nested(x UInt64, y UInt64)) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO t_merge_drops_nested_offsets VALUES ([1, 2], [3, 4]);
-ALTER TABLE t_merge_drops_nested_offsets ADD COLUMN `n.size0` UInt64;
+CREATE TABLE t_merge_drops_nested_offsets (n Nested(x UInt64, y UInt64), `n.size0` UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1;
+INSERT INTO t_merge_drops_nested_offsets (n.x, n.y) VALUES ([1, 2], [3, 4]);
 OPTIMIZE TABLE t_merge_drops_nested_offsets FINAL;
 
 SELECT 'the nested column survives the merge';
 SELECT n.x, n.y FROM t_merge_drops_nested_offsets;
-SELECT length(n.x), length(n.y) FROM t_merge_drops_nested_offsets;
+-- Without the rewrite of `length` into the sizes subcolumn, which here resolves to the column `n.size0`.
+SELECT length(n.x), length(n.y) FROM t_merge_drops_nested_offsets SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_merge_drops_nested_offsets;
 DROP TABLE t_merge_drops_offsets;
