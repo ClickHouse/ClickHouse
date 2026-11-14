@@ -54,6 +54,7 @@ public:
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).
     StorageLocalConfiguration() = default;
+    StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -62,6 +63,19 @@ public:
     Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return path.path; }
+
+    const Paths & getPathsUnlocked() const override { return paths; }
+    Paths & getMutablePathsUnlocked() override { return paths; }
+    void setPathsUnlocked(const Paths & paths_) override
+    {
+        paths = paths_;
+        onPathsUpdatedUnlocked();
+    }
+    void onPathsUpdatedUnlocked() override
+    {
+        if (!paths.empty())
+            path = paths[0];
+    }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
@@ -72,13 +86,6 @@ public:
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
 protected:
-    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
-    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
-    {
-        paths = paths_;
-        path = paths_[0];
-    }
-
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure) override;
 
@@ -86,7 +93,7 @@ private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     String disk_name;
     Path path;
-    Paths paths TSA_GUARDED_BY(paths_mutex);
+    Paths paths;
     void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
 

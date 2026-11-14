@@ -1,0 +1,11 @@
+--- The insert fails while writing the fourth file
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+--- The table reads the files that were finished, and the unfinished one is removed
+900	899
+data.1.tsv
+data.2.tsv
+data.tsv
+--- A smaller truncating insert leaves no file of the failed insert behind
+100	99
+100	99
+data.tsv

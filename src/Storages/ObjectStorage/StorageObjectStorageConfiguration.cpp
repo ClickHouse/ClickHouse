@@ -6,7 +6,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -270,28 +269,6 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     return getSipHash128AsHexString(hash);
 }
 
-StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
-{
-    SharedLockGuard lock(paths_mutex);
-    return getPathsImpl();
-}
-
-void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
-{
-    std::lock_guard lock(paths_mutex);
-    setPathsImpl(paths);
-}
-
-void StorageObjectStorageConfiguration::addPath(const Path & path)
-{
-    std::lock_guard lock(paths_mutex);
-    auto paths = getPathsImpl();
-    if (std::ranges::find(paths, path.path, &Path::path) != paths.end())
-        return;
-    paths.push_back(path);
-    setPathsImpl(paths);
-}
-
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 {
     schema_hash = hash;
@@ -422,6 +399,19 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
     }
 
     return Path {partition_strategy->getPathForWrite(raw_path.path, partition_id)};
+}
+
+NumberedFileNames StorageObjectStorageConfiguration::getNumberedPathsForWrite(const std::string & partition_id, const std::string & path_for_write) const
+{
+    if (!partition_strategy)
+        return getNumberedFileNames(path_for_write);
+
+    /// The same pattern that `getPathForWrite` substitutes the partition key into.
+    auto raw_path = getRawPath();
+    if (!schema_hash.empty())
+        boost::replace_all(raw_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
+    return partition_strategy->getNumberedPathsForWrite(raw_path.path, partition_id, path_for_write);
 }
 
 bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const

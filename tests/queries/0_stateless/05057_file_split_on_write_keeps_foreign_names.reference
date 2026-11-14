@@ -1,0 +1,18 @@
+--- Someone else owns two of the numbered names
+--- A large insert skips the taken names
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.4.tsv
+data.5.tsv
+data.tsv
+--- A smaller truncating insert does not delete the names it does not own
+foreign 1
+foreign 3
+--- The leftovers of the previous insert are kept as well: their names are indistinguishable from the foreign ones
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.4.tsv
+data.5.tsv
+data.tsv

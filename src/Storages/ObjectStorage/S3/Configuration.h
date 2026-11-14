@@ -126,6 +126,13 @@ public:
     void setRawPath(const Path & path) override { url.key = path.path; }
     const String & getRawURI() const override { return url.uri_str; }
 
+    const Paths & getPathsUnlocked() const override { return keys; }
+    Paths & getMutablePathsUnlocked() override { return keys; }
+    void setPathsUnlocked(const Paths & paths) override
+    {
+        keys = paths;
+    }
+
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
     String getDataSourceDescriptionForNamespace(const String & object_namespace) const override;
@@ -152,7 +159,7 @@ public:
     S3::URI url;
 
 
-    Paths keys TSA_GUARDED_BY(paths_mutex);
+    Paths keys;
 
     std::unique_ptr<S3Settings> s3_settings;
     std::map<String, String> explicit_request_settings;
@@ -169,12 +176,6 @@ public:
     String biglake_service_account_key;
 
 protected:
-    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }
-    void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex)
-    {
-        keys = paths;
-    }
-
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
