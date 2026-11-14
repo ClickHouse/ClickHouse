@@ -59,6 +59,17 @@ public:
     void adjustRightMark(size_t right_mark);
     ReadBuffer * getDataBuffer();
 
+    /// Where granule `row_index` of column `column_position` starts: in the file, the compressed block it starts in, and
+    /// in that block, its first row.
+    MarkInCompressedFile getMark(size_t row_index, size_t column_position = 0);
+
+    /// The next compressed block of the stream as it is stored, without decompressing it, for a reader that decompresses
+    /// the blocks elsewhere, such as a GPU; nothing at the end of what is read, see `adjustRightMark`. After a seek to a
+    /// mark, it is the block the mark is in, of which the rows of the granule start at `offset_in_decompressed_block`.
+    /// Only of a stream that is compressed and read without the uncompressed cache, and not to be mixed with reads
+    /// through `getDataBuffer`.
+    std::optional<CompressedReadBufferBase::CompressedBlock> readCompressedBlock();
+
     size_t getFileSize() const { return file_size; }
 
     /// Announces the new map if the buffer exists.
