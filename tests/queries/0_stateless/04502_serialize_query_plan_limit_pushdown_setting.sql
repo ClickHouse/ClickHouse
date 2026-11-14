@@ -5,6 +5,7 @@
 SET serialize_query_plan = 1;
 -- The plan-level distributed read is used only with distributed lazy materialization enabled.
 SET query_plan_optimize_distributed_lazy_materialization = 1;
+SET enable_parallel_replicas = 0;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS mdp_pdl_local;
