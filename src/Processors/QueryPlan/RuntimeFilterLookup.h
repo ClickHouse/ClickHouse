@@ -9,6 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
+#include <Common/RowsSkipBudget.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 
@@ -103,19 +104,7 @@ private:
     Field range_max{};
 };
 
-/// Thread-safe, nonnegative row budget used to throttle runtime-filter evaluation.
-class RuntimeFilterSkipBudget
-{
-public:
-    /// Add `rows * multiplier` to the budget, saturating at the maximum representable value.
-    void replenish(UInt64 rows, UInt64 multiplier);
-
-    /// Consume `rows` and return whether enough budget remains to skip the current block.
-    bool consume(size_t rows);
-
-private:
-    std::atomic<Int64> rows_to_skip = 0;
-};
+using RuntimeFilterSkipBudget = RowsSkipBudget;
 }
 
 class RuntimeFilterEvaluationState

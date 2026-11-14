@@ -144,7 +144,7 @@ static void selectFirstMatchForEachKey(const IColumn::Offsets & offsets, Mutable
     null_map = std::move(filtered_null_map);
 }
 
-JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
+JoinResultPtr DirectKeyValueJoin::joinBlock(Block block, JoinProbeContext /*context*/)
 {
     const String & key_name = table_join->getOnlyClause().key_names_left[0];
     const ColumnWithTypeAndName & key_col = block.getByName(key_name);

@@ -7911,6 +7911,10 @@ Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINC
 Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a hash join. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`.
 )", 0, \
         {"26.11", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a join."}) \
+    DECLARE(Bool, rewrite_intersect_except_all_to_join, true, R"(
+Execute `INTERSECT ALL` and `EXCEPT ALL` as a hash join that counts the rows of each key. `NULL` values compare equal, as in the set operation. The join always uses the `hash` algorithm and ignores `join_algorithm`, `max_rows_in_join` and `max_bytes_in_join`.
+)", 0, \
+        {"26.11", false, true, "New setting to execute `INTERSECT ALL` and `EXCEPT ALL` as a join."}) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(
 Limits the number of simultaneously active data streams in a `UNION` step (applies to `UNION ALL`, to `UNION DISTINCT`, because it is implemented via a `UNION ALL` step followed by a `DISTINCT` step, and to a `Merge` table read with plan-based parallel replicas, which is expanded into a union of the reads from its underlying tables). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
 )", 0, \

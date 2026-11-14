@@ -39,9 +39,9 @@ public:
         join->checkTypesOfKeys(block);
     }
 
-    JoinResultPtr joinBlock(Block block) override
+    JoinResultPtr joinBlock(Block block, JoinProbeContext context) override
     {
-        return join->joinBlock(block);
+        return join->joinBlock(block, context);
     }
 
     const Block & getTotals() const override

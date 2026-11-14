@@ -399,9 +399,11 @@ bool SpillingHashJoin::canPreserveLeftBlockOrder() const
 
     /// The spill fallback must be able to run as an order-preserving MergeJoin. `any_take_last_row`
     /// has no MergeJoin counterpart: it picks the first match in the right sort order instead.
+    /// Neither has `INTERSECT ALL`: MergeJoin emits one row per key instead of counting duplicates.
     bool merge_join_fallback_is_possible = MergeJoin::isSupported(table_join)
         && (table_join->strictness() == JoinStrictness::Any || table_join->strictness() == JoinStrictness::All)
         && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any)
+        && table_join->setOperation() != JoinSetOperation::IntersectAll
         && keys_preserve_hash_equality();
 
     return in_memory_join_preserves_order && merge_join_fallback_is_possible;
@@ -458,14 +460,14 @@ void SpillingHashJoin::initialize(const Block & sample_block)
     hash_join->initialize(sample_block);
 }
 
-JoinResultPtr SpillingHashJoin::joinBlock(Block block)
+JoinResultPtr SpillingHashJoin::joinBlock(Block block, JoinProbeContext context)
 {
     /// During header computation (transformHeader), `joinBlock` is called with an empty block
     /// before any data is added. Delegate to the appropriate join in COLLECTING state.
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
-        return hash_join->joinBlock(std::move(block));
+        return hash_join->joinBlock(std::move(block), context);
 
-    return chosen_join->joinBlock(std::move(block));
+    return chosen_join->joinBlock(std::move(block), context);
 }
 
 void SpillingHashJoin::setTotals(const Block & block)

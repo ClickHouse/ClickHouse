@@ -1,0 +1,39 @@
+<test>
+    <!-- Test INTERSECT ALL and EXCEPT ALL as a join. -->
+
+    <!-- Unique rows on both sides, half of them shared. -->
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) INTERSECT ALL SELECT number + 5000000 FROM numbers_mt(10000000))</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) EXCEPT ALL SELECT number + 5000000 FROM numbers_mt(10000000))</query>
+
+    <!-- Arms of different sizes. -->
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) INTERSECT ALL SELECT number * 10 FROM numbers_mt(1000000))</query>
+    <query>SELECT count() FROM (SELECT number * 10 FROM numbers_mt(1000000) INTERSECT ALL SELECT number FROM numbers_mt(10000000))</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(10000000) EXCEPT ALL SELECT number * 10 FROM numbers_mt(1000000))</query>
+    <query>SELECT count() FROM (SELECT number * 10 FROM numbers_mt(1000000) EXCEPT ALL SELECT number FROM numbers_mt(10000000))</query>
+
+    <!-- Many duplicates of each row. -->
+    <query>SELECT count() FROM (SELECT number % 500000 FROM numbers_mt(10000000) INTERSECT ALL SELECT number % 300000 + 200000 FROM numbers_mt(10000000))</query>
+    <query>SELECT count() FROM (SELECT number % 500000 FROM numbers_mt(10000000) EXCEPT ALL SELECT number % 300000 + 200000 FROM numbers_mt(10000000))</query>
+
+    <!-- Few distinct rows, so the rows of a key repeat in every block. -->
+    <query>SELECT count() FROM (SELECT number % 10 FROM numbers_mt(50000000) INTERSECT ALL SELECT number % 10 FROM numbers_mt(50000000))</query>
+    <query>SELECT count() FROM (SELECT number % 1000 FROM numbers_mt(50000000) EXCEPT ALL SELECT number % 1000 FROM numbers_mt(40000000))</query>
+
+    <!-- Skewed rows: Zipf with s = 1.5 over 1M keys. The hottest key has 29% of the rows, the hottest 10 have 70%. -->
+    <query>SELECT count() FROM ((WITH (cityHash64(number, 1) % 4294967296 + 1) / 4294967296 AS u SELECT toUInt32(pow((pow(1000000, -0.5) - 1) * u + 1, -2)) FROM numbers_mt(20000000)) INTERSECT ALL (WITH (cityHash64(number, 2) % 4294967296 + 1) / 4294967296 AS u SELECT toUInt32(pow((pow(1000000, -0.5) - 1) * u + 1, -2)) FROM numbers_mt(20000000)))</query>
+    <query>SELECT count() FROM ((WITH (cityHash64(number, 1) % 4294967296 + 1) / 4294967296 AS u SELECT toUInt32(pow((pow(1000000, -0.5) - 1) * u + 1, -2)) FROM numbers_mt(20000000)) EXCEPT ALL (WITH (cityHash64(number, 2) % 4294967296 + 1) / 4294967296 AS u SELECT toUInt32(pow((pow(1000000, -0.5) - 1) * u + 1, -2)) FROM numbers_mt(20000000)))</query>
+
+    <!-- About 1000 copies of each row, in random order. -->
+    <query>SELECT count() FROM (SELECT cityHash64(number, 1) % 20000 FROM numbers_mt(20000000) INTERSECT ALL SELECT cityHash64(number, 2) % 20000 FROM numbers_mt(20000000))</query>
+    <query>SELECT count() FROM (SELECT cityHash64(number, 1) % 20000 FROM numbers_mt(20000000) EXCEPT ALL SELECT cityHash64(number, 2) % 20000 FROM numbers_mt(20000000))</query>
+
+    <!-- Two columns. -->
+    <query>SELECT count() FROM (SELECT number % 1000000 AS a, number % 7 AS b FROM numbers_mt(3000000) INTERSECT ALL SELECT number, number % 5 FROM numbers_mt(2000000))</query>
+    <query>SELECT count() FROM (SELECT number % 1000000 AS a, number % 7 AS b FROM numbers_mt(3000000) EXCEPT ALL SELECT number, number % 5 FROM numbers_mt(2000000))</query>
+
+    <!-- String rows. -->
+    <query>SELECT count() FROM (SELECT toString(number) FROM numbers_mt(5000000) EXCEPT ALL SELECT toString(number + 2500000) FROM numbers_mt(5000000))</query>
+    
+    <!-- Rows with NULLs. -->
+    <query>SELECT count() FROM (SELECT if(number % 10 = 0, NULL, number % 100000) AS a, toString(number % 1000) AS b FROM numbers_mt(10000000) INTERSECT ALL SELECT if(number % 7 = 0, NULL, (number + 50000) % 100000), toString((number + 500) % 1000) FROM numbers_mt(10000000))</query>
+</test>

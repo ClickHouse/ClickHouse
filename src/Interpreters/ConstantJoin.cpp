@@ -896,7 +896,7 @@ private:
     bool spilled_blocks_exhausted = false;
 };
 
-JoinResultPtr ConstantJoin::joinBlock(Block block)
+JoinResultPtr ConstantJoin::joinBlock(Block block, JoinProbeContext /*context*/)
 {
     total_rows_left.fetch_add(block.rows(), std::memory_order_relaxed);
 

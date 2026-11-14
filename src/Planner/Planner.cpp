@@ -192,6 +192,8 @@ namespace Setting
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool rewrite_intersect_except_distinct_to_join;
+    extern const SettingsBool rewrite_intersect_except_all_to_join;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
@@ -2829,16 +2831,43 @@ static void renameColumnsByPosition(QueryPlan & plan, const Block & header, cons
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
 }
 
-/// Executes `INTERSECT DISTINCT` or `EXCEPT DISTINCT` of the two arms as a join on all columns with `<=>`, which
-/// matches `NULL` with `NULL` like the set operation does. The `DISTINCT` step added after it deduplicates only after
-/// LEFT ANTI: INNER ANY and RIGHT ANTI emit each key once.
-static QueryPlan buildIntersectOrExceptDistinctAsJoin(
-    SelectUnionMode union_mode, std::vector<std::unique_ptr<QueryPlan>> query_plans, const Block & header, const ContextPtr & query_context)
+/// The set operation to execute as a join, or `None` to execute it with the set-operation step.
+static JoinSetOperation selectJoinSetOperation(SelectUnionMode union_mode, const Block & union_common_header, const Settings & settings)
+{
+    if (union_common_header.columns() == 0)
+        return JoinSetOperation::None;
+
+    const bool distinct_as_join = settings[Setting::rewrite_intersect_except_distinct_to_join];
+    const bool all_as_join = settings[Setting::rewrite_intersect_except_all_to_join];
+    switch (union_mode)
+    {
+        case SelectUnionMode::INTERSECT_DISTINCT:
+            return distinct_as_join ? JoinSetOperation::IntersectDistinct : JoinSetOperation::None;
+        case SelectUnionMode::EXCEPT_DISTINCT:
+            return distinct_as_join ? JoinSetOperation::ExceptDistinct : JoinSetOperation::None;
+        case SelectUnionMode::INTERSECT_ALL:
+            return all_as_join ? JoinSetOperation::IntersectAll : JoinSetOperation::None;
+        case SelectUnionMode::EXCEPT_ALL:
+            return all_as_join ? JoinSetOperation::ExceptAll : JoinSetOperation::None;
+        default:
+            return JoinSetOperation::None;
+    }
+}
+
+/// Executes `INTERSECT` or `EXCEPT` of the two arms as a join on all columns with `<=>`, which matches `NULL` with
+/// `NULL` like the set operation does. For `DISTINCT`, the `DISTINCT` step added after it deduplicates only after
+/// LEFT ANTI: INNER ANY and RIGHT ANTI emit each key once. For `ALL`, the join counts the right rows of each key and
+/// every left row uses up one of them.
+static QueryPlan buildIntersectOrExceptAsJoin(
+    JoinSetOperation join_set_operation,
+    std::vector<std::unique_ptr<QueryPlan>> query_plans,
+    const Block & header,
+    const ContextPtr & query_context)
 {
     chassert(query_plans.size() == 2);
 
     const auto & settings = query_context->getSettingsRef();
-    const bool is_intersect = union_mode == SelectUnionMode::INTERSECT_DISTINCT;
+    const bool is_intersect = join_set_operation == JoinSetOperation::IntersectDistinct || join_set_operation == JoinSetOperation::IntersectAll;
     const size_t num_columns = header.columns();
 
     /// The join addresses columns by name, and both arms have the names of the union header, possibly repeated.
@@ -2869,7 +2898,7 @@ static QueryPlan buildIntersectOrExceptDistinctAsJoin(
         is_intersect ? JoinStrictness::Any : JoinStrictness::Anti,
         JoinLocality::Unspecified,
         std::move(predicates));
-    join_operator.set_operation = is_intersect ? JoinSetOperation::IntersectDistinct : JoinSetOperation::ExceptDistinct;
+    join_operator.set_operation = join_set_operation;
 
     auto join_step = std::make_unique<JoinStepLogical>(
         left_header,
@@ -2879,10 +2908,7 @@ static QueryPlan buildIntersectOrExceptDistinctAsJoin(
         std::move(output_nodes),
         JoinSettings(settings, query_context->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
-    if (is_intersect)
-        join_step->setStepDescription("INTERSECT DISTINCT");
-    else
-        join_step->setStepDescription("EXCEPT DISTINCT");
+    join_step->setStepDescription(toString(join_set_operation), settings[Setting::query_plan_max_step_description_length]);
 
     QueryPlan result;
     result.unitePlans(std::move(join_step), std::move(query_plans));
@@ -2991,17 +3017,16 @@ void Planner::buildPlanForUnionNode()
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_DISTINCT;
 
-    const bool execute_as_join = (union_mode == SelectUnionMode::INTERSECT_DISTINCT || union_mode == SelectUnionMode::EXCEPT_DISTINCT)
-        && settings[Setting::rewrite_intersect_except_distinct_to_join] && union_common_header.columns() != 0;
+    const auto join_set_operation = selectJoinSetOperation(union_mode, union_common_header, settings);
 
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {
         auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* allow_narrowing = */ true);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
-    else if (execute_as_join)
+    else if (join_set_operation != JoinSetOperation::None)
     {
-        query_plan = buildIntersectOrExceptDistinctAsJoin(union_mode, std::move(query_plans), union_common_header, query_context);
+        query_plan = buildIntersectOrExceptAsJoin(join_set_operation, std::move(query_plans), union_common_header, query_context);
     }
     else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_ALL || union_mode == SelectUnionMode::EXCEPT_DISTINCT)
@@ -3054,7 +3079,7 @@ void Planner::buildPlanForUnionNode()
             distinct_step->setStepDescription("DISTINCT");
 
         /// INNER ANY emits each key once whichever side is built, so `INTERSECT DISTINCT` needs only the limit on rows.
-        if (execute_as_join)
+        if (join_set_operation != JoinSetOperation::None)
         {
             if (union_mode == SelectUnionMode::INTERSECT_DISTINCT)
                 distinct_step->skipDeduplication();
@@ -3066,7 +3091,7 @@ void Planner::buildPlanForUnionNode()
     }
 
     /// The join drops the extremes of the arms, so they are computed on the result.
-    if (execute_as_join)
+    if (join_set_operation != JoinSetOperation::None)
         addExtremesStepIfNeeded(query_plan, planner_context);
 
     /// Each child of the UNION/INTERSECT/EXCEPT may independently add a DelayedMaterializingCTEsStep

@@ -827,7 +827,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         }
 
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
+            left_header, output_header, join, JoinProbeContext::forStream(i, num_streams), max_block_size, false, default_totals,
+            joining_finish_counter, joining_right_rows_match_counter, emit_non_joined);
         joining->keepReadingInputs(keep_reading_left, keep_reading_right);
 
         connect(*left_port, joining->getInputs().front());
@@ -894,7 +895,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     if (left->hasTotals())
     {
-        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, join, max_block_size, true, default_totals);
+        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, join, JoinProbeContext::none(), max_block_size, true, default_totals);
         connect(*left->pipe.totals_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         left->pipe.totals_port = &joining->getOutputs().front();
@@ -990,7 +991,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     {
         auto finish_counter = std::make_shared<FinishCounter>(1);
         auto match_counter = std::make_shared<RightRowsMatchCounter>();
-        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, joins[i], max_block_size, false, false, finish_counter, match_counter);
+        auto joining = std::make_shared<JoiningTransform>(
+            left_header, output_header, joins[i], JoinProbeContext::forStream(0, 1), max_block_size, false, false, finish_counter, match_counter);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());

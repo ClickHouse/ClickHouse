@@ -96,7 +96,7 @@ public:
 
     bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
-    JoinResultPtr joinBlock(Block block) override;
+    JoinResultPtr joinBlock(Block block, JoinProbeContext context) override;
 
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;

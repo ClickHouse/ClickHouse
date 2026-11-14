@@ -173,12 +173,12 @@ static std::optional<UInt64> countMatchedLeftRows(const AddedColumns & added_col
     else if constexpr (source == LeftMatchedSource::OutputFilter)
     {
         chassert(added_columns.need_filter);
-        return countBytesInFilter(added_columns.filter);
+        return added_columns.matched_rows.size();
     }
     else if constexpr (source == LeftMatchedSource::OutputFilterComplement)
     {
         chassert(added_columns.need_filter);
-        return probed_rows - countBytesInFilter(added_columns.filter);
+        return probed_rows - added_columns.matched_rows.size();
     }
     else
     {
