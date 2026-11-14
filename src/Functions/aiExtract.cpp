@@ -4,6 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
@@ -202,7 +203,8 @@ private:
     /// Parse errors are swallowed on purpose — the user will see the output anyway.
     String postProcessResponse(const String & raw) const override
     {
-        if (raw.empty() || raw.front() != '{')
+        std::string_view trimmed = trimWhitespace(raw);
+        if (!trimmed.starts_with('{'))
             return raw;
 
         try

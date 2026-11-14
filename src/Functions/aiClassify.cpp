@@ -8,6 +8,7 @@
 #include <DataTypes/IDataType.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
@@ -172,7 +173,8 @@ private:
     /// swallowed on purpose — the user will see the output anyway.
     String postProcessResponse(const String & raw_response) const override
     {
-        if (raw_response.empty() || raw_response.front() != '{')
+        std::string_view trimmed = trimWhitespace(raw_response);
+        if (!trimmed.starts_with('{'))
             return raw_response;
 
         try
