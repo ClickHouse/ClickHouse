@@ -5192,6 +5192,7 @@ static ColumnConst::Ptr deserializeConstant(
         LambdaCapture capture;
         deserializeCapture(capture, in, max_type_complexity);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+        capture.body_hash = hashLambdaBody(capture_dag, capture);
 
         UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
@@ -5483,6 +5484,7 @@ ActionsDAG ActionsDAG::deserialize(
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+                capture.body_hash = hashLambdaBody(capture_dag, capture);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(

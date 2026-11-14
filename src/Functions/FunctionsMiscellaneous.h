@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
+#include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -29,6 +30,8 @@ struct LambdaCapture
     String return_name;
     DataTypePtr return_type;
     bool allow_constant_folding = false;
+    /// identifies the expression of the body, see `hashLambdaBody`
+    UInt128 body_hash{};
 };
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
@@ -435,6 +438,76 @@ private:
     String name;
 };
 
+/// the hash of a lambda body before the JIT compiles it; it has the captured columns and the arguments by position, not by name
+inline UInt128 hashLambdaBody(const ActionsDAG & body, const LambdaCapture & capture)
+{
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> input_positions;
+    for (const auto & name : capture.captured_names)
+        input_positions.emplace(name, input_positions.size());
+    for (const auto & argument : capture.lambda_arguments)
+        input_positions.emplace(argument.name, input_positions.size());
+
+    const auto * result = body.tryFindInOutputs(capture.return_name);
+    if (!result)
+        return {};
+
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, UInt128> hashes;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{result};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        size_t stack_size = stack.size();
+        for (const auto * child : node->children)
+            if (!hashes.contains(child))
+                stack.push_back(child);
+        if (stack.size() != stack_size)
+            continue;
+        stack.pop_back();
+        if (hashes.contains(node))
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            hashes.emplace(node, hashes.at(node->children.at(0)));
+            continue;
+        }
+
+        SipHash hash;
+        hash.update(node->type);
+        hash.update(node->result_type->getName());
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (auto it = input_positions.find(node->result_name); it != input_positions.end())
+                hash.update(it->second);
+            else
+                hash.update(node->result_name);
+        }
+        else if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            hash.update(node->function_base->getName());
+            if (const auto * nested_lambda = typeid_cast<const FunctionCapture *>(node->function_base.get()))
+                hash.update(nested_lambda->getCapture().body_hash);
+        }
+        else if (node->type == ActionsDAG::ActionType::COLUMN)
+        {
+            /// the value of a set or of a lambda does not identify it, so such a constant is equal only to itself
+            const auto & data = node->column->getDataColumn();
+            if (typeid_cast<const ColumnSet *>(&data) || typeid_cast<const ColumnFunction *>(&data))
+                hash.update(reinterpret_cast<uintptr_t>(node));
+            else
+                data.updateHashWithValue(0, hash);
+        }
+        else
+            hash.update(node->result_name);
+
+        for (const auto * child : node->children)
+            hash.update(hashes.at(child));
+        hashes.emplace(node, hash.get128());
+    }
+
+    return hashes.at(result);
+}
+
 class FunctionCaptureOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
@@ -488,6 +561,7 @@ public:
             .allow_constant_folding = allow_constant_folding,
         });
 
+        capture->body_hash = hashLambdaBody(actions_dag, *capture);
         expression_actions = std::make_shared<ExpressionActions>(std::move(actions_dag), actions_settings);
     }
 
