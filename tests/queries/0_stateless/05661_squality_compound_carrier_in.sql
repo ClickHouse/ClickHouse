@@ -22,6 +22,14 @@ SELECT count() FROM numbers(1)
 WHERE map('a', toUInt8(1)) IN materialize(CAST(map('a', toUInt8(1)) AS Dynamic))
 SETTINGS in_null_as_unknown = 1;
 
+SELECT
+    map('a', toUInt8(1)) IN materialize(CAST(map('a', toUInt8(1)) AS Dynamic)),
+    map('a', toUInt8(1)) IN materialize(CAST(map(toUInt8(1), toUInt8(1)) AS Dynamic)),
+    map('a', toUInt8(1)) IN materialize(CAST('other' AS Variant(Map(String, UInt8), String))),
+    map('a', toUInt8(1)) IN materialize(CAST(map('a', toUInt8(1)) AS Variant(Map(String, UInt8), String))),
+    map('a', toUInt8(1)) IN materialize(CAST('other' AS Variant(Map(UInt8, UInt8), String)))
+SETTINGS in_null_as_unknown = 1, short_circuit_function_evaluation = 'disable';
+
 SET in_null_as_unknown = 1;
 CREATE TABLE squality_compound_carrier_check
 (

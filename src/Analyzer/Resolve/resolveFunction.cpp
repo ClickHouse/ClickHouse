@@ -40,6 +40,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
@@ -1270,6 +1271,10 @@ static QueryTreeNodePtr buildCompoundCarrierInComparison(
 {
     const auto left_bare = removeNullable(removeLowCardinality(left_type));
     const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(right_bare.get());
+        variant && !variant->tryGetVariantDiscriminator(left_bare->getName()))
+        return std::make_shared<ConstantNode>(Field{0u});
+
     auto actual_type = std::make_shared<FunctionNode>(isDynamic(right_bare) ? "dynamicType" : "variantType");
     actual_type->getArguments().getNodes().push_back(right);
     QueryTreeNodePtr actual_type_name = std::move(actual_type);
@@ -1279,19 +1284,20 @@ static QueryTreeNodePtr buildCompoundCarrierInComparison(
         to_string->getArguments().getNodes().push_back(std::move(actual_type_name));
         actual_type_name = std::move(to_string);
     }
-    auto matches_kind = std::make_shared<FunctionNode>(isDynamic(right_bare) ? "equals" : "startsWith");
-    matches_kind->getArguments().getNodes() = {
+    auto matches_type = std::make_shared<FunctionNode>("equals");
+    matches_type->getArguments().getNodes() = {
         std::move(actual_type_name),
-        std::make_shared<ConstantNode>(
-            isDynamic(right_bare) ? left_bare->getName() : (isArray(left_bare) ? "Array(" : "Map("),
-            std::make_shared<DataTypeString>())};
+        std::make_shared<ConstantNode>(left_bare->getName(), std::make_shared<DataTypeString>())};
+    auto extracted = std::make_shared<FunctionNode>(isDynamic(right_bare) ? "dynamicElement" : "variantElement");
+    extracted->getArguments().getNodes() = {
+        right, std::make_shared<ConstantNode>(left_bare->getName(), std::make_shared<DataTypeString>())};
     auto equal = std::make_shared<FunctionNode>("equals");
-    equal->getArguments().getNodes() = {left, right};
+    equal->getArguments().getNodes() = {left, std::move(extracted)};
     auto non_null_equal = std::make_shared<FunctionNode>("ifNull");
     non_null_equal->getArguments().getNodes() = {std::move(equal), std::make_shared<ConstantNode>(Field{0u})};
     auto guarded = std::make_shared<FunctionNode>("if");
     guarded->getArguments().getNodes() = {
-        std::move(matches_kind), std::move(non_null_equal), std::make_shared<ConstantNode>(Field{0u})};
+        std::move(matches_type), std::move(non_null_equal), std::make_shared<ConstantNode>(Field{0u})};
     return guarded;
 }
 
