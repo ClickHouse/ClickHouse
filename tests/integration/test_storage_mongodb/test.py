@@ -1063,6 +1063,8 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag NOT IN (0, toFloat32(2))": "2\n",
                 "n IN (true)": "2\n",
                 "n NOT IN (true)": "2\n",
+                "n IN (reinterpret(char(2), 'Bool'))": "2\n",
+                "n NOT IN (reinterpret(char(2), 'Bool'), 0)": "1\n",
             }
             actual = {
                 predicate: node.query(
@@ -1518,6 +1520,9 @@ def test_where_bool_default_settings(started_cluster, bool_type):
             "flag IN (1, 2.0)",
             "flag NOT IN (true)",
             "flag NOT IN (0, 2)",
+            "flag IN (reinterpret(char(2), 'Bool'))",
+            "flag IN (reinterpret(char(2), 'Bool'), 2)",
+            "flag NOT IN (reinterpret(char(2), 'Bool'))",
             "flag = true OR id = 8",
             "flag = true AND id > 7",
         ]

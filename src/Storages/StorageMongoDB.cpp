@@ -459,6 +459,26 @@ static Array listMembers(const Field & value)
     return members;
 }
 
+/// The type of the member `index` of an `IN` list of type `list_type`, or nothing if the list type does not tell it.
+static DataTypePtr listMemberType(const DataTypePtr & list_type, size_t index)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(list_type.get()))
+        return index < tuple_type->getElements().size() ? tuple_type->getElements()[index] : nullptr;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(list_type.get()))
+        return array_type->getNestedType();
+    return list_type;
+}
+
+/// The set of `IN` reads a member of type `Bool` as `true` or `false`, although the member, e.g. from `reinterpret`, may hold
+/// another byte. A number member keeps its value.
+static Field setMemberValue(const Field & member, const DataTypePtr & member_type)
+{
+    if (member_type && isBool(removeLowCardinalityAndNullable(member_type))
+        && (member.getType() == Field::Types::UInt64 || member.getType() == Field::Types::Bool))
+        return Field(member.safeGet<UInt64>() != 0);
+    return member;
+}
+
 /// Whether `value`, read from a BSON bool, satisfies the comparison with a constant, or nothing if that is not known.
 static std::optional<bool> boolSatisfies(bool value, const std::string & func_name, const Field & bound)
 {
@@ -495,7 +515,7 @@ static std::optional<bool> boolSatisfies(bool value, const std::string & func_na
 
 /// The BSON bools that cannot satisfy a comparison of a `Bool` column. The reader takes any other BSON value too, and
 /// converts it in ways that a MongoDB comparison cannot express, so the filter keeps every other document.
-static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, const Field & const_value)
+static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, const Field & const_value, const DataTypePtr & const_type)
 {
     auto bools = bsoncxx::builder::basic::array{};
     for (bool value : {false, true})
@@ -506,9 +526,10 @@ static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, c
             /// A member equal to the value decides the membership; a member that is not known to differ keeps the value.
             bool has_equal_member = false;
             bool has_unknown_member = false;
-            for (const auto & member : listMembers(const_value))
+            const Array members = listMembers(const_value);
+            for (size_t i = 0; i < members.size(); ++i)
             {
-                auto is_equal = boolSatisfies(value, "$eq", member);
+                auto is_equal = boolSatisfies(value, "$eq", setMemberValue(members[i], listMemberType(const_type, i)));
                 if (!is_equal.has_value())
                     has_unknown_member = true;
                 else if (*is_equal)
@@ -600,7 +621,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     if (isBool(removeNullable(column_type)))
     {
         is_superset = true;
-        return make_document(kvp(column_node->getColumnName(), make_document(kvp("$nin", unsatisfiableBools(func_name, const_value)))));
+        return make_document(kvp(column_node->getColumnName(), make_document(kvp("$nin", unsatisfiableBools(func_name, const_value, const_type)))));
     }
 
     bool is_const_number = WhichDataType(const_type).isNumber() && !isBool(const_type);
@@ -618,21 +639,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
         /// hold matches nothing. A member whose conversion loses part of the value is refused like a lossy
         /// bound; `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
-        const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
         /// `fieldAsBSONValue` writes no wide integer, so the members of a wide integer column are written as `Int64`s.
         const DataTypePtr member_type = isWideInteger(column_type) ? std::make_shared<DataTypeInt64>() : column_type;
         Array converted_elements;
         converted_elements.reserve(elements.size());
         for (size_t i = 0; i < elements.size(); ++i)
         {
-            DataTypePtr element_type;
-            if (tuple_type && i < tuple_type->getElements().size())
-                element_type = tuple_type->getElements()[i];
-            else if (array_type)
-                element_type = array_type->getNestedType();
-            else if (!tuple_type)
-                element_type = const_type;
+            const DataTypePtr element_type = listMemberType(const_type, i);
+            elements[i] = setMemberValue(elements[i], element_type);
 
             /// Every element is converted: the list is written with the column's type, so a `Float64`
             /// element under an integer column would be read back as an integer.
