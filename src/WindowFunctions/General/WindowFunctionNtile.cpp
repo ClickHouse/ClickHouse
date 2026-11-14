@@ -51,27 +51,13 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.partition = true, .order_by = true};
+        return WindowFunctionRequirements{.partition_end = true, .order_by = true};
     }
 
     size_t sizeOfState() const override { return sizeof(NtileState); }
     size_t alignOfState() const override { return alignof(NtileState); }
     void createState(char * place) const override { new (place) NtileState(); }
     void resetPartition(char * place) const override { new (place) NtileState(); }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
-    }
-
-    void checkWindowFrameType(const WindowDescription & window) const override
-    {
-        if (window.frame.begin_type != WindowFrame::BoundaryType::Unbounded || window.frame.end_type != WindowFrame::BoundaryType::Unbounded)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING', '{}' given", getName(), window.frame.toString());
-    }
 
     Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
@@ -111,15 +97,14 @@ Divides the ordered rows within a partition into a specified number of buckets (
 
 ```sql
 ntile (buckets)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+  OVER ([[PARTITION BY grouping_column] ORDER BY sorting_column] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] ORDER BY sorting_column)
 ```
 
 For each partition, ntile uses the positive integer bucket count from its first row in window order; subsequent values are ignored
 
-An `ORDER BY` clause is required. The window frame must be the whole partition (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), which is also the default frame used when none is specified explicitly.
+An `ORDER BY` clause is required. The function always reads the whole partition; a window frame, if specified, is ignored.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 

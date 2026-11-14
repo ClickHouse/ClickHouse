@@ -10,7 +10,6 @@ hide_advert: true
 sidebarTitle: 'monitoring kubernetes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into self-managed ClickHouse Observability, then viewing them in the built-in Kubernetes dashboard.
 
@@ -304,15 +303,39 @@ spec:
 
 Open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud) and select **ClickStack** from the left menu.
 
-<Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Launch ClickStack" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Launch ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+</Frame>
+
+</div>
 
 In the **Search** view, switch the source to `Logs` and set the time range to **Last 15 minutes**. Container logs from across the cluster should appear within a few seconds, enriched with attributes like `k8s.namespace.name`, `k8s.pod.name`, and `k8s.node.name`.
 
-<Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="ClickStack Search view with Kubernetes logs"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack Search view with Kubernetes logs](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+</Frame>
+
+</div>
 
 To see infrastructure metrics and events in context, open the built-in **Kubernetes** dashboard  by navigating to **Dashboards** -> **Kubernetes**. The `Pods`, `Nodes`, and `Namespaces` tabs should all be populated.
 
-<Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="ClickStack Kubernetes dashboard" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack Kubernetes dashboard](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+</Frame>
+
+</div>
 
 If nothing shows up:
 

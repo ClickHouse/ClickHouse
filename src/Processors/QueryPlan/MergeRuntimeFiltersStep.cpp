@@ -16,6 +16,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/receiveExchangeStreams.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -34,7 +35,7 @@ MergeRuntimeFiltersStep::MergeRuntimeFiltersStep(
     String input_exchange_id_,
     Strings source_buckets_,
     size_t fan_in_,
-    std::vector<Output> outputs_)
+    VectorWithMemoryTracking<Output> outputs_)
     : filter_name(std::move(filter_name_))
     , filter_column_type(filter_column_type_)
     , geometry(geometry_)
@@ -59,11 +60,11 @@ MergeRuntimeFiltersStep::inputStreams(const String & exchange_id, const Strings 
     return streams;
 }
 
-std::vector<ExchangeStreamId>
-MergeRuntimeFiltersStep::outputStreams(const std::vector<Output> & outputs, size_t bucket_index, size_t fan_in)
+VectorWithMemoryTracking<ExchangeStreamId>
+MergeRuntimeFiltersStep::outputStreams(const VectorWithMemoryTracking<Output> & outputs, size_t bucket_index, size_t fan_in)
 {
     const String bucket_id = toString(bucket_index);
-    std::vector<ExchangeStreamId> streams;
+    VectorWithMemoryTracking<ExchangeStreamId> streams;
     for (const auto & output : outputs)
     {
         if (output.destination_buckets.empty())
@@ -191,7 +192,7 @@ QueryPlanStepPtr MergeRuntimeFiltersStep::deserialize(Deserialization & ctx)
     readVarUInt(fan_in, ctx.in);
     size_t num_outputs = 0;
     readVarUInt(num_outputs, ctx.in);
-    std::vector<Output> outputs(num_outputs);
+    VectorWithMemoryTracking<Output> outputs(num_outputs);
     size_t parent_outputs = 0;
     for (auto & output : outputs)
     {

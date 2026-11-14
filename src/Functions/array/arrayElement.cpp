@@ -1887,12 +1887,20 @@ template <typename DataColumn>
 struct MatcherStringConst
 {
     const DataColumn & data;
-    const String & index;
+    /// A copy of the key with 15 readable bytes after it, as `memequalSmallAllowOverflow15` requires.
+    /// A `memcmp` of a variable length is a call to `bcmp`, which dispatches on the length through
+    /// a jump table for every element of every array (`get_map_value`).
+    PaddedPODArray<char> index;
+
+    MatcherStringConst(const DataColumn & data_, const String & index_)
+        : data(data_), index(index_.data(), index_.data() + index_.size())
+    {
+    }
 
     bool match(size_t row_data, size_t /* row_index */) const
     {
         auto data_ref = data.getDataAt(row_data);
-        return index.size() == data_ref.size() && memcmp(index.data(), data_ref.data(), data_ref.size()) == 0;
+        return memequalSmallAllowOverflow15(index.data(), index.size(), data_ref.data(), data_ref.size());
     }
 };
 
