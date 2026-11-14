@@ -120,7 +120,6 @@ using MergeTreeSkipIndexReaderPtr = std::shared_ptr<MergeTreeSkipIndexReader>;
 
 struct ProjectionIndexBitmap;
 using ProjectionIndexBitmapPtr = std::shared_ptr<ProjectionIndexBitmap>;
-using ProjectionIndexBitmaps = std::vector<ProjectionIndexBitmapPtr>;
 
 /// A bitmap wrapper for either 32-bit or 64-bit Roaring bitmaps, used in projection index processing.
 struct ProjectionIndexBitmap
