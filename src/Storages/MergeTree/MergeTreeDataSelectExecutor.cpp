@@ -1020,7 +1020,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     }
 
     /// Whether the part can match the filter by its estimates.
-    auto part_can_match = [&](const RangesInDataPart & part, Estimates estimates)
+    auto part_can_match = [&](const RangesInDataPart & part, const EstimatesPtr & estimates)
     {
         /// The statistics describe the values as they are stored in the part. When the part stores a
         /// column with a type different from the current metadata, a read converts the values to the
@@ -1029,19 +1029,25 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
         /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
         /// `KILL MUTATION` it is gone, while the conversion on read still happens.
-        /// Only the required columns are checked: the estimates may hold every column of the part.
+        /// Only the required columns are checked: the estimates hold every column of the part.
+        /// The estimates are shared with other callers, so they are copied only when a column has to be removed.
+        std::optional<Estimates> filtered_estimates;
         for (const auto & [column_name, metadata_type] : required_column_types)
         {
-            auto it = estimates.find(column_name);
-            if (it == estimates.end())
+            if (!estimates->contains(column_name))
                 continue;
 
             auto part_column = part.data_part->tryGetColumn(column_name);
             if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
-                estimates.erase(it);
+            {
+                if (!filtered_estimates)
+                    filtered_estimates.emplace(*estimates);
+                filtered_estimates->erase(column_name);
+            }
         }
+        const Estimates & part_estimates = filtered_estimates ? *filtered_estimates : *estimates;
 
-        if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+        if (!statistics_pruner.checkPartCanMatch(part_estimates).can_be_true)
         {
             LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
             return false;
@@ -1066,10 +1072,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             decided_without_loading[i] = true;
             can_match_without_loading[i] = true;
         }
-        else if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory(required_columns))
+        else if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory())
         {
             decided_without_loading[i] = true;
-            can_match_without_loading[i] = part_can_match(parts[i], std::move(*estimates));
+            can_match_without_loading[i] = part_can_match(parts[i], estimates);
         }
         else
             parts_to_load_statistics.push_back(parts[i]);
@@ -1094,7 +1100,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
 
-    std::vector<Estimates> parts_estimates(parts.size());
+    std::vector<EstimatesPtr> parts_estimates(parts.size());
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts.size(),
         settings[Setting::max_threads],
@@ -1102,7 +1108,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         [&](size_t part_index)
         {
             if (needs_loading(part_index))
-                parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+                parts_estimates[part_index] = parts[part_index].data_part->getEstimates();
         },
         [&](size_t part_index)
         {
@@ -1114,7 +1120,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
             }
             else if (load_statistics)
             {
-                can_match = part_can_match(part, std::move(parts_estimates[part_index]));
+                /// Release the estimates of the part once it is decided, unless the part keeps them memoized.
+                auto estimates = std::move(parts_estimates[part_index]);
+                can_match = part_can_match(part, estimates);
             }
 
             if (can_match)

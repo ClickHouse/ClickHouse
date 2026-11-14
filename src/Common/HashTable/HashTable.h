@@ -1757,7 +1757,9 @@ public:
         }
     }
 
-    void read(DB::ReadBuffer & rb)
+    /// `max_size` bounds the number of elements before the buffer is allocated,
+    /// so that a corrupted size cannot request a huge allocation.
+    void read(DB::ReadBuffer & rb, size_t max_size = 100'000'000'000)
     {
         Cell::State::read(rb);
 
@@ -1766,8 +1768,9 @@ public:
 
         size_t new_size = 0;
         DB::readVarUInt(new_size, rb);
-        if (new_size > 100'000'000'000)
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
+        if (new_size > max_size)
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "The size of serialized hash table is suspiciously large: {}, maximum: {}", new_size, max_size);
 
         free();
         Grower new_grower = grower;
