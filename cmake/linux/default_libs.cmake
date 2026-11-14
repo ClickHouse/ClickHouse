@@ -10,8 +10,10 @@ include (cmake/compiler_rt_link.cmake)
 # (`memcpy`/`memmove`/`memset`/`memcmp`/`bcmp`/`memmem`). Disabling it on
 # x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —
 # which then carries a versioned glibc symbol again (no portability shim).
+# On s390x it supplies only the math functions; the memory functions are always
+# taken from the system libc there (see contrib/libllvmlibc-cmake).
 option (ENABLE_LLVM_LIBC_MATH "Use math and memory functions from llvm-libc instead of glibc" ON)
-if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
+if (NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_S390X))
     set(ENABLE_LLVM_LIBC_MATH OFF)
 endif()
 
