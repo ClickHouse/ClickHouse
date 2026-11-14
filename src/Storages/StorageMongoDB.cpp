@@ -783,16 +783,30 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
             return {};
 
         // Only these function can have exactly one argument and be passed to MongoDB.
-        if (func->getFunctionName() == "isNull")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$eq", bsoncxx::types::b_null{}))));
-        if (func->getFunctionName() == "isNotNull")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$ne", bsoncxx::types::b_null{}))));
-        if (func->getFunctionName() == "empty")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$in", make_array(bsoncxx::types::b_null{}, "")))));
-        if (func->getFunctionName() == "notEmpty")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$nin", make_array(bsoncxx::types::b_null{}, "")))));
+        const auto & function_name = func->getFunctionName();
+        if (function_name != "isNull" && function_name != "isNotNull" && function_name != "empty" && function_name != "notEmpty")
+            return {};
 
-        return {};
+        /// The reader reads any BSON value into a `String`: `null`, a missing field, `""` and an empty binary as an empty string
+        /// (or `NULL`), the others as non-empty strings. The emptiness of other types, e.g. of an empty array, has no filter.
+        if ((function_name == "empty" || function_name == "notEmpty") && !isString(removeNullable(column->getResultType())))
+            return {};
+
+        /// A `null` also matches an array with a `null` element, which the reader takes as a non-`NULL`, non-empty string, so the
+        /// filters below keep every array, and the `WHERE` decides the documents they match.
+        is_superset = true;
+        const auto & column_name = column->getColumnName();
+        if (function_name == "isNull")
+            return make_document(kvp(column_name, make_document(kvp("$eq", bsoncxx::types::b_null{}))));
+        if (function_name == "empty")
+            return make_document(kvp("$or", make_array(
+                make_document(kvp(column_name, make_document(kvp("$in", make_array(bsoncxx::types::b_null{}, ""))))),
+                make_document(kvp(column_name, make_document(kvp("$type", "binData")))))));
+
+        auto excluded = function_name == "isNotNull" ? make_array(bsoncxx::types::b_null{}) : make_array(bsoncxx::types::b_null{}, "");
+        return make_document(kvp("$or", make_array(
+            make_document(kvp(column_name, make_document(kvp("$nin", std::move(excluded))))),
+            make_document(kvp(column_name, make_document(kvp("$type", "array")))))));
     }
 
     if (argumnet_nodes.size() == 2)
