@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -53,6 +54,7 @@
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
 #include <base/arithmeticOverflow.h>
+#include <base/unaligned.h>
 #include <Common/memory.h>
 #include <Common/AllocationInterceptors.h>
 
@@ -294,6 +296,13 @@ static bool isDictionaryEncoded(const ORC::Proto::StripeFooter * stripe_footer, 
     return encoding == ORC::Proto::ColumnEncodingKind::DICTIONARY || encoding == ORC::Proto::ColumnEncodingKind::DICTIONARY_V2;
 }
 
+/// Iceberg writes a `uuid` field to ORC as `binary` with this attribute, 16 big-endian bytes per value.
+static bool isIcebergUUIDBinary(const ORC::Type & orc_type)
+{
+    return orc_type.getKind() == ORC::TypeKind::BINARY && orc_type.hasAttributeKey("iceberg.binary-type")
+        && orc_type.getAttributeValue("iceberg.binary-type") == "UUID";
+}
+
 static DataTypePtr parseORCType(
     const ORC::Type * orc_type,
     bool skip_columns_with_unsupported_types,
@@ -422,6 +431,9 @@ static DataTypePtr parseORCType(
         case ORC::TypeKind::VARCHAR:
         case ORC::TypeKind::BINARY:
         case ORC::TypeKind::STRING: {
+            if (isIcebergUUIDBinary(*orc_type))
+                return std::make_shared<DataTypeUUID>();
+
             DataTypePtr type;
             if (orc_type->getKind() == ORC::TypeKind::CHAR)
                 type = std::make_shared<DataTypeFixedString>(orc_type->getMaximumLength());
@@ -1946,6 +1958,31 @@ readIPv6ColumnFromBinaryData(const ORC::ColumnVectorBatch * orc_column, const St
 }
 
 static ColumnWithTypeAndName
+readUUIDColumnFromIcebergBinaryData(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
+{
+    ColumnPtr holder;
+    const auto & strings = getStringColumnFromBatch(orc_column, holder);
+
+    auto internal_type = std::make_shared<DataTypeUUID>();
+    auto internal_column = internal_type->createColumn();
+    auto & data = assert_cast<ColumnUUID &>(*internal_column).getData();
+    data.resize_fill(orc_column->numElements);
+
+    for (size_t i = 0; i < orc_column->numElements; ++i)
+    {
+        if (orc_column->hasNulls && !orc_column->notNull[i])
+            continue;
+        auto value = strings.getDataAt(i);
+        if (value.size() != sizeof(UUID))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Value of Iceberg uuid column {} in ORC has {} bytes, expected {}", column_name, value.size(), sizeof(UUID));
+        UUIDHelpers::getHighBytes(data[i]) = unalignedLoadBigEndian<UInt64>(value.data());
+        UUIDHelpers::getLowBytes(data[i]) = unalignedLoadBigEndian<UInt64>(value.data() + sizeof(UInt64));
+    }
+    return {std::move(internal_column), internal_type, column_name};
+}
+
+static ColumnWithTypeAndName
 readIPv4ColumnWithInt32Data(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
 {
     const auto & data = typeid_cast<const ORC::IntVectorBatch &>(*orc_column).getData();
@@ -2301,7 +2338,7 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
             return which.isStringOrFixedString();
         case ORC::TypeKind::BINARY:
             return which.isStringOrFixedString() || which.isIPv6() || which.isInt128() || which.isUInt128() || which.isInt256()
-                || which.isUInt256() || which.isDecimal256();
+                || which.isUInt256() || which.isDecimal256() || (which.isUUID() && isIcebergUUIDBinary(*orc_branch_type));
         case ORC::TypeKind::CHAR:
             return which.isStringOrFixedString() || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256()
                 || which.isDecimal256();
@@ -2380,7 +2417,7 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
 /// schema fail depending on per-stripe encoding choices; preferring the natural pairing keeps the
 /// assignment stable. The target is inspected with the LowCardinality/Nullable wrappers stripped,
 /// so a LowCardinality-wrapped alternative (inferred from a dictionary-encoded stripe) pairs the
-/// same way. BINARY deliberately has no preference: it is the conversion-rich kind (IPv6, big
+/// same way. An unmarked BINARY deliberately has no preference: it is the conversion-rich kind (IPv6, big
 /// integers, Decimal256), so a preference could steal a String alternative from a STRING branch.
 ///
 /// The numeric kinds are tie-broken the same way, for the same reason: they match their widenings
@@ -2415,6 +2452,8 @@ static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const D
         case ORC::TypeKind::STRING:
         case ORC::TypeKind::VARCHAR:
             return which.isString();
+        case ORC::TypeKind::BINARY:
+            return which.isUUID() && isIcebergUUIDBinary(*orc_branch_type);
         default:
             return false;
     }
@@ -2860,6 +2899,9 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         {
             if (type_hint)
             {
+                if (isUUID(removeLowCardinalityAndNullable(type_hint)) && isIcebergUUIDBinary(*orc_type))
+                    return readUUIDColumnFromIcebergBinaryData(orc_column, column_name);
+
                 switch (type_hint->getTypeId())
                 {
                     case TypeIndex::IPv6:
@@ -3271,6 +3313,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 
 - Other types are not supported.
 - An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
+- An ORC `Binary` column with the attribute `iceberg.binary-type=UUID` (how Apache Iceberg writes `uuid`) is read as [UUID](/reference/data-types/uuid) from 16 big-endian bytes. `UUID` is not supported for output.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 - `DateTime64` values between `1969-12-31 23:59:59.001` and `1969-12-31 23:59:59.999999999` (UTC) are written as `1970-01-01 00:00:00`. This is a gap in the [ORC specification](https://orc.apache.org/specification/ORCv1/#timestamp-columns), which stores the seconds and the nanoseconds of a timestamp, with the nanoseconds not negative. The reference implementations add one second to a negative timestamp with more than 999999 nanoseconds, and the readers subtract it, but a timestamp between -1 and 0 seconds would then be stored as 0 seconds and read back after the epoch. The implementations write such a timestamp differently: the Java and C++ writers of Apache ORC write it so that it is read back one second later, and the Arrow ORC adapter (PyArrow) writes negative nanoseconds, which the specification does not allow and the Java reader rejects. ClickHouse writes the epoch instead, which all readers read back the same way.
