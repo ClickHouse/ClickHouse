@@ -2110,24 +2110,22 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
 
 
 def test_openrouter_provider(started_cluster):
-    """`provider = 'openrouter'` uses the OpenAI-compatible request format and adds the OpenRouter
-    app attribution headers to chat and embedding requests."""
+    """`provider = 'openrouter'` uses the OpenAI-compatible request format for chat and embedding
+    requests."""
     result = instance.query(
         "SELECT aiGenerate('via openrouter', map('credentials', 'ai_openrouter'))",
     )
     assert result.strip() == "via openrouter"
-    headers = last_request()["headers"]
-    assert headers.get("authorization") == "Bearer test-key"
-    assert headers.get("http-referer") == "https://clickhouse.com/"
-    assert headers.get("x-openrouter-title") == "ClickHouse"
+    req = last_request()
+    assert req["path"] == "/v1/chat/completions"
+    assert req["headers"].get("authorization") == "Bearer test-key"
 
     instance.query(
         "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_openrouter_embed'))",
     )
-    headers = last_request()["headers"]
-    assert last_request()["path"] == "/v1/embeddings"
-    assert headers.get("http-referer") == "https://clickhouse.com/"
-    assert headers.get("x-openrouter-title") == "ClickHouse"
+    req = last_request()
+    assert req["path"] == "/v1/embeddings"
+    assert req["headers"].get("authorization") == "Bearer test-key"
 
 
 def test_function_name_header(started_cluster):
