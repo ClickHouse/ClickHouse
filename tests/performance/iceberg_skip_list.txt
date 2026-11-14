@@ -31,6 +31,7 @@ enum_to_low_cardinality_string.xml                       # type Enum16 in CREATE
 final_big_column.xml                                     # FINAL
 final_move_to_prewhere.xml                               # FINAL
 final_read_in_order_limit.xml                            # FINAL
+final_skip_index_exact_mode_partitions.xml               # FINAL, virtual column _part
 final_skip_index_exact_mode_scattered.xml                # virtual column _part
 final_with_lonely_parts.xml                              # FINAL
 group_array_moving_sum.xml                               # type UInt8 in CREATE ... AS SELECT
