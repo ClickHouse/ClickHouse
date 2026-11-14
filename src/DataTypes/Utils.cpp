@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -402,6 +403,15 @@ bool isBoolNode(const IDataType & type)
 
 bool convertsToBool(const IDataType & from, const IDataType & to)
 {
+    /// `CAST` removes `LowCardinality` and `Nullable` from each side independently.
+    if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&from))
+        return convertsToBool(*from_low_cardinality->getDictionaryType(), to);
+    if (const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&to))
+        return convertsToBool(from, *to_low_cardinality->getDictionaryType());
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from))
+        return convertsToBool(*from_nullable->getNestedType(), to);
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
+        return convertsToBool(from, *to_nullable->getNestedType());
     if (isBoolNode(to))
         return !isBoolNode(from);
     /// `CAST` copies a `JSON` typed path as is and matches `Variant` alternatives by name, so their children do not count.
@@ -410,14 +420,24 @@ bool convertsToBool(const IDataType & from, const IDataType & to)
     /// `CAST` matches the elements of named tuples by name when they share one.
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(&from);
     const auto * to_tuple = typeid_cast<const DataTypeTuple *>(&to);
-    if (from_tuple && to_tuple && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+    if (from_tuple && to_tuple && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+        && from_tuple->getElementNames() != to_tuple->getElementNames())
     {
+        const auto & from_names = from_tuple->getElementNames();
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> from_positions;
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+
         bool has_common_name = false;
-        for (size_t i = 0; i < to_tuple->getElements().size(); ++i)
+        const auto & to_names = to_tuple->getElementNames();
+        for (size_t i = 0; i < to_names.size(); ++i)
         {
-            const auto from_position = from_tuple->tryGetPositionByName(to_tuple->getElementNames()[i]);
-            has_common_name |= from_position.has_value();
-            if (from_position && convertsToBool(*from_tuple->getElement(*from_position), *to_tuple->getElement(i)))
+            const auto it = from_positions.find(to_names[i]);
+            if (it == from_positions.end())
+                continue;
+            has_common_name = true;
+            if (convertsToBool(*from_tuple->getElement(it->second), *to_tuple->getElement(i)))
                 return true;
         }
         if (has_common_name)

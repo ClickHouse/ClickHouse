@@ -129,8 +129,11 @@ ALTER TABLE proj_sub MODIFY COLUMN m Map(String, Bool); -- { serverError ALTER_O
 CREATE TABLE proj_outer (id UInt32, m Map(String, Array(UInt8)), PROJECTION p (SELECT sum(arraySum(arrayFlatten(mapValues(m)))))) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE proj_outer MODIFY COLUMN m Map(FixedString(1), Array(Bool)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE proj_sub MODIFY COLUMN t Tuple(x Bool, y String) SETTINGS allow_metadata_only_named_tuple_alter = 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE proj_null (id UInt32, t Tuple(x UInt8), PROJECTION p (SELECT sum(assumeNotNull(t).x))) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE proj_null MODIFY COLUMN t Nullable(Tuple(x Bool)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 CREATE TABLE idx_sub (id UInt32, p Tuple(x UInt8), INDEX ix toString(p.x) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE idx_sub MODIFY COLUMN p Tuple(x Bool); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE idx_sub MODIFY COLUMN p Nullable(Tuple(x Bool)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 CREATE TABLE proj_key (id UInt32, active UInt8, PROJECTION p (SELECT active, count() GROUP BY active)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO proj_key VALUES (1, 2), (2, 255), (3, 1);
 ALTER TABLE proj_key MODIFY COLUMN active Bool SETTINGS mutations_sync = 2;
