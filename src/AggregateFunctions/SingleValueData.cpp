@@ -1,5 +1,6 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <Formats/FormatSettings.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -7,6 +8,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/TypeTree.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -1247,22 +1249,32 @@ FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 
 /// String
 
-char * SingleValueDataString::getDataMutable()
+namespace
+{
+template <bool is_fixed_string>
+using StringColumnOf = std::conditional_t<is_fixed_string, ColumnFixedString, ColumnString>;
+}
+
+template <bool is_fixed_string>
+char * SingleValueDataStringImpl<is_fixed_string>::getDataMutable()
 {
     return isSmall() ? small_data : large_data;
 }
 
-const char * SingleValueDataString::getData() const
+template <bool is_fixed_string>
+const char * SingleValueDataStringImpl<is_fixed_string>::getData() const
 {
     return isSmall() ? small_data : large_data;
 }
 
-std::string_view SingleValueDataString::getStringView() const
+template <bool is_fixed_string>
+std::string_view SingleValueDataStringImpl<is_fixed_string>::getStringView() const
 {
     return std::string_view{getData(), size - 1};
 }
 
-void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
+template <bool is_fixed_string>
+void SingleValueDataStringImpl<is_fixed_string>::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
 {
     if (capacity < size_to_reserve)
     {
@@ -1279,7 +1291,8 @@ void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Ar
     }
 }
 
-void SingleValueDataString::changeImpl(std::string_view value, Arena * arena)
+template <bool is_fixed_string>
+void SingleValueDataStringImpl<is_fixed_string>::changeImpl(std::string_view value, Arena * arena)
 {
     if (unlikely(MAX_STRING_SIZE < value.size()))
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", value.size(), MAX_STRING_SIZE);
@@ -1303,121 +1316,165 @@ void SingleValueDataString::changeImpl(std::string_view value, Arena * arena)
     }
 }
 
-void SingleValueDataString::insertResultInto(IColumn & to, const DataTypePtr &) const
+template <bool is_fixed_string>
+void SingleValueDataStringImpl<is_fixed_string>::insertResultInto(IColumn & to, const DataTypePtr &) const
 {
     if (has())
-        assert_cast<ColumnString &>(to).insertData(getData(), size - 1);
+        assert_cast<StringColumnOf<is_fixed_string> &>(to).insertData(getData(), size - 1);
     else
-        assert_cast<ColumnString &>(to).insertDefault();
+        assert_cast<StringColumnOf<is_fixed_string> &>(to).insertDefault();
 }
 
-void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
+template <bool is_fixed_string>
+void SingleValueDataStringImpl<is_fixed_string>::write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
 {
-    if (unlikely(MAX_STRING_SIZE < size))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
-
-    /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
-    /// The strings are serialized as zero terminated.
-    Int32 size_to_write = size ? size : -1;
-    writeBinaryLittleEndian(size_to_write, buf);
-    if (has())
+    if constexpr (is_fixed_string)
     {
-        buf.write(getData(), size - 1);
-        buf.write('\0');
-    }
-}
-
-void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena)
-{
-    /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
-    Int32 rhs_size_signed = 0;
-    readBinaryLittleEndian(rhs_size_signed, buf);
-
-    if (rhs_size_signed < 0)
-    {
-        /// Don't free large_data here.
-        size = 0;
-        return;
-    }
-
-    /// Compatibility with an invalid format in certain old versions.
-    if (rhs_size_signed == 0)
-    {
-        /// Don't free large_data here.
-        size = 1;
-        return;
-    }
-
-    /// The strings are serialized as zero terminated.
-    char last_char = 0;
-
-    UInt32 rhs_size = rhs_size_signed;
-    if (rhs_size <= MAX_SMALL_STRING_SIZE + 1 && isSmall())
-    {
-        /// Don't free large_data here.
-        size = rhs_size;
-        buf.readStrict(small_data, size - 1);
-        readChar(last_char, buf);
+        writeBinary(has(), buf);
+        if (has())
+            buf.write(getData(), size - 1);
     }
     else
     {
-        size = rhs_size;
-        allocateLargeDataIfNeeded(size - 1, arena);
-        buf.readStrict(large_data, size - 1);
-        readChar(last_char, buf);
-    }
+        if (unlikely(MAX_STRING_SIZE < size))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
 
-    /// Compatibility with an invalid format in certain old versions.
-    if (last_char != 0)
-    {
-        if (size < MAX_SMALL_STRING_SIZE + 1 && isSmall())
+        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
+        /// The strings are serialized as zero terminated.
+        Int32 size_to_write = size ? size : -1;
+        writeBinaryLittleEndian(size_to_write, buf);
+        if (has())
         {
-            small_data[size - 1] = last_char;
+            buf.write(getData(), size - 1);
+            buf.write('\0');
         }
-        else if (size == MAX_SMALL_STRING_SIZE + 1 && isSmall())
-        {
-            String tmp;
-            tmp.reserve(size);
-            tmp.assign(small_data, size - 1);
-            tmp += last_char;
+    }
+}
 
-            allocateLargeDataIfNeeded(size, arena);
-            memcpy(large_data, tmp.data(), size);
+template <bool is_fixed_string>
+void SingleValueDataStringImpl<is_fixed_string>::read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & type, Arena * arena)
+{
+    if constexpr (is_fixed_string)
+    {
+        bool is_not_null = false;
+        readBinary(is_not_null, buf);
+        if (!is_not_null)
+        {
+            /// Don't free large_data here.
+            size = 0;
+            return;
+        }
+
+        UInt32 n = static_cast<UInt32>(assert_cast<const DataTypeFixedString &>(*type).getN());
+        if (n <= MAX_SMALL_STRING_SIZE && isSmall())
+        {
+            /// Don't free large_data here.
+            buf.readStrict(small_data, n);
         }
         else
         {
-            large_data[size - 1] = last_char;
+            allocateLargeDataIfNeeded(n, arena);
+            buf.readStrict(large_data, n);
         }
-        ++size;
+        size = n + 1;
+    }
+    else
+    {
+        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
+        Int32 rhs_size_signed = 0;
+        readBinaryLittleEndian(rhs_size_signed, buf);
+
+        if (rhs_size_signed < 0)
+        {
+            /// Don't free large_data here.
+            size = 0;
+            return;
+        }
+
+        /// Compatibility with an invalid format in certain old versions.
+        if (rhs_size_signed == 0)
+        {
+            /// Don't free large_data here.
+            size = 1;
+            return;
+        }
+
+        /// The strings are serialized as zero terminated.
+        char last_char = 0;
+
+        UInt32 rhs_size = rhs_size_signed;
+        if (rhs_size <= MAX_SMALL_STRING_SIZE + 1 && isSmall())
+        {
+            /// Don't free large_data here.
+            size = rhs_size;
+            buf.readStrict(small_data, size - 1);
+            readChar(last_char, buf);
+        }
+        else
+        {
+            size = rhs_size;
+            allocateLargeDataIfNeeded(size - 1, arena);
+            buf.readStrict(large_data, size - 1);
+            readChar(last_char, buf);
+        }
+
+        /// Compatibility with an invalid format in certain old versions.
+        if (last_char != 0)
+        {
+            if (size < MAX_SMALL_STRING_SIZE + 1 && isSmall())
+            {
+                small_data[size - 1] = last_char;
+            }
+            else if (size == MAX_SMALL_STRING_SIZE + 1 && isSmall())
+            {
+                String tmp;
+                tmp.reserve(size);
+                tmp.assign(small_data, size - 1);
+                tmp += last_char;
+
+                allocateLargeDataIfNeeded(size, arena);
+                memcpy(large_data, tmp.data(), size);
+            }
+            else
+            {
+                large_data[size - 1] = last_char;
+            }
+            ++size;
+        }
     }
 }
 
-bool SingleValueDataString::isEqualTo(const IColumn & column, size_t row_num) const
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::isEqualTo(const IColumn & column, size_t row_num) const
 {
-    return has() && assert_cast<const ColumnString &>(column).getDataAt(row_num) == getStringView();
+    return has() && assert_cast<const StringColumnOf<is_fixed_string> &>(column).getDataAt(row_num) == getStringView();
 }
 
-bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return has() && to.has() && to.getStringView() == getStringView();
 }
 
-void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * arena)
+template <bool is_fixed_string>
+void SingleValueDataStringImpl<is_fixed_string>::set(const IColumn & column, size_t row_num, Arena * arena)
 {
-    changeImpl(assert_cast<const ColumnString &>(column).getDataAt(row_num), arena);
+    changeImpl(assert_cast<const StringColumnOf<is_fixed_string> &>(column).getDataAt(row_num), arena);
 }
 
-void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena)
+template <bool is_fixed_string>
+void SingleValueDataStringImpl<is_fixed_string>::set(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has())
         changeImpl(to.getStringView(), arena);
 }
 
-bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) < getStringView())
+    if (!has() || assert_cast<const StringColumnOf<is_fixed_string> &>(column).getDataAt(row_num) < getStringView())
     {
         set(column, row_num, arena);
         return true;
@@ -1425,7 +1482,8 @@ bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num,
     return false;
 }
 
-bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.getStringView() < getStringView()))
@@ -1437,9 +1495,10 @@ bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Aren
 }
 
 
-bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) > getStringView())
+    if (!has() || assert_cast<const StringColumnOf<is_fixed_string> &>(column).getDataAt(row_num) > getStringView())
     {
         set(column, row_num, arena);
         return true;
@@ -1447,7 +1506,8 @@ bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num,
     return false;
 }
 
-bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Arena * arena)
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::setIfGreater(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.getStringView() > getStringView()))
@@ -1458,17 +1518,22 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
     return false;
 }
 
-bool SingleValueDataString::wouldSetIfSmaller(const SingleValueDataBase & other) const
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::wouldSetIfSmaller(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return to.has() && (!has() || to.getStringView() < getStringView());
 }
 
-bool SingleValueDataString::wouldSetIfGreater(const SingleValueDataBase & other) const
+template <bool is_fixed_string>
+bool SingleValueDataStringImpl<is_fixed_string>::wouldSetIfGreater(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return to.has() && (!has() || to.getStringView() > getStringView());
 }
+
+template struct SingleValueDataStringImpl<false>;
+template struct SingleValueDataStringImpl<true>;
 
 /// Generic
 
@@ -1849,6 +1914,13 @@ void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMe
         new (&data.memory) SingleValueDataString;
         return;
     }
+    if (idx == TypeIndex::FixedString)
+    {
+        static_assert(sizeof(SingleValueDataFixedString) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataFixedString) <= alignof(SingleValueDataBaseMemoryBlock));
+        new (&data.memory) SingleValueDataFixedString;
+        return;
+    }
 
     if (canUseFieldForValueData(type))
     {
@@ -1865,6 +1937,6 @@ void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMe
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx)
 {
-    return idx == TypeIndex::String;
+    return idx == TypeIndex::String || idx == TypeIndex::FixedString;
 }
 }

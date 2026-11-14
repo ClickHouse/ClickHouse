@@ -455,6 +455,10 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
         if (which.idx == TypeIndex::String)
             return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataString>, isMin>(
                 argument_types, parameters, return_both));
+        if (which.idx == TypeIndex::FixedString)
+            return AggregateFunctionPtr(
+                new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixedString>, isMin>(
+                    argument_types, parameters, return_both));
 
         if (canUseFieldForValueData(value_type))
             return AggregateFunctionPtr(
