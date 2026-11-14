@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
 
 
@@ -72,7 +73,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & map_type = assert_cast<const DataTypeMap &>(*removeNullable(removeLowCardinality(arguments[0].type)));
+        const auto map_type = removeNullable(removeLowCardinality(arguments[0].type));
         auto maps = arguments[0].column->convertToFullColumnIfConst();
         auto sources = arguments[1].column->convertToFullColumnIfConst();
         auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
@@ -86,19 +87,14 @@ public:
                 null_values[row] = 1;
                 continue;
             }
-            /// Preserve the contained `Field` type so conversion follows prepared `Set` insertion.
-            const Field source = (*sources)[row];
-            if (source.getType() != Field::Types::Map && source.getType() != Field::Types::String)
+            /// The source column retains the active `Dynamic`/`Variant` alternative and
+            /// nested `Bool` tags that extracting a `Field` would discard.
+            auto source_row = sources->cut(row, 1);
+            auto converted = tryConvertColumnToTypeOrNull(
+                *source_row, arguments[1].type, map_type, {}, /*strict=*/true);
+            if (!converted)
                 continue;
-            const Field converted = source.getType() == Field::Types::String
-                ? tryConvertFieldToType(source, map_type, nullptr, {}, true)
-                : convertFieldToType(source, map_type, nullptr, {}, true);
-            if (converted.isNull())
-                continue;
-
-            auto candidate = map_type.createColumn();
-            candidate->insert(converted);
-            values[row] = maps->compareAt(row, 0, *candidate, 1) == 0;
+            values[row] = maps->compareAt(row, 0, *converted, 1) == 0;
         }
         if (canContainNull(*arguments[1].type))
             return ColumnNullable::create(std::move(result), std::move(null_map));

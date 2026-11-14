@@ -503,7 +503,7 @@ ASTPtr makeNumericNonConstantInReplacement(
             auto exact = makeASTFunction("equals", candidate->clone(), std::move(round_trip));
             candidate = makeASTFunction("if", std::move(exact), std::move(cast_value), make_intrusive<ASTLiteral>(Field{}));
         }
-        else if (isStringOrFixedString(element_bare_type))
+        else if (isStringOrFixedString(element_bare_type) || isDynamic(element_bare_type) || isVariant(element_bare_type))
             candidate = makeASTFunction(
                 "accurateCastOrNull", std::move(candidate),
                 make_intrusive<ASTLiteral>(left_bare_type->getName()));
@@ -1786,6 +1786,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     const bool compare_numeric_sources = use_standard_null_semantics
                         && left_argument_type
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
+                            || isBool(removeNullable(removeLowCardinality(left_argument_type)))
                             || left_is_temporal)
                         && element_types_known
                         && !element_types.empty()
@@ -1793,15 +1794,17 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         {
                             const auto bare_type = removeNullable(removeLowCardinality(type));
                             return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
+                                || isDynamic(bare_type) || isVariant(bare_type)
                                 || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)));
                         });
                     const bool compare_numeric_array_sources = use_standard_null_semantics && right_argument_is_array
-                        && left_bare_type && (isNumber(left_bare_type) || left_is_temporal) && right_array_type
+                        && left_bare_type && (isNumber(left_bare_type) || isBool(left_bare_type) || left_is_temporal) && right_array_type
                         && [&]
                         {
                             const auto & element_type = right_array_type->getNestedType();
                             const auto bare_type = removeNullable(removeLowCardinality(element_type));
                             return element_type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
+                                || isDynamic(bare_type) || isVariant(bare_type)
                                 || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)));
                         }();
                     auto needs_complex_candidate_rewrite = [](const DataTypePtr & type)

@@ -3623,9 +3623,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         return isNumber(removeNullable(removeLowCardinality(element->getResultType())));
                     });
-                    if (use_standard_null_semantics && numeric_left && has_numeric_source
-                        && (isBool(left_value_type)
-                            || !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false)))
+                    const bool has_numeric_carrier = std::any_of(source_elements.begin(), source_elements.end(), [](const auto & element)
+                    {
+                        const auto type = removeNullable(removeLowCardinality(element->getResultType()));
+                        return isDynamic(type) || isVariant(type);
+                    });
+                    if (use_standard_null_semantics && numeric_left
+                        && (has_numeric_carrier || (has_numeric_source
+                            && (isBool(left_value_type)
+                                || !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false)))))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         QueryTreeNodes arrays;
@@ -3655,7 +3661,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             if (!numeric_element)
                             {
                                 auto cast_type = makeNullableOrLowCardinalityNullableSafe(in_first_argument->getResultType());
-                                auto cast = std::make_shared<FunctionNode>("CAST");
+                                const auto source_type = removeNullable(removeLowCardinality(element->getResultType()));
+                                auto cast = std::make_shared<FunctionNode>(
+                                    isDynamic(source_type) || isVariant(source_type) ? "accurateCastOrNull" : "CAST");
                                 cast->getArguments().getNodes() = {
                                     std::move(right_argument),
                                     std::make_shared<ConstantNode>(cast_type->getName(), std::make_shared<DataTypeString>())};

@@ -790,6 +790,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
     if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
     {
+        /// The map lookup can return a default floating-point zero for a missing key.
+        /// The set treats both signs of zero as equal, while the bloom index hashes
+        /// their different bit patterns. Decline pruning for this predicate.
+        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(type)))
+            return false;
+
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
           *
