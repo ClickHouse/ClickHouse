@@ -117,15 +117,21 @@ void registerTableFunctionFilesystemCache(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFilesystemCache>(
         {
-            .description = R"(Returns the file segments of a filesystem cache, selected by their priority in the cache, stopping when either `max_elements` segments or `max_total_size` bytes have been collected. The segment which would make the total size exceed `max_total_size` is not returned, and neither are the ones after it.
+            .description = R"(Returns the file segments of a filesystem cache, selected by their position in the eviction queue of the cache.
 
-Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the priority queue of one cache and only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.)",
+With 'hottest' and 'coldest', the queue is walked from one end and the walk stops as soon as `max_elements` segments have been returned or the next segment would make the total `size` exceed `max_total_size`: that segment is not returned, and neither are the ones after it, even if they would fit.
+
+With 'random', the whole queue is walked to take a uniform sample of at most `max_elements` segments, ignoring `max_total_size`. The sample is then shuffled, and segments are dropped from its end until the total `size` is at most `max_total_size`, so the result can be smaller than what would fit.
+
+A cache with the SLRU policy has two queues: the probationary one is colder than the protected one. A cache with `use_split_cache` has a data and a system queue, and the data queue always comes first, in every order.
+
+Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks the eviction queue of one cache, and with 'hottest' and 'coldest' only as far as needed, so it can return the hottest segments (e.g. to prewarm another replica), the next eviction candidates, or a uniform sample of the cache.)",
             .syntax = "filesystemCache(cache_name, max_elements, max_total_size[, order])",
             .arguments = {
                 {"cache_name", "The name of the cache, the same as in `SYSTEM DROP FILESYSTEM CACHE` and `system.filesystem_cache.cache_name`.", {"String"}},
                 {"max_elements", "The maximum number of returned segments.", {"UInt64"}},
                 {"max_total_size", "The maximum sum of `size` of the returned segments.", {"UInt64"}},
-                {"order", "'hottest' (the default): the highest-priority segments first. 'coldest': the next eviction candidates first. 'random': a uniform sample of segments in random order, with `priority_rank` being the position of the segment in the queue, coldest first.", {"String"}},
+                {"order", "'hottest' (the default): the highest-priority segments first. 'coldest': the next eviction candidates first. 'random': a uniform sample of segments, in random order.", {"String"}},
             },
             .returned_value = {"A table with the columns `priority_rank`, `path`, `key`, `offset`, `size`, `state`, `queue` and `user_id`, one row per segment.", {}},
             .examples = {

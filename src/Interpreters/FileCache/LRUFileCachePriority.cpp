@@ -341,7 +341,6 @@ void LRUFileCachePriority::iterate(
     QueueEntryType queue_entry_type,
     FileSegmentSummaryInfos & result)
 {
-    assertNotSealed("iterate");
     auto lock = getPriorityGuard().readLock();
     if (queue_entry_type == QueueEntryType::None)
         queue_entry_type = QueueEntryType::LRU;
@@ -356,6 +355,9 @@ void LRUFileCachePriority::iterate(
     FileSegmentSummaryInfos & result,
     const CachePriorityGuard::ReadLock &)
 {
+    /// Here and not in the public overload, so that SLRU, which calls this one for its sub-queues directly, is checked too.
+    assertNotSealed("iterate");
+
     /// return early since result is aggregation for e.g probationary and protected queue in the case of SLRUFileCachePriority and
     /// an aggregation of system cache and data cache in the case of SplitFileCachePriority.
     if (result.limit_reached)
