@@ -126,6 +126,7 @@ Limit
       │  Sort description: x ASC
       │  Per-stream LIMIT BY columns: x
       │  Per-stream LIMIT BY length 1
+      │  Per-stream LIMIT BY max groups 10
       └──ArrayJoin
          │  ARRAY JOIN arr
          └──ReadFromMergeTree
