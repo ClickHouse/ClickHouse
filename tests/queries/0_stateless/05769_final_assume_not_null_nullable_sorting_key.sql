@@ -36,7 +36,11 @@ SYSTEM STOP MERGES t_final_nullable_key_index;
 INSERT INTO t_final_nullable_key_index SELECT number, nullIf(toUInt64(1), toUInt64(1)), 1 FROM numbers(1000);
 INSERT INTO t_final_nullable_key_index SELECT number, nullIf(toUInt64(2), toUInt64(2)), 2 FROM numbers(1000);
 SELECT 'skip index', groupArray(ver) FROM t_final_nullable_key_index FINAL WHERE n = 0 AND assumeNotNull(k) = 1
-SETTINGS optimize_move_to_prewhere = 0;
+SETTINGS optimize_move_to_prewhere = 0, force_data_skipping_indices = 'ik';
+SELECT 'skip index expand', countIf(explain ILIKE '%PrimaryKeyExpand%')
+FROM (EXPLAIN indexes = 1 SELECT ver FROM t_final_nullable_key_index FINAL WHERE n = 0 AND assumeNotNull(k) = 1 SETTINGS optimize_move_to_prewhere = 0);
+SELECT 'skip index expand kept off', countIf(explain ILIKE '%PrimaryKeyExpand%')
+FROM (EXPLAIN indexes = 1 SELECT ver FROM t_final_nullable_key_index FINAL WHERE n = 0 AND k = 1 SETTINGS optimize_move_to_prewhere = 0);
 DROP TABLE t_final_nullable_key_index;
 
 DROP TABLE IF EXISTS t_final_nullable_key_partition;
@@ -50,6 +54,8 @@ SELECT 'partitions', arraySort(groupUniqArray(partition)) FROM system.parts
 WHERE database = currentDatabase() AND table = 't_final_nullable_key_partition' AND active;
 SELECT 'partition pruning', groupArray(ver) FROM t_final_nullable_key_partition FINAL WHERE n = 0 AND assumeNotNull(k) = 1
 SETTINGS optimize_move_to_prewhere = 0;
+SELECT 'partition pruning off', countIf(trimLeft(explain) = 'Partition'), countIf(trimLeft(explain) = 'Condition: true')
+FROM (EXPLAIN indexes = 1 SELECT ver FROM t_final_nullable_key_partition FINAL WHERE n = 0 AND assumeNotNull(k) = 1 SETTINGS optimize_move_to_prewhere = 0);
 DROP TABLE t_final_nullable_key_partition;
 
 -- without assumeNotNull every NULL is in one partition, so pruning stays
