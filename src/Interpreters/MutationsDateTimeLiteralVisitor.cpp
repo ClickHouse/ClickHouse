@@ -21,6 +21,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/TTLDescription.h>
 
 
 namespace DB
@@ -636,8 +637,10 @@ bool rewriteDateTimeLiteralsWithTimezone(
     if (expressions.empty())
         return false;
 
-    /// A `TTL` does not allow aliases, so it is analyzed with the settings of this query only.
-    auto execution_context = Context::createCopy(context);
+    /// The `TTL` is analyzed with the server settings, as its validation and the merges analyze it, so a setting of the query
+    /// that changes the types, such as `enable_extended_results_for_datetime_functions`, neither rejects it nor changes what
+    /// the identifiers are bound to. It does not allow aliases, so the other value of `prefer_column_name_to_alias` does not matter.
+    auto execution_context = Context::createCopy(getTTLExpressionContext(context));
     const auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
     const auto table_node = std::make_shared<TableNode>(storage, execution_context);
     const auto conversions = getConversions(collectLiteralUses(expressions, table_node, execution_context), std::nullopt);

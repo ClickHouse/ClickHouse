@@ -34,7 +34,8 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
     const ContextPtr & context);
 
 /// The same for a `TTL` rewritten in place, which is evaluated by background merges without the session either. Its
-/// expressions are analyzed against a table with the columns `columns`. Returns whether any literal was wrapped.
+/// expressions are analyzed against a table with the columns `columns`, with the server settings. Returns whether any literal
+/// was wrapped.
 bool rewriteDateTimeLiteralsWithTimezone(
     const ASTPtr & expression, const ColumnsDescription & columns, const String & session_timezone, const ContextPtr & context);
 
