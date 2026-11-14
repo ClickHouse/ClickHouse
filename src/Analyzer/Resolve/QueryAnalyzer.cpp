@@ -2967,6 +2967,135 @@ static bool isInAggregateOrGroupingFunctionScope(const IdentifierResolveScope & 
     return false;
 }
 
+enum class LambdaShapeMatch : uint8_t
+{
+    Different,
+    Equal,
+    /// Equal except the types of lambda argument columns and the result types of the functions computed from them.
+    EqualUpToLambdaArgumentTypes,
+};
+
+static LambdaShapeMatch combineLambdaShapeMatches(LambdaShapeMatch lhs, LambdaShapeMatch rhs)
+{
+    if (lhs == LambdaShapeMatch::Different || rhs == LambdaShapeMatch::Different)
+        return LambdaShapeMatch::Different;
+    if (lhs == LambdaShapeMatch::EqualUpToLambdaArgumentTypes || rhs == LambdaShapeMatch::EqualUpToLambdaArgumentTypes)
+        return LambdaShapeMatch::EqualUpToLambdaArgumentTypes;
+    return LambdaShapeMatch::Equal;
+}
+
+/// Exact comparison as in `nullable_group_by_keys`, except for the types `EqualUpToLambdaArgumentTypes` excludes.
+static LambdaShapeMatch matchUpToLambdaArgumentTypes(const QueryTreeNodePtr & node, const QueryTreeNodePtr & shape)
+{
+    if (!node || !shape)
+        return node == shape ? LambdaShapeMatch::Equal : LambdaShapeMatch::Different;
+
+    /// Folding a function of lambda arguments depends on their types, so the two sides can be folded differently.
+    const auto * node_constant = node->as<ConstantNode>();
+    const auto * shape_constant = shape->as<ConstantNode>();
+    bool node_is_folded = node_constant && node_constant->hasSourceExpression();
+    bool shape_is_folded = shape_constant && shape_constant->hasSourceExpression();
+    if ((node_is_folded || shape_is_folded) && !(node_constant && shape_constant && node->isEqual(*shape, {.compare_aliases = false})))
+    {
+        auto match = matchUpToLambdaArgumentTypes(
+            node_is_folded ? node_constant->getSourceExpression() : node,
+            shape_is_folded ? shape_constant->getSourceExpression() : shape);
+        return match == LambdaShapeMatch::EqualUpToLambdaArgumentTypes ? match : LambdaShapeMatch::Different;
+    }
+
+    if (node->getNodeType() != shape->getNodeType())
+        return LambdaShapeMatch::Different;
+
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::COLUMN:
+        {
+            const auto & node_column = node->as<const ColumnNode &>();
+            const auto & shape_column = shape->as<const ColumnNode &>();
+
+            auto node_source = node_column.getColumnSourceOrNull();
+            auto shape_source = shape_column.getColumnSourceOrNull();
+            bool node_is_lambda_argument = node_source && node_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+            bool shape_is_lambda_argument = shape_source && shape_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+
+            if (node_is_lambda_argument && shape_is_lambda_argument)
+                return node_column.getColumnName() == shape_column.getColumnName() ? LambdaShapeMatch::EqualUpToLambdaArgumentTypes
+                                                                                   : LambdaShapeMatch::Different;
+            if (node_is_lambda_argument || shape_is_lambda_argument)
+                return LambdaShapeMatch::Different;
+            break;
+        }
+        case QueryTreeNodeType::LAMBDA:
+        {
+            const auto & node_lambda = node->as<const LambdaNode &>();
+            const auto & shape_lambda = shape->as<const LambdaNode &>();
+
+            if (node_lambda.getArguments().getNames() != shape_lambda.getArguments().getNames())
+                return LambdaShapeMatch::Different;
+
+            return matchUpToLambdaArgumentTypes(node_lambda.getExpression(), shape_lambda.getExpression());
+        }
+        case QueryTreeNodeType::LIST:
+        {
+            const auto & node_items = node->as<const ListNode &>().getNodes();
+            const auto & shape_items = shape->as<const ListNode &>().getNodes();
+            if (node_items.size() != shape_items.size())
+                return LambdaShapeMatch::Different;
+
+            auto match = LambdaShapeMatch::Equal;
+            for (size_t i = 0; i < node_items.size() && match != LambdaShapeMatch::Different; ++i)
+                match = combineLambdaShapeMatches(match, matchUpToLambdaArgumentTypes(node_items[i], shape_items[i]));
+            return match;
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            const auto & node_function = node->as<const FunctionNode &>();
+            const auto & shape_function = shape->as<const FunctionNode &>();
+
+            if (node_function.hasWindow() || shape_function.hasWindow())
+                break;
+
+            if (!node_function.isEqualExceptResultType(shape_function))
+                return LambdaShapeMatch::Different;
+
+            auto match = combineLambdaShapeMatches(
+                matchUpToLambdaArgumentTypes(node_function.getParametersNode(), shape_function.getParametersNode()),
+                matchUpToLambdaArgumentTypes(node_function.getArgumentsNode(), shape_function.getArgumentsNode()));
+            if (match != LambdaShapeMatch::Equal || !node_function.isResolved())
+                return match;
+
+            auto node_type = node_function.getResultType();
+            auto shape_type = shape_function.getResultType();
+            if (node_type && shape_type)
+                return node_type->equals(*shape_type) ? LambdaShapeMatch::Equal : LambdaShapeMatch::Different;
+            return node_type == shape_type ? LambdaShapeMatch::Equal : LambdaShapeMatch::Different;
+        }
+        default:
+            break;
+    }
+
+    return node->isEqual(*shape, {.compare_aliases = false}) ? LambdaShapeMatch::Equal : LambdaShapeMatch::Different;
+}
+
+/// The GROUP BY key that `node` is equal to, see `IdentifierResolveScope::nullable_group_by_keys`.
+static QueryTreeNodePtr findNullableGroupByKey(const IdentifierResolveScope & scope, const QueryTreeNodePtr & node)
+{
+    auto it = scope.nullable_group_by_keys.find(node);
+    if (it != scope.nullable_group_by_keys.end())
+        return it->second;
+
+    if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
+    {
+        for (const auto & [shape, key] : scope.nullable_group_by_keys_with_lambdas)
+        {
+            if (matchUpToLambdaArgumentTypes(node, shape) != LambdaShapeMatch::Different)
+                return key;
+        }
+    }
+
+    return nullptr;
+}
+
 /** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description. Check ColumnTransformers.h for detailed transformers description.
   *
   * 1. Populate matched expression nodes resolving qualified or unqualified matcher.
@@ -4419,8 +4548,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
             {
-                auto it = scope_ptr->nullable_group_by_keys.find(node);
-                if (it != scope_ptr->nullable_group_by_keys.end())
+                if (auto key = findNullableGroupByKey(*scope_ptr, node))
                 {
                     if (is_correlated_column_node)
                     {
@@ -4438,11 +4566,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     else
                     {
                         /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
-                        /// matched node itself rather than the stored key `it->second`: two constants equal
+                        /// matched node itself rather than the stored `key`: two constants equal
                         /// in value and type but with different source expressions share a single map entry,
                         /// and the source expression determines the action node name (hence which aggregation
                         /// key column the projection reads), so the matched node's own one must be preserved.
-                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : key)->clone();
                         node->convertToNullable();
                     }
                     break;
@@ -4777,6 +4905,23 @@ bool convertNestedGroupByKeysToNullable(
     return true;
 }
 
+bool containsLambda(const QueryTreeNodePtr & node)
+{
+    if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+        return true;
+
+    if (isQueryOrUnionNode(node))
+        return false;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && containsLambda(child))
+            return true;
+    }
+
+    return false;
+}
+
 /** Register GROUP BY keys in scope.nullable_group_by_keys in every shape in which an expression
   * equal to a key can arrive at the lookup in resolveExpressionNode, so that the lookup can use
   * exact comparison (including types):
@@ -4808,6 +4953,8 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
             if (converted)
             {
                 rerunFunctionResolve(key_with_converted_sub_keys->as<FunctionNode>(), scope.context);
+                if (containsLambda(key_with_converted_sub_keys))
+                    scope.nullable_group_by_keys_with_lambdas.emplace_back(key_with_converted_sub_keys, key);
                 scope.nullable_group_by_keys.emplace(std::move(key_with_converted_sub_keys), key);
             }
         }
