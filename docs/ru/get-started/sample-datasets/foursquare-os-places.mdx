@@ -7,8 +7,6 @@ keywords: ['демонстрационный набор данных', 'Foursqua
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Foursquare OS Places содержит более 100 миллионов коммерческих точек интереса (POI), включая магазины, рестораны, парки, игровые площадки и памятники. В этом руководстве вы подключите ClickHouse к каталогу Iceberg Foursquare, изучите набор данных и загрузите его в таблицу, оптимизированную для геопространственных запросов.
 
 Набор данных доступен на [портале Foursquare Places](https://places.foursquare.com/) и бесплатен для использования по лицензии Apache 2.0.
@@ -370,10 +368,42 @@ WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 Во время корпоративного хакатона сооснователь и CTO ClickHouse Алексей Миловидов использовал ClickHouse,
 чтобы создать следующие визуализации на основе набора данных Foursquare.
 
-<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="Карта плотности точек интереса в Европе" />
+<div className="ch-image-md">
 
-<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="Саке-бары в Японии" />
+<Frame>
 
-<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="Банкоматы" />
+![Карта плотности точек интереса в Европе](/images/getting-started/example-datasets/visualization_1.webp)
 
-<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="Карта Европы с точками интереса, распределёнными по странам" />
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Саке-бары в Японии](/images/getting-started/example-datasets/visualization_2.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Банкоматы](/images/getting-started/example-datasets/visualization_3.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Карта Европы с точками интереса, распределёнными по странам](/images/getting-started/example-datasets/visualization_4.webp)
+
+</Frame>
+
+</div>

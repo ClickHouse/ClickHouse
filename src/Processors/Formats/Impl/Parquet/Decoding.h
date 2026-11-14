@@ -240,10 +240,11 @@ struct PageDecoderInfo
 
     /// [data, end) must be padded, i.e. have at least PADDING_FOR_SIMD bytes of readable memory
     /// before `data` and after `end`.
+    /// `num_values` is the number of values in the page (including nulls), an upper bound of the number of encoded values.
     /// If `string_value_filter` is not nullptr, string values that do not match it may be decoded
     /// as empty strings (used for substring search conditions pushed down from PREWHERE).
     std::unique_ptr<PageDecoder> makeDecoder(
-        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr) const;
+        parq::Encoding::type, std::span<const char> data, size_t num_values, const StringValueFilter * string_value_filter = nullptr) const;
 
     /// Decode a min/max value from Statistics.
     /// If not supported, allow_stats is false, or the value doesn't survive the conversion to
@@ -465,8 +466,11 @@ extern template struct BigEndianDecimalStringConverter<Int256>;
 
 struct Int96Converter : public FixedSizeConverter
 {
-    /// A value that does not fit into Int64 nanoseconds is clamped to the `DateTime64(9)` range with Saturate, otherwise throws.
+    /// Output is `DateTime64(scale)` ticks, rounded toward zero, or down if `round_down`. A value outside the range
+    /// that type holds is clamped to it with Saturate, otherwise throws.
     FormatSettings::DateTimeOverflowBehavior overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+    UInt32 scale = 9;
+    bool round_down = false;
 
     Int96Converter();
 

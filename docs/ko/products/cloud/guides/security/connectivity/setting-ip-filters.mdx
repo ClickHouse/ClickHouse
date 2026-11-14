@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['IP 필터', 'IP 액세스 목록']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="setting-ip-filters">
   ## IP 필터 설정
 </div>
@@ -64,7 +62,15 @@ Classless Inter-domain Routing(CIDR) 표기법을 사용하면 기존의 Class A
 
 다음 스크린샷은 &quot;NY Office range&quot;로 설명된 IP 주소 범위의 트래픽을 허용하는 액세스 목록을 보여줍니다:
 
-<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="ClickHouse Cloud의 기존 액세스 목록" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud의 기존 액세스 목록](/images/cloud/security/ip-filtering-after-provisioning.webp)
+
+</Frame>
+
+</div>
 
 <div id="possible-actions">
   ### 가능한 작업
@@ -74,7 +80,15 @@ Classless Inter-domain Routing(CIDR) 표기법을 사용하면 기존의 Class A
 
 이 예시에서는 설명이 `London server`인 단일 IP 주소를 추가합니다:
 
-<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="ClickHouse Cloud의 액세스 목록에 단일 IP 추가" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud의 액세스 목록에 단일 IP 추가](/images/cloud/security/ip-filter-add-single-ip.webp)
+
+</Frame>
+
+</div>
 
 2. 기존 항목 삭제
 

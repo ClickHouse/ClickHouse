@@ -122,6 +122,8 @@
 #include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <ranges>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -469,32 +471,6 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
       * Because it is the column that is cheapest to read.
       */
-    class ColumnWithSize
-    {
-    public:
-        ColumnWithSize(NameAndTypePair column_, ColumnSize column_size_)
-            : column(std::move(column_))
-            , compressed_size(column_size_.data_compressed)
-            , uncompressed_size(column_size_.data_uncompressed)
-            , type_size(column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100)
-        {
-        }
-
-        bool operator<(const ColumnWithSize & rhs) const
-        {
-            return std::tie(compressed_size, type_size, uncompressed_size)
-                < std::tie(rhs.compressed_size, rhs.type_size, rhs.uncompressed_size);
-        }
-
-        NameAndTypePair column;
-        size_t compressed_size = 0;
-        size_t uncompressed_size = 0;
-        size_t type_size = 0;
-    };
-
-    std::vector<ColumnWithSize> columns_with_sizes;
-
-    auto column_sizes = storage->getColumnSizes();
     auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
     bool filtered_by_allowed_columns = false;
@@ -549,35 +525,14 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         }
     }
 
-    if (!column_sizes.empty())
-    {
-        for (auto & column_name_and_type : column_names_and_types)
-        {
-            auto it = column_sizes.find(column_name_and_type.name);
-            if (it == column_sizes.end())
-                continue;
+    /// A table expression can resolve to no columns at all, for example a table function over a
+    /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+    if (column_names_and_types.empty())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Cannot read from table expression with no columns");
 
-            columns_with_sizes.emplace_back(column_name_and_type, it->second);
-        }
-    }
-
-    NameAndTypePair result;
-
-    if (!columns_with_sizes.empty())
-        result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
-    else
-    {
-        /// A table expression can resolve to no columns at all, for example a table function over a
-        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
-        if (column_names_and_types.empty())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read from table expression with no columns");
-
-        /// If we have no information about columns sizes, choose a column of minimum size of its data type
-        result = ExpressionActions::getSmallestColumn(column_names_and_types, /*skip_subcolumns=*/ !filtered_by_allowed_columns);
-    }
-
-    return result;
+    return ExpressionActions::getCheapestColumnToRead(
+        column_names_and_types, storage->getColumnSizes(), /*skip_subcolumns=*/ !filtered_by_allowed_columns);
 }
 
 /// True if the table expression carries modifiers that prevent answering a
@@ -2338,6 +2293,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             custom_key_ast,
                             table_expression_query_info.table_expression,
                             query_context,
+                            planner_context->isViewSourceInSubqueries(),
                             /*check_access_rights=*/ true);
 
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
@@ -2650,6 +2606,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     additional_filter_ast,
                                     table_expression_query_info.table_expression,
                                     query_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
 
                                 auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
@@ -2682,6 +2639,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     table_expression_query_info.additional_filter_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2700,6 +2658,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     custom_key_ast,
                                     std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
                                     inner_context,
+                                    planner_context->isViewSourceInSubqueries(),
                                     /*check_access_rights=*/ true);
                             }
 
@@ -2944,6 +2903,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 custom_key_ast,
                                 table_expression_query_info.table_expression,
                                 query_context,
+                                planner_context->isViewSourceInSubqueries(),
                                 /*check_access_rights=*/ true);
 
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
@@ -3380,7 +3340,7 @@ JoinTreeQueryPlan joinPlansWithStep(
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan)
 {
-    std::vector<QueryPlanPtr> plans;
+    QueryPlanPtrs plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_join_tree_query_plan.query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_join_tree_query_plan.query_plan)));
 
@@ -3453,7 +3413,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             JoinOperator{JoinKind::Cross},
             std::move(join_expression_actions),
             outer_scope_columns,
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
             JoinSettings(settings, query_context->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));
