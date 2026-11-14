@@ -165,7 +165,8 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    /// Strict coverage is for callers that increment the row count before adding each part's statistics.
+    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_, bool require_complete_part_statistics_ = false);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
     /// See `ColumnStatistics::setCardinality`; the column must have statistics.
@@ -174,6 +175,8 @@ public:
 
 private:
     bool has_data = false;
+    const bool require_complete_part_statistics;
+    UInt64 current_part_rows = 0;
     ConditionSelectivityEstimatorPtr estimator;
 };
 

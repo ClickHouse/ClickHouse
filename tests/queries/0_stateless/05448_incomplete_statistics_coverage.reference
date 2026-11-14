@@ -1,0 +1,9 @@
+v and y are each incomplete	1
+all-incomplete estimate matches fallback	1
+selected-partition v estimate is about 5	1
+v remains partial while y is complete	1
+partial v falls back while retaining y	1
+mixed-state SELECT result is 250	1
+v and y statistics cover both parts	1
+complete v estimate is about 500	1
+complete-state SELECT result is 500	1
