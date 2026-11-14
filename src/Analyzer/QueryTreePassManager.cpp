@@ -18,6 +18,7 @@
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 #include <Analyzer/Passes/AggregateFunctionsArithmeticOperationsPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
+#include <Analyzer/Passes/ArrayExistsLikeToOrPass.h>
 #include <Analyzer/Passes/RewriteArrayFilterLengthToArrayCountPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
@@ -310,6 +311,7 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<RewriteSumFunctionWithSumAndCountPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
+    manager.addPass(std::make_unique<RewriteArrayExistsLikeToOrPass>());
     manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());
     manager.addPass(std::make_unique<RewriteHasToInPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
