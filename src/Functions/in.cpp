@@ -460,10 +460,20 @@ public:
 
         if (in_null_as_unknown && isUInt64(left_type_without_wrappers) && set_types.size() == 1
             && left_arg.column->size() == 1 && left_arg.column->getUInt(0) == 9007199254740993ULL)
+        {
+            auto probe = left_arg.column->cut(0, 1);
+            auto converted = tryConvertColumnToTypeOrNull(
+                *probe, left_arg.type, removeNullable(removeLowCardinality(set_types[0])), {}, /*strict=*/true);
+            auto restored = converted
+                ? tryConvertColumnToTypeOrNull(*converted, removeNullable(removeLowCardinality(set_types[0])), left_type_without_wrappers, {}, /*strict=*/true)
+                : nullptr;
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "SQuaLity probe: key_type={}, check={}, member={}, has_null={}",
-                set_types[0]->getName(), check_numeric_probe_exactness, res->getBool(0), set->hasNull());
+                "SQuaLity probe: key_type={}, check={}, member={}, has_null={}, converted={}, restored={}, exact={}",
+                set_types[0]->getName(), check_numeric_probe_exactness, res->getBool(0), set->hasNull(),
+                static_cast<bool>(converted), static_cast<bool>(restored),
+                restored && accurateEquals((*probe)[0], (*restored)[0]));
+        }
 
         if (in_null_as_unknown)
             res = applyStandardNullSemantics(*res, *left_arg.column, set->hasNull());
