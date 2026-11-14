@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
@@ -55,6 +56,10 @@ static bool isStorageEligibleForParallelReplicas(const StoragePtr & storage, boo
     const auto & settings = context->getSettingsRef();
 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
+        return false;
+
+    /// Temporary tables other than `Memory` are not sent to the replicas.
+    if (storage->getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         return false;
 
     /// TODO(unique-key): support parallel replicas; this misses a UNIQUE KEY table on a JOIN's non-driving side.
