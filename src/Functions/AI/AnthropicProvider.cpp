@@ -40,7 +40,7 @@ HTTPHeaderEntries AnthropicProvider::getHeaders() const
     return headers;
 }
 
-void AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
+void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
     response = {};
 

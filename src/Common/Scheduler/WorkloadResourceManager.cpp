@@ -148,6 +148,10 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
             root_node.reset();
         }
 
+        // Fail the queue's requests while the node is fully alive: query threads may still reach the queue through
+        // older versions, and the queue's error messages read the workload's name.
+        n->purgeQueue();
+
         node_for_workload.erase(info.name);
 
         updateCurrentVersion();

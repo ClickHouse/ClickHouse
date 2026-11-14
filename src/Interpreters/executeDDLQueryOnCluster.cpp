@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsBool ignore_on_cluster_for_replicated_database;
+    extern const SettingsUInt64 distributed_ddl_entry_format_version;
 }
 
 namespace ServerSetting
@@ -269,6 +270,16 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     }
 
     return false;
+}
+
+bool distributedDDLWorkersUseInitiatorUser(ContextPtr context)
+{
+    /// The same condition as in `executeDDLQueryOnCluster` and `DDLLogEntry::setSettingsIfRequired`: the user is
+    /// written to the entry only with the server setting on, and read by the hosts only from `INITIATOR_USER_VERSION`.
+    /// `setSettingsIfRequired` never lowers the configured version below `INITIATOR_USER_VERSION`.
+    return context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+        && context->getSettingsRef()[Setting::distributed_ddl_entry_format_version] >= DDLLogEntry::INITIATOR_USER_VERSION
+        && !context->getUserName().empty();
 }
 
 }

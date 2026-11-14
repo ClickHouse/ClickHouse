@@ -19,6 +19,7 @@
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -253,6 +254,18 @@ struct RuntimeHashStatisticsContext
     }
 };
 
+/// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
+constexpr Float64 array_join_rows_multiplier = 100;
+
+static UInt64 toUInt64Saturating(Float64 estimate)
+{
+    if (!(estimate > 0))
+        return 0;
+    if (estimate >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(estimate);
+}
+
 static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
@@ -450,7 +463,32 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
+    const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
+    const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(step);
+    if (array_join_step || (expression_step && expression_step->getExpression().hasArrayJoin()))
+    {
+        /// A filter above the array join can read its output, which the statistics of the input do not describe.
+        auto stats = estimateReadRowsCount(*node.children.front(), nullptr);
+        if (stats.estimated_rows && *stats.estimated_rows != 0)
+        {
+            /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.
+            if (filter || (array_join_step && array_join_step->hasElementFilter()))
+            {
+                stats.estimated_rows.reset();
+                stats.imprecise_estimate = true;
+            }
+            else
+                stats.estimated_rows = toUInt64Saturating(Float64(*stats.estimated_rows) * array_join_rows_multiplier);
+        }
+        if (expression_step)
+            remapColumnStats(stats.column_stats, expression_step->getExpression());
+        else
+            for (const auto & column : array_join_step->getColumns())
+                stats.column_stats.erase(column);
+        return stats;
+    }
+
+    if (expression_step)
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
@@ -1248,6 +1286,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
+    BitSet null_supplying_relations;
+    for (const auto & [relation, restriction] : query_graph_builder.join_kinds)
+        if (restriction.second != JoinKind::Inner)
+            null_supplying_relations.set(relation);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
@@ -1460,11 +1502,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
 
-            for (auto rel_id : {left_rels.getSingleBit(), right_rels.getSingleBit()})
+            /// NULL padding applies where the relation is joined alone; other type changes only after all predicates on original columns.
+            const bool is_last_step = entry_idx + 1 == sequence.size();
+            for (const auto & [relation, new_inputs] : query_graph_builder.type_changes)
             {
-                if (!rel_id.has_value())
+                const bool joined_alone = left_rels.getSingleBit() == relation || right_rels.getSingleBit() == relation;
+                if (!(null_supplying_relations.test(relation) ? joined_alone : is_last_step))
                     continue;
-                const auto & new_inputs = query_graph_builder.type_changes[rel_id.value()];
                 for (const auto * new_input : new_inputs)
                 {
                     const auto * input_node = trackInputColumn(new_input);

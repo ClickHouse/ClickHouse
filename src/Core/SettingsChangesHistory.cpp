@@ -104,7 +104,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."},
             {"join_runtime_filter_min_probe_rows", 1000, 1000, "The JOIN runtime filters became a Production tier feature."},
             {"enable_join_runtime_filters_index_analysis", false, false, "The JOIN runtime filters became a Production tier feature."},
-            {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
+            {"ai_function_max_retries", 0, 3, "Retry a transient API error up to three times by default, so a 429 or 5xx from the provider does not fail the query and an overloaded rate-limited provider is retried under concurrent requests."},
+            {"ai_function_max_concurrent_requests_per_thread", 1, 8, "New setting"},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_trino_dialect", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."},
             {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
@@ -142,9 +143,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
             {"output_format_arrow_record_batch_size", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."},
             {"output_format_arrow_record_batch_size_bytes", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."},
+            {"output_format_arrow_max_record_batch_size_bytes", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"json_extract_use_cast_string_to_date_time_mode", false, true, "`JSONExtract` parses `DateTime` values according to `cast_string_to_date_time_mode` instead of `date_time_input_format`. `compatibility` with versions before 26.8 restores the previous behavior."},
             {"backup_s3_expired_token_retry_timeout_ms", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."},
             {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.8 restores the previous strict behavior."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},

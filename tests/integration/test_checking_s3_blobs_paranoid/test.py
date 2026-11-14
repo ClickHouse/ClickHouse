@@ -308,6 +308,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
             SETTINGS
                 s3_max_single_part_upload_size=100,
                 s3_min_upload_part_size=100,
+                s3_max_inflight_parts_for_one_file=1,
                 s3_check_objects_after_upload=0
             """,
         query_id=insert_query_id,
@@ -315,6 +316,10 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
 
     assert "Code: 499" in error, error
     assert message in error, error
+
+    _, _, s3_errors = get_multipart_counters(node, insert_query_id)
+    # s3_retry_attempts + 1 attempts of the failing part, plus the failed abort of the fake upload
+    assert s3_errors == 5 + 1 + 1, s3_errors
 
 
 def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
