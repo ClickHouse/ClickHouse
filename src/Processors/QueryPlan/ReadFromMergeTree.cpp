@@ -5663,6 +5663,44 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
     }
 
+    /// When trivial_limit is set, reduce block_size and num_streams so the source
+    /// reads about LIMIT + OFFSET rows. Lightweight deletes mask physical rows, so
+    /// that reduction can return fewer live rows than requested. Parts are final
+    /// here, including a distributed worker's bucket, so the check matches the read.
+    if (query_info.trivial_limit > 0)
+    {
+        bool has_parts_with_lwd = false;
+        for (const auto & part_with_ranges : result.parts_with_ranges)
+        {
+            if (part_with_ranges.data_part->hasLightweightDelete())
+            {
+                has_parts_with_lwd = true;
+                break;
+            }
+
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, context);
+            if (alter_conversions->hasLightweightDelete())
+            {
+                has_parts_with_lwd = true;
+                break;
+            }
+        }
+
+        if (has_parts_with_lwd)
+        {
+            /// Disable trivial_limit optimizations when LWD parts are present,
+            /// because we cannot predict how many rows need to be scanned
+            /// to produce the requested number of live rows.
+            query_info.trivial_limit = 0;
+        }
+        else if (query_info.trivial_limit < block_size.max_block_size_rows)
+        {
+            /// No LWD parts: safe to apply the reduction the planner deferred.
+            block_size.max_block_size_rows = std::max<UInt64>(1, query_info.trivial_limit);
+            requested_num_streams = 1;
+        }
+    }
+
     /// Do not keep data parts in snapshot.
     {
         auto stripped_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
