@@ -31,3 +31,7 @@ SELECT countIf(number IN (SELECT x FROM merge('', '^t_implicit_db_'))) FROM remo
 SELECT sum(n), count()
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05300.tsv', 'TSV', 'n UInt64')
 WHERE n IN (SELECT x FROM merge('', '^t_implicit_db_'));
+
+-- A `LowCardinality` scalar subquery is not folded into a constant.
+SELECT sum(number), count() FROM remote('127.0.0.2', numbers(4))
+WHERE number IN (SELECT x FROM merge((SELECT toLowCardinality('')), '^t_implicit_db_'));

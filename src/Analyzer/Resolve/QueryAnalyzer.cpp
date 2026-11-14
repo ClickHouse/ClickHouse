@@ -5984,18 +5984,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
 
-    /// `merge` with one argument or with the database '' reads the current database, which the servers this query is sent to do not share.
+    /// `merge` with one argument or with a database that evaluates to '' reads the current database, which the servers this query
+    /// is sent to do not share, so the database it resolved replaces any database argument except a `REGEXP`, which is not analyzed.
     /// A secondary query is left as sent: its `IN` set names are hashed from the query tree and must match the sender's.
     if (const auto * merge_storage = typeid_cast<const StorageMerge *>(table_function_storage.get());
         merge_storage && scope_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         auto & argument_nodes = table_function_node_typed.getArguments().getNodes();
-        const auto * database_node = argument_nodes.size() == 2 ? argument_nodes[0]->as<ConstantNode>() : nullptr;
+        auto database_node = std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp());
         if (argument_nodes.size() == 1)
-            argument_nodes.insert(argument_nodes.begin(), std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp()));
-        else if (database_node && database_node->getValue().getType() == Field::Types::String
-                 && database_node->getValue().safeGet<String>().empty())
-            argument_nodes[0] = std::make_shared<ConstantNode>(merge_storage->getSourceDatabaseNameOrRegexp());
+            argument_nodes.insert(argument_nodes.begin(), std::move(database_node));
+        else if (!std::ranges::contains(skip_analysis_arguments_indexes, 0))
+            argument_nodes[0] = std::move(database_node);
     }
 
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
