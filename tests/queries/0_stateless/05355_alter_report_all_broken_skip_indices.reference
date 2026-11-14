@@ -1,0 +1,23 @@
+All three dependent indices reported
+Only retained dependent indices reported
+Single-index error includes index list
+Rename reports all dependent indices
+Clear reports all dependent indices
+Modify reports all dependent indices
+Rename reports whole-column and subcolumn indices
+Clear reports whole-column and subcolumn indices
+Modify reports whole-column and subcolumn indices
+Both mixed-stage invalid indices reported
+Expression, type, and lazy-conversion index errors reported together
+Modify collects policy, expression, and type errors across columns
+Rename collects policy errors across columns
+Clear collects policy errors across columns
+Both invalid text indices reported
+Both lazy JSON indices reported
+3	7
+idx_first
+idx_second
+idx_third
+idx_unrelated
+7
+idx_unrelated

@@ -265,7 +265,8 @@ public:
         StorageInMemoryMetadata & metadata,
         ContextPtr context,
         bool share_nested_offsets = true,
-        const MergeTreeSettings * settings_defaults = nullptr) const;
+        const MergeTreeSettings * settings_defaults = nullptr,
+        std::vector<std::pair<int, String>> * secondary_index_errors = nullptr) const;
 
     /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
     NameSet getAddedIndexNames(const IndicesDescription & existing) const;

@@ -2057,7 +2057,8 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context,
-        const MergeTreeSettings * alter_effective_settings = nullptr) const;
+        const MergeTreeSettings * alter_effective_settings = nullptr,
+        std::vector<std::pair<int, String>> * secondary_index_errors = nullptr) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
     /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
