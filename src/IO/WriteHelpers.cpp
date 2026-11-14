@@ -13,6 +13,17 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+void throwDecimalFractionalLengthOutOfBound(UInt32 scale, UInt32 fractional_length, size_t max_digits)
+{
+    throw Exception(
+        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+        "Cannot write Decimal with scale {} and fractional length {}: the maximum is {}",
+        scale,
+        fractional_length,
+        max_digits);
 }
 
 template <typename IteratorSrc, typename IteratorDst>
