@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -84,6 +85,15 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 : "";
             if (!disk_name.empty())
             {
+                /// Only Iceberg, Delta Lake and Lance support the `disk` setting; other data lakes (Paimon, Hudi)
+                /// have no configuration over a disk.
+                const std::string_view function_name = Definition::name;
+                const bool is_iceberg = function_name.starts_with("iceberg");
+                const bool is_delta_lake = function_name.starts_with("deltaLake");
+                const bool is_lance = function_name.starts_with("lance");
+                if (!is_iceberg && !is_delta_lake && !is_lance)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `disk` is not supported by table function {}", function_name);
+
                 auto disk = context->getDisk(disk_name);
                 const auto object_storage_type = [&]()
                 {
@@ -131,10 +141,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     if (Definition::object_storage_type != "s3")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -148,10 +158,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::object_storage_type != "azure")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -164,10 +174,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "deltaLakeCluster" &&
                         Definition::object_storage_type != "local")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -176,6 +186,9 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
                 }
                 }
+
+                if (!configuration)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No configuration over disk {} was created for table function {}", disk_name, function_name);
             }
             else
                 configuration = std::make_shared<Configuration>(settings);

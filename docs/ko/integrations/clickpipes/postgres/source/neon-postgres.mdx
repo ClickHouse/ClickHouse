@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickPipes에서 복제에 사용할 Neon Postgres를 설정하는 방법을 안내하는 가이드입니다.
 이 설정을 진행하기 전에 [Neon console](https://console.neon.tech/app/projects)에 로그인되어 있는지 확인하세요.
 
@@ -68,11 +66,27 @@ ClickPipes에서 복제에 사용할 Neon Postgres를 설정하는 방법을 안
 Neon에서는 UI를 통해 논리적 복제를 활성화할 수 있습니다. ClickPipes의 CDC가 데이터를 복제하려면 이 설정이 필요합니다.
 **설정** 탭으로 이동한 다음 **논리적 복제** 섹션으로 이동하십시오.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="논리적 복제 활성화" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![논리적 복제 활성화](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
+
+</Frame>
+
+</div>
 
 여기에서 **활성화**를 클릭하면 설정이 완료됩니다. 활성화한 후에는 아래와 같은 성공 메시지가 표시됩니다.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="논리적 복제 활성화됨" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![논리적 복제 활성화됨](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
+
+</Frame>
+
+</div>
 
 Neon Postgres 인스턴스에서 아래 설정을 확인하겠습니다:
 
@@ -89,7 +103,15 @@ SHOW max_replication_slots; -- should be 10
 Neon Enterprise 플랜을 사용하는 경우 [ClickPipes IPs](/ko/integrations/clickpipes/networking/static-ips)를 허용 목록에 추가하면 ClickPipes에서 Neon Postgres 인스턴스로의 복제를 허용할 수 있습니다.
 이 작업을 수행하려면 **설정** 탭을 클릭한 다음 **IP 허용** 섹션으로 이동하세요.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="IP 허용 화면" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![IP 허용 화면](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
+
+</Frame>
+
+</div>
 
 <div id="copy-connection-details">
   ## 연결 정보 복사
@@ -99,7 +121,15 @@ Neon Enterprise 플랜을 사용하는 경우 [ClickPipes IPs](/ko/integrations/
 **Dashboard**로 이동한 다음, 연결 문자열이 표시된 텍스트 상자에서
 보기를 **Parameters Only**로 변경하세요. 다음 단계에서 이 매개변수가 필요합니다.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="연결 정보" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![연결 정보](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## 다음 단계는 무엇인가요?

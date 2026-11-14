@@ -3,7 +3,6 @@ select	4
 engine	MergeTree
 parts	1
 parts_columns	1
-total_bytes_uncompressed	1
 after alter delete	3
 after lightweight delete	2
 cold lightweight delete	1

@@ -5,7 +5,7 @@
 #
 # A crafted `REPLICATED`-serialized column can trigger the same out-of-bounds read
 # (nested_column[index]) via two independent paths that SerializationReplicated must
-# reject with INCORRECT_DATA (code 117), while the server stays alive:
+# reject with INCORRECT_DATA (code 117):
 #
 # 1. out-of-bounds index: per-row indexes point past the nested ("elements") column.
 #    Before the fix, only the index row count was validated, not the index values.
@@ -16,14 +16,25 @@
 #    ColumnReplicated, not the nested column size), so without an explicit post-read
 #    size check the nested column would silently end up smaller than num_elements.
 #
-# The client speaks the raw native protocol pinned to revision 54482
+# Only a server may choose the `REPLICATED` kind, so the crafted columns arrive the way a real
+# one does: in a result block, sent to clickhouse-client by a fake server. A block that a client
+# sends to the server accepts only the default kind, so there such a column is rejected by its
+# kind, before SerializationReplicated reads it, and the server must stay alive (the last scenario).
+#
+# Both sides speak the raw native protocol pinned to revision 54482
 # (DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION, the minimum that enables REPLICATED),
 # so the set of exchanged, revision-gated fields is fixed and does not drift.
 
 import os
 import socket
 import struct
+import sys
 import uuid
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from fake_native_server import runClientAgainstFakeServer
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
@@ -259,13 +270,17 @@ def readHeader(s):
             readKindStack(s)
 
 
-def sendCraftedReplicatedBlock(s):
+CLIENT_DATA = 2
+SERVER_DATA = 1
+
+
+def craftedReplicatedBlock(packet_type):
     limit = 4
     num_elements = 1
     oob_index = 0xFFFFFFFF
 
     ba = bytearray()
-    writeVarUInt(2, ba)  # Data
+    writeVarUInt(packet_type, ba)  # Data
     writeStringBinary("", ba)  # table name
     serializeBlockInfo(ba)
     writeVarUInt(1, ba)  # columns
@@ -286,7 +301,7 @@ def sendCraftedReplicatedBlock(s):
     for _ in range(num_elements):
         ba.extend(struct.pack("<Q", 42))
 
-    s.sendall(ba)
+    return bytes(ba)
 
 
 def connectAndStartInsert(s):
@@ -316,19 +331,21 @@ def expectIncorrectData(s, must_contain):
     assert must_contain in text, text
 
 
+def expectClientException(reply, must_contain, code=117):
+    """clickhouse-client must reject the block that a server sends as a result."""
+    output = runClientAgainstFakeServer(reply)
+    assert "Code: {}.".format(code) in output, output
+    assert must_contain in output, output
+
+
 def outOfBoundsIndexScenario():
     # Every index points past the (single-element) nested column: must be rejected before
     # any ColumnReplicated accessor can dereference nested_column[index] out of bounds.
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
-        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
-        connectAndStartInsert(s)
-        sendCraftedReplicatedBlock(s)
-        expectIncorrectData(s, "ColumnReplicated")
-        print("out-of-bounds index: caught expected exception INCORRECT_DATA")
+    expectClientException(craftedReplicatedBlock(SERVER_DATA), "ColumnReplicated")
+    print("out-of-bounds index: caught expected exception INCORRECT_DATA")
 
 
-def sendReplicatedBlockWithTruncatedElements(s):
+def replicatedBlockWithTruncatedElements(packet_type):
     # All indexes are in range for the advertised num_elements, but the elements payload
     # is cut short. Bulk readers of primitive types (e.g. SerializationNumber::deserializeBinaryBulk)
     # short-read on EOF instead of throwing, so without an explicit post-read size check the
@@ -339,7 +356,7 @@ def sendReplicatedBlockWithTruncatedElements(s):
     sent_elements = 2
 
     ba = bytearray()
-    writeVarUInt(2, ba)  # Data
+    writeVarUInt(packet_type, ba)  # Data
     writeStringBinary("", ba)  # table name
     serializeBlockInfo(ba)
     writeVarUInt(1, ba)  # columns
@@ -360,29 +377,23 @@ def sendReplicatedBlockWithTruncatedElements(s):
     for _ in range(sent_elements):
         ba.extend(struct.pack("<Q", 42))
 
-    s.sendall(ba)
-    # Signal EOF on the read side of the server's connection so the truncated read
-    # returns a short read instead of blocking for the missing bytes.
-    s.shutdown(socket.SHUT_WR)
+    return bytes(ba)
 
 
 def truncatedElementsScenario():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
-        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
-        connectAndStartInsert(s)
-        sendReplicatedBlockWithTruncatedElements(s)
-        expectIncorrectData(s, "Cannot read all elements")
-        print("truncated elements: caught expected exception INCORRECT_DATA")
+    expectClientException(
+        replicatedBlockWithTruncatedElements(SERVER_DATA), "Cannot read all elements"
+    )
+    print("truncated elements: caught expected exception INCORRECT_DATA")
 
 
-def sendReplicatedBlockWithInvalidIndexTypeSize(s):
+def replicatedBlockWithInvalidIndexTypeSize(packet_type):
     # The index type width is read straight off the wire; an unsupported value must be
     # rejected with INCORRECT_DATA instead of hitting the switch's LOGICAL_ERROR default.
     limit = 4
 
     ba = bytearray()
-    writeVarUInt(2, ba)  # Data
+    writeVarUInt(packet_type, ba)  # Data
     writeStringBinary("", ba)  # table name
     serializeBlockInfo(ba)
     writeVarUInt(1, ba)  # columns
@@ -396,27 +407,24 @@ def sendReplicatedBlockWithInvalidIndexTypeSize(s):
     writeVarUInt(limit, ba)
     ba.append(3)  # size_of_index_type = 3 -- not one of sizeof(UInt8/16/32/64)
 
-    s.sendall(ba)
-    s.shutdown(socket.SHUT_WR)
+    return bytes(ba)
 
 
 def invalidIndexTypeSizeScenario():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
-        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
-        connectAndStartInsert(s)
-        sendReplicatedBlockWithInvalidIndexTypeSize(s)
-        expectIncorrectData(s, "Unexpected size of index type")
-        print("invalid index type size: caught expected exception INCORRECT_DATA")
+    expectClientException(
+        replicatedBlockWithInvalidIndexTypeSize(SERVER_DATA),
+        "Unexpected size of index type",
+    )
+    print("invalid index type size: caught expected exception INCORRECT_DATA")
 
 
-def sendReplicatedBlockWithIndexRowCountMismatch(s):
+def replicatedBlockWithIndexRowCountMismatch(packet_type):
     # The index row count is read straight off the wire; a value that disagrees with the
     # block row count must be rejected with INCORRECT_DATA, not LOGICAL_ERROR.
     limit = 4
 
     ba = bytearray()
-    writeVarUInt(2, ba)  # Data
+    writeVarUInt(packet_type, ba)  # Data
     writeStringBinary("", ba)  # table name
     serializeBlockInfo(ba)
     writeVarUInt(1, ba)  # columns
@@ -429,28 +437,25 @@ def sendReplicatedBlockWithIndexRowCountMismatch(s):
     # ReplicatedIndexes substream: advertise a row count that disagrees with the block.
     writeVarUInt(limit + 1, ba)
 
-    s.sendall(ba)
-    s.shutdown(socket.SHUT_WR)
+    return bytes(ba)
 
 
 def indexRowCountMismatchScenario():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
-        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
-        connectAndStartInsert(s)
-        sendReplicatedBlockWithIndexRowCountMismatch(s)
-        expectIncorrectData(s, "Unexpected number of rows in indexes column")
-        print("index row count mismatch: caught expected exception INCORRECT_DATA")
+    expectClientException(
+        replicatedBlockWithIndexRowCountMismatch(SERVER_DATA),
+        "Unexpected number of rows in indexes column",
+    )
+    print("index row count mismatch: caught expected exception INCORRECT_DATA")
 
 
-def sendSparseOverReplicatedBlock(s):
+def sparseOverReplicatedBlock(packet_type):
     # Sparse can sit inside Replicated but not the other way round, so this kind stack is rejected as
     # out of order. A wire-supplied kind stack must produce INCORRECT_DATA, not LOGICAL_ERROR.
     END_OF_GRANULE_FLAG = 1 << 62
     limit = 4
 
     ba = bytearray()
-    writeVarUInt(2, ba)  # Data
+    writeVarUInt(packet_type, ba)  # Data
     writeStringBinary("", ba)  # table name
     serializeBlockInfo(ba)
     writeVarUInt(1, ba)  # columns
@@ -470,36 +475,22 @@ def sendSparseOverReplicatedBlock(s):
     # non-default values, so offset reading returns cleanly before Replicated is invoked.
     writeVarUInt(limit | END_OF_GRANULE_FLAG, ba)
 
-    s.sendall(ba)
-    s.shutdown(socket.SHUT_WR)
+    return bytes(ba)
 
 
 def sparseOverReplicatedScenario():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(30)
-        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
-        connectAndStartInsert(s)
-        sendSparseOverReplicatedBlock(s)
-        expectIncorrectData(s, "is out of order")
-        print("sparse over replicated: caught expected exception INCORRECT_DATA")
+    expectClientException(sparseOverReplicatedBlock(SERVER_DATA), "is out of order")
+    print("sparse over replicated: caught expected exception INCORRECT_DATA")
 
 
-def expectException(s, expected_code, must_contain):
-    packet_type = readVarUInt(s)
-    assert packet_type == 2, "Expected Exception packet, got {}".format(packet_type)
-    code, text = readException(s)
-    assert code == expected_code, "Expected code {}, got {}: {}".format(expected_code, code, text)
-    assert must_contain in text, text
-
-
-def sendReplicatedBlockWithHugeElementCount(s):
+def replicatedBlockWithHugeElementCount(packet_type):
     # The element count is read straight off the wire and the nested column is sized from it
     # before any element is read, so an implausibly large count must be rejected up front.
     limit = 4
     num_elements = 779583733922149480
 
     ba = bytearray()
-    writeVarUInt(2, ba)  # Data
+    writeVarUInt(packet_type, ba)  # Data
     writeStringBinary("", ba)  # table name
     serializeBlockInfo(ba)
     writeVarUInt(1, ba)  # columns
@@ -518,18 +509,71 @@ def sendReplicatedBlockWithHugeElementCount(s):
     # ReplicatedElements substream: a huge element count and no element data.
     writeVarUInt(num_elements, ba)
 
-    s.sendall(ba)
-    s.shutdown(socket.SHUT_WR)
+    return bytes(ba)
 
 
 def hugeElementCountScenario():
+    expectClientException(
+        replicatedBlockWithHugeElementCount(SERVER_DATA),
+        "Suspiciously many elements",
+        code=128,
+    )
+    print("huge element count: caught expected exception TOO_LARGE_ARRAY_SIZE")
+
+
+def replicatedTupleElementBlock(packet_type):
+    # A well-formed `Tuple(UInt64, UInt64)` whose element 0 is Replicated. `ColumnReplicated` wraps
+    # whole columns only and is unwrapped only at the top level, so a nested one would reach code
+    # that casts the element to its declared type. The kind must be rejected for a tuple element.
+    limit = 4
+
+    ba = bytearray()
+    writeVarUInt(packet_type, ba)  # Data
+    writeStringBinary("", ba)  # table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(limit, ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("Tuple(UInt64, UInt64)", ba)
+    ba.append(1)  # has_custom serialization
+    ba.append(0)  # KindStackBinarySerializationType::DEFAULT, the tuple
+    ba.append(4)  # KindStackBinarySerializationType::REPLICATED, element 0
+    ba.append(0)  # KindStackBinarySerializationType::DEFAULT, element 1
+
+    # Element 0. ReplicatedIndexes substream: row count, size of index type, in-range indexes.
+    writeVarUInt(limit, ba)
+    ba.append(1)  # size_of_index_type = sizeof(UInt8)
+    for i in range(limit):
+        ba.append(i % 2)
+    # ReplicatedElements substream: element count, nested data.
+    writeVarUInt(2, ba)
+    ba.extend(struct.pack("<2Q", 42, 43))
+
+    # Element 1.
+    ba.extend(struct.pack("<{}Q".format(limit), *range(limit)))
+    return bytes(ba)
+
+
+def replicatedTupleElementScenario():
+    expectClientException(
+        replicatedTupleElementBlock(SERVER_DATA),
+        "Unexpected serialization kind Replicated in the received data",
+    )
+    print("replicated tuple element: caught expected exception INCORRECT_DATA")
+
+
+def replicatedOnInsertScenario():
+    # A block that a client sends accepts only the default kind, so the column is rejected by
+    # its kind, before SerializationReplicated reads it.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(30)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         connectAndStartInsert(s)
-        sendReplicatedBlockWithHugeElementCount(s)
-        expectException(s, 128, "Suspiciously many elements")
-        print("huge element count: caught expected exception TOO_LARGE_ARRAY_SIZE")
+        s.sendall(craftedReplicatedBlock(CLIENT_DATA))
+        expectIncorrectData(
+            s, "Unexpected serialization kind Replicated in the received data"
+        )
+        print("replicated on insert: caught expected exception INCORRECT_DATA")
 
 
 def main():
@@ -539,6 +583,8 @@ def main():
     indexRowCountMismatchScenario()
     sparseOverReplicatedScenario()
     hugeElementCountScenario()
+    replicatedTupleElementScenario()
+    replicatedOnInsertScenario()
 
 
 if __name__ == "__main__":
