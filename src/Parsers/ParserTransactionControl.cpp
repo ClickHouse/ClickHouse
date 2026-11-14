@@ -56,7 +56,8 @@ Introduced in: v22.4.0
 <CloudNotSupportedBadge/>
 
 The transaction control statements `BEGIN TRANSACTION`, `COMMIT`, `ROLLBACK` and `SET TRANSACTION SNAPSHOT` group several queries over `MergeTree` tables into one transaction.
-The queries of a transaction read one consistent snapshot of the data.
+The queries of a transaction read one consistent snapshot of the changes that other transactions commit.
+Writes outside transactions are not isolated: an `INSERT`, `TRUNCATE TABLE` or `ALTER TABLE ... DELETE` that runs outside a transaction is visible to the next query of a running transaction, so a stable view requires the writers to use transactions as well, for example with [`implicit_transaction`](/reference/settings/session-settings/implicit#implicit_transaction).
 Other transactions see its changes only after `COMMIT`, and `ROLLBACK` discards them.
 Queries that run outside a transaction can see the changes of a running transaction before it commits.
 
