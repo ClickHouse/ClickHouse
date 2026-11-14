@@ -131,6 +131,8 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
+/// Whether `getAvroType` supports the type, i.e. a manifest partition field of this type can be written.
+bool canGetAvroType(const DataTypePtr & type);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(

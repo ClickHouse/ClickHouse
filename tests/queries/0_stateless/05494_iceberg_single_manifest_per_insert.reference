@@ -22,10 +22,8 @@
 2
 2	0	2	0	[(false,10,12)]
 6	0	12	0	[(false,10,12)]
---- DROP PARTITION 11 is rejected: its manifest is shared with partitions 10 and 12
-NOT_IMPLEMENTED
+--- DROP PARTITION 11 rewrites the manifest it shares with partitions 10 and 12
 10	5	118
-11	4	22
 12	5	146
 --- NULL and non-NULL partition values in one INSERT
 1
