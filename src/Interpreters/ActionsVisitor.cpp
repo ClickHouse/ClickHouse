@@ -493,7 +493,7 @@ ASTPtr makeNumericNonConstantInReplacement(
                 "CAST", std::move(candidate),
                 make_intrusive<ASTLiteral>("Nullable(" + left_bare_type->getName() + ")"));
         }
-        else if ((isDate(left_bare_type) || isDate32(left_bare_type)) && isNumber(element_bare_type))
+        else if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type) && isNumber(element_bare_type))
         {
             auto cast_value = makeASTFunction(
                 "accurateCastOrNull", candidate->clone(), make_intrusive<ASTLiteral>(left_bare_type->getName()));
@@ -536,6 +536,7 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
         const auto right_bare = removeNullable(removeLowCardinality(right_nested));
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !tryGetLeastSupertype(DataTypes{left_nested, right_nested}))
+            || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare) && isNumber(right_bare))
             || needsExactCompoundNumericInComparison(left_nested, right_nested);
     };
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
@@ -571,6 +572,19 @@ ASTPtr makeExactCompoundValueInComparison(
     ASTPtr equal;
     if (needsExactCompoundNumericInComparison(left_type, right_type))
         equal = makeExactCompoundNumericInComparison(left->clone(), right->clone(), left_type, right_type);
+    else if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
+        && isNumber(removeNullable(removeLowCardinality(right_type))))
+    {
+        const auto left_bare = removeNullable(removeLowCardinality(left_type));
+        const auto right_bare = removeNullable(removeLowCardinality(right_type));
+        auto cast_value = makeASTFunction(
+            "accurateCastOrNull", right->clone(), make_intrusive<ASTLiteral>(left_bare->getName()));
+        auto round_trip = makeASTFunction(
+            "accurateCastOrNull", cast_value->clone(), make_intrusive<ASTLiteral>(right_bare->getName()));
+        auto exact = makeASTFunction("equals", right->clone(), std::move(round_trip));
+        auto candidate = makeASTFunction("if", std::move(exact), std::move(cast_value), make_intrusive<ASTLiteral>(Field{}));
+        equal = makeASTFunction("equals", left->clone(), std::move(candidate));
+    }
     else if (isNumber(removeNullable(removeLowCardinality(left_type)))
         && isNumber(removeNullable(removeLowCardinality(right_type))))
     {
@@ -686,6 +700,21 @@ ASTPtr makeComplexNonConstantInReplacement(
         {
             match = makeExactCompoundNumericInComparison(
                 left_operand->clone(), elements[i]->clone(), left_operand_type, source_type);
+        }
+        else if (isDynamic(source_bare_type) || isVariant(source_bare_type))
+        {
+            ASTPtr actual_type = makeASTFunction(
+                isDynamic(source_bare_type) ? "dynamicType" : "variantType", elements[i]->clone());
+            if (isVariant(source_bare_type))
+                actual_type = makeASTFunction("toString", std::move(actual_type));
+            auto matches_kind = makeASTFunction(
+                "startsWith", std::move(actual_type),
+                make_intrusive<ASTLiteral>(isArray(left_bare_type) ? "Array(" : "Map("));
+            auto equal = makeASTFunction("equals", left_operand->clone(), elements[i]->clone());
+            match = makeASTFunction(
+                "if", std::move(matches_kind),
+                makeASTFunction("ifNull", std::move(equal), make_intrusive<ASTLiteral>(0u)),
+                make_intrusive<ASTLiteral>(0u));
         }
         else if (isStringOrFixedString(source_bare_type))
         {
@@ -1739,29 +1768,29 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         }
                     }
 
-                    const bool left_is_calendar_date = left_argument_type
-                        && (isDate(removeNullable(removeLowCardinality(left_argument_type)))
-                            || isDate32(removeNullable(removeLowCardinality(left_argument_type))));
+                    const bool left_is_temporal = left_argument_type
+                        && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(
+                            removeNullable(removeLowCardinality(left_argument_type)));
                     const bool compare_numeric_sources = use_standard_null_semantics
                         && left_argument_type
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
-                            || left_is_calendar_date)
+                            || left_is_temporal)
                         && element_types_known
                         && !element_types.empty()
-                        && std::all_of(element_types.begin(), element_types.end(), [left_is_calendar_date](const auto & type)
+                        && std::all_of(element_types.begin(), element_types.end(), [left_is_temporal](const auto & type)
                         {
                             const auto bare_type = removeNullable(removeLowCardinality(type));
                             return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
-                                || (left_is_calendar_date && (isDateTime(bare_type) || isDateTime64(bare_type)));
+                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)));
                         });
                     const bool compare_numeric_array_sources = use_standard_null_semantics && right_argument_is_array
-                        && left_bare_type && (isNumber(left_bare_type) || left_is_calendar_date) && right_array_type
+                        && left_bare_type && (isNumber(left_bare_type) || left_is_temporal) && right_array_type
                         && [&]
                         {
                             const auto & element_type = right_array_type->getNestedType();
                             const auto bare_type = removeNullable(removeLowCardinality(element_type));
                             return element_type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
-                                || (left_is_calendar_date && (isDateTime(bare_type) || isDateTime64(bare_type)));
+                                || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)));
                         }();
                     auto needs_complex_candidate_rewrite = [](const DataTypePtr & type)
                     {

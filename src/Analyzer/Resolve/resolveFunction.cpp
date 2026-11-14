@@ -1253,7 +1253,44 @@ static bool isIncompatibleNullableScalarForComplexIn(const DataTypePtr & source_
 {
     const auto bare_type = removeNullable(removeLowCardinality(source_type));
     return canContainNull(*source_type)
-        && !isArray(bare_type) && !isMap(bare_type) && !isStringOrFixedString(bare_type);
+        && !isArray(bare_type) && !isMap(bare_type) && !isStringOrFixedString(bare_type)
+        && !isDynamic(bare_type) && !isVariant(bare_type);
+}
+
+static bool isCompoundCarrierForIn(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    return (isArray(left) || isMap(left)) && (isDynamic(right) || isVariant(right));
+}
+
+static QueryTreeNodePtr buildCompoundCarrierInComparison(
+    const QueryTreeNodePtr & left, const QueryTreeNodePtr & right,
+    const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left_bare = removeNullable(removeLowCardinality(left_type));
+    const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    auto actual_type = std::make_shared<FunctionNode>(isDynamic(right_bare) ? "dynamicType" : "variantType");
+    actual_type->getArguments().getNodes().push_back(right);
+    QueryTreeNodePtr actual_type_name = std::move(actual_type);
+    if (isVariant(right_bare))
+    {
+        auto to_string = std::make_shared<FunctionNode>("toString");
+        to_string->getArguments().getNodes().push_back(std::move(actual_type_name));
+        actual_type_name = std::move(to_string);
+    }
+    auto matches_kind = std::make_shared<FunctionNode>("startsWith");
+    matches_kind->getArguments().getNodes() = {
+        std::move(actual_type_name),
+        std::make_shared<ConstantNode>(isArray(left_bare) ? "Array(" : "Map(", std::make_shared<DataTypeString>())};
+    auto equal = std::make_shared<FunctionNode>("equals");
+    equal->getArguments().getNodes() = {left, right};
+    auto non_null_equal = std::make_shared<FunctionNode>("ifNull");
+    non_null_equal->getArguments().getNodes() = {std::move(equal), std::make_shared<ConstantNode>(Field{0u})};
+    auto guarded = std::make_shared<FunctionNode>("if");
+    guarded->getArguments().getNodes() = {
+        std::move(matches_kind), std::move(non_null_equal), std::make_shared<ConstantNode>(Field{0u})};
+    return guarded;
 }
 
 static QueryTreeNodePtr buildNumericInEquality(
@@ -1270,8 +1307,10 @@ static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type,
     {
         const auto left_bare = removeNullable(removeLowCardinality(left_nested));
         const auto right_bare = removeNullable(removeLowCardinality(right_nested));
+        const bool temporal_left = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare);
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !tryGetLeastSupertype(DataTypes{left_nested, right_nested}))
+            || (temporal_left && isNumber(right_bare))
             || needsExactCompoundNumericInComparison(left_nested, right_nested);
     };
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
@@ -1303,6 +1342,10 @@ static QueryTreeNodePtr buildExactCompoundNumericInComparison(
     const QueryTreeNodePtr & right,
     const DataTypePtr & left_type,
     const DataTypePtr & right_type);
+static QueryTreeNodePtr makeExactInCast(
+    const QueryTreeNodePtr & source,
+    const DataTypePtr & source_type,
+    const DataTypePtr & target_type);
 
 static QueryTreeNodePtr buildExactCompoundValueInComparison(
     const QueryTreeNodePtr & left,
@@ -1313,6 +1356,13 @@ static QueryTreeNodePtr buildExactCompoundValueInComparison(
     QueryTreeNodePtr equal;
     if (needsExactCompoundNumericInComparison(left_type, right_type))
         equal = buildExactCompoundNumericInComparison(left, right, left_type, right_type);
+    else if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(left_type)))
+        && isNumber(removeNullable(removeLowCardinality(right_type))))
+    {
+        auto equals = std::make_shared<FunctionNode>("equals");
+        equals->getArguments().getNodes() = {left, makeExactInCast(right, right_type, left_type)};
+        equal = std::move(equals);
+    }
     else if (isNumber(removeNullable(removeLowCardinality(left_type)))
         && isNumber(removeNullable(removeLowCardinality(right_type))))
         equal = buildNumericInEquality(left, right, left_type, right_type);
@@ -1512,6 +1562,19 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
 
         QueryTreeNodePtr match_result;
         if (source_array_type
+            && isCompoundCarrierForIn(element_arg->getResultType(), source_array_type->getNestedType()))
+        {
+            const String candidate_name = "__in_compound_carrier_array_candidate";
+            auto comparison = buildCompoundCarrierInComparison(
+                element_arg, std::make_shared<IdentifierNode>(Identifier{candidate_name}),
+                element_arg->getResultType(), source_array_type->getNestedType());
+            auto lambda = std::make_shared<LambdaNode>(
+                std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(comparison), false /*is_operator*/);
+            auto any_match = std::make_shared<FunctionNode>("arrayExists");
+            any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
+            match_result = std::move(any_match);
+        }
+        else if (source_array_type
             && (isArray(removeNullable(removeLowCardinality(element_arg->getResultType())))
                 || isMap(removeNullable(removeLowCardinality(element_arg->getResultType()))))
             && isIncompatibleNullableScalarForComplexIn(source_array_type->getNestedType()))
@@ -3359,6 +3422,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const auto * lhs_array = typeid_cast<const DataTypeArray *>(in_first_argument->getResultType().get());
                         if (rhs_array && lhs_array
                             && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
+                            && !isCompoundCarrierForIn(in_first_argument->getResultType(), rhs_array->getNestedType())
                             && !(isIncompatibleNullableScalarForComplexIn(rhs_array->getNestedType())
                                 && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
                         {
@@ -3649,6 +3713,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     QueryTreeNodes matchable_elements = source_elements;
                     QueryTreeNodes string_elements;
                     QueryTreeNodes exact_compound_elements;
+                    QueryTreeNodes compound_carrier_elements;
                     const auto left_complex_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
                     if (use_standard_null_semantics)
                     {
@@ -3660,6 +3725,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 if (needsExactCompoundNumericInComparison(in_first_argument->getResultType(), arg->getResultType()))
                                 {
                                     exact_compound_elements.push_back(arg);
+                                    return true;
+                                }
+                                return false;
+                            });
+                            std::erase_if(matchable_elements, [&](const auto & arg)
+                            {
+                                if (isCompoundCarrierForIn(in_first_argument->getResultType(), arg->getResultType()))
+                                {
+                                    compound_carrier_elements.push_back(arg);
                                     return true;
                                 }
                                 return false;
@@ -3693,6 +3767,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         QueryTreeNodePtr match = buildExactCompoundNumericInComparison(
                             in_first_argument, source_compound,
                             in_first_argument->getResultType(), source_compound->getResultType());
+                        resolveFunction(match, scope);
+                        if (extra_match_predicate)
+                        {
+                            auto either_match = std::make_shared<FunctionNode>("or");
+                            either_match->getArguments().getNodes() = {std::move(extra_match_predicate), std::move(match)};
+                            extra_match_predicate = std::move(either_match);
+                            resolveFunction(extra_match_predicate, scope);
+                        }
+                        else
+                            extra_match_predicate = std::move(match);
+                    }
+                    for (const auto & source_carrier : compound_carrier_elements)
+                    {
+                        QueryTreeNodePtr match = buildCompoundCarrierInComparison(
+                            in_first_argument, source_carrier,
+                            in_first_argument->getResultType(), source_carrier->getResultType());
                         resolveFunction(match, scope);
                         if (extra_match_predicate)
                         {
@@ -3794,6 +3884,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     const bool use_standard_null_semantics = scope.context->getSettingsRef()[Setting::in_null_as_unknown];
                     const auto left_bare_type = removeNullable(removeLowCardinality(left_type));
                     const auto right_bare_type = removeNullable(removeLowCardinality(non_const_set_candidate->getResultType()));
+                    if (use_standard_null_semantics && isCompoundCarrierForIn(left_type, non_const_set_candidate->getResultType()))
+                    {
+                        auto match = buildCompoundCarrierInComparison(
+                            fn_args[0], fn_args[1], left_type, non_const_set_candidate->getResultType());
+                        auto source_is_null = std::make_shared<FunctionNode>("isNull");
+                        source_is_null->getArguments().getNodes().push_back(fn_args[1]);
+                        auto result = std::make_shared<FunctionNode>("if");
+                        result->getArguments().getNodes() = {
+                            std::move(source_is_null),
+                            std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())),
+                            std::move(match)};
+                        node = std::move(result);
+                        resolveFunction(node, scope);
+                        if (is_not_in)
+                        {
+                            node = createNotWrapper(std::move(node));
+                            resolveFunction(node, scope);
+                        }
+                        return ProjectionNames{proj};
+                    }
                     if (use_standard_null_semantics
                         && needsExactCompoundNumericInComparison(left_type, non_const_set_candidate->getResultType()))
                     {
