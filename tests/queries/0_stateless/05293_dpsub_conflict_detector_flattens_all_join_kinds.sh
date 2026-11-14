@@ -20,6 +20,9 @@ SETTINGS=(
     --query_plan_convert_outer_join_to_inner_join 0
     --automatic_parallel_replicas_mode 0
     --join_use_nulls 0
+    # A positive value makes the planner build one more plan to estimate the rows to read,
+    # and that plan runs the join order optimizer again, so its log lines would be printed twice.
+    --parallel_replicas_min_number_of_rows_per_replica 0
 )
 DPSUB=(--query_plan_optimize_join_order_algorithm 'dpsub,greedy' --query_plan_optimize_join_order_conflict_detector 'c')
 GREEDY=(--query_plan_optimize_join_order_algorithm 'greedy' --query_plan_optimize_join_order_conflict_detector '')

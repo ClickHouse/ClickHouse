@@ -416,6 +416,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     optimization_settings.materialize_ctes = false; // no need to materialize CTEs to collect filters
     /// This plan collects pushed-down filters and is never executed
     optimization_settings.make_distributed_plan = false;
+    /// Keep joins logical: the plan is never executed, and the physical join algorithm does not affect which
+    /// filters are pushed down to the tables. Choosing it could fail here even for a valid query: the tables
+    /// are replaced with dummy ones, so e.g. `join_algorithm = 'direct'` with a `MergeTree` right table cannot
+    /// be built (`ReadFromDummy` is not `ReadFromMergeTree`) and throws `NOT_IMPLEMENTED`.
+    optimization_settings.keep_logical_steps = true;
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;
