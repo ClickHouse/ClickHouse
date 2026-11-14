@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <optional>
 #include <numeric>
+#include <ranges>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -92,6 +93,8 @@ namespace ProfileEvents
 extern const Event FilteringMarksWithPrimaryKeyProcessedMarks;
 extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
+extern const Event GranulesDroppedByPrimaryKey;
+extern const Event GranulesDroppedBySkipIndexes;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event IndexGenericExclusionSearchStepLimitReached;
@@ -1391,6 +1394,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_marks_union = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
+    std::vector<std::atomic<bool>> skip_index_used(skip_indexes.useful_indices.size());
 
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
@@ -1483,10 +1487,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
 
+                const auto & part_key_condition = key_condition->generateForPart(ranges.data_part);
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPart(ranges.data_part),
+                    part_key_condition,
                     part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
                     total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
@@ -1496,6 +1501,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
+                /// an always true key condition drops nothing, all drops then come from `_part_offset` conditions
+                if (filter_context.report_index_usage && !part_key_condition.alwaysUnknownOrTrue())
+                    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, total_marks_count - ranges.getMarksCount());
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -1565,6 +1573,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     partial_eval_results.resize(
                         ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
+                /// in a disjunction the indexes exclude granules together in the merge below
+                std::vector<size_t> indexes_without_own_drops;
+
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
                     if (ranges.ranges.empty())
@@ -1607,6 +1618,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             use_skip_indexes_for_disjunctions,
                             partial_eval_results,
                             log);
+
+                        if (ranges.getMarksCount() < total_granules)
+                            skip_index_used[index_idx] = true;
+                        else if (rpn_template_for_part)
+                            indexes_without_own_drops.push_back(index_idx);
                     }
 
                     stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1618,9 +1634,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 if (rpn_template_for_part)
                 {
+                    const size_t marks_before_merge = ranges.getMarksCount();
                     ranges.ranges = mergePartialResultsForDisjunctions(*part_info_for_reader,
                                         ranges.ranges, *rpn_template_for_part,
                                         partial_eval_results, reader_settings, log);
+
+                    if (ranges.getMarksCount() < marks_before_merge)
+                        for (size_t index_idx : indexes_without_own_drops)
+                            skip_index_used[index_idx] = true;
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
@@ -1728,6 +1749,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     /// merge top-N results if optimization is done
+    const size_t sum_marks_before_top_k = parts_with_ranges.getMarksCountAllParts();
     size_t sum_marks_after_top_k = 0;
     size_t sum_parts_after_top_k = 0;
     if (perform_top_k_optimization)
@@ -1739,15 +1761,31 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
         {
             if (!parts_top_k_granules[part_index].empty())
-            {
                 parts_with_ranges[part_index].ranges = std::move(top_k_granules_result[part_index]);
-            }
             if (!parts_with_ranges[part_index].ranges.empty())
             {
                 sum_parts_after_top_k++;
                 sum_marks_after_top_k += parts_with_ranges[part_index].getMarksCount();
             }
         }
+    }
+
+    if (filter_context.report_index_usage)
+        ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, sum_marks_pk.load() - parts_with_ranges.getMarksCountAllParts());
+
+    if (filter_context.report_index_usage && !query_info.is_internal && context->hasQueryContext())
+    {
+        auto add_used_index = [&](const auto & index)
+        {
+            context->getQueryContext()->addUsedDataSkippingIndex(parts_with_ranges.front().data_part->storage.getStorageID(), index->index.name);
+        };
+
+        for (auto [used, index_and_condition] : std::views::zip(skip_index_used, skip_indexes.useful_indices))
+            if (used)
+                add_used_index(index_and_condition.index);
+
+        if (perform_top_k_optimization && sum_marks_after_top_k < sum_marks_before_top_k)
+            add_used_index(skip_indexes.skip_index_for_top_k_filtering);
     }
 
     if (metadata_snapshot->hasPrimaryKey())
@@ -2399,7 +2437,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         allow_top_k_prewhere_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false,
         /*check_row_limits=*/true,
-        /*skip_ranges_analysis=*/false);
+        /*skip_ranges_analysis=*/false,
+        /*report_index_usage=*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

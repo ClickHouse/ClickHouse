@@ -1,0 +1,12 @@
+5
+70
+5
+70
+5
+70
+5
+70
+skip_index_disjunction_1	['t_skip_index_disjunction.idx_a','t_skip_index_disjunction.idx_b']	14	2
+skip_index_disjunction_2	[]	0	16
+skip_index_disjunction_3	[]	0	16
+skip_index_disjunction_4	['t_skip_index_disjunction.idx_a','t_skip_index_disjunction.idx_b']	0	2

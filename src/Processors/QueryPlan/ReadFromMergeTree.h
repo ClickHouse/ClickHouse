@@ -406,12 +406,13 @@ public:
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
-        bool skip_ranges_analysis);
+        bool skip_ranges_analysis,
+        bool report_index_usage);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
-    /// or memoizing the result. The executed read analyzes again after its final mode is known.
+    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits,
+    /// memoizing the result or reporting the index usage. The executed read analyzes again after its final mode is known.
     /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
     /// before `tryOptimizeTopK`, so the `use_query_condition_cache_for_top_k` gate is not yet known.
     AnalysisResultPtr selectRangesToReadForEstimation(bool allow_query_condition_cache_) const;
