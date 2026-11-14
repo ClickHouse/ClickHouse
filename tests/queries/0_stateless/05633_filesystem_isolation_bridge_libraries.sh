@@ -6,8 +6,9 @@
 # A server with `filesystem_isolation` keeps visible the dynamic loader and the shared libraries of
 # `clickhouse-odbc-bridge` next to its executable, which it starts after the isolation, also the ones that the server
 # itself does not map, and the ones that the dynamic loader finds through the `DT_RUNPATH` of the bridge. A program
-# built here stands for the bridge: it needs a private library in `../lib`, found through `$ORIGIN/../lib`, and it is
-# run by the isolated server as an executable user defined function.
+# built here stands for the bridge: it needs a private library in `../lib`, found through `$ORIGIN/../lib`, and the
+# bridge next to the server is a link to it in another directory, so `$ORIGIN` is the directory of the target of the
+# link, as the dynamic loader takes it. The isolated server runs it as an executable user defined function.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,7 +27,7 @@ fi
 
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_bridge_libraries"
 rm -rf "$DIR"
-mkdir -p "$DIR/bin" "$DIR/lib" "$DIR/src" "$DIR/conf" "$DIR/data" "$DIR/log"
+mkdir -p "$DIR/bin" "$DIR/pkg/bin" "$DIR/pkg/lib" "$DIR/src" "$DIR/conf" "$DIR/data" "$DIR/log"
 DIR=$(cd "$DIR" && pwd -P)
 
 # The server looks for the bridge in the directory of its executable as it is named in `argv[0]`.
@@ -46,9 +47,10 @@ int main(void)
     return 0;
 }
 EOF
-cc -shared -fPIC -o "$DIR/lib/libprivate.so" "$DIR/src/private.c"
+cc -shared -fPIC -o "$DIR/pkg/lib/libprivate.so" "$DIR/src/private.c"
 # shellcheck disable=SC2016
-cc -o "$DIR/bin/clickhouse-odbc-bridge" "$DIR/src/bridge.c" -L"$DIR/lib" -lprivate -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN/../lib'
+cc -o "$DIR/pkg/bin/bridge" "$DIR/src/bridge.c" -L"$DIR/pkg/lib" -lprivate -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN/../lib'
+ln -s ../pkg/bin/bridge "$DIR/bin/clickhouse-odbc-bridge"
 
 # The loader and the libraries of the stand-in, without their links.
 LIBRARIES=$(ldd "$DIR/bin/clickhouse-odbc-bridge" | grep -o -E '/[^ ]+' | xargs -n1 readlink -f | sort -u)

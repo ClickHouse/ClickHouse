@@ -1074,8 +1074,10 @@ std::vector<std::string> getExecutableDependencies(const std::string & path, con
     if (const auto interpreter = elf.findSectionByName(".interp"))
         dependencies.emplace_back(interpreter->begin(), strnlen(interpreter->begin(), interpreter->size()));
 
-    /// With the search paths of the executable, as for a library.
-    const DynamicEntries entries = getDynamicEntries(path);
+    /// With the search paths of the executable, as for a library, but with `$ORIGIN` relative to the real location
+    /// of the executable: the dynamic loader takes it from `/proc/self/exe`, with the links resolved, unlike for a
+    /// library, whose `$ORIGIN` is the directory of the path it is opened by.
+    const DynamicEntries entries = getDynamicEntries(fs::canonical(path).string());
     for (auto & library : findLibraries(entries.needed, getLibraryDirectories(mapped_files), entries.rpath, entries.runpath))
         dependencies.push_back(std::move(library));
     return dependencies;
