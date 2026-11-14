@@ -27,21 +27,36 @@ INSERT INTO statistics_parallel_probe SELECT number, number, number % 2 FROM num
 DETACH TABLE statistics_parallel_probe;
 ATTACH TABLE statistics_parallel_probe;
 
+-- With `PREWHERE` the probe runs three times: in parallel while the indexes are not in memory, then serially.
 SELECT count() FROM statistics_parallel_probe WHERE key IN (5, 35000) AND value >= 30000 AND flag = 0
 SETTINGS log_comment = 'parallel_probe_small';
 
--- The previous query loaded the primary indexes. Without `PREWHERE` the decision is made once, by the parallel
--- analysis, and not again after the indexes are loaded.
+-- The same with the primary index cache, where an index in the cache is in memory.
+ALTER TABLE statistics_parallel_probe MODIFY SETTING use_primary_key_cache = 1;
+SYSTEM UNLOAD PRIMARY KEY statistics_parallel_probe;
+
+SELECT count() FROM statistics_parallel_probe WHERE key IN (5, 35000) AND value >= 30000 AND flag = 0
+SETTINGS log_comment = 'parallel_probe_small_cache';
+
+-- Without `PREWHERE` the decision is made once, by the parallel analysis.
+ALTER TABLE statistics_parallel_probe MODIFY SETTING use_primary_key_cache = 0;
 SYSTEM UNLOAD PRIMARY KEY statistics_parallel_probe;
 
 SELECT count() FROM statistics_parallel_probe WHERE key >= 1 AND value >= 30000 AND flag = 0
 SETTINGS optimize_move_to_prewhere = 0, log_comment = 'parallel_probe_large';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS query_log, text_log;
 
-SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts']
+-- The last column is the number of probes that analyzed the parts in parallel.
+WITH (
+    SELECT groupArray(query_id) FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+        AND message_format_string = 'Analyzing the primary key of parts in {} threads to decide whether to load statistics'
+) AS parallel_probes
+SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts'], countEqual(parallel_probes, query_id)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'parallel_probe_')
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'parallel_probe_')
 ORDER BY log_comment;
 
 DROP TABLE statistics_parallel_probe;
