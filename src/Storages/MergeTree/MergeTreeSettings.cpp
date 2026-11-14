@@ -680,7 +680,8 @@ Wide part with Full storage. The persisted mutation commands and their
 versions are unchanged.
 Set to false to execute each command separately.
 )", 0, \
-        {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
+        {"26.10", true, true, "The change was backported to 26.8 and is recorded there."}, \
+        {"26.8", false, true, "Enable row-mask update coalescing by default"}) \
     DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
 Maximum number of keys in one coalesced row-mask update. The effective limit
 also respects `max_rows_in_set` in the background query settings. Values below
