@@ -708,8 +708,9 @@ ASTPtr makeComplexNonConstantInReplacement(
             if (isVariant(source_bare_type))
                 actual_type = makeASTFunction("toString", std::move(actual_type));
             auto matches_kind = makeASTFunction(
-                "startsWith", std::move(actual_type),
-                make_intrusive<ASTLiteral>(isArray(left_bare_type) ? "Array(" : "Map("));
+                isDynamic(source_bare_type) ? "equals" : "startsWith", std::move(actual_type),
+                make_intrusive<ASTLiteral>(
+                    isDynamic(source_bare_type) ? left_bare_type->getName() : (isArray(left_bare_type) ? "Array(" : "Map(")));
             auto equal = makeASTFunction("equals", left_operand->clone(), elements[i]->clone());
             match = makeASTFunction(
                 "if", std::move(matches_kind),

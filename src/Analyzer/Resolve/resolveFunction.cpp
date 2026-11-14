@@ -1279,10 +1279,12 @@ static QueryTreeNodePtr buildCompoundCarrierInComparison(
         to_string->getArguments().getNodes().push_back(std::move(actual_type_name));
         actual_type_name = std::move(to_string);
     }
-    auto matches_kind = std::make_shared<FunctionNode>("startsWith");
+    auto matches_kind = std::make_shared<FunctionNode>(isDynamic(right_bare) ? "equals" : "startsWith");
     matches_kind->getArguments().getNodes() = {
         std::move(actual_type_name),
-        std::make_shared<ConstantNode>(isArray(left_bare) ? "Array(" : "Map(", std::make_shared<DataTypeString>())};
+        std::make_shared<ConstantNode>(
+            isDynamic(right_bare) ? left_bare->getName() : (isArray(left_bare) ? "Array(" : "Map("),
+            std::make_shared<DataTypeString>())};
     auto equal = std::make_shared<FunctionNode>("equals");
     equal->getArguments().getNodes() = {left, right};
     auto non_null_equal = std::make_shared<FunctionNode>("ifNull");
