@@ -101,8 +101,11 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
-    /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
+    /// Key ranges holding every token a pattern can match, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
+    /// Length of the leading part of `literal` (at most 4 letters) where a case-insensitive match can only hold the ASCII
+    /// case variants of each character, so a case-insensitive `^literal` matches inside one key range per variant.
+    static size_t getCaseVariantPrefixSize(std::string_view literal);
     bool canFilterTokensByLiterals() const;
     bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
     /// Like `TextIndexDictionaryDFA::Cursor::next`, but for the union of all pattern DFAs: `token` matches if any
