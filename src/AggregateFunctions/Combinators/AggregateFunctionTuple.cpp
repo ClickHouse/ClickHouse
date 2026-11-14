@@ -618,9 +618,21 @@ void AggregateFunctionTuple::mergeAndDestroyBatch(
     std::atomic<bool> & is_cancelled,
     Arena * arena) const
 {
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-        nested_functions[i]->mergeAndDestroyBatch(
-            dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    size_t i = 0;
+    try
+    {
+        for (; i < nested_functions.size(); ++i)
+            nested_functions[i]->mergeAndDestroyBatch(
+                dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    }
+    catch (...)
+    {
+        /// The function that threw has destroyed its own states of the batch, the following ones are untouched.
+        for (size_t k = i + 1; k < nested_functions.size(); ++k)
+            for (size_t row = 0; row < size; ++row)
+                nested_functions[k]->destroy(rhs_places[row] + offset + state_offsets[k]);
+        throw;
+    }
 }
 
 void AggregateFunctionTuple::serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const

@@ -329,6 +329,7 @@ public:
 
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
+    /// If it throws, every source state of the batch has been destroyed.
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
     /// Same as `mergeAndDestroyBatch`, but pairs of states that are too large to merge serially on this
@@ -901,16 +902,27 @@ public:
 
     void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
-        for (size_t i = 0; i < size; ++i)
+        size_t i = 0;
+        try
         {
-            chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
-                     "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
-            if constexpr (Derived::parallelizeMergeWithKey())
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
-            else
-                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            for (; i < size; ++i)
+            {
+                chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
+                         "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
+                if constexpr (Derived::parallelizeMergeWithKey())
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+                else
+                    static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
 
-            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            }
+        }
+        catch (...)
+        {
+            /// `destroy` does not throw, so the merge of row `i` threw and the sources from `i` on are not destroyed yet.
+            for (; i < size; ++i)
+                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            throw;
         }
     }
 

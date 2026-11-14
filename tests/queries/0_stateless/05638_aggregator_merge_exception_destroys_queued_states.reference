@@ -1,0 +1,8 @@
+partition: FAULT_INJECTED
+partition_string: FAULT_INJECTED
+serial: FAULT_INJECTED
+bucket: FAULT_INJECTED
+fixed_map: FAULT_INJECTED
+nullable_default: FAULT_INJECTED
+partition_batch: FAULT_INJECTED
+serial_batch: FAULT_INJECTED
