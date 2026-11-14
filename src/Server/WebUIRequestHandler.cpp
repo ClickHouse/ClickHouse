@@ -3,6 +3,8 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Common/re2.h>
+#include <Common/Hex.h>
+#include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
@@ -14,6 +16,8 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
+
+#include <algorithm>
 
 
 /// Embedded HTML pages
@@ -106,15 +110,114 @@ constexpr unsigned char resource_katex_css[] =
 namespace DB
 {
 
-/// Replace a link to an external JavaScript or CSS file on a CDN with the embedded copy served under `/js/`.
+String relativeServerRootURL(const HTTPServerRequest & request)
+{
+    std::string_view path = request.getURI();
+    path = path.substr(0, path.find_first_of("?#"));
+
+    /// An absolute-form request target (`GET http://host/docs HTTP/1.1`): skip the scheme and the authority.
+    if (!path.starts_with('/'))
+    {
+        size_t authority = path.find("://");
+        size_t path_start = authority == std::string_view::npos ? std::string_view::npos : path.find('/', authority + 3);
+        path = path_start == std::string_view::npos ? std::string_view("/") : path.substr(path_start);
+    }
+
+    /// Every `/` after the first one is a directory level of the page to climb out of.
+    size_t depth = std::count(path.begin(), path.end(), '/');
+    if (depth <= 1)
+        return "./";
+
+    String url;
+    for (size_t i = 1; i < depth; ++i)
+        url += "../";
+    return url;
+}
+
+/// Decodes a parameter name of a query string as `URLSearchParams` in the browser does: `+` is a space,
+/// a valid `%XX` escape is the byte it encodes, and an invalid escape is kept as is.
+static String decodeQueryParameterName(std::string_view name)
+{
+    String result;
+    result.reserve(name.size());
+    for (size_t i = 0; i < name.size(); ++i)
+    {
+        if (name[i] == '+')
+        {
+            result += ' ';
+        }
+        else if (name[i] == '%' && i + 2 < name.size() && isHexDigit(name[i + 1]) && isHexDigit(name[i + 2]))
+        {
+            result += static_cast<char>(unhex2(&name[i + 1]));
+            i += 2;
+        }
+        else
+        {
+            result += name[i];
+        }
+    }
+    return result;
+}
+
+String routingQueryOfRequest(const HTTPServerRequest & request)
+{
+    std::string_view query = request.getURI();
+    size_t query_start = query.find('?');
+    if (query_start == std::string_view::npos)
+        return {};
+    query = query.substr(query_start + 1);
+    query = query.substr(0, query.find('#'));
+
+    String result;
+    while (!query.empty())
+    {
+        size_t end = query.find('&');
+        std::string_view parameter = query.substr(0, end);
+        query = end == std::string_view::npos ? std::string_view() : query.substr(end + 1);
+
+        /// The credentials are never routing information, and neither is `query`, which the HTTP interface executes.
+        /// The name is compared decoded, as the page and the HTTP interface see it, so that an encoded
+        /// `%70assword` is dropped as well, while the retained parameters keep their original bytes.
+        String name = decodeQueryParameterName(parameter.substr(0, parameter.find('=')));
+        if (parameter.empty() || name == "user" || name == "password" || name == "query")
+            continue;
+
+        result += result.empty() ? '?' : '&';
+        /// The result is inserted into an HTML attribute and into an `RE2` rewrite string, so every character
+        /// that could end the attribute or start an escape is percent-encoded. Existing escapes are kept as is.
+        for (char c : parameter)
+        {
+            if (isAlphaNumericASCII(c) || std::string_view("-._~%+=:@/?!,*;").contains(c))
+            {
+                result += c;
+            }
+            else
+            {
+                static constexpr char hex[] = "0123456789ABCDEF";
+                result += '%';
+                result += hex[static_cast<unsigned char>(c) >> 4];
+                result += hex[static_cast<unsigned char>(c) & 0xF];
+            }
+        }
+    }
+    return result;
+}
+
+String serverAssetURL(const HTTPServerRequest & request, std::string_view name)
+{
+    return relativeServerRootURL(request) + "js/" + String(name) + routingQueryOfRequest(request);
+}
+
+/// Replace a link to an external JavaScript or CSS file on a CDN with the embedded copy served under `/js/`
+/// (`local_url`, made by `serverAssetURL`).
 /// This allows to open the HTML without running a server (then the CDN links in the source are used)
 /// and to host it on the server without loading third-party code into the ClickHouse HTTP origin.
 /// The CDN links carry subresource integrity hashes of the CDN files, but the embedded copies may differ
 /// from them (e.g. they have license banners prepended), so the pattern matches the URL up to its closing
 /// quote together with the `integrity` attribute that follows it, and both are replaced.
-static void replaceExternalAsset(std::string & html, const re2::RE2 & pattern, std::string_view local_path)
+static void replaceExternalAsset(std::string & html, const re2::RE2 & pattern, const String & local_url)
 {
-    RE2::Replace(&html, pattern, std::string(local_path) + '"');
+    RE2::Replace(&html, pattern, local_url + '"');
 }
 
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
@@ -179,10 +282,10 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     /// but we don't do it to keep the "view-source" perfectly readable.
 
     static const re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, uplot_url, "/js/uplot.js");
+    replaceExternalAsset(html, uplot_url, serverAssetURL(request, "uplot.js"));
 
     static const re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, lz_string_url, "/js/lz-string.js");
+    replaceExternalAsset(html, lz_string_url, serverAssetURL(request, "lz-string.js"));
 
     handle(request, response, html, http_response_headers_override);
 }
@@ -192,10 +295,10 @@ void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
     std::string html(reinterpret_cast<const char *>(resource_binary_html), std::size(resource_binary_html));
 
     static const re2::RE2 leaflet_js_url = R"(https://[^\s"'`]+leaflet[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, leaflet_js_url, "/js/leaflet.js");
+    replaceExternalAsset(html, leaflet_js_url, serverAssetURL(request, "leaflet.js"));
 
     static const re2::RE2 leaflet_css_url = R"(https://[^\s"'`]+leaflet[^\s"'`]*\.css"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, leaflet_css_url, "/js/leaflet.css");
+    replaceExternalAsset(html, leaflet_css_url, serverAssetURL(request, "leaflet.css"));
 
     handle(request, response, html, http_response_headers_override);
 }
@@ -224,9 +327,13 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         {"/js/katex.min.css", resource_katex_css, std::size(resource_katex_css), "text/css; charset=UTF-8"},
     };
 
+    /// The page links carry the routing parameters of a reverse proxy (`serverAssetURL`), which are not part of the path.
+    std::string_view path = request.getURI();
+    path = path.substr(0, path.find_first_of("?#"));
+
     for (const auto & resource : resources)
     {
-        if (request.getURI() == resource.path)
+        if (path == resource.path)
         {
             auto headers = http_response_headers_override;
             if (resource.content_type)
@@ -245,10 +352,10 @@ void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTT
     std::string html(reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html));
 
     static const re2::RE2 uplot_js_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, uplot_js_url, "/js/uplot.js");
+    replaceExternalAsset(html, uplot_js_url, serverAssetURL(request, "uplot.js"));
 
     static const re2::RE2 uplot_css_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.css"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, uplot_css_url, "/js/uplot.min.css");
+    replaceExternalAsset(html, uplot_css_url, serverAssetURL(request, "uplot.min.css"));
 
     handle(request, response, html, http_response_headers_override);
 }
@@ -275,13 +382,13 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     /// local file (file://) against a remote server, mirroring the `dashboard.html` handling.
 
     static const re2::RE2 marked_url = R"(https://[^\s"'`]+marked[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, marked_url, "/js/marked.min.js");
+    replaceExternalAsset(html, marked_url, serverAssetURL(request, "marked.min.js"));
 
     static const re2::RE2 katex_js_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.js"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, katex_js_url, "/js/katex.min.js");
+    replaceExternalAsset(html, katex_js_url, serverAssetURL(request, "katex.min.js"));
 
     static const re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css"(?:\s+integrity="[^"]*")?)";
-    replaceExternalAsset(html, katex_css_url, "/js/katex.min.css");
+    replaceExternalAsset(html, katex_css_url, serverAssetURL(request, "katex.min.css"));
 
     handle(request, response, html, http_response_headers_override);
 }
