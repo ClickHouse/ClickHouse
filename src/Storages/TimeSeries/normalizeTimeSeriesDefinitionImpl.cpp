@@ -36,6 +36,7 @@
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <base/EnumReflection.h>
 #include <algorithm>
 #include <optional>
@@ -61,6 +62,8 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsUInt64 samples_index_granularity_bytes;
     extern const TimeSeriesSettingsASTFunction samples_partition_by;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_native_histograms;
+    extern const TimeSeriesSettingsUInt64 histograms_index_granularity;
     extern const TimeSeriesSettingsBool store_time_ranges;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
@@ -85,11 +88,11 @@ namespace ErrorCodes
 namespace
 {
     /// All target kinds of a TimeSeries table.
-    /// The RecentSamples and TimeRanges targets are optional: they're enabled by the `recent_samples_ttl_seconds`
-    /// and `store_time_ranges` settings (see `isOptionalTarget` in StorageTimeSeries.cpp).
-    constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
+    /// The RecentSamples, Histograms and TimeRanges targets are optional: they're enabled by the `recent_samples_ttl_seconds`,
+    /// `store_native_histograms` and `store_time_ranges` settings (see `isOptionalTarget` in StorageTimeSeries.cpp).
+    constexpr std::array<ViewTarget::Kind, 6> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Histograms, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies};
     }
 
     /// If `type` is `Array(Tuple(timestamp_type, value_type))`, optionally wrapped in `SimpleAggregateFunction`, returns
@@ -537,6 +540,15 @@ namespace
         return create_query.getTargetInnerUUID(kind) != UUIDHelpers::Nil;
     }
 
+    /// The "histograms" target is optional: it exists when the CREATE query mentions it explicitly
+    /// or enables it with the `store_native_histograms` setting.
+    bool hasHistogramsTarget(const ASTCreateQuery & create_query, const TimeSeriesSettings & settings)
+    {
+        if (create_query.targets && create_query.targets->tryGetTarget(ViewTarget::Histograms))
+            return true;
+        return settings[TimeSeriesSetting::store_native_histograms];
+    }
+
     /// The family of the inner engines when none is declared: it follows the `default_table_engine` setting.
     /// The value `None` is kept: then the inner engines must be declared explicitly.
     DefaultTableEngine getDefaultInnerEngineFamily(const Settings & query_settings, const StorageID & table_id)
@@ -601,6 +613,9 @@ namespace
 
             case ViewTarget::MetricFamilies:
                 return "ReplacingMergeTree";
+
+            case ViewTarget::Histograms:
+                return "MergeTree";
 
             default:
                 UNREACHABLE();
@@ -1026,6 +1041,33 @@ namespace
                 return false;
             }
 
+            case ViewTarget::Histograms:
+            {
+                if (has_default)
+                    return false;
+
+                if (name == TimeSeriesColumnNames::ID)
+                    return !codec;
+
+                if (name == TimeSeriesColumnNames::Timestamp)
+                {
+                    if (!is_timestamp_type(*type))
+                        return false;
+                    return !codec || (codec->formatWithSecretsOneLine() == "CODEC(DoubleDelta, ZSTD(1))");
+                }
+
+                if (codec)
+                    return false;
+
+                for (const auto & payload_column : getTimeSeriesHistogramPayloadColumns())
+                {
+                    if (name == payload_column.name)
+                        return type_name == payload_column.type->getName();
+                }
+
+                return false;
+            }
+
             case ViewTarget::Tags:
             {
                 if (codec)
@@ -1325,6 +1367,14 @@ namespace
                 break;
             }
 
+            case ViewTarget::Histograms:
+            {
+                if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
+                    inner_engine.reset(inner_engine.order_by);
+                remove_settings({{"index_granularity", settings[TimeSeriesSetting::histograms_index_granularity].value}});
+                break;
+            }
+
             case ViewTarget::Tags:
             {
                 /// The primary key and the sorting key are connected, so they are considered together.
@@ -1566,6 +1616,21 @@ namespace
                 break;
             }
 
+            case ViewTarget::Histograms:
+            {
+                add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
+
+                /// Same codec rationale as the samples table's `timestamp` column above.
+                if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
+                    timestamp_decl->setCodec(makeASTFunction(
+                        "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
+
+                for (const auto & [name, type] : getTimeSeriesHistogramPayloadColumns())
+                    add_column_if_missing(name, dataTypeToAST(type));
+
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -1668,9 +1733,10 @@ namespace
 
         for (auto inner_table_kind : getTargetKinds())
         {
-            /// Prealpha tables predate the optional targets (the recent samples and the time ranges tables), so there is
+            /// Prealpha tables predate the optional targets (the recent samples, histograms and time ranges tables), so there is
             /// nothing to convert for them, and no such target should be added to an old table's definition.
-            if ((inner_table_kind == ViewTarget::RecentSamples) || (inner_table_kind == ViewTarget::TimeRanges))
+            if ((inner_table_kind == ViewTarget::RecentSamples) || (inner_table_kind == ViewTarget::Histograms)
+                || (inner_table_kind == ViewTarget::TimeRanges))
                 continue;
             if (hasTargetTableID(create_query, inner_table_kind))
                 continue;
@@ -1994,6 +2060,20 @@ namespace
                 }
 
                 set_ttl(getRecentSamplesTTLFromSettings(settings));
+                break;
+            }
+
+            case ViewTarget::Histograms:
+            {
+                /// One histogram per row, keyed like the samples tables of the versions before buckets.
+                if (needs_sorting_key())
+                {
+                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
+                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)});
+                }
+
+                const auto & index_granularity = settings[TimeSeriesSetting::histograms_index_granularity];
+                set_merge_tree_setting("index_granularity", index_granularity, index_granularity.value);
                 break;
             }
 
@@ -2327,6 +2407,15 @@ namespace
                 break;
             }
 
+            case ViewTarget::Histograms:
+            {
+                check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
+                check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
+                for (const auto & [name, type] : getTimeSeriesHistogramPayloadColumns())
+                    check_column_type(name, type);
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -2471,6 +2560,10 @@ namespace
             if ((kind == ViewTarget::TimeRanges) && !new_settings.isTimeRangesTargetEnabled())
                 continue;
 
+            /// A disabled histograms target needs nothing from the old table.
+            if ((kind == ViewTarget::Histograms) && !hasHistogramsTarget(create_query, new_settings))
+                continue;
+
             if (!hasTargetTableID(create_query, kind) && !hasInnerColumns(create_query, kind))
             {
                 if (auto * old_inner_columns = old_create_query.getTargetInnerColumns(kind))
@@ -2503,7 +2596,8 @@ namespace
 
     /// Generates the canonical outer columns from the resolved types.
     /// The name of the column with samples depends on the version of the table (see TimeSeriesVersion.h).
-    ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & value_type, UInt64 version)
+    /// The `histograms` column exists only when the histograms target is enabled.
+    ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & value_type, UInt64 version, bool with_histograms)
     {
         ColumnsDescription result;
 
@@ -2519,6 +2613,9 @@ namespace
 
         add_column(TimeSeriesColumnNames::getOuterSamples(version),
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type})));
+
+        if (with_histograms)
+            add_column(TimeSeriesColumnNames::Histograms, getTimeSeriesHistogramsOuterColumnType(timestamp_type));
 
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
@@ -2709,6 +2806,11 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
             if ((kind == ViewTarget::TimeRanges) && !time_ranges_enabled)
                 continue;
 
+            /// The histograms target is off by default and enabled by an explicit HISTOGRAMS clause
+            /// or the `store_native_histograms` setting.
+            if ((kind == ViewTarget::Histograms) && !hasHistogramsTarget(create_query, settings))
+                continue;
+
             if (hasTargetTableID(create_query, kind))
             {
                 /// An external target table is specified - check it has all the required columns.
@@ -2762,10 +2864,15 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     /// as IO interface. They store no data, in fact the data is stored in target or inner columns.
     /// The version is pinned at this point (see above), so the columns are generated the way that version does it.
     {
+        TimeSeriesSettings settings_for_columns;
+        if (create_query.storage)
+            settings_for_columns.loadFromQuery(*create_query.storage);
+        bool with_histograms = hasHistogramsTarget(create_query, settings_for_columns);
+
         auto new_columns_ast = make_intrusive<ASTColumns>();
         new_columns_ast->set(new_columns_ast->columns,
             InterpreterCreateQuery::formatColumns(generateOuterColumns(
-                resolved_types.timestamp_type, resolved_types.value_type, getTimeSeriesVersion(create_query))));
+                resolved_types.timestamp_type, resolved_types.value_type, getTimeSeriesVersion(create_query), with_histograms)));
         const auto * old_columns = create_query.columns_list;
         if (!old_columns
             || !old_columns->columns
