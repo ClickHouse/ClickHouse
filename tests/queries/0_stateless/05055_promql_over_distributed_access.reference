@@ -1,0 +1,12 @@
+--- no grants
+describe: ACCESS_DENIED
+describe range: ACCESS_DENIED
+create as: ACCESS_DENIED
+select: ACCESS_DENIED
+other engine: ACCESS_DENIED
+--- with grants
+describe: OK
+describe range: OK
+create as: OK
+select: OK
+other engine: MergeTree UNEXPECTED_TABLE_ENGINE

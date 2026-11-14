@@ -1,0 +1,28 @@
+<clickhouse>
+    <remote_servers>
+        <two_shards_dist>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_0</default_database>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>shard_1</default_database>
+                </replica>
+            </shard>
+        </two_shards_dist>
+        <unreachable_only>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </unreachable_only>
+    </remote_servers>
+</clickhouse>

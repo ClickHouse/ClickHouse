@@ -55,12 +55,16 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int INCOMPATIBLE_SCHEMA;
+    extern const int NETWORK_ERROR;
+    extern const int NO_REMOTE_SHARD_AVAILABLE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int SNAPPY_UNCOMPRESS_FAILED;
+    extern const int SOCKET_TIMEOUT;
     extern const int UNSUPPORTED_MEDIA_TYPE;
     extern const int ZSTD_DECODER_FAILED;
 }
@@ -675,7 +679,10 @@ public:
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
             /// not with the query: report it as an internal error so that clients don't attribute it
             /// to the PromQL expression.
-            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            /// So is a shard that could not be reached or that went away during the query.
+            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA || e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+                || e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT
+                || e.code() == ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
             /// The error body is JSON, also for endpoints whose success body is not.
             response.setContentType("application/json");
             response.setStatusAndReason(

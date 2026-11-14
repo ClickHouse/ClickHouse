@@ -1,0 +1,31 @@
+<clickhouse>
+    <prometheus>
+        <port>9093</port>
+        <handlers>
+            <!-- A Distributed table over the per-shard TimeSeries tables. -->
+            <dist_api>
+                <url_prefix>/dist</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_dist</table>
+                </handler>
+            </dist_api>
+            <!-- One local TimeSeries table holding the same data. -->
+            <local_api>
+                <url_prefix>/local</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_all</table>
+                </handler>
+            </local_api>
+            <!-- A Distributed table whose only shard cannot be reached. -->
+            <unreachable_api>
+                <url_prefix>/unreachable</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_unreachable</table>
+                </handler>
+            </unreachable_api>
+        </handlers>
+    </prometheus>
+</clickhouse>

@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Server/PrometheusMetricsWriter.h>
+#include <Storages/IStorage.h>
 #include <Storages/StoragePrometheusQuery.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
@@ -33,6 +34,7 @@
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/makeASTSelectLatestSamples.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -191,10 +193,16 @@ String unescapePrometheusLabelName(const String & name)
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext{context_}
-    , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
+    , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    distributed_target = resolvePrometheusQueryTarget(*time_series_storage, context_);
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (!distributed_target)
+        checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
+
+    const auto metadata = time_series_storage->getInMemoryMetadataPtr(context_, false);
+    time_series_version = outerSamplesVersion(*time_series_storage, *metadata);
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
@@ -204,10 +212,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params,
     QueryFinishCallback query_finish_callback)
 {
+    if (distributed_target)
+        checkPrometheusQueryDistributedRead(time_series_storage->getStorageID(), getContext());
+
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
-    evaluation_settings.time_series_version = time_series_storage->getVersion();
+    evaluation_settings.distributed = distributed_target;
+
+    /// A Distributed table declares the same outer samples column as its shard-local TimeSeries tables.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    evaluation_settings.time_series_version = time_series_version;
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(evaluation_settings.time_series_version);
     evaluation_settings.table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
     evaluation_settings.time_scale = getPromQLResultTimestampScale(evaluation_settings.table_timestamp_type);
@@ -258,6 +272,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
     StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
+    /// The shards must get the query text: a serialized plan would resolve the shard-local table on this server.
+    if (distributed_target)
+        query_context->setSetting("serialize_query_plan", false);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
@@ -468,7 +485,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
     const auto & time_series_column_with_type
-        = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion()));
+        = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_version));
     const auto & time_series_column = time_series_column_with_type.column;
     const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
     const auto & offsets = array_column.getOffsets();
@@ -529,9 +546,10 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & end_param)
 {
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
+    const auto time_series_table = storagePtrToTimeSeries(time_series_storage);
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_version);
     auto table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
-    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
+    auto tags_table = time_series_table->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
     auto table_id_type = tags_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
     const UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
@@ -547,7 +565,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
 
     /// Like the query path, the series are filtered by their stored time ranges; without stored time ranges the range is ignored (a superset is allowed).
-    auto time_series_settings = time_series_storage->getStorageSettings();
+    auto time_series_settings = time_series_table->getStorageSettings();
 
     auto tags_table_id = tags_table->getStorageID();
 
@@ -575,7 +593,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
                             quoteString(match_param));
 
         auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
-            *time_series_storage, tags_table_id, *time_series_settings, table_timestamp_type, table_id_type, matchers, min_time, max_time, time_scale, getContext());
+            *time_series_table, tags_table_id, *time_series_settings, table_timestamp_type, table_id_type, matchers, min_time, max_time, time_scale, getContext());
         const auto & select_ids = typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query);
         list_of_selects->children.push_back(select_ids.list_of_selects->children.at(0));
     }
@@ -694,7 +712,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
-    const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage->getVersion());
+    const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(time_series_version);
 
     /// The metric families target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
