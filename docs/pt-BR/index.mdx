@@ -372,7 +372,7 @@ export const PageWrapper = ({ children }) => {
         />
 
         <HeroCard
-          title="Nossas soluções"
+          title="Nossos produtos"
           galaxyEvent="docs.home.solutions"
           description="Quero conhecer as soluções da ClickHouse"
           href={localizeHref("/products/cloud/getting-started/intro")}
@@ -383,7 +383,7 @@ export const PageWrapper = ({ children }) => {
       }
           links={[
           { label: "ClickHouse Cloud", href: localizeHref("/products/cloud/getting-started/cloud-get-started") },
-          { label: "ClickStack", href: localizeHref("/clickstack") },
+          { label: "ClickHouse Observability", href: localizeHref("/clickstack") },
           { label: "ClickHouse Managed Postgres", href: localizeHref("/products/managed-postgres/overview") },
           { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
           { label: "chDB", href: localizeHref("/chdb") },
@@ -400,7 +400,7 @@ export const PageWrapper = ({ children }) => {
       <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
         <HeroCard title="Analytics em tempo real" galaxyEvent="docs.home.real-time-analytics" description="Ofereça insights instantâneos e dashboards em escala. Analise bilhões de linhas em tempo real com resultados em milissegundos." href={localizeHref("/get-started/use-cases/real-time-analytics")} showArrow />
 
-        <HeroCard title="Observabilidade" galaxyEvent="docs.home.observability" description="Armazene e consulte logs, métricas e traces em escala usando o ClickStack, a stack de observabilidade open source com tecnologia ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
+        <HeroCard title="Observabilidade" galaxyEvent="docs.home.observability" description="Armazene e consulte logs, métricas e traces em escala usando o ClickHouse Observability, a stack de observabilidade open source com tecnologia ClickHouse." href={localizeHref("/clickstack/overview")} showArrow />
 
         <HeroCard title="Armazenamento de dados" galaxyEvent="docs.home.data-warehousing" description="Analise e explore dados instantaneamente para obter insights e criar aplicativos. Escale mais rápido descarregando workloads intensivas." href={localizeHref("/get-started/use-cases/data-warehousing")} showArrow />
 
@@ -443,9 +443,9 @@ export const PageWrapper = ({ children }) => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="A stack de observabilidade tudo em um com tecnologia ClickHouse, que oferece consultas extremamente rápidas e agregações poderosas em logs, métricas, traces, replays de sessão e erros." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickHouse Observability" galaxyEvent="docs.home.clickstack" description="A stack de observabilidade tudo em um com tecnologia ClickHouse, que oferece consultas extremamente rápidas e agregações poderosas em logs, métricas, traces, replays de sessão e erros." href={localizeHref("/clickstack/overview")} extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Serviço Postgres rápido, escalável e de nível empresarial, integrado nativamente ao ClickHouse. Combine facilmente o Postgres para transações e o ClickHouse para analytics." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.svg" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Serviço Postgres rápido, escalável e de nível empresarial, integrado nativamente ao ClickHouse. Combine facilmente o Postgres para transações e o ClickHouse para analytics." href={localizeHref("/products/managed-postgres/overview")} extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 

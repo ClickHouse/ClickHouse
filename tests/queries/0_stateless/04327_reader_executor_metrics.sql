@@ -26,7 +26,9 @@ CREATE TABLE t_reader_executor_metrics
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8192;
+-- Wide part, one file per column. In a Compact part on object storage the multi-buffer reader reads each column
+-- with its own stream, and its request map spans the chunks of the other columns, so the stream reads them too.
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_reader_executor_metrics
 SELECT number, number * 2, concat('row_', toString(number))
@@ -43,34 +45,31 @@ SET enable_filesystem_cache = 0;
 
 -- Full scan; marked so the check below finds it by query id. Its result is
 -- irrelevant (it only drives the executor), so discard it with FORMAT Null.
+-- One thread: the request map is per part, so a thread fetches past its share into the next one.
 SELECT count(), sum(id), sum(v), sum(length(s)) FROM t_reader_executor_metrics
-SETTINGS log_comment = '04327_reader_executor_metrics_probe' FORMAT Null;
+SETTINGS log_comment = '04327_reader_executor_metrics_probe', max_threads = 1 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Per-query ProfileEvents for the marked query, scoped to this test's database.
--- Columns (all expected 1):
---   1: source requests happened
---   2: bytes were read from source
---   3: requested bytes == source bytes (no over-read: gap-bridging needs long connections, off here)
---   4: total work time was recorded
---   5: modeled cost >= 30ms-per-source-request floor (the byte term only adds to it)
---   6,7: cache get / cache populate stay 0 (not implemented)
---   8: incomplete connections stay 0 (no held connections to drop with long connections off)
+-- Per-query ProfileEvents for the marked query, scoped to this test's database. Every check must be 1.
+-- The modeled cost has a 30 ms floor per source request; its byte term only adds to it.
+-- Cache get / populate are not implemented. With long connections off, no held connection is dropped.
 SELECT
-    ProfileEvents['ReaderExecutorSourceRequests'] > 0,
-    ProfileEvents['ReaderExecutorBytesFromSource'] > 0,
-    ProfileEvents['ReaderExecutorDeliveredBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'],
-    ProfileEvents['ReaderExecutorWorkMicroseconds'] > 0,
-    ProfileEvents['ReaderExecutorModeledCostMicroseconds'] >= 30000 * ProfileEvents['ReaderExecutorSourceRequests'],
-    ProfileEvents['ReaderExecutorCacheGetRequests'] = 0,
-    ProfileEvents['ReaderExecutorCachePopulateRequests'] = 0,
-    ProfileEvents['ReaderExecutorIncompleteConnections'] = 0
+    ProfileEvents['ReaderExecutorSourceRequests'] > 0 AS made_source_requests,
+    ProfileEvents['ReaderExecutorBytesFromSource'] > 0 AS read_bytes_from_source,
+    ProfileEvents['ReaderExecutorDeliveredBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'] AS delivered_every_source_byte,
+    ProfileEvents['ReaderExecutorWorkMicroseconds'] > 0 AS recorded_work_time,
+    ProfileEvents['ReaderExecutorModeledCostMicroseconds'] >= 30000 * ProfileEvents['ReaderExecutorSourceRequests']
+        AS modeled_cost_at_least_30ms_per_request,
+    ProfileEvents['ReaderExecutorCacheGetRequests'] = 0 AS no_cache_gets,
+    ProfileEvents['ReaderExecutorCachePopulateRequests'] = 0 AS no_cache_populates,
+    ProfileEvents['ReaderExecutorIncompleteConnections'] = 0 AS no_dropped_connections
 FROM system.query_log
 WHERE log_comment = '04327_reader_executor_metrics_probe'
   AND type = 'QueryFinish'
   AND current_database = currentDatabase()
 ORDER BY event_time_microseconds DESC
-LIMIT 1;
+LIMIT 1
+FORMAT Vertical;
 
 DROP TABLE t_reader_executor_metrics;

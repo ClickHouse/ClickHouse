@@ -273,8 +273,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Enable query_plan_lower_array_join_function by default."}]}]}/>
 
-Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
-Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
+Runs the `arrayJoin` function in the same way as the `ARRAY JOIN` clause: as a separate `ARRAY JOIN` step of the query plan. When disabled, the function is calculated inside the expression that contains it, as in older versions.
 
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['déploiement de cluster', 'réplication', 'partitionnement', 'haute disponibilité', 'évolutivité']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/fr/_config_explanation.mdx';
 import ListenHost from '/snippets/fr/_listen_host.mdx';
 import KeeperConfig from '/snippets/fr/_keeper_config.mdx';
@@ -16,6 +14,7 @@ import KeeperConfigExplanation from '/snippets/fr/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/fr/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/fr/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/fr/_working_example.mdx';
+
 import CloudTip from '/snippets/fr/_cloud_tip.mdx';
 
 > Dans cet exemple, vous allez apprendre à configurer un cluster ClickHouse simple qui
@@ -25,7 +24,15 @@ import CloudTip from '/snippets/fr/_cloud_tip.mdx';
 
 L’architecture du cluster que vous allez configurer est illustrée ci-dessous :
 
-<Image img="/images/deployment-guides/replication-sharding-examples/both.webp" size="md" alt="Schéma d’architecture pour 2 shards et 1 réplique" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Schéma d’architecture pour 2 shards et 1 réplique](/images/deployment-guides/replication-sharding-examples/both.webp)
+
+</Frame>
+
+</div>
 
 <DedicatedKeeperServers />
 

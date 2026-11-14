@@ -1253,6 +1253,48 @@ SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 └───────────────────────┘
 ```
 
+## JSONRemove {#JSONRemove}
+
+導入バージョン: v26.10.0
+
+JSONPath を使用して、JSON文字列から 1 つ以上のオブジェクトメンバーまたは配列要素を削除します。
+各パスは、1 つのオブジェクトメンバー名または 1 つの配列位置に解決される必要があります。パスは左から右の順に適用されます。
+`$[1 to 2]` のように 1 つの配列位置に解決される JSONPath の範囲は、その位置として扱われ、`$[1]` と同等になります。
+オブジェクトメンバーのステップは、重複するものも含め、名前が一致するすべてのメンバーをたどります。
+最後のステップがオブジェクトメンバーの場合、一致するメンバーはすべて削除されます。存在しないパスを指定しても、値は削除されません。
+結果はコンパクトな形式で返されます。無効な JSON を渡すと例外が発生します。
+
+**構文**
+
+```sql
+JSONRemove(json, path[, path ...])
+```
+
+**別名**: `JSON_REMOVE`
+
+**引数**
+
+* `json` — 有効な JSON を含む文字列。[`String`](/ja/reference/data-types/string)
+* `path[, path ...]` — JSONPath 式を含む 1 つ以上の定数文字列。各パスは、1 つのオブジェクトメンバー名または 1 つの配列位置を指すように解決される必要があります。$[1 to 2] のように単一の配列位置に解決される範囲は、$[1] として扱われます。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+JSON ドキュメントをコンパクトな文字列として返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT JSONRemove('{"a":1,"b":2}', '$.a');
+SELECT JSON_REMOVE('[0,1,2]', '$[0]', '$[1]');
+```
+
+```response title=Response
+{"b":2}
+[1]
+```
+
 ## JSONSharedDataPaths {#JSONSharedDataPaths}
 
 導入バージョン: v24.8.0
