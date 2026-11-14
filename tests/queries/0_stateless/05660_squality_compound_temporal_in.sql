@@ -18,3 +18,13 @@ CREATE TABLE squality_compound_temporal_check
 INSERT INTO squality_compound_temporal_check VALUES ('2106-02-07 06:28:15', 4294967296);
 SELECT x IN (y, NULL) FROM squality_compound_temporal_check;
 DROP TABLE squality_compound_temporal_check;
+
+CREATE TABLE squality_temporal_string_check
+(
+    x DateTime('UTC'),
+    y String,
+    CONSTRAINT c CHECK x NOT IN (y)
+) ENGINE = Memory;
+INSERT INTO squality_temporal_string_check VALUES ('2020-01-01 00:00:00', 'not-a-date');
+SELECT x NOT IN (y) FROM squality_temporal_string_check;
+DROP TABLE squality_temporal_string_check;
