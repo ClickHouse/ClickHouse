@@ -19,6 +19,8 @@
 #include <optional>
 #include <variant>
 
+#include <Poco/Net/SocketAddress.h>
+
 namespace DB
 {
 
@@ -221,6 +223,10 @@ private:
             const std::unique_ptr<MemoryTracker> queued_data_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
+            /// The address of the client that submitted the entry. Kept only when the flush is audited
+            /// (see `InsertQuery::audit_flush`), so the failure of this entry alone can be attributed to
+            /// the request, together with `query_id`: the flush runs under its own query id and address.
+            std::optional<Poco::Net::SocketAddress> client_address;
 
             Entry(
                 DataChunk && chunk_,

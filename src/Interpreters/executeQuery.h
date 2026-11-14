@@ -189,7 +189,8 @@ void logExceptionBeforeStart(
     bool internal,
     bool log_as_internal,
     bool audit,
-    bool charge_quota = true);
+    bool charge_quota = true,
+    IAST::QueryKind query_kind_without_ast = IAST::QueryKind::None);
 
 /// Whether the query is recorded in the audit log. The decision is taken once, from the audit policy
 /// (writer configured and enabled, audit type of the statement enabled) in effect when the query is
@@ -200,11 +201,20 @@ void logExceptionBeforeStart(
 /// retroactively add or drop the records of queries that are already running.
 ///
 /// `internal` queries are audited only when `audit_internal` is set (see `QueryFlags::audit_internal`).
-bool decideAuditLog(const ContextPtr & context, const ASTPtr & ast, bool internal, bool audit_internal = false);
+/// `query_kind_without_ast` is the kind of a query that has no AST: a query plan received from a native
+/// client (`QueryProcessingStage::QueryPlan`) is a read, and is logged as `Select` by `logQueryStart`.
+/// The same kind must be passed to `logExceptionBeforeStart`, so the record agrees with the decision.
+bool decideAuditLog(
+    const ContextPtr & context,
+    const ASTPtr & ast,
+    bool internal,
+    bool audit_internal = false,
+    IAST::QueryKind query_kind_without_ast = IAST::QueryKind::None);
 
 /// Returns the global AST fuzzer instance with a lock held.
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();
 
 /// Write the audit record of a query for which `decideAuditLog` returned true.
-void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast = nullptr);
+/// `query_id`, if not empty, is written instead of the ID of the query the current thread runs.
+void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast = nullptr, std::string_view query_id = {});
 }

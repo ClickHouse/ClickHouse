@@ -5,6 +5,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 
@@ -43,7 +44,9 @@ public:
     /// Close the underlying file so it can be reopened on next write (SIGHUP rotation).
     void closeFile();
 
-    void write(std::string message);
+    /// `query_id`, if not empty, replaces the query ID of the current thread in the record prefix: a record
+    /// written on behalf of another query (e.g. an entry of a flushed asynchronous insert) carries its ID.
+    void write(std::string message, std::string_view query_id = {});
 
     size_t getQueueSize() const;
 
@@ -72,7 +75,9 @@ AuditLog * getGlobalAuditLog();
 
 }
 
-#define LOG_AUDIT(audit_log_ptr, ...) do                                                                    \
+#define LOG_AUDIT(audit_log_ptr, ...) LOG_AUDIT_FOR_QUERY(audit_log_ptr, std::string_view{}, __VA_ARGS__)
+
+#define LOG_AUDIT_FOR_QUERY(audit_log_ptr, query_id, ...) do                                                 \
 {                                                                                                           \
     auto * _audit_log_instance = (audit_log_ptr);                                                           \
     if (!_audit_log_instance)                                                                                \
@@ -80,7 +85,7 @@ AuditLog * getGlobalAuditLog();
     MemoryTrackerBlockerInThread _audit_mem_block(VariableContext::Global);                                  \
     try                                                                                                     \
     {                                                                                                       \
-        _audit_log_instance->write(fmt::format(__VA_ARGS__));                                               \
+        _audit_log_instance->write(fmt::format(__VA_ARGS__), (query_id));                                   \
     }                                                                                                       \
     catch (...)                                                                                              \
     {                                                                                                       \

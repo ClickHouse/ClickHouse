@@ -980,7 +980,7 @@ def test_audit_log_fire_and_forget_async_insert_flush_failure_before_start(start
     node_dml_misc.query("DROP TABLE IF EXISTS audit_async_dropped_user_table")
 
 
-def _async_flush_records(node, table, failed):
+def _async_flush_records(node, table, failed, with_query_id=False):
     log_content = node.grep_in_log(table, from_host=True, filename="clickhouse-server.audit.log")
     records = []
     for line in log_content.strip().split("\n"):
@@ -988,22 +988,26 @@ def _async_flush_records(node, table, failed):
             continue
         fields = line.split("AUDIT: ", 1)[1].split(", ")
         if fields[1] == "AsyncInsertFlush" and (fields[2] != "0") == failed:
-            records.append(fields)
+            if with_query_id:
+                # The record prefix is "timestamp [ thread_id ] {query_id} <Notice> AUDIT: ...".
+                match = re.search(r"\{([^}]*)\} <Notice> AUDIT: ", line)
+                records.append((match.group(1) if match else None, fields))
+            else:
+                records.append(fields)
     return records, log_content
 
 
-def _queue_async_insert(node, table, data):
+def _queue_async_insert(node, table, data, query_id=None):
     # The busy timeout keeps the data queued until the explicit flush, so the entries form one batch.
-    node.http_query(
-        f"INSERT INTO default.{table} FORMAT CSV",
-        data=data,
-        params={
-            "async_insert": 1,
-            "wait_for_async_insert": 0,
-            "async_insert_use_adaptive_busy_timeout": 0,
-            "async_insert_busy_timeout_max_ms": 600000,
-        },
-    )
+    params = {
+        "async_insert": 1,
+        "wait_for_async_insert": 0,
+        "async_insert_use_adaptive_busy_timeout": 0,
+        "async_insert_busy_timeout_max_ms": 600000,
+    }
+    if query_id is not None:
+        params["query_id"] = query_id
+    node.http_query(f"INSERT INTO default.{table} FORMAT CSV", data=data, params=params)
 
 
 def test_audit_log_fire_and_forget_async_insert_parsing_error(start_cluster):
@@ -1030,23 +1034,30 @@ def test_audit_log_fire_and_forget_async_insert_parsing_error(start_cluster):
 
 def test_audit_log_fire_and_forget_async_insert_mixed_batch(start_cluster):
     """In a batch with a valid and an invalid entry, the valid rows are written and the flush succeeds,
-    but the failure of the invalid entry must still be audited."""
+    but the failure of the invalid entry must still be audited, with the query ID and the address of
+    the request that submitted it (both requests have the same text, so nothing else tells them apart)."""
     table = "audit_async_mixed_batch_table"
     node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
     node_dml_misc.query(f"CREATE TABLE {table} (a UInt32) ENGINE = Memory")
 
-    _queue_async_insert(node_dml_misc, table, "1\n")
-    _queue_async_insert(node_dml_misc, table, "not_a_number\n")
+    valid_query_id = f"audit_async_valid_{uuid.uuid4().hex}"
+    invalid_query_id = f"audit_async_invalid_{uuid.uuid4().hex}"
+    _queue_async_insert(node_dml_misc, table, "1\n", query_id=valid_query_id)
+    _queue_async_insert(node_dml_misc, table, "not_a_number\n", query_id=invalid_query_id)
     node_dml_misc.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
 
     for _ in range(60):
-        failed, log_content = _async_flush_records(node_dml_misc, table, failed=True)
+        failed, log_content = _async_flush_records(node_dml_misc, table, failed=True, with_query_id=True)
         succeeded, _ = _async_flush_records(node_dml_misc, table, failed=False)
         if failed and succeeded:
             break
         time.sleep(0.5)
     assert len(failed) == 1, f"the invalid entry of the batch must be audited once: {log_content}"
     assert succeeded, f"the flush of the batch must be audited: {log_content}"
+    failed_query_id, failed_fields = failed[0]
+    assert failed_query_id == invalid_query_id, log_content
+    # CLIENT_IP is the address of the submitting request, not the placeholder of a flush without one.
+    assert failed_fields[4] != "Unknown Host", log_content
     assert node_dml_misc.query(f"SELECT count() FROM {table}") == "1\n"
 
     node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
@@ -1213,20 +1224,27 @@ def test_audit_log_partially_executed_parallel_with(start_cluster):
 def test_audit_log_parallel_with_prepared_statement_of_failed_query(start_cluster):
     """`CREATE TABLE ... AS SELECT` publishes the table and returns its fill pipeline, which PARALLEL WITH
     keeps for the combined pipeline. When a later statement fails, the combined pipeline never runs, but
-    the table is already created, so the `CREATE` must still be audited (as failed). node_ddl enables only DDL."""
+    the table is already created, so the `CREATE` must still be audited (as failed). node_ddl enables only DDL.
+
+    In databases with UUIDs (`Atomic`, `Replicated`), `CREATE TABLE ... AS SELECT` populates the table inside the
+    interpreter and publishes it afterwards, returning no pipeline, so a `Memory` database (no UUIDs) is used to
+    get the lazy fill pipeline."""
     marker = f"audit_pw_gap_{uuid.uuid4().hex[:8]}"
+    # The database name does not contain the marker, so its own `CREATE` and `DROP` records are not matched below.
+    database = f"audit_pw_gap_db_{uuid.uuid4().hex[:8]}"
     table_created, table_missing = f"{marker}_created", f"{marker}_missing"
 
+    node_ddl.query(f"CREATE DATABASE {database} ENGINE = Memory")
     error = node_ddl.query_and_get_error(
-        f"CREATE TABLE {table_created} ENGINE = Memory AS SELECT 1 AS n"
-        f" PARALLEL WITH DROP TABLE {table_missing}",
+        f"CREATE TABLE {database}.{table_created} ENGINE = Memory AS SELECT 1 AS n"
+        f" PARALLEL WITH DROP TABLE {database}.{table_missing}",
         settings={"max_threads": "1"},
     )
     assert "UNKNOWN_TABLE" in error, error
-    assert node_ddl.query(f"EXISTS TABLE {table_created}").strip() == "1"
+    assert node_ddl.query(f"EXISTS TABLE {database}.{table_created}").strip() == "1"
 
-    assert_audit_log_contain_with_retry(node_ddl, f"CREATE TABLE {table_created}")
-    assert_audit_log_contain_with_retry(node_ddl, f"DROP TABLE {table_missing}")
+    assert_audit_log_contain_with_retry(node_ddl, f"CREATE TABLE {database}.{table_created}")
+    assert_audit_log_contain_with_retry(node_ddl, f"DROP TABLE {database}.{table_missing}")
     log_content = node_ddl.grep_in_log(
         marker, from_host=True, filename="clickhouse-server.audit.log"
     )
@@ -1240,12 +1258,13 @@ def test_audit_log_parallel_with_prepared_statement_of_failed_query(start_cluste
         records[fields[1]] = (fields[2], fields[5])
 
     assert set(records) == {"Create", "Drop"}, lines
-    assert records["Drop"] == ("60", f"default.{table_missing}"), lines  # UNKNOWN_TABLE
+    assert records["Drop"] == ("60", f"{database}.{table_missing}"), lines  # UNKNOWN_TABLE
     # The fill pipeline of the `CREATE` never ran, so it is recorded as failed.
     assert records["Create"][0] != "0", lines
-    assert records["Create"][1] == f"default.{table_created}", lines
+    # The object names of the `CREATE` also list the tables its `SELECT` reads (`system.one`), separated by `\,`.
+    assert f"{database}.{table_created}" in records["Create"][1].split("\\,"), lines
 
-    node_ddl.query(f"DROP TABLE {table_created}")
+    node_ddl.query(f"DROP DATABASE {database}")
 
 
 def test_audit_log_parallel_with_wrapper_records_own_outcome(start_cluster):

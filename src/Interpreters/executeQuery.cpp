@@ -817,7 +817,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 
 static Context::AuditLogTypes classifyAuditType(IAST::QueryKind query_kind, const IAST * ast);
 
-bool decideAuditLog(const ContextPtr & context, const ASTPtr & ast, bool internal, bool audit_internal)
+bool decideAuditLog(const ContextPtr & context, const ASTPtr & ast, bool internal, bool audit_internal, IAST::QueryKind query_kind_without_ast)
 {
     if (internal && !audit_internal)
         return false;
@@ -825,9 +825,9 @@ bool decideAuditLog(const ContextPtr & context, const ASTPtr & ast, bool interna
     if (!getAuditLog())
         return false;
 
-    /// Mirrors `QueryLogElement::query_kind`, which stays default-initialized when there is no AST
-    /// (a query that failed to parse, see `logExceptionBeforeStart`).
-    const IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::None;
+    /// Mirrors `QueryLogElement::query_kind`, which is `query_kind_without_ast` when there is no AST
+    /// (a query that failed to parse, or a query plan, see `logQueryStart` and `logExceptionBeforeStart`).
+    const IAST::QueryKind query_kind = ast ? ast->getQueryKind() : query_kind_without_ast;
     return context->isEnabledAuditType(classifyAuditType(query_kind, ast.get()));
 }
 
@@ -1236,7 +1236,8 @@ void logExceptionBeforeStart(
     bool internal,
     bool log_as_internal,
     bool audit,
-    bool charge_quota)
+    bool charge_quota,
+    IAST::QueryKind query_kind_without_ast)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -1271,6 +1272,10 @@ void logExceptionBeforeStart(
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
             elem.formatted_query = ast->formatForLogging();
+    }
+    else
+    {
+        elem.query_kind = query_kind_without_ast;
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1646,7 +1651,7 @@ static Context::AuditLogTypes classifyAuditType(IAST::QueryKind query_kind, cons
 /// The runtime gate and the type mask are deliberately not consulted again here: they may have been
 /// changed since, possibly by this very query (`SYSTEM RELOAD CONFIG`), and the audit trail must
 /// reflect the policy under which the query was admitted.
-void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
+void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast, std::string_view query_id)
 {
     auto * audit_log = getGlobalAuditLog();
     if (!audit_log)
@@ -1704,7 +1709,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
     String safe_user = escapeForAuditField(elem.client_info.current_user);
 
     /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
-    LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
+    LOG_AUDIT_FOR_QUERY(audit_log, query_id, "{}, {}, {}, {}, {}, {}, {}",
             audit_type, query_kind, elem.exception_code, safe_user,
             host, safe_object_names, safe_query);
 }
@@ -2946,6 +2951,11 @@ static BlockIO executeQueryImpl(
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
+    /// A query plan received from a native client is executed without an AST. It is a read, which
+    /// `logQueryStart` logs as `Select`, so it is audited as one (`DML`) on every path.
+    const IAST::QueryKind query_kind_without_ast
+        = stage == QueryProcessingStage::QueryPlan ? IAST::QueryKind::Select : IAST::QueryKind::None;
+
     /// Parse the query from string.
     try
     {
@@ -3311,14 +3321,16 @@ static BlockIO executeQueryImpl(
             start_watch.elapsedMilliseconds(),
             internal,
             log_as_internal,
-            decideAuditLog(context, out_ast, internal, audit_internal));
+            decideAuditLog(context, out_ast, internal, audit_internal, query_kind_without_ast),
+            /* charge_quota = */ true,
+            query_kind_without_ast);
         throw;
     }
 
     /// The query is admitted: decide now, before anything executes, whether it is audited. The
     /// decision must not depend on the state the query leaves behind (`SYSTEM RELOAD CONFIG`) or
     /// on reloads that happen while it runs.
-    const bool audit = decideAuditLog(context, out_ast, internal, audit_internal);
+    const bool audit = decideAuditLog(context, out_ast, internal, audit_internal, query_kind_without_ast);
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
@@ -4243,7 +4255,7 @@ static BlockIO executeQueryImpl(
         }
 
         if (!background_query_dispatched)
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, audit, /* charge_quota = */ !quota_ignored);
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, audit, /* charge_quota = */ !quota_ignored, query_kind_without_ast);
 
         throw;
     }

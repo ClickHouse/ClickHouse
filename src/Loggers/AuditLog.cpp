@@ -119,13 +119,15 @@ void AuditLog::closeFile()
         file_channel->close();
 }
 
-void AuditLog::write(std::string message)
+void AuditLog::write(std::string message, std::string_view query_id)
 {
     if (!is_open || !formatting_channel)
         return;
 
     const Poco::Message audit_message("AUDIT", message, Poco::Message::PRIO_NOTICE);
     auto extended_message = ExtendedLogMessage::getFrom(audit_message);
+    if (!query_id.empty())
+        extended_message.query_id = query_id;
     /// The query ID comes from the client (for example via the native protocol) and is written
     /// verbatim into the record prefix by the formatter. Escape it like the other free-form fields,
     /// so that `CR`/`LF` in it cannot split the record or forge a separate audit line.

@@ -768,6 +768,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         && decideAuditLog(query_context, query, /*internal=*/ true, /*audit_internal=*/ true);
 
     const auto & client_info = query_context->getClientInfo();
+    if (audit_flush)
+        entry->client_address = client_info.current_address;
 
     /// The flush runs in a context of its own, which only has the client address restored if a quota needs it.
     String quota_client_address;
@@ -1449,9 +1451,6 @@ try
         insert_context->setInsertionTable(insert_query.table_id);
     }
 
-    /// From here on every failure is written to the audit log by `logExceptionBeforeStart` or `logQueryException`.
-    data->flush_outcome_audited = true;
-
     std::unique_ptr<DB::IInterpreter> interpreter;
     QueryPipeline pipeline;
     QueryLogElement query_log_elem;
@@ -1486,7 +1485,10 @@ try
             entry_elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
             entry_elem.exception_code = exception_code;
             entry_elem.exception = exception;
-            auditLog(entry_elem, insert_context, key.query);
+            /// Attribute the failure to the request that submitted the entry, not to the flush.
+            entry_elem.client_info.current_query_id = entry->query_id;
+            entry_elem.client_info.current_address = entry->client_address;
+            auditLog(entry_elem, insert_context, key.query, entry->query_id);
         }
 
         if (!async_insert_log)
@@ -1585,6 +1587,9 @@ try
             internal,
             /*log_as_internal=*/ internal,
             key.audit_flush);
+        /// Set only once the outcome is recorded, so that a failure before this point (even in the allocations
+        /// preceding the `try`) is audited by `auditFlushFailureBeforeStartSafe` instead.
+        data->flush_outcome_audited = true;
 
         if (async_insert_log)
         {
@@ -1683,6 +1688,7 @@ try
             /*log_as_internal=*/ internal,
             log_error,
             key.audit_flush);
+        data->flush_outcome_audited = true;
         if (!log_elements.empty())
         {
             auto exception = getCurrentExceptionMessage(false);
