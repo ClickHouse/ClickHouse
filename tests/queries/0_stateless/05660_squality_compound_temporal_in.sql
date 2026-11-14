@@ -15,8 +15,9 @@ CREATE TABLE squality_compound_temporal_check
     y UInt64,
     CONSTRAINT c CHECK x IN (y, NULL)
 ) ENGINE = Memory;
-INSERT INTO squality_compound_temporal_check VALUES ('2106-02-07 06:28:15', 4294967296);
-SELECT x IN (y, NULL) FROM squality_compound_temporal_check;
+INSERT INTO squality_compound_temporal_check VALUES ('2106-02-07 06:28:15', 4294967296); -- { serverError VIOLATED_CONSTRAINT }
+SELECT x IN (y, NULL)
+FROM (SELECT toDateTime('2106-02-07 06:28:15', 'UTC') AS x, materialize(toUInt64(4294967296)) AS y);
 DROP TABLE squality_compound_temporal_check;
 
 CREATE TABLE squality_temporal_string_check

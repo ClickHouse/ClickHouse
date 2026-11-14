@@ -88,7 +88,11 @@ public:
             }
             /// Preserve the contained `Field` type so conversion follows prepared `Set` insertion.
             const Field source = (*sources)[row];
-            const Field converted = convertFieldToType(source, map_type, nullptr, {}, true);
+            if (source.getType() != Field::Types::Map && source.getType() != Field::Types::String)
+                continue;
+            const Field converted = source.getType() == Field::Types::String
+                ? tryConvertFieldToType(source, map_type, nullptr, {}, true)
+                : convertFieldToType(source, map_type, nullptr, {}, true);
             if (converted.isNull())
                 continue;
 
