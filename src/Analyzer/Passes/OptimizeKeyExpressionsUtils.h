@@ -27,6 +27,6 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys);
 /// is not unwrapped further: `LIMIT BY` runs after aggregation, so it must not be rewritten past a
 /// `GROUP BY` key into columns that no longer exist there.
 QueryTreeNodes unwrapInjectiveFunctionsInKeys(
-    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashSet * keys_to_keep = nullptr);
+    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashIgnoreAliasesSet * keys_to_keep = nullptr);
 
 }
