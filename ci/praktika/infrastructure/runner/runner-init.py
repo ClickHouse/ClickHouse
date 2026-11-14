@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 79
+    version: int = 80
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -59,12 +59,16 @@ class RunnerConfig:
     max_life: int = 3600 * 24
 
     # When true, the per-job _work wipe in run_job is skipped so the git checkout
-    # survives between jobs. Set for the incremental-sync runner type below, whose
-    # dedicated always-warm ASG reuses one instance to fetch into an existing
-    # checkout instead of re-cloning the full ClickHouse history every cron run.
+    # survives between jobs. Set for the runner types below, whose dedicated
+    # always-warm ASGs reuse one instance to fetch into an existing checkout
+    # instead of re-cloning the full ClickHouse history every cron run.
     keep_workspace: bool = False
-    # Runner type that reuses its checkout across jobs (see keep_workspace).
-    incremental_sync_runner_type: str = "private-incremental-sync"
+    # Runner types that reuse their checkout across jobs (see keep_workspace):
+    # the IncrementalSync and CherryPick crons of the private repository.
+    keep_workspace_runner_types: tuple = (
+        "private-incremental-sync",
+        "private-cherry-pick",
+    )
 
     free_blocks_threshold: int = 3_000_000
     free_blocks_threshold_percent: int = 5
@@ -215,7 +219,7 @@ class Runner:
             config.max_chill = 7200
             config.max_jobs = 10
 
-        if self.runner_type == config.incremental_sync_runner_type:
+        if self.runner_type in config.keep_workspace_runner_types:
             # Serve many cron runs on one warm instance and keep its checkout;
             # max_life still recycles the instance daily for a clean re-clone.
             config.max_jobs = 1_000_000
