@@ -331,18 +331,15 @@ private:
                     const fs::path real_location = fs::canonical(location, entry_error);
                     if (entry_error)
                         break;
-                    /// A location that is inside the scanned directory both as the link names it and with the links
-                    /// resolved is visible anyway. Otherwise it is kept, so that the links on the way are recreated: one
-                    /// named outside that leads back inside, as `/opt/ca-link -> /srv/ca`, and one named inside that
-                    /// leads outside through a link and `..`, as `nested/via/..` with `nested/via -> /opt/trust/active`.
-                    /// A directory that is scanned already is not scanned again.
-                    const bool inside = (isSameOrInside(location, current_directory) || isSameOrInside(location, real_directory))
-                        && isSameOrInside(real_location, real_directory);
+                    /// Every location is kept as the link names it, also one inside the scanned directory, because the way
+                    /// to it can go through other links, as `../current/root.pem` with `current -> ca`, which `resolvePath`
+                    /// recreates; a location that is visible anyway is dropped by `planMounts`. A directory that is scanned
+                    /// already is not scanned again.
                     const fs::path relative = real_location.relative_path();
-                    if (!inside && !isSameOrInside(real_location, "/dev") && std::distance(relative.begin(), relative.end()) >= 2)
+                    if (!isSameOrInside(real_location, "/dev") && std::distance(relative.begin(), relative.end()) >= 2)
                     {
                         targets.insert(location);
-                        if (is_directory)
+                        if (is_directory && !isSameOrInside(real_location, real_directory))
                             pending.push_back(target);
                     }
                     if (is_directory)
@@ -607,8 +604,18 @@ private:
         addHdfsConfig();
         addKeyLocation("nats.credential_file", Access::ReadOnly, runtime_directory);
 
+        /// As `checkPath` of the `File` backup engine resolves them: relative to `path`, and normalized lexically, so
+        /// `..` is the parent as written, not of the target of a link.
         for (const auto & key : getMultipleKeys("backups", "allowed_path"))
-            addKey(key, Access::ReadWrite, data_path);
+        {
+            if (const auto value = config.getString(key); !value.empty())
+            {
+                fs::path allowed_path = value;
+                if (allowed_path.is_relative())
+                    allowed_path = data_path / allowed_path;
+                add(allowed_path.lexically_normal(), Access::ReadWrite, fmt::format("`{}`", key));
+            }
+        }
 
         /// The same default as in `NamedCollectionsMetadataStorage::create`; both `local` and `local_encrypted` keep the
         /// collections in this directory.
