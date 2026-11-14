@@ -309,10 +309,10 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         && !isLoopbackHost(endpoint_uri.getHost())
         && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
+            "AI named collection '{}' uses an insecure endpoint: prompts and the API key would be sent to a "
             "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
             "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials, params.collection.endpoint);
+            credentials);
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.
