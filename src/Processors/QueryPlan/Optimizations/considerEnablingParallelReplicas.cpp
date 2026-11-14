@@ -34,6 +34,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -55,6 +56,7 @@ extern const Event AutoParallelReplicasSkippedDueToQuery;
 extern const Event AutoParallelReplicasPlansNotComparable;
 extern const Event AutoParallelReplicasPlanWithoutParallelReplicas;
 extern const Event AutoParallelReplicasNoStatistics;
+extern const Event AutoParallelReplicasRetryDeferred;
 extern const Event AutoParallelReplicasStatisticsDrifted;
 extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
@@ -822,7 +824,8 @@ static bool decideAtBoundary(
     ReadFromMergeTree * source_reading_step,
     const CoordinatedReads * reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
-    const QueryPlan::Node * replicas_plan_boundary);
+    const QueryPlan::Node * replicas_plan_boundary,
+    UInt64 undecided_key);
 
 void considerEnablingParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
@@ -1027,6 +1030,12 @@ void considerEnablingParallelReplicas(
     size_t single_replica_plan_boundary_hash = 0;
     ReadFromMergeTree * remembered_coordinated_read = nullptr;
     const bool remember_boundary = optimization_settings.automatic_parallel_replicas_remember_boundary;
+    /// Where an outcome that leaves no decision is remembered, under the same key as the boundary; zero when it is
+    /// not. Mode 2 builds the replicas plan on every execution, as it recollects.
+    const UInt64 undecided_key = optimization_settings.automatic_parallel_replicas_undecided_retry_after_executions
+            && optimization_settings.automatic_parallel_replicas_mode != 2
+        ? root_key
+        : 0;
     if (remember_boundary && optimization_settings.automatic_parallel_replicas_mode != 2)
     {
         if (const auto remembered = stats_cache.getBoundary(root_key))
@@ -1052,11 +1061,43 @@ void considerEnablingParallelReplicas(
             remembered_coordinated_read,
             /*reads=*/nullptr,
             /*plan_with_parallel_replicas=*/nullptr,
-            /*replicas_plan_boundary=*/nullptr))
+            /*replicas_plan_boundary=*/nullptr,
+            undecided_key))
     {
         /// Counted here rather than at each decline in `decideAtBoundary`, so that none of them is missed.
         ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
         return;
+    }
+
+    /// The last build of the replicas plan for this plan ended without a decision, so this one would likely end
+    /// the same way. Nothing makes that certain - the data, the replicas and the statistics the joins are ordered
+    /// by all change under the same key - so skip a number of executions rather than for good. Everything above,
+    /// which is cheap, is checked every time.
+    if (undecided_key)
+    {
+        if (const auto undecided = stats_cache.getUndecided(undecided_key))
+        {
+            /// Take turns rather than wait for the outcome of the retry: however many executions run at once, one in
+            /// `retry_after + 1` builds the plan, and the rest skip it until a new outcome replaces the entry. After
+            /// the first outcome for this plan the first execution builds it, whatever the setting (see
+            /// `Undecided::first`), and the turns count from the one after it.
+            const UInt64 retry_after = optimization_settings.automatic_parallel_replicas_undecided_retry_after_executions;
+            /// The largest value cannot have one added; it is far beyond any count of executions anyway.
+            const UInt64 period = retry_after == std::numeric_limits<UInt64>::max() ? retry_after : retry_after + 1;
+            const UInt64 execution = undecided->executions.fetch_add(1, std::memory_order_relaxed);
+            const bool first_retry = undecided->first && execution == 0;
+            if (const auto turn = (undecided->first ? execution - 1 : execution) % period; !first_retry && turn < retry_after)
+            {
+                ProfileEvents::increment(undecided->outcome_event);
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRetryDeferred);
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "The last build of the plan with parallel replicas ended without a decision. Not building it, "
+                    "{} more executions skip it",
+                    retry_after - turn - 1);
+                return;
+            }
+        }
     }
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
@@ -1092,15 +1133,23 @@ void considerEnablingParallelReplicas(
     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanBuildMicroseconds, plan_build_microseconds);
     auto plan_with_parallel_replicas = std::move(build_result.plan);
 
+    /// Counts an outcome that leaves no decision, and remembers it for the skip above.
+    auto end_undecided = [&](ProfileEvents::Event outcome_event)
+    {
+        ProfileEvents::increment(outcome_event);
+        if (undecided_key)
+            stats_cache.setUndecided(undecided_key, outcome_event);
+    };
+
     auto * const replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!replicas_plan_boundary)
     {
         /// `findTopNodeOfReplicasPlan` has logged why. Without any read from the other replicas, the planner has
         /// declined parallel replicas for this query, which is not a limitation of this optimization.
         if (planReadsFromOtherReplicas(*plan_with_parallel_replicas->getRootNode()))
-            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+            end_undecided(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         else
-            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanWithoutParallelReplicas);
+            end_undecided(ProfileEvents::AutoParallelReplicasPlanWithoutParallelReplicas);
         return;
     }
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
@@ -1119,7 +1168,7 @@ void considerEnablingParallelReplicas(
             pr_node_hashes.at(replicas_plan_boundary),
             explainWithHashes(*plan_with_parallel_replicas, pr_node_hashes),
             explainWithHashes(query_plan, nopr_node_hashes));
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         return;
     }
 
@@ -1132,7 +1181,7 @@ void considerEnablingParallelReplicas(
     const bool found_coordinated_read = collectCoordinatedReads(*replicas_plan_boundary, *single_replica_plan_boundary, reads);
     if (!reads.usable)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "The single-node plan and the replicas plan do not agree about the read coordinated between the "
@@ -1141,7 +1190,7 @@ void considerEnablingParallelReplicas(
     }
     if (!found_coordinated_read)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided(ProfileEvents::AutoParallelReplicasPlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "No read below the node whose output the replicas ship is coordinated between them, so nothing "
@@ -1169,7 +1218,8 @@ void considerEnablingParallelReplicas(
         reads.to_instrument,
         &reads,
         plan_with_parallel_replicas,
-        replicas_plan_boundary);
+        replicas_plan_boundary,
+        undecided_key);
     chassert(!needs_replicas_plan);
 }
 
@@ -1177,7 +1227,8 @@ void considerEnablingParallelReplicas(
 /// instruments it to collect statistics. `source_reading_step` is the read parallel replicas coordinate, as
 /// it stands in this plan. Returns true only when the verdict is to parallelize or to collect but there is no
 /// replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan and call
-/// again with the boundary it matches. `reads` comes with the replicas plan, and is null when that is.
+/// again with the boundary it matches. `reads` comes with the replicas plan, and is null when that is. With a
+/// non-zero `undecided_key`, an outcome that leaves no decision is remembered under it, and a decision forgets it.
 static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
@@ -1186,8 +1237,18 @@ static bool decideAtBoundary(
     ReadFromMergeTree * const source_reading_step,
     const CoordinatedReads * const reads,
     const QueryPlanPtr & plan_with_parallel_replicas,
-    const QueryPlan::Node * const replicas_plan_boundary)
+    const QueryPlan::Node * const replicas_plan_boundary,
+    const UInt64 undecided_key)
 {
+    /// Remembered only when the replicas plan was built for this execution: from a remembered boundary the same
+    /// outcome is reached without building it.
+    auto end_undecided = [&]
+    {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        if (undecided_key && plan_with_parallel_replicas)
+            getRuntimeDataflowStatisticsCache().setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasPlansNotComparable);
+    };
+
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
     /// estimate the number of bytes replicas would send to the initiator: the reading step records only
@@ -1197,7 +1258,7 @@ static bool decideAtBoundary(
     /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
     if (single_replica_plan_boundary->step.get() == source_reading_step)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
@@ -1209,7 +1270,7 @@ static bool decideAtBoundary(
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return false;
     }
@@ -1224,21 +1285,21 @@ static bool decideAtBoundary(
     /// the parallel-replicas plan cannot be relied on to reproduce.
     if (analysis->readFromProjection())
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(getLogger("AutoParallelReplicas"), "The read is served from a projection. Skipping optimization");
         return false;
     }
     const auto rows_to_read = analysis->selected_rows;
     if (!rows_to_read)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        end_undecided();
         LOG_TRACE(getLogger("AutoParallelReplicas"), "Index analysis result doesn't contain selected rows. Skipping optimization");
         return false;
     }
 
     bool table_data_drifted_significantly = true;
 
-    const auto & stats_cache = getRuntimeDataflowStatisticsCache();
+    auto & stats_cache = getRuntimeDataflowStatisticsCache();
     if (const auto stats = stats_cache.getStats(single_replica_plan_boundary_hash))
     {
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;
@@ -1314,6 +1375,11 @@ static bool decideAtBoundary(
                 return true;
 
             ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
+            /// A decline is a decision, so whatever ended without one before is resolved. Adopting the replicas plan
+            /// can still fail below, and forgets only once it succeeds.
+            const bool declined = !replicas_plan_is_cheaper || rejected_by_duplicated_reads || rejected_by_threshold;
+            if (undecided_key && declined)
+                stats_cache.forgetUndecided(undecided_key);
             /// Unconditionally, before the decision. Recording it only when the threshold turns a
             /// query away would show only which queries a lower threshold would let through, never
             /// what a higher one would cost - and the queries it would start turning away are exactly
@@ -1368,7 +1434,7 @@ static bool decideAtBoundary(
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
                 {
                     /// `transplantAnalysisToAllReads` has logged which read could not be paired and why.
-                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+                    end_undecided();
                     return false;
                 }
                 /// The transplant pairs reads by name, while the read the decision stands on was found by
@@ -1377,7 +1443,7 @@ static bool decideAtBoundary(
                 /// read was given the analysis of another read than the one the decision priced.
                 if (reads->in_replicas_plan->getAnalyzedResult() != analysis)
                 {
-                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+                    end_undecided();
                     LOG_TRACE(
                         getLogger("AutoParallelReplicas"),
                         "The coordinated read was paired with another single-node read than the one the decision "
@@ -1410,7 +1476,7 @@ static bool decideAtBoundary(
 
                 if (!moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas))
                 {
-                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+                    end_undecided();
                     LOG_TRACE(
                         getLogger("AutoParallelReplicas"),
                         "A set of the plan with parallel replicas has no counterpart in the single-replica plan. "
@@ -1427,6 +1493,8 @@ static bool decideAtBoundary(
                 /// after the swap, not before: the swap can throw, and a query that failed on the way there
                 /// did not get the optimization applied to it.
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
+                if (undecided_key)
+                    stats_cache.forgetUndecided(undecided_key);
                 return false;
             }
             else if (!plan_with_parallel_replicas)
@@ -1466,7 +1534,8 @@ static bool decideAtBoundary(
         if (!plan_with_parallel_replicas)
             return true;
 
-        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read);
+        auto statistics_block
+            = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read, undecided_key);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group

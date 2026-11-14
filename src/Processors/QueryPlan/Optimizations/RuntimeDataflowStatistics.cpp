@@ -20,6 +20,7 @@
 
 namespace ProfileEvents
 {
+extern const Event AutoParallelReplicasNoStatistics;
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
 extern const Event RuntimeDataflowStatisticsInputNanoseconds;
@@ -48,6 +49,25 @@ void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, Boundary bound
     boundary_cache->set(root_key, std::make_shared<Boundary>(boundary));
 }
 
+std::shared_ptr<const RuntimeDataflowStatisticsCache::Undecided> RuntimeDataflowStatisticsCache::getUndecided(UInt64 root_key) const
+{
+    return undecided_cache->get(root_key);
+}
+
+void RuntimeDataflowStatisticsCache::setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event)
+{
+    auto undecided = std::make_shared<Undecided>();
+    undecided->outcome_event = outcome_event;
+    /// Two executions can race here, and then both entries count as the first, which costs one more build.
+    undecided->first = !undecided_cache->get(root_key);
+    undecided_cache->set(root_key, undecided);
+}
+
+void RuntimeDataflowStatisticsCache::forgetUndecided(UInt64 root_key)
+{
+    undecided_cache->remove(root_key);
+}
+
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
@@ -57,9 +77,13 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
 
 RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 {
+    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
+
     if (unsupported_case)
     {
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
+        if (undecided_key)
+            dataflow_cache.setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasNoStatistics);
         return;
     }
 
@@ -117,12 +141,18 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
     {
+        /// Nothing reached the measured steps, e.g. an inner join with an empty build side never read its probe side.
+        /// The zeros are not stored: the statistics key ignores the values of string constants, so another query could
+        /// decide from them. But the plan is deferred, so that it is not built again on every execution.
         LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "No statistics collected, skipping statistics update.");
+        if (undecided_key)
+            dataflow_cache.setUndecided(undecided_key, ProfileEvents::AutoParallelReplicasNoStatistics);
         return;
     }
 
-    auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(cache_key, res);
+    if (undecided_key)
+        dataflow_cache.forgetUndecided(undecided_key);
 }
 
 bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type)

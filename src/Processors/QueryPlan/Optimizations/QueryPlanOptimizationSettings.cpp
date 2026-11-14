@@ -145,6 +145,7 @@ namespace Setting
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
     extern const SettingsBool automatic_parallel_replicas_remember_boundary;
+    extern const SettingsUInt64 automatic_parallel_replicas_undecided_retry_after_executions;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -490,6 +491,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
     automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
+    automatic_parallel_replicas_undecided_retry_after_executions = from[Setting::automatic_parallel_replicas_undecided_retry_after_executions];
     parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi

@@ -12,8 +12,10 @@
 #include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
+#include <Common/ProfileEvents.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -65,6 +67,7 @@ public:
     RuntimeDataflowStatisticsCache()
         : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
         , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , undecided_cache(std::make_shared<UndecidedCache>(CurrentMetrics::end(), CurrentMetrics::end(), 64_MiB, 100'000))
     {
     }
 
@@ -87,11 +90,40 @@ public:
 
     void setBoundary(UInt64 root_key, Boundary boundary);
 
+    /// The last build of the plan with parallel replicas for a plan ended without a decision, so that the next
+    /// executions can skip building it. It is not a verdict: nothing proves the outcome permanent, so a number of
+    /// executions skip, and the one after them builds again.
+    struct Undecided
+    {
+        /// The event the outcome was counted in, which a skipped execution counts again: the plans could not be
+        /// compared, the planner used no parallel replicas in the plan built with them, or a step could not collect
+        /// statistics (`RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`).
+        ProfileEvents::Event outcome_event{};
+        /// The executions since, counted on the shared entry so that concurrent ones take turns: every one in
+        /// `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan, the others skip.
+        mutable std::atomic<UInt64> executions{0};
+        /// No earlier entry was replaced: this is the first time building the plan for this key ended without a
+        /// decision. Then the turn of the first execution after it comes at once. The first execution of a join is
+        /// what measures its hash table, and join reordering takes row counts from that, so the build after it often
+        /// orders both plans alike.
+        bool first = false;
+    };
+
+    /// Under the same key as the boundary.
+    std::shared_ptr<const Undecided> getUndecided(UInt64 root_key) const;
+
+    void setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event);
+
+    void forgetUndecided(UInt64 root_key);
+
 private:
     using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
 
+    using UndecidedCache = DB::CacheBase<UInt64, Undecided>;
+
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;
+    std::shared_ptr<UndecidedCache> undecided_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -150,9 +182,12 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
+    /// `undecided_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
+    /// step cannot collect, or when the collection measures nothing.
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , undecided_key(undecided_key_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -165,6 +200,7 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    const UInt64 undecided_key = 0;
 
     std::atomic_bool unsupported_case{false};
 
