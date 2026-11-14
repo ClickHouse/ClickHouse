@@ -1130,7 +1130,8 @@ private:
             bool decrypt_fail = false;
             /// Avoid extra work on empty ciphertext/plaintext. Always decrypt empty to empty.
             /// This makes sense for default implementation for NULLs.
-            if (!input_value.empty())
+            /// A GCM ciphertext of empty plaintext is a bare tag, which still has to be verified.
+            if (!input_reader[row_idx].empty())
             {
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
