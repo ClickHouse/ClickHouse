@@ -47,7 +47,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM copy_local"
 # these cases do not grant.
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY policy_05443 ON src_dist USING id != 1 TO $user"
 echo -n "row policy on source "
-"${client[@]}" --parallel_distributed_insert_select 2 --enable_analyzer 1 --enable_parallel_replicas 0 \
+"${client[@]}" --parallel_distributed_insert_select 2 --enable_parallel_replicas 0 \
     --serialize_query_plan 0 \
     -q "INSERT INTO dst_dist SELECT * FROM src_dist" |& grep -o -m1 'ILLEGAL_PREWHERE' || echo 'NOT REJECTED'
 $CLICKHOUSE_CLIENT -q "DROP ROW POLICY policy_05443 ON src_dist"

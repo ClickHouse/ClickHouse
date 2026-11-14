@@ -1014,7 +1014,6 @@ def test_filter_where(started_cluster):
 
 
 PREWHERE_SETTINGS = {
-    "enable_analyzer": 1,
     "optimize_move_to_prewhere": 1,
     "move_all_conditions_to_prewhere": 1,
     "allow_reorder_prewhere_conditions": 1,

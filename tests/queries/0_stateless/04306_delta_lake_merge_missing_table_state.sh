@@ -25,7 +25,7 @@ cp -r "${CUR_DIR}"/data_delta_lake/struct_column_mapping/* "${TABLE_PATH}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_delta_kernel_rs=1 --query "
+${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} ENGINE = DeltaLakeLocal('${TABLE_PATH}')
 "
 
@@ -38,7 +38,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_delta_kernel_rs=1 --query "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT datalake_simulate_missing_table_state"
 
 # Non-trivial read (subcolumn, not count) so a real read pipeline runs into iterate().
-${CLICKHOUSE_CLIENT} --allow_experimental_delta_kernel_rs=1 \
+${CLICKHOUSE_CLIENT} \
     --query "SELECT c1.id FROM ${TABLE} ORDER BY c1.id"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT datalake_simulate_missing_table_state"

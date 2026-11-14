@@ -67,11 +67,11 @@ trap '
 # The dropped column is not selected, and reading the table works.
 create_table_with_dropped_field_id_2 "${TABLE_DROPPED}" "${TABLE_DROPPED_DIR}"
 add_column_to_data_file "${TABLE_DROPPED_DIR}" 2 y
-${CLICKHOUSE_CLIENT} --input_format_parquet_use_native_reader_v3=1 --query "SELECT x FROM ${TABLE_DROPPED} ORDER BY x;"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE_DROPPED} ORDER BY x;"
 
 # A column dropped and later re-added under the same name keeps its old name in the old data files,
 # so the name of a dropped column may coincide with the name of a column of the read schema. The
 # projection is by field id, so the values of the dropped column must not be returned for `x`.
 create_table_with_dropped_field_id_2 "${TABLE_SHADOWED}" "${TABLE_SHADOWED_DIR}"
 add_column_to_data_file "${TABLE_SHADOWED_DIR}" 2 x
-${CLICKHOUSE_CLIENT} --input_format_parquet_use_native_reader_v3=1 --query "SELECT x FROM ${TABLE_SHADOWED} ORDER BY x;"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE_SHADOWED} ORDER BY x;"

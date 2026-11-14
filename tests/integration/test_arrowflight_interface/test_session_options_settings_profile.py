@@ -74,3 +74,24 @@ def test_profile_constraints_apply_within_same_request():
         == SetSessionOptionsResult.UNSPECIFIED
     )
     assert float(_query_scalar(client, "SELECT getSetting('max_execution_time')")) == 10
+
+
+def test_obsolete_setting_in_session_options_is_reported():
+    """An obsolete setting changed by SetSessionOptions is shown in `system.warnings` and logged."""
+    client = get_client()
+
+    result = client.set_session_options({"multiple_joins_rewriter_version": "2"})
+    assert "multiple_joins_rewriter_version" not in result.errors
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.warnings "
+            "WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %' "
+            "AND message LIKE '%''multiple_joins_rewriter_version''%'"
+        ).strip()
+        == "1"
+    )
+    # `contains_in_log` passes the substring to `bash` in double quotes, so it must not contain backticks.
+    assert node.contains_in_log(
+        "multiple_joins_rewriter_version.* is changed (to '2')"
+    )

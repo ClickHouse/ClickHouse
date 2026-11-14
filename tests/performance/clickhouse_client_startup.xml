@@ -168,7 +168,6 @@
             --query_plan_join_shard_by_pk_ranges False \
             --enable_add_distinct_to_in_subqueries False \
             --use_statistics True \
-            --enable_optimize_predicate_expression True \
             --enable_optimize_predicate_expression_to_final_subquery True \
             --enable_software_prefetch_in_aggregation True \
             --allow_reorder_prewhere_conditions True \

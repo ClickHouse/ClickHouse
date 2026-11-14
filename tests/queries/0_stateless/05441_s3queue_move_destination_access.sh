@@ -174,7 +174,7 @@ $CLICKHOUSE_CLIENT -q "
 echo "-- ALTER through an Alias"
 
 # The export checks see only the name in the query, which is the alias, so the change is refused for every user.
-$CLICKHOUSE_CLIENT --allow_experimental_alias_table_engine 1 -q "CREATE TABLE ${db}.t_alias ENGINE = Alias('${db}', 't')"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${db}.t_alias ENGINE = Alias('${db}', 't')"
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE ${db}.t_alias MODIFY SETTING after_processing_move_uri = '${dst}', ${keys}
     -- { serverError NOT_IMPLEMENTED }

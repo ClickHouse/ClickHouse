@@ -43,13 +43,7 @@ def read_table(started_cluster, storage_type, table_name, query):
         table_function=True,
     )
     instance = started_cluster.instances["node1"]
-    return [
-        instance.query(
-            query.format(table=table_expression),
-            settings={"input_format_parquet_use_native_reader_v3": use_v3},
-        )
-        for use_v3 in [1, 0]
-    ]
+    return [instance.query(query.format(table=table_expression))]
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
