@@ -1190,6 +1190,14 @@ void IMergeTreeDataPart::removeIfNeeded()
 
     try
     {
+        /// On object storage the directory of a temporary part and the blobs it has written exist only in its uncommitted transaction.
+        auto & part_storage = getDataPartStorage();
+        if (is_temp && part_storage.hasActiveTransaction() && !part_storage.hasSharedTransaction())
+        {
+            LOG_DEBUG(storage.log, "Rolling back the uncommitted transaction of temporary part {}", part_storage.getPartDirectory());
+            part_storage.undoTransaction();
+        }
+
         if (!getDataPartStorage().exists()) // path
             return;
 
