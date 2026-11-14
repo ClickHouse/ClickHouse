@@ -326,7 +326,8 @@ private:
     UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
-        VectorWithMemoryTracking<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
+        /// The timestamps keep their type: `UInt128` and `UInt256` ones must not be narrowed.
+        VectorWithMemoryTracking<std::optional<std::pair<T, T>>> events_timestamp(events_size);
         bool first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
         {
@@ -340,7 +341,7 @@ private:
             }
             if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
+                events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
@@ -376,7 +377,7 @@ private:
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, static_cast<UInt64>(timestamp));
+                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }
@@ -399,12 +400,12 @@ private:
         /// would read indeterminate values under MSan/ASan.
         struct EventMatchTimeWindow
         {
-            UInt64 first_timestamp{};
-            UInt64 last_timestamp{};
+            T first_timestamp{};
+            T last_timestamp{};
             std::array<UInt64, MAX_EVENTS> event_path{};
 
             EventMatchTimeWindow() = default;
-            EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
+            EventMatchTimeWindow(T first_ts, T last_ts)
                 : first_timestamp(first_ts), last_timestamp(last_ts) {}
         };
 
@@ -432,7 +433,7 @@ private:
             }
             else if (event_idx == 0)
             {
-                auto & event_seq = event_sequences[0].emplace_back(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
+                auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
             }
@@ -491,7 +492,7 @@ private:
                     {
                         prev_path[event_idx] = unique_id;
 
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
+                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
                         new_seq.event_path = std::move(prev_path);
                         if (event_idx + 1 == events_size)
                             return events_size;

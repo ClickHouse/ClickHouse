@@ -108,6 +108,9 @@ size_t decompressLzo(const char * src, size_t src_size, char * dst, size_t dst_c
             }
             else if (first_command)
             {
+                /// A first command below 17 would be a match, with nothing to match yet (17 is the end marker above).
+                if (command < 17)
+                    throwMalformedLzo(offset());
                 literal_length = command - 17;
             }
             else if ((command & 0xF0) == 0x10)

@@ -353,7 +353,8 @@ void NpyRowInputFormat::readPrefix()
             throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset byte count overflows");
         size_t offset_bytes_per_row = total_offsets_per_row * sizeof(UInt64);
 
-        if (data_bytes_per_row > max_bytes_per_row - std::min(offset_bytes_per_row, max_bytes_per_row))
+        /// The offsets alone are checked too: with no data bytes, the second comparison would accept any number of them.
+        if (offset_bytes_per_row > max_bytes_per_row || data_bytes_per_row > max_bytes_per_row - offset_bytes_per_row)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Npy row size is too large: {} data bytes + {} offset bytes per row exceeds the {} byte limit",
