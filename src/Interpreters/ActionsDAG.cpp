@@ -2479,9 +2479,15 @@ ActionsDAG ActionsDAG::clone(UnorderedMapWithMemoryTracking<const Node *, const 
 }
 
 #if USE_EMBEDDED_COMPILER
-void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ActionsDAG::compileExpressions(
+    size_t min_count_to_compile_expression,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
 {
-    compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
+    if (uncompiled_actions_dag)
+        uncompiled_actions_dag->reset();
+
+    compileFunctions(min_count_to_compile_expression, lazy_executed_nodes, uncompiled_actions_dag);
     removeUnusedActions(/*allow_remove_inputs = */ false);
 }
 #endif
@@ -5211,11 +5217,10 @@ static ColumnConst::Ptr deserializeConstant(
             captured_column.column = captured_column.column->cloneResized(1);
         }
 
-        auto function_expression = std::make_shared<FunctionExpression>(
-            std::make_shared<LambdaCapture>(std::move(capture)),
-            std::make_shared<ExpressionActions>(
-                std::move(capture_dag),
-                ExpressionActionsSettings(context, CompileExpressions::yes)));
+        auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
+        auto expression_actions = createLambdaExpressionActions(
+            std::move(capture_dag), ExpressionActionsSettings(context, CompileExpressions::yes), *capture_ptr);
+        auto function_expression = std::make_shared<FunctionExpression>(std::move(capture_ptr), std::move(expression_actions));
 
         return ColumnConst::create(ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns)), 0);
     }
@@ -5484,13 +5489,11 @@ ActionsDAG ActionsDAG::deserialize(
                 deserializeCapture(capture, in, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
 
+                auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
+                auto expression_actions = createLambdaExpressionActions(
+                    std::move(capture_dag), ExpressionActionsSettings(context, CompileExpressions::yes), *capture_ptr);
                 node.function_base = std::make_shared<FunctionCapture>(
-                    std::make_shared<ExpressionActions>(
-                        std::move(capture_dag),
-                        ExpressionActionsSettings(context, CompileExpressions::yes)),
-                    std::make_shared<LambdaCapture>(std::move(capture)),
-                    node.result_type,
-                    function_name);
+                    std::move(expression_actions), std::move(capture_ptr), node.result_type, function_name);
 
                 node.function = node.function_base->prepare(arguments);
                 node.is_function_compiled = false;

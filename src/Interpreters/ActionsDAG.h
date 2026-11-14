@@ -376,7 +376,10 @@ public:
     bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {});
+    void compileExpressions(
+        size_t min_count_to_compile_expression,
+        const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
     /// The functions `compileExpressions` compiled into `function`, or nullptr if it is not a compiled expression.
     static const std::vector<FunctionBasePtr> * getCompiledFunctions(const IFunctionBase & function);
 #endif
@@ -705,7 +708,10 @@ private:
         bool all_const);
 
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {});
+    void compileFunctions(
+        size_t min_count_to_compile_expression,
+        const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 #endif
 
     bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
