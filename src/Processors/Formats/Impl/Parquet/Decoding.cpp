@@ -320,6 +320,21 @@ struct BitPackedRLEDecoder : public PageDecoder
             return true;
         }
 
+        /// `decodeAndIndexFixedSize` requires a non-empty dictionary.
+        if (dictionary.mode == Dictionary::Mode::FixedSize && limit != 0)
+        {
+            switch (dictionary.value_size)
+            {
+                case 1: decodeAndIndexFixedSize<1>(num_values, dictionary, out); return true;
+                case 2: decodeAndIndexFixedSize<2>(num_values, dictionary, out); return true;
+                case 3: decodeAndIndexFixedSize<3>(num_values, dictionary, out); return true;
+                case 4: decodeAndIndexFixedSize<4>(num_values, dictionary, out); return true;
+                case 8: decodeAndIndexFixedSize<8>(num_values, dictionary, out); return true;
+                case 16: decodeAndIndexFixedSize<16>(num_values, dictionary, out); return true;
+                default: break;
+            }
+        }
+
         const UnpackBitPackedFn<UInt32> unpack_indexes = getUnpackBitPacked<UInt32>(bit_width);
         while (num_values)
         {
@@ -360,6 +375,62 @@ struct BitPackedRLEDecoder : public PageDecoder
             }
         }
         return true;
+    }
+
+    /// The loop of `decodeAndIndex` for a fixed-size dictionary, with the column resized once per call.
+    template <size_t value_size>
+    void decodeAndIndexFixedSize(size_t num_values, const Dictionary & dictionary, IColumn & out)
+    {
+        struct Value { char bytes[value_size]; };
+
+        std::span<char> to_span = out.insertRawUninitialized(num_values);
+        chassert(to_span.size() == value_size * num_values);
+        char * to = to_span.data();
+        const char * dict = dictionary.data.data();
+        const size_t width = bit_width;
+        const size_t max_index = limit - 1;
+
+        while (num_values)
+        {
+            if (run_length == 0)
+                startRun();
+
+            size_t n = std::min(run_length, num_values);
+            run_length -= n;
+            num_values -= n;
+
+            if (run_is_rle)
+            {
+                /// `val` was bounds-checked in startRun.
+                const Value v = unalignedLoad<Value>(dict + size_t(val) * value_size);
+                for (size_t i = 0; i < n; ++i)
+                    memcpy(to + i * value_size, &v, value_size);
+            }
+            else
+            {
+                for (size_t done = 0; done < n;)
+                {
+                    constexpr size_t batch = 256;
+                    T buf[batch];
+                    const size_t m = std::min(n - done, batch);
+                    unpack(data, bit_idx, m, buf);
+                    bit_idx += m * width;
+                    T max_seen = 0;
+                    for (size_t i = 0; i < m; ++i)
+                        max_seen = std::max(max_seen, buf[i]);
+                    if (max_seen > max_index)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+                    char * dst = to + done * value_size;
+                    for (size_t i = 0; i < m; ++i)
+                        memcpy(dst + i * value_size, dict + size_t(buf[i]) * value_size, value_size);
+                    done += m;
+                }
+
+                if (!run_length)
+                    data += run_bytes;
+            }
+            to += n * value_size;
+        }
     }
 
     void startRun()
