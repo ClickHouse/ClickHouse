@@ -6,8 +6,6 @@ title: 'الإدارة الذاتية للرصيد المدفوع مسبقًا'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 إذا اشتريت أرصدة مدفوعة مسبقًا بموجب عقد التزام، فيمكنك إدارة طريقة توزيع هذه الأرصدة على مؤسسات ClickHouse الخاصة بك.
 استخدم صفحة **Prepaid credits** لعرض الأرصدة ونقلها بين المؤسسات.
 
@@ -15,7 +13,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 في ClickHouse Cloud console، افتح **Settings**، ثم حدّد **Prepaid credits** ضمن **Account**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="الأرصدة المدفوعة مسبقًا ضمن Account في الشريط الجانبي للإعدادات" size="sm" />
+<div className="ch-image-sm">
+
+<Frame>
+
+![الأرصدة المدفوعة مسبقًا ضمن Account في الشريط الجانبي للإعدادات](/images/cloud/reference/billing/prepaid-credits-navigation.png)
+
+</Frame>
+
+</div>
 
 لعرض أرصدة الائتمان المدفوعة مسبقًا، يجب أن يكون لديك أحد الأدوار التالية على الأقل في مؤسسة مخصّص لها أرصدة عقد ملتزم به:
 
@@ -63,7 +69,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | **Spent**              | استُهلكت جميع الأرصدة المدفوعة مسبقًا لدى المؤسسة دون أن تنتهي صلاحيتها. وتَسبق هذه الحالة الحالة **Active** في الأولوية. |
 | **No Prepaid Credits** | لا تمتلك المؤسسة أي اعتمادات مدفوعة مسبقًا.                                                                               |
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="مقاييس ملخّص الاعتمادات المدفوعة مسبقًا والأرصدة حسب المؤسسة" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مقاييس ملخّص الاعتمادات المدفوعة مسبقًا والأرصدة حسب المؤسسة](/images/cloud/reference/billing/prepaid-credits-balances.png)
+
+</Frame>
+
+</div>
 
 ## نقل الأرصدة {#transfer-credits}
 
@@ -77,7 +91,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 4. أدخل المبلغ المراد نقله.
 5. راجع الأرصدة الناتجة ثم انقر على **Transfer credits**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="لوحة نقل الأرصدة تعرض منحة المصدر، والمؤسسة الهدف، ومبلغ النقل، والأرصدة الناتجة" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![لوحة نقل الأرصدة تعرض منحة المصدر، والمؤسسة الهدف، ومبلغ النقل، والأرصدة الناتجة](/images/cloud/reference/billing/prepaid-credits-transfer.png)
+
+</Frame>
+
+</div>
 
 ### قواعد النقل {#transfer-rules}
 
