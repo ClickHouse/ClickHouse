@@ -19,16 +19,6 @@ if (NOT ENABLE_PARQUET)
     return()
 endif()
 
-# The native Parquet reader and writer (`src/Processors/Formats/Impl/Parquet`) and the native `Arrow`
-# and `ArrowStream` formats (`src/Processors/Formats/Impl/ArrowIPC`) need only the Thrift-generated
-# Parquet structures and the FlatBuffers-generated Arrow IPC bindings defined below. The Apache Arrow
-# C++ library and parquet-cpp are needed for the rest: the `ParquetMetadata` format,
-# Hive, the legacy Delta Lake reader, delta-kernel-rs, and Arrow Flight.
-option (ENABLE_ARROW_LIBRARY "Enable the Apache Arrow C++ library and parquet-cpp (not needed for the Parquet and Arrow formats)" ${ENABLE_LIBRARIES})
-if (NOT ENABLE_ARROW_LIBRARY)
-    message(STATUS "Not using the Apache Arrow C++ library")
-endif()
-
 # Support C11
 if(NOT DEFINED CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 11)
@@ -120,26 +110,6 @@ target_include_directories(_arrow_ipc_metadata SYSTEM INTERFACE "${ARROW_IPC_GEN
 target_link_libraries(_arrow_ipc_metadata INTERFACE ch_contrib::flatbuffers)
 add_dependencies(_arrow_ipc_metadata _arrow_ipc_generated)
 add_library(ch_contrib::arrow_ipc_metadata ALIAS _arrow_ipc_metadata)
-
-# === Parquet format
-# The structures generated from `parquet.thrift` with the minimal Thrift runtime to (de)serialize them:
-# everything the native Parquet reader and writer need from third-party code. The generated header is
-# exposed from a directory of its own, so that the code using it cannot include Arrow headers by accident.
-set(PARQUET_FORMAT_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/parquet_format_include")
-foreach (file parquet_types.h parquet_types.tcc)
-    configure_file("${ARROW_SRC_DIR}/generated/${file}" "${PARQUET_FORMAT_INCLUDE_DIR}/generated/${file}" COPYONLY)
-endforeach()
-# The only Arrow header included by the generated code. It does nothing outside Windows.
-file(WRITE "${PARQUET_FORMAT_INCLUDE_DIR}/parquet/windows_compatibility.h" "#pragma once\n")
-
-add_library(_parquet_format "${ARROW_SRC_DIR}/generated/parquet_types.cpp")
-target_include_directories(_parquet_format SYSTEM PUBLIC "${PARQUET_FORMAT_INCLUDE_DIR}")
-target_link_libraries(_parquet_format PUBLIC ch_contrib::thrift_minimal)
-add_library(ch_contrib::parquet_format ALIAS _parquet_format)
-
-if (NOT ENABLE_ARROW_LIBRARY)
-    return()
-endif()
 
 
 # ===  hdfs
@@ -467,6 +437,7 @@ include(flight.cmake)
 # === parquet
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet")
+set(GEN_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/generated")
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
         "${LIBRARY_DIR}/arrow/fuzz_internal.cc"
@@ -523,6 +494,8 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/stream_writer.cc"
         "${LIBRARY_DIR}/types.cc"
         "${LIBRARY_DIR}/xxhasher.cc"
+
+        "${GEN_LIBRARY_DIR}/parquet_types.cpp"
         )
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
 
@@ -545,7 +518,7 @@ add_dependencies(_parquet _arrow_ipc_generated)
 target_link_libraries(_parquet
     PUBLIC
         _arrow
-        _parquet_format
+        ch_contrib::thrift
     PRIVATE
         boost::headers_only
         boost::regex

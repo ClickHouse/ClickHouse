@@ -205,8 +205,7 @@ The `count` is the full stack length **including the leading `DEFAULT` entry** t
 
 Note that this order is not the order of the kind byte values above. Any other stack describes a column layout no writer builds and that no materialization step unwraps back to a full column of the declared type — a `ColumnSparse` whose values column is itself sparse or replicated, for instance, stays wrapped.
 
-**Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
-An element's stack never contains `REPLICATED` or `DETACHED`: both wrap a whole top-level column only, and a decoder rejects either of them in an element stack with `INCORRECT_DATA`.
+**Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse or replicated still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
 
 **Sparse wire format.** When `kind_stack = 0x01`, the column `data` is two streams written back-to-back in the single shared TCP stream:
 
@@ -240,10 +239,7 @@ A decoder reconstructs a dense column by selecting `elements[indexes[i]]` for ea
 
 If the wrapped column was sparse, its stack is `{DEFAULT, SPARSE, DETACHED}`, which serializes as `DETACHED_OVER_SPARSE`. A client decoding such a column reads the blob length and bytes, then decompresses the blob to recover the inner column payload (see the [`ColumnBLOB` note](#compression-negotiation) under compression).
 
-`DETACHED` is directional: it may appear only in result blocks sent by a server, and only for a whole top-level column — never as one of the element kinds of a `Tuple`. Unlike the other kinds, it makes the runtime column a `ColumnBLOB` instead of the column of the declared type, so a receiver accepts it only when its own pipeline converts the blob back.
-
-**Kinds in blocks sent to a server.** Every non-default kind is directional: it appears only in result blocks sent by a server.
-A block sent to a server — insert data, the data of the `input` table function, external table data and scalars, whether it comes from a client or from another server — carries only `DEFAULT` stacks: senders convert the columns to full ones before sending, and a server rejects any other kind in such a block with `INCORRECT_DATA`.
+`DETACHED` is directional: it may appear only in result blocks sent by a server, and only for a whole top-level column — never as one of the element kinds of a `Tuple`. Unlike the other kinds, it makes the runtime column a `ColumnBLOB` instead of the column of the declared type, so a receiver accepts it only when its own pipeline converts the blob back. A server therefore rejects `DETACHED` in any block a client sends — external table data, scalars and insert data alike — with `INCORRECT_DATA`.
 
 ### Block variants {#block-variants}
 
@@ -569,7 +565,7 @@ F0 B0 00 00              Int32 LE = 45296
 ```
 
 <Note>
-`Time` and `Time64` are enabled by default since version 25.12. On servers from 25.6 to 25.11, they require the `enable_time_time64_type = 1` setting.
+`Time` and `Time64` are experimental and require `allow_experimental_time_time64_type = 1` on the server.
 </Note>
 
 #### Interval {#interval}
@@ -1447,16 +1443,6 @@ The three method bytes above (`NONE`/`LZ4`/`ZSTD`) are the only ones a ClickHous
 
 When the `0x80` flag is clear, the payload is a standalone `.pco` stream that is byte-for-byte compatible with the reference pcodec implementation and self-describes its number type; the stored form (flag set) is used only when compression would not shrink the block, bounding the output to the input size plus the two header bytes. `PCO` needs the column type to compress, but it decodes without one: the element width `W` and the number type carried inside the `.pco` stream are sufficient. A decoder that does know the expected column type additionally rejects a block whose `W` — or, for the compressed form, whose embedded number type — disagrees with that type, instead of reinterpreting the values.
 
-`0xa1` (GDeflate) carries a body written by the `GDeflate` codec. The uncompressed bytes are split into chunks of 65536 bytes, the last one possibly shorter, and each chunk is compressed into one independent GDeflate page, the Deflate variant with 32 interleaved sub-streams that nvcomp and DirectStorage expand on a GPU:
-
-```text
-[4 bytes:  N LE u32]                       ← number of chunks = ceil(uncompressed_size / 65536)
-[4 bytes × N: compressed chunk size LE u32]
-[chunk × N]                                ← each a GDeflate page, followed by zero bytes up to a multiple of 4
-```
-
-Chunk `i` expands to bytes `[i × 65536, min((i + 1) × 65536, uncompressed_size))` of the block. The first chunk starts right after the sizes, and every chunk starts at a multiple of 4 from the start of the body.
-
 The method byte also encodes the [column-level codecs](/reference/statements/create/table/codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
 
 | Byte   | Method            |
@@ -1475,23 +1461,12 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9e` | `Quantized`       |
 | `0x9f` | `ZXC`             |
 | `0xa0` | `PCO` (see [Per-column codec frames](#per-column-codec-frames)) |
-| `0xa1` | `GDeflate` (see [Per-column codec frames](#per-column-codec-frames)) |
 
 `DoubleDelta` (`0x94`) stores second differences as MSB-first prefix/sign/magnitude bits. Word-based decoding preserves this encoding, element count, and final-byte padding.
 
-The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
-
-`0x9c` (`ALP`) is a lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression).
-
-`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
+`0x9c` (`ALP`) is a **beta** lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression). A table can be created with `CODEC(ALP)` only when the `enable_alp_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0xa0` (`PCO`) is an **experimental** lossless codec for fixed-width numeric columns, implemented by the pcodec Rust library. A table can be created with `CODEC(PCO)` only when the `enable_pco_codec` setting is set. In builds that include the library, the method byte is always accepted on decompression so that previously written data stays readable. A server built without it (without Rust, or with `ENABLE_PCO=OFF`) does not register the codec and rejects `0xa0` frames with `UNKNOWN_CODEC`. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when the `enable_quantized_codec` setting is set, and the method byte is always accepted on decompression.
-
-`0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
-
-`0xa0` (`PCO`) is a **beta** lossless codec for fixed-width numeric columns, implemented by the pcodec Rust library. A table can be created with `CODEC(PCO)` only when the `enable_pco_codec` setting is set. In builds that include the library, the method byte is always accepted on decompression so that previously written data stays readable. A server built without it (without Rust, or with `ENABLE_PCO=OFF`) does not register the codec and rejects `0xa0` frames with `UNKNOWN_CODEC`.
-
-`0xa1` (`GDeflate`) is an **experimental** Deflate variant whose chunks a GPU can expand in parallel. A table can be created with `CODEC(GDeflate)` only when the `enable_gdeflate_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 
 ### Checksum {#checksum}
 

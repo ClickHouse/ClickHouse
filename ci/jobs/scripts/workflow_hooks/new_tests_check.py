@@ -2,11 +2,7 @@ import sys
 from pathlib import Path
 
 from ci.defs.defs import JobNames
-from ci.jobs.scripts.docker_server.docker_library import (
-    changed_tests as changed_docker_tests,
-)
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
-from ci.jobs.scripts.workflow_hooks.review_threads import KV_PIPELINE_LIMITED
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -215,18 +211,11 @@ def check():
         print("Not a bug fix PR - skip")
         return True
 
-    if Labels.CI_SKIP_NEW_TESTS_CHECK in labels:
-        print(
-            f"Label `{Labels.CI_SKIP_NEW_TESTS_CHECK}` is set - new tests are not required"
-        )
-        return True
-
     changed_files = Info().get_changed_files()
     has_unit = has_new_unit_tests(changed_files)
     has_ft = has_new_functional_tests(changed_files)
     has_it = has_new_integration_tests(changed_files)
     has_docker = has_new_integration_test_docker_images(changed_files)
-    has_docker_server = bool(changed_docker_tests(changed_files))
 
     # Branching by what kinds of new tests the PR adds. The structure
     # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
@@ -239,17 +228,6 @@ def check():
     # HEAD and is fixed on the PR). The presence of an additional unit
     # test alongside FT/IT does not relax this requirement either.
     if has_ft or has_it:
-        # The unresolved-review-threads gate skips the per-arch Bugfix Validation
-        # jobs, so there is no result to judge yet. Defer the verdict to the full
-        # run: the gate keeps the merge blocked until it happens. Failing here
-        # would also make `Finish Workflow` fail for another reason than the
-        # gate, which `retry_infra_failures.yml` would then retry.
-        if Info().get_kv_data(KV_PIPELINE_LIMITED):
-            print(
-                "The pipeline was limited by unresolved review threads, so the per-arch "
-                "Bugfix Validation jobs did not run - the check is deferred to the full run"
-            )
-            return True
         states = per_arch_validation_states()
         if any_bugfix_validation_passed(states):
             print(
@@ -295,20 +273,6 @@ def check():
         print(
             "Integration test Docker image changed (no new functional/"
             "integration/unit tests) - pass"
-        )
-        return True
-
-    # Docker server/keeper image test: the `Docker server image` job validates it itself, it fails when the test passes on
-    # the `head` images built from master. It reads the labels the workflow started with.
-    if has_docker_server:
-        if not any(lb in Info().pr_labels for lb in _BUGFIX_LABELS):
-            print(
-                "The PR became a bug fix after the workflow started, so the Docker image tests were not run on the "
-                "`head` images built from master; re-run the workflow"
-            )
-            return False
-        print(
-            "Docker image test changed (no new functional/integration/unit tests) - pass"
         )
         return True
 

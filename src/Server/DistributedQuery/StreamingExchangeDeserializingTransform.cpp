@@ -40,7 +40,7 @@ void StreamingExchangeDeserializingTransform::transform(Chunk & chunk)
             exchange_id, packet_header.packet_type, packet_header.bytes_size, packet.size());
 
     ReadBufferFromMemory body(packet.data() + sizeof(packet_header), packet_header.bytes_size);
-    auto data_packet = StreamingExchangeProtocol::readDataPacketBody(body, getOutputPort().getHeader(), exchange_id, &type_cache);
+    auto data_packet = StreamingExchangeProtocol::readDataPacketBody(body, getOutputPort().getHeader(), exchange_id);
     /// The source reads the end-of-stream marker itself and does not hand it on.
     if (data_packet.end_of_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "End-of-stream packet reached the deserializer of exchange {}", exchange_id);

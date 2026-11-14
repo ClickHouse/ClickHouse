@@ -204,9 +204,9 @@ openSSL:
             # Use for self-signed: name: AcceptCertificateHandler
             name: RejectCertificateHandler
 
-# Default root page on http[s] server. For example open the built-in Web UI when opening http://localhost:8123
+# Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123
 # http_server_default_response: |-
-#     <html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>
+#     <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>
 
 # Maximum number of concurrent queries.
 max_concurrent_queries: 100

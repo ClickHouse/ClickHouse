@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
 #include <Analyzer/IQueryTreePass.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace DB
@@ -71,13 +71,9 @@ class QueryAnalysisPass final : public IQueryTreePass
 public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
-      * `replaced_storage` is the view source that the interpreter swaps into the query tree after the passes.
       */
     explicit QueryAnalysisPass(
-        bool only_analyze_ = false,
-        bool positional_arguments_already_resolved_ = false,
-        StoragePtr replaced_storage_ = nullptr,
-        bool view_source_in_subqueries_ = false);
+        bool only_analyze_ = false, StoragePtr replaced_storage_ = nullptr, bool view_source_in_subqueries_ = false);
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
@@ -104,7 +100,6 @@ public:
 private:
     TableExpressionNodePtr table_expression;
     const bool only_analyze;
-    const bool positional_arguments_already_resolved = false;
     const StoragePtr replaced_storage;
     const bool view_source_in_subqueries = false;
 };

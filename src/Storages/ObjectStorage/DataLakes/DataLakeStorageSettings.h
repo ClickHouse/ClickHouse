@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <base/unit.h>
@@ -42,7 +43,6 @@ class SettingsChanges;
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, NonZeroUInt64) \
@@ -71,21 +71,9 @@ Get latest metadata path from version-hint.text file.
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
-    DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
-The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns are mapped to. The stored values are instants and do not depend on this setting, it only changes how they are displayed and how `DateTime64` literals without an explicit time zone are interpreted in queries.
-)", 0) \
     DECLARE(Bool, paimon_incremental_read, false, R"(
 Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
 in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
-)", 0) \
-    DECLARE(Bool, paimon_incremental_read_append_overwrite, false, R"(
-Like Paimon's `streaming-read-append-overwrite` table option: the incremental read also delivers the data files that
-`OVERWRITE` snapshots add, for example the rows of `INSERT OVERWRITE` and the new versions of rows changed by `UPDATE`.
-For a copy-on-write `DELETE`, `UPDATE` or `MERGE INTO` they include the unchanged rows of every rewritten data file,
-so rows that an earlier read delivered are delivered again. A data file that a later snapshot read by the same query
-removes is not delivered, but `COMPACT` snapshots are not read: when one query reads an `APPEND` snapshot, a `COMPACT`
-that merges the file it added and an `OVERWRITE` that rewrites the merged file, it returns the rows of both the
-original and the rewritten file, so the unchanged rows appear twice and the changed ones in their old and new versions.
 )", 0) \
     DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
 Background metadata refresh interval for Paimon tables (seconds).
@@ -121,12 +109,11 @@ Per-table counterpart of the query-level setting of the same name: allows backgr
 Unlike the query-level setting, this one is stored in the table definition, so it survives a server restart.
 When it is not set explicitly in the table definition, the query-level setting of the context that initializes the table metadata is used instead.
 )", 0) \
-    ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
+    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
 Per-table counterpart of the query-level setting of the same name: allows removing old data files after they were merged by compaction,
 together with the snapshots that referenced them.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
-The previous name `allow_experimental_cleanup_old_data_files_compaction` is kept as an alias, so the table definitions that use it still load.
-)", 0, allow_experimental_cleanup_old_data_files_compaction) \
+)", 0) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Per-table counterpart of the query-level setting of the same name: minimum delay between two background compaction operations.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
@@ -220,8 +207,6 @@ struct DataLakeStorageSettings
     bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
-    /// Returns the canonical name of a setting given under one of its aliases.
-    static std::string_view resolveName(std::string_view name);
 
     void serialize(WriteBuffer & out) const;
     static DataLakeStorageSettings deserialize(ReadBuffer & in);
@@ -232,7 +217,6 @@ private:
 
 using DataLakeStorageSettingsPtr = std::shared_ptr<DataLakeStorageSettings>;
 
-/// Expanding this list requires <Core/FormatFactorySettings.h>, not included here to keep this widely used header light.
 #define LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
     DATA_LAKE_STORAGE_RELATED_SETTINGS(M, ALIAS) \
     OBSOLETE_SETTINGS(M, ALIAS) \

@@ -34,6 +34,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event QueryCacheOnDiskReadBytes;
     extern const Event QueryCacheOnDiskWrittenBytes;
 }
 
@@ -59,7 +60,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// On-disk entry layout, version 8:
+/// On-disk entry layout, version 6:
 ///
 ///     Fixed header (FIXED_HEADER_SIZE bytes):
 ///         char[8]  magic "QRCache1"
@@ -78,7 +79,6 @@ namespace
 ///         UInt8    has_user_id, [UInt128 user_id]
 ///         varUInt  number of user roles, [UInt128 role]...
 ///         String   tag (setting `query_cache_tag`), so that `SYSTEM DROP QUERY CACHE TAG` can find the entry
-///         UInt8    ignore_quota, whether the query which wrote the entry was exempt from quotas
 ///
 ///     Result payload (compressed with the codec from setting `query_cache_on_disk_codec`; the compression frames are
 ///     self-describing, so reading does not depend on the setting):
@@ -87,7 +87,6 @@ namespace
 ///         Chunk    one per result chunk
 ///         UInt8    has_totals, [Chunk]
 ///         UInt8    has_extremes, [Chunk]
-///         varUInt  number of result column origins, [String database, String table, String org_table, String column]...
 ///
 ///     Each chunk is serialized per column, so that special column representations survive the round trip: Sparse columns through
 ///     the custom serialization of the Native format, Const columns through an explicit flag plus their single-row data column:
@@ -95,7 +94,7 @@ namespace
 ///         Per column of the header: UInt8 is_const, then a single-column Native block (the data column of a Const column with
 ///         one row, the column itself with `number of rows` rows otherwise)
 constexpr char ENTRY_MAGIC[8] = {'Q', 'R', 'C', 'a', 'c', 'h', 'e', '1'};
-constexpr UInt32 ENTRY_FORMAT_VERSION = 8;
+constexpr UInt32 ENTRY_FORMAT_VERSION = 6;
 constexpr size_t FIXED_HEADER_SIZE
     = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt128);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
@@ -237,7 +236,6 @@ struct AccessMetadata
     std::optional<UUID> user_id;
     std::vector<UUID> current_user_roles;
     String tag;
-    bool ignore_quota = false;
 };
 
 AccessMetadata readAccessMetadata(ReadBuffer & in, size_t body_size)
@@ -261,9 +259,6 @@ AccessMetadata readAccessMetadata(ReadBuffer & in, size_t body_size)
     for (size_t i = 0; i < num_roles; ++i)
         metadata.current_user_roles.push_back(readUUID(in));
     readStringBinary(metadata.tag, in, body_size);
-    UInt8 ignore_quota = 0;
-    readBinaryLittleEndian(ignore_quota, in);
-    metadata.ignore_quota = ignore_quota;
     return metadata;
 }
 
@@ -479,7 +474,6 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
         for (const auto & role : key.current_user_roles)
             writeUUID(role, out);
         writeStringBinary(key.tag, out);
-        writeBinaryLittleEndian(static_cast<UInt8>(key.ignore_quota), out);
 
         {
             CompressedWriteBuffer compressed_out(out, CompressionCodecFactory::instance().get(codec_name));
@@ -502,14 +496,6 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
                 writeBinaryLittleEndian(static_cast<UInt8>(entry.extremes.has_value()), compressed_out);
                 if (entry.extremes)
                     writeChunk(*entry.extremes, *key.header, writer, compressed_out);
-                writeVarUInt(key.result_column_origins.size(), compressed_out);
-                for (const auto & column_origin : key.result_column_origins)
-                {
-                    writeStringBinary(column_origin.database, compressed_out);
-                    writeStringBinary(column_origin.table, compressed_out);
-                    writeStringBinary(column_origin.org_table, compressed_out);
-                    writeStringBinary(column_origin.column, compressed_out);
-                }
             }
 
             compressed_out.finalize();
@@ -781,36 +767,19 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
         if (has_extremes)
             entry.extremes = readChunk(header->columns(), reader, compressed_in);
 
-        size_t num_result_column_origins = 0;
-        readVarUInt(num_result_column_origins, compressed_in);
-        /// There is either no origin or one per result column.
-        if (num_result_column_origins != 0 && num_result_column_origins != header->columns())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The number of result column origins {} does not match the number of result columns {}",
-                num_result_column_origins, header->columns());
-        ResultColumnOrigins result_column_origins(num_result_column_origins);
-        for (auto & column_origin : result_column_origins)
-        {
-            readStringBinary(column_origin.database, compressed_in);
-            readStringBinary(column_origin.table, compressed_in);
-            readStringBinary(column_origin.org_table, compressed_in);
-            readStringBinary(column_origin.column, compressed_in);
-        }
-
         /// Treat the read as an access in the eviction policy of the filesystem cache, so that hot entries stay cached.
         for (const auto & file_segment : *holder)
             file_segment->increasePriority();
 
+        ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskReadBytes, fixed_header->total_size);
         LOG_TRACE(logger, "Query result found on disk for query {}", doubleQuoteString(key.query_string));
 
         return QueryResultCacheReader(
             source,
             header,
             std::move(entry),
-            std::move(result_column_origins),
             std::chrono::system_clock::from_time_t(fixed_header->created_at),
-            std::chrono::system_clock::from_time_t(fixed_header->expires_at),
-            access.ignore_quota,
-            /* on_disk_read_bytes_ = */ fixed_header->total_size);
+            std::chrono::system_clock::from_time_t(fixed_header->expires_at));
     }
     catch (...)
     {

@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['AWS', 'CloudWatch', 'OTEL', 'ClickStack', 'logs']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -56,15 +58,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     3. Acesse **Configurações da equipe → API Keys**
     4. Copie sua **API key de ingestão**
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![API key do ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/api-key.webp" alt="API key do ClickStack" />
 
     Salve isso em uma variável de ambiente:
 
@@ -300,15 +294,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     3. Aguarde 1 a 2 minutos para que os logs apareçam (dependendo do seu intervalo de polling)
     4. Pesquise logs dos seus grupos de logs do CloudWatch
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Visualização de pesquisa de logs](/images/clickstack/cloudwatch/log-search-view.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/log-search-view.webp" alt="Visualização de pesquisa de logs" />
 
     Procure estes atributos principais nos logs:
 
@@ -317,15 +303,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     * `ResourceAttributes['cloudwatch.log.stream']`: O nome do fluxo de logs
     * `Body`: O conteúdo da mensagem de log
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Valores da coluna de logs de erro](/images/clickstack/cloudwatch/error-log-column-values.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/error-log-column-values.webp" alt="Valores da coluna de logs de erro" />
   </Step>
 </Steps>
 
@@ -380,15 +358,7 @@ Para usuários que desejam testar a integração com os logs do CloudWatch antes
 
     Você deverá ver logs de vários grupos de logs do CloudWatch.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Visualização de busca de demonstração](/images/clickstack/cloudwatch/demo-search-view.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="Visualização de busca de demonstração" />
 
     <Info>
       **Exibição de fuso horário**
@@ -413,41 +383,17 @@ Para ajudar você a monitorar os logs do CloudWatch com o ClickStack, fornecemos
     1. Abra o HyperDX e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Botão Import dashboard](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Botão Import dashboard" />
 
     3. Faça upload do arquivo `cloudwatch-logs-dashboard.json` e clique em **Finish Import**
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Caixa de diálogo Finish import](/images/clickstack/cloudwatch/finish-import.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="Caixa de diálogo Finish import" />
   </Step>
 
   <Step title="Visualize o dashboard" id="created-dashboard">
     O dashboard será criado com todas as visualizações pré-configuradas:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard do CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="Dashboard do CloudWatch Logs" />
 
     <Note>
       Para o conjunto de dados de demonstração, defina o intervalo de tempo como **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo especificado.

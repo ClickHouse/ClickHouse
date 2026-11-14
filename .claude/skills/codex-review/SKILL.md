@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write, AskUserQuestion
 
 # Local codex review
 
-Run the same AI review CI runs (`ci/jobs/codex_review_job.py`), but locally against the current branch,
+Run the same AI review CI runs (`ci/jobs/copilot_review_job.py`), but locally against the current branch,
 before pushing. The point is an **independent** model with a **general** prompt: a Claude subagent shares
 this session's context and blind spots. Spawn a real `codex` process, never a subagent.
 
@@ -43,7 +43,7 @@ EFFORT=$(git config --global --get codex-review.effort)
 If either is empty, or `--model` was passed, find the model CI uses:
 
 ```bash
-grep -oP 'f"-m \K[\w.-]+' ci/jobs/codex_review_job.py | head -1
+grep -oP 'f"-m \K[\w.-]+' ci/jobs/copilot_review_job.py | head -1
 ```
 
 Ask with `AskUserQuestion` (one call, two questions):

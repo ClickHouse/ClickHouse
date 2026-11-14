@@ -319,33 +319,30 @@ namespace JSONUtils
 
                 if (format_settings.json.empty_as_default && str.empty())
                 {
-                    if (type->isDefaultInsertTrivial())
-                        column.insertDefault();
-                    else
-                        type->insertDefaultInto(column);
+                    column.insertDefault();
                     return false;
                 }
 
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)
-                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization, type.get());
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(column, buf, format_settings, serialization);
 
                 serialization->deserializeWholeText(column, buf, format_settings);
                 return true;
             }
 
-            auto deserialize = [as_nullable, &format_settings, &serialization, &type](IColumn & column_, ReadBuffer & buf) -> bool
+            auto deserialize = [as_nullable, &format_settings, &serialization](IColumn & column_, ReadBuffer & buf) -> bool
             {
                 if (as_nullable)
-                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization, type.get());
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization);
 
                 serialization->deserializeTextJSON(column_, buf, format_settings);
                 return true;
             };
 
             if (format_settings.json.empty_as_default)
-                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize, type.get());
+                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize);
             return deserialize(column, in);
         }
         catch (Exception & e)
@@ -594,7 +591,7 @@ namespace JSONUtils
         writeJSONString(exception_message, out, settings);
     }
 
-    Strings makeNamesValidJSONStrings(std::span<const String> names, const FormatSettings & settings, bool validate_utf8)
+    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8)
     {
         Strings result;
         result.reserve(names.size());
@@ -1000,7 +997,7 @@ namespace JSONUtils
     }
 
     template <typename ReturnType, bool default_column_return_value>
-    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested, const IDataType * type)
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested)
     {
         static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1010,14 +1007,11 @@ namespace JSONUtils
         if (istr.eof() || *istr.position() != EMPTY_STRING[0])
             return deserialize_nested(column, istr);
 
-        auto do_deserialize = [type](IColumn & column_, ReadBuffer & buf, auto && check_for_empty_string, auto && deserialize) -> ReturnType
+        auto do_deserialize = [](IColumn & column_, ReadBuffer & buf, auto && check_for_empty_string, auto && deserialize) -> ReturnType
         {
             if (check_for_empty_string(buf))
             {
-                if (type && !type->isDefaultInsertTrivial())
-                    type->insertDefaultInto(column_);
-                else
-                    column_.insertDefault();
+                column_.insertDefault();
                 return ReturnType(default_column_return_value);
             }
             return deserialize(column_, buf);
@@ -1071,9 +1065,9 @@ namespace JSONUtils
         return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_nested_with_check);
     }
 
-    template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested, const IDataType * type);
-    template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
-    template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
+    template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
 }
 
 }

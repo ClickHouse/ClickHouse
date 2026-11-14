@@ -229,13 +229,7 @@ void TablesLoader::removeUnresolvableDependencies()
         if (metadata.parsed_tables.contains(table_id.getQualifiedName()))
             return false;
 
-        /// Only a database with its own tables has loaded ones, and it answers from memory. Any other database resolves
-        /// a name on access, and checking it reaches the data (a path, a remote server), which can be unavailable.
-        /// Dependencies parsed from metadata are database-qualified names without a UUID, so a lookup by name is enough.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
-        const auto * database_with_own_tables = dynamic_cast<const DatabaseWithOwnTablesBase *>(database.get());
-
-        if (database_with_own_tables && database_with_own_tables->isTableExist(table_id.table_name, global_context))
+        if (DatabaseCatalog::instance().isTableExist(table_id, global_context))
         {
             /// Table exists and it's already loaded
         }
@@ -249,10 +243,6 @@ void TablesLoader::removeUnresolvableDependencies()
                 "Consider converting it to DDL dictionary.",
                 fmt::join(all_loading_dependencies.getDependents(table_id), ", "),
                 table_id);
-        }
-        else if (database && !database_with_own_tables)
-        {
-            /// The table is resolved on access, there is nothing to load.
         }
         else
         {

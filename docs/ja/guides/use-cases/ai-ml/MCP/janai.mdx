@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 > このガイドでは、[Jan.ai](https://jan.ai/docs) で ClickHouse MCPサーバー を使う方法を説明します。
 
 <Steps>
@@ -23,30 +25,14 @@ doc_type: 'guide'
 
     OpenAI を有効にするには、以下のように APIキーを入力する必要があります。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![OpenAI モデルを有効化](/images/use-cases/AI_ML/MCP/0_janai_openai.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="OpenAI モデルを有効化" size="md" />
   </Step>
 
   <Step title="MCPサーバーを有効にする" id="enable-mcp-servers">
     本稿執筆時点では、MCPサーバーは Jan.ai の実験的機能です。
     実験的機能をオンにすると有効化できます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![MCPサーバーを有効化](/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp" alt="MCPサーバーを有効化" size="md" />
 
     このトグルをオンにすると、左側のメニューに `MCP servers` が表示されます。
   </Step>
@@ -54,115 +40,43 @@ doc_type: 'guide'
   <Step title="ClickHouse MCPサーバー を設定する" id="configure-clickhouse-mcp-server">
     `MCP servers` メニューをクリックすると、接続可能な MCPサーバーの一覧が表示されます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![MCPサーバー一覧](/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="MCPサーバー一覧" size="md" />
 
     これらのサーバーはデフォルトではすべて無効ですが、トグルをクリックすると有効にできます。
 
     ClickHouse MCPサーバー をインストールするには、`+` アイコンをクリックし、フォームに次の内容を入力します。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![MCPサーバーを追加](/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp" alt="MCPサーバーを追加" size="md" />
 
     入力が完了したら、まだ有効になっていない場合は ClickHouse Server のトグルをオンにします。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![MCPサーバーを有効化](/images/use-cases/AI_ML/MCP/4_janai_toggle.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/4_janai_toggle.webp" alt="MCPサーバーを有効化" size="md" />
 
     これで、ClickHouse MCPサーバー のツールがチャット画面に表示されます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse MCPサーバー のツール](/images/use-cases/AI_ML/MCP/5_jani_tools.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="ClickHouse MCPサーバー のツール" size="md" />
   </Step>
 
   <Step title="Jan.ai で ClickHouse MCPサーバー とチャットする" id="chat-to-clickhouse-mcp-server">
     それでは、ClickHouse に保存されているデータについて対話してみましょう。
     質問してみます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![質問](/images/use-cases/AI_ML/MCP/6_janai_question.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/6_janai_question.webp" alt="質問" size="md" />
 
     Jan.ai はツールを呼び出す前に確認を求めます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![ツール確認](/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp" alt="ツール確認" size="md" />
 
     その後、実行されたツール呼び出しの一覧が表示されます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![呼び出されたツール](/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp" alt="呼び出されたツール" size="md" />
 
     ツール呼び出しをクリックすると、呼び出しの詳細を確認できます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![展開されたツール呼び出し](/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp" alt="展開されたツール呼び出し" size="md" />
 
     その下に、結果が表示されます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![結果](/images/use-cases/AI_ML/MCP/10_janai_result.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/10_janai_result.webp" alt="結果" size="md" />
   </Step>
 </Steps>

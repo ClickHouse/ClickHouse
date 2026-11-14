@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <unordered_map>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -44,8 +43,7 @@ public:
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const String & source_table_regexp_,
-        ContextPtr context_,
-        bool keep_inferred_source_metadata = false);
+        ContextPtr context_);
 
     std::string getName() const override { return "Merge"; }
 
@@ -108,8 +106,6 @@ public:
     /// `View`, `ObjectStorageCluster`, etc.) at the top level.
     bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
-    const String & getSourceDatabaseNameOrRegexp() const { return database_name_or_regexp.source_database_name_or_regexp; }
-
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
         const String & source_database_name_or_regexp,
@@ -118,10 +114,8 @@ public:
         size_t max_tables_to_look);
 
 private:
-    /// (Database, Table, Lock, TableName, Metadata). The metadata is the snapshot the column-level access check
-    /// resolved subcolumns against, so the read uses it too and both see the same schema. It is null when the check
-    /// did not need it, then the read takes the snapshot itself.
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
+    /// (Database, Table, Lock, TableName)
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
     struct DatabaseNameOrRegexp
@@ -147,25 +141,8 @@ private:
 
     DatabaseNameOrRegexp database_name_or_regexp;
 
-    /// The metadata of each data lake source table as the schema inference of the `merge` table function read it, so
-    /// that its read uses the same snapshot instead of refreshing the table again. Keyed by the table, not the storage
-    /// object, because a database may build a new object on each lookup (`DataLakeCatalog` does). A table without a UUID
-    /// is identified only by its storage object, since its name can be given to another table in the meantime. So a Glue or
-    /// Hive catalog table (no UUID, a new object per lookup) is refreshed again by the read, which can see a newer schema.
-    struct InferredSourceMetadata
-    {
-        std::weak_ptr<IStorage> storage;
-        StorageMetadataPtr metadata;
-    };
-    using SourceMetadata = std::unordered_map<
-        StorageID, InferredSourceMetadata, StorageID::DatabaseAndTableNameAndUUIDHash, StorageID::DatabaseAndTableNameAndUUIDEqual>;
-    SourceMetadata inferred_source_metadata;
-
     template <typename F>
     StoragePtr traverseTablesUntil(F && predicate) const;
-
-    template <typename F>
-    StoragePtr traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
@@ -178,22 +155,21 @@ private:
         const ContextPtr & context,
         const DatabaseNameOrRegexp & database_name_or_regexp,
         size_t max_tables_to_look,
-        const IStorage * ignore_self,
-        SourceMetadata * source_metadata);
+        const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
+    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context, SourceMetadata * source_metadata) const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
     static VirtualColumnsDescription createVirtuals();
 
     bool tableSupportsPrewhere() const;
 
     template <typename F>
-    std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
+    std::optional<UInt64> totalRowsOrBytes(F && func) const;
 
     friend class ReadFromMerge;
 };
@@ -204,7 +180,7 @@ public:
     static constexpr auto name = "ReadFromMerge";
     String getName() const override { return name; }
 
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
@@ -225,12 +201,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts `order_info_`: no child plan runs distributed, and every reading step of every
-    /// child plan has to be a `ReadFromMergeTree` that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`)
-    /// and is sorted like its table on the prefix.
-    /// With `allow_shorter_read_key`, a read whose sorting key is shorter than the prefix passes: it refuses the request itself.
-    /// Creates the child plans.
-    bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
+    /// Whether `requestReadingInOrder` accepts `direction`: every reading step of every child plan has to be
+    /// a `ReadFromMergeTree` that accepts it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
+    bool canReadInOrder(int direction);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
@@ -308,7 +281,7 @@ private:
     class RowPolicyData
     {
     public:
-        RowPolicyData(RowPolicyFilterPtr, StorageMetadataPtr, ContextPtr);
+        RowPolicyData(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
 
         /// Add to data stream columns that are needed only for row policies
         ///  SELECT x from T  if  T has row policy  y=42
@@ -401,9 +374,6 @@ private:
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
-
-    /// The metadata snapshot of a child table to read with. It may refresh the metadata of a data lake child, which can be slow.
-    StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
 
 }

@@ -318,7 +318,7 @@ Pipe executeRemoveOrphanFiles(
     /// between queries. Resolve the same metadata file the scan below roots at, so the
     /// gate and the scan judge one table state.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method, _] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_name,

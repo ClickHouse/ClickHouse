@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <atomic>
-#include <future>
 #include <map>
 #include <set>
 #include <optional>
@@ -34,10 +33,6 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
-#if USE_GPU
-#include <GPU/GPUDevice.h>
-#include <GPU/GPUKernelCache.h>
-#endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
@@ -51,7 +46,6 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
-#include <Storages/FileLog/DirectoryWatchReactor.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
@@ -130,7 +124,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
@@ -160,7 +154,6 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Analyzer/Utils.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -181,9 +174,6 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
-#include <Server/StatelessWorker/StatelessWorkersProviderRegistry.h>
-#include <Server/StatelessWorker/StatelessWorkerAllocation.h>
 
 namespace fs = std::filesystem;
 
@@ -334,9 +324,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
-    extern const SettingsString distributed_plan_worker_cluster;
-    extern const SettingsUInt64 distributed_plan_workers_num;
-    extern const SettingsUInt64 distributed_plan_workers_provisioning_timeout_ms;
     extern const SettingsBoolAuto force_read_through_distributed_cache;
     extern const SettingsBoolAuto force_write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
@@ -346,6 +333,7 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+    extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -384,8 +372,6 @@ namespace Setting
     extern const SettingsBool page_cache_inject_eviction;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsUInt64 parallel_replicas_count;
-    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
@@ -400,6 +386,7 @@ namespace Setting
     extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
+    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
@@ -468,11 +455,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_distributed_cache_write_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
-    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
-    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
-    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
@@ -501,16 +485,13 @@ namespace ServerSetting
 
 namespace FailPoints
 {
-    extern const char context_zookeeper_connection_attempt_pause[];
-    extern const char context_auxiliary_zookeeper_connection_attempt_pause[];
+    extern const char context_zookeeper_lock_acquired_pause[];
+    extern const char context_auxiliary_zookeeper_lock_acquired_pause[];
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-#if USE_GPU
-    extern const int GPU_ERROR;
-#endif
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -572,75 +553,6 @@ static const std::vector<String> distributed_cache_force_setting_names
     }                                                   \
 } while (false)                                         \
 
-/// A connection attempt of one Keeper client, shared by every thread that finds the client missing or expired.
-/// The thread that registered it (the connector) connects with no lock held and finishes it exactly once.
-class ZooKeeperConnectionAttempt
-{
-public:
-    /// `args_` is set for a first connection, which has no expired client to take the config from.
-    explicit ZooKeeperConnectionAttempt(std::optional<zkutil::ZooKeeperArgs> args_) : args(std::move(args_)) {}
-
-    bool isFirstConnection() const { return args.has_value(); }
-
-    /// As ZooKeeper::configChanged, for a first connection.
-    bool configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
-    {
-        zkutil::ZooKeeperArgs new_args(config, config_name);
-        new_args.send_receive_os_threads_nice_value = args->send_receive_os_threads_nice_value;
-        new_args.enforce_component_tracking = args->enforce_component_tracking;
-        return new_args != *args;
-    }
-
-    /// The connector discards its client or its error; the attempt stays registered until it finishes.
-    void supersede() { superseded = true; }
-    bool isSuperseded() const { return superseded; }
-
-    void finish() { promise.set_value(); }
-
-    /// Called in the connector's catch block. Throws the connector's own copy of the exception.
-    [[noreturn]] void fail(std::exception_ptr error_)
-    {
-        error = std::move(error_);
-        promise.set_value();
-        rethrowError();
-    }
-
-    const std::shared_future<void> & getFuture() const { return future; }
-
-    /// After the future is ready: throws a copy of the connector's exception if the attempt failed.
-    void rethrowIfFailed() const
-    {
-        if (error)
-            rethrowError();
-    }
-
-private:
-    /// `error` is never thrown itself: catch blocks modify the exceptions they catch, so every thread gets a copy.
-    /// `copyMutableException` would copy a `Coordination::Exception` as a `DB::Exception`, without its code.
-    [[noreturn]] void rethrowError() const
-    {
-        try
-        {
-            std::rethrow_exception(error);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            throw Coordination::Exception(e);
-        }
-        catch (...)
-        {
-            std::rethrow_exception(copyMutableException(std::current_exception()));
-        }
-    }
-
-    const std::optional<zkutil::ZooKeeperArgs> args;
-    std::promise<void> promise;
-    std::shared_future<void> future = promise.get_future().share();
-    bool superseded = false; /// Protected by the client mutex.
-    /// Written by the connector before `promise` is satisfied, only read after.
-    std::exception_ptr error;
-};
-
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
@@ -658,23 +570,17 @@ struct ContextSharedPart : boost::noncopyable
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
-    /// Protects the ZooKeeper client and its connection attempt. Not held while connecting, except by config reload.
+    /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::timed_mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper. Protected by zookeeper_mutex.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs. Protected by zookeeper_mutex.
-    mutable std::shared_ptr<ZooKeeperConnectionAttempt> zookeeper_connection_attempt; /// Protected by zookeeper_mutex.
-    bool zookeeper_server_started = false;                  /// Set by setServerCompletelyStarted. Protected by zookeeper_mutex.
-    bool zookeeper_shut_down = false;                       /// Set by shutdown: no new connection attempts. Protected by zookeeper_mutex.
 
     ConfigurationPtr sensitive_data_masker_config;
 
     mutable std::timed_mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers; /// Map for auxiliary ZooKeeper clients. Protected by auxiliary_zookeepers_mutex.
     ConfigurationPtr auxiliary_zookeepers_config;                        /// Stores auxiliary zookeepers configs. Protected by auxiliary_zookeepers_mutex.
-    mutable std::map<String, std::shared_ptr<ZooKeeperConnectionAttempt>> auxiliary_zookeeper_connection_attempts; /// Protected by auxiliary_zookeepers_mutex.
-    bool auxiliary_zookeepers_server_started = false;       /// Set by setServerCompletelyStarted. Protected by auxiliary_zookeepers_mutex.
-    bool auxiliary_zookeepers_shut_down = false;            /// Set by shutdown. Protected by auxiliary_zookeepers_mutex.
 
     /// No lock required for interserver_io_host, interserver_io_port, interserver_scheme modified only during initialization
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
@@ -757,7 +663,6 @@ struct ContextSharedPart : boost::noncopyable
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
-    bool cpu_slot_parking TSA_GUARDED_BY(mutex) = true;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
@@ -801,9 +706,6 @@ struct ContextSharedPart : boost::noncopyable
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
-#if USE_GPU
-    std::unique_ptr<GPU::GPUDevice> gpu;    /// Set at the start of the server, before any query, so read without the mutex.
-#endif
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -830,13 +732,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable BackgroundSchedulePoolPtr iceberg_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs background metadata refresh for all active Iceberg tables
     OnceFlag streaming_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs streaming background jobs
-
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    OnceFlag directory_watch_reactor_initialized;
-    mutable std::mutex directory_watch_reactor_mutex;
-    /// The thread that watches the directories of all `FileLog` tables
-    mutable std::shared_ptr<DirectoryWatchReactor> directory_watch_reactor TSA_GUARDED_BY(directory_watch_reactor_mutex);
-#endif
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -993,9 +888,6 @@ struct ContextSharedPart : boost::noncopyable
 #if USE_NURAFT
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
-
-    mutable std::mutex stateless_worker_provider_mutex;
-    mutable StatelessWorkersProviderRegistryPtr stateless_workers_registry TSA_GUARDED_BY(stateless_worker_provider_mutex);
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
@@ -1334,9 +1226,6 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
         BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
         BackgroundSchedulePoolPtr delete_streaming_schedule_pool;
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        std::shared_ptr<DirectoryWatchReactor> delete_directory_watch_reactor;
-#endif
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1353,20 +1242,6 @@ struct ContextSharedPart : boost::noncopyable
                 /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while deconstructing,
                 /// which will trigger the callback and make ClusterDiscovery reconnect to keeper again (unnecessary).
                 cluster_discovery.reset();
-            }
-        }
-
-        {
-            /// Detach under the lock (a racing query may read it), then shut down outside the lock.
-            StatelessWorkersProviderRegistryPtr registry;
-            {
-                std::lock_guard lock(stateless_worker_provider_mutex);
-                registry.swap(stateless_workers_registry);
-            }
-            if (registry)
-            {
-                LOG_TRACE(log, "Shutting down stateless worker providers");
-                registry->shutdown();
             }
         }
 
@@ -1427,41 +1302,6 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
-        /// Stop zookeeper connections. A connection attempt in flight needs the schedule pool, so this goes first.
-        zkutil::ZooKeeperPtr delete_zookeeper;
-        {
-            std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
-            {
-                std::lock_guard lock(zookeeper_mutex);
-                zookeeper_shut_down = true;
-                attempt = zookeeper_connection_attempt;
-            }
-            /// The attempt in flight publishes its client before it is moved out below.
-            if (attempt)
-                attempt->getFuture().wait();
-            std::lock_guard lock(zookeeper_mutex);
-            delete_zookeeper = std::move(zookeeper);
-        }
-        if (delete_zookeeper)
-            delete_zookeeper->finalize("shutdown");
-
-        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
-        {
-            std::vector<std::shared_ptr<ZooKeeperConnectionAttempt>> attempts;
-            {
-                std::lock_guard lock(auxiliary_zookeepers_mutex);
-                auxiliary_zookeepers_shut_down = true;
-                for (const auto & [name, attempt] : auxiliary_zookeeper_connection_attempts)
-                    attempts.push_back(attempt);
-            }
-            for (const auto & attempt : attempts)
-                attempt->getFuture().wait();
-            std::lock_guard lock(auxiliary_zookeepers_mutex);
-            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
-        }
-        for (auto & [name, zk] : delete_auxiliary_zookeepers)
-            zk->finalize("shutdown");
-
         {
             std::lock_guard lock(schedule_pools_mutex);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
@@ -1472,12 +1312,22 @@ struct ContextSharedPart : boost::noncopyable
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+        zkutil::ZooKeeperPtr delete_zookeeper;
         {
-            std::lock_guard lock(directory_watch_reactor_mutex);
-            delete_directory_watch_reactor = std::move(directory_watch_reactor);
+            /// Stop zookeeper connection
+            std::lock_guard lock(zookeeper_mutex);
+            delete_zookeeper = std::move(zookeeper);
         }
-#endif
+        if (delete_zookeeper)
+            delete_zookeeper->finalize("shutdown");
+
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::lock_guard lock(auxiliary_zookeepers_mutex);
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -1515,17 +1365,7 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_iceberg_schedule_pool));
         join_background_pool(std::move(delete_streaming_schedule_pool));
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        /// The tables are shut down by now, so this is normally the last reference and stops the reactor thread.
-        delete_directory_watch_reactor.reset();
-#endif
-
         delete_access_control.reset();
-
-#if USE_GPU
-        /// After everything that may still hold device or pinned memory.
-        gpu.reset();
-#endif
 
         total_memory_tracker.resetOvercommitTracker();
         total_memory_tracker.resetPageCache();
@@ -1556,7 +1396,7 @@ struct ContextSharedPart : boost::noncopyable
     void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, message);
+        LOG_WARNING(log, "{}", message.text);
         warnings[warning] = message;
     }
 
@@ -1721,13 +1561,11 @@ ContextData::ContextData(const ContextData &o) :
     is_analyzing_background_expressions(o.is_analyzing_background_expressions),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
-    is_sql_security_overridden_body(o.is_sql_security_overridden_body),
+    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
-    totals_without_storage_access(o.totals_without_storage_access),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
-    is_metadata_query(o.is_metadata_query),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
@@ -1739,7 +1577,6 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
     streaming_cursor(o.streaming_cursor),
-    query_execution_started_callback(o.query_execution_started_callback),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -2861,13 +2698,13 @@ void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_cons
     {
         /// Check the profile's settings against current constraints before resolving, because after
         /// resolving the parent_profile references are already expanded and checkSettingsConstraints
-        /// would not see them. The profile replaces this context's settings, so every user is bound by
-        /// its constraints, even one defined in the server config; only a context without a user is trusted.
+        /// would not see them. A config-defined admin is trusted to apply looser profiles (structural
+        /// rules still apply); a SQL-defined user must satisfy the constraints it is bound by.
         SettingsProfileElements elements;
         elements.emplace_back().parent_profile = profile_id;
         getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(
             *settings, elements, SettingSource::PROFILE, /* skip_config_defined_profiles= */ false,
-            /* actor_is_config_defined= */ !user_id);
+            /* actor_is_config_defined= */ isCurrentUserDefinedInConfigWithLock());
     }
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
     setCurrentProfilesWithLock(*profile_info, /* check_constraints= */ false, lock);
@@ -2945,20 +2782,6 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
-namespace
-{
-    /// Maps every resource to an empty ResourceLink, so a query using it is exempt from all workload
-    /// scheduling (query-slot and memory-reservation admission, CPU and IO) and never throws on an
-    /// unknown workload. Stateless, so a single shared instance serves every exempt query.
-    class ExemptClassifier : public IClassifier
-    {
-    public:
-        bool has(const String &) override { return false; }
-        ResourceLink get(const String &) override { return {}; }
-        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
-    };
-}
-
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     const auto & query_settings = getSettingsRef();
@@ -2977,22 +2800,8 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-    {
-        if (is_metadata_query)
-        {
-            static const ClassifierPtr metadata_exempt_classifier = std::make_shared<ExemptClassifier>();
-            classifier = metadata_exempt_classifier;
-        }
-        else
-            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
-    }
+        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
     return classifier;
-}
-
-void Context::setMetadataQuery()
-{
-    std::lock_guard lock(mutex);
-    is_metadata_query = true;
 }
 
 void Context::releaseQuerySlot() const
@@ -3086,18 +2895,6 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption = cpu_slot_preemption;
     shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
-}
-
-bool Context::getCPUSlotParking() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_parking;
-}
-
-void Context::setCPUSlotParking(bool cpu_slot_parking)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->cpu_slot_parking = cpu_slot_parking;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -3585,41 +3382,29 @@ static bool findIdentifier(const ASTFunction * function)
     return false;
 }
 
-/// Substituting the parameters and analyzing the body report parts of the definition in their errors.
-static void checkAccessToParameterizedView(const Context & context, const String & database_name, const String & table_name, const StorageID & view_id)
-{
-    if (!context.getAccess()->getAccessRightsWithImplicit()->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
-        context.checkAccess(AccessType::SELECT, view_id);
-}
-
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    /// Same split as the analyzer: a stored `` `db.view`(...) `` has no compound-name flag.
-    auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(function->name, shared_from_this());
+    String database_name = getCurrentDatabase();
+    String table_name = function->name;
 
-    auto is_parameterized_view = [](const StoragePtr & storage)
+    if (function->isCompoundName())
     {
-        const auto * view = storage ? storage->as<StorageView>() : nullptr;
-        return view && view->isParameterizedView();
-    };
+        std::vector<std::string> parts;
+        splitInto<'.'>(parts, function->name);
 
-    StoragePtr table;
-    if (!table_name.empty())
-        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
-    /// A view whose own name has a dot: `` `v.x`(...) ``.
-    if (!is_parameterized_view(table) && !function->isCompoundName() && table_name != function->name)
-    {
-        database_name = getCurrentDatabase();
-        table_name = function->name;
-        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+        if (parts.size() == 2)
+        {
+            database_name = std::move(parts[0]);
+            table_name = std::move(parts[1]);
+        }
     }
-    /// A registered table function takes precedence over a view of the same name, as in `QueryAnalyzer::resolveTableFunction`.
-    if (table && !TableFunctionFactory::instance().isTableFunctionName(function->name))
+
+    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
-            checkAccessToParameterizedView(*this, database_name, table_name, table->getStorageID());
             auto view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
             auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
@@ -3912,8 +3697,6 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     auto * storage_view = original_view->as<StorageView>();
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
-
-    checkAccessToParameterizedView(*this, database_name, table_name, original_view->getStorageID());
 
     auto original_view_metadata = original_view->getInMemoryMetadataPtr(getQueryContext(), false);
     auto query = original_view_metadata->getSelectQuery().inner_query->clone();
@@ -4299,34 +4082,6 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
 
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
-}
-
-SettingsChanges Context::applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings)
-{
-    /// Clamping the whole clause as a batch would check every change against the settings as they were
-    /// before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve differently
-    /// from the last-wins reading the clause has everywhere else. `clampToSettingsConstraintsRejectingInvalidChanges`
-    /// keeps a change that does not change the value, so clamping one change at a time does not lose the batch's
-    /// `compatibility` marker: `SETTINGS use_variant_as_common_type = 1, compatibility = '25.12'` keeps the `1`.
-    SettingsChanges effective_changes;
-    for (const auto & change : changes)
-    {
-        SettingsChanges single_change{change};
-        clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
-        applySettingsChanges(single_change);
-        effective_changes.insert(effective_changes.end(), single_change.begin(), single_change.end());
-    }
-
-    if (!default_settings.empty())
-    {
-        auto allowed_resets = default_settings;
-        SettingsChanges clamped_resets;
-        clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
-        resetSettingsToDefaultValue(allowed_resets);
-        applySettingsChanges(clamped_resets);
-    }
-
-    return effective_changes;
 }
 
 void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
@@ -4787,7 +4542,6 @@ AsyncLoader & Context::getAsyncLoader() const
             /* log_failures = */ true,
             /* log_progress = */ true,
             /* log_events = */ true);
-        shared->async_loader->setWaiterCallbacks(onLoadJobWaitersIncrement, onLoadJobWaitersDecrement);
     });
 
     return *shared->async_loader;
@@ -4857,37 +4611,16 @@ void Context::tryCreateEmbeddedDictionaries() const
         static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
-void Context::registerDictionariesBeforeLoadingMetadata(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock(shared->external_dictionaries_mutex);
-
-    /// The tables are attached before the dictionaries are allowed to load, but they can refer to dictionaries
-    /// declared in configuration files: in a projection, in a column default, or in their loading dependencies.
-    /// So the definitions are registered now, while no dictionary starts loading until `loadOrReloadDictionaries`:
-    /// a dictionary may read from a table which is not attached yet, or from this server, which does not listen yet.
-    auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
-    external_dictionaries_loader.enableAutomaticLoading(false);
-    addDictionariesConfigRepository(config, lock);
-}
-
 void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
     bool dictionaries_lazy_load = shared->server_settings[ServerSetting::dictionaries_lazy_load];
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
 
     std::lock_guard lock(shared->external_dictionaries_mutex);
 
     auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
     external_dictionaries_loader.enableAlwaysLoadEverything(!dictionaries_lazy_load);
-    addDictionariesConfigRepository(config, lock);
-    external_dictionaries_loader.enableAutomaticLoading(true);
-}
-
-void Context::addDictionariesConfigRepository(const Poco::Util::AbstractConfiguration & config, const std::lock_guard<std::mutex> & lock) TSA_REQUIRES(shared->external_dictionaries_mutex)
-{
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
-
-    auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
 
     if (shared->external_dictionaries_config_repository)
     {
@@ -5189,23 +4922,6 @@ void Context::waitAllBackupsAndRestores() const
         shared->backups_worker->waitAll();
 }
 
-void Context::stopDDLWorkerAndWaitAllBackupsAndRestores() const
-{
-    /// A worker that has not started yet must never start, because its startup job would undo the stop.
-    if (shared->ddl_worker_startup_task)
-        getAsyncLoader().remove(shared->ddl_worker_startup_task->goals());
-
-    DDLWorker * ddl_worker = nullptr;
-    {
-        SharedLockGuard lock(shared->mutex);
-        ddl_worker = shared->ddl_worker.get();
-    }
-    if (ddl_worker)
-        ddl_worker->shutdown();
-
-    waitAllBackupsAndRestores();
-}
-
 bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
@@ -5395,43 +5111,6 @@ void Context::setPageCache(std::chrono::milliseconds history_window,
         history_window, cache_policy, size_ratio,
         min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
-
-#if USE_GPU
-void Context::setGPU(const ServerSettings & server_settings)
-{
-    if (shared->gpu)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU has been already set.");
-
-    shared->gpu = std::make_unique<GPU::GPUDevice>(GPU::GPUDeviceSettings::fromServerSettings(server_settings));
-}
-
-GPU::GPUDevice & Context::getGPU() const
-{
-    if (!shared->gpu)
-        throw Exception(ErrorCodes::GPU_ERROR, "There is no GPU: the server setting `enable_gpu` is not set");
-    return *shared->gpu;
-}
-
-void Context::updateGPUKernelCacheConfiguration(const ServerSettings & server_settings)
-{
-    if (!shared->gpu)
-        return;
-
-    const GPU::GPUDeviceSettings settings = GPU::GPUDeviceSettings::fromServerSettings(server_settings);
-    GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
-    cache.setMaxSizeInBytes(settings.kernel_cache_max_size_in_bytes);
-    cache.setMaxCount(settings.kernel_cache_max_count);
-}
-
-std::pair<size_t, size_t> Context::getGPUKernelCacheLimits() const
-{
-    if (!shared->gpu)
-        return {0, 0};
-
-    const GPU::GPUKernelCache & cache = shared->gpu->kernelCache();
-    return {cache.maxSizeInBytes(), cache.maxCount()};
-}
-#endif
 
 PageCachePtr Context::getPageCache() const
 {
@@ -6582,21 +6261,6 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
     return shared->distributed_schedule_pool;
 }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-std::shared_ptr<DirectoryWatchReactor> Context::getDirectoryWatchReactor() const
-{
-    callOnce(shared->directory_watch_reactor_initialized, [&]
-    {
-        auto created_reactor = std::make_shared<DirectoryWatchReactor>();
-        std::lock_guard lock(shared->directory_watch_reactor_mutex);
-        shared->directory_watch_reactor = std::move(created_reactor);
-    });
-
-    std::lock_guard lock(shared->directory_watch_reactor_mutex);
-    return shared->directory_watch_reactor;
-}
-#endif
-
 BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
 {
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
@@ -6851,13 +6515,13 @@ ThrottlerPtr Context::getMergesThrottler() const
 ThrottlerPtr Context::getServerWideDistributedCacheReadThrottler() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->distributed_cache_read_throttler == shared->remote_read_throttler ? nullptr : shared->distributed_cache_read_throttler;
+    return shared->distributed_cache_read_throttler;
 }
 
 ThrottlerPtr Context::getServerWideDistributedCacheWriteThrottler() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->distributed_cache_write_throttler == shared->remote_write_throttler ? nullptr : shared->distributed_cache_write_throttler;
+    return shared->distributed_cache_write_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
@@ -6992,8 +6656,6 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         getGoals(startup_after),
         TablesLoaderBackgroundStartupPoolId,
         "startup ddl worker",
-        /// A table that failed to load must not stop distributed DDL on the whole server.
-        ignoreDependencyFailure,
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             std::lock_guard lock2(shared->mutex);
@@ -7046,193 +6708,107 @@ void recordZooKeeperConnectionLoss()
     );
 }
 
-/// Waits for the client mutex or another thread's connection attempt. With a query context they end at
-/// `get_zookeeper_lock_acquire_timeout_ms` or on cancellation; without one they are unbounded.
-class ZooKeeperWaitLimit
+std::unique_lock<std::timed_mutex> acquireZooKeeperLock(
+    const Context & context, std::timed_mutex & mutex, const char * lock_name)
 {
-public:
-    explicit ZooKeeperWaitLimit(const Context & context)
+    const bool has_query_context = context.hasQueryContext();
+    auto lock_acquire_timeout = context.getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    if (has_query_context)
+        lock_acquire_timeout = context.getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+
+    std::unique_lock lock(mutex, std::defer_lock);
+    if (lock_acquire_timeout.totalMilliseconds() == 0)
+        lock.lock();
+    else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
     {
-        if (!context.hasQueryContext())
-            return;
-        const auto query_context = context.getQueryContext();
-        is_query = true;
-        query_status = query_context->getProcessListElementSafe();
-        timeout_ms = query_context->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms].totalMilliseconds();
-        if (timeout_ms)
-            deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        /// Without a query context, report a Keeper error, handled like a lost connection; a query fails fast instead.
+        if (!has_query_context)
+            throw Coordination::Exception(
+                Coordination::Error::ZOPERATIONTIMEOUT,
+                "Timeout exceeded while acquiring {} ({} ms)",
+                lock_name,
+                lock_acquire_timeout.totalMilliseconds());
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timeout exceeded while acquiring {} ({} ms)",
+            lock_name,
+            lock_acquire_timeout.totalMilliseconds());
     }
 
-    std::unique_lock<std::timed_mutex> lock(std::timed_mutex & mutex, const char * lock_name) const
-    {
-        std::unique_lock lock(mutex, std::defer_lock);
-        if (!is_query)
-            lock.lock();
-        else
-            while (!lock.try_lock_for(nextStep()))
-                check("acquiring", lock_name);
-        return lock;
-    }
-
-    void wait(const std::shared_future<void> & finished, const char * attempt_name) const
-    {
-        if (!is_query)
-            finished.wait();
-        else
-            while (finished.wait_for(nextStep()) != std::future_status::ready)
-                check("waiting for", attempt_name);
-    }
-
-private:
-    std::chrono::steady_clock::duration nextStep() const
-    {
-        std::chrono::steady_clock::duration step = std::chrono::milliseconds(100);
-        if (deadline)
-            step = std::clamp(*deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero(), step);
-        return step;
-    }
-
-    void check(const char * action, const char * what) const
-    {
-        /// `checkTimeLimit` throws on `KILL QUERY` and in the `throw` overflow mode, and returns false in the `break`
-        /// mode; a Keeper getter has no partial result, so it stops there too.
-        if (query_status && !query_status->checkTimeLimit())
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached while {} {}", action, what);
-        if (deadline && std::chrono::steady_clock::now() >= *deadline)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while {} {} ({} ms)", action, what, timeout_ms);
-    }
-
-    bool is_query = false;
-    QueryStatusPtr query_status;
-    UInt64 timeout_ms = 0;
-    std::optional<std::chrono::steady_clock::time_point> deadline;
-};
+    return lock;
+}
 
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
-    const ZooKeeperWaitLimit limit(*this);
-    /// Only an attempt found on the first pass started before this call. Its failure can predate a recovered
-    /// connection, so it is not final: the caller then makes or joins one more attempt.
-    for (bool first_pass = true;; first_pass = false)
+    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
+    FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_lock_acquired_pause);
+    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
+
+    if (!shared->zookeeper)
     {
-        std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
-        bool is_connector = false;
-        zkutil::ZooKeeperPtr expired_zookeeper;
-        std::optional<zkutil::ZooKeeperArgs> args;
-        {
-            auto lock = limit.lock(shared->zookeeper_mutex, "ZooKeeper lock");
-            if (shared->zookeeper && !shared->zookeeper->expired())
-                return shared->zookeeper;
+        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
 
-            attempt = shared->zookeeper_connection_attempt;
-            if (!attempt)
-            {
-                if (shared->zookeeper_shut_down)
-                    throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "ZooKeeper client is shut down");
-                expired_zookeeper = shared->zookeeper;
-                if (!expired_zookeeper)
-                {
-                    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
-                    args.emplace(config, zkutil::getZooKeeperConfigName(config));
-                    args->send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-                    args->enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
-                }
-                attempt = std::make_shared<ZooKeeperConnectionAttempt>(args);
-                shared->zookeeper_connection_attempt = attempt;
-                is_connector = true;
-            }
-        }
-
-        if (!is_connector)
-        {
-            limit.wait(attempt->getFuture(), "ZooKeeper connection attempt");
-            /// A published client is read under the mutex again: a config reload may have replaced it already.
-            if (!first_pass)
-                attempt->rethrowIfFailed();
-            continue;
-        }
-
-        /// From here on every path finishes the attempt exactly once, as the last step.
         try
         {
-            Stopwatch watch;
-            FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_connection_attempt_pause);
-            zkutil::ZooKeeperPtr zookeeper;
-            try
-            {
-                if (expired_zookeeper)
-                {
-                    CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-                    LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
-                }
-                if (args)
-                    zookeeper = zkutil::ZooKeeper::create(std::move(*args), getZooKeeperLog(), getAggregatedZooKeeperLog());
-                else
-                    zookeeper = expired_zookeeper->startNewSession();
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (e.code == Coordination::Error::ZCONNECTIONLOSS)
-                    recordZooKeeperConnectionLoss();
-                throw;
-            }
-
-            {
-                std::lock_guard lock(shared->zookeeper_mutex);
-                chassert(shared->zookeeper_connection_attempt == attempt);
-                if (!attempt->isSuperseded())
-                {
-                    shared->zookeeper = zookeeper;
-                    if (shared->zookeeper_server_started)
-                        zookeeper->setServerCompletelyStarted();
-                    CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-                    if (auto zookeeper_connection_log = getZooKeeperConnectionLog())
-                    {
-                        if (expired_zookeeper)
-                        {
-                            zookeeper_connection_log->addDisconnected(
-                                ZooKeeperConnectionLog::default_zookeeper_name, *expired_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-                            zookeeper_connection_log->addConnected(
-                                ZooKeeperConnectionLog::default_zookeeper_name, *zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-                        }
-                        else
-                            zookeeper_connection_log->addConnected(
-                                ZooKeeperConnectionLog::default_zookeeper_name, *zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
-                    }
-                    if (expired_zookeeper)
-                        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
-
-                    shared->zookeeper_connection_attempt.reset();
-                    attempt->finish();
-                    return zookeeper;
-                }
-            }
-            /// Superseded: the discarded session is closed before the attempt is released.
-            zookeeper->finalize("Superseded while connecting");
-            {
-                std::lock_guard lock(shared->zookeeper_mutex);
-                shared->zookeeper_connection_attempt.reset();
-            }
-            attempt->finish();
+            shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
         }
-        catch (...)
+        catch (const Coordination::Exception & e)
         {
-            bool superseded = false;
+            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
             {
-                std::lock_guard lock(shared->zookeeper_mutex);
-                if (shared->zookeeper_connection_attempt == attempt)
-                    shared->zookeeper_connection_attempt.reset();
-                superseded = attempt->isSuperseded();
+                recordZooKeeperConnectionLoss();
             }
-            /// A superseded attempt has no result, not even an error: its callers retry with the current config.
-            if (!superseded)
-                attempt->fail(std::current_exception());
-            attempt->finish();
+            throw;
         }
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+            zookeeper_connection_log->addConnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
     }
+
+    if (shared->zookeeper->expired())
+    {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+
+        Stopwatch watch;
+        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
+
+        auto old_zookeeper = shared->zookeeper;
+
+        try
+        {
+            shared->zookeeper = shared->zookeeper->startNewSession();
+            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            {
+                recordZooKeeperConnectionLoss();
+            }
+            throw;
+        }
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        {
+            zookeeper_connection_log->addDisconnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            zookeeper_connection_log->addConnected(
+                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+        }
+
+        if (isServerCompletelyStarted())
+            shared->zookeeper->setServerCompletelyStarted();
+        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+    }
+
+    return shared->zookeeper;
 }
 
 int64_t Context::getZooKeeperLastZXIDSeen() const
@@ -7304,7 +6880,7 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
 
 UInt32 Context::getZooKeeperSessionUptime() const
 {
-    auto lock = ZooKeeperWaitLimit(*this).lock(shared->zookeeper_mutex, "ZooKeeper lock");
+    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
     if (!shared->zookeeper || shared->zookeeper->expired())
         return 0;
     return shared->zookeeper->getSessionUptime();
@@ -7312,9 +6888,7 @@ UInt32 Context::getZooKeeperSessionUptime() const
 
 void Context::reconnectZooKeeper(const String & reason) const
 {
-    auto lock = ZooKeeperWaitLimit(*this).lock(shared->zookeeper_mutex, "ZooKeeper lock");
-    if (shared->zookeeper_connection_attempt)
-        shared->zookeeper_connection_attempt->supersede();
+    auto lock = acquireZooKeeperLock(*this, shared->zookeeper_mutex, "ZooKeeper lock");
     if (shared->zookeeper)
     {
         shared->zookeeper->finalize(reason);
@@ -7450,130 +7024,49 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
-    const ZooKeeperWaitLimit limit(*this);
+    auto lock = acquireZooKeeperLock(*this, shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
+    FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_lock_acquired_pause);
     const auto config_name = "auxiliary_zookeepers." + name;
-    /// As in getZooKeeper, the failure of an attempt found on the first pass is not final.
-    for (bool first_pass = true;; first_pass = false)
+
+    auto zookeeper = shared->auxiliary_zookeepers.find(name);
+    if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
-        bool is_connector = false;
-        zkutil::ZooKeeperPtr expired_zookeeper;
-        std::optional<zkutil::ZooKeeperArgs> args;
+        if (name.contains(':') || name.contains('/'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
+        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
+        if (!config.has(config_name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
+                "config.xml",
+                name);
+
+        zkutil::ZooKeeperArgs args(config, config_name);
+        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+
+        zookeeper = shared->auxiliary_zookeepers.emplace(name,
+                        zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
+    }
+    else if (zookeeper->second->expired())
+    {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+
+        auto old_zookeeper = zookeeper->second;
+        zookeeper->second = zookeeper->second->startNewSession();
+
+        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
-            auto lock = limit.lock(shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
-            auto zookeeper = shared->auxiliary_zookeepers.find(name);
-            if (zookeeper != shared->auxiliary_zookeepers.end() && !zookeeper->second->expired())
-                return zookeeper->second;
-
-            if (auto it = shared->auxiliary_zookeeper_connection_attempts.find(name); it != shared->auxiliary_zookeeper_connection_attempts.end())
-                attempt = it->second;
-            else
-            {
-                const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-                if (zookeeper == shared->auxiliary_zookeepers.end())
-                {
-                    if (name.contains(':') || name.contains('/'))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
-
-                    if (!config.has(config_name))
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
-                            "config.xml",
-                            name);
-                }
-
-                if (shared->auxiliary_zookeepers_shut_down)
-                    throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Auxiliary ZooKeeper client {} is shut down", name);
-
-                if (zookeeper != shared->auxiliary_zookeepers.end())
-                    expired_zookeeper = zookeeper->second;
-                else
-                {
-                    args.emplace(config, config_name);
-                    args->send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-                    args->enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
-                }
-                attempt = std::make_shared<ZooKeeperConnectionAttempt>(args);
-                shared->auxiliary_zookeeper_connection_attempts.emplace(name, attempt);
-                is_connector = true;
-            }
-        }
-
-        if (!is_connector)
-        {
-            limit.wait(attempt->getFuture(), "auxiliary ZooKeeper connection attempt");
-            if (!first_pass)
-                attempt->rethrowIfFailed();
-            continue;
-        }
-
-        auto deregister_attempt = [&]
-        {
-            auto it = shared->auxiliary_zookeeper_connection_attempts.find(name);
-            if (it != shared->auxiliary_zookeeper_connection_attempts.end() && it->second == attempt)
-                shared->auxiliary_zookeeper_connection_attempts.erase(it);
-        };
-
-        /// From here on every path finishes the attempt exactly once, as the last step.
-        try
-        {
-            FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_connection_attempt_pause);
-            zkutil::ZooKeeperPtr zookeeper;
-            if (expired_zookeeper)
-                CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-            if (args)
-                zookeeper = zkutil::ZooKeeper::create(std::move(*args), getZooKeeperLog(), getAggregatedZooKeeperLog());
-            else
-                zookeeper = expired_zookeeper->startNewSession();
-
-            {
-                std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-                chassert(shared->auxiliary_zookeeper_connection_attempts.contains(name)
-                    && shared->auxiliary_zookeeper_connection_attempts.at(name) == attempt);
-                if (!attempt->isSuperseded())
-                {
-                    shared->auxiliary_zookeepers[name] = zookeeper;
-                    if (shared->auxiliary_zookeepers_server_started)
-                        zookeeper->setServerCompletelyStarted();
-                    if (auto zookeeper_connection_log = getZooKeeperConnectionLog())
-                    {
-                        if (expired_zookeeper)
-                        {
-                            zookeeper_connection_log->addDisconnected(name, *expired_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-                            zookeeper_connection_log->addConnected(name, *zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-                        }
-                        else
-                            zookeeper_connection_log->addConnected(name, *zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
-                    }
-
-                    deregister_attempt();
-                    attempt->finish();
-                    return zookeeper;
-                }
-            }
-            /// Superseded: the discarded session is closed before the attempt is released.
-            zookeeper->finalize("Superseded while connecting");
-            {
-                std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-                deregister_attempt();
-            }
-            attempt->finish();
-        }
-        catch (...)
-        {
-            bool superseded = false;
-            {
-                std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-                deregister_attempt();
-                superseded = attempt->isSuperseded();
-            }
-            /// As in getZooKeeper, a superseded attempt has no result.
-            if (!superseded)
-                attempt->fail(std::current_exception());
-            attempt->finish();
+            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_expired_reason);
         }
     }
+
+    return zookeeper->second;
 }
 
 std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const String & name) const
@@ -7584,7 +7077,7 @@ std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const
 
 std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 {
-    auto lock = ZooKeeperWaitLimit(*this).lock(shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
+    auto lock = acquireZooKeeperLock(*this, shared->auxiliary_zookeepers_mutex, "auxiliary ZooKeeper lock");
     return shared->auxiliary_zookeepers;
 }
 
@@ -7628,82 +7121,36 @@ static void reloadZooKeeperIfChangedImpl(
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
+    bool server_started = isServerCompletelyStarted();
+
     auto component_guard = Coordination::setCurrentComponent("Context::reloadZooKeeperIfChanged");
     std::lock_guard lock(shared->zookeeper_mutex);
-    if (shared->zookeeper_shut_down)
-        return;
     shared->zookeeper_config = config;
-    const auto config_name = zkutil::getZooKeeperConfigName(*config);
-
-    /// Two sessions of one client must not connect at the same time: they would race on the session node. So a client
-    /// with an attempt in flight is not replaced. If its config changed, the attempt is superseded and the expired
-    /// client is dropped, so the next attempt uses the new config.
-    if (const auto & attempt = shared->zookeeper_connection_attempt)
-    {
-        if (attempt->isFirstConnection() ? attempt->configChanged(*config, config_name)
-                                         : !shared->zookeeper || shared->zookeeper->configChanged(*config, config_name))
-        {
-            attempt->supersede();
-            if (shared->zookeeper)
-            {
-                if (auto zookeeper_connection_log = getZooKeeperConnectionLog())
-                    zookeeper_connection_log->addDisconnected(
-                        ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, "Config changed");
-                shared->zookeeper.reset();
-            }
-        }
-        return;
-    }
 
     reloadZooKeeperIfChangedImpl(
         config,
         ZooKeeperConnectionLog::default_zookeeper_name,
-        config_name,
+        zkutil::getZooKeeperConfigName(*config),
         shared->zookeeper,
         getZooKeeperLog(),
         getZooKeeperConnectionLog(),
         getAggregatedZooKeeperLog(),
-        shared->zookeeper_server_started,
+        server_started,
         getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
         getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
 {
+    bool server_started = isServerCompletelyStarted();
     auto zookeeper_connection_log = getZooKeeperConnectionLog();
 
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-    if (shared->auxiliary_zookeepers_shut_down)
-        return;
-    shared->auxiliary_zookeepers_config = config;
 
-    /// As in reloadZooKeeperIfChanged.
-    for (const auto & [name, attempt] : shared->auxiliary_zookeeper_connection_attempts)
-    {
-        const auto config_name = "auxiliary_zookeepers." + name;
-        auto it = shared->auxiliary_zookeepers.find(name);
-        const bool changed = !config->has(config_name)
-            || (attempt->isFirstConnection() ? attempt->configChanged(*config, config_name)
-                                             : it == shared->auxiliary_zookeepers.end() || it->second->configChanged(*config, config_name));
-        if (!changed)
-            continue;
-        attempt->supersede();
-        if (it != shared->auxiliary_zookeepers.end())
-        {
-            if (zookeeper_connection_log)
-                zookeeper_connection_log->addDisconnected(
-                    name, *it->second, config->has(config_name) ? "Config changed" : ZooKeeperConnectionLog::keeper_removed_from_config);
-            shared->auxiliary_zookeepers.erase(it);
-        }
-    }
+    shared->auxiliary_zookeepers_config = config;
 
     for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
     {
-        if (shared->auxiliary_zookeeper_connection_attempts.contains(it->first))
-        {
-            ++it;
-            continue;
-        }
         const auto config_name = "auxiliary_zookeepers." + it->first;
         LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
         if (!config->has(config_name))
@@ -7725,7 +7172,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
                 getZooKeeperLog(),
                 zookeeper_connection_log,
                 getAggregatedZooKeeperLog(),
-                shared->auxiliary_zookeepers_server_started,
+                server_started,
                 getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
                 getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
             ++it;
@@ -7947,18 +7394,6 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
     shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
 }
 
-UInt64 Context::getKafkaLocksRefreshPolls() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::stream_kafka_locks_refresh_polls];
-}
-
-void Context::setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("stream_kafka_locks_refresh_polls", stream_kafka_locks_refresh_polls);
-}
-
 bool Context::getMessageQueueDisableInsertion() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -7988,31 +7423,6 @@ void Context::setWriteThroughDistributedCache(bool write_through_distributed_cac
 {
     std::lock_guard lock(shared->mutex);
     shared->server_settings.set("enable_write_through_distributed_cache", write_through_distributed_cache);
-}
-
-DistributedCachePoolBehaviourOnLimit Context::getDistributedCacheTemporaryDataPoolBehaviourOnLimit() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit];
-}
-
-void Context::setDistributedCacheTemporaryDataPoolBehaviourOnLimit(DistributedCachePoolBehaviourOnLimit value) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set(
-        "distributed_cache_temporary_data_pool_behaviour_on_limit", SettingFieldDistributedCachePoolBehaviourOnLimit(value).toString());
-}
-
-UInt64 Context::getDistributedCacheTemporaryDataMaxConnectionsBypassingPool() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool];
-}
-
-void Context::setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(UInt64 value) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("distributed_cache_temporary_data_max_connections_bypassing_pool", value);
 }
 
 bool Context::resolveReadThroughDistributedCache() const
@@ -9044,11 +8454,6 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
-{
-    return getInputFormat(name, buf, sample, max_block_size, std::nullopt);
-}
-
 InputFormatPtr Context::getInputFormat(
     const String & name,
     ReadBuffer & buf,
@@ -9076,19 +8481,9 @@ InputFormatPtr Context::getInputFormat(
         min_block_size_bytes);
 }
 
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return getOutputFormat(name, buf, sample, std::nullopt);
-}
-
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
 {
     return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this(), format_settings);
-}
-
-OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return getOutputFormatParallelIfPossible(name, buf, sample, std::nullopt);
 }
 
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -9159,11 +8554,6 @@ void Context::stopServers(const ServerType & server_type) const
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     shared->shutdown();
-}
-
-bool Context::isShutdownCalled() const
-{
-    return shared->shutdown_called;
 }
 
 
@@ -9384,12 +8774,12 @@ void Context::setInputInitializer(InputInitializer && initializer)
 }
 
 
-void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
+void Context::initializeInput(const StoragePtr & input_storage)
 {
     if (!input_initializer_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
 
-    input_initializer_callback(shared_from_this(), columns, header);
+    input_initializer_callback(shared_from_this(), input_storage);
     /// Reset callback
     input_initializer_callback = {};
 }
@@ -9723,22 +9113,6 @@ Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
     return ddl_additional_checks_on_enqueue;
 }
 
-void Context::setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback)
-{
-    query_execution_started_callback = std::move(callback);
-}
-
-const QueryExecutionStartedCallback & Context::getQueryExecutionStartedCallback() const
-{
-    return query_execution_started_callback;
-}
-
-void Context::onQueryExecutionStarted() const
-{
-    if (query_execution_started_callback)
-        query_execution_started_callback();
-}
-
 
 void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */) const
 {
@@ -9785,14 +9159,12 @@ void Context::setServerCompletelyStarted()
     {
         {
             std::lock_guard lock(shared->zookeeper_mutex);
-            shared->zookeeper_server_started = true;
             if (shared->zookeeper)
                 shared->zookeeper->setServerCompletelyStarted();
         }
 
         {
             std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-            shared->auxiliary_zookeepers_server_started = true;
             for (auto & zk : shared->auxiliary_zookeepers)
                 zk.second->setServerCompletelyStarted();
         }
@@ -10046,57 +9418,6 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
-StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
-{
-    auto query_context_ptr = getQueryContext();
-    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
-    if (!query_context_ptr->stateless_worker_provider)
-        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
-            query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
-    return query_context_ptr->stateless_worker_provider;
-}
-
-StatelessWorkerAllocationPtr Context::getOrCreateStatelessWorkerAllocation() const
-{
-    /// Sized from the query context's settings, as planning is, so a subquery's `SETTINGS` cannot change it.
-    auto query_context_ptr = getQueryContext();
-
-    /// Resolve the provider before locking (it takes the same mutex).
-    auto provider = query_context_ptr->getStatelessWorkersProvider();
-
-    /// Held across the blocking allocation: a concurrent caller waits, then reuses the stored handle.
-    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
-    if (!query_context_ptr->stateless_worker_allocation)
-    {
-        const auto & settings = query_context_ptr->getSettingsRef();
-        UInt64 workers_num = settings[Setting::distributed_plan_workers_num];
-        /// The plans are built for at most this many nodes, so `TaskToHostMap` uses no more workers.
-        if (const size_t node_count = getCascadesClusterNodeCountParam(query_context_ptr); node_count > 0)
-            workers_num = std::min<UInt64>(workers_num, node_count);
-        query_context_ptr->stateless_worker_allocation
-            = provider->allocate(workers_num, settings[Setting::distributed_plan_workers_provisioning_timeout_ms]);
-    }
-    return query_context_ptr->stateless_worker_allocation;
-}
-
-StatelessWorkersProviderRegistryPtr Context::getStatelessWorkersProviderRegistry() const
-{
-    std::lock_guard lock(shared->stateless_worker_provider_mutex);
-    if (!shared->stateless_workers_registry)
-        shared->stateless_workers_registry = std::make_shared<StatelessWorkersProviderRegistry>();
-    return shared->stateless_workers_registry;
-}
-
-StatelessWorkersProviderPtr Context::getStatelessWorkersProvider(const String & cluster_name) const
-{
-    return getStatelessWorkersProviderRegistry()->getProvider(cluster_name);
-}
-
-void Context::reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const
-{
-    getStatelessWorkersProviderRegistry()->reloadConfig(config);
-}
-
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
     callOnce(
@@ -10214,6 +9535,10 @@ ReadSettings Context::getReadSettings() const
 
     if (settings_ref[Setting::filesystem_cache_boundary_alignment])
         res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
+
+    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
+    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
+        = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
@@ -10395,8 +9720,7 @@ bool Context::canReplaceClusterEngineWithClusterVariant() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator
-        && (!is_sql_security_overridden_body || getSettingsRef()[Setting::parallel_replicas_plan_based]);
+    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
@@ -10419,8 +9743,7 @@ bool Context::canUseParallelReplicasCustomKey() const
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
 {
-    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1
-        && !is_sql_security_overridden_body;
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
 }
 
 bool Context::canUseOffsetParallelReplicas() const
@@ -10442,45 +9765,6 @@ bool Context::canUseOffsetParallelReplicas() const
            has_enough_servers &&
            parallel_replicas_enabled &&
            is_parallel_replicas_with_custom_key_or_native_sampling_key;
-}
-
-void Context::restrictParallelReplicasInSQLSecurityOverriddenBody()
-{
-    chassert(is_sql_security_overridden_body);
-
-    /// The body is read locally unless plan-based parallel replicas ship its already resolved plan, see `canUseParallelReplicasOnInitiator`.
-    /// Turn the other modes off in the body itself, so that the checks rejecting what parallel replicas do not support
-    /// (`FINAL`, `JOIN` with a custom key, ...) do not fire for a body that does not use them.
-    /// A follower keeps task-based parallel replicas to read its part.
-    if (getClientInfo().collaborate_with_initiator)
-        return;
-
-    const auto & settings_ref = getSettingsRef();
-
-    /// A `sampling_key` follower reads the slice it is assigned by `parallel_replicas_count` / `parallel_replica_offset`.
-    /// Without the setting it would read the whole table, and the result would be multiplied by the number of replicas.
-    /// The body cannot fan out on its own: `updateSettingsAndClientInfoForCluster` keeps only the assigned slice for its shards.
-    if (isSamplingKeyParallelReplicasFollower())
-        return;
-
-    if (!settings_ref[Setting::parallel_replicas_custom_key].value.empty())
-    {
-        setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        setSetting("parallel_replicas_custom_key", String{});
-    }
-
-    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && !(canUseTaskBasedParallelReplicas() && settings_ref[Setting::parallel_replicas_plan_based]))
-        setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-}
-
-bool Context::isSamplingKeyParallelReplicasFollower() const
-{
-    const auto & settings_ref = getSettingsRef();
-    return getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY
-        && settings_ref[Setting::parallel_replicas_count] > 1;
 }
 
 void Context::disableOffsetParallelReplicas()

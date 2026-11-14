@@ -43,17 +43,16 @@ for _ in {1..10}; do
     # The first three queries are accounted in the first interval (3 of 4 queries used). The sleeps read `system.one`,
     # and queries reading only tables of the `system` database (including `system.quota_usage`) are not accounted by quotas, so they cross
     # the end of the interval without starting the new one. The last two queries are the first two of the new interval.
-    # The sleeps last until just after the end of the interval rather than a fixed time, so that slow queries before them do not
-    # push the last queries out of the new interval (two of them, as one `sleep` is limited to 3 seconds).
     # The usage is read in the same session, because a new client may start too late on a slow machine.
-    # Errors are ignored: an attempt that fails does not report both checkpoints, so it is repeated.
+    # A slow attempt may also exceed the quota by accounting all its queries in one interval, so the errors are
+    # ignored, and such an attempt is repeated as it does not report both checkpoints.
     RESULT=$(${CLICKHOUSE_CLIENT} --user ${USER} 2>/dev/null -q "
         SELECT 1 FROM numbers(1) FORMAT Null;
         SELECT 1 FROM numbers(1) FORMAT Null;
         SELECT 1 FROM numbers(1) FORMAT Null;
         SELECT toUnixTimestamp(end_time) FROM system.quota_usage WHERE quota_name = '${QUOTA}';
-        SELECT sleep(least(3, greatest(0, $((END + 5)) + 0.1 - toUnixTimestamp64Milli(now64(3)) / 1000))) FORMAT Null;
-        SELECT sleep(least(3, greatest(0, $((END + 5)) + 0.1 - toUnixTimestamp64Milli(now64(3)) / 1000))) FORMAT Null;
+        SELECT sleep(3) FORMAT Null;
+        SELECT sleep(2.5) FORMAT Null;
         SELECT 1 FROM numbers(1) FORMAT Null;
         SELECT 1 FROM numbers(1) FORMAT Null;
         SELECT toUnixTimestamp(end_time), queries FROM system.quota_usage WHERE quota_name = '${QUOTA}' FORMAT TSV;

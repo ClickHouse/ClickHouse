@@ -10,6 +10,7 @@ integration:
   - category: 'sql_client'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
@@ -81,15 +82,7 @@ You can also paste a URL with **Paste URL** instead of filling the fields, for e
 `clickhouse://localhost:8123/default` or `https://reader:secret@ch.example.com:8443/analytics`.
 An `https://` URL turns TLS on.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![LibreDB Studio New Connection dialog with ClickHouse selected, the host, port 8123, username and database filled in, and a successful connection test](/images/integrations/sql-clients/libredb-studio-new-connection.png)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="LibreDB Studio New Connection dialog with ClickHouse selected, the host, port 8123, username and database filled in, and a successful connection test" />
 
 </Step>
 <Step title="Run a query" id="run-a-query">
@@ -113,15 +106,7 @@ ORDER BY sales DESC
 LIMIT 10
 ```
 
-<div className="ch-image-md">
-
-<Frame>
-
-![LibreDB Studio SQL editor showing the uk_price_paid query and a result grid with the declared ClickHouse column types](/images/integrations/sql-clients/libredb-studio-query.png)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="LibreDB Studio SQL editor showing the uk_price_paid query and a result grid with the declared ClickHouse column types" />
 
 </Step>
 </Steps>
@@ -148,15 +133,7 @@ LibreDB Studio can also run `OPTIMIZE TABLE ... FINAL` on a table, show a `syste
 of a table or database, and stop a running query with `KILL QUERY ... SYNC`. These need the
 matching grants.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![LibreDB Studio monitoring overview for a ClickHouse connection showing the server version, uptime, connections, storage size, cache hit ratio and table count](/images/integrations/sql-clients/libredb-studio-monitoring.png)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="LibreDB Studio monitoring overview for a ClickHouse connection showing the server version, uptime, connections, storage size, cache hit ratio and table count" />
 
 ## Troubleshooting {#troubleshooting}
 

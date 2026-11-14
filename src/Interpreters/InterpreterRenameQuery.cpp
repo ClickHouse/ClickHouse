@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -92,17 +91,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
 
     for (const auto & elem : descriptions)
     {
-        /// With the asynchronous loading of tables, a table is attached only by its load job, so wait
-        /// for the source and the destination before the existence checks below, the same way
-        /// `tryGetTable` does: otherwise a table that is still loading is treated as nonexistent.
-        auto wait_table_started = [&](const String & database_name, const String & table_name)
-        {
-            if (auto database = database_catalog.tryGetDatabase(database_name))
-                database->waitTableStarted(table_name);
-        };
-        wait_table_started(elem.from_database_name, elem.from_table_name);
-        wait_table_started(elem.to_database_name, elem.to_table_name);
-
         if (elem.if_exists)
         {
             chassert(!rename.exchange);
@@ -125,10 +113,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             exchange_tables = false;
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
-
-        StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.from_database_name, elem.from_table_name), getContext(), /*is_drop_database*/ false);
-        if (exchange_tables)
-            StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(StorageID(elem.to_database_name, elem.to_table_name), getContext(), /*is_drop_database*/ false);
 
         /// Run the caller's pre-swap check while still holding `ddl_guards`. If it
         /// throws, the guards release via RAII, no rename happens, and the caller's
@@ -275,10 +259,6 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
         auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
 
         catalog.assertDatabaseDoesntExist(new_name);
-
-        /// Views from the same database are checked too: their stored query keeps the old database name.
-        StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(*db, old_name, getContext(), /*is_drop_database*/ false);
-
         db->renameDatabase(getContext(), new_name);
     }
 

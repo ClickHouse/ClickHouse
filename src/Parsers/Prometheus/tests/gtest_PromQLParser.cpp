@@ -5,10 +5,6 @@
 
 #include <fmt/format.h>
 
-#include <array>
-#include <tuple>
-#include <utility>
-
 using namespace DB;
 
 namespace
@@ -175,34 +171,6 @@ TEST(PromQLParser, SelectorRequiresNonEmptyMatcher)
         EXPECT_FALSE(query_tree.tryParse(R"({__name__=~".+", job=~"(.*"})", 3, &error_message, &error_pos));
         EXPECT_NE(error_message.find("invalid regular expression in label matcher"), String::npos);
     }
-}
-
-TEST(PromQLParser, RejectedSelectorWithOffset)
-{
-    /// A selector followed by `offset` or `@` is parsed by its own visitor, which must report the error of the selector as a parse error.
-    constexpr std::array<std::tuple<const char *, const char *, size_t>, 5> queries = {{
-        {R"({job=~".*"} offset 5m)", "vector selector must contain at least one non-empty matcher", 0},
-        {R"({job=~".*"} @ 100)", "vector selector must contain at least one non-empty matcher", 0},
-        {R"(rate({job!="a"}[5m] offset 1m))", "vector selector must contain at least one non-empty matcher", 5},
-        {R"(up{job=~"("} offset 5m)", "invalid regular expression in label matcher", 3},
-        {R"(up{__name__="x"} offset 5m)", "metric name must not be set twice", 3},
-    }};
-
-    for (const auto & [query, expected_error, expected_error_pos] : queries)
-    {
-        PrometheusQueryTree query_tree;
-        String error_message;
-        size_t error_pos = 0;
-        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
-        EXPECT_EQ(error_pos, expected_error_pos) << query << ": " << error_message;
-        EXPECT_NE(error_message.find(expected_error), String::npos) << query << ": " << error_message;
-    }
-
-    /// `tryParse` sets `error_message` and `error_pos` only on failure, so only the result is checked here.
-    PrometheusQueryTree valid_query_tree;
-    String error_message;
-    size_t error_pos = 0;
-    EXPECT_TRUE(valid_query_tree.tryParse(R"(up{job=~".*"} offset 5m)", 3, &error_message, &error_pos)) << error_message;
 }
 
 

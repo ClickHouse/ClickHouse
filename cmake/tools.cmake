@@ -37,18 +37,12 @@ if (LINKER_NAME MATCHES "gold")
     message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
 endif ()
 
-# Tools are taken from the compiler's own directory first, so that they belong to the same toolchain.
-get_filename_component (COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-
 macro(ch_find_program var)
     if (USING_DUMMY_LAUNCHERS)
         set(${var} "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
     else()
         unset(${var})
-        find_program(${var} ${ARGN} PATHS "${COMPILER_BIN_DIR}" NO_DEFAULT_PATH)
-        if (NOT ${var})
-            find_program(${var} ${ARGN})
-        endif()
+        find_program(${var} ${ARGN})
     endif()
 endmacro()
 

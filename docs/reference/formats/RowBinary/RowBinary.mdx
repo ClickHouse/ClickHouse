@@ -295,7 +295,7 @@ Stored as `Int32` representing a time value in seconds. Negative values are vali
 Supported range of values: `[-999:59:59, 999:59:59]` (i.e., `[-3599999, 3599999]` seconds).
 
 <Note>
-`Time` and `Time64` are enabled by default since version 25.12. On versions 25.6 to 25.11, set `enable_time_time64_type = 1` to use them.
+At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
 </Note>
 
 Sample underlying values for `Time`:
@@ -324,7 +324,7 @@ Where `precision` is an integer from `0` to `9`. Common values: `3` (millisecond
 Supported range of values: `[-999:59:59.xxxxxxxxx, 999:59:59.xxxxxxxxx]`.
 
 <Note>
-`Time` and `Time64` are enabled by default since version 25.12. On versions 25.6 to 25.11, set `enable_time_time64_type = 1` to use them.
+At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
 </Note>
 
 The underlying `Int64` value represents fractional seconds scaled by `10^precision`.

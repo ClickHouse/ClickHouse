@@ -2,15 +2,15 @@
     <settings>
         <query_plan_join_swap_table>0</query_plan_join_swap_table>
         <query_plan_convert_outer_join_to_inner_join>0</query_plan_convert_outer_join_to_inner_join>
-        <hash_join_layout>parallel</hash_join_layout>
+        <parallel_hash_join_threshold>0</parallel_hash_join_threshold>
     </settings>
 
     <substitutions>
         <substitution>
-            <name>join_settings</name>
+            <name>algorithm</name>
             <values>
-                <value>join_algorithm = 'hash', hash_join_layout = 'serial'</value>
-                <value>join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', enable_robin_hood_hash_for_joins = 1</value>
+                <value>hash</value>
+                <value>parallel_hash</value>
             </values>
         </substitution>
         <substitution>
@@ -23,7 +23,7 @@
     </substitutions>
 
     <!-- Every right key matched, so there are no unmatched right rows to emit after the probe. -->
-    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000000) AS r ON l.number % 10000000 = r.number SETTINGS {join_settings} FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000000) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
     <!-- One right key unmatched. -->
-    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000001) AS r ON l.number % 10000000 = r.number SETTINGS {join_settings} FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000001) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
 </test>

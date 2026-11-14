@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', 'オブザーバビリティ', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 ClickStack には、AIアシスタントがオブザーバビリティデータを操作できる組み込みの [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) サーバーが含まれています。接続すると、AIアシスタントは自然言語ですべて操作でき、ログ、トレース、メトリクスのクエリ実行、ダッシュボードやアラートの管理、データソースの確認、保存済み検索の利用が可能です。
 
 これにより、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Cursor](https://www.cursor.com/)、または任意の MCP 対応クライアントを使って、開発環境を離れることなく、インシデントの調査、ダッシュボードの作成、オブザーバビリティ環境の管理を行えます。
@@ -146,27 +148,20 @@ https://mcp.clickhouse.cloud/clickstack
 
 Open Source および BYOC のデプロイメントでは、ClickStack インスタンスに組み込まれた MCP エンドポイントを Bearer トークン認証で使用します。
 
-### 前提条件 {#oss-prerequisites}
+<div id="oss-prerequisites">
+  ### 前提条件
+</div>
 
 * 稼働中の ClickStack インスタンス (セットアップ方法については [デプロイメント](/ja/clickstack/deployment/overview) を参照してください)
 * **Personal API Access Key** — HyperDX の **Team Settings → API Keys → Personal API Access Key** で確認できます
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Team Settings 内の Personal API Access Key](/images/clickstack/api-key-personal.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/api-key-personal.webp" alt="Team Settings 内の Personal API Access Key" size="md" border />
 
 <Note>
   Personal API Access Key は、Team Settings にある **インジェスト API key** とは異なります。インジェスト API key は、OpenTelemetry Collector に送信されるテレメトリー データの認証に使用されます。
 </Note>
 
 <div id="managed-endpoint">
-  <a id="oss-endpoint" />
   ### エンドポイント
 </div>
 
@@ -179,7 +174,6 @@ MCPサーバーは、ClickStack のフロントエンドURLの `/api/mcp` パス
 MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランスポートを使用します。
 
 <div id="managed-connecting-a-client">
-  <a id="oss-connecting-a-client" />
   ### MCP client の接続
 </div>
 
@@ -277,7 +271,7 @@ MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランス
 * **データのクエリ** — ClickStack のクエリビルダー、検索構文、または生の SQL を使用して、ログ、トレース、メトリクスを検索・集計できます。
 * **データソース** — 利用可能なデータソース、データベース接続、カラムスキーマ、属性キーを一覧表示できます。
 * **ダッシュボード** — タイルを含むダッシュボードの作成、更新、削除、確認ができます。
-* **アラート** — 評価履歴を含むアラートの作成、更新、確認ができます。[異常検知](/ja/clickstack/features/anomaly-detection)が有効になっている場合は、異常検知アラートの設定を保存する前に、直近の履歴データでバックテストを実行することもできます。
+* **アラート** — 評価履歴を含むアラートの作成、更新、確認ができます。
 * **保存済み検索** — 再利用可能な保存済み検索定義の作成、更新、確認ができます。
 * **Webhooks** — アラート通知に使用できる webhook の宛先を一覧表示できます。
 * **チーム** — 現在のユーザーが所属しているチームを一覧表示し、アクティブなチームを特定できます。

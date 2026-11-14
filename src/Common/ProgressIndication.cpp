@@ -149,11 +149,6 @@ void ProgressIndication::writeFinalProgress()
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
-    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
-    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
-    if (message.isCanceled())
-        return;
-
     std::lock_guard lock(progress_mutex);
 
     static const char * indicators[8] = {
@@ -441,11 +436,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
 void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
-    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
-    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
-    if (message.isCanceled())
-        return;
-
     std::lock_guard lock(progress_mutex);
 
     if (written_progress_chars)

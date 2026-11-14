@@ -1,6 +1,4 @@
 #include <Processors/Transforms/TTLTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
@@ -45,7 +43,7 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
 /// the value they had before the expiry, which contradicts their own expression forever - no later merge
 /// repairs it. `ALTER TABLE ... CLEAR COLUMN`, the other path that resets a column to its default,
 /// recomputes them, so do the same here, over the same dependency graph.
-VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMaterializedColumn>> TTLTransform::analyzeDependentMaterializedColumns(
+std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform::analyzeDependentMaterializedColumns(
     const MergeTreeData & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & reset_columns,
@@ -68,7 +66,7 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
         return {};
 
     /// The level of a dependent is one past the highest level among the dependents it reads.
-    UnorderedMapWithMemoryTracking<String, size_t> level_of;
+    std::unordered_map<String, size_t> level_of;
     auto level_of_column = [&](const String & name, auto && self) -> size_t
     {
         if (auto it = level_of.find(name); it != level_of.end())
@@ -98,7 +96,7 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
     NameSet unrecomputable_columns = columns_to_leave_alone;
     unrecomputable_columns.merge(metadata_snapshot->getStorageColumnsRequiredForKeys());
 
-    VectorWithMemoryTracking<VectorWithMemoryTracking<DependentMaterializedColumn>> levels(number_of_levels);
+    std::vector<std::vector<DependentMaterializedColumn>> levels(number_of_levels);
     for (const auto & column : storage_columns)
     {
         if (!dependents.contains(column.name) || unrecomputable_columns.contains(column.name))
@@ -177,12 +175,11 @@ TTLTransform::TTLTransform(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
-    /// `consume` adds the expired columns to the block before the algorithms run.
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getOutputPort().getHeader(), storage_, metadata_snapshot_));
+                getInputPort().getHeader(), storage_, metadata_snapshot_));
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
@@ -226,7 +223,7 @@ TTLTransform::TTLTransform(
     for (const auto & expired_column : expired_columns)
         reset_columns.insert(expired_column.name);
 
-    VectorWithMemoryTracking<VectorWithMemoryTracking<DependentMaterializedColumn>> recompute_levels;
+    std::vector<std::vector<DependentMaterializedColumn>> recompute_levels;
     NameSet recomputed_columns;
     if (!reset_columns.empty())
     {
@@ -301,7 +298,7 @@ static Block reorderColumns(Block block, const Block & header)
     return res;
 }
 
-void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents)
+void TTLTransform::recomputeDependentColumns(Block & block, const std::vector<DependentMaterializedColumn> & dependents)
 {
     if (block.empty())
         return;

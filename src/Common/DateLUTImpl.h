@@ -440,6 +440,23 @@ private:
         return lut[toLUTIndex(v)];
     }
 
+    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
+    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
+    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
+    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
+    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
+    template <typename DateOrTime, typename Divisor>
+    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
+    {
+        if (value >= 0) [[likely]]
+            return static_cast<DateOrTime>(value / divisor * divisor);
+
+        const Int64 v = static_cast<Int64>(value);
+        const Int64 d = static_cast<Int64>(divisor);
+        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
+        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
+    }
+
     /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
     /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
     /// outside any valid date range this sum can step just past the type boundary even though both operands
@@ -496,23 +513,6 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
-
-    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
-    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
-    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
-    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
-    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
-    template <typename DateOrTime, typename Divisor>
-    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
-    {
-        if (value >= 0) [[likely]]
-            return static_cast<DateOrTime>(value / divisor * divisor);
-
-        const Int64 v = static_cast<Int64>(value);
-        const Int64 d = static_cast<Int64>(divisor);
-        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
-        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
-    }
 
     /// Round a negative `value` down to a multiple of `divisor` (towards negative infinity), given the
     /// already computed `rounded_towards_zero` == `value / divisor * divisor` (truncating division).
@@ -903,7 +903,11 @@ public:
         return res <= 23 ? res : 23;
     }
 
-    /// The offset from UTC at the instant `t`.
+    /** Calculating offset from UTC in seconds.
+      * which means Using the same literal time of "t" to get the corresponding timestamp in UTC,
+      * then subtract the former from the latter to get the offset result.
+      * The boundaries when meets DST(daylight saving time) change should be handled very carefully.
+      */
     Time timezoneOffset(Time t) const
     {
         if (unlikely(isOutOfLUTRange(t)))
@@ -919,29 +923,6 @@ public:
         if (lut[index].amount_of_offset_change() != 0 && t >= lut[index].date + lut[index].time_at_offset_change())
             res += lut[index].amount_of_offset_change();
 
-        return res;
-    }
-
-    /// The offset from UTC at the local time `t`, which is a wall clock read as seconds since the epoch, so that
-    /// `t - timezoneOffsetAtLocalTime(t)` is its UTC time. A repeated or skipped local time is resolved as in `makeDateTime`.
-    Time timezoneOffsetAtLocalTime(Time t) const
-    {
-        Int64 day = t / 86400;
-        Time time_of_day = t % 86400;
-        if (time_of_day < 0)
-        {
-            --day;
-            time_of_day += 86400;
-        }
-
-        const Int64 index = day + daynum_offset_epoch;
-        if (unlikely(static_cast<UInt64>(index) >= DATE_LUT_SIZE))
-            return timezoneOffsetAtLocalTimeOutOfRange(t);
-
-        const Values & values = lut[index];
-        Time res = day * 86400 - values.date;
-        if (values.amount_of_offset_change() != 0 && time_of_day >= values.time_at_offset_change())
-            res += values.amount_of_offset_change();
         return res;
     }
 
@@ -2031,7 +2012,6 @@ private:
     DateTimeComponents toDateTimeComponentsOutOfRange(Time t) const;
     Time toTimeOutOfRange(Time t) const;
     Time timezoneOffsetOutOfRange(Time t) const;
-    Time timezoneOffsetAtLocalTimeOutOfRange(Time t) const;
     Time addDaysOutOfRange(Time t, Int64 delta) const;
     Time addMonthsOutOfRange(Time t, Int64 delta) const;
     Time addYearsOutOfRange(Time t, Int64 delta) const;
@@ -2088,18 +2068,26 @@ public:
 
     TimeComponents toTimeComponents(Time t) const
     {
-        constexpr Time max_time = 1000 * 3600 - 1;
-
         TimeComponents res;
-        res.is_negative = t < 0;
 
-        t = std::clamp(t, -max_time, max_time);
-        if (res.is_negative)
+        bool is_negative = false;
+
+        if (unlikely(t < 0))
+        {
+            is_negative = true;
             t = -t;
+        }
 
-        res.hour = t / 3600;
-        res.minute = t / 60 % 60;
+        // Cap at 3599999 seconds (999:59:59)
+        if (unlikely(t > 3599999))
+            t = 3599999;
+
         res.second = t % 60;
+        res.minute = t / 60 % 60;
+        res.hour = t / 3600;
+
+        res.is_negative = is_negative;
+
         return res;
     }
 
@@ -2140,10 +2128,6 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     NO_SANITIZE_UNDEFINED Time addDays(DateTime t, Int64 delta) const
     {
-        /// The wall-clock round trip below maps an instant in a repeated hour to the hour's first occurrence.
-        if (delta == 0)
-            return t;
-
         /// A `DateTime` (`UInt32`) cannot denote a value outside the lookup table, so only the wide
         /// timestamp types take the escape path.
         if constexpr (!std::is_same_v<DateTime, UInt32>)
@@ -2224,10 +2208,6 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     Time NO_SANITIZE_UNDEFINED addMonths(DateTime t, Int64 delta) const
     {
-        /// See addDays.
-        if (delta == 0)
-            return t;
-
         /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
         if constexpr (!std::is_same_v<DateTime, UInt32>)
             if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
@@ -2322,10 +2302,6 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     Time addYears(DateTime t, Int64 delta) const
     {
-        /// See addDays.
-        if (delta == 0)
-            return t;
-
         /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
         if constexpr (!std::is_same_v<DateTime, UInt32>)
             if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))

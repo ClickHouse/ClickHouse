@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'autenticação', 'provedor de identidade', 'RS256']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
@@ -22,12 +24,6 @@ import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBad
 O ClickHouse Cloud permite autenticar conexões com um serviço usando JSON Web Tokens (JWTs) validados nos seus próprios endpoints de JSON Web Key Set (JWKS). Em vez de gerenciar credenciais de banco de dados, seu provedor de identidade emite tokens de curta duração que o ClickHouse verifica com base nas chaves públicas publicadas em um URL JWKS configurado por você.
 
 Você pode configurar esses provedores JWKS para cada serviço em **Settings → Security** no Cloud Console do ClickHouse.
-
-<Tip>
-  **Usa o Microsoft Entra ID?**
-
-  Siga o guia [Autenticação JWT com o Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) para ver a configuração do Entra ID, os valores do provedor que devem ser informados e como mapear as funções de aplicativo do Entra ID para funções do ClickHouse.
-</Tip>
 
 <div id="before-you-begin">
   ## Antes de começar
@@ -62,15 +58,7 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
   <Step title="Abra as configurações de segurança do serviço" id="open-security-settings">
     Acesse o serviço, abra **Settings** e role até a seção **Security**. Localize o cartão **JWT authentication**.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Seção de autenticação JWT nas configurações de segurança do serviço](/images/cloud/security/jwt/jwt-section.png)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/security/jwt/jwt-section.png" size="lg" alt="Seção de autenticação JWT nas configurações de segurança do serviço" force />
   </Step>
 
   <Step title="Abra o painel de provedores" id="open-flyout">
@@ -111,4 +99,3 @@ O ClickHouse valida e busca o URL JWKS quando você adiciona ou atualiza um prov
 </div>
 
 * [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt) — claims de tokens, usuários efêmeros e uso do cliente.
-* [Autenticação JWT com Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — configure o Entra ID como provedor JWT.

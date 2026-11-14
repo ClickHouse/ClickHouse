@@ -8,20 +8,13 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ru/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 Управляемый режим работает в вашем собственном кластере Amazon EKS. В каждый релиз входят четыре корневых модуля Terraform (далее — корневые модули), которые либо создают кластер, соответствующий требованиям, либо добавляют недостающие компоненты в уже существующие VPC или кластер. Корневые модули создают кластер с системной группой узлов и управляемыми дополнениями (`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`), а также роли IAM, ключи KMS и теги; `existing-eks` устанавливает только те дополнения, которые перечислены в `install_addons`. Затем, если целевой платформой является Helm, команда `clicklink clctl init` устанавливает платформенный слой на основе выходных значений и bundle платформы: Karpenter, контроллер AWS Load Balancer, класс хранилища и компоненты с закреплёнными версиями (см. раздел [Инициализация коннектора из выходных значений Terraform](#hand-off)). Для корневых модулей требуется Terraform 1.10+ или OpenTofu 1.12+, а также провайдер AWS `~> 6.0`. Во всех командах на этой странице вместо `terraform` можно использовать `tofu`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Процесс подготовки коннектора ClickHouse в AWS с помощью Terraform](/images/cloud/reference/byoc-connector-terraform-flow.svg)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Процесс подготовки коннектора ClickHouse в AWS с помощью Terraform" />
 
 ## Перед началом работы {#before-you-begin}
 
