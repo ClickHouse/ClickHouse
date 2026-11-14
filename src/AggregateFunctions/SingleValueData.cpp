@@ -15,6 +15,7 @@
 #    include <base/extended_types.h>
 #endif
 
+#include <cmath>
 #include <cstring>
 #include <type_traits>
 
@@ -1523,6 +1524,70 @@ void SingleValueDataGeneric::set(const SingleValueDataBase & other, Arena *)
         value = to.value;
 }
 
+namespace
+{
+
+/// Orders `Field`s like `IColumn::compareAt` does with `nan_null_direction_hint`: a `NULL` or a `NaN` is placed at the end
+/// for the hint `1` and at the start for `-1`, also inside arrays, tuples and maps. `Field::operator<` is a single order
+/// (`NULL` first, `NaN` last), so it cannot say that a `NULL` or `NaN` never wins, which `min` and `max` apply to the rows of one block.
+int compareFieldsWithDirectionHint(const Field & lhs, const Field & rhs, int nan_null_direction_hint)
+{
+    if (lhs.isNull() || rhs.isNull())
+    {
+        if (lhs.isNull() && rhs.isNull())
+            return 0;
+        return lhs.isNull() ? nan_null_direction_hint : -nan_null_direction_hint;
+    }
+
+    if (lhs.getType() == rhs.getType())
+    {
+        auto compare_vectors = [&](const auto & lhs_elements, const auto & rhs_elements)
+        {
+            const size_t common_size = std::min(lhs_elements.size(), rhs_elements.size());
+            for (size_t i = 0; i < common_size; ++i)
+                if (int result = compareFieldsWithDirectionHint(lhs_elements[i], rhs_elements[i], nan_null_direction_hint); result != 0)
+                    return result;
+            if (lhs_elements.size() == rhs_elements.size())
+                return 0;
+            return lhs_elements.size() < rhs_elements.size() ? -1 : 1;
+        };
+
+        switch (lhs.getType())
+        {
+            case Field::Types::Float64:
+            {
+                const Float64 lhs_value = lhs.safeGet<Float64>();
+                const Float64 rhs_value = rhs.safeGet<Float64>();
+                if (std::isnan(lhs_value) || std::isnan(rhs_value))
+                {
+                    if (std::isnan(lhs_value) && std::isnan(rhs_value))
+                        return 0;
+                    return std::isnan(lhs_value) ? nan_null_direction_hint : -nan_null_direction_hint;
+                }
+                return lhs_value < rhs_value ? -1 : (rhs_value < lhs_value ? 1 : 0);
+            }
+            case Field::Types::Array:
+                return compare_vectors(lhs.safeGet<Array>(), rhs.safeGet<Array>());
+            case Field::Types::Tuple:
+                return compare_vectors(lhs.safeGet<Tuple>(), rhs.safeGet<Tuple>());
+            case Field::Types::Map:
+                return compare_vectors(lhs.safeGet<Map>(), rhs.safeGet<Map>());
+            default:
+                break;
+        }
+    }
+
+    if (lhs < rhs)
+        return -1;
+    return rhs < lhs ? 1 : 0;
+}
+
+/// The direction of `SingleValueDataBase::getSmallestIndex` and `getGreatestIndex`.
+constexpr int NULL_NAN_LAST = 1;
+constexpr int NULL_NAN_FIRST = -1;
+
+}
+
 bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
     if (!has())
@@ -1533,7 +1598,7 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
 
     Field new_value;
     column.get(row_num, new_value);
-    if (new_value < value)
+    if (compareFieldsWithDirectionHint(new_value, value, NULL_NAN_LAST) < 0)
     {
         value = new_value;
         return true;
@@ -1544,7 +1609,7 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
 bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.value < value))
+    if (to.has() && (!has() || compareFieldsWithDirectionHint(to.value, value, NULL_NAN_LAST) < 0))
     {
         value = to.value;
         return true;
@@ -1562,7 +1627,7 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
 
     Field new_value;
     column.get(row_num, new_value);
-    if (new_value > value)
+    if (compareFieldsWithDirectionHint(new_value, value, NULL_NAN_FIRST) > 0)
     {
         value = new_value;
         return true;
@@ -1573,7 +1638,7 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
 bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.value > value))
+    if (to.has() && (!has() || compareFieldsWithDirectionHint(to.value, value, NULL_NAN_FIRST) > 0))
     {
         value = to.value;
         return true;
@@ -1584,13 +1649,13 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
 bool SingleValueDataGeneric::wouldSetIfSmaller(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return to.has() && (!has() || to.value < value);
+    return to.has() && (!has() || compareFieldsWithDirectionHint(to.value, value, NULL_NAN_LAST) < 0);
 }
 
 bool SingleValueDataGeneric::wouldSetIfGreater(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return to.has() && (!has() || to.value > value);
+    return to.has() && (!has() || compareFieldsWithDirectionHint(to.value, value, NULL_NAN_FIRST) > 0);
 }
 
 /// GenericWithColumn
