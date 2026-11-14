@@ -195,7 +195,6 @@ private:
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
     /// FIXME should go through ActionsDAG to behave as a proper function
-    void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan);
     void executeWithFill(QueryPlan & query_plan);
     void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
