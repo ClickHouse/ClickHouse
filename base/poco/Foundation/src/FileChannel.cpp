@@ -25,7 +25,10 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include "Poco/CombinedRotateStrategy.h"
+#include <cerrno>
+#include <memory>
 #include <utility>
+#include <unistd.h>
 
 
 namespace Poco {
@@ -48,10 +51,7 @@ FileChannel::FileChannel():
 	_streamCompress(false),
 	_flush(true),
 	_rotateOnOpen(false),
-	_pFile(0),
-	_pRotateStrategy(0),
-	_pArchiveStrategy(new ArchiveByNumberStrategy),
-	_pPurgeStrategy(0)
+	_pArchiveStrategy(std::make_unique<ArchiveByNumberStrategy>())
 {
 }
 
@@ -63,10 +63,7 @@ FileChannel::FileChannel(const std::string& path):
 	_streamCompress(false),
 	_flush(true),
 	_rotateOnOpen(false),
-	_pFile(0),
-	_pRotateStrategy(0),
-	_pArchiveStrategy(new ArchiveByNumberStrategy),
-	_pPurgeStrategy(0)
+	_pArchiveStrategy(std::make_unique<ArchiveByNumberStrategy>())
 {
 }
 
@@ -76,9 +73,6 @@ FileChannel::~FileChannel()
 	try
 	{
 		close();
-		delete _pRotateStrategy;
-		delete _pArchiveStrategy;
-		delete _pPurgeStrategy;
 	}
 	catch (...)
 	{
@@ -99,8 +93,7 @@ void FileChannel::close()
 {
 	FastMutex::ScopedLock lock(_mutex);
 
-	delete _pFile;
-	_pFile = 0;
+	_pFile.reset();
 }
 
 
@@ -109,19 +102,11 @@ void FileChannel::log(const Message& msg)
 	FastMutex::ScopedLock lock(_mutex);
 
 	unsafeOpen();
-
-	if (_pRotateStrategy && _pArchiveStrategy && _pRotateStrategy->mustRotate(_pFile))
-	{
-		unsafeRotate();
-		// we must call mustRotate() again to give the
-		// RotateByIntervalStrategy a chance to write its timestamp
-		// to the new file.
-		_pRotateStrategy->mustRotate(_pFile);
-	}
+	unsafeRotateIfDue();
 
 	try
 	{
-	_pFile->write(msg.getText(), _flush);
+		_pFile->write(msg.getText(), _flush);
     }
     catch (const WriteFileException & e)
     {
@@ -230,33 +215,30 @@ const std::string& FileChannel::path() const
 
 void FileChannel::setRotation(const std::string& rotation)
 {
-	auto * pStrategy = new CombinedRotateStrategy(rotation, _times);
-	delete _pRotateStrategy;
-	_pRotateStrategy = pStrategy;
+	_pRotateStrategy = std::make_unique<CombinedRotateStrategy>(rotation, _times);
 	_rotation = rotation;
 }
 
 
 void FileChannel::setArchive(const std::string& archive)
 {
-	ArchiveStrategy* pStrategy = 0;
+	std::unique_ptr<ArchiveStrategy> pStrategy;
 	if (archive == "number")
 	{
-		pStrategy = new ArchiveByNumberStrategy;
+		pStrategy = std::make_unique<ArchiveByNumberStrategy>();
 	}
 	else if (archive == "timestamp")
 	{
 		if (_times == "utc")
-			pStrategy = new ArchiveByTimestampStrategy<DateTime>;
+			pStrategy = std::make_unique<ArchiveByTimestampStrategy<DateTime>>();
 		else if (_times == "local")
-			pStrategy = new ArchiveByTimestampStrategy<LocalDateTime>;
+			pStrategy = std::make_unique<ArchiveByTimestampStrategy<LocalDateTime>>();
 		else
 			throw PropertyNotSupportedException("times", _times);
 	}
 	else throw InvalidArgumentException("archive", archive);
-	delete _pArchiveStrategy;
 	pStrategy->compress(_compress && !_streamCompress);
-	_pArchiveStrategy = pStrategy;
+	_pArchiveStrategy = std::move(pStrategy);
 	_archive = archive;
 }
 
@@ -286,7 +268,7 @@ void FileChannel::setPurgeAge(const std::string& age)
 	int num = extractDigit(age, &nextToDigit);
 	Timespan::TimeDiff factor = extractFactor(age, nextToDigit);
 
-	setPurgeStrategy(new PurgeByAgeStrategy(Timespan(num * factor)));
+	_pPurgeStrategy = std::make_unique<PurgeByAgeStrategy>(Timespan(num * factor));
 	_purgeAge = age;
 }
 
@@ -295,7 +277,7 @@ void FileChannel::setPurgeCount(const std::string& count)
 {
 	if (setNoPurge(count)) return;
 
-	setPurgeStrategy(new PurgeByCountStrategy(extractDigit(count)));
+	_pPurgeStrategy = std::make_unique<PurgeByCountStrategy>(extractDigit(count));
 	_purgeCount = count;
 }
 
@@ -333,25 +315,96 @@ void FileChannel::unsafeOpen()
 	{
 		_pFile = newLogFile();
 		if (_rotateOnOpen && _pFile->size() > 0)
-			unsafeRotate();
+		{
+			_rotationPending = true;
+			unsafeRotateIfDue();
+		}
 	}
 }
 
 
 void FileChannel::unsafeRotate()
 {
-	/// `archive` deletes the current file, so `_pFile` must not dangle if opening the new one fails.
-	/// The raw pointer is intentional: `archive` owns `pFile` and deletes it, so it must not be deleted here.
-	LogFile * pFile = std::exchange(_pFile, nullptr);
+	_pArchiveStrategy->archive(_pFile, _streamCompress);
+	purge();
+}
+
+
+namespace
+{
+std::string currentExceptionText()
+{
 	try
 	{
-		_pFile = _pArchiveStrategy->archive(pFile, _streamCompress);
-		purge();
+		throw;
+	}
+	catch (const Exception& e)
+	{
+		return e.displayText();
+	}
+	catch (const std::exception& e)
+	{
+		return e.what();
 	}
 	catch (...)
 	{
-		_pFile = newLogFile();
+		return "unknown error";
 	}
+}
+
+void writeToStderr(const std::string& text)
+{
+	const char* data = text.data();
+	size_t size = text.size();
+	while (size > 0)
+	{
+		ssize_t res = ::write(STDERR_FILENO, data, size);
+		if (res < 0 && errno == EINTR)
+			continue;
+		if (res <= 0)
+			return;
+		data += res;
+		size -= static_cast<size_t>(res);
+	}
+}
+}
+
+
+void FileChannel::unsafeRotateIfDue()
+{
+	if (!_pArchiveStrategy)
+		return;
+
+	bool rotated = false;
+	try
+	{
+		if (_rotationPending || (_pRotateStrategy && _pRotateStrategy->mustRotate(_pFile.get())))
+		{
+			_rotationPending = true;
+			unsafeRotate();
+			_rotationPending = false;
+			rotated = true;
+		}
+	}
+	catch (...)
+	{
+		/// The current file is still open: keep logging into it and retry with the next message.
+		/// A pending rotation stays pending; a failed check is simply repeated.
+		if (!_pFile)
+			throw;
+		/// Report once per failure, to stderr: the file holds records formatted above this channel, for example JSON.
+		if (!_rotationFailureReported)
+			writeToStderr("Log file rotation failed for " + _path + ", logging continues in the current file: " + currentExceptionText() + "\n");
+		_rotationFailureReported = true;
+		return;
+	}
+
+	_rotationFailureReported = false;
+	// we must call mustRotate() again to give the
+	// RotateByIntervalStrategy a chance to write its timestamp
+	// to the new file.
+	if (rotated && _pRotateStrategy)
+		_pRotateStrategy->mustRotate(_pFile.get());
 }
 
 
@@ -445,15 +498,15 @@ void FileChannel::archiveCorrupted(const std::string& path)
 	}
 }
 
-LogFile * FileChannel::newLogFile()
+std::unique_ptr<LogFile> FileChannel::newLogFile()
 {
 	if (_streamCompress) {
 		archiveCorrupted(_path);
-		return new CompressedLogFile(_path);
+		return std::make_unique<CompressedLogFile>(_path);
 	}
 	else
 	{
-		return new LogFile(_path);
+		return std::make_unique<LogFile>(_path);
 	}
 }
 
@@ -462,8 +515,7 @@ bool FileChannel::setNoPurge(const std::string& value)
 {
 	if (value.empty() || 0 == icompare(value, "none"))
 	{
-		delete _pPurgeStrategy;
-		_pPurgeStrategy = 0;
+		_pPurgeStrategy.reset();
 		_purgeAge = "none";
 		return true;
 	}
@@ -489,13 +541,6 @@ int FileChannel::extractDigit(const std::string& value, std::string::const_itera
 
 	if (nextToDigit) *nextToDigit = it;
 	return digit;
-}
-
-
-void FileChannel::setPurgeStrategy(PurgeStrategy* strategy)
-{
-	delete _pPurgeStrategy;
-	_pPurgeStrategy = strategy;
 }
 
 

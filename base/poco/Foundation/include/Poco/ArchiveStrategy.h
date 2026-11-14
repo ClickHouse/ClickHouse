@@ -25,6 +25,9 @@
 #include "Poco/LogFile.h"
 #include "Poco/NumberFormatter.h"
 
+#include <functional>
+#include <memory>
+
 
 namespace Poco
 {
@@ -44,11 +47,11 @@ public:
     ArchiveStrategy();
     virtual ~ArchiveStrategy();
 
-    virtual LogFile * archive(LogFile * pFile, bool streamCompress = false) = 0;
-    /// Renames the given log file for archiving
-    /// and creates and returns a new log file.
-    /// The given LogFile object is deleted.
-    /// Returns CompressedLogFile if streamCompress flag is set.
+    virtual void archive(std::unique_ptr<LogFile> & file, bool streamCompress = false) = 0;
+    /// Renames `file` for archiving and replaces it with a new log file.
+    /// If this method throws, `file` is still the current file under its original name
+    /// (or null, if the file could not be renamed back).
+    /// Creates CompressedLogFile if streamCompress flag is set.
 
     void compress(bool flag = true);
     /// Enables or disables compression of archived files.
@@ -56,6 +59,16 @@ public:
 protected:
     void moveFile(const std::string & oldName, const std::string & newName);
     bool exists(const std::string & name);
+    static std::unique_ptr<LogFile> openFile(const std::string & base, bool streamCompress);
+    void rotateFile(
+        std::unique_ptr<LogFile> & file,
+        const std::string & base,
+        const std::string & ext,
+        const std::string & archived,
+        bool streamCompress,
+        const std::function<void()> & makeRoom);
+    /// Opens the new file under a temporary name, calls `makeRoom`, renames the current file to `archived`
+    /// and the new file to the current name, then replaces `file`. Compresses `archived` after the old file is closed.
 
 private:
     ArchiveStrategy(const ArchiveStrategy &);
@@ -74,7 +87,7 @@ class Foundation_API ArchiveByNumberStrategy : public ArchiveStrategy
 public:
     ArchiveByNumberStrategy();
     ~ArchiveByNumberStrategy();
-    LogFile * archive(LogFile * pFile, bool streamCompress = false);
+    void archive(std::unique_ptr<LogFile> & file, bool streamCompress = false);
 };
 
 
@@ -88,12 +101,12 @@ public:
 
     ~ArchiveByTimestampStrategy() { }
 
-    LogFile * archive(LogFile * pFile, bool streamCompress = false)
+    void archive(std::unique_ptr<LogFile> & file, bool streamCompress = false)
     /// Archives the file by appending the current timestamp to the
     /// file name. If the new file name exists, additionally a monotonic
     /// increasing number is appended to the log file name.
     {
-        std::string base = pFile->path();
+        std::string base = file->path();
         std::string ext = "";
 
         if (base.ends_with(".lz4"))
@@ -102,21 +115,16 @@ public:
             ext = ".lz4";
         }
 
-        delete pFile;
         std::string archPath = base;
         archPath.append(".");
         DateTimeFormatter::append(archPath, DT().timestamp(), "%Y%m%d%H%M%S%i");
         archPath.append(ext);
 
-        if (exists(archPath))
-            archiveByNumber(archPath);
-        else
-            moveFile(base + ext, archPath);
-
-        if (streamCompress)
-            return new CompressedLogFile(base);
-        else
-            return new LogFile(base);
+        rotateFile(file, base, ext, archPath, streamCompress, [&]
+        {
+            if (exists(archPath))
+                archiveByNumber(archPath);
+        });
     }
 
 private:

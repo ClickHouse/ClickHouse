@@ -40,6 +40,7 @@ public:
     UInt64 sizeImpl() const;
     Timestamp creationDateImpl() const;
     const std::string & pathImpl() const;
+    void renameToImpl(const std::string & path);
 
 private:
     std::string _path;
