@@ -28,6 +28,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Columns/ColumnConst.h>
 #include <Common/BitHelpers.h>
 #include <city.h>
 #include <Common/BufferAllocationPolicy.h>
@@ -1457,6 +1458,18 @@ UInt64 countRowsDensifiedFromSparse(const MergeTreeDataPartsVector & parts, cons
     return sparse_rows;
 }
 
+/// The bytes a dense writer is fed for one default row of `type`: the size of a value for a fixed-size type,
+/// otherwise the in-memory size of the type's default value (for `String` the offset plus the empty string).
+/// It does not depend on any `DEFAULT` expression: a densified row is the type default, which a sparse column
+/// does not store. The in-memory size bounds the serialized one: an empty `String` is one length byte with
+/// `string_serialization_version = 'single_stream'` and one `UInt64` size with `'with_size_stream'`.
+UInt64 densifiedDefaultValueSize(const IDataType & type)
+{
+    if (type.haveMaximumSizeOfValue())
+        return type.getMaximumSizeOfValueInMemory();
+    return type.createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst()->byteSize();
+}
+
 /// A compressed reader keeps a copy of a compressed block in `CompressedReadBufferBase::own_compressed_buffer`
 /// whenever the whole framed block is not available in its file buffer - a block larger than the file buffer,
 /// or simply one that straddles the end of the buffer. The copy stays allocated next to the file buffer and the
@@ -2200,18 +2213,18 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// A column stored sparsely by a source part but densely by the merged part (for example, after
     /// `ratio_of_defaults_for_sparse_serialization` was raised) writes a full value for every default row,
     /// while the source part's uncompressed size only counts its offsets and non-default values. Price the
-    /// densified rows of a fixed-size type like the synthesized defaults above, so the bound is shared by the
-    /// multipart ceiling, the writer buffer growth and the compression scratch below
-    /// (see countRowsDensifiedFromSparse).
+    /// densified rows like the synthesized defaults above, so the bound is shared by the multipart ceiling, the
+    /// writer buffer growth and the compression scratch below (see countRowsDensifiedFromSparse). A densified row
+    /// is the type default, so a variable-size type such as `String` is priced too (see densifiedDefaultValueSize).
     const double ratio_of_defaults_for_sparse = static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]);
     for (const auto & column : output_columns)
     {
-        if (!column.type->haveMaximumSizeOfValue())
-            continue;
         const UInt64 densified_rows
             = countRowsDensifiedFromSparse(future_part.parts, part_source_name(column.name), ratio_of_defaults_for_sparse);
+        if (densified_rows == 0)
+            continue;
         default_filled_value_bytes = saturatingAdd(
-            default_filled_value_bytes, saturatingStreamsTimesBuffer(densified_rows, column.type->getMaximumSizeOfValueInMemory()));
+            default_filled_value_bytes, saturatingStreamsTimesBuffer(densified_rows, densifiedDefaultValueSize(*column.type)));
     }
 
     UInt64 multipart_written_bytes = sum_input_bytes_uncompressed;
@@ -3337,7 +3350,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// projection: `writeProjectionPartImpl` chooses the serialization kind with the projection's own
                 /// `ratio_of_defaults_for_sparse_serialization`, which can differ from the table's. The sparse
                 /// source volume counts only the offsets and the non-default values, so price the densified rows
-                /// of a fixed-size type the same way as for the base part (see countRowsDensifiedFromSparse).
+                /// the same way as for the base part (see countRowsDensifiedFromSparse and densifiedDefaultValueSize).
                 const double projection_ratio_of_defaults_for_sparse
                     = static_cast<double>(projection_settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]);
                 for (const auto & required_column : required_columns)
@@ -3346,13 +3359,15 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                         GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), required_column);
                     if (!column)
                         column = output_columns.tryGetByName(required_column);
-                    if (!column || !column->type->haveMaximumSizeOfValue())
+                    if (!column)
                         continue;
                     const UInt64 densified_rows = countRowsDensifiedFromSparse(
                         future_part.parts, part_source_name(required_column), projection_ratio_of_defaults_for_sparse);
+                    if (densified_rows == 0)
+                        continue;
                     projection_uncompressed_bytes = saturatingAdd(
                         projection_uncompressed_bytes,
-                        saturatingStreamsTimesBuffer(densified_rows, column->type->getMaximumSizeOfValueInMemory()));
+                        saturatingStreamsTimesBuffer(densified_rows, densifiedDefaultValueSize(*column->type)));
                 }
 
                 /// `parse` removes `_part_offset` from required_columns for projections that store it as
