@@ -128,6 +128,7 @@ CREATE TABLE tab
 (
     m Map(String, String),
     k String,
+    v String ALIAS m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k)],
     INDEX idx(mapValues(m)) TYPE text(tokenizer = splitByString([' ']))
 )
 ENGINE = MergeTree ORDER BY tuple();
@@ -138,6 +139,9 @@ SELECT hasAnyTokens(m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D',
 SELECT hasAnyTokens(m[key], 'FOO') FROM (SELECT m, multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k = 'F', 'f', k) AS key FROM tab ORDER BY key LIMIT 1);
 SELECT hasAnyTokens(v, 'FOO') FROM (SELECT m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k = 'F', 'f', k)] AS v FROM tab ORDER BY v LIMIT 1);
 SELECT count() FROM tab WHERE hasAnyTokens(m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k)], 'FOO') SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes = 0;
+SELECT hasAnyTokens(v, 'FOO') FROM (SELECT m[multiIf(k = 'A', 'a', k = 'B', 'b', k = 'C', 'c', k = 'D', 'd', k = 'E', 'e', k)] AS v FROM tab ORDER BY v LIMIT 1);
+SELECT hasAnyTokens(v, 'FOO') FROM tab SETTINGS query_plan_enable_optimizations = 0;
+SELECT count() FROM tab WHERE hasAnyTokens(v, 'FOO') SETTINGS query_plan_enable_optimizations = 0, use_skip_indexes = 0;
 
 DROP TABLE tab;
 

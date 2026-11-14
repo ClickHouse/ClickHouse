@@ -162,7 +162,18 @@ const ActionsDAG::Node * replaceLongSubexpressions(
     NameLengthBounds & bounds,
     ActionsDAG::NodeMapping & replaced)
 {
-    if (getNameLengthLowerBound(node, max_name_length + 1, bounds, {}) <= max_name_length)
+    auto is_long = [&](const ActionsDAG::Node * expression)
+    {
+        return getNameLengthLowerBound(expression, max_name_length + 1, bounds, {}) > max_name_length;
+    };
+
+    /// Longer than every index column name, so no indexed expression contains this name.
+    auto add_opaque_input = [&](const DataTypePtr & type) -> const ActionsDAG::Node *
+    {
+        return &dag.addInput(String(max_name_length + 1, '_') + std::to_string(dag.getInputs().size()), type);
+    };
+
+    if (!is_long(node))
         return node;
 
     if (auto it = replaced.find(node); it != replaced.end())
@@ -179,17 +190,21 @@ const ActionsDAG::Node * replaceLongSubexpressions(
         for (auto & child : children)
             child = replaceLongSubexpressions(child, max_name_length, dag, bounds, replaced);
 
+        /// A long `m[key]` is matched only to `mapValues(m)` or with a constant key, so any other key is opaque.
+        if (node->function_base->getName() == "arrayElement" && children.size() == 2 && isMap(children[0]->result_type)
+            && children[1]->type != ActionsDAG::ActionType::INPUT && !(children[1]->column && isColumnConst(*children[1]->column)))
+            children[1] = add_opaque_input(children[1]->result_type);
+
         if (children != node->children)
         {
             result = &dag.addFunction(node->function_base, std::move(children), {});
-            if (getNameLengthLowerBound(result, max_name_length + 1, bounds, {}) > max_name_length)
+            if (is_long(result))
                 result = nullptr;
         }
     }
 
-    /// Longer than every index column name, so no indexed expression contains this name.
     if (!result)
-        result = &dag.addInput(String(max_name_length + 1, '_') + std::to_string(replaced.size()), node->result_type);
+        result = add_opaque_input(node->result_type);
 
     replaced.emplace(node, result);
     return result;
