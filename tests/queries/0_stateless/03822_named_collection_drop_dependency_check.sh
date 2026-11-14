@@ -124,10 +124,13 @@ $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAM
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_nc_dep_atomic SETTINGS ast_fuzzer_runs = 0;"
 $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
-# Drop the Ordinary table, now drop should succeed
+# Drop the Ordinary table, now drop should succeed. Recreating the same table name first is what
+# makes this assertion bite: DROP NAMED COLLECTION prunes edges whose table no longer exists, so
+# with no table of that name it would pass even if DROP TABLE had left the name-based edge behind.
 $CLICKHOUSE_CLIENT -m -q "
 SET ast_fuzzer_runs = 0;
 DROP TABLE ${ORDINARY_DB}.test_nc_dep_ordinary_renamed;
+CREATE TABLE ${ORDINARY_DB}.test_nc_dep_ordinary_renamed (x UInt32) ENGINE = Memory;
 DROP NAMED COLLECTION ${NC_NAME};
 DROP DATABASE ${ORDINARY_DB};
 "
