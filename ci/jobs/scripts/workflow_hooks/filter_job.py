@@ -944,7 +944,14 @@ def should_skip_job(job_name):
     # A draft is work in progress: the fast test gives the author quick feedback, and the
     # full CI starts when the PR is marked ready for review (the PR workflow also runs on
     # `ready_for_review`). The `ci-force-all` label, checked above, runs everything.
-    if _info_cache.pr_is_draft and job_name not in DRAFT_PR_JOBS:
+    # Only the main PR workflow, whose `can_be_merged.py` post-hook blocks the merge of a
+    # draft-only run: `BackportPR` has no fast test and no merge gate but has automerge,
+    # so a draft backport must still run its full CI.
+    if (
+        _info_cache.pr_is_draft
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and job_name not in DRAFT_PR_JOBS
+    ):
         _add_draft_note()
         return True, DRAFT_PR_SKIP_REASON
 

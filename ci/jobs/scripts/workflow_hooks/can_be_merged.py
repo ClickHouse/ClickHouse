@@ -31,8 +31,13 @@ STATELESS_TESTS_DIR = "tests/queries/0_stateless/"
 def is_draft_only_run(info):
     """A draft pull request without `ci-force-all` runs only the fast test (see
     `should_skip_job` in `filter_job.py`). The draft status is the one the workflow
-    started with, so it matches the set of jobs that actually ran."""
-    return bool(info.pr_is_draft) and Labels.CI_FORCE_ALL not in info.pr_labels
+    started with, so it matches the set of jobs that actually ran. Only the main PR
+    workflow (`PR`) has the draft shortcut; other workflows run in full."""
+    return (
+        bool(info.pr_is_draft)
+        and info.workflow_name == "PR"
+        and Labels.CI_FORCE_ALL not in info.pr_labels
+    )
 
 
 def llvm_coverage_label_allows_merge(changed_files):

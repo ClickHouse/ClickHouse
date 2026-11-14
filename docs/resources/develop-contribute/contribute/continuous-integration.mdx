@@ -321,6 +321,8 @@ Until it completes, the `Mergeable Check` of a draft run fails, so the pull requ
 
 To run the full CI on a draft anyway, add the `ci-force-all` label and re-run the workflow (or push a commit).
 
+A draft backport pull request still runs its full CI.
+
 ## Revert pull requests {#revert-pull-requests}
 
 A pull request that reverts a merged change gets a green light at once: every CI job except the style check is skipped, so that the revert can be merged as quickly as possible.
