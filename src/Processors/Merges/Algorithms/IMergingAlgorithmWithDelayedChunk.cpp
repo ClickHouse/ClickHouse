@@ -37,9 +37,96 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
     /// A single-column key without a collation compares cheaply even through the generic
     /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`).
     /// The algorithms consume rows one by one, so the batches only pay off by saving
-    /// comparisons: with a cheap comparator the detection is skipped altogether.
+    /// comparisons: with a cheap comparator the detection is skipped, unless the algorithm
+    /// takes long batches of rows without duplicate keys in one go.
     bool compare_is_expensive = sortDescriptionCompareIsExpensive(description);
-    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, compare_is_expensive, compare_is_expensive);
+    has_long_batches_of_unique_keys = uses_batches_of_unique_keys && sourcesHaveLongBatchesOfUniqueKeys();
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(
+        cursors, compare_is_expensive, compare_is_expensive || has_long_batches_of_unique_keys);
+}
+
+bool IMergingAlgorithmWithDelayedChunk::singleSourceHasMostlyDistinctKeys() const
+{
+    /// A small sample, like in `sourcesHaveLongBatchesOfUniqueKeys`: with keys that repeat (a block of an INSERT that
+    /// sums many rows per key) looking for rows with distinct keys would only cost.
+    static constexpr size_t max_rows_to_check = 1024;
+
+    const SortCursorImpl * source = nullptr;
+    for (const auto & cursor : cursors)
+    {
+        if (cursor.empty())
+            continue;
+        if (source)
+            return false;
+        source = &cursor;
+    }
+    if (!source)
+        return false;
+
+    const size_t rows_to_check = std::min(source->rowsLeft() / max_share_of_rows_to_check, max_rows_to_check);
+    if (rows_to_check < min_batch_size_to_take)
+        return false;
+
+    const auto row_at = [&](size_t pos) { return source->permutation ? (*source->permutation)[pos] : pos; };
+    const IColumn ** sort_columns = const_cast<const IColumn **>(source->sort_columns.data());
+    const size_t begin = source->getSize() - source->rowsLeft();
+    const size_t end = begin + rows_to_check;
+    size_t distinct = 0;
+    for (size_t pos = begin; pos < end; ++pos)
+        distinct += !detail::RowRef::checkEquals(source->sort_columns.size(), sort_columns, row_at(pos), sort_columns, row_at(pos + 1));
+
+    return distinct * 2 >= rows_to_check;
+}
+
+bool IMergingAlgorithmWithDelayedChunk::sourcesHaveLongBatchesOfUniqueKeys() const
+{
+    /// Merge the beginning of the current chunks with the batch detection on, without taking any rows.
+    /// Interleaved keys (e.g. parts that each hold every key once, or two parts of a similar size) come
+    /// in batches of one or two rows, where the detection only costs. A large part merged with a few
+    /// small ones (e.g. a table with recent updates) comes in long batches, which save the work per row.
+    /// A small sample: it runs at the start of every merge, including those of a few granules for a point query.
+    static constexpr size_t max_rows_to_check = 1024;
+
+    bool has_source_with_unique_keys = false;
+    for (size_t source_num = 0; source_num < cursors.size(); ++source_num)
+    {
+        const auto & cursor = cursors[source_num];
+        if (!cursor.empty() && !cursor.permutation && sourceHasUniqueKeys(source_num))
+            has_source_with_unique_keys = true;
+    }
+    if (!has_source_with_unique_keys)
+        return false;
+
+    size_t total_rows = 0;
+    for (const auto & cursor : cursors)
+        if (!cursor.empty())
+            total_rows += cursor.rowsLeft();
+
+    const size_t rows_to_check = std::min(total_rows / max_share_of_rows_to_check, max_rows_to_check);
+    if (rows_to_check < min_batch_size_to_take)
+        return false;
+
+    SortCursorImpls sample_cursors = cursors;
+    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> sample_queue(
+        sample_cursors, /*enable_array_container=*/ false, /*enable_batch_detection=*/ true);
+
+    size_t rows = 0;
+    size_t rows_in_long_batches = 0;
+    while (sample_queue.isValid() && rows < rows_to_check)
+    {
+        auto [cursor, batch_size] = sample_queue.current();
+        /// The next chunk of the source is not available here.
+        if ((*cursor)->isLast(batch_size))
+            break;
+
+        rows += batch_size;
+        if (batch_size >= min_batch_size_to_take && !(*cursor)->permutation && sourceHasUniqueKeys((*cursor)->order))
+            rows_in_long_batches += batch_size - 2;
+
+        sample_queue.next(batch_size);
+    }
+
+    return rows_in_long_batches * 2 >= rows && rows_in_long_batches > 0;
 }
 
 void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t source_num)

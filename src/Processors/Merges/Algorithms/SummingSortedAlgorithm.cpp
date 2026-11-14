@@ -7,6 +7,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -22,6 +23,8 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
+#include <base/unaligned.h>
 
 namespace DB
 {
@@ -64,6 +67,10 @@ struct SummingSortedAlgorithm::AggregateDescription
     bool aggregate_all_columns = false;
 
     String sum_function_map_name;
+
+    /// For a number summed by `sumWithOverflow` (see `can_copy_rows_of_own_groups`): its size and whether it is a float.
+    size_t value_size = 0;
+    bool is_float = false;
 
     void init(const char * function_name, const DataTypes & argument_types)
     {
@@ -585,6 +592,40 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             def.columns_need_exact_copy[i] = true;
     }
 
+    /// A group of one row results in that row when every aggregated column is a number summed by
+    /// `sumWithOverflow`: the sum of one value `x` is `0 + x` (see `SummingMergedData::insertRowsOfOwnGroups`).
+    def.can_copy_rows_of_own_groups = true;
+    for (auto & desc : def.columns_to_aggregate)
+    {
+        bool is_number = false;
+        if (desc.real_type)
+        {
+            WhichDataType which(desc.real_type);
+            is_number = which.isInt() || which.isUInt() || which.isFloat32() || which.isFloat64() || which.isDecimal();
+            desc.is_float = which.isFloat32() || which.isFloat64();
+            if (is_number)
+                desc.value_size = desc.real_type->getSizeOfValueInMemory();
+        }
+
+        if (!is_number || desc.is_agg_func_type || desc.is_simple_agg_func_type || desc.aggregate_all_columns || desc.nested_type
+            || desc.column_numbers.size() != 1 || !desc.function || desc.function->getName() != "sumWithOverflow"
+            || !desc.function->getResultType()->equals(*desc.real_type))
+        {
+            def.can_copy_rows_of_own_groups = false;
+            break;
+        }
+    }
+
+    /// Columns with a dynamic structure (JSON, Dynamic) are copied one row at a time (see `setRow`).
+    for (const auto & column : header_flatten)
+        if (column.type->hasDynamicStructure())
+            def.can_copy_rows_of_own_groups = false;
+
+    /// See `finishGroup`: a row is removed only if each aggregated column is a single summed column with
+    /// `remove_default_values` and all of them are zero.
+    def.removes_zero_rows = def.can_copy_rows_of_own_groups && def.maps_to_sum.empty() && !def.columns_to_aggregate.empty()
+        && std::all_of(def.columns_to_aggregate.begin(), def.columns_to_aggregate.end(), [](const auto & desc) { return desc.remove_default_values; });
+
     return def;
 }
 
@@ -937,6 +978,142 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
     }
 }
 
+/// The sum of one value `x` by `sumWithOverflow` is `0 + x`: the same as `x`, except that -0.0 becomes +0.0
+/// (and a signaling NaN a quiet one).
+template <typename T>
+static void addZeroToValuesFrom(IColumn & column, size_t from)
+{
+    auto & data = assert_cast<ColumnVector<T> &>(column).getData();
+    for (size_t i = from; i < data.size(); ++i)
+        data[i] = T(0) + data[i];
+}
+
+/// Whether the sum of the single value at `row` is zero, i.e. the default value with all bits zero (see `isDefaultAt` of
+/// `ColumnVector` and `ColumnDecimal`): the sum `0 + x` is +0.0 for both zeros of a float, and `x` for other numbers.
+static bool isZeroSum(const char * data, size_t value_size, bool is_float, size_t row)
+{
+    const char * value = data + row * value_size;
+    if (is_float)
+        return value_size == sizeof(Float64) ? unalignedLoad<Float64>(value) == 0 : unalignedLoad<Float32>(value) == 0;
+    for (size_t i = 0; i < value_size; ++i)
+        if (value[i] != 0)
+            return false;
+    return true;
+}
+
+/// Appends the rows at the positions [begin, end) of `src`, through `permutation` if it is set.
+static void insertRowsAtPositions(IColumn & dst, const IColumn & src, size_t begin, size_t end, const IColumn::Permutation * permutation)
+{
+    if (!permutation)
+    {
+        dst.insertRangeFrom(src, begin, end - begin);
+        return;
+    }
+
+    for (size_t pos = begin; pos < end; ++pos)
+        dst.insertFrom(src, (*permutation)[pos]);
+}
+
+/// Appends the given rows of `src`.
+static void insertRowsByNumbers(IColumn & dst, const IColumn & src, const VectorWithMemoryTracking<size_t> & rows)
+{
+    for (size_t row : rows)
+        dst.insertFrom(src, row);
+}
+
+void SummingSortedAlgorithm::SummingMergedData::insertRowsOfOwnGroups(
+    const ColumnRawPtrs & raw_columns, size_t begin, size_t end, const IColumn::Permutation * permutation)
+{
+    chassert(!is_group_started && def.can_copy_rows_of_own_groups);
+
+    /// Appends rows to every column with `insert_column(dst, src)`, adding 0 to the float sums as `sumWithOverflow` does.
+    const auto insert_rows = [&](size_t num_rows, const auto & insert_column)
+    {
+        const size_t old_rows = columns.front()->size();
+        for (auto & desc : def.columns_to_aggregate)
+        {
+            insert_column(*desc.merged_column, *raw_columns[desc.column_numbers[0]]);
+            if (desc.is_float && desc.value_size == sizeof(Float64))
+                addZeroToValuesFrom<Float64>(*desc.merged_column, old_rows);
+            else if (desc.is_float)
+                addZeroToValuesFrom<Float32>(*desc.merged_column, old_rows);
+        }
+
+        size_t next_column = columns.size() - def.column_numbers_not_to_aggregate.size();
+        for (auto column_number : def.column_numbers_not_to_aggregate)
+        {
+            insert_column(*columns[next_column], *raw_columns[column_number]);
+            ++next_column;
+        }
+
+        total_merged_rows += num_rows;
+        merged_rows += num_rows;
+    };
+
+    const auto row_at = [permutation](size_t pos) { return permutation ? (*permutation)[pos] : pos; };
+
+    /// A row whose sums are all zero is removed (see `finishGroup`): find the first one.
+    size_t first_zero_row_pos = end;
+    const size_t num_sums = def.columns_to_aggregate.size();
+    const auto is_zero_row = [&](size_t row)
+    {
+        for (size_t i = 0; i < num_sums; ++i)
+        {
+            const auto & desc = def.columns_to_aggregate[i];
+            if (!isZeroSum(sum_data[i], desc.value_size, desc.is_float, row))
+                return false;
+        }
+        return true;
+    };
+
+    if (def.removes_zero_rows)
+    {
+        sum_data.resize(num_sums);
+        for (size_t i = 0; i < num_sums; ++i)
+            sum_data[i] = raw_columns[def.columns_to_aggregate[i].column_numbers[0]]->getRawData().data();
+
+        for (size_t pos = begin; pos < end; ++pos)
+        {
+            if (is_zero_row(row_at(pos)))
+            {
+                first_zero_row_pos = pos;
+                break;
+            }
+        }
+    }
+
+    insert_rows(first_zero_row_pos - begin, [&](IColumn & dst, const IColumn & src)
+    {
+        insertRowsAtPositions(dst, src, begin, first_zero_row_pos, permutation);
+    });
+
+    if (first_zero_row_pos == end)
+        return;
+
+    /// Skip the zero rows: insert the other rows in portions of a bounded size.
+    static constexpr size_t max_rows_in_portion = 65536;
+    const auto insert_portion = [&]
+    {
+        insert_rows(rows_to_insert.size(), [&](IColumn & dst, const IColumn & src) { insertRowsByNumbers(dst, src, rows_to_insert); });
+        rows_to_insert.clear();
+    };
+
+    rows_to_insert.clear();
+    for (size_t pos = first_zero_row_pos + 1; pos < end; ++pos)
+    {
+        const size_t row = row_at(pos);
+        if (is_zero_row(row))
+            continue;
+
+        rows_to_insert.push_back(row);
+        if (rows_to_insert.size() == max_rows_in_portion)
+            insert_portion();
+    }
+
+    if (!rows_to_insert.empty())
+        insert_portion();
+}
+
 void SummingSortedAlgorithm::SummingMergedData::initAggregateDescription()
 {
     size_t num_columns = def.columns_to_aggregate.size();
@@ -975,6 +1152,9 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)
 {
     columns_definition.origin_header = header_;
+
+    /// The rows of a source without duplicate keys can be taken by whole batches (see `mergeImpl`).
+    uses_batches_of_unique_keys = columns_definition.can_copy_rows_of_own_groups;
 }
 
 void SummingSortedAlgorithm::initialize(Inputs inputs)
@@ -993,7 +1173,16 @@ void SummingSortedAlgorithm::initialize(Inputs inputs)
             preprocessChunk(input.chunk, columns_definition);
 
     merged_data.initialize(*header, inputs);
+    merged_data.setMayHaveReplicatedColumns(anyInputColumnReplicated(inputs));
+    /// Replicated columns are not copied in bulk (see `merge`), so the merge does not need to look for batches.
+    if (merged_data.mayHaveReplicatedColumns())
+        uses_batches_of_unique_keys = false;
+
+    const size_t num_inputs = inputs.size();
     initializeQueue(std::move(inputs));
+
+    /// With a single source (e.g. the block of an INSERT) the whole rest of its chunk is one batch.
+    take_runs_of_distinct_keys = uses_batches_of_unique_keys && num_inputs == 1 && singleSourceHasMostlyDistinctKeys();
 }
 
 void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
@@ -1003,17 +1192,93 @@ void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
     removeReplicatedFromSortingColumns(columns_definition.origin_header, input, description);
     removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
+    if (!merged_data.mayHaveReplicatedColumns() && anyChunkColumnReplicated(input.chunk))
+        merged_data.setMayHaveReplicatedColumns(true);
     updateCursor(input, source_num);
 }
 
+/// Out of line: it runs once per batch, and inlining it would make the loop over the other rows in `merge` slower.
+NO_INLINE bool SummingSortedAlgorithm::takeRowsOfOwnGroups(SortCursor current, size_t batch_size, bool compare_keys)
+{
+    /// Positions in the cursor; the rows are read through its permutation, if any (an unsorted INSERT block).
+    const IColumn::Permutation * permutation = current->permutation;
+    const auto row_at = [permutation](size_t pos) { return permutation ? (*permutation)[pos] : pos; };
+    ColumnRawPtrs & sort_columns = current->sort_columns;
+    const auto next_row_has_same_key = [&](size_t pos)
+    {
+        return detail::RowRef::checkEquals(sort_columns.size(), sort_columns.data(), row_at(pos), sort_columns.data(), row_at(pos + 1));
+    };
+
+    const size_t pos = current->getPosRef();
+    /// The group of the current row continues with the next row.
+    if (compare_keys && next_row_has_same_key(pos))
+        return false;
+
+    if (permutation && merged_data.limitsBlockBytes())
+        return false;
+
+    const ColumnRawPtrs & columns = current->all_columns;
+
+    /// The group of the current row ends with it (see `mergeImpl`).
+    merged_data.finishGroup();
+
+    const size_t begin = pos + 1;
+    size_t end = pos + batch_size - 1;
+
+    /// Keep the limits of the block size: write only the rows that fit before a flush. The row `end` then
+    /// starts its group as usual, and like for each row in `mergeImpl` a full block is emitted before that.
+    if (merged_data.hasEnoughRows())
+        end = begin;
+    else
+    {
+        const size_t max_rows = std::min<size_t>(end - begin, merged_data.maxBlockSize() - merged_data.mergedRows());
+        end = permutation ? begin + max_rows : begin + merged_data.rowsToInsertBeforeFlush(columns, begin, max_rows, current->getSize());
+    }
+
+    /// Without the guarantee of unique keys, a row is a group of its own only if it also differs from the next row.
+    if (compare_keys)
+    {
+        size_t run_end = begin;
+        while (run_end < end && !next_row_has_same_key(run_end))
+            ++run_end;
+        end = run_end;
+    }
+
+    if (begin < end)
+        merged_data.insertRowsOfOwnGroups(columns, begin, end, permutation);
+
+    if (compare_keys && begin < end)
+    {
+        /// The key of the row `end` is compared with `last_key`: let it refer to the row before.
+        queue.next(end - 1 - pos);
+        setRowRef(last_key, current);
+        queue.next(1);
+    }
+    else
+    {
+        /// `last_key` refers to the current row, so the row `end` from the same source is compared as a different key.
+        queue.next(end - pos);
+    }
+    return true;
+}
+
 IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
+{
+    if ((has_long_batches_of_unique_keys || take_runs_of_distinct_keys) && !merged_data.mayHaveReplicatedColumns())
+        return mergeImpl<true>();
+    return mergeImpl<false>();
+}
+
+template <bool take_batches>
+IMergingAlgorithm::Status SummingSortedAlgorithm::mergeImpl()
 {
     /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
     while (queue.isValid())
     {
         bool key_differs = false;
 
-        SortCursor current = *queue.current().first;
+        const auto current_and_batch_size = queue.current();
+        SortCursor current = *current_and_batch_size.first;
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -1047,10 +1312,40 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
                 return Status(merged_data.pull());
             }
 
+            if constexpr (take_batches)
+            {
+                /// With a single source the rows of a chunk come at consecutive positions.
+                previous_group_has_one_row = current->getPosRef() == group_start_pos + 1;
+                group_start_pos = current->getPosRef();
+            }
             merged_data.startGroup(current->all_columns, current->getRow());
         }
         else
             merged_data.addRow(current->all_columns, current->getRow());
+
+        /// A part with a non-zero level is taken to have no duplicate keys (see `sourceHasUniqueKeys`). All rows of one
+        /// batch come consecutively from the same cursor and are less than the current rows of the other cursors,
+        /// except that the last row of the batch may have the same key as the current row of a cursor of a later
+        /// source. So in a batch from such a part the group of the current row (which may have started in another
+        /// source) ends with it, and every row between it and the last row is a group of its own: take them in one
+        /// go instead of starting and finishing a group for each of them.
+        /// A single source may have duplicate keys (the block of an INSERT): its rows that differ from both neighbours
+        /// are groups of their own too, and finding them takes the comparisons that the per-row path makes anyway.
+        if constexpr (take_batches)
+        {
+            if (unlikely(current_and_batch_size.second >= min_batch_size_to_take))
+            {
+                if (sourceHasUniqueKeys(current->order))
+                {
+                    if (!current->permutation && takeRowsOfOwnGroups(current, current_and_batch_size.second, /*compare_keys=*/ false))
+                        continue;
+                }
+                /// Only after a group of one row: where keys repeat, looking for a run would cost a comparison per group.
+                else if (take_runs_of_distinct_keys && key_differs && previous_group_has_one_row
+                    && takeRowsOfOwnGroups(current, current_and_batch_size.second, /*compare_keys=*/ true))
+                    continue;
+            }
+        }
 
         if (!current->isLast())
         {
