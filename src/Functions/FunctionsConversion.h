@@ -4922,10 +4922,10 @@ struct ToNumberMonotonicity
             Float64 left_float = left.safeGet<Float64>();
             Float64 right_float = right.safeGet<Float64>();
 
-            if (left_float >= static_cast<Float64>(std::numeric_limits<T>::min())
-                && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
-                && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
-                && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
+            if (accurate::greaterOrEqualsOp(left_float, std::numeric_limits<T>::min())
+                && accurate::lessOrEqualsOp(left_float, std::numeric_limits<T>::max())
+                && accurate::greaterOrEqualsOp(right_float, std::numeric_limits<T>::min())
+                && accurate::lessOrEqualsOp(right_float, std::numeric_limits<T>::max()))
                 return { .is_monotonic = true };
 
             return {};
