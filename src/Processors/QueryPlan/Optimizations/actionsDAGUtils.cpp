@@ -141,7 +141,6 @@ static bool foldedLambdasMatch(const IColumn & inner, const IColumn & outer, siz
         max_set_size);
 }
 
-/// Compares the data columns of two constants.
 static bool constantsMatch(
     const IColumn & inner, const IDataType & inner_type, const IColumn & outer, const IDataType & outer_type, size_t max_set_size)
 {
