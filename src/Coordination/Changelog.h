@@ -752,6 +752,10 @@ private:
         uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
     /// Removes retained recovery copies synchronously during startup cleanup.
     void removeRetainedChangelogCopies(uint64_t from_log_index, ChangelogFileDescription & registered);
+    /// Whether a retained recovery copy of the range occupies `path` on `disk`. A move there would
+    /// overwrite it, and it may be the only complete copy of the range: for example, when the
+    /// selected copy has a torn tail.
+    bool isOccupiedByRetainedCopy(uint64_t from_log_index, const DiskPtr & disk, const std::string & path) const;
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;

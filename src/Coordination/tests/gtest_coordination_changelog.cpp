@@ -5350,19 +5350,20 @@ TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterStartupMoveOntoRetai
     }
     regular_disk->copyFile(String(duplicated_path), *latest_disk, String(duplicated_path), {});
 
-    /// Startup selects the latest-disk copy, retains the regular one, and then moves the selected
-    /// copy back onto the path of the retained one.
+    /// Startup selects the latest-disk copy and retains the regular one. The selected copy is not
+    /// moved onto the path of the retained one, which would overwrite it.
     this->keeper_context->setLatestLogDisk(latest_disk);
     DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
     ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
     EXPECT_EQ(recovered.getNextEntryIndex(), 26);
     EXPECT_TRUE(regular_disk->existsFile(String(duplicated_path)));
-    EXPECT_FALSE(latest_disk->existsFile(String(duplicated_path)));
+    EXPECT_TRUE(latest_disk->existsFile(String(duplicated_path)));
 
-    /// Replacing the suffix removes the range together with its retained copy, which is the same file.
+    /// Replacing the suffix removes the range together with its retained copy.
     recovered.writeAt(5, getLogEntry("rewrite_5", 2));
     recovered.flush();
     EXPECT_FALSE(regular_disk->existsFile(String(duplicated_path)));
+    EXPECT_FALSE(latest_disk->existsFile(String(duplicated_path)));
     EXPECT_FALSE(regular_disk->existsFile("changelog_21_30.bin"));
     EXPECT_FALSE(latest_disk->existsFile("changelog_21_30.bin"));
     EXPECT_EQ(recovered.getNextEntryIndex(), 6);
@@ -5395,22 +5396,21 @@ TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterMovesAwayFromRetaine
     }
     regular_disk->copyFile(String(duplicated_path), *latest_disk, String(duplicated_path), {});
 
-    /// Startup selects the latest-disk copy, retains the regular one, and then moves the selected
-    /// copy back onto the path of the retained one.
+    /// Startup selects the latest-disk copy and retains the regular one without moving onto it.
     this->keeper_context->setLatestLogDisk(latest_disk);
     DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
     ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
     EXPECT_EQ(recovered.getNextEntryIndex(), 26);
 
-    /// The first rewrite moves the registered changelog away from the path of the retained copy,
-    /// removing the file there.
+    /// The first rewrite appends to the registered changelog on the latest disk and keeps the
+    /// retained copy.
     recovered.writeAt(15, getLogEntry("rewrite_15", 2));
     recovered.flush();
-    EXPECT_FALSE(regular_disk->existsFile(String(duplicated_path)));
+    EXPECT_TRUE(regular_disk->existsFile(String(duplicated_path)));
     EXPECT_TRUE(latest_disk->existsFile(String(duplicated_path)));
 
     /// The second rewrite finalizes the registered changelog under another name and removes it
-    /// together with the retained copy, whose file is already gone.
+    /// together with the retained copy.
     recovered.writeAt(5, getLogEntry("rewrite_5", 2));
     recovered.flush();
     for (const auto & disk : {regular_disk, latest_disk})
@@ -5420,6 +5420,62 @@ TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterMovesAwayFromRetaine
         EXPECT_FALSE(disk->existsFile("changelog_21_30.bin"));
     }
     EXPECT_EQ(recovered.getNextEntryIndex(), 6);
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupKeepsRetainedCopyOfBrokenSelectedChangelog)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    ChangelogDirTest regular("./logs_keep_retained_copy_of_broken_regular");
+    ChangelogDirTest latest("./logs_keep_retained_copy_of_broken_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 20,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view path = "changelog_1_20.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 5; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+
+    /// An interrupted markerless copy: the latest disk holds the first five entries and a torn sixth record.
+    regular_disk->copyFile(String(path), *latest_disk, String(path), {});
+    {
+        auto torn = latest_disk->writeFile(String(path), DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append);
+        torn->write("\x01\x02\x03", 3);
+        torn->finalize();
+    }
+
+    /// The regular disk holds the complete range.
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 6; index <= 10; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+    const auto complete_digest = DB::computeKeeperFileDigest(regular_disk, String(path));
+
+    /// Startup selects the broken latest-disk copy and retains the complete regular one. Replay stops
+    /// at the torn record, and moving the selected copy to the regular disk would overwrite the only
+    /// complete copy of the range.
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(recovered.getNextEntryIndex(), 6);
+    ASSERT_TRUE(regular_disk->existsFile(String(path)));
+    EXPECT_TRUE(DB::computeKeeperFileDigest(regular_disk, String(path)) == complete_digest);
+    EXPECT_TRUE(latest_disk->existsFile(String(path)));
 }
 
 /// An append-capable disk that is not `DiskLocal`, like S3 with local metadata.

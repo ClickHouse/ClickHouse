@@ -4276,14 +4276,15 @@ void Changelog::finalizeChangelogsAfterRead(
     if (remove_logs_before_index)
         removeAllLogFilesBefore(remove_logs_before_index);
 
-    const auto move_from_latest_logs_disks = [&](auto & description)
+    const auto move_from_latest_logs_disks = [&](uint64_t start_index, auto & description)
     {
         /// check if we need to move completed log to another disk
         auto latest_log_disk = getLatestLogDisk();
         auto disk = getDisk();
 
         /// A failed move is logged, and the changelog stays on the latest log disk.
-        if (latest_log_disk != disk && latest_log_disk == description->disk)
+        if (latest_log_disk != disk && latest_log_disk == description->disk
+            && !isOccupiedByRetainedCopy(start_index, disk, description->path))
             std::ignore = moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
     };
 
@@ -4337,7 +4338,7 @@ void Changelog::finalizeChangelogsAfterRead(
             remove_invalid_logs();
             entry_storage.cleanAfter(last_log_read_outcome->last_read_index);
             description->broken_at_end = true;
-            move_from_latest_logs_disks(description);
+            move_from_latest_logs_disks(last_log_read_outcome->log_start_index, description);
         }
         /// don't mix compressed and uncompressed writes
         else if (compress_logs == last_log_read_outcome->compressed_log)
@@ -4347,7 +4348,8 @@ void Changelog::finalizeChangelogsAfterRead(
     }
     else if (last_log_read_outcome.has_value())
     {
-        move_from_latest_logs_disks(existing_changelogs.at(last_log_read_outcome->log_start_index));
+        move_from_latest_logs_disks(
+            last_log_read_outcome->log_start_index, existing_changelogs.at(last_log_read_outcome->log_start_index));
     }
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
@@ -4369,7 +4371,7 @@ void Changelog::finalizeChangelogsAfterRead(
             continue;
         }
 
-        if (description->disk != disk)
+        if (description->disk != disk && !isOccupiedByRetainedCopy(start_index, disk, description->path))
             placement_moves.push_back(description);
     }
     if (!placement_moves.empty())
@@ -5326,6 +5328,25 @@ void Changelog::removeRetainedChangelogCopies(uint64_t from_log_index, Changelog
             duplicate->disk->removeFileIfExists(*duplicate->recovery_marker_path);
     }
     retained_duplicate_changelogs.erase(duplicate_it);
+}
+
+bool Changelog::isOccupiedByRetainedCopy(uint64_t from_log_index, const DiskPtr & disk, const std::string & path) const
+{
+    auto duplicate_it = retained_duplicate_changelogs.find(from_log_index);
+    if (duplicate_it == retained_duplicate_changelogs.end())
+        return false;
+
+    /// Recovery copies are never moved, so their location can be read without the lock.
+    const bool occupied = std::ranges::any_of(
+        duplicate_it->second, [&](const auto & duplicate) { return duplicate->disk == disk && duplicate->path == path; });
+    if (occupied)
+        LOG_INFO(
+            log,
+            "Not moving changelog range starting at {} to disk {} because its retained recovery copy occupies {} there",
+            from_log_index,
+            disk->getName(),
+            path);
+    return occupied;
 }
 
 void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
