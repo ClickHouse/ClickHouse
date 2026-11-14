@@ -1,0 +1,11 @@
+scalar	1	2
+scalar reversed	2	1
+array scalar	[1]	[0,2]
+in	0	1
+where in or in	3
+group by	0	1	2
+group by	1	0	1
+remote	2	4
+two dotted databases	1	2
+temporary table scalar	1	2
+temporary table in	0	1
