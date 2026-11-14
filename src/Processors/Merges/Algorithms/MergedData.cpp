@@ -70,6 +70,33 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
     }
 }
 
+void MergedData::enableFixedSizeByteCount()
+{
+    fixed_size_byte_count_enabled = true;
+    classifyFixedSizeColumns();
+}
+
+void MergedData::classifyFixedSizeColumns()
+{
+    fixed_size_bytes_per_row = 0;
+    fixed_size_base_bytes = 0;
+    other_columns.clear();
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto planes = columns[i]->getPlanes();
+        if (planes.shape == ColumnPlanes::Shape::Fixed)
+        {
+            fixed_size_bytes_per_row += planes.stride;
+            fixed_size_base_bytes += columns[i]->byteSize() - columns[i]->size() * planes.stride;
+        }
+        else
+            other_columns.push_back(i);
+    }
+
+    count_fixed_size_bytes = other_columns.size() != columns.size();
+}
+
 void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t block_size)
 {
     size_t num_columns = raw_columns.size();
@@ -214,6 +241,9 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
             column->popBack(pop_size);
     }
 
+    if (fixed_size_byte_count_enabled)
+        classifyFixedSizeColumns();
+
     need_flush = true;
     total_merged_rows += rows_size;
     merged_rows = rows_size;
@@ -255,12 +285,27 @@ bool MergedData::hasEnoughRows() const
     /// Never return more than max_block_size_bytes
     if (merged_rows && max_block_size_bytes)
     {
-        size_t merged_bytes = 0;
-        for (const auto & column : columns)
+        if (count_fixed_size_bytes && !may_have_replicated_columns)
         {
-            merged_bytes += column->byteSize();
+            size_t merged_bytes = fixed_size_base_bytes + merged_rows * fixed_size_bytes_per_row;
             if (merged_bytes >= max_block_size_bytes)
                 return true;
+            for (size_t i : other_columns)
+            {
+                merged_bytes += columns[i]->byteSize();
+                if (merged_bytes >= max_block_size_bytes)
+                    return true;
+            }
+        }
+        else
+        {
+            size_t merged_bytes = 0;
+            for (const auto & column : columns)
+            {
+                merged_bytes += column->byteSize();
+                if (merged_bytes >= max_block_size_bytes)
+                    return true;
+            }
         }
     }
 
@@ -305,6 +350,33 @@ size_t MergedData::rowsToInsertBeforeFlush(
         return rows_to_insert;
 
     chassert(columns.size() == raw_columns.size());
+
+    if (count_fixed_size_bytes && !may_have_replicated_columns)
+    {
+        /// A fixed-size column grows by its stride per row, so only the other columns can underestimate the growth.
+        for (size_t i : other_columns)
+        {
+            if (byteSizeAtCanUnderestimateGrowth(*columns[i]) || byteSizeAtCanUnderestimateGrowth(*raw_columns[i]))
+                return 1;
+        }
+
+        size_t merged_bytes = fixed_size_base_bytes + merged_rows * fixed_size_bytes_per_row;
+        for (size_t i : other_columns)
+            merged_bytes += columns[i]->byteSize();
+
+        for (size_t length = 1; length <= rows_to_insert; ++length)
+        {
+            const size_t row = start_index + length - 1;
+            merged_bytes += fixed_size_bytes_per_row;
+            for (size_t i : other_columns)
+                merged_bytes += raw_columns[i]->byteSizeAt(row);
+
+            if (merged_bytes >= max_block_size_bytes)
+                return length;
+        }
+
+        return rows_to_insert;
+    }
 
     /// The sum of `IColumn::byteSizeAt` over the source rows can arbitrarily underestimate how much
     /// the destination grows for aggregate states (their data is copied into the destination arena)

@@ -226,6 +226,8 @@ TEST(MergingSortedBatchLimits, MaxBlockSizeBytes)
     EXPECT_EQ(
         getFirstChunkSize(SortingQueueStrategy::Default, 100, false),
         getFirstChunkSize(SortingQueueStrategy::Batch, 100, false));
+    /// The key and the payload take 8 + 28 bytes per row, so the 100-byte limit cuts the first block after 3 rows.
+    EXPECT_EQ(3uz, getFirstChunkSize(SortingQueueStrategy::Default, 100, false));
 }
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytesFastForward)
