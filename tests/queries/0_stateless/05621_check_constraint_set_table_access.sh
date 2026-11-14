@@ -21,6 +21,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.t_alter (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE USER ${USER};
     GRANT CREATE TABLE, ALTER ADD CONSTRAINT ON ${CLICKHOUSE_DATABASE}.* TO ${USER};
+    GRANT TABLE ENGINE ON MergeTree TO ${USER};
 "
 
 for target in set_target mt_target absent_target
