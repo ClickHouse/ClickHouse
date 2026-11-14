@@ -274,14 +274,10 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
         num_threads = std::min<size_t>(num_threads, settings[Setting::max_threads_for_indexes]);
     num_threads = std::max<size_t>(num_threads, 1);
 
-    /// Analyzing a part loads its primary index if it is not in memory. When more than one index of a window of
-    /// `num_threads` consecutive parts is not in memory, the parts of the window are analyzed in parallel, as the index
-    /// analysis of the read does. A window is consumed in order before the next one is started, so the decision and the
-    /// exception are those of the serial analysis, which analyzes fewer than `num_threads` parts less.
+    /// Windows are consumed in order, so the decision and the exception are those of the serial analysis.
     std::vector<size_t> window_marks(num_threads);
     std::vector<std::exception_ptr> window_exceptions(num_threads);
-    /// Created on the first window with more than one index to load. Declared after the vectors to be destroyed first:
-    /// its destructor joins the jobs that still use them when scheduling throws.
+    /// Declared after the vectors to be destroyed first: its destructor joins the jobs that still use them.
     std::optional<ThreadPool> pool;
 
     /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
