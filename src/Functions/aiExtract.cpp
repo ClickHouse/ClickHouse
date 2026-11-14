@@ -197,11 +197,14 @@ private:
         return root;
     }
 
-    /// Unwrap a single-key `{"result": "..."}` response; in free-text mode the model is constrained to this shape
-    /// and we return just the string value. If the object has multiple fields (schema mode), return the raw JSON.
+    /// In instruction mode the reply is constrained to `{"result": "..."}`: return the value, or an empty string for `null`.
+    /// In schema mode the keys are the user's, possibly a sole `result`, so the JSON object is returned as is.
     /// Parse errors are swallowed on purpose — the user will see the output anyway.
-    String postProcessResponse(const String & raw) const override
+    String postProcessResponse(const ColumnsWithTypeAndName & arguments, const String & raw) const override
     {
+        if (isJSONSchema(getInstruction(arguments)))
+            return raw;
+
         if (raw.empty() || raw.front() != '{')
             return raw;
 

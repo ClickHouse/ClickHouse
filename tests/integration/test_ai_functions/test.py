@@ -100,6 +100,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint whose structured reply has every field `null`.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_mock_null_fields AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_null_fields', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # Endpoint that always replies with plain text, ignoring `response_format`, as a
         # model/gateway that doesn't support structured output would.
         instance.query(
@@ -1282,6 +1290,25 @@ def test_extract_json_schema(started_cluster):
     parsed = json.loads(result.strip())
     assert "name" in parsed
     assert "age" in parsed
+
+
+def test_extract_json_schema_sole_result_field(started_cluster):
+    """A schema whose only field is `result` returns the JSON object, also for a `null` value.
+    Only instruction mode unwraps `result`."""
+    schema = """'{"result": "the value"}'"""
+    assert (
+        instance.query(f"SELECT aiExtract('sample', {schema}, map('credentials', 'ai_mock'))")
+        == '{"result": "sample"}\n'
+    )
+    assert (
+        instance.query(f"SELECT aiExtract('sample', {schema}, map('credentials', 'ai_mock_null_fields'))")
+        == '{"result": null}\n'
+    )
+    # Instruction mode keeps returning an empty string for `null`.
+    assert (
+        instance.query("SELECT aiExtract('sample', 'the value', map('credentials', 'ai_mock_null_fields'))")
+        == "\n"
+    )
 
 
 def test_extract_multiple_rows(started_cluster):

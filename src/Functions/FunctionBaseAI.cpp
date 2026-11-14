@@ -622,7 +622,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 continue;
             }
 
-            insertProcessedResult(*result_col, postProcessResponse(ai_response->result));
+            insertProcessedResult(*result_col, postProcessResponse(arguments, ai_response->result));
             ++rows_processed;
         }
     }
