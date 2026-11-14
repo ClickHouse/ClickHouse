@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <future>
 #include <memory>
 #include <thread>
@@ -16,6 +17,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
 #include <Interpreters/ProcessList.h>
@@ -34,6 +36,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+    extern const Event MemoryCredits;
     extern const Event MemoryLargeAllocationTraced;
 }
 
@@ -674,4 +677,182 @@ TEST(MemoryTracker, UserSettlesToZeroWhenItsLastQueryEnds)
     runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
 }
 
+}
+
+/// `MemoryCredits` must not wrap for large amounts of memory held for long intervals, and the sub-second parts of
+/// many short intervals must add up instead of being truncated away.
+TEST(MemoryTracker, MemoryCreditsConversionDoesNotOverflow)
+{
+    static constexpr UInt64 gibibyte = 1ULL << 30;
+    static constexpr UInt64 hour_us = 3600ULL * 1'000'000;
+
+    std::atomic<UInt64> remainder{0};
+
+    /// 1 TiB held for an hour is far beyond 2^64 byte-microseconds.
+    EXPECT_EQ(MemoryTracker::convertMemoryCreditsToByteSeconds(1024 * gibibyte, hour_us, remainder), 1024 * gibibyte * 3600);
+    EXPECT_EQ(remainder.load(), 0u);
+
+    /// 64 GiB held for a day.
+    EXPECT_EQ(MemoryTracker::convertMemoryCreditsToByteSeconds(64 * gibibyte, 24 * hour_us, remainder), 64 * gibibyte * 3600 * 24);
+
+    /// One byte held for a million intervals of one microsecond is exactly one byte-second.
+    std::atomic<UInt64> small_remainder{0};
+    UInt64 total = 0;
+    for (size_t i = 0; i < 1'000'000; ++i)
+        total += MemoryTracker::convertMemoryCreditsToByteSeconds(1, 1, small_remainder);
+    EXPECT_EQ(total, 1u);
+
+    /// The result saturates instead of wrapping for absurd values.
+    std::atomic<UInt64> absurd_remainder{0};
+    EXPECT_EQ(
+        MemoryTracker::convertMemoryCreditsToByteSeconds(std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), absurd_remainder),
+        std::numeric_limits<UInt64>::max());
+}
+
+/// A caller that read the clock and was descheduled before updating the timestamp must neither move it backward
+/// nor charge anything: the interval up to its reading has already been charged by the thread that advanced it.
+TEST(MemoryTracker, MemoryCreditsTimestampIsMonotonic)
+{
+    static constexpr UInt64 second_us = 1'000'000;
+
+    std::atomic<UInt64> last_update_us{0};
+
+    /// The first update only seeds the timestamp.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 1 * second_us), 0u);
+
+    /// Thread A reads 2 s and pauses; thread B reads 3 s and updates.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 3 * second_us), 2 * second_us);
+
+    /// Thread A resumes with its stale reading.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 2 * second_us), 0u);
+    EXPECT_EQ(last_update_us.load(), 3 * second_us);
+
+    /// The next update charges only the interval from 3 s, so 3 s are charged in total, each exactly once.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 4 * second_us), second_us);
+}
+
+namespace
+{
+
+/// Calls `on_pick` while the allocation that has reached the overcommit tracker is still in flight,
+/// and picks no query, so that the allocation fails afterwards.
+struct UserOvercommitTrackerWithCallback : UserOvercommitTracker
+{
+    using UserOvercommitTracker::UserOvercommitTracker;
+
+    std::function<void()> on_pick;
+
+protected:
+    void pickQueryToExcludeImpl() override
+    {
+        on_pick();
+        picked_tracker = nullptr;
+    }
+};
+
+}
+
+/// The bytes of an allocation waiting in the overcommit tracker of a parent are already in the `amount` of the query tracker,
+/// but they are not held yet, and the allocation may still fail: a snapshot of `MemoryCredits` taken meanwhile
+/// (`system.processes`, the query metric log) must not integrate them.
+TEST(MemoryTracker, MemoryCreditsExcludeAllocationPendingInParent)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.user.setHardLimit(LIMIT);
+    hierarchy.process.setOvercommitWaitingTime(1'000'000);
+
+    DB::ProcessList process_list;
+    DB::ProcessListForUser user_process_list(&process_list);
+    UserOvercommitTrackerWithCallback overcommit_tracker(&process_list, &user_process_list);
+    hierarchy.user.setOvercommitTracker(&overcommit_tracker);
+
+    Int64 amount_while_pending = 0;
+    Int64 held_while_pending = 0;
+    overcommit_tracker.on_pick = [&]
+    {
+        amount_while_pending = hierarchy.process.get();
+        held_while_pending = hierarchy.process.getMemoryCreditsHeldAmount();
+    };
+
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        std::ignore = CurrentMemoryTracker::alloc(10 * MB);
+        expectNear(hierarchy.process.getMemoryCreditsHeldAmount(), hierarchy.process.get());
+
+        expectMemoryLimitExceeded(OVER_LIMIT);
+
+        /// The query tracker has already counted the pending allocation, but it is not held.
+        expectNear(amount_while_pending, 10 * MB + OVER_LIMIT);
+        expectNear(held_while_pending, 10 * MB);
+
+        /// After the rollback both agree again.
+        expectNear(hierarchy.process.get(), 10 * MB);
+        expectNear(hierarchy.process.getMemoryCreditsHeldAmount(), hierarchy.process.get());
+
+        std::ignore = CurrentMemoryTracker::free(10 * MB);
+        expectNear(hierarchy.process.getMemoryCreditsHeldAmount(), 0);
+    });
+}
+
+/// The tracker of a query may be destroyed on a thread of another query, e.g. when `ProcessList::getUserInfo` releases the last
+/// copy of its thread group. Settling what the finished query still holds must not charge its `MemoryCredits` to the other query.
+TEST(MemoryTracker, MemoryCreditsOfDestroyedTrackerAreNotChargedToAnotherQuery)
+{
+    /// Large, so that even a microsecond elapsed between the allocation and the destruction is worth many byte-seconds.
+    static constexpr Int64 held = 1024 * MB;
+
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    auto finished_query = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+    runAttachedTo(*finished_query, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(held); });
+    expectNear(finished_query->getMemoryCreditsHeldAmount(), held);
+
+    ProfileEvents::Counters other_query_counters(VariableContext::Process);
+    MemoryTracker other_query{&user, VariableContext::Process, false};
+    runAttachedTo(other_query, [&](MemoryTracker &)
+    {
+        DB::CurrentThread::get().performance_counters.setParent(&other_query_counters);
+        finished_query.reset();
+    });
+
+    EXPECT_EQ(other_query_counters[ProfileEvents::MemoryCredits], 0u);
+
+    /// Give back to the server total what the user was relieved of.
+    runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(held); });
+}
+
+/// `ThreadStatus::detachFromGroup` detaches the profile counters of a thread from the query before the cleanup that frees
+/// memory still charged to the query tracker. The `MemoryCredits` of the interval ended by that free must be kept for the
+/// flush at the snapshot of the owning thread group instead of being lost.
+TEST(MemoryTracker, MemoryCreditsAreKeptWhenCountersAreDetachedBeforeTheFree)
+{
+    static constexpr Int64 held = 1024 * MB;
+    /// The interval ended by the free lasts at least this long, so it is worth at least `held / 100` byte-seconds,
+    /// much more than the interval between the free and the flush below.
+    static constexpr UInt64 hold_ns = 10'000'000;
+
+    MemoryTrackerHierarchy hierarchy;
+    ProfileEvents::Counters query_counters(VariableContext::Process);
+
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        DB::CurrentThread::get().performance_counters.setParent(&query_counters);
+        std::ignore = CurrentMemoryTracker::alloc(held);
+        std::ignore = CurrentMemoryTracker::alloc(MB);
+
+        /// Hold the memory for a measurable time: this does not wait for another thread, it only lets the clock move.
+        const UInt64 start_ns = clock_gettime_ns();
+        while (clock_gettime_ns() < start_ns + hold_ns)
+            std::this_thread::yield();
+
+        /// The counters are detached, as in `detachFromGroup`, while the memory tracker still points to the query.
+        DB::CurrentThread::get().performance_counters.setParent(&ProfileEvents::global_counters);
+        std::ignore = CurrentMemoryTracker::free(MB);
+    });
+
+    /// Nothing reached the query counters through the detached thread, but the flush of the owning group charges it.
+    EXPECT_LT(query_counters[ProfileEvents::MemoryCredits], static_cast<UInt64>(held / 100));
+    hierarchy.process.flushMemoryCredits(query_counters);
+    EXPECT_GE(query_counters[ProfileEvents::MemoryCredits], static_cast<UInt64>(held / 100));
+
+    runInThread(hierarchy, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(held); });
 }
