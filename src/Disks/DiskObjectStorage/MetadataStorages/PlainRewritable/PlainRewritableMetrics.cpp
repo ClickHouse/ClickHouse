@@ -63,6 +63,7 @@ std::shared_ptr<PlainRewritableMetrics> createPlainRewritableMetrics(ObjectStora
         case ObjectStorageType::None:
         case ObjectStorageType::HDFS:
         case ObjectStorageType::Web:
+        case ObjectStorageType::BorrowFromCache:
         case ObjectStorageType::Max:
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not Implemented");

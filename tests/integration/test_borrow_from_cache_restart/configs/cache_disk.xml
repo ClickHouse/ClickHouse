@@ -1,0 +1,16 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Registers the filesystem cache `borrowed_cache` that the borrow_from_cache disk
+                 references by name. Removing this file before a restart makes the cache absent,
+                 reproducing the load-order race that a restart can otherwise hit. -->
+            <borrowed_cache>
+                <type>cache</type>
+                <disk>obj_local</disk>
+                <path>borrowed_cache/</path>
+                <max_size>104857600</max_size>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </borrowed_cache>
+        </disks>
+    </storage_configuration>
+</clickhouse>

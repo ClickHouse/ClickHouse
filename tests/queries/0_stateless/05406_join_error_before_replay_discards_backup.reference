@@ -1,0 +1,6 @@
+rows after the rebuild:
+1	committed
+FAULT_INJECTED
+SET_SIZE_LIMIT_EXCEEDED
+rows after reattach:
+1	committed

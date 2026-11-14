@@ -754,6 +754,13 @@ void DiskObjectStorageTransaction::undo() noexcept
     /// Keep the retries of this cleanup when the query or merge is cancelled: nothing removes orphaned blobs later.
     ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
+    /// With random blob paths every written blob is a new object owned by this transaction, so it is removed
+    /// through every layer down to the base object storage. Otherwise a blob key can be the key of an existing object,
+    /// for example when an ordinary file of `plain_rewritable` is overwritten in place, and that object stays
+    /// referenced by the committed metadata: removing it physically would lose committed data, so only the
+    /// outermost layer (e.g. the cache entries of `CachedObjectStorage`) is cleaned up.
+    const bool written_blobs_are_owned = metadata_storage->areBlobPathsRandom();
+
     for (const auto & [location, blobs] : written_blobs)
     {
         /// A decorator such as `CachedObjectStorage` removes only its own state for the blobs (the cache entries),
@@ -769,7 +776,7 @@ void DiskObjectStorageTransaction::undo() noexcept
             tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), fmt::format("An error occurred during transaction cleanup from location '{}'", location));
         }
 
-        for (; object_storage; object_storage = object_storage->getUnderlying())
+        for (; object_storage; object_storage = written_blobs_are_owned ? object_storage->getUnderlying() : nullptr)
         {
             try
             {

@@ -1,0 +1,10 @@
+after delete	1	10
+after delete	3	30
+after delete	4	40
+after reattach	1	10
+after reattach	3	30
+after reattach	4	40
+after second delete	1	10
+after second delete	4	40
+after reattach	1	10
+after reattach	4	40
