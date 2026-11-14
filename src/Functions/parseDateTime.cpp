@@ -175,7 +175,13 @@ namespace
         bool day_of_year_format = false; /// If true, date is composed of year(reuse year), day of year(use day_of_year)
 
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
+        bool is_week_year = false; /// Whether year was specified as an ISO week year (%G, %g, Joda x).
         bool has_year = false; /// Whether year was explicitly specified.
+        bool has_month = false; /// Whether month was explicitly specified.
+        bool has_day_of_month = false; /// Whether day of month was explicitly specified.
+        bool has_week = false; /// Whether ISO week of year was explicitly specified.
+        bool has_day_of_week = false; /// Whether day of week was explicitly specified.
+        bool has_day_of_year = false; /// Whether day of year was explicitly specified.
 
         /// If hour_starts_at_1 = true, is_hour_of_half_day = true, hour's range is [1, 12]
         /// If hour_starts_at_1 = true, is_hour_of_half_day = false, hour's range is [1, 24]
@@ -210,7 +216,13 @@ namespace
             day_of_year_format = false;
 
             is_year_of_era = false;
+            is_week_year = false;
             has_year = false;
+            has_month = false;
+            has_day_of_month = false;
+            has_week = false;
+            has_day_of_week = false;
+            has_day_of_year = false;
 
             hour = 0;
             minute = 0;
@@ -245,11 +257,12 @@ namespace
 
             year = 100 * century;
             has_year = true;
+            is_week_year = false;
             return {};
         }
 
         [[nodiscard]]
-        VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
+        VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year_ = false, bool select_week_date_ = false)
         {
             if (!yearIsInValidRange(year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, min_year, max_year)
@@ -257,16 +270,26 @@ namespace
             year = year_;
             has_year = true;
             is_year_of_era = is_year_of_era_;
-            if (is_week_year)
+            is_week_year = is_week_year_;
+            if (is_week_year_)
             {
-                week_date_format = true;
-                day_of_year_format = false;
+                if ((has_week && has_day_of_week)
+                    || ((has_week || has_day_of_week) && (!has_month || !has_day_of_month))
+                    || (select_week_date_ && !has_day_of_year && !has_month && !has_day_of_month))
+                {
+                    week_date_format = true;
+                    day_of_year_format = false;
+                }
+            }
+            else if (has_month && has_day_of_month && !has_day_of_year)
+            {
+                week_date_format = false;
             }
             return {};
         }
 
         [[nodiscard]]
-        VoidOrError setYear2(Int32 year_)
+        VoidOrError setYear2(Int32 year_, bool is_week_year_ = false)
         {
             if (year_ >= 70 && year_ < 100)
                 year_ += 1900;
@@ -275,7 +298,7 @@ namespace
             else
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_)
 
-            RETURN_ERROR_IF_FAILED(setYear(year_, false, false))
+            RETURN_ERROR_IF_FAILED(setYear(year_, false, is_week_year_))
             return {};
         }
 
@@ -286,7 +309,10 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_)
 
             month = month_;
-            week_date_format = false;
+            has_month = true;
+            has_day_of_year = false;
+            if (!is_week_year || !has_day_of_month || !has_week || !has_day_of_week)
+                week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
             {
@@ -303,8 +329,13 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
-            week_date_format = true;
-            day_of_year_format = false;
+            has_week = true;
+            has_day_of_year = false;
+            if ((is_week_year && has_day_of_week) || !has_month || !has_day_of_month)
+            {
+                week_date_format = true;
+                day_of_year_format = false;
+            }
             if (!has_year)
             {
                 has_year = true;
@@ -320,6 +351,9 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_)
 
             day_of_year = day_of_year_;
+            has_day_of_year = true;
+            has_week = false;
+            has_day_of_week = false;
             day_of_year_format = true;
             week_date_format = false;
             if (!has_year)
@@ -337,7 +371,10 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month)
 
             day = day_of_month;
-            week_date_format = false;
+            has_day_of_month = true;
+            has_day_of_year = false;
+            if (!is_week_year || !has_month || !has_week || !has_day_of_week)
+                week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
             {
@@ -354,8 +391,13 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
-            week_date_format = true;
-            day_of_year_format = false;
+            has_day_of_week = true;
+            has_day_of_year = false;
+            if ((is_week_year && has_week) || !has_month || !has_day_of_month)
+            {
+                week_date_format = true;
+                day_of_year_format = false;
+            }
             if (!has_year)
             {
                 has_year = true;
@@ -577,13 +619,61 @@ namespace
             const Int32 hour_of_day = is_hour_of_half_day && !is_am ? hour + 12 : hour;
 
             // Convert the parsed date/time into a timestamp.
+            Int32 effective_year = year;
             Int32 days_since_epoch = 0;
             if (week_date_format)
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromWeekDate(year, week, day_of_week))
             else if (day_of_year_format)
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDayOfYear(year, day_of_year))
             else
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
+            {
+                if (is_week_year && has_month && has_day_of_month && ((month == 12 && day >= 29) || (month == 1 && day <= 3)))
+                {
+                    auto matches_iso_week_year = [&](Int32 cand_year, bool require_week_or_dow) -> bool
+                    {
+                        if (!isDateValid(cand_year, month, day))
+                            return false;
+                        auto cand_days_res = daysSinceEpochFromDate(cand_year, month, day);
+                        if (!cand_days_res.has_value())
+                            return false;
+                        Int32 cand_days = *cand_days_res;
+                        Int32 cand_dow = extractISODayOfTheWeek(cand_days);
+                        if (require_week_or_dow && has_day_of_week && cand_dow != day_of_week)
+                            return false;
+                        auto jan4_res = daysSinceEpochFromDate(year, 1, 4);
+                        if (!jan4_res.has_value())
+                            return false;
+                        Int32 week1_monday = *jan4_res - (extractISODayOfTheWeek(*jan4_res) - 1);
+                        Int32 offset_days = cand_days - week1_monday;
+                        if (offset_days < 0)
+                            return false;
+                        Int32 next_week1_monday = week1_monday + 52 * 7;
+                        if (yearIsInValidRange(year + 1))
+                        {
+                            auto next_jan4_res = daysSinceEpochFromDate(year + 1, 1, 4);
+                            if (next_jan4_res.has_value())
+                                next_week1_monday = *next_jan4_res - (extractISODayOfTheWeek(*next_jan4_res) - 1);
+                        }
+                        if (cand_days >= next_week1_monday)
+                            return false;
+                        Int32 cand_week = offset_days / 7 + 1;
+                        if (require_week_or_dow && has_week && cand_week != week)
+                            return false;
+                        return true;
+                    };
+
+                    const Int32 boundary_year = (month == 12) ? (year - 1) : (year + 1);
+                    if (matches_iso_week_year(year, true))
+                        effective_year = year;
+                    else if (matches_iso_week_year(boundary_year, true))
+                        effective_year = boundary_year;
+                    else if (matches_iso_week_year(year, false))
+                        effective_year = year;
+                    else if (matches_iso_week_year(boundary_year, false))
+                        effective_year = boundary_year;
+                }
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(effective_year, month, day))
+            }
 
             Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
@@ -592,7 +682,7 @@ namespace
             {
                 /// Convert the local time as `toDateTime` does. The offset at `seconds_since_epoch`, which is the local
                 /// time read as UTC, can be the one from the other side of a daylight saving time change.
-                auto local_year = static_cast<Int16>(year);
+                auto local_year = static_cast<Int16>(effective_year);
                 auto local_month = static_cast<UInt8>(month);
                 auto local_day = static_cast<UInt8>(day);
                 /// For a week date or a day of the year, take the calendar date from the day number.
@@ -1233,7 +1323,7 @@ namespace
             {
                 Int32 year2 = 0;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2, true))
                 return cur;
             }
 
@@ -1242,7 +1332,7 @@ namespace
             {
                 Int32 year = 0;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year, false, true))
                 return cur;
             }
 
@@ -1662,7 +1752,7 @@ namespace
                 Int32 week_year = 0;
                 size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, 4) : repetitions;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, max_digits, fragment, week_year)))
-                RETURN_ERROR_IF_FAILED(parsed_value.setYear(week_year, false, true))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(week_year, false, true, true))
                 return cur;
             }
 
