@@ -692,6 +692,7 @@
                 "reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
                 "reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "reference/functions/aggregate-functions/timeSeriesQuantilePrometheusHistogram",
                 "reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
