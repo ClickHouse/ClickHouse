@@ -545,8 +545,9 @@ void StorageMaterializedView::readImpl(
     /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
     /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
     /// on the outermost storage, but for materialized views that is the view itself
-    /// (which is a no-op), not the target table.
-    storage->updateExternalDynamicMetadataIfExists(context);
+    /// (which is a no-op), not the target table. A lazily loaded target is a proxy that does not forward the
+    /// refresh, and reading loads it in any case, so refresh the loaded storage.
+    resolveStorageProxyLoading(storage)->updateExternalDynamicMetadataIfExists(context);
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
