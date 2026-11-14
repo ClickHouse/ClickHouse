@@ -1256,7 +1256,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 static void applyLayerRangeFilter(
     Pipe & pipe,
     const KeyDescription & primary_key,
-    const std::vector<Values> & borders,
+    const VectorWithMemoryTracking<Values> & borders,
     size_t layer,
     bool in_reverse_order,
     const String & description,
