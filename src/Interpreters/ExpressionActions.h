@@ -94,7 +94,12 @@ private:
     ExpressionActionsSettings settings;
 
 public:
-    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    /// `uncompiled_actions_dag`, if set, receives the DAG as built when JIT replaces a node, and stays empty otherwise.
+    explicit ExpressionActions(
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
 

@@ -8,8 +8,10 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -35,11 +37,166 @@ static bool hasNullConstantArgument(const ActionsDAG::Node & node)
     return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
 }
 
+using InputNameMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_view>;
+
+static MatchedTrees::Matches matchTreesImpl(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag,
+    const ActionsDAG & outer_dag,
+    bool check_monotonicity,
+    size_t max_size_for_sets_from_tuple_to_compare,
+    const InputNameMap * outer_to_inner_input_names);
+
+static bool constantsMatch(
+    const IColumn & inner, const IDataType & inner_type, const IColumn & outer, const IDataType & outer_type, size_t max_set_size);
+
+/// A lambda's name is only its signature; its body is in its own DAG.
+static bool lambdaBodiesMatch(
+    const LambdaCapture & inner,
+    const ActionsDAG & inner_dag,
+    const LambdaCapture & outer,
+    const ActionsDAG & outer_dag,
+    size_t max_set_size)
+{
+    if (inner.captured_names.size() != outer.captured_names.size() || inner.captured_types.size() != outer.captured_types.size()
+        || inner.lambda_arguments.size() != outer.lambda_arguments.size() || !inner.return_type->equals(*outer.return_type))
+        return false;
+
+    InputNameMap outer_to_inner_input_names;
+    for (size_t i = 0; i < inner.captured_names.size(); ++i)
+    {
+        if (!inner.captured_types[i]->equals(*outer.captured_types[i]))
+            return false;
+        outer_to_inner_input_names.emplace(outer.captured_names[i], inner.captured_names[i]);
+    }
+
+    for (auto inner_it = inner.lambda_arguments.begin(), outer_it = outer.lambda_arguments.begin(); inner_it != inner.lambda_arguments.end();
+         ++inner_it, ++outer_it)
+    {
+        if (inner_it->name != outer_it->name || !inner_it->type->equals(*outer_it->type))
+            return false;
+        outer_to_inner_input_names.emplace(outer_it->name, inner_it->name);
+    }
+
+    const auto * inner_body = inner_dag.tryFindInOutputs(inner.return_name);
+    const auto * outer_body = outer_dag.tryFindInOutputs(outer.return_name);
+    if (!inner_body || !outer_body)
+        return false;
+
+    auto matches = matchTreesImpl({inner_body}, outer_dag, /*check_monotonicity=*/false, max_set_size, &outer_to_inner_input_names);
+    auto it = matches.find(outer_body);
+    return it != matches.end() && it->second.node == inner_body && !it->second.monotonicity;
+}
+
+static bool capturedLambdasMatch(const ActionsDAG::Node & inner, const ActionsDAG::Node & outer, size_t max_set_size)
+{
+    const auto * inner_capture = typeid_cast<const FunctionCapture *>(inner.function_base.get());
+    const auto * outer_capture = typeid_cast<const FunctionCapture *>(outer.function_base.get());
+    if (!inner_capture && !outer_capture)
+        return true;
+    if (!inner_capture || !outer_capture)
+        return false;
+
+    return lambdaBodiesMatch(
+        inner_capture->getCapture(),
+        inner_capture->getActionsDAGForSemanticAnalysis(),
+        outer_capture->getCapture(),
+        outer_capture->getActionsDAGForSemanticAnalysis(),
+        max_set_size);
+}
+
+static const IColumn & unwrapConstColumn(const ColumnPtr & column)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        return column_const->getDataColumn();
+    return *column;
+}
+
+static bool foldedLambdasMatch(const IColumn & inner, const IColumn & outer, size_t max_set_size)
+{
+    const auto * inner_function = typeid_cast<const ColumnFunction *>(&inner);
+    const auto * outer_function = typeid_cast<const ColumnFunction *>(&outer);
+    if (!inner_function || !outer_function)
+        return false;
+
+    const auto * inner_expression = typeid_cast<const FunctionExpression *>(inner_function->getFunction().get());
+    const auto * outer_expression = typeid_cast<const FunctionExpression *>(outer_function->getFunction().get());
+    if (!inner_expression || !outer_expression)
+        return false;
+
+    const auto & inner_captured = inner_function->getCapturedColumns();
+    const auto & outer_captured = outer_function->getCapturedColumns();
+    if (inner_captured.size() != outer_captured.size())
+        return false;
+
+    for (size_t i = 0; i < inner_captured.size(); ++i)
+        if (!constantsMatch(unwrapConstColumn(inner_captured[i].column), *inner_captured[i].type,
+                unwrapConstColumn(outer_captured[i].column), *outer_captured[i].type, max_set_size))
+            return false;
+
+    return lambdaBodiesMatch(
+        inner_expression->getCapture(),
+        inner_expression->getActionsDAGForSemanticAnalysis(),
+        outer_expression->getCapture(),
+        outer_expression->getActionsDAGForSemanticAnalysis(),
+        max_set_size);
+}
+
+static bool constantsMatch(
+    const IColumn & inner, const IDataType & inner_type, const IColumn & outer, const IDataType & outer_type, size_t max_set_size)
+{
+    if (!inner_type.equals(outer_type))
+        return false;
+
+    if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner))
+    {
+        /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
+        /// set contents, so `getField()` cannot distinguish different
+        /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
+        /// hash (computed order-independently in its constructor) when both
+        /// fit under the size limit. Subquery/storage sets fall through to
+        /// non-matching: their content isn't known at planning time, and
+        /// matching them structurally here would be unsound.
+        const auto * outer_set = typeid_cast<const ColumnSet *>(&outer);
+        if (!outer_set || max_set_size == 0)
+            return false;
+
+        const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(inner_set->getData().get());
+        const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(outer_set->getData().get());
+        if (!inner_tuple || !outer_tuple)
+            return false;
+
+        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
+        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
+        /// Sizes are deduplicated counts; different sizes ⇒ different
+        /// contents, so skip hashing in that case.
+        if (inner_rows != outer_rows || inner_rows > max_set_size)
+            return false;
+
+        return inner_tuple->getContentHash() == outer_tuple->getContentHash();
+    }
+
+    if (typeid_cast<const ColumnFunction *>(&inner) || typeid_cast<const ColumnFunction *>(&outer))
+        return foldedLambdasMatch(inner, outer, max_set_size);
+
+    return inner[0] == outer[0];
+}
+
 MatchedTrees::Matches matchTrees(
     const ActionsDAG::NodeRawConstPtrs & inner_dag,
     const ActionsDAG & outer_dag,
     bool check_monotonicity,
     size_t max_size_for_sets_from_tuple_to_compare)
+{
+    return matchTreesImpl(
+        inner_dag, outer_dag, check_monotonicity, max_size_for_sets_from_tuple_to_compare, /*outer_to_inner_input_names=*/nullptr);
+}
+
+static MatchedTrees::Matches matchTreesImpl(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag,
+    const ActionsDAG & outer_dag,
+    bool check_monotonicity,
+    size_t max_size_for_sets_from_tuple_to_compare,
+    const InputNameMap * outer_to_inner_input_names)
 {
     using Parents = SetWithMemoryTracking<const ActionsDAG::Node *>;
     UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Parents> inner_parents;
@@ -123,8 +280,18 @@ MatchedTrees::Matches matchTrees(
 
             if (frame.node->type == ActionsDAG::ActionType::INPUT)
             {
+                std::string_view inner_name = frame.node->result_name;
+                bool is_mapped_input = true;
+                if (outer_to_inner_input_names)
+                {
+                    auto name_it = outer_to_inner_input_names->find(inner_name);
+                    is_mapped_input = name_it != outer_to_inner_input_names->end();
+                    if (is_mapped_input)
+                        inner_name = name_it->second;
+                }
+
                 const ActionsDAG::Node * mapped = nullptr;
-                if (auto it = inner_inputs.find(frame.node->result_name); it != inner_inputs.end())
+                if (auto it = inner_inputs.find(inner_name); is_mapped_input && it != inner_inputs.end())
                     mapped = it->second;
 
                 match.node = mapped;
@@ -204,52 +371,20 @@ MatchedTrees::Matches matchTrees(
                                         {
                                             const auto * inner_col = children[i]->column.get();
                                             const auto * outer_col = frame.node->children[i]->column.get();
-                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
-                                            {
-                                                all_children_matched = false;
-                                            }
-                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner_col->getDataColumn()))
-                                            {
-                                                /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
-                                                /// set contents, so `getField()` cannot distinguish different
-                                                /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
-                                                /// hash (computed order-independently in its constructor) when both
-                                                /// fit under the size limit. Subquery/storage sets fall through to
-                                                /// non-matching: their content isn't known at planning time, and
-                                                /// matching them structurally here would be unsound.
-                                                all_children_matched = false;
-                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(&outer_col->getDataColumn()) : nullptr;
-                                                if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
-                                                {
-                                                    const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
-                                                        inner_set->getData().get());
-                                                    const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(
-                                                        outer_set->getData().get());
-                                                    if (inner_tuple && outer_tuple)
-                                                    {
-                                                        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
-                                                        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
-                                                        /// Sizes are deduplicated counts; different sizes ⇒ different
-                                                        /// contents, so skip hashing in that case.
-                                                        if (inner_rows == outer_rows
-                                                            && inner_rows <= max_size_for_sets_from_tuple_to_compare)
-                                                        {
-                                                            all_children_matched =
-                                                                inner_tuple->getContentHash() == outer_tuple->getContentHash();
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            else
-                                            {
-                                                all_children_matched = inner_col->getField() == outer_col->getField();
-                                            }
+                                            all_children_matched = inner_col && outer_col
+                                                && constantsMatch(
+                                                    inner_col->getDataColumn(),
+                                                    *children[i]->result_type,
+                                                    outer_col->getDataColumn(),
+                                                    *frame.node->children[i]->result_type,
+                                                    max_size_for_sets_from_tuple_to_compare);
                                         }
                                         else
                                             all_children_matched = frame.mapped_children[i] == children[i];
                                     }
 
-                                    if (all_children_matched)
+                                    if (all_children_matched
+                                        && capturedLambdasMatch(*parent, *frame.node, max_size_for_sets_from_tuple_to_compare))
                                     {
                                         match.node = parent;
                                         break;

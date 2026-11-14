@@ -511,7 +511,10 @@ const std::vector<FunctionBasePtr> * ActionsDAG::getCompiledFunctions(const IFun
     return llvm_function ? &llvm_function->getNestedFunctions() : nullptr;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ActionsDAG::compileFunctions(
+    size_t min_count_to_compile_expression,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
 {
     struct Data
     {
@@ -655,9 +658,15 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
             for (const auto * child : new_children)
                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
+            auto executable_function = fn->prepare(arguments);
+
+            /// Taken before the first replacement, so it holds the DAG as built.
+            if (uncompiled_actions_dag && !*uncompiled_actions_dag)
+                *uncompiled_actions_dag = std::make_shared<ActionsDAG>(clone());
+
             node->type = ActionsDAG::ActionType::FUNCTION;
             node->function_base = fn;
-            node->function = fn->prepare(arguments);
+            node->function = std::move(executable_function);
             node->children.swap(new_children);
             node->is_function_compiled = true;
             node->column = nullptr;
