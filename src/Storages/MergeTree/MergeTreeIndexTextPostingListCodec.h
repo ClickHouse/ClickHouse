@@ -356,6 +356,7 @@ public:
         std::span<const UInt32> row_ids,
         std::span<const UInt32> weights,
         const PostingListBuildContext & context) override;
+
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     size_t cardinality() const override { return total_row_ids; }
