@@ -874,3 +874,24 @@ def test_backup_endpoint_header_not_sent_without_server_keys():
     assert_no_payer_header()
 
     node.query("DROP TABLE t_rp_keyless_src SYNC")
+
+
+# An endpoint header that `http_forbid_headers` forbids rejects the query before any request is sent.
+def test_forbidden_endpoint_header_rejected():
+    node_with_endpoint_header.query("DROP TABLE IF EXISTS t_rp_forbidden_src SYNC")
+    node_with_endpoint_header.query(
+        "CREATE TABLE t_rp_forbidden_src (x UInt32) ENGINE = MergeTree ORDER BY x"
+    )
+
+    payer_proxy_reset()
+    for query in [
+        f"SELECT count() FROM s3('{PAYER_PROXY}/forbidden/data.tsv', 'TSV', 'x UInt32')",
+        f"BACKUP TABLE t_rp_forbidden_src TO S3('{PAYER_PROXY}/forbidden/backup5')",
+        f"RESTORE TABLE t_rp_forbidden_src AS t_rp_forbidden_restored "
+        f"FROM S3('{PAYER_PROXY}/forbidden/backup5')",
+    ]:
+        error = node_with_endpoint_header.query_and_get_error(query)
+        assert "is forbidden in configuration file" in error, error
+    assert payer_proxy_requests() == []
+
+    node_with_endpoint_header.query("DROP TABLE t_rp_forbidden_src SYNC")

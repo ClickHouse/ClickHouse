@@ -293,6 +293,8 @@ private:
         /// S3 credentials.
         credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
 
+        context->getHTTPHeaderFilter().checkHeaders(headers);
+
         /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
         if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
         {
