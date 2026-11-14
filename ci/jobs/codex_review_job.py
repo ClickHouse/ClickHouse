@@ -51,6 +51,7 @@ MODEL = "gpt-6.1-sol"
 FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
 MODEL_AT_CAPACITY = "Selected model is at capacity"
+REVIEW_HEADER = "#### AI Review"
 
 
 def _join_prompt(*sections):
@@ -185,7 +186,7 @@ Output:
 Write a self-contained summary of ALL findings, regardless of previous summaries, as plain Markdown
 to {REVIEW_FILE} using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md:
 start with `---
-#### AI Review`, then use ##### for section headers.
+{REVIEW_HEADER}`, then use ##### for section headers.
 Do NOT post the summary yourself: the job script will post it after you finish.
 """
 
@@ -210,6 +211,32 @@ def _post_review():
         ],
         check=True,
     )
+
+
+def _add_cyber_risk_note(flagged_sessions, review_model):
+    """Put the sessions that the provider stopped as a cybersecurity risk at the top of `REVIEW_FILE`.
+
+    A session is typically stopped when it reaches a memory-safety finding, which is then missing from
+    the posted summary. Only the attempt and the model are listed: the partial output can describe an
+    unfixed vulnerability, and the PR may be public.
+    """
+    sessions = "\n".join(f"- attempt {attempt}: `{model}`" for attempt, model in flagged_sessions)
+    note = f"""\
+##### ⚠️ Review sessions stopped as a cybersecurity risk
+The model provider stopped these review sessions as a possible cybersecurity risk:
+{sessions}
+
+This summary comes from a session with `{review_model}`. A session is typically stopped when it reaches \
+a memory-safety finding, and the finding is lost with it, so this review can miss a real defect. \
+Please review the change in detail, and run the review internally with a model that has cyber access.
+
+"""
+    with open(REVIEW_FILE, encoding="utf-8") as f:
+        lines = f.readlines()
+    position = next((i + 1 for i, line in enumerate(lines) if line.startswith(REVIEW_HEADER)), 0)
+    lines.insert(position, note)
+    with open(REVIEW_FILE, "w", encoding="utf-8") as f:
+        f.writelines(lines)
 
 
 def _drop_stale_review_file():
@@ -281,12 +308,18 @@ def _run(prompt):
     """
     last_error = None
     model = MODEL
+    review_model = model
+    flagged_sessions = []
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
+            review_model = model
             result = _run_codex_once(prompt, model)
-            if model != FALLBACK_MODEL and CYBER_RISK_FLAG in result.info:
-                print(f"WARNING: {model} flagged the review as a cybersecurity risk, switching to {FALLBACK_MODEL}")
-                model = FALLBACK_MODEL
+            if CYBER_RISK_FLAG in result.info:
+                flagged_sessions.append((attempt, model))
+                print(f"WARNING: {model} flagged the review as a cybersecurity risk")
+                if model != FALLBACK_MODEL:
+                    print(f"Switching to {FALLBACK_MODEL}")
+                    model = FALLBACK_MODEL
             elif model != FALLBACK_MODEL and attempt == MAX_ATTEMPTS - 1 and MODEL_AT_CAPACITY in result.info:
                 print(f"WARNING: {model} is at capacity, the last attempt uses {FALLBACK_MODEL}")
                 model = FALLBACK_MODEL
@@ -318,6 +351,9 @@ def _run(prompt):
         raise RuntimeError(
             f"Codex review failed after {MAX_ATTEMPTS} attempts: {last_error}"
         )
+
+    if flagged_sessions:
+        _add_cyber_risk_note(flagged_sessions, review_model)
 
     # Post the summary from the job script so the job fails loudly if anything is broken.
     _post_review()

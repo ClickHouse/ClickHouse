@@ -1780,6 +1780,7 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
     DECLARE(UInt64, gpu_expression_kernel_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(The maximum number of kernels in the cache of the kernels that the GPU engine compiles for expressions. The change takes effect without a restart.)", EXPERIMENTAL) \
     DECLARE(UInt64, gpu_memory_pool_release_threshold, std::numeric_limits<uint64_t>::max(), R"(The amount of freed device memory that the GPU's default memory pool keeps instead of returning it to the driver. With the default, the pool grows to the peak of the queries and stays there until the server shuts down.)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_iceberg_rest_catalog, false, R"(Enable the experimental Iceberg REST catalog server, configured in the `iceberg_rest_catalog` section. A change takes effect after a server restart.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.", EXPERIMENTAL) \
@@ -2021,6 +2022,23 @@ Enabling this option is recommended but will lead to increased startup time for 
 ```
 )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
+    DECLARE(Bool, quick_startup, false, R"(
+Start up as fast as possible by skipping the optional work that the server does at startup:
+- `<mlock>` of the executable, as with `mlock_executable` = `false`;
+- remapping of the executable to huge pages, as with `remap_executable` = `false`;
+- the integrity check of the executable, as with `skip_binary_checksum_checks` = `true`;
+- the checks of the environment (such as the clock source, transparent huge pages, memory overcommit, kernel limits, delay accounting and disk readahead), which only produce warnings in `system.warnings`.
+
+The validation of the configuration is not skipped.
+
+The executable code is about 500 MiB, and both the `<mlock>` and the integrity check read all of it. On a cold page cache and a network disk, that takes several seconds, most of the startup time. It is useful where the server is often restarted, such as in tests, benchmarks and short-lived instances. The cost is that the code can be paged out under memory pressure, and a corrupted executable is not detected at startup.
+
+**Example**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+)", 0) \
     DECLARE(SeccompMode, seccomp, SeccompMode::Log, R"(
 What the Linux kernel does when the server makes a system call that it is not supposed to make.
 
