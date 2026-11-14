@@ -37,6 +37,8 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -277,6 +279,8 @@ String HTTPHandler::getURIForLogging(const HTTPServerRequest & request) const
 
 bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
 {
+    /// Authentication updates session and connection state that outlives the query.
+    MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
     return authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log);
 }
 
@@ -316,12 +320,14 @@ void HTTPHandler::processQuery(
             throw Exception(ErrorCodes::SESSION_ID_EMPTY, "Session id query parameter was provided, but it was empty");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
+        MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
     else
     {
         session_id = "";
         /// We should create it even if we don't have a session_id
+        MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
         session->makeSessionContext();
     }
 
@@ -333,6 +339,8 @@ void HTTPHandler::processQuery(
     /// Also, SCOPE_EXIT is still needed to release a session in case of any exception. If the exception occurs at some point
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
+
+    query_scope = QueryScope::createForQueryContext(session->sessionContext());
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
@@ -507,6 +515,8 @@ void HTTPHandler::processQuery(
     HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
     if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
     {
+        /// Connection metadata survives the request and can be replaced by a later query.
+        MemoryTrackerSwitcher connection_memory_scope(&total_memory_tracker);
         /// Each request sets the client properties again.
         /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
         /// Use `current_address` for the address and for the port. Do not use `request.clientAddress`.
@@ -688,7 +698,7 @@ void HTTPHandler::processQuery(
 
     /// Initialize query scope, once query_id is initialized.
     /// (To track as much allocations as possible)
-    query_scope = QueryScope::create(context);
+    query_scope.attachToQueryContext(context);
 
     /// Now we know the resolved settings. Decide what to do with unrecognized URL params:
     /// - if http_allow_filters_as_unrecognized_url_parameters is true: treat them as filter expressions
@@ -1196,7 +1206,10 @@ void HTTPHandler::processQuery(
         in = std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
     }
 
-    applyHTTPResponseHeaders(response, http_response_headers_override);
+    {
+        MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
+        applyHTTPResponseHeaders(response, http_response_headers_override);
+    }
 
     /// Capture data needed for Content-Disposition computation from the surrounding scope. The
     /// filename normally comes from the URL path component verbatim (preserving the case the user
@@ -1235,6 +1248,8 @@ void HTTPHandler::processQuery(
         = [&response, &used_output, this, disposition_filename, disposition_base, disposition_path_format, disposition_compression, disposition_format_override]
         (const QueryResultDetails & details)
     {
+        /// The caller destroys the response after the query scope has detached.
+        MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
         response.add("X-ClickHouse-Query-Id", details.query_id);
 
         if (details.framed)
@@ -1694,16 +1709,19 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
-        response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
-        response.set("X-ClickHouse-Server-Display-Name", server_display_name);
+        {
+            MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
+            response.setContentType("text/plain; charset=UTF-8");
+            response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
+            response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
-        if (!request.get("Origin", "").empty())
-            addHTTPOptionHeadersFromConfig(response, server.config());
+            if (!request.get("Origin", "").empty())
+                addHTTPOptionHeadersFromConfig(response, server.config());
 
-        /// For keep-alive to work.
-        if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
-            response.setChunkedTransferEncoding(true);
+            /// For keep-alive to work.
+            if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
+                response.setChunkedTransferEncoding(true);
+        }
 
         HTMLForm params = [&]()
         {
@@ -1764,7 +1782,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     }
     catch (...)
     {
+        /// Preserve the original error if delivering it exceeds the memory limit.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
         SCOPE_EXIT({
+            MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
             request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
         });
 
@@ -1789,6 +1811,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
 void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_session)
 {
+    /// Releasing a named session also replaces its retained client metadata.
+    MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
     if (!session_id.empty())
     {
         if (close_session)
