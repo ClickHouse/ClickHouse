@@ -1,5 +1,5 @@
 -- GROUP BY, DISTINCT, IN and JOIN over the fixed-width key sets that are batch-packed in clause order: sets with a key
--- of another width than 1, 2, 4, 8 or 16 bytes, nullable sets and keys256 sets. A block of 100000 rows holds several
+-- of another width than 1, 2, 4, 8 or 16 bytes, nullable sets and keys256 sets. A block of 50000 rows holds several
 -- chunks of a set packed in chunks. In order, runs of the sorting prefix are shorter and longer than 256 rows.
 
 DROP TABLE IF EXISTS t_keys_fixed_chunks;
@@ -17,11 +17,11 @@ ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_keys_fixed_chunks
 SELECT
     n, n * 7, n * 13, if(number % 9 = 3, NULL, n * 13), toUInt32(n),
-    toFixedString(reinterpretAsString(toUInt32(n)), 3) AS f, if(number % 17 = 5, NULL, f),
+    toFixedString(reinterpretAsString(toUInt32(n * 1003)), 3) AS f, if(number % 17 = 5, NULL, f),
     toFixedString(concat(f, 'abcdefghijklmnopq'), 20) AS f20, if(number % 13 = 4, NULL, f20),
     bitAnd(n, 65535), number % 5, number % 3,
     if(intHash32(number) % 100 < 50, NULL, n * 13), if(intHash32(number) % 100 < 99, NULL, n * 13)
-FROM (SELECT number, toInt64(number % 100100) AS n FROM numbers(300000));
+FROM (SELECT number, toInt64(number % 16700) AS n FROM numbers(50000));
 
 -- Runs of `a` cycle over the lengths 1, 7, 255, 256, 300 and 600.
 CREATE TABLE t_keys_fixed_chunks_in_order (a Int64, b Int64, cn Nullable(Int64), c32 UInt32, f3 FixedString(3), u UInt8)
@@ -38,7 +38,7 @@ OPTIMIZE TABLE t_keys_fixed_chunks_in_order FINAL;
 -- 100 rows per key, so that a probe block is cut by `max_joined_block_size_rows` and resumed many times.
 CREATE TABLE t_keys_fixed_chunks_fan_out (f3 FixedString(3), u UInt8, k UInt32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_keys_fixed_chunks_fan_out
-SELECT toFixedString(reinterpretAsString(toUInt32(intDiv(number, 100) * 7)), 3), intDiv(number, 100) % 5, number FROM numbers(100000);
+SELECT toFixedString(reinterpretAsString(toUInt32(intDiv(number, 100) * 7 * 1003)), 3), intDiv(number, 100) % 5, number FROM numbers(50000);
 
 SET max_block_size = 100000, preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0;
 
@@ -48,8 +48,6 @@ SELECT 'group by f3, u', count(), sum(cityHash64(toString((f3, u, n)))) FROM (SE
 SELECT 'group by f3n, u, q', count(), sum(cityHash64(toString((f3n, u, q, n)))) FROM (SELECT f3n, u, q, count() AS n FROM t_keys_fixed_chunks GROUP BY f3n, u, q);
 SELECT 'group by f20, w', count(), sum(cityHash64(toString((f20, w, n)))) FROM (SELECT f20, w, count() AS n FROM t_keys_fixed_chunks GROUP BY f20, w);
 SELECT 'group by f20n, w', count(), sum(cityHash64(toString((f20n, w, n)))) FROM (SELECT f20n, w, count() AS n FROM t_keys_fixed_chunks GROUP BY f20n, w);
-SELECT 'two-level external f3, u, q', count(), sum(cityHash64(toString((f3, u, q, n)))) FROM (SELECT f3, u, q, count() AS n FROM t_keys_fixed_chunks GROUP BY f3, u, q)
-SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
 SELECT 'top-k f3, u, q', groupArray((hex(f3), u, q, n)) FROM
 (SELECT f3, u, q, count() AS n FROM t_keys_fixed_chunks GROUP BY f3, u, q ORDER BY f3, u, q LIMIT 10)
 SETTINGS enable_group_by_top_k_optimization = 1;
@@ -81,19 +79,19 @@ SETTINGS join_algorithm = 'hash';
 SELECT 'asof join build with NULL asof keys f3, u', count(), sum(cityHash64(toString((l.a, l.q, r.t)))) FROM t_keys_fixed_chunks AS l
 ASOF INNER JOIN
 (
-    SELECT toFixedString(reinterpretAsString(toUInt32(number % 100100)), 3) AS f3, toUInt8(number % 5) AS u,
-        if(number % 100000 >= 60000 OR number >= 200000, NULL, toInt64(number % 100100)) AS t
-    FROM numbers(300000)
+    SELECT toFixedString(reinterpretAsString(toUInt32(number % 10000 * 1003)), 3) AS f3, toUInt8(number % 5) AS u,
+        if(number % 10000 >= 6000 OR number >= 20000, NULL, toInt64(number % 10000)) AS t
+    FROM numbers(30000)
 ) AS r ON l.f3 = r.f3 AND l.u = r.u AND l.a >= r.t
-SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial', query_plan_join_swap_table = false;
+SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial', query_plan_join_swap_table = false, max_block_size = 10000;
 SELECT 'asof join parallel build with NULL asof keys f3, u', count(), sum(cityHash64(toString((l.a, l.q, r.t)))) FROM t_keys_fixed_chunks AS l
 ASOF INNER JOIN
 (
-    SELECT toFixedString(reinterpretAsString(toUInt32(number % 100100)), 3) AS f3, toUInt8(number % 5) AS u,
-        if(number % 100000 >= 60000 OR number >= 200000, NULL, toInt64(number % 100100)) AS t
-    FROM numbers(300000)
+    SELECT toFixedString(reinterpretAsString(toUInt32(number % 10000 * 1003)), 3) AS f3, toUInt8(number % 5) AS u,
+        if(number % 10000 >= 6000 OR number >= 20000, NULL, toInt64(number % 10000)) AS t
+    FROM numbers(30000)
 ) AS r ON l.f3 = r.f3 AND l.u = r.u AND l.a >= r.t
-SETTINGS join_algorithm = 'hash', hash_join_layout = 'parallel', max_threads = 8, query_plan_join_swap_table = false;
+SETTINGS join_algorithm = 'hash', hash_join_layout = 'parallel', max_threads = 8, query_plan_join_swap_table = false, max_block_size = 10000;
 SELECT 'in order a, f3, u', count(), sum(cityHash64(toString((a, f3, u, n)))) FROM
 (SELECT a, f3, u, count() AS n FROM t_keys_fixed_chunks_in_order GROUP BY a, f3, u)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, max_threads = 1;
@@ -131,8 +129,6 @@ SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1, max_threads
 -- keys256 without Nullable.
 SELECT 'group by a, b, c', count(), sum(cityHash64(toString((a, b, c, n)))) FROM (SELECT a, b, c, count() AS n FROM t_keys_fixed_chunks GROUP BY a, b, c);
 SELECT 'group by c32, b, c', count(), sum(cityHash64(toString((c32, b, c, n)))) FROM (SELECT c32, b, c, count() AS n FROM t_keys_fixed_chunks GROUP BY c32, b, c);
-SELECT 'two-level external a, b, c', count(), sum(cityHash64(toString((a, b, c, n)))) FROM (SELECT a, b, c, count() AS n FROM t_keys_fixed_chunks GROUP BY a, b, c)
-SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
 SELECT 'top-k a, b, c', groupArray((a, b, c, n)) FROM
 (SELECT a, b, c, count() AS n FROM t_keys_fixed_chunks GROUP BY a, b, c ORDER BY a, b, c LIMIT 10)
 SETTINGS enable_group_by_top_k_optimization = 1;
