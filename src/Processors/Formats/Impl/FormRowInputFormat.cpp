@@ -28,9 +28,11 @@ namespace
     /// In application/x-www-form-urlencoded data '+' encodes a space. Replace it before
     /// percent-decoding so that "%2B" still decodes to a literal '+'. Poco::URI::decode with
     /// plusAsSpace = true is not enough: it only handles '+' after a '?' in the input.
+    /// Poco::URI::decode appends to its destination, so clear it first.
     void decodeFormValue(String & encoded, String & decoded)
     {
         std::ranges::replace(encoded, '+', ' ');
+        decoded.clear();
         Poco::URI::decode(encoded, decoded);
     }
 }
