@@ -133,6 +133,11 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace Setting
+{
+    extern const SettingsBool enable_url_encoding;
+}
+
 namespace
 {
     DataTypePtr rowLineageColumnType()
@@ -326,6 +331,13 @@ namespace
         const auto & url_shards = web_object_storage.getURLShards();
 
         SipHash hash;
+
+        /// The readers parse the URL of the object with `enable_url_encoding` of the request context (with it, an encoded
+        /// slash `%2F` in the path is decoded into a path separator), so the same path can name different resources.
+        const bool enable_url_encoding = web_object_storage.getRequestContext()->getSettingsRef()[Setting::enable_url_encoding];
+        hash.update(enable_url_encoding);
+        hash.update('\0');
+
         auto hash_urls = [&](const WebObjectStorage::URLOptions & urls)
         {
             for (const auto & url : urls)
