@@ -198,7 +198,19 @@ public:
 
     virtual ~CacheMetadata();
 
+    /// Starts the permanent background threads. The cleanup thread does not remove keys until `startCleanup`
+    /// is called, because the metadata may still be loading.
     void startup();
+
+    /// Lets the cleanup thread started by `startup` remove the keys submitted for removal. Called when the
+    /// metadata is loaded.
+    void startCleanup();
+
+    /// Stop and join the permanent background threads started by `startup`, keeping the
+    /// queues usable, so that a retried `startup` (the caller of `FileCache::initialize`
+    /// may retry it after an exception) starts from a clean state instead of replacing
+    /// still-joinable threads, which would abort the process.
+    void stopThreads();
 
     bool isEmpty() const;
 

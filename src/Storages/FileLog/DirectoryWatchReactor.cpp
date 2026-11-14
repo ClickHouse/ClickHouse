@@ -211,7 +211,7 @@ DirectoryWatchReactor::DirectoryWatchReactor()
             epoll.add(inotify_fd, &inotify_fd);
         }
 
-        thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
+        thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { run(); });
     }
     catch (...)
     {
@@ -594,7 +594,7 @@ DirectoryWatchReactor::DirectoryWatchReactor()
         if (::kevent(kqueue_fd, &change, 1, nullptr, 0, nullptr) == -1)
             throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot register the control pipe of the directory watch reactor");
 
-        thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
+        thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { run(); });
     }
     catch (...)
     {

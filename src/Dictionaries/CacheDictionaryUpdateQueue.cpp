@@ -34,6 +34,9 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
     , update_queue(configuration.max_update_queue_size)
     , update_pool(CurrentMetrics::CacheDictionaryThreads, CurrentMetrics::CacheDictionaryThreadsActive, CurrentMetrics::CacheDictionaryThreadsScheduled, configuration.max_threads_for_updates)
 {
+    /// Each worker runs `updateThreadFunction`, which returns only when the queue is stopped.
+    update_pool.setJobsAreLongLived();
+
     try
     {
         for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
