@@ -52,6 +52,7 @@ public:
     bool isRemote() const override;
     bool readRequiresAnalyzedQuery() const override { return true; }
     bool readsFromOtherTables() const override { return true; }
+    bool mayReadViewSource(const ContextPtr & query_context) const override;
     bool supportsTruncate() const override { return false; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
