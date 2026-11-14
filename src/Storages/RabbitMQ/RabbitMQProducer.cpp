@@ -20,6 +20,7 @@ static const auto FINISH_PRODUCER_NUM_TRIES = 50;
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int LOGICAL_ERROR;
 }
@@ -83,7 +84,11 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
     payload.id = ++payload_counter;
     LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
+    {
+        /// The producing task has failed and closed the queue: rethrows its exception.
+        finish();
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
+    }
 }
 
 void RabbitMQProducer::cancel() noexcept
@@ -244,8 +249,15 @@ void RabbitMQProducer::startProducingTaskLoop()
 {
     LOG_TRACE(log, "Starting producer loop");
 
-    while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
+    while (!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty())
     {
+        if (shutdown_called.load())
+        {
+            /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
+            payloads.finish();
+            throw Exception(ErrorCodes::ABORTED, "Table is detached");
+        }
+
         /// If onReady callback is not received, producer->usable() will anyway return true,
         /// but must publish only after onReady callback.
         if (producer_ready)

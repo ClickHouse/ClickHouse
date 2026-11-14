@@ -4137,3 +4137,57 @@ def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
     # Read in parallel, a message waits about one flush interval (1 s). Read one after another, about half of them
     # waited longer than 5 s.
     assert int(late) < messages_num // 20, f"{late} messages inserted more than 5 s after publishing (max {max_delay} s)"
+
+
+def test_rabbitmq_insert_racing_drop(rabbitmq_cluster, db, unique):
+    # The queue rejects every message, so the producer republishes until the table is shut down.
+    # 100000 messages do not fit in the producer's queue together with the unconfirmed ones (at most 50000).
+    exchange = f"{unique}_full"
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+    channel = connection.channel()
+    channel.exchange_declare(exchange=exchange, exchange_type="fanout")
+    channel.queue_declare(queue=exchange, arguments={"x-max-length": 0, "x-overflow": "reject-publish"})
+    channel.queue_bind(exchange=exchange, queue=exchange)
+
+    def insert_and_shut_down(ddl, rows):
+        table = f"{ddl.lower()}_{rows}"
+        instance.query(f"""
+            CREATE TABLE {db}.{table} (key UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_exchange_name = '{exchange}',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_queue_base = '{unique}_unused',
+                         rabbitmq_queue_consume = 1;
+            """)
+        query_id = f"{unique}_{uuid.uuid4().hex}"
+        errors = []
+        insert = threading.Thread(
+            target=lambda: errors.append(
+                instance.query_and_get_error(
+                    f"INSERT INTO {db}.{table} SELECT number FROM numbers({rows})", query_id=query_id, timeout=120
+                )
+            ),
+            daemon=True,
+        )
+        insert.start()
+        # Wait until the sink has rows, so the INSERT already holds the table.
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        written_rows = f"SELECT sum(written_rows) FROM system.processes WHERE query_id = '{query_id}'"
+        while instance.query(written_rows).strip() == "0":
+            assert time.monotonic() < deadline, "the INSERT did not start"
+            time.sleep(0.1)
+        instance.query(f"{ddl} TABLE {db}.{table}")
+        insert.join(timeout=30)
+        assert errors and "Table is detached" in errors[0] and "(ABORTED)" in errors[0], (ddl, rows, errors)
+
+    for ddl in ["DROP", "DETACH"]:
+        for rows in [1, 100000]:
+            insert_and_shut_down(ddl, rows)
+
+    channel.queue_delete(queue=exchange)
+    channel.exchange_delete(exchange=exchange)
+    connection.close()
