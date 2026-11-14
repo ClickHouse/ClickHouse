@@ -4227,7 +4227,8 @@ def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert):
     )
     insert.start()
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while instance.query(f"SELECT count() FROM system.processes WHERE {producing_query}").strip() == "0":
+    # A KILL while the producer is still connecting ends the INSERT before it publishes anything.
+    while instance.query(f"SELECT count() FROM system.processes WHERE {producing_query} AND written_rows > 0").strip() == "0":
         assert time.monotonic() < deadline, "the INSERT did not start publishing"
         time.sleep(0.1)
     instance.query(f"KILL QUERY WHERE {producing_query} SYNC", timeout=30)
