@@ -47,8 +47,10 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -99,6 +101,77 @@ bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const A
         if (func->arguments->children.size() == 1)
             return isPrimaryKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
+    return false;
+}
+
+bool ProjectionDescription::isSortingKeyStaleInPart(const IMergeTreeDataPart & parent_part) const
+{
+    const auto & projection_parts = parent_part.getProjectionParts();
+    auto it = projection_parts.find(name);
+    if (it == projection_parts.end())
+        return false;
+
+    const auto & part_columns = it->second->getColumns();
+    auto recorded_type = [&](const String & column_name) -> DataTypePtr
+    {
+        if (auto own = part_columns.tryGetByName(column_name))
+            return own->type;
+        if (auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+            column && column->isSubcolumn())
+        {
+            if (auto parent = part_columns.tryGetByName(column->getNameInStorage()))
+                return parent->type->tryGetSubcolumnType(column->getSubcolumnName());
+        }
+        return nullptr;
+    };
+
+    const auto & sorting_key = metadata->getSortingKey();
+    if (!sorting_key.expression)
+        return false;
+    const auto & key_inputs = sorting_key.expression->getRequiredColumnsWithTypes();
+
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        if (auto part_type = recorded_type(sorting_key.column_names[i]);
+            part_type && !isRepresentationPreservingConversion(part_type.get(), sorting_key.data_types[i].get()))
+            return true;
+
+    /// A key expression's value can change with any difference of its input, even a byte-identical one
+    /// (`toHour` after a timezone-only change); an input used only as a key column itself only needs identical bytes.
+    NameSet expression_inputs;
+    std::vector<const ActionsDAG::Node *> to_visit;
+    for (const auto & key_column : sorting_key.column_names)
+    {
+        const auto * output = sorting_key.expression->getActionsDAG().tryFindInOutputs(key_column);
+        if (!output)
+        {
+            for (const auto & input : key_inputs)
+                expression_inputs.insert(input.name);
+            to_visit.clear();
+            break;
+        }
+        if (output->type != ActionsDAG::ActionType::INPUT)
+            to_visit.push_back(output);
+    }
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            expression_inputs.insert(node->result_name);
+        to_visit.insert(to_visit.end(), node->children.begin(), node->children.end());
+    }
+
+    for (const auto & [column_name, input_type] : key_inputs)
+    {
+        auto part_type = recorded_type(column_name);
+        if (!part_type || (part_type->equals(*input_type) && part_type->getName() == input_type->getName()))
+            continue;
+        if (expression_inputs.contains(column_name) || !isRepresentationPreservingConversion(part_type.get(), input_type.get()))
+            return true;
+    }
     return false;
 }
 
