@@ -1,0 +1,19 @@
+<test>
+    <!-- A `DISTINCT` over a `FINAL` read of a `ReplacingMergeTree` with no `LIMIT` does not read in order,
+         which keeps vertical `FINAL`, also through a join. -->
+    <create_query>CREATE TABLE distinct_final_vertical (k1 String, k2 String, payload String, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY (k1, k2)</create_query>
+    <create_query>CREATE TABLE distinct_final_vertical_right (k1 String, payload String, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY (k1, payload)</create_query>
+
+    <fill_query>SYSTEM STOP MERGES distinct_final_vertical</fill_query>
+    <fill_query>SYSTEM STOP MERGES distinct_final_vertical_right</fill_query>
+    <fill_query>INSERT INTO distinct_final_vertical SELECT 'o' || toString(number % 50), toString(cityHash64(number)), toString(cityHash64(number, 7) % 1000000), 1 FROM numbers(4000000) SETTINGS max_insert_threads = 1</fill_query>
+    <fill_query>INSERT INTO distinct_final_vertical SELECT 'o' || toString(number % 50), toString(cityHash64(number)), toString(cityHash64(number, 7) % 1000000), 2 FROM numbers(2000000, 4000000) SETTINGS max_insert_threads = 1</fill_query>
+    <fill_query>INSERT INTO distinct_final_vertical_right SELECT 'o' || toString(number % 50), toString(number), 1 FROM numbers(1000000) SETTINGS max_insert_threads = 1</fill_query>
+
+    <query>SELECT count() FROM (SELECT DISTINCT k1, k2 FROM distinct_final_vertical FINAL WHERE payload LIKE '1%')</query>
+    <query>SELECT count() FROM (SELECT DISTINCT k1, k2 FROM distinct_final_vertical FINAL)</query>
+    <query>SELECT count() FROM (SELECT DISTINCT p.k1, p.k2 FROM distinct_final_vertical AS p FINAL INNER JOIN (SELECT k1, payload FROM distinct_final_vertical_right FINAL) AS c ON c.k1 = p.k1 AND c.payload = p.payload) SETTINGS query_plan_read_in_order_through_join = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS distinct_final_vertical</drop_query>
+    <drop_query>DROP TABLE IF EXISTS distinct_final_vertical_right</drop_query>
+</test>

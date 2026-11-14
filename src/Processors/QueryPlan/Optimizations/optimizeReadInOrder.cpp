@@ -29,6 +29,8 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1693,7 +1695,35 @@ bool sortPrefixCanGroupDistinctKeys(const InputOrder & order_info, const Names &
     return getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, header).size() == order_info.sort_description.size();
 }
 
-InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+/// Whether a `LIMIT` above the step at the top of `stack` can stop reading early, i.e. no step in between reads its input till the end.
+bool canStopReadingEarly(const Stack & stack)
+{
+    for (size_t i = stack.size(); i-- > 0;)
+    {
+        const QueryPlan::Node & node = *stack[i].node;
+        const IQueryPlanStep * step = node.step.get();
+        if (const auto * limit = typeid_cast<const LimitStep *>(step))
+            return !limit->alwaysReadTillEnd();
+        if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(step); limit_range && limit_range->canStopReadingEarly())
+            return true;
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(step); distinct && distinct->getLimitHint())
+            return true;
+        if (typeid_cast<const SortingStep *>(step) || typeid_cast<const AggregatingStep *>(step)
+            || typeid_cast<const CreatingSetStep *>(step))
+            return false;
+        /// A join reads the input it builds its table from till the end, and which input that is is known only for a `JoinStep`.
+        if (typeid_cast<const JoinStepLogical *>(step))
+            return false;
+        const auto * join = typeid_cast<const JoinStep *>(step);
+        if (join && join->getJoin()->pipelineType() == JoinPipelineType::FillRightFirst
+            && stack[i + 1].node != node.children[join->swap_streams ? 1 : 0])
+            return false;
+    }
+    return false;
+}
+
+InputOrder buildInputOrderInfo(
+    DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings, bool can_stop_early)
 {
     /// Here we allow improving existing in-order optimization.
     /// Example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
@@ -1725,6 +1755,10 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         /// Same as above: skip distinct-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
+            return {};
+
+        /// Reading in order turns vertical `FINAL` off, which pays off only when the `DISTINCT` can stop reading early.
+        if (reading->getEnableVerticalFinal() && !can_stop_early)
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -2279,8 +2313,9 @@ void optimizeUniqExactInOrderLayers(QueryPlan::Node & node)
         aggregating->clearUniqExactInOrder();
 }
 
-void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeDistinctInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    auto & node = *stack.back().node;
     if (node.children.size() != 1)
         return;
 
@@ -2294,7 +2329,7 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     if (!distinct->getSortDescription().empty())
         return;
 
-    auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), optimization_settings);
+    auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), optimization_settings, canStopReadingEarly(stack));
     if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description));
 }
