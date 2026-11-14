@@ -2110,7 +2110,7 @@
         <!--
         NOTE: statistics should be consumed, otherwise it creates too many
               entries in the queue that leads to memory leak and slow shutdown.
-        default value: 0
+        default value: 3000 for StorageKafka2, 0 for StorageKafka and producers
         <statistics_interval_ms>3000</statistics_interval_ms>
         -->
 

@@ -40,6 +40,8 @@ struct KafkaConfigLoader
         size_t consumer_number;
         String client_id;
         size_t max_block_size;
+        /// Only StorageKafka2 sets this: unlike the old engine, it drains statistics events of held consumers.
+        bool enable_statistics_by_default = false;
     };
 
     struct ProducerConfigParams : public LoadConfigParams

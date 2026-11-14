@@ -105,12 +105,12 @@ CppKafkaConsumerPtr && KafkaConsumer2::moveConsumer()
     return std::move(consumer);
 }
 
-void KafkaConsumer2::pollEvents()
+void KafkaConsumer2::pollEvents(size_t max_tries, bool wait)
 {
-    static constexpr auto max_tries = 5;
-    for (auto i = 0; i < max_tries; ++i)
+    std::lock_guard lock(events_poll_mutex);
+    for (size_t i = 0; i < max_tries; ++i)
     {
-        auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
+        auto msg = consumer->poll(wait ? EVENT_POLL_TIMEOUT : 0ms);
         if (!msg)
             return;
         // All the partition queues are detached, so the consumer shouldn't be able to poll any real messages
