@@ -328,7 +328,34 @@ void loadFromConfig(
 {
     if (!params.collection_name.empty())
     {
-        loadNamedCollectionConfig(kafka_config, params.collection_name, config_prefix);
+        const auto & collection = NamedCollectionFactory::instance().get(params.collection_name);
+        const auto keys = collection->getKeys(-1, config_prefix);
+        for (const auto & key : keys)
+        {
+            const auto param_name = key.substr(config_prefix.size() + 1);
+            const auto tag = param_name.substr(0, param_name.find('.'));
+            /// Consumer, producer and per-topic sections are not librdkafka properties, same as in the server configuration below.
+            if (tag == KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG || tag == KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG
+                || tag.starts_with(KafkaConfigLoader::CONFIG_KAFKA_TAG))
+                continue;
+            setKafkaConfigValue(kafka_config, param_name, collection->get<String>(key));
+        }
+
+        /// Per-topic configuration (new syntax) is applied after the common one.
+        for (const auto & key : keys)
+        {
+            const auto param_name = key.substr(config_prefix.size() + 1);
+            const auto tag = param_name.substr(0, param_name.find('.'));
+            if (tag == param_name || !tag.starts_with(KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG))
+                continue;
+
+            const auto property = param_name.substr(tag.size() + 1);
+            const auto topic_name_path = config_prefix + "." + tag + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+            const auto topic_name = collection->getOrDefault<String>(topic_name_path, "");
+            if (property == KafkaConfigLoader::CONFIG_NAME_TAG || !std::ranges::contains(params.topics, topic_name))
+                continue;
+            setKafkaConfigValue(kafka_config, property, collection->get<String>(key));
+        }
         return;
     }
 
