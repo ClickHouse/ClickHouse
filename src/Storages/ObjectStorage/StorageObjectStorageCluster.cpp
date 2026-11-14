@@ -572,7 +572,9 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        /*skip_object_metadata=*/true,
+        /*with_tags=*/false,
+        format_settings);
 
     if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
     {

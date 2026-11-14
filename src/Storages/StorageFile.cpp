@@ -1649,13 +1649,15 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_,
-    String archive_member_path_)
+    String archive_member_path_,
+    std::optional<FormatSettings> format_settings_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
     , distributed_processing(distributed_processing_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
+    , format_settings(std::move(format_settings_))
     , archive_member_path(std::move(archive_member_path_))
 {
     std::optional<ActionsDAG> filter_dag;
@@ -1681,7 +1683,7 @@ StorageFileSource::FilesIterator::FilesIterator(
                 filter_sources,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
@@ -1725,7 +1727,7 @@ String StorageFileSource::FilesIterator::next()
                 filtered_files,
                 VirtualColumnUtils::getFilterByPathAndFileIndexes(
                     filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                    /*format_settings=*/std::nullopt,
+                    format_settings,
                     archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
@@ -3012,7 +3014,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing,
-        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        storage->format_settings);
 }
 
 StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey() const

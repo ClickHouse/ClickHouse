@@ -349,10 +349,11 @@ static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
         : max_addresses_upper_bound(max_addresses)
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
+        , filter_format_settings(format_settings_)
         , filter_context(context)
     {
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
@@ -539,8 +540,10 @@ private:
         for (const auto & uri : uris)
             paths.push_back(Poco::URI(uri).getPath());
 
-        VirtualColumnUtils::filterByPathOrFile(
-            uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+        VirtualColumnUtils::filterSourcesByIndexes(
+            uris,
+            VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context, filter_format_settings));
     }
 
     std::mutex mutex;
@@ -555,6 +558,7 @@ private:
     bool filter_deferred TSA_GUARDED_BY(mutex) = false;
     const NamesAndTypesList filter_virtual_columns;
     const NamesAndTypesList filter_hive_columns;
+    const std::optional<FormatSettings> filter_format_settings;
     const ContextPtr filter_context;
 
     Strings batch TSA_GUARDED_BY(mutex);
@@ -564,8 +568,8 @@ private:
     std::optional<size_t> exact_size;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context, format_settings_)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -2151,7 +2155,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed URLs and make a source for each file. Even a URL
         /// without globs must go through this iterator: it applies a deferred `_path`
         /// / `_file` filter before the source opens the URL.
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context, storage->format_settings);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
