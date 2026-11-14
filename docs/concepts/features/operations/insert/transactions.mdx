@@ -83,7 +83,7 @@ The statements that control transactions are described on the [`BEGIN TRANSACTIO
 
 ### Notes {#notes-1}
 - This is an experimental feature, and changes should be expected.
-- If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos.  
+- If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos, except for a query that cannot be parsed or whose query parameters are missing or invalid: such a query is not executed and leaves the transaction running.
 - Nested transactions are not supported; finish the current transaction and start a new one instead
 
 ### Configuration {#configuration}

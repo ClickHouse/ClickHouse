@@ -247,7 +247,7 @@ KILL TRANSACTION [ON CLUSTER cluster]
 ```
 
 Rolls back the running [transactions](/reference/statements/transactions) selected from the [`system.transactions`](/reference/system-tables/transactions) table by the `WHERE` clause.
-The session of a killed transaction is then in the same state as after a failed query: until it runs `ROLLBACK`, `COMMIT` and its other queries throw an `INVALID_TRANSACTION` exception, see [`COMMIT`](/reference/statements/transactions#commit).
+The session of a killed transaction is then in the same state as after a failed query, described in [`COMMIT`](/reference/statements/transactions#commit): until it runs `ROLLBACK`, `COMMIT` throws an `INVALID_TRANSACTION` exception.
 
 The statement requires the `KILL TRANSACTION` privilege and `SELECT` on `system.transactions`.
 The response contains the `kill_status` column, which is `waiting` for a transaction that was rolled back, followed by the `tid`, `tid_hash`, `elapsed`, `is_readonly` and `state` columns of `system.transactions`.
@@ -293,6 +293,7 @@ A cancelled move is rolled back in the background, and its `state` in `system.pa
 A move that has reached the `SOURCE_DROP` state can no longer be cancelled and runs to completion.
 
 The statement requires `SELECT` on `system.part_moves_between_shards` and, to cancel a move, the `ALTER MOVE PARTITION` privilege on its table and the `MOVE PARTITION BETWEEN SHARDS` privilege.
+With `ON CLUSTER`, the statement requires both move privileges on `*.*`.
 The response contains the `kill_status` column, which is `waiting` for a cancelled move and `cant_cancel` for a move that can no longer be cancelled, followed by the `database`, `table`, `task_name`, `task_uuid`, `part_name`, `to_shard` and `state` columns of `system.part_moves_between_shards`.
 
 A test query (`TEST`) only displays a list of moves to cancel. The `SYNC` modifier is not supported and throws a `NOT_IMPLEMENTED` exception.

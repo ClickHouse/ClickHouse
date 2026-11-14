@@ -98,7 +98,8 @@ Nested transactions are not supported: `BEGIN TRANSACTION` inside a transaction 
 Commits the current transaction and makes its changes visible to other transactions.
 `COMMIT` without a current transaction throws an `INVALID_TRANSACTION` exception.
 
-If a query inside the transaction fails, the transaction is rolled back. Until `ROLLBACK` ends the transaction, `COMMIT` and the other queries that follow throw an `INVALID_TRANSACTION` exception. Only `ROLLBACK`, `SET TRANSACTION SNAPSHOT` and the `EXPLAIN` queries other than `EXPLAIN ANALYZE` still run.
+If a query inside the transaction fails, the transaction is rolled back. A query that cannot be parsed, for example because of a syntax error, or whose query parameters are missing or invalid is not executed and leaves the transaction running, so a later `COMMIT` still commits it.
+Until `ROLLBACK` ends a rolled-back transaction, `COMMIT` and the other queries that follow throw an `INVALID_TRANSACTION` exception. Only `ROLLBACK`, `SET TRANSACTION SNAPSHOT` and the `EXPLAIN` queries other than `EXPLAIN ANALYZE` still run.
 
 The [`wait_changes_become_visible_after_commit_mode`](/reference/settings/session-settings/other#wait_changes_become_visible_after_commit_mode) setting controls what `COMMIT` waits for.
 
@@ -111,10 +112,12 @@ Rolls back the current transaction and discards its changes.
 
 Changes the snapshot that the current transaction reads to the commit sequence number (CSN) `snapshot`, for example a value that [`transactionLatestSnapshot`](/reference/functions/regular-functions/other-functions#transactionLatestSnapshot) returned in an earlier transaction.
 The transaction then sees its own changes, the data written outside transactions and the changes of the transactions committed up to that CSN.
+It reads only the parts that the server still keeps, and it does not protect them from removal: once no running transaction started before a merge, a mutation or another query removed a part, the server can delete that part, and an earlier snapshot then misses its rows.
+Do not rely on `SET TRANSACTION SNAPSHOT` for repeatable reads of historical data.
 `SET TRANSACTION SNAPSHOT` without a current transaction throws an `INVALID_TRANSACTION` exception.
 
 The values from `0` to `32` are reserved and throw an `INVALID_TRANSACTION` exception, except two:
-`1` makes only the data written outside transactions and the transaction's own changes visible, and `3` makes all the parts of a table visible, including the parts that transactions removed or rolled back.
+`1` makes only the data written outside transactions and the transaction's own changes visible, and `3` makes all the parts of a table visible, including the parts of transactions that have not committed yet and the parts that transactions removed or rolled back.
 
 ## Queries inside a transaction {#queries-inside-a-transaction}
 
