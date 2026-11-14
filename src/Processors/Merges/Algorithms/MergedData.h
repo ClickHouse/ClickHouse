@@ -58,8 +58,7 @@ public:
     bool mayHaveReplicatedColumns() const { return may_have_replicated_columns; }
 
     /// Count the columns whose values have a fixed size (`ColumnPlanes::Shape::Fixed`) in `hasEnoughRows` and
-    /// `rowsToInsertBeforeFlush` from `merged_rows`, instead of asking each of them for its size per row.
-    /// Applies only while `mayHaveReplicatedColumns() == false`.
+    /// `rowsToInsertBeforeFlush` from `merged_rows`. Applies only while `mayHaveReplicatedColumns() == false`.
     void enableFixedSizeByteCount();
 
     virtual ~MergedData() = default;
