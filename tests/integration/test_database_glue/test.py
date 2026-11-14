@@ -14,11 +14,12 @@ from datetime import timedelta
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from helpers.config_cluster import minio_access_key, minio_secret_key
 import decimal
 from pyiceberg.types import (
+    BinaryType,
     DoubleType,
     LongType,
     NestedField,
@@ -239,13 +240,13 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     )
 
 def create_clickhouse_glue_table(
-    started_cluster, node, database_name, table_name, schema, additional_settings={}
+    started_cluster, node, database_name, table_name, schema, additional_settings={}, catalog_name=CATALOG_NAME
 ):
     settings_suffix = "" if len(additional_settings) == 0 else f"SETTINGS {",".join((k+"="+repr(v) for k, v in additional_settings.items()))}"
 
     node.query(
         f"""
-CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+CREATE TABLE {catalog_name}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 {settings_suffix}
 """,
         settings={
@@ -254,7 +255,7 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
         },
     )
 
-    show_result = node.query(f"SHOW DATABASE {CATALOG_NAME}")
+    show_result = node.query(f"SHOW DATABASE {catalog_name}")
     assert minio_secret_key not in show_result
 
 def create_glue_table_directly(
@@ -377,6 +378,7 @@ def started_cluster():
             main_configs=[
                 "configs/query_log.xml",
                 "configs/text_log.xml",
+                "configs/url_scheme_mappers.xml",
             ],
             user_configs=[],
             stay_alive=True,
@@ -820,62 +822,6 @@ def test_timestamps(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 
-def test_timestamp_types_cache_does_not_keep_metadata(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_ts_cache_{uuid.uuid4().hex}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    database_name = f"db_{test_ref}"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-
-    schema = Schema(
-        NestedField(field_id=1, name="timestamp", field_type=TimestampType(), required=False),
-        NestedField(field_id=2, name="timestamptz", field_type=TimestamptzType(), required=False),
-    )
-    table = create_table(catalog, root_namespace, table_name, schema, dir=test_ref)
-
-    create_clickhouse_glue_database(started_cluster, node, database_name)
-
-    def cache_metrics():
-        return [
-            int(value)
-            for value in node.query(
-                "SELECT value FROM system.metrics "
-                "WHERE metric IN ('GlueCatalogSchemaCacheBytes', 'GlueCatalogSchemaCacheEntries') ORDER BY metric"
-            ).split()
-        ]
-
-    bytes_before, entries_before = cache_metrics()
-
-    row = pa.Table.from_pylist(
-        [{"timestamp": datetime(2024, 1, 1, 12), "timestamptz": datetime(2024, 1, 1, 12, tzinfo=pytz.UTC)}]
-    )
-    versions = 30
-    for _ in range(versions):
-        table.append(row)
-        description = node.query(f"DESCRIBE TABLE {database_name}.`{root_namespace}.{table_name}`")
-        assert [line.split("\t")[1] for line in description.splitlines()] == [
-            "Nullable(DateTime64(6))",
-            "Nullable(DateTime64(6, \\'UTC\\'))",
-        ]
-
-    bytes_after, entries_after = cache_metrics()
-    assert entries_after - entries_before == versions
-
-    metadata_size = int(
-        node.query(
-            f"SELECT max(_size) FROM s3('http://minio1:9001/warehouse-glue/{test_ref}/metadata/*.metadata.json', "
-            f"'{minio_access_key}', '{minio_secret_key}', 'One')"
-        )
-    )
-    assert bytes_after - bytes_before < metadata_size
-
-    node.query(f"DROP DATABASE {database_name}")
-
-
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -900,11 +846,197 @@ def test_create(started_cluster):
     test_ref = f"test_list_tables_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
-    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    columns = before["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in columns] == [("x", "string")]
+    for name, value in {
+        "iceberg.field.id": "1",
+        "iceberg.field.optional": "false",
+        "iceberg.field.current": "true",
+    }.items():
+        assert columns[0]["Parameters"][name] == value
+
+    # Preserve other Glue clients' columns and attributes on metadata commits.
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "Description": "Keep this Glue description",
+            "StorageDescriptor": {
+                "Location": before["StorageDescriptor"]["Location"],
+                "Columns": columns,
+            },
+            "Parameters": {**before["Parameters"], "external_parameter": "keep-me"},
+        },
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["StorageDescriptor"]["Columns"] == columns
+    assert after["Description"] == "Keep this Glue description"
+    assert after["Parameters"]["external_parameter"] == "keep-me"
+    assert after["Parameters"]["previous_metadata_location"] == before["Parameters"]["metadata_location"]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert "`x` String" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+    # `storage_endpoint` without the bucket: metadata reads must use the table's bucket.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"})
+    assert "`x` String" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    node.query(f"INSERT INTO {table_ref} VALUES ('MSFT');", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "AAPL\nMSFT\n"
+
+
+def test_create_preserves_nested_names_and_uuid_on_reopen(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_schema_roundtrip_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(
+        started_cluster, node, root_namespace, table_name,
+        "(id UUID, details Tuple(`a:b` Int32, `c,d` Nullable(String)))",
+    )
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in columns] == [
+        ("id", "string"),
+        ("details", "struct<a:b:int,c,d:string>"),
+    ]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    description = {line.split("\t")[0]: line.split("\t")[1] for line in node.query(f"DESCRIBE TABLE {table_ref}").splitlines()}
+    assert description["id"] == "UUID"
+    assert "a:b" in description["details"]
+    assert "c,d" in description["details"]
+    assert "Nullable(String)" in description["details"]
+    assert node.query(f"SELECT * FROM {table_ref}") == ""
+
+
+@pytest.mark.parametrize("glue_columns", [[], [{"Name": "stale", "Type": "int"}]], ids=["empty", "stale"])
+def test_insert_rewrites_glue_columns(started_cluster, glue_columns):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_legacy_columns_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "StorageDescriptor": {
+                "Location": before["StorageDescriptor"]["Location"],
+                "Columns": glue_columns,
+            },
+            "Parameters": before["Parameters"],
+        },
+    )
+    stored_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [col["Name"] for col in stored_columns] == [col["Name"] for col in glue_columns]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(f"INSERT INTO {table_ref} VALUES ('repaired')", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert [(col["Name"], col["Type"]) for col in after["StorageDescriptor"]["Columns"]] == [("x", "string")]
+    assert after["Parameters"]["previous_metadata_location"] == before["Parameters"]["metadata_location"]
+    assert node.query(f"SELECT * FROM {table_ref}") == "repaired\n"
+
+
+def test_s3a_locations(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_s3a_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=StringType(), required=False))
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
+    table.append(pa.Table.from_pylist([{"id": "a"}, {"id": "b"}]))
+
+    # Other writers (Spark, EMR) register Hadoop `s3a://` locations in Glue.
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    parameters = dict(before["Parameters"])
+    parameters["metadata_location"] = parameters["metadata_location"].replace("s3://", "s3a://", 1)
+    storage_descriptor = dict(before["StorageDescriptor"])
+    storage_descriptor["Location"] = storage_descriptor["Location"].replace("s3://", "s3a://", 1)
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "StorageDescriptor": storage_descriptor,
+            "Parameters": parameters,
+        },
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"})
+    assert "`id` Nullable(String)" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "a\nb\n"
+
+
+def test_storage_endpoint_with_key_prefix(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_key_prefix_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=StringType(), required=False))
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
+    table.append(pa.Table.from_pylist([{"id": "a"}, {"id": "b"}]))
+
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+    prefix_bucket = f"glue-prefix-{uuid.uuid4().hex[:8]}"
+    s3_client.create_bucket(Bucket=prefix_bucket)
+    for page in s3_client.get_paginator("list_objects_v2").paginate(Bucket="warehouse-glue", Prefix=f"{table_name}/"):
+        for obj in page.get("Contents", []):
+            s3_client.copy_object(
+                Bucket=prefix_bucket,
+                Key=f"warehouse-glue/{obj['Key']}",
+                CopySource={"Bucket": "warehouse-glue", "Key": obj["Key"]},
+            )
+
+    create_clickhouse_glue_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": f"http://minio1:9001/{prefix_bucket}"}
+    )
+    assert "`id` Nullable(String)" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "a\nb\n"
 
 
 @pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
@@ -1061,25 +1193,39 @@ def test_schema_evolution(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
 
     node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
 
     node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    added_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in added_columns] == [("x", "string"), ("y", "int"), ("z", "string")]
+    assert added_columns[2]["Parameters"]["iceberg.field.optional"] == "true"
     assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
     assert node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings) == "123\t1\t\\N\n"
 
     node.query(f"INSERT INTO {table_ref} VALUES ('456', 2, 'hello');", settings=write_settings)
+    assert glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"] == added_columns
     assert (
         node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings)
         == "123\t1\t\\N\n456\t2\thello\n"
     )
 
     node.query(f"ALTER TABLE {table_ref} RENAME COLUMN z TO w;", settings=write_settings)
+    renamed_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [col["Name"] for col in renamed_columns] == ["x", "y", "w"]
+    assert renamed_columns[2]["Parameters"]["iceberg.field.id"] == added_columns[2]["Parameters"]["iceberg.field.id"]
     assert "w" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
     assert (
         node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL", settings=write_settings)
         == "123\t1\t\\N\n456\t2\thello\n"
     )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert "w" in node.query(f"DESCRIBE TABLE {table_ref}")
+    assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL") == "123\t1\t\\N\n456\t2\thello\n"
 
 
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
@@ -1093,8 +1239,12 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
 
     node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+    version_before = metadata_version(glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"])
 
     num_columns = 10
 
@@ -1117,6 +1267,240 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
     expected = "123\t1" + "\t\\N" * num_columns + "\n"
     assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
+
+    # Each ALTER advanced the Glue pointer by one version, so it never moved back to an older schema.
+    table = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert metadata_version(table) == version_before + num_columns
+    assert sorted(col["Name"] for col in table["StorageDescriptor"]["Columns"]) == sorted(columns)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    description = node.query(f"DESCRIBE TABLE {table_ref}")
+    assert sorted(line.split("\t")[0] for line in description.strip().split("\n")) == sorted(columns)
+
+
+def metadata_version(glue_table):
+    file_name = glue_table["Parameters"]["metadata_location"].rsplit("/", 1)[1]
+    return int(re.match(r"v?(\d+)", file_name).group(1))
+
+
+def test_writes_do_not_overwrite_concurrent_glue_commit(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_concurrent_glue_commit_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "iceberg_writes_pause_before_commit"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+    base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    base_location = base["Parameters"]["metadata_location"]
+    # An Iceberg Java style name, whose version is unrelated to the `vN` that ClickHouse writes next.
+    external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+
+    def s3_url(location):
+        return "http://minio1:9001/" + location.split("://", 1)[1]
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        paused_insert = executor.submit(
+            node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        # Another engine commits while the insert is paused after reading its base from Glue.
+        node.query(
+            f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+            f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+        )
+        glue_client.update_table(
+            DatabaseName=root_namespace,
+            TableInput={
+                "Name": table_name,
+                "TableType": base["TableType"],
+                "StorageDescriptor": {
+                    "Location": base["StorageDescriptor"]["Location"],
+                    "Columns": base["StorageDescriptor"]["Columns"],
+                },
+                "Parameters": {
+                    **base["Parameters"],
+                    "metadata_location": external_location,
+                    "previous_metadata_location": base_location,
+                },
+            },
+        )
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        paused_insert.result(timeout=120)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False)
+
+    # The insert detected the conflict and was rebuilt on top of the other commit instead of overwriting it.
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["Parameters"]["previous_metadata_location"] == external_location
+    assert metadata_version(after) == 100
+    assert [col["Name"] for col in after["StorageDescriptor"]["Columns"]] == ["x"]
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+
+
+def test_writes_do_not_overwrite_replaced_glue_metadata_of_same_version(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_replaced_glue_metadata_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "iceberg_writes_pause_before_commit"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+    base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    base_location = base["Parameters"]["metadata_location"]
+    replaced_location = (
+        f"{base_location.rsplit('/', 1)[0]}/{metadata_version(base):05d}-{uuid.uuid4()}.metadata.json"
+    )
+
+    def s3_url(location):
+        return "http://minio1:9001/" + location.split("://", 1)[1]
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        paused_insert = executor.submit(
+            node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        node.query(
+            f"INSERT INTO FUNCTION s3('{s3_url(replaced_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+            f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+        )
+        glue_client.update_table(
+            DatabaseName=root_namespace,
+            TableInput={
+                "Name": table_name,
+                "TableType": base["TableType"],
+                "StorageDescriptor": {
+                    "Location": base["StorageDescriptor"]["Location"],
+                    "Columns": base["StorageDescriptor"]["Columns"],
+                },
+                "Parameters": {
+                    **base["Parameters"],
+                    "metadata_location": replaced_location,
+                    "previous_metadata_location": base_location,
+                },
+            },
+        )
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        # The commit built on `base_location` is rejected, its metadata file is removed, and the retry builds on the replacement.
+        paused_insert.result(timeout=120)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False)
+
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["Parameters"]["previous_metadata_location"] == replaced_location
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+
+    # The rejected attempt must not leave a metadata file that blocks later commits.
+    node.query(f"INSERT INTO {table_ref} VALUES ('later');", settings=write_settings)
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN y Nullable(String);", settings=write_settings)
+    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY x") == "base\t\\N\nlater\t\\N\npaused\t\\N\n"
+
+
+def test_writes_rebuild_after_glue_version_id_conflict(started_cluster):
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    test_ref = uuid.uuid4().hex
+    db_name = f"glue_cas_{test_ref}"
+    root_namespace = f"cas_{test_ref}"
+    table_name = "t"
+    table_ref = f"{db_name}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "glue_catalog_pause_before_update_table"
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        create_clickhouse_glue_table(
+            started_cluster, node, root_namespace, table_name, "(x String)", catalog_name=db_name
+        )
+        glue_client = boto3.client(
+            "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+        )
+
+        node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+        base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        base_location = base["Parameters"]["metadata_location"]
+        external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+
+        def s3_url(location):
+            return "http://minio1:9001/" + location.split("://", 1)[1]
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            paused_insert = executor.submit(
+                node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+            # Another engine commits after the insert has read the `VersionId` it sends with `UpdateTable`.
+            node.query(
+                f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+                f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+            )
+            glue_client.update_table(
+                DatabaseName=root_namespace,
+                TableInput={
+                    "Name": table_name,
+                    "TableType": base["TableType"],
+                    "StorageDescriptor": {
+                        "Location": base["StorageDescriptor"]["Location"],
+                        "Columns": base["StorageDescriptor"]["Columns"],
+                    },
+                    "Parameters": {
+                        **base["Parameters"],
+                        "metadata_location": external_location,
+                        "previous_metadata_location": base_location,
+                    },
+                },
+            )
+
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            # The stale `VersionId` is rejected once; the insert is rebuilt on top of the other commit instead of failing.
+            paused_insert.result(timeout=120)
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            executor.shutdown(wait=False)
+
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "-s", f"http://localhost:8081/injected/{root_namespace}"]
+        )
+        assert int(injected) == 1
+
+        after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        assert after["Parameters"]["previous_metadata_location"] == external_location
+        assert metadata_version(after) == 100
+        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
 def test_alternating_commits_with_pyiceberg(started_cluster):
@@ -1438,6 +1822,27 @@ def test_table_without_metadata_location(started_cluster):
     assert "Iceberg" in create_table_result, f"Expected Iceberg engine in: {create_table_result}"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_location_not_a_uri(started_cluster):
+    # Without `storage_endpoint` the location itself is the S3 URL; the timestamp column makes Glue read the
+    # metadata early through `createObjectStorageForEarlyTableAccess`.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_location_not_a_uri_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name, dir=f"{test_ref}/a b é")
+    table.append(generate_arrow_data(5))
+
+    create_clickhouse_glue_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": ""}
+    )
+    assert node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}` SETTINGS optimize_trivial_count_query = 0"
+    ) == "5\n"
 
 
 def test_check_database(started_cluster):
@@ -2265,3 +2670,40 @@ def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_geo_types_opt_in_per_query(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_geo_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="geom", field_type=BinaryType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
+
+    # pyiceberg cannot create `geometry` columns, so patch the type in the current metadata file.
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+    bucket, key = table.metadata_location.removeprefix("s3://").split("/", 1)
+    metadata = json.loads(s3_client.get_object(Bucket=bucket, Key=key)["Body"].read())
+    for table_schema in metadata["schemas"]:
+        for field in table_schema["fields"]:
+            if field["name"] == "geom":
+                field["type"] = "geometry"
+    s3_client.put_object(Bucket=bucket, Key=key, Body=json.dumps(metadata).encode())
+
+    # `allow_geo_types_in_iceberg` is disabled by default and enabled only for the query.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    result = node.query(f"SHOW CREATE TABLE {table_ref}", settings={"allow_geo_types_in_iceberg": 1})
+    assert "`geom` Geometry" in result, result

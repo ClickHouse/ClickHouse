@@ -32,17 +32,18 @@ https://api.clickhouse.cloud/v1
 
 すべての ClickPipes エンドポイントは、ClickHouse Cloud サービスのスコープに属します。
 
-| Method   | Path                                                                                     | Description              |
-| -------- | ---------------------------------------------------------------------------------------- | ------------------------ |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | すべての ClickPipes を一覧表示    |
-| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe を作成            |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を取得            |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を更新            |
-| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を削除            |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を取得         |
-| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を更新         |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe のスケーリングを更新     |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe の状態を更新 (開始/停止) |
+| Method   | Path                                                                                     | Description                                    |
+| -------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | すべての ClickPipes を一覧表示                          |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | ClickPipe を作成                                  |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/context`                | サービスのケーパビリティと GCP Workload Identity のプリンシパルを取得 |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を取得                                  |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を更新                                  |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | ClickPipe を削除                                  |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を取得                               |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | ClickPipe の設定を更新                               |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | ClickPipe のスケーリングを更新                           |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | ClickPipe の状態を更新 (開始/停止)                       |
 
 CDC (変更データキャプチャ)  ClickPipes (Postgres、MySQL、MongoDB) では、共有 CDC (変更データキャプチャ)  インフラストラクチャのスケーリング用に、組織レベルの追加エンドポイントが用意されています。
 
@@ -97,13 +98,17 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/$CLICKPIPE_ID"
 ```
 
+## GCP Workload Identity (ベータ) {#gcp-workload-identity}
+
+以下の Workload Identity の例を使用する前に、[GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity#openapi)の手順に従って ClickPipes が管理する service account を取得し、そのアカウントにソースへのアクセス権限を付与してください。
+
 ## ClickPipes の作成 {#creating-clickpipes}
 
 `POST /clickpipes` のリクエストボディは、ソースタイプによって異なります。以下の例では、サポートされている各 ClickPipe タイプの構造を示します。正式な JSON スキーマについては、[API リファレンス](/ja/products/cloud/api-reference/clickpipes/list-clickpipes) を参照してください。
 
 ### Kafka {#create-kafka}
 
-サポートされている Kafka 互換のソース: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
+サポートされている Kafka 互換のソース: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`、およびプライベートプレビューの `gcmk`。
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -140,6 +145,22 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
 ```
+
+Google Managed Kafka の場合は、クラスターのプロジェクトで Workload Identity のプリンシパルに `roles/managedkafka.client` を付与し、必要な Kafka のアクセス制御リストを設定してください。そのうえで、`credentials` フィールドを含めずに、次の source オブジェクトを使用します。
+
+```json
+{
+  "kafka": {
+    "type": "gcmk",
+    "format": "JSONEachRow",
+    "brokers": "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092",
+    "topics": "events",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+Google Managed Kafka で Workload Identity を使用するには TLS が必要です。
 
 ### Amazon Kinesis {#create-kinesis}
 
@@ -221,7 +242,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
 
 ### Google Cloud Storage {#create-gcs}
 
-`serviceAccountKey` には、GCP のサービス アカウント JSON キーファイルの内容を base64 エンコードした値を指定する必要があります。
+`serviceAccountKey` には、GCP の service account JSON キーファイルの内容を base64 エンコードした値を指定する必要があります。
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -236,6 +257,55 @@ curl -u "$KEY_ID:$KEY_SECRET" \
         "format": "JSONEachRow",
         "authentication": "SERVICE_ACCOUNT",
         "serviceAccountKey": "<base64_encoded_service_account_json>"
+      }
+    },
+    "destination": {
+      "table": "my_table",
+      "managedTable": true,
+      "tableDefinition": {
+        "engine": { "type": "MergeTree" }
+      },
+      "columns": [
+        { "name": "id", "type": "UInt64" },
+        { "name": "message", "type": "String" }
+      ]
+    }
+  }' \
+  "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+service account キーの代わりに Workload Identity を使用する場合は、ソースバケットに対する `roles/storage.objectViewer` をプリンシパルに付与し、次のソースオブジェクトを使用します:
+
+```json
+{
+  "objectStorage": {
+    "type": "gcs",
+    "url": "gs://my-bucket/data/*.json",
+    "format": "JSONEachRow",
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+unordered モードでインジェストする場合は、通知用サブスクリプションに対する `roles/pubsub.subscriber` と `roles/pubsub.viewer` もプリンシパルに付与してください。また、`isContinuous` を `true` に設定し、`queueUrl` には `projects/<project-id>/subscriptions/<subscription-id>` 形式の完全修飾名を指定してください。
+
+### Google Cloud Pub/Sub {#create-pubsub}
+
+次の例では Workload Identity を使用します。ClickPipe を作成する前に、プリンシパルに[必要な Pub/Sub のアクセス許可](/ja/integrations/clickpipes/pubsub/auth#required-permissions)を付与してください。
+
+```bash
+curl -u "$KEY_ID:$KEY_SECRET" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Pub/Sub ClickPipe",
+    "source": {
+      "pubsub": {
+        "format": "JSONEachRow",
+        "projectId": "my-gcp-project",
+        "topic": "events",
+        "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+        "seekType": "latest"
       }
     },
     "destination": {
@@ -394,7 +464,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
 
 ### BigQuery {#create-bigquery}
 
-`serviceAccountFile` には、GCP のサービスアカウント JSON キーファイルの内容を base64 エンコードしたものを指定する必要があります。
+`serviceAccountFile` には、GCP の service account JSON キーファイルの内容を base64 エンコードしたものを指定する必要があります。
 
 ```bash
 curl -u "$KEY_ID:$KEY_SECRET" \
@@ -425,4 +495,26 @@ curl -u "$KEY_ID:$KEY_SECRET" \
     }
   }' \
   "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes"
+```
+
+service account キーの代わりに Workload Identity を使用するには、プリンシパルに[必要な BigQuery および GCS のアクセス許可](/ja/integrations/clickpipes/bigquery/overview#permissions)を付与したうえで、次の source オブジェクトを使用します。
+
+```json
+{
+  "bigquery": {
+    "authentication": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY",
+    "projectId": "my-gcp-project",
+    "snapshotStagingPath": "gs://my-staging-bucket/staging/",
+    "settings": {
+      "replicationMode": "snapshot"
+    },
+    "tableMappings": [
+      {
+        "sourceDatasetName": "my_dataset",
+        "sourceTable": "my_table",
+        "targetTable": "my_bigquery_table"
+      }
+    ]
+  }
+}
 ```

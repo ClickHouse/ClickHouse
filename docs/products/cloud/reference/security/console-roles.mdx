@@ -65,13 +65,13 @@ The table below describes the ClickHouse console and SQL console permissions. Mo
 | **Service (general)** | General service-level permissions |
 | control-plane:service:view | View service-level metadata, settings, and status. |
 | control-plane:service:manage | Manage service configuration and lifecycle operations. |
-| control-plane:service:delete | Delete a service. |
+| control-plane:service:delete | Delete a service, and turn [deletion protection](/cloud/manage/deletion-protection) on or off. |
 | **Backups** ([more info](/products/cloud/features/backups/overview)) | Service backups and restore points |
 | control-plane:service:view-backups | View backups and restore points for a service. |
 | control-plane:service:manage-backups | Create, manage, and restore service backups. |
 | **IP access list** ([more info](/products/cloud/guides/security/connectivity/setting-ip-filters)) | Manage IP access lists and network filtering |
 | control-plane:service:manage-ip-access-list | Manage IP access lists and network filtering for a service. |
-| **Generative AI** ([more info](/products/cloud/features/ai-ml/agents/assistant/using-ai-chat)) | Configure generative AI features |
+| **Generative AI** ([more info](/agents/assistant/using-ai-chat)) | Configure generative AI features |
 | control-plane:service:manage-generative-ai | Configure and manage generative AI features and settings for a service. |
 | **Remote MCP** ([more info](/products/cloud/features/ai-ml/remote-mcp)) | Remote MCP server access |
 | control-plane:service:manage-mcp | Enable or disable the remote MCP server for a service. |

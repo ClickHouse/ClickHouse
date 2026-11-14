@@ -110,6 +110,7 @@ $CLICKHOUSE_CLIENT -q "
 CREATE TABLE t_alias_access (public UInt64, secret UInt64, hidden UInt64 ALIAS (secret AS confidential) * 1000 + confidential) ENGINE = MergeTree ORDER BY public;
 DROP USER IF EXISTS ${user};
 CREATE USER ${user} NOT IDENTIFIED;
+GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_alias_access TO ${user};
 "
 for grant in "" "SELECT(public)" "SELECT(hidden)" "SELECT(secret)"
 do
