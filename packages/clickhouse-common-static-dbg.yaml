@@ -1,4 +1,4 @@
-# package sources should be placed in ${PWD}/root
+# build-dir should be a link to the build directory
 # nfpm should run from the same directory with a config
 name: "clickhouse-common-static-dbg"
 description: |
@@ -28,8 +28,10 @@ conflicts:
 - clickhouse-common-dbg
 
 contents:
-- src: root/usr/lib/debug/usr/bin/clickhouse.debug
+- src: build-dir/programs/stripped/lib/debug/bin/clickhouse.debug
   dst: /usr/lib/debug/usr/bin/clickhouse.debug
+  file_info:
+    mode: 0644
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-common-static-dbg/AUTHORS

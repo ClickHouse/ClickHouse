@@ -1,4 +1,4 @@
-# package sources should be placed in ${PWD}/root
+# build-dir should be a link to the build directory
 # nfpm should run from the same directory with a config
 name: "clickhouse-keeper"
 description: |
@@ -28,13 +28,17 @@ suggests:
 - clickhouse-keeper-dbg
 
 contents:
-- src: root/etc/clickhouse-keeper/keeper_config.xml
+- src: ../programs/keeper/keeper_config.xml
   dst: /etc/clickhouse-keeper/keeper_config.xml
   type: config|noreplace
+  file_info:
+    mode: 0644
 - src: clickhouse-keeper.service
   dst: /lib/systemd/system/clickhouse-keeper.service
-- src: root/usr/bin/clickhouse-keeper
+- src: build-dir/programs/stripped/bin/clickhouse-keeper
   dst: /usr/bin/clickhouse-keeper
+  file_info:
+    mode: 0755
 - src: clickhouse-keeper
   dst: /usr/bin/clickhouse-keeper-client
   type: symlink
