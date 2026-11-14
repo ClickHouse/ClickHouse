@@ -133,13 +133,16 @@ void PushingPipelineExecutor::finish()
     }
 }
 
-void PushingPipelineExecutor::cancel()
+void PushingPipelineExecutor::cancel(std::exception_ptr cause)
 {
     /// Cancel execution if it wasn't finished.
     if (executor && !finished)
     {
         finished = true;
-        executor->cancel(IProcessor::CancelReason::CancelledByUser);
+        if (cause)
+            executor->cancelWithException(cause);
+        else
+            executor->cancel(IProcessor::CancelReason::CancelledByUser);
     }
 }
 

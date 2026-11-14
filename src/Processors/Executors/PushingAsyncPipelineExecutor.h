@@ -1,4 +1,5 @@
 #pragma once
+#include <exception>
 #include <list>
 #include <memory>
 #include <vector>
@@ -46,7 +47,8 @@ public:
     void finish();
 
     /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
-    void cancel();
+    /// `cause`, if set, is the exception that stops the execution, see `IExecutor::cancelWithException`.
+    void cancel(std::exception_ptr cause = nullptr);
 
     struct Data;
 

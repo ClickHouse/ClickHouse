@@ -3,6 +3,7 @@
 #include <Processors/IProcessor.h>
 
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <memory>
 
@@ -29,6 +30,9 @@ public:
 
     /// Cancel execution.
     virtual void cancel(IProcessor::CancelReason reason) = 0;
+
+    /// Cancel execution because of `cause`, which the execution fails with unless an exception has already cancelled it.
+    virtual void cancelWithException(std::exception_ptr cause) = 0;
 
     /// Cancel processors which only read data from source.
     virtual void cancelReading() = 0;

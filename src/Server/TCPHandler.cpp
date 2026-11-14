@@ -1669,7 +1669,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            executor.cancel(std::current_exception());
             throw;
         }
     };
@@ -1828,7 +1828,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            executor.cancel(std::current_exception());
             throw;
         }
 
