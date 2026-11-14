@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
@@ -255,6 +256,14 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         if (column_desc)
             if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
                 max_compress_block_size = value->safeGet<UInt64>();
+
+        /// Of a `Quantized` column, the column-level `max_compress_block_size` applies only to the stream of the array
+        /// elements, where it is set to the size of one vector for `OneRowPerBlockLayout`. The other streams, the array
+        /// sizes and the quantized codes, would only get many small blocks, so they get the default.
+        if (max_compress_block_size && tryExtractQuantizedCodecParams(column_desc->codec)
+            && std::ranges::none_of(substream_path, [](const auto & substream) { return substream.type == ISerialization::Substream::ArrayElements; }))
+            max_compress_block_size = 0;
+
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.

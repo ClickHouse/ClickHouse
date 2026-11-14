@@ -595,6 +595,7 @@
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRows, "Number of rows SELECTed from all tables.", ValueType::Number) \
+    M(MergeTreeOneRowPerBlockReadRows, "Number of rows of array columns read by reading only their blocks, see the setting `merge_tree_use_one_row_per_block_layout`.", ValueType::Number) \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \

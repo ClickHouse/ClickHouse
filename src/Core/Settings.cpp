@@ -10316,6 +10316,24 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", 0, \
         {"24.10", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."}) \
+    DECLARE(Bool, merge_tree_use_one_row_per_block_layout, false, R"(
+Read only the needed rows of a vector column instead of whole granules.
+
+This applies when a query reads known rows of a part. This happens in the second stage of lazy materialization.
+It also happens for the candidates of a vector similarity index with `vector_search_with_rescoring`.
+Only the blocks of these rows are read and checksummed. Their elements are copied directly into the result.
+
+The column must meet these conditions:
+- Its type is `Array(BFloat16)`, `Array(Float32)`, `Array(Float64)` or `Array(Int8)`.
+- Its codec is `NONE` or `Quantized`.
+- Its column-level settings `min_compress_block_size` and `max_compress_block_size` both equal the size of one row.
+- All its rows have the same number of elements.
+
+The last condition is checked once per part. The array sizes are read the first time a query reads the column of that part this way.
+
+The part must be a Wide part. The setting has no effect when the uncompressed cache or the columns cache is used.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.

@@ -1,4 +1,5 @@
 #pragma once
+#include <Compression/CompressedReadBufferBase.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -58,6 +59,11 @@ public:
      */
     void adjustRightMark(size_t right_mark);
     ReadBuffer * getDataBuffer();
+
+    /// The next compressed block of the stream as it is stored, without decompressing it; nothing at the end of the file.
+    /// After a seek to a mark, it is the block the mark is in. Only of a stream that is compressed and read without the
+    /// uncompressed cache, and not to be mixed with reads through `getDataBuffer`.
+    std::optional<CompressedReadBufferBase::CompressedBlock> readCompressedBlock();
 
     size_t getFileSize() const { return file_size; }
 

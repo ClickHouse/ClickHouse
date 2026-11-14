@@ -55,6 +55,12 @@ public:
     /// So we must always apply filter into the RangeReader.
     virtual bool mustApplyFilter() const { return false; }
 
+    /// Only these rows of the part are needed. A filter that keeps exactly them is applied to the result of every read
+    /// before any value is used, so a reader does not need to read whole granules: it may put any value of the column's
+    /// type in the other rows, as long as it returns the usual number of rows. `rows` are the numbers of the rows in the
+    /// part, strictly increasing.
+    virtual void setSelectedRows(const PaddedPODArray<UInt64> & /*rows*/) {}
+
     virtual size_t getResultColumnCount() const { return getColumns().size(); }
 
     /// The number of granules in a stripe of the columns cache for this part, 0 if the reader does

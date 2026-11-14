@@ -7,6 +7,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeOneRowPerBlockReader.h>
 #include <Storages/MergeTree/StreamWithSizeHint.h>
 
 
@@ -46,6 +47,10 @@ public:
         MutableColumns & res_columns, Columns & shared_columns) override;
 
     bool canReadIncompleteGranules() const override { return true; }
+
+    /// Reads the columns with `OneRowPerBlockLayout` only for the selected rows, with `MergeTreeOneRowPerBlockReader`,
+    /// and returns empty arrays for the other rows. The other columns are read as usual.
+    void setSelectedRows(const PaddedPODArray<UInt64> & rows) override;
 
     size_t getColumnsCacheStripeMarks() const override
     {
@@ -348,6 +353,17 @@ private:
         const std::vector<size_t> & sizes_before_reading,
         MutableColumns & res_columns,
         Columns & shared_columns);
+
+    /// The readers of the columns with `OneRowPerBlockLayout`, by position, and the rows they read, see `setSelectedRows`.
+    std::vector<std::unique_ptr<MergeTreeOneRowPerBlockReader>> one_row_per_block_readers;
+    PaddedPODArray<UInt64> selected_rows;
+    /// The row of the part after the last row read, to continue reading the columns with `OneRowPerBlockLayout`.
+    /// Empty before the first read of a task.
+    std::optional<UInt64> next_row_for_selected_rows;
+
+    /// Reads the columns with `OneRowPerBlockLayout` for the rows of a call of `readRows`, returns the number of rows.
+    size_t readOneRowPerBlock(
+        size_t from_mark, bool continue_reading, size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns);
 };
 
 }

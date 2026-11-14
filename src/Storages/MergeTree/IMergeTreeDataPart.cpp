@@ -1588,6 +1588,19 @@ String IMergeTreeDataPart::getPathForCacheKey() const
     return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
 }
 
+bool IMergeTreeDataPart::hasOneRowPerBlockArraySizes(
+    const String & column_name, UInt64 array_size, const std::function<bool()> & check) const
+{
+    std::lock_guard lock(one_row_per_block_array_sizes_mutex);
+    auto key = std::make_pair(column_name, array_size);
+    if (auto it = one_row_per_block_array_sizes.find(key); it != one_row_per_block_array_sizes.end())
+        return it->second;
+
+    const bool result = check();
+    one_row_per_block_array_sizes.emplace(std::move(key), result);
+    return result;
+}
+
 Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) const
 {
     return *getEstimatesImpl(required_columns, /* only_from_memory = */ false);

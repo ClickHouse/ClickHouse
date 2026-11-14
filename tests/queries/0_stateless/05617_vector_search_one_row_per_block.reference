@@ -1,0 +1,102 @@
+one part, setting on
+123
+337
+1237
+1571
+65
+543
+1650
+101
+721
+121
+one part, setting off
+123
+337
+1237
+1571
+65
+543
+1650
+101
+721
+121
+2000
+two parts, setting on
+123
+3160
+337
+2587
+1237
+1571
+3844
+2305
+3997
+2272
+two parts, setting off
+123
+3160
+337
+2587
+1237
+1571
+3844
+2305
+3997
+2272
+several rows per block, setting on
+123
+337
+1237
+1571
+65
+543
+1650
+101
+721
+121
+different sizes, setting on
+1785	65	178500	178564
+390	63	39000	39062
+389	65	38900	38964
+181	65	18100	18164
+298	63	29800	29862
+different sizes, setting off
+1785	65	178500	178564
+390	63	39000	39062
+389	65	38900	38964
+181	65	18100	18164
+298	63	29800	29862
+same sizes, setting on
+1785	64	0.869
+390	64	0.936
+389	64	0.034
+3187	64	0.595
+2573	64	-0.219
+other block sizes, setting off
+1785	178500
+390	39000
+389	38900
+181	18100
+298	29800
+compressed, setting on
+1785	6	256
+390	6	256
+389	6	256
+181	6	256
+298	6	256
+compressed, setting off
+1785	6	256
+390	6	256
+389	6	256
+181	6	256
+298	6	256
+codes in few blocks	1
+05617_lz4_on	0
+05617_one_part_off	0
+05617_one_part_on	100
+05617_same_sizes_on	3
+05617_several_rows_per_block_on	0
+05617_sizes_off	0
+05617_sizes_on	0
+05617_two_parts_off	0
+05617_two_parts_on	49
