@@ -347,6 +347,8 @@ public:
 
     void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
     {
+        if (tasks.size() == tasks.capacity())
+            tasks.reserve(2 * tasks.size() + 1);
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }
 
