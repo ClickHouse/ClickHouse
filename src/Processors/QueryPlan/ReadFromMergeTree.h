@@ -406,7 +406,9 @@ public:
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
-        bool skip_ranges_analysis);
+        bool skip_ranges_analysis,
+        /// The given ranges are already the result of the index analysis: keep them.
+        bool index_analysis_already_done = false);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -1017,6 +1019,20 @@ private:
     /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
     VectorWithMemoryTracking<DistributedReadBucket> distributed_read_task_buckets;
+
+    /// Worker side: fills `distributed_read_task_buckets` from this read's bucket parameter.
+    void readDistributedReadTaskBuckets(const BuildQueryPipelineSettings & settings);
+    /// Worker side, before the index analysis: pins `prepared_parts` to the marks of this task's bucket,
+    /// so the analysis covers only this task's share of the table. A read with sampling, or from a
+    /// table with `max_concurrent_queries` admission, is not pinned.
+    /// Returns whether it pinned them.
+    bool pinPartsToReceivedMarks();
+    /// Worker side: whether its own index analysis can prune the received marks further than the
+    /// coordinator's analysis did.
+    bool workerIndexAnalysisCanPruneReceivedMarks() const;
+    /// Worker side: the received marks are already the result of the index analysis the worker would run,
+    /// because the coordinator ran the same analysis to select them. The worker does not repeat it.
+    bool index_analysis_done_by_coordinator = false;
 };
 
 }

@@ -19,6 +19,8 @@ INSERT INTO t_probe SELECT number, number FROM numbers(100000);
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET use_index_for_in_with_subqueries = 0;
+-- The skip-index route below tests the index analysis, not the read-time application of skip indexes.
+SET use_skip_indexes_on_data_read = 0;
 -- A control's query condition cache entry can zero the next query's selection, and the setting is
 -- randomized in CI, so pin it to keep each control comparable to the distributed query beside it.
 SET use_query_condition_cache = 0;
@@ -52,9 +54,8 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
 
 -- The same divergence via a skip index rather than the primary key: `s` is not in the sorting key, so
 -- only the minmax index over it can prune. This is the route the reported failure takes.
--- Only index-analysis-time pruning can diverge here: `make_distributed_plan` forces
--- `use_skip_indexes_on_data_read` off (`SettingsQuirks.cpp`), so a worker never applies skip indexes
--- while reading. See 04656_distributed_plan_workers_disable_jit_and_skip_index_read.
+-- Only index-analysis-time pruning is tested here, so `use_skip_indexes_on_data_read` is off (see the
+-- settings above): otherwise the worker applies the skip index while reading instead.
 CREATE TABLE t_probe_skip (k Int32, s Int32, v UInt64, INDEX idx_s s TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_probe_skip SELECT number, number, number FROM numbers(100000);
@@ -91,7 +92,10 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
 -- `_part_offset` is read per part, so it must stay correct when whole parts drop out of the read.
 -- Disjoint key ranges make the worker prune two of the three parts while the third still has a row.
 -- Merges are stopped so the three parts cannot collapse into one and take the divergence out of play.
-CREATE TABLE t_probe_offset (k Int32, v UInt64) ENGINE = MergeTree ORDER BY k;
+-- Each part is a single granule, so the read volume below counts whole parts: with a granularity the
+-- runner randomizes, the worker would also prune the granules of the matching part.
+CREATE TABLE t_probe_offset (k Int32, v UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 SYSTEM STOP MERGES t_probe_offset;
 INSERT INTO t_probe_offset SELECT number, number FROM numbers(1000);
 INSERT INTO t_probe_offset SELECT 10000 + number, number FROM numbers(1000);
