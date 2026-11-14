@@ -413,6 +413,13 @@ private:
     /// True while a parameterized view argument value is resolved: a scalar subquery there must
     /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
     bool parameterized_view_arguments_in_resolve_process = false;
+
+    /// The working table and the `<cte_name>_settled` table of each `USING KEY` recursive CTE whose
+    /// recursive members are being resolved, with the name of the table. A scalar subquery or `EXISTS`
+    /// is evaluated once during analysis, while these tables are still empty, so reading them there
+    /// would silently fold a wrong constant instead of reading the state of each iteration.
+    /// See `evaluateScalarSubqueryIfNeeded`.
+    std::vector<std::pair<StoragePtr, String>> keyed_recursive_cte_tables_in_resolve_process;
 };
 
 }

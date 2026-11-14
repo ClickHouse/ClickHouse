@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool allow_experimental_keyed_recursive_cte;
 }
 
 
@@ -135,6 +136,7 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
+        Names key_columns = {}; /// WITH RECURSIVE name USING KEY (a, b) AS (...)
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -347,6 +349,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setRecursiveCTEKeyColumns(cte_data.key_columns);
     union_node->setOriginalAST(select_with_union_query);
 
     auto union_context = union_node->getContext();
@@ -414,6 +417,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setRecursiveCTEKeyColumns(cte_data.key_columns);
     union_node->setOriginalAST(select_intersect_except_query);
 
     auto union_context = union_node->getContext();
@@ -878,8 +882,25 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
             .is_materialized = with_element->is_materialized,
+            .key_columns = {},
         };
+
+        if (with_element->key_columns)
+        {
+            if (!context->getSettingsRef()[Setting::allow_experimental_keyed_recursive_cte])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Keyed recursive common table expressions (USING KEY) are experimental. "
+                    "Set allow_experimental_keyed_recursive_cte = 1 to enable them");
+
+            for (const auto & key_column : with_element->key_columns->children)
+                cte_data.key_columns.push_back(key_column->as<ASTIdentifier &>().name());
+        }
+
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
+
+        if (!cte_data.key_columns.empty() && query_node->getNodeType() != QueryTreeNodeType::UNION)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "USING KEY is supported only for recursive UNION common table expressions");
 
         result = std::move(query_node);
     }

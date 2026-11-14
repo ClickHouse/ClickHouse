@@ -1,0 +1,6 @@
+a	bc	0
+ab	c	1
+1
+2
+3
+SELECT __table1.k AS k\nFROM\n(\n    WITH RECURSIVE\n        t USING KEY (k) AS\n        (\n            (\n                SELECT 1 AS k\n                FROM system.one AS __table3\n            )\n            UNION ALL\n            (\n                SELECT plus(__table5.k, 1) AS `plus(k, 1)`\n                FROM t AS __table5\n                WHERE less(__table5.k, 3)\n            )\n        )\n    SELECT k\n    FROM t\n) AS __table1

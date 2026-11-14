@@ -163,6 +163,19 @@ namespace ErrorCodes
 namespace
 {
 
+/// Whether `IColumn::compareAt` establishes equality for every value of the type. `isComparableForEquality`
+/// alone is not enough: `Variant` reports itself comparable regardless of its variants, also when it is
+/// nested in a container type, and `Dynamic` and `JSON` hold values of types that are only known at run
+/// time, aggregate function states included. Walk the declared type tree and reject those.
+bool canCompareValuesForEquality(const DataTypePtr & type)
+{
+    return !anyInTypeTree(*type, [](const IDataType & nested_type)
+    {
+        WhichDataType which(nested_type);
+        return which.isDynamic() || which.isObject() || !nested_type.isComparableForEquality();
+    });
+}
+
 /// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
 /// Must run for every reference: clones of one body can resolve differently.
 void checkMaterializedCTESubqueryIsNotCorrelated(
@@ -8193,6 +8206,26 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             ? non_recursive_query->as<QueryNode &>().getProjectionColumns()
             : non_recursive_query->as<UnionNode &>().computeProjectionColumns();
 
+        /// USING KEY: key columns must be a subset of the CTE projection columns.
+        for (const auto & key_column_name : union_node_typed.getRecursiveCTEKeyColumns())
+        {
+            bool key_column_found = false;
+            for (const auto & column : temporary_table_columns)
+            {
+                if (column.name == key_column_name)
+                {
+                    key_column_found = true;
+                    break;
+                }
+            }
+
+            if (!key_column_found)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Recursive CTE {} USING KEY column {} is not present in the non-recursive subquery projection",
+                    union_node_typed.getCTEName(),
+                    key_column_name);
+        }
+
         /// Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive
         /// and recursive sides until the types stabilize (or until the configured limit of widening steps).
         /// Each widening step requires re-resolving the recursive queries with the new column types,
@@ -8206,6 +8239,8 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
         TemporaryTableHolderPtr final_temporary_table_holder;
         StoragePtr final_temporary_table_storage;
+        TemporaryTableHolderPtr final_settled_table_holder;
+        StoragePtr final_settled_table_storage;
 
         auto resolve_recursive_queries_with_current_types = [&]
         {
@@ -8220,12 +8255,42 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
             recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
 
+            /// USING KEY: additionally expose the accumulated keyed state (one row per key)
+            /// to the recursive members as the `<cte_name>_settled` table.
+            TemporaryTableHolderPtr settled_table_holder;
+            StoragePtr settled_table_storage;
+            TableNodePtr settled_table_node;
+            if (union_node_typed.hasRecursiveCTEKeyColumns())
+            {
+                settled_table_holder = std::make_shared<TemporaryTableHolder>(
+                    non_recursive_query_mutable_context,
+                    ColumnsDescription{NamesAndTypesList{temporary_table_columns.begin(), temporary_table_columns.end()}},
+                    ConstraintsDescription{},
+                    nullptr /*query*/,
+                    true /*create_for_global_subquery*/);
+                settled_table_storage = settled_table_holder->getTable();
+
+                settled_table_node = std::make_shared<TableNode>(settled_table_storage, non_recursive_query_mutable_context);
+                settled_table_node->setTemporaryTableName(union_node_typed.getCTEName() + "_settled");
+            }
+
+            /// Scalar subqueries and `EXISTS` reading these tables cannot be folded during analysis.
+            size_t previous_keyed_recursive_cte_tables_size = keyed_recursive_cte_tables_in_resolve_process.size();
+            SCOPE_EXIT({ keyed_recursive_cte_tables_in_resolve_process.resize(previous_keyed_recursive_cte_tables_size); });
+            if (settled_table_storage)
+            {
+                keyed_recursive_cte_tables_in_resolve_process.emplace_back(temporary_table_storage, union_node_typed.getCTEName());
+                keyed_recursive_cte_tables_in_resolve_process.emplace_back(settled_table_storage, union_node_typed.getCTEName() + "_settled");
+            }
+
             for (size_t i = 1; i < queries_nodes.size(); ++i)
             {
                 auto & query_node = queries_nodes[i];
 
                 IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
                 subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
+                if (settled_table_node)
+                    subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName() + "_settled"] = settled_table_node;
 
                 auto query_node_type = query_node->getNodeType();
                 if (query_node_type == QueryTreeNodeType::QUERY)
@@ -8253,16 +8318,19 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                         scope.scope_node->formatASTForErrorMessage());
 
                 /// A materialized CTE referenced from a recursive member is materialized once, before the recursion
-                /// starts, while the working table of this recursive CTE is still empty, so it cannot read the
-                /// working table: fail instead of snapshotting an empty table. Checked after every widening pass,
-                /// because a later pass would otherwise report a schema mismatch of the materialized CTE instead.
+                /// starts, while the working table (and the `<cte_name>_settled` table of `USING KEY`) of this
+                /// recursive CTE is still empty, so it cannot read either of them: fail instead of snapshotting an
+                /// empty table. Checked after every widening pass, because a later pass would otherwise report a
+                /// schema mismatch of the materialized CTE instead.
                 traverseQueryTree(query_node, Everything{}, [&](const QueryTreeNodePtr & node)
                 {
                     auto * table_node = node->as<TableNode>();
                     if (!table_node || !table_node->isMaterializedCTE())
                         return;
 
-                    if (isStorageUsedInTree(temporary_table_storage, table_node->getMaterializedCTESubquery().get()))
+                    const auto * materialized_subquery = table_node->getMaterializedCTESubquery().get();
+                    if (isStorageUsedInTree(temporary_table_storage, materialized_subquery)
+                        || (settled_table_storage && isStorageUsedInTree(settled_table_storage, materialized_subquery)))
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                             "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
                             table_node->getMaterializedCTE()->cte_name,
@@ -8273,6 +8341,8 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
             final_temporary_table_holder = std::move(temporary_table_holder);
             final_temporary_table_storage = std::move(temporary_table_storage);
+            final_settled_table_holder = std::move(settled_table_holder);
+            final_settled_table_storage = std::move(settled_table_storage);
         };
 
         /// Initial resolve with column types from the non-recursive query.
@@ -8313,6 +8383,9 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         }
 
         recursive_cte_table.emplace(std::move(final_temporary_table_holder), std::move(final_temporary_table_storage), std::move(temporary_table_columns));
+        recursive_cte_table->key_columns = union_node_typed.getRecursiveCTEKeyColumns();
+        recursive_cte_table->settled_holder = std::move(final_settled_table_holder);
+        recursive_cte_table->settled_storage = std::move(final_settled_table_storage);
     }
 
     size_t queries_nodes_size = queries_nodes.size();
@@ -8341,7 +8414,13 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         }
     }
 
-    if (recursive_cte_table && isStorageUsedInTree(recursive_cte_table->storage, union_node.get()))
+    /// With USING KEY, reading the accumulated state `<cte_name>_settled` from a recursive member
+    /// is a self-reference too, even if the working table itself is not read.
+    bool is_recursive_cte = recursive_cte_table
+        && (isStorageUsedInTree(recursive_cte_table->storage, union_node.get())
+            || (recursive_cte_table->settled_storage && isStorageUsedInTree(recursive_cte_table->settled_storage, union_node.get())));
+
+    if (is_recursive_cte)
     {
         if (union_node_typed.getUnionMode() != SelectUnionMode::UNION_ALL)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -8370,7 +8449,34 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             });
         }
 
+        /// With USING KEY, a produced row is propagated only when it differs from the accumulated row of its
+        /// key, and the comparison is `IColumn::compareAt`, which cannot establish equality for every type:
+        /// `ColumnAggregateFunction::compareAt` reports every pair of states as equal, so a row whose aggregate
+        /// state changed would be dropped and the recursion would stop early with a wrong result. Reject such
+        /// column types, including when nested in a container type or possible at run time in `Dynamic` or `JSON`.
+        if (!recursive_cte_table->key_columns.empty())
+        {
+            for (const auto & column : recursive_cte_table->columns)
+            {
+                if (!canCompareValuesForEquality(column.type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Column {} of recursive CTE {} with USING KEY has type {}, whose values cannot be compared for "
+                        "equality, so changes to them would not be detected. Keep a comparable value instead, "
+                        "for example the result of `finalizeAggregation`. In scope {}",
+                        column.name,
+                        union_node_typed.getCTEName(),
+                        column.type->getName(),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
+        }
+
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
+    }
+    else if (union_node_typed.hasRecursiveCTEKeyColumns())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "USING KEY is specified for CTE {} but the CTE is not recursive (it does not reference itself)",
+            union_node_typed.getCTEName());
     }
 }
 
