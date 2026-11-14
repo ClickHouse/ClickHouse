@@ -9,6 +9,7 @@
 #include <Core/ServerSettings.h>
 #include <Disks/DiskFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -182,7 +183,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
         /// loaded (on server startup and on short `ATTACH`), and only the first occurrence of each key counts
         /// for the checks, as it does for the disk.
         const bool is_repeated_key = !seen_keys.insert(key).second && !is_list_key(key);
-        if (is_repeated_key && !is_loading_from_existing_metadata && !stored_definition)
+        /// A `Replicated` database replays the definitions committed by other replicas, maybe by an older version.
+        if (is_repeated_key && !is_loading_from_existing_metadata && !stored_definition && !isSecondaryDDLReplay(context))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key `{}` is specified more than once in the disk configuration", key);
 
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
