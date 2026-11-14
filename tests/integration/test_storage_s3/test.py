@@ -91,10 +91,12 @@ def started_cluster():
         cluster.add_instance(
             "dummy_without_named_collections",
             with_minio=True,
+            stay_alive=True,
             main_configs=[
                 "configs/defaultS3.xml",
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
+                "configs/requester_pays.xml",
             ],
             user_configs=[
                 "configs/access.xml",
@@ -115,6 +117,7 @@ def started_cluster():
         cluster.add_instance(
             "s3_non_default",
             with_minio=True,
+            main_configs=["configs/forbid_request_payer.xml"],
             user_configs=["configs/allow_server_credentials.xml"],
         )
         cluster.add_instance(
@@ -1001,6 +1004,7 @@ def run_s3_mocks(started_cluster):
             ("echo.py", "resolver", "8082"),
             ("no_list_objects.py", "resolver", "8083"),
             ("gcs_transcode_mock.py", "resolver", "8084"),
+            ("requester_pays.py", "resolver", "8085"),
         ],
     )
 
@@ -1075,6 +1079,110 @@ def test_custom_auth_headers_exclusion(started_cluster):
 
     assert ei.value.returncode == 243
     assert "HTTP response code: 403" in ei.value.stderr
+
+
+def test_request_payer(started_cluster):
+    # The mock on port 8085 refuses every request without a signed `x-amz-request-payer: requester`.
+    node = started_cluster.instances["dummy_without_named_collections"]
+    base = f"http://resolver:8085/{started_cluster.minio_bucket}"
+    keys = f"'minio', '{minio_secret_key}'"
+    payer = {"s3_request_payer": "requester"}
+
+    def denied(error):
+        # The mock's 403, with its `Access Denied` body or without a body (HEAD).
+        return "Access Denied" in error or "HTTP response code: 403" in error
+
+    def check(query, events, settings={}):
+        query_id = uuid.uuid4().hex
+        result = node.query(query, settings={**settings, **payer}, query_id=query_id)
+        assert denied(node.query_and_get_error(query, settings=settings)), query
+        node.query("SYSTEM FLUSH LOGS query_log")
+        sent = node.query(
+            "SELECT "
+            + ", ".join(f"ProfileEvents['{e}'] > 0" for e in events)
+            + f" FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        assert sent.split() == ["1"] * len(events), (query, sent)
+        return result
+
+    write = f"INSERT INTO FUNCTION s3('{base}/request_payer/a.csv', {keys}, 'CSV', 'x UInt64') SELECT number FROM numbers(1000)"
+    multipart = ["S3CreateMultipartUpload", "S3UploadPart", "S3CompleteMultipartUpload"]
+    check(
+        write,
+        multipart,
+        {"s3_max_single_part_upload_size": 0, "s3_truncate_on_insert": 1},
+    )
+    read = f"SELECT count() FROM s3('{base}/request_payer/a.csv', {keys}, 'CSV', 'x UInt64')"
+    assert check(read, ["S3HeadObject"]) == "1000\n"
+    glob = f"SELECT count() FROM s3('{base}/request_payer/*.csv', {keys}, 'CSV', 'x UInt64')"
+    assert check(glob, ["S3ListObjects"]) == "1000\n"
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        read, settings={"s3_request_payer": "owner"}
+    )
+
+    # The `request_payer` key of an endpoint section (without keys in the query and under the default restriction)
+    # and of a disk. Both take precedence over the setting, so `owner` must not reach them.
+    owner = {"s3_request_payer": "owner"}
+    endpoint = f"{base}/requester_pays_endpoint/b.csv"
+    disk = f"disk(type = s3, endpoint = '{base}/request_payer_disk/', access_key_id = 'minio', secret_access_key = '{minio_secret_key}'"
+    create = "CREATE TABLE t_request_payer_disk (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = "
+    assert denied(node.query_and_get_error(f"{create}{disk})"))
+    try:
+        node.query(
+            f"INSERT INTO FUNCTION s3('{endpoint}', 'CSV', 'x UInt64') SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert = 1",
+            settings=owner,
+        )
+        node.query(
+            f"CREATE TABLE t_request_payer ENGINE = S3('{endpoint}', 'CSV')",
+            settings=owner,
+        )
+        assert (
+            node.query("SELECT count() FROM t_request_payer", settings=owner) == "10\n"
+        )
+        node.query(f"{create}{disk}, request_payer = 'requester')", settings=owner)
+        node.query(
+            "INSERT INTO t_request_payer_disk SELECT number FROM numbers(100)",
+            settings=owner,
+        )
+        assert (
+            node.query("SELECT count() FROM t_request_payer_disk", settings=owner)
+            == "100\n"
+        )
+
+        # Both tables keep the header when they are loaded from their metadata at startup.
+        node.restart_clickhouse()
+        assert node.query("SELECT count() FROM t_request_payer") == "10\n"
+        assert node.query("SELECT count() FROM t_request_payer_disk") == "100\n"
+    finally:
+        node.query("DROP TABLE IF EXISTS t_request_payer")
+        node.query("DROP TABLE IF EXISTS t_request_payer_disk SYNC")
+
+    node.query(
+        "CREATE TABLE t_request_payer_src (x UInt64) ENGINE = MergeTree ORDER BY x AS SELECT number FROM numbers(100)"
+    )
+    backup = lambda: f"S3('{base}/request_payer_backup/{uuid.uuid4().hex}', {keys})"
+    assert denied(
+        node.query_and_get_error(f"BACKUP TABLE t_request_payer_src TO {backup()}")
+    )
+    destination = backup()
+    node.query(f"BACKUP TABLE t_request_payer_src TO {destination}", settings=payer)
+    node.query(
+        f"RESTORE TABLE t_request_payer_src AS t_request_payer_restored FROM {destination}",
+        settings=payer,
+    )
+    assert node.query("SELECT count() FROM t_request_payer_restored") == "100\n"
+    node.query("DROP TABLE t_request_payer_src SYNC")
+    node.query("DROP TABLE t_request_payer_restored SYNC")
+
+    # `<http_forbid_headers>` refuses the header before any request is sent.
+    other = started_cluster.instances["s3_non_default"]
+    other.query(
+        "CREATE TABLE IF NOT EXISTS t_request_payer_src (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    for query in [read, f"BACKUP TABLE t_request_payer_src TO {backup()}"]:
+        error = other.query_and_get_error(query, settings=payer)
+        assert 'HTTP header "x-amz-request-payer" is forbidden' in error, error
+    other.query("DROP TABLE t_request_payer_src SYNC")
 
 
 def test_infinite_redirect(started_cluster):

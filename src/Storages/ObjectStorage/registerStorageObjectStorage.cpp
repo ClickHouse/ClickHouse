@@ -688,6 +688,7 @@ The following settings can be specified in configuration file for given endpoint
 - `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Optional, default value is `false`.
 - `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
 - `no_sign_request` - Ignore all the credentials so requests are not signed. Useful for accessing public buckets.
+- `request_payer` - Set to `requester` to access a requester-pays bucket: every request to the given endpoint carries the header `x-amz-request-payer: requester`. Optional. Takes precedence over the [`s3_request_payer`](/reference/settings/session-settings/s3#s3_request_payer) setting.
 - `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
 - `access_header` - Adds specified HTTP header to a request to given endpoint, in cases where there are no other credentials from another source.
 - `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set. Optional.
