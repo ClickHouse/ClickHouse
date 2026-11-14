@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_STATE;
+    extern const int CANNOT_CONNECT_NATS;
 }
 
 INATSProducer::INATSProducer(NATSConnectionPtr connection_, String subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_)
@@ -84,7 +85,8 @@ void INATSProducer::publish()
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), getNATSLastError());
             if (!payloads.pushFront(payload))
-                throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
+                throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot publish to NATS subject {}: {}. Last error message: {}",
+                                subject, natsStatus_GetText(status), getNATSLastError());
             break;
         }
     }
@@ -119,7 +121,9 @@ void INATSProducer::startProducingTaskLoop()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Nothing pops `payloads` anymore, so `produce` must not wait for free space in it.
+        payloads.finish();
+        throw;
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
