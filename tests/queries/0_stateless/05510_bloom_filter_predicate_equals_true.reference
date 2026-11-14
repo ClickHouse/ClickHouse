@@ -1,0 +1,27 @@
+has	Granules: 1/2
+has = 1	Granules: 1/2
+has = true	Granules: 1/2
+has != 0	Granules: 1/2
+1 = has	Granules: 1/2
+hasAny = 1	Granules: 1/2
+equals	Granules: 1/2
+equals = 1	Granules: 1/2
+has = 0	
+has = 1	1
+has = 1	1
+has = true	1
+has = true	1
+has != 0	1
+has != 0	1
+hasAny = 1	1
+hasAny = 1	1
+equals = 1	1
+equals = 1	1
+has = 0	1
+has = 0	1
+absent = 1	0
+absent = 1	0
+not has = 1	1
+not has = 1	1
+has or = 1	2
+has or = 1	2
