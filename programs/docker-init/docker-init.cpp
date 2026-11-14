@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <csignal>
 #include <cstring>
 #include <filesystem>
@@ -686,6 +687,41 @@ bool pingServer(Poco::UInt16 port_number, [[maybe_unused]] bool secure)
     }
 }
 
+/// Whether the server on 127.0.0.1:`native_port` answers `SELECT 1` as `user`. It is polled while the server is starting,
+/// so any failure means "not ready yet".
+bool queryServer(const std::string & native_port, const std::string & user, const std::string & password)
+{
+    pid_t check_pid = fork();
+    if (check_pid < 0)
+        return false;
+    if (check_pid == 0)
+    {
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0)
+        {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        /// Keep args in a named variable so the strings outlive argv.
+        std::vector<std::string> check_args = {
+            g_clickhouse_binary, "client",
+            "--host", "127.0.0.1",
+            "--port", native_port,
+            "-u", user,
+            "--password", password,
+            "--query", "SELECT 1",
+        };
+        auto argv = buildArgv(check_args);
+        execvp(argv[0], argv.data());
+        _exit(127);
+    }
+
+    int check_status = 0;
+    while (waitpid(check_pid, &check_status, 0) < 0 && errno == EINTR) {}
+    return WIFEXITED(check_status) && WEXITSTATUS(check_status) == 0;
+}
+
 /// Returns false on first script failure (fail-fast, matches shell `set -e`).
 bool runInitScripts(const std::vector<std::string> & client_base)
 {
@@ -809,13 +845,16 @@ bool initClickHouseDB(
     if (native_port.empty())
         native_port = "9000";
 
-    /// The readiness check is `/ping` over HTTP, the same as in entrypoint.sh. It needs no credentials: the user
-    /// from the environment may be unable to log in, e.g. when a mounted `users.d` sets the password of `default`
-    /// and an init script passes that password itself.
+    /// The readiness check is `/ping` over HTTP (or HTTPS), the same as in entrypoint.sh. It needs no credentials:
+    /// the user from the environment may be unable to log in, e.g. when a mounted `users.d` sets the password
+    /// of `default` and an init script passes that password itself.
+    /// A configuration with only the native interface has nothing to ping, so then the check is `SELECT 1` over
+    /// the native interface with the user from the environment, which is also the user of the initialization.
     std::string ping_port = getOverriddenConfigValue(extra_server_args, "http_port");
     if (ping_port.empty())
         ping_port = extractConfigValue(config_file, "http_port");
     bool ping_secure = false;
+#if USE_SSL
     if (ping_port.empty())
     {
         ping_port = getOverriddenConfigValue(extra_server_args, "https_port");
@@ -823,33 +862,18 @@ bool initClickHouseDB(
             ping_port = extractConfigValue(config_file, "https_port");
         ping_secure = true;
     }
-    if (ping_port.empty())
-    {
-        std::cerr << "docker-init: error: neither `http_port` nor `https_port` is configured, "
-                     "so it cannot check whether the server for the initialization is ready\n";
-        return false;
-    }
-#if !USE_SSL
-    if (ping_secure)
-    {
-        std::cerr << "docker-init: error: only `https_port` is configured, but ClickHouse is built without SSL, "
-                     "so it cannot check whether the server for the initialization is ready\n";
-        return false;
-    }
 #endif
     Poco::UInt16 ping_port_number = 0;
-    try
+    if (!ping_port.empty())
     {
-        const unsigned long value = std::stoul(ping_port);
-        if (value == 0 || value > std::numeric_limits<Poco::UInt16>::max())
-            throw std::out_of_range(ping_port);
-        ping_port_number = static_cast<Poco::UInt16>(value);
-    }
-    catch (const std::exception &)
-    {
-        std::cerr << "docker-init: error: invalid " << (ping_secure ? "`https_port`" : "`http_port`")
-                  << " '" << ping_port << "'\n";
-        return false;
+        const char * ping_port_end = ping_port.data() + ping_port.size();
+        auto [ptr, error] = std::from_chars(ping_port.data(), ping_port_end, ping_port_number);
+        if (error != std::errc() || ptr != ping_port_end || ping_port_number == 0)
+        {
+            std::cerr << "docker-init: error: invalid " << (ping_secure ? "`https_port`" : "`http_port`")
+                      << " '" << ping_port << "'\n";
+            return false;
+        }
     }
 
     std::string run_as = std::to_string(run_uid) + ":" + std::to_string(run_gid);
@@ -924,7 +948,10 @@ bool initClickHouseDB(
 
     while (tries > 0 && !server_ready && !g_shutdown_requested)
     {
-        if (pingServer(ping_port_number, ping_secure))
+        const bool ready = ping_port_number != 0
+            ? pingServer(ping_port_number, ping_secure)
+            : queryServer(native_port, clickhouse_user, clickhouse_password);
+        if (ready)
         {
             server_ready = true;
         }
