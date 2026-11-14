@@ -118,6 +118,7 @@ protected:
 
     mutable StorageObjectStorageConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
+    mutable bool object_storage_is_readonly = false;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
     ASTPtr partition_by;

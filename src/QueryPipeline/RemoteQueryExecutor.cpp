@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/SelectQueryInfo.h>
@@ -1040,6 +1041,9 @@ void RemoteQueryExecutor::processProfileEventsPacket(Block block)
         ProfileEvents::subtractIncrements(block, ProfileEvents::SelectedBytes, selected_bytes);
     }
 
+    if (profile_events_callback)
+        profile_events_callback(block);
+
     /// Pass profile events from remote server to client
     if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
         if (!profile_queue->emplace(std::move(block)))
@@ -1372,6 +1376,10 @@ void RemoteQueryExecutor::sendExternalTables()
 
                     auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
 
+                    /// The receiver accepts only the default serialization, while a table that is not filled
+                    /// through the insert chain (a materialized CTE) keeps `Sparse` columns.
+                    builder->addSimpleTransform([](const SharedHeader & table_header) { return std::make_shared<MaterializingTransform>(table_header); });
+
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getSharedHeader(), limits));
 
@@ -1479,6 +1487,12 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
     LockAndBlocker guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
+}
+
+void RemoteQueryExecutor::setProfileEventsCallback(ProfileEventsCallback callback)
+{
+    LockAndBlocker guard(was_cancelled_mutex);
+    profile_events_callback = std::move(callback);
 }
 
 bool RemoteQueryExecutor::shouldSkipUnavailableShard() const

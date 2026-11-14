@@ -719,6 +719,9 @@ std::optional<UInt64> StorageObjectStorage::totalRowsInSnapshot(const StorageSna
     if (distributed_processing)
         return std::nullopt;
 
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     std::optional<DataLakeTableStateSnapshot> state;
     if (storage_snapshot && storage_snapshot->metadata)
         state = storage_snapshot->metadata->datalake_table_state;
@@ -737,6 +740,9 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         return std::nullopt;
 
     if (distributed_processing)
+        return std::nullopt;
+
+    if (query_context->totalsWithoutStorageAccess())
         return std::nullopt;
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
@@ -1096,21 +1102,26 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
-    auto paths = configuration->getPaths();
+    const auto paths = configuration->getPaths();
+    /// Unless the insert truncates, the probe below checks the first path, which is written when it is free.
+    auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
     {
-        paths.push_back({*new_key});
+        configuration->addPath({*new_key});
+        write_path = *new_key;
     }
-    configuration->setPaths(paths);
 
+    /// Another writer can take the same name between the probe above and the end of the upload.
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
+        write_path,
         object_storage,
         format_settings,
         sample_block,
         local_context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        /* format_filter_info */ nullptr,
+        /* fail_if_exists */ settings.create_new_file_on_insert && !settings.truncate_on_insert);
 }
 
 bool StorageObjectStorage::optimize(
@@ -1483,7 +1494,7 @@ Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
 }
 
 

@@ -10,9 +10,7 @@ doc_type: 'مرجع'
 
 تُستخدم هذه الإعدادات لتهيئة ClickHouse server، وقد أُنشئت تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 إعدادات العناقيد التي يستخدمها محرك الجدول [Distributed](/ar/reference/engines/table-engines/special/distributed) ودالة الجدول `cluster`.
 
@@ -30,9 +28,7 @@ doc_type: 'مرجع'
 * [اكتشاف العنقود](/ar/guides/oss/deployment-and-scaling/cluster-discovery)
 * [محرك قاعدة البيانات Replicated](/ar/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 قائمة بالمضيفات المسموح باستخدامها في محرّكات التخزين ودوال الجداول المرتبطة بـ URL.
 
@@ -44,11 +40,23 @@ doc_type: 'مرجع'
 * إذا كان المضيف محددًا على هيئة عنوان IP، فسيُتحقق منه كما هو محدد في URL. على سبيل المثال: `[2a02:6b8:a::a]`.
 * إذا كانت هناك عمليات إعادة توجيه وكان دعم إعادة التوجيه مفعّلًا، فسيُتحقق من كل عملية إعادة توجيه (حقل location).
 
+عند إضافة تعبير نمطي باستخدام وسم XML ‏`\<host_regexp\>`، يُستخدم محرك RE2 وتجب مطابقة اسم المضيف بالكامل. على سبيل المثال: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+عند إضافة حاوية S3 واحدة باستخدام وسم XML ‏`\<s3_bucket\>`، بالصيغة `host/bucket` أو `host:port/bucket`:
+
+* يفيد ذلك عندما تكون نقطة النهاية مشتركة بين جهات عديدة، مثل نقطة نهاية AWS ذات نمط المسار `s3.us-west-2.amazonaws.com`، إذ إن السماح بالمضيف بالكامل يعني السماح بكل الحاويات الموجودة عليه.
+* تُستخرج الحاوية من عنوان URL الخاص بـ S3 بعد تحليله، لذا يطابق الإدخال كلًّا من `https://s3.us-west-2.amazonaws.com/my-bucket/...` و`https://my-bucket.s3.us-west-2.amazonaws.com/...`.
+* ينطبق ذلك على عناوين URL الخاصة بـ S3 فقط: دوال الجداول والمحركات `s3`، ومحرك قاعدة البيانات `S3`، وعمليات `BACKUP`/`RESTORE` إلى `S3`، وأقراص S3 المُنشأة عبر SQL باستخدام الدالة `disk`.
+* يُتحقق من قرص S3 المُنشأ عبر SQL عند تنفيذ الاستعلام الذي يُنشئه. أما القرص الذي كان موجودًا قبل ضبط القائمة، أو الذي أُنشئ بإصدار لا يتضمن هذا الفحص، فيستمر تحميله عند بدء تشغيل الخادم، بما في ذلك الجدول الذي حُذف ولم يُمحَ نهائيًا بعد، ولذلك يظل `UNDROP TABLE` يعمل؛ ويُبلغ الخادم عن ذلك في السجل وفي `system.warnings`.
+* تُطابَق عملية إعادة التوجيه الدائمة (301) التي تُرجعها S3 مع إدخالات الحاويات أيضًا، أما عملية إعادة التوجيه المؤقتة (307) فيُتحقق منها بحسب المضيف فقط، ولذلك تُرفض إذا كانت القائمة لا تحتوي إلا على إدخالات `\<s3_bucket\>`.
+
 على سبيل المثال:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 
