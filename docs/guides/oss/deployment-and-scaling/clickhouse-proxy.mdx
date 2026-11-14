@@ -248,9 +248,14 @@ request body, so the proxy classifies them together. When the `query` parameter 
 type by itself (an `INSERT` does, so its data is relayed without waiting for it), the proxy reads the
 beginning of the body (the chunks of a chunked body as long as they are needed, up to 64 KiB in total),
 and routes the request as soon as the bytes received so far establish the type.
+For a URL path with a table, such as `/db/table.CSV`, the type is that of the query the server generates:
+a `PUT` without a `query` parameter is an upload, which is an `insert` (its body is data, not a query),
+and a request without a query and a body is a `select`.
 The query is tokenized with the server's lexer, so comments are recognized as the server recognizes them.
-A `WITH` query is a `select` or an `insert` by the first `SELECT` or `INSERT` outside of brackets (it has
-no query type when that keyword may be a name in the `WITH` clause instead, such as an alias after `AS`), and
+A `WITH` query is parsed with the server's grammar, as `select` and `insert` may also be names in the
+`WITH` clause: it is a `select` or an `insert` as the server parses it, and it has no query type when the
+server would not parse it, or when its text is not read completely, unless the inspected beginning already
+reaches the inline data of an `INSERT`. Other read queries are recognized by their first keyword, and
 a read query combined with other statements by `PARALLEL WITH` is `other`; as a read query may be
 followed by such statements, a read query whose text is not read completely has no query type. A body that is compressed
 (`Content-Encoding`, or the `decompress` URL parameter) is not inspected, so unless the `query`

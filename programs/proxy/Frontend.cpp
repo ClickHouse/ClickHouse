@@ -5,7 +5,14 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <Core/Defines.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -28,6 +35,43 @@ namespace ErrorCodes
 
 namespace DB::Proxy
 {
+
+namespace
+{
+
+/// A `WITH` clause may introduce a `SELECT` or an `INSERT`, and `select` and `insert` may also be names within it
+/// (`WITH 1 AS select, 1 + select AS x INSERT ...`), so the type of such a query is determined with the server's grammar.
+String classifyWithQuery(std::string_view query, bool is_prefix)
+{
+    const char * begin = query.data();
+    const char * end = query.data() + query.size();
+    ParserQuery parser(end);
+    String error;
+    ASTPtr ast = tryParseQuery(parser, begin, end, error, /*hilite=*/ false, "query", /*allow_multi_statements=*/ false,
+        /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/ true);
+
+    /// A query that the server would not parse, or a prefix that does not parse yet, has no known type.
+    if (!ast)
+        return "";
+
+    if (const auto * insert = ast->as<ASTInsertQuery>())
+    {
+        /// Once the parser reached the inline data of an `INSERT`, the rest of a prefix cannot change the statement.
+        if (is_prefix && !insert->data)
+            return "";
+        return "insert";
+    }
+
+    /// The rest of a prefix may still turn the query into a write.
+    if (is_prefix)
+        return "";
+
+    if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectIntersectExceptQuery>())
+        return "select";
+    return "other";
+}
+
+}
 
 String classifyQuery(std::string_view query, bool is_prefix)
 {
@@ -63,18 +107,17 @@ String classifyQuery(std::string_view query, bool is_prefix)
     if (is_keyword(first, "insert"))
         return "insert";
 
-    const bool is_with = is_keyword(first, "with");
-    if (!is_with && !is_keyword(first, "select") && !is_keyword(first, "show") && !is_keyword(first, "describe")
+    if (is_keyword(first, "with"))
+        return classifyWithQuery(query, is_prefix);
+
+    if (!is_keyword(first, "select") && !is_keyword(first, "show") && !is_keyword(first, "describe")
         && !is_keyword(first, "desc") && !is_keyword(first, "explain") && !is_keyword(first, "exists"))
         return "other";
 
-    /// A read query is not established by its first keyword alone: a `WITH` clause may introduce an `INSERT`,
-    /// and a read statement may be combined with a write into `statement1 PARALLEL WITH statement2`.
-    /// Look at the rest of the query outside of brackets.
-    String result = is_with ? "" : "select";
+    /// A read query is not established by its first keyword alone: a read statement may be combined with a write
+    /// into `statement1 PARALLEL WITH statement2`. Look at the rest of the query outside of brackets.
     size_t depth = 0;
     bool after_parallel = false;
-    Token previous = first;
     while (true)
     {
         const Token token = next_significant();
@@ -91,37 +134,17 @@ String classifyQuery(std::string_view query, bool is_prefix)
             if (depth > 0)
                 --depth;
         }
-        else if (depth == 0 && token.type == TokenType::BareWord)
+        else if (depth == 0 && after_parallel && is_keyword(token, "with"))
         {
-            if (after_parallel && is_keyword(token, "with"))
-                return "other";
-            if (result.empty() && (is_keyword(token, "insert") || is_keyword(token, "select")))
-            {
-                /// Within the `WITH` clause, `select` and `insert` may also be bare names: an alias after `AS`
-                /// (`WITH 1 AS select INSERT ...`), or a name before it (`WITH select AS (...) ...`).
-                /// Without the grammar of the clause, such a query has no known type.
-                if (previous.type == TokenType::Comma || is_keyword(previous, "as") || is_keyword(previous, "with"))
-                    return "";
-                Lexer lookahead = lexer;
-                Token next = lookahead.nextToken();
-                while (!next.isSignificant())
-                    next = lookahead.nextToken();
-                if (is_cut(next) || is_keyword(next, "as"))
-                    return "";
-
-                if (is_keyword(token, "insert"))
-                    return "insert";
-                result = "select";
-            }
+            return "other";
         }
         after_parallel = parallel;
-        previous = token;
     }
 
     /// The rest of a prefix may still turn the query into a write.
     if (is_prefix)
         return "";
-    return result.empty() ? "other" : result;
+    return "select";
 }
 
 FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, bool encrypt)

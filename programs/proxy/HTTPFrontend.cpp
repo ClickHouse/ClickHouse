@@ -408,14 +408,18 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     /// (the legacy query endpoints `/` and `/query` are not parsed). A database in both the path and
     /// a parameter or header must be the same, or the server rejects the request, so the proxy rejects it
     /// too, instead of routing it (and running first-seen hooks) by a database the request will not use.
-    String path_database;
+    /// As in `DynamicQueryHandler::allowMutatingIdempotentMethods`, a `PUT` without a `query` parameter is an upload
+    /// to the table of the path, for which the server generates the query `INSERT INTO table FORMAT format`.
+    const bool is_path_table_upload = method == "PUT" && !param_query && !multipart_form_data;
+    HTTPPathInfo path_info;
     {
         const String raw_path = target.substr(0, target.find('?'));
         if (!raw_path.empty() && raw_path != "/" && raw_path != "/query")
         {
             try
             {
-                path_database = parseHTTPPath(raw_path, /*allow_database=*/ true, /*allow_table=*/ true, /*allow_filters=*/ true).database;
+                path_info = parseHTTPPath(raw_path, /*allow_database=*/ true, /*allow_table=*/ true, /*allow_filters=*/ true,
+                    /*allow_table_after_database=*/ is_path_table_upload);
             }
             catch (...)  // NOLINT(bugprone-empty-catch)
             {
@@ -424,6 +428,7 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
             }
         }
     }
+    const String & path_database = path_info.database;
     String database_conflict;
     if (!path_database.empty())
     {
@@ -439,7 +444,20 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     /// With `multipart/form-data`, the query is concatenated from all the `query` parameters of the URL
     /// and of the form, so it is not classified.
     const bool has_body = body_framing.chunked || body_framing.content_length.value_or(0) > 0;
-    if (ctx.router.needsQueryType(ListenerProtocol::HTTP) && !multipart_form_data && (param_query || has_body))
+    if (ctx.router.needsQueryType(ListenerProtocol::HTTP) && !path_info.table.empty() && is_path_table_upload)
+    {
+        /// The body is the data of the generated `INSERT`, not a query. With filters or without a body, the server
+        /// rejects the upload. The format is not checked: the proxy does not register the formats of the server,
+        /// so the format stays a part of the table name, and the server rejects an upload with an unknown format.
+        if (path_info.path_filters.empty() && has_body)
+            attributes.query_type = "insert";
+    }
+    else if (ctx.router.needsQueryType(ListenerProtocol::HTTP) && !path_info.table.empty() && (!param_query || param_query->empty()) && !has_body)
+    {
+        /// Without a query and a body, the server generates the query `SELECT * FROM table` for the table of the path.
+        attributes.query_type = "select";
+    }
+    else if (ctx.router.needsQueryType(ListenerProtocol::HTTP) && !multipart_form_data && (param_query || has_body))
     {
         String query_head;
         if (param_query && !param_query->empty())

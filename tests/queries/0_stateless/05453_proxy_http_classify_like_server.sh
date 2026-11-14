@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The proxy must classify the query and extract the routing attributes of an HTTP request the way the server does:
 # - comments are recognized by the server's lexer (nested, `//`, `#`), also when an opener is split between chunks;
-# - a `WITH` query may be an `INSERT`, and a read query combined with `PARALLEL WITH` is not a read;
+# - a `WITH` query may be an `INSERT` (determined with the server's grammar), and a read query combined with `PARALLEL WITH` is not a read;
 # - the database may come from the URL path or from an RFC 2047 encoded header.
 # Every request prints the HTTP status: the live server answers a request routed to the `ch` pool, a request routed
 # to the `dead` pool gets 502, and a request matching no rule gets 503 (the listener has no default pool).
@@ -120,8 +120,19 @@ echo "writes"
 status --data-binary 'WITH y AS (SELECT 1) INSERT INTO t_nonexistent SELECT * FROM y' "$URL"
 status --data-binary 'SELECT 1 PARALLEL WITH INSERT INTO t_nonexistent VALUES (1)' "$URL"
 status --data-binary 'WITH 1 AS y SELECT y' "$URL"
-# `select` is an alias here, not the statement: the query has no known type and matches no rule.
+# A `WITH` query is classified with the server's grammar: `select` and `insert` may be names in the `WITH` clause.
 status --data-binary 'WITH 1 AS select INSERT INTO t_nonexistent SELECT 1' "$URL"
+# shellcheck disable=SC2016
+status --data-binary 'WITH 1 AS `select`, 1 + select + 1 AS x INSERT INTO t_nonexistent SELECT x' "$URL"
+status --data-binary 'WITH 1 AS insert SELECT insert' "$URL"
+# A `WITH` query that the server cannot parse has no known type and matches no rule.
+status --data-binary 'WITH 1 AS y INSERT' "$URL"
+
+echo "path"
+# The type of a request with a table in the path is that of the query the server generates for it.
+# An upload is an `insert`, even if its data looks like a query.
+status -X PUT --data-binary $'SELECT 1\n' "${URL}default/t_nonexistent.CSV"
+status "${URL}system/one.TSV"
 
 echo "database"
 status "${URL}${CLICKHOUSE_DATABASE}/t_path"
