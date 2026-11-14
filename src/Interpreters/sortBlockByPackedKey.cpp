@@ -202,7 +202,8 @@ int strictOrder(const IColumn & column, size_t rows)
     return order;
 }
 
-/// Whether the values never decrease through the block, or never increase for a descending column.
+/// Whether the values never decrease through the block, or never increase for a descending column. The rows are
+/// compared in groups without an early exit inside a group, so that the comparisons are vectorized.
 bool inSortOrder(const IColumn & column, size_t rows, bool descending)
 {
     const char * data = column.getRawData().data();
@@ -210,14 +211,27 @@ bool inSortOrder(const IColumn & column, size_t rows, bool descending)
     callWithPackableOrderedBits(column, [&](auto get_bits)
     {
         using GetBits = decltype(get_bits);
-        size_t i = 1;
+        auto ordered = [&](auto out_of_order)
+        {
+            constexpr size_t group = 64;
+            size_t i = 1;
+            for (; i + group <= rows; i += group)
+            {
+                UInt8 any_out_of_order = 0;
+                for (size_t j = i; j < i + group; ++j)
+                    any_out_of_order |= static_cast<UInt8>(out_of_order(valueAt<GetBits>(data, j - 1), valueAt<GetBits>(data, j)));
+                if (any_out_of_order)
+                    return false;
+            }
+            for (; i < rows; ++i)
+                if (out_of_order(valueAt<GetBits>(data, i - 1), valueAt<GetBits>(data, i)))
+                    return false;
+            return true;
+        };
         if (descending)
-            while (i < rows && !(valueAt<GetBits>(data, i - 1) < valueAt<GetBits>(data, i)))
-                ++i;
+            in_order = ordered([](auto prev, auto value) { return prev < value; });
         else
-            while (i < rows && !(valueAt<GetBits>(data, i) < valueAt<GetBits>(data, i - 1)))
-                ++i;
-        in_order = i == rows;
+            in_order = ordered([](auto prev, auto value) { return value < prev; });
     });
     return in_order;
 }
@@ -634,7 +648,16 @@ void sortByPackedKey(
 
     const bool try_presorted = !stable;
     const size_t index_bits = std::bit_width(rows - 1);
-    if (total_bits + index_bits <= 32)
+    /// A key of one or two bytes takes one or two passes with the row numbers aside, instead of four with them.
+    if (total_bits <= 8)
+    {
+        sortKeysWithIndices<UInt8>(keys, rows, try_presorted, need_equal_ranges, permutation, equal_ranges);
+    }
+    else if (total_bits <= 16)
+    {
+        sortKeysWithIndices<UInt16>(keys, rows, try_presorted, need_equal_ranges, permutation, equal_ranges);
+    }
+    else if (total_bits + index_bits <= 32)
     {
         PaddedPODArray<UInt32> narrow_keys(rows);
         for (size_t i = 0; i < rows; ++i)
@@ -774,7 +797,11 @@ size_t trySortByPackedKey(
             break;
     }
 
-    if (packed_columns.empty() || columnSortIsCheaper(packed_columns, rows, total_bits, index_bits))
+    /// The column sort would still go through an ordered last column within every range of rows equal on the packed
+    /// ones, while sorting the packed key leaves it in order: a key of up to 32 bits is then worth sorting alone.
+    const bool sort_before_ordered_column = last_column_in_order && total_bits <= 32;
+
+    if (packed_columns.empty() || (!sort_before_ordered_column && columnSortIsCheaper(packed_columns, rows, total_bits, index_bits)))
         return 0;
 
     /// The following columns are sorted within the ranges of rows equal on the packed ones.
@@ -793,7 +820,7 @@ size_t trySortByPackedKey(
 
     /// A single column is worth packing only if its key is much narrower than its values. Every packed column is
     /// therefore narrower than 64 bits, so that appending it never shifts the key by 64.
-    if (packed_columns.size() == 1 && packed_columns[0].bits > packed_columns[0].value_bits / 2)
+    if (packed_columns.size() == 1 && packed_columns[0].bits > packed_columns[0].value_bits / 2 && !sort_before_ordered_column)
         return 0;
 
     sortByPackedKey(packed_columns, ranks, total_bits, rows, stable || last_column_in_order, need_equal_ranges, permutation, equal_ranges);
