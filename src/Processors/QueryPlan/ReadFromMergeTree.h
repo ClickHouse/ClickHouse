@@ -593,6 +593,9 @@ public:
     /// Compose statistics over the part set of the given partition/PK analysis result
     /// instead of all prepared parts. Passing nullptr falls back to getParts().
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
+    /// See `estimateDistinctValuesFromMetadata` in `MergeTreeDistinctValuesFromMetadata.h`: over the parts of
+    /// `analyzed_result`, or all parts of the read without it.
+    std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(const Names & column_names, const AnalysisResultPtr & analyzed_result) const;
 
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorForPrewhere(
         const Names & required_columns, const ActionsDAG::Node * predicate) const;

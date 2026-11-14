@@ -217,6 +217,7 @@ private:
             TUInt relation_bit = 0;
             std::optional<UInt64> ndv;
             UInt64 ndv_upper_bound = 0;
+            bool ndv_from_metadata = false;
         };
         VectorWithMemoryTracking<VectorWithMemoryTracking<EquivMember>> equiv_classes; /// members of each distinct equivalence class
         VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
@@ -428,7 +429,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 if (!relation || *relation >= num_relations)
                     continue;
                 auto ndv = getColumnStats(query_graph, dp_table, sources, equiv_member.getColumnName());
-                members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound});
+                members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound, ndv.from_metadata});
                 relations |= members.back().relation_bit;
                 columns.push_back(equiv_member);
             }
@@ -1058,8 +1059,7 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            UInt64 max_ndv = 0;
-            UInt64 max_ndv_upper_bound = 0;
+            KeyDistinctValues key_distinct_values;
             bool has_left = false;
             bool has_right = false;
             for (const auto & equiv_member : dpsub_data.equiv_classes[class_idx])
@@ -1070,11 +1070,10 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                     has_right = true;
                 else
                     continue;
-                max_ndv = std::max(max_ndv, equiv_member.ndv.value_or(0));
-                max_ndv_upper_bound = std::max(max_ndv_upper_bound, equiv_member.ndv_upper_bound);
+                key_distinct_values.add(equiv_member.ndv, equiv_member.ndv_upper_bound, equiv_member.ndv_from_metadata);
             }
             if (has_left && has_right)
-                applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+                applyEquiKeyDistinctValues(estimate, key_distinct_values);
         }
     }
 
