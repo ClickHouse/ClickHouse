@@ -1,0 +1,66 @@
+types/all_trino_types
+id	Nullable(Int64)
+boolean_col	Nullable(Bool)
+integer_col	Nullable(Int32)
+long_col	Nullable(Int64)
+float_col	Nullable(Float32)
+double_col	Nullable(Float64)
+decimal_col	Nullable(Decimal(18, 5))
+date_col	Nullable(Date32)
+time_col	Nullable(Int64)
+timestamp_col	Nullable(DateTime64(6))
+timestamptz_col	Nullable(DateTime64(6, \'UTC\'))
+string_col	Nullable(String)
+uuid_col	Nullable(UUID)
+binary_col	Nullable(String)
+list_col	Array(Nullable(Float64))
+1	true	42	9223372036854775807	3.14	2.718281828459045	123456.78901	2025-04-05	45296123456	2025-04-05 12:34:56.123456	2025-04-05 12:34:56.123456	Hello Iceberg	550e8400-e29b-41d4-a716-446655440000	[1.1,2.2,3.3]	DEADBEEF
+types/all_spark_types
+col0	Nullable(Bool)
+col1	Nullable(Int32)
+col2	Nullable(Int64)
+col3	Nullable(Float32)
+col4	Nullable(Float64)
+col5	Nullable(Decimal(10, 2))
+col6	Nullable(String)
+col7	Nullable(String)
+col8	Nullable(Date32)
+col9	Nullable(DateTime64(6, \'UTC\'))
+col10	Nullable(DateTime64(6))
+col11	Array(Nullable(String))
+true	2147483647	9223372036854775807	3.4028235e38	1.7976931348623157e308	12345.67	example	spark	2023-10-10	2023-10-10 12:34:56.000000	2023-10-10 12:34:56.000000	['item1','item2']
+types/decimals
+col0	Nullable(Decimal(6, 3))
+col1	Nullable(Decimal(16, 10))
+col2	Nullable(Decimal(19, 11))
+col3	Nullable(Decimal(20, 11))
+col4	Nullable(Decimal(21, 11))
+col5	Nullable(Decimal(22, 11))
+col6	Nullable(Decimal(23, 11))
+col7	Nullable(Decimal(24, 11))
+col8	Nullable(Decimal(25, 11))
+col9	Nullable(Decimal(26, 11))
+125.697	128325.0941237697	42128325.09412377328	142128325.09412378073	2142128325.09412384033	32142128325.09412384033	321421283265.09411621094	3214216283265.09423828125	32142162813265.09375	321421622813265.125
+types/unsupported_types
+col0	Map(String, Nullable(Int32))
+col1	Tuple(\n    nested_int Nullable(Int32),\n    nested_string Nullable(String))
+{'key1':1,'key2':2}	(42,'nested_value')
+streams/default_value
+id	Nullable(Int64)
+boolean_col	Nullable(Bool)
+integer_col	Nullable(Int32)
+long_col	Nullable(Int64)
+float_col	Nullable(Float32)
+double_col	Nullable(Float64)
+decimal_col	Nullable(Decimal(10, 2))
+string_col	Nullable(String)
+binary_col	Nullable(String)
+date_col	Nullable(Date32)
+timestamp_col	Nullable(DateTime64(6))
+timestamptz_col	Nullable(DateTime64(6, \'UTC\'))
+array_col	Array(Nullable(String))
+1	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	[]	\N
+2	true	2147483647	9223372036854775807	3.4028235e38	1.7976931348623157e308	12345.67	example	2023-10-10	2023-10-10 12:34:56.000000	2023-10-10 12:34:56.000000	['item1','item2']	737061726B
+streams/default_value with initial-default
+1	true	17	9	3.5	6.21	3.14	default	1972-11-05	2012-11-01 00:10:50.051000	2017-11-16 22:31:08.123456	['b','fwl']	B5B5B5B5B5
+2	true	2147483647	9223372036854775807	3.4028235e38	1.7976931348623157e308	12345.67	example	2023-10-10	2023-10-10 12:34:56.000000	2023-10-10 12:34:56.000000	['item1','item2']	737061726B
