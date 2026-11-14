@@ -3,7 +3,8 @@
 # no-fasttest: pyarrow is not available in fasttest builds
 # Schema inference reads an Arrow column of the `null` type as `Nullable(Nothing)`: alone, next to other columns,
 # inside a list or a union, and in every `schema_inference_make_columns_nullable` mode. When
-# `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` skips every column, the error says so.
+# `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` skips every column, the error explains the
+# empty schema.
 # `data_arrow/unknown_type.arrows` is a schema-only stream whose single field `i` has a type id (99) that no Arrow
 # version defines (a `large_utf8` field with the `Field.type_type` byte patched), because the reader maps every
 # type that `pyarrow` can write.
@@ -57,4 +58,4 @@ echo "--- every column skipped"
 ${CLICKHOUSE_LOCAL} --query "
     DESC file('${CUR_DIR}/data_arrow/unknown_type.arrows', ArrowStream)
     SETTINGS input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 1" 2>&1 \
-    | grep -o "skipped all of them" | head -1
+    | grep -o "may have skipped all of them" | head -1
