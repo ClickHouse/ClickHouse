@@ -11,6 +11,10 @@
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
+#include <cmath>
+#include <limits>
+#include <optional>
+#include <random>
 #include <ranges>
 
 namespace CurrentMetrics
@@ -291,6 +295,33 @@ void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat
     iterateImpl(queue.begin(), func, stat, lock);
 }
 
+namespace
+{
+
+/// The summary of the file segment of `entry`, or `nullopt` if the segment is gone or empty.
+std::optional<FileSegmentSummaryInfo> tryGetSummaryInfo(const IFileCachePriority::Entry & entry, QueueEntryType queue_entry_type)
+{
+    auto key_metadata = entry.key_metadata.lock();
+    if (!key_metadata)
+        return std::nullopt;
+
+    auto locked_key = key_metadata->tryLock();
+    if (!locked_key)
+        return std::nullopt;
+
+    auto file_segment_metadata = locked_key->tryGetByOffset(entry.offset);
+    if (!file_segment_metadata)
+        return std::nullopt;
+
+    auto info = FileSegment::getSummaryInfo(file_segment_metadata->file_segment, queue_entry_type);
+    if (info.size == 0)
+        return std::nullopt;
+
+    return info;
+}
+
+}
+
 FileSegmentSummaryInfos LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
@@ -299,8 +330,11 @@ FileSegmentSummaryInfos LRUFileCachePriority::iterate(
     QueueEntryType queue_entry_type)
 {
     assertNotSealed("iterate");
-    FileSegmentSummaryInfos result;
     auto lock = getPriorityGuard().readLock();
+    if (query_order == IterationOrder::RANDOM)
+        return sample(query_max_elements, start_priority_rank, queue_entry_type, lock);
+
+    FileSegmentSummaryInfos result;
     iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, queue_entry_type, result, lock);
     return result;
 }
@@ -328,30 +362,18 @@ void LRUFileCachePriority::iterate(
         if (!isObservable(entry->getState()) || entry->size.load() == 0)
             return true;
 
-        auto key_metadata = entry->key_metadata.lock();
-        if (!key_metadata)
-            return true;
-
-        auto locked_key = key_metadata->tryLock();
-        if (!locked_key)
-            return true;
-
-        auto file_segment_metadata = locked_key->tryGetByOffset(entry->offset);
-        if (!file_segment_metadata)
-            return true;
-
-        auto info = FileSegment::getSummaryInfo(file_segment_metadata->file_segment, queue_entry_type);
-        if (info.size == 0)
+        auto info = tryGetSummaryInfo(*entry, queue_entry_type);
+        if (!info)
             return true;
 
         /// don't add an entry which would push over the limit
-        if (info.size > query_max_total_size - result.total_size)
+        if (info->size > query_max_total_size - result.total_size)
             return false;
 
         /// cache size so we don't need to calculate it once again
-        result.total_size += info.size;
-        info.priority_rank = next_priority_rank++;
-        result.infos.push_back(std::move(info));
+        result.total_size += info->size;
+        info->priority_rank = next_priority_rank++;
+        result.infos.push_back(std::move(*info));
 
         /// We should stop when size becomes query_max_elements
         return result.infos.size() < query_max_elements;
@@ -369,10 +391,81 @@ void LRUFileCachePriority::iterate(
         }
     };
 
+    chassert(query_order != IterationOrder::RANDOM);
     if (query_order == IterationOrder::COLDEST)
         add_entries(queue);
     else
         add_entries(queue | std::views::reverse);
+}
+
+FileSegmentSummaryInfos LRUFileCachePriority::sample(
+    UInt64 query_max_elements,
+    UInt64 start_priority_rank,
+    QueueEntryType queue_entry_type,
+    const CachePriorityGuard::ReadLock &)
+{
+    FileSegmentSummaryInfos result;
+    if (query_max_elements == 0)
+        return result;
+    result.infos.reserve(std::min<UInt64>(query_max_elements, queue.size()));
+
+    pcg64 rng(randomSeed());
+    /// A uniformly distributed random number in (0, 1), so that its logarithm is finite.
+    auto random_unit = [&] { return (static_cast<double>(rng() >> 11) + 0.5) / 9007199254740992.0; };
+
+    /// Algorithm L: once the reservoir is full, the number of segments to skip before the next one to put into it
+    /// has the geometric distribution with the probability `w` of success, and `w` decreases after each pick.
+    const double k = static_cast<double>(query_max_elements);
+    double w = std::exp(std::log(random_unit()) / k);
+    auto next_pick_after = [&](UInt64 index) -> UInt64
+    {
+        /// `skip` is huge or infinite when `w` is tiny: saturate instead of overflowing.
+        const double skip = std::floor(std::log(random_unit()) / std::log1p(-w));
+        constexpr UInt64 max_index = std::numeric_limits<UInt64>::max();
+        if (!(skip < 0x1p63))
+            return max_index;
+        const auto skip_count = static_cast<UInt64>(skip);
+        return skip_count > max_index - index ? max_index : index + skip_count;
+    };
+
+    /// The index of the next segment to put into the full reservoir.
+    UInt64 next_pick = next_pick_after(query_max_elements);
+    /// The number of observable segments seen so far.
+    UInt64 population = 0;
+    for (const auto & entry : queue)
+    {
+        /// Check the state without the key lock first, as an optimization.
+        if (!isObservable(entry->getState()) || entry->size.load() == 0)
+            continue;
+
+        /// Only the segments which go into the reservoir take the key lock.
+        if (population >= query_max_elements && population != next_pick)
+        {
+            ++population;
+            continue;
+        }
+
+        auto info = tryGetSummaryInfo(*entry, queue_entry_type);
+        /// The segment is gone: do not count it, as if it was not in the queue. If it was picked, the next one is picked instead.
+        if (!info)
+            continue;
+
+        info->priority_rank = start_priority_rank + population;
+        if (population < query_max_elements)
+        {
+            result.infos.push_back(std::move(*info));
+        }
+        else
+        {
+            result.infos[std::uniform_int_distribution<UInt64>(0, query_max_elements - 1)(rng)] = std::move(*info);
+            w *= std::exp(std::log(random_unit()) / k);
+            next_pick = next_pick_after(population + 1);
+        }
+        ++population;
+    }
+
+    result.population = population;
+    return result;
 }
 
 size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)

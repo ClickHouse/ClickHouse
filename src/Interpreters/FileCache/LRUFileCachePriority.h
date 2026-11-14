@@ -271,6 +271,16 @@ private:
         FileSegmentSummaryInfos & result,
         const CachePriorityGuard::ReadLock &);
 
+    /// A uniformly random sample of at most `query_max_elements` file segments of this queue (Algorithm L).
+    /// `priority_rank` of a segment is its position among the observable segments of the queue, coldest first,
+    /// starting from `start_priority_rank`. `population` of the result is the number of those segments.
+    /// The segments are not in any particular order.
+    FileSegmentSummaryInfos sample(
+        UInt64 query_max_elements,
+        UInt64 start_priority_rank,
+        QueueEntryType queue_entry_type,
+        const CachePriorityGuard::ReadLock &);
+
     LRUQueue::iterator iterateImpl(
         LRUQueue::iterator start_pos,
         IterateFunc func,

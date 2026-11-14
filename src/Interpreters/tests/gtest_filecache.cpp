@@ -4644,6 +4644,50 @@ try
         }
     };
 
+    /// Checks a `RANDOM` sample: at most `query_max_elements` segments within `query_max_total_size`, sorted by rank,
+    /// where the rank of a segment is its position in `coldest`.
+    auto assert_random_sample
+        = [&](FileCache & cache, UInt64 query_max_elements, UInt64 query_max_total_size, const std::vector<ExpectedSegment> & coldest)
+    {
+        const auto infos = cache.observeFilesystemCache(query_max_elements, query_max_total_size, Order::RANDOM);
+        ASSERT_LE(infos.size(), query_max_elements);
+        UInt64 total_size = 0;
+        for (size_t i = 0; i < infos.size(); ++i)
+        {
+            const auto & info = infos[i];
+            ASSERT_GE(info.priority_rank, 1);
+            ASSERT_LE(info.priority_rank, coldest.size());
+            if (i > 0)
+                ASSERT_LT(infos[i - 1].priority_rank, info.priority_rank);
+            const auto & segment = coldest[info.priority_rank - 1];
+            ASSERT_EQ(info.key, segment.key.toString());
+            ASSERT_EQ(info.offset, segment.range.left);
+            ASSERT_EQ(info.size, segment.range.size());
+            if (segment.queue)
+                ASSERT_EQ(info.queue_entry_type, toString(*segment.queue));
+            total_size += info.size;
+        }
+        ASSERT_LE(total_size, query_max_total_size);
+    };
+
+    /// Every segment is in a `RANDOM` sample of `query_max_elements` segments with the probability `query_max_elements / coldest.size()`.
+    auto assert_uniform = [&](FileCache & cache, UInt64 query_max_elements, const std::vector<ExpectedSegment> & coldest)
+    {
+        constexpr size_t trials = 2000;
+        std::vector<size_t> hits(coldest.size());
+        for (size_t trial = 0; trial < trials; ++trial)
+        {
+            const auto infos = cache.observeFilesystemCache(query_max_elements, 100, Order::RANDOM);
+            ASSERT_EQ(infos.size(), query_max_elements);
+            for (const auto & info : infos)
+                ++hits[info.priority_rank - 1];
+        }
+        /// The standard deviation of a count is at most `sqrt(trials) / 2`, about 22: the tolerance is about 7 of them.
+        const double expected = static_cast<double>(trials * query_max_elements) / static_cast<double>(coldest.size());
+        for (size_t i = 0; i < hits.size(); ++i)
+            ASSERT_NEAR(static_cast<double>(hits[i]), expected, 150) << "segment with rank " << i + 1;
+    };
+
     /// LRU
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), make_settings("observe_lru", FileCachePolicy::LRU, false));
@@ -4676,6 +4720,19 @@ try
         /// Whichever limit is reached first stops the walk.
         assert_observed(cache.observeFilesystemCache(1, 100, Order::HOTTEST), {third});
         assert_observed(cache.observeFilesystemCache(2, 5, Order::COLDEST), {first});
+
+        /// A sample of everything is the whole queue, sorted coldest first.
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::RANDOM), {first, second, third});
+        assert_observed(cache.observeFilesystemCache(10, 0, Order::RANDOM), {});
+        for (size_t i = 0; i < 100; ++i)
+        {
+            assert_random_sample(cache, 2, 100, {first, second, third});
+            /// Only `first` or `second` alone fits.
+            assert_random_sample(cache, 10, 9, {first, second, third});
+            assert_random_sample(cache, 10, 10, {first, second, third});
+        }
+        assert_uniform(cache, 1, {first, second, third});
+        assert_uniform(cache, 2, {first, second, third});
     }
 
     /// SLRU
@@ -4718,6 +4775,19 @@ try
         /// The first sub-queue stops on `protected_head` (5 + 10 > 14), so the second one is not walked,
         /// even though `probationary_tail` would fit.
         assert_observed(cache.observeFilesystemCache(10, 14, Order::HOTTEST), {protected_tail});
+
+        /// The ranks of a sample continue from the probationary queue to the protected one.
+        const std::vector<ExpectedSegment> coldest{probationary_head, probationary_tail, protected_head, protected_tail};
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::RANDOM), coldest);
+        for (size_t i = 0; i < 100; ++i)
+        {
+            assert_random_sample(cache, 2, 100, coldest);
+            assert_random_sample(cache, 10, 14, coldest);
+        }
+        /// The sample is uniform across both sub-queues.
+        assert_uniform(cache, 1, coldest);
+        assert_uniform(cache, 2, coldest);
+        assert_uniform(cache, 3, coldest);
     }
 
     /// SplitFileCachePriority (with LRU sub-queues)
@@ -4756,6 +4826,19 @@ try
         assert_observed(cache.observeFilesystemCache(10, 20, Order::COLDEST), {data_head, data_tail});
         assert_observed(cache.observeFilesystemCache(10, 30, Order::HOTTEST), {data_tail, data_head, system_tail, system_head});
         assert_observed(cache.observeFilesystemCache(10, 0, Order::COLDEST), {});
+
+        /// The ranks of a sample continue from the data queue to the system one.
+        const std::vector<ExpectedSegment> coldest{data_head, data_tail, system_head, system_tail};
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::RANDOM), coldest);
+        for (size_t i = 0; i < 100; ++i)
+        {
+            assert_random_sample(cache, 2, 100, coldest);
+            assert_random_sample(cache, 10, 15, coldest);
+        }
+        /// The sample is uniform across both sub-queues.
+        assert_uniform(cache, 1, coldest);
+        assert_uniform(cache, 2, coldest);
+        assert_uniform(cache, 3, coldest);
     }
 }
 catch (...)

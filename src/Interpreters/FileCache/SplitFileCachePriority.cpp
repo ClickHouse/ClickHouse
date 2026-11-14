@@ -133,6 +133,20 @@ FileSegmentSummaryInfos SplitFileCachePriority::iterate(
     UInt64 start_priority_rank,
     QueueEntryType /* queue_entry_type */)
 {
+    if (query_order == IterationOrder::RANDOM)
+    {
+        auto data_sample = getPriority(SegmentType::Data)
+                               .iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, QueueEntryType::SplitCache_Data);
+        auto system_sample = getPriority(SegmentType::System)
+                                 .iterate(
+                                     query_max_elements,
+                                     query_max_total_size,
+                                     query_order,
+                                     start_priority_rank + data_sample.population,
+                                     QueueEntryType::SplitCache_System);
+        return mergeSamples(std::move(data_sample), std::move(system_sample), query_max_elements);
+    }
+
     /// Random decision to iterate first over data than system table
     auto result = getPriority(SegmentType::Data)
                       .iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, QueueEntryType::SplitCache_Data);

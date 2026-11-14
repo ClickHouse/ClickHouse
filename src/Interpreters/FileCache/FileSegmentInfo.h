@@ -109,5 +109,8 @@ namespace DB
         /// Set when the walk stopped on `query_max_elements` or `query_max_total_size`.
         /// The next sub-queue (SLRU's second one, Split's system one) is then not walked at all.
         bool limit_reached = false;
+        /// `RANDOM` only: the number of segments `infos` were sampled from.
+        /// SLRU and Split use it to merge the samples of their sub-queues.
+        UInt64 population = 0;
     };
 }

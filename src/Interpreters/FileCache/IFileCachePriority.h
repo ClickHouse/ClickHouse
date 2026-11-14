@@ -262,6 +262,8 @@ public:
         HOTTEST = 0,
         /// Next eviction candidates first.
         COLDEST,
+        /// A uniformly random sample of entries, sorted by their position in the queue (coldest first).
+        RANDOM,
     };
 
     std::vector<FileSegmentSummaryInfo>
@@ -328,6 +330,12 @@ protected:
     {
         return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving;
     }
+
+    /// For `IterationOrder::RANDOM`: merges uniformly random samples of two disjoint populations into a uniformly
+    /// random sample of at most `query_max_elements` segments of their union.
+    /// Each sample must have `min(query_max_elements, population)` segments.
+    static FileSegmentSummaryInfos
+    mergeSamples(FileSegmentSummaryInfos first, FileSegmentSummaryInfos second, UInt64 query_max_elements);
 
 public:
     /// Which cursor a candidate-collection pass resumes from.
