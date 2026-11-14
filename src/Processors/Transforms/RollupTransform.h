@@ -21,6 +21,8 @@ protected:
 
     MutableColumnPtr getColumnWithDefaults(size_t key, size_t n) const;
 
+    void makeKeysNullableIfNeeded(Columns & columns) const;
+
     AggregatingTransformParamsPtr params;
 
     bool use_nulls;
@@ -48,6 +50,7 @@ protected:
 
 private:
     const ColumnsMask aggregates_mask;
+    const bool input_merge_is_redundant;
 
     size_t last_removed_key = 0;
     size_t set_counter = 0;
