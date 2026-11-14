@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Functions/FunctionAccessCheck.h>
 #include <Functions/FunctionFactory.h>
 #include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
@@ -35,14 +36,24 @@ public:
     static constexpr auto name = "file";
     static FunctionPtr create(ContextPtr context)
     {
-        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
-            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+        return std::make_shared<FunctionFile>(context);
+    }
 
-        return std::make_shared<FunctionFile>();
+    explicit FunctionFile(const ContextPtr & context)
+    {
+        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            access_check.emplace(context);
     }
 
     bool isVariadic() const override { return true; }
     String getName() const override { return name; }
+
+    void checkAccessOnBuild() const override
+    {
+        if (access_check)
+            access_check->check(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+    }
+
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isDeterministic() const override { return false; }
@@ -150,6 +161,10 @@ public:
 
         return result;
     }
+
+private:
+    /// Not set for `clickhouse-local` and for the creation without a context.
+    std::optional<FunctionAccessCheck> access_check;
 };
 
 

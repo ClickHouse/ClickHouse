@@ -8,7 +8,7 @@
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
+#include <Functions/FunctionAccessCheck.h>
 #include <Access/Common/AccessFlags.h>
 
 #include <Functions/addressToLine.h>
@@ -29,9 +29,10 @@ public:
     String getSignatureString() const override { return "(UInt64) -> Array(String)"; }
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::addressToLineWithInlines);
-        return std::make_shared<FunctionAddressToLineWithInlines>();
+        return std::make_shared<FunctionAddressToLineWithInlines>(context);
     }
+    explicit FunctionAddressToLineWithInlines(const ContextPtr & context) : access_check(context) {}
+    void checkAccessOnBuild() const override { access_check.check(AccessType::addressToLineWithInlines); }
 
 protected:
     DataTypePtr getDataType() const override
@@ -88,6 +89,7 @@ private:
         out.finalize();
     }
 
+    FunctionAccessCheck access_check;
 };
 
 }
