@@ -1,8 +1,12 @@
 #include <Processors/Transforms/WindowTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <iterator>

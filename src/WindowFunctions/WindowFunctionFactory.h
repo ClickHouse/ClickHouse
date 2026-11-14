@@ -1,6 +1,8 @@
 #pragma once
 
-#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
+
+#include <DataTypes/IDataType_fwd.h>
 
 #include <Core/ColumnsWithTypeAndName.h>
 
@@ -15,6 +17,7 @@
 namespace DB
 {
 
+struct Array;
 struct Settings;
 
 using WindowFunctionCreator = std::function<GeneralWindowFunctionPtr(const String & name, const ColumnsWithTypeAndName & arguments, const Array & parameters, const Settings & settings)>;
