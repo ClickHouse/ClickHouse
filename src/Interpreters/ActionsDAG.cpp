@@ -55,6 +55,7 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
 
 
@@ -1117,36 +1118,26 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     return false;
 }
 
-bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
+namespace
 {
-    UnorderedSetWithMemoryTracking<const Node *> used_inputs;
-    if (!allow_remove_inputs)
-    {
-        for (const auto * input : inputs)
-            used_inputs.insert(input);
-    }
-    return removeUnusedActions(used_inputs, allow_constant_folding, evaluate_constants);
-}
 
-bool ActionsDAG::removeUnusedActions(const UnorderedSetWithMemoryTracking<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
+/// Removes the nodes that are not reachable from `roots`, folding constants on the way.
+bool removeUnreachableNodes(
+    ActionsDAG::Nodes & nodes,
+    ActionsDAG::NodeRawConstPtrs & inputs,
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    bool allow_constant_folding,
+    bool evaluate_constants)
 {
-    NodeRawConstPtrs roots;
-    roots.reserve(outputs.size() + used_inputs.size());
-    roots = outputs;
-
-    for (auto & node : nodes)
-    {
-        /// We cannot remove arrayJoin because it changes the number of rows.
-        if (node.type == ActionType::ARRAY_JOIN)
-            roots.push_back(&node);
-
-        if (node.type == ActionType::INPUT && used_inputs.contains(&node))
-            roots.push_back(&node);
-    }
+    using Node = ActionsDAG::Node;
+    using ActionType = ActionsDAG::ActionType;
 
     UnorderedSetWithMemoryTracking<const Node *> non_deterministic_nodes;
+    absl::flat_hash_set<const Node *> required_nodes;
+    required_nodes.reserve(nodes.size());
+    bool has_folded_nodes = false;
 
-    visitNodesPostOrder(roots, [&](const Node * visited_node)
+    visitNodesPostOrder(roots, required_nodes, [&](const Node * visited_node)
     {
         auto * node = const_cast<Node *>(visited_node);
 
@@ -1165,7 +1156,7 @@ bool ActionsDAG::removeUnusedActions(const UnorderedSetWithMemoryTracking<const 
         }
 
         /// Best-effort evaluation of functions whose children have become constant.
-        if (evaluate_constants && node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        if (evaluate_constants && node->type == ActionType::FUNCTION && !node->column)
         {
             auto [arguments, all_const] = getFunctionArguments(node->children);
             node->function = node->function_base->prepare(arguments);
@@ -1179,19 +1170,65 @@ bool ActionsDAG::removeUnusedActions(const UnorderedSetWithMemoryTracking<const 
             && (!node->children.empty()
                 || (node->type == ActionType::FUNCTION && WhichDataType(node->result_type).isFunction())))
         {
-            node->type = ActionsDAG::ActionType::COLUMN;
+            node->type = ActionType::COLUMN;
             node->children.clear();
             node->is_deterministic_constant = !non_deterministic_nodes.contains(node);
+            has_folded_nodes = true;
         }
-    });
+    }, [](const Node *) { return false; });
 
-    /// Folding cut some edges, so what is required is collected after it.
-    const auto required_nodes = findReachableNodes(roots);
+    /// Folding cut some edges, so what is required is collected again after it.
+    if (has_folded_nodes)
+    {
+        required_nodes.clear();
+        required_nodes.reserve(nodes.size());
+        visitNodesPostOrder(roots, required_nodes, [](const Node *) {}, [](const Node *) { return false; });
+    }
 
     const auto erased_count = std::erase_if(nodes, [&](const Node & node) { return !required_nodes.contains(&node); });
     std::erase_if(inputs, [&](const Node * node) { return !required_nodes.contains(node); });
 
     return erased_count != 0;
+}
+
+}
+
+bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
+{
+    NodeRawConstPtrs roots;
+    roots.reserve(outputs.size() + (allow_remove_inputs ? 0 : inputs.size()));
+    roots = outputs;
+
+    /// We cannot remove arrayJoin because it changes the number of rows.
+    for (auto & node : nodes)
+        if (node.type == ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
+
+    if (!allow_remove_inputs)
+        for (const auto * input : inputs)
+            if (input->type == ActionType::INPUT)
+                roots.push_back(input);
+
+    return removeUnreachableNodes(nodes, inputs, roots, allow_constant_folding, evaluate_constants);
+}
+
+bool ActionsDAG::removeUnusedActions(const UnorderedSetWithMemoryTracking<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
+{
+    NodeRawConstPtrs roots;
+    roots.reserve(outputs.size() + used_inputs.size());
+    roots = outputs;
+
+    for (auto & node : nodes)
+    {
+        /// We cannot remove arrayJoin because it changes the number of rows.
+        if (node.type == ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
+
+        if (node.type == ActionType::INPUT && used_inputs.contains(&node))
+            roots.push_back(&node);
+    }
+
+    return removeUnreachableNodes(nodes, inputs, roots, allow_constant_folding, evaluate_constants);
 }
 
 
@@ -1956,11 +1993,14 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 Block ActionsDAG::updateHeader(const Block & header) const
 {
     IntermediateExecutionResult node_to_column;
-    std::set<size_t> pos_to_remove;
+    node_to_column.reserve(nodes.size());
+    std::vector<UInt8> is_input_position(header.columns());
+    size_t num_input_positions = 0;
 
     {
         using inline_vector = absl::InlinedVector<size_t, 7>; // 64B, holding max 7 size_t elements inlined
         absl::flat_hash_map<std::string_view, inline_vector> input_positions;
+        input_positions.reserve(inputs.size());
 
         /// We insert from last to first in the inlinedVector so it's easier to pop_back matches later
         for (size_t pos = inputs.size(); pos != 0; pos--)
@@ -1972,7 +2012,8 @@ Block ActionsDAG::updateHeader(const Block & header) const
             auto it = input_positions.find(col.name);
             if (it != input_positions.end() && !it->second.empty())
             {
-                pos_to_remove.insert(pos);
+                is_input_position[pos] = 1;
+                ++num_input_positions;
 
                 auto & v = it->second;
                 node_to_column[inputs[v.back()]] = col;
@@ -1995,14 +2036,13 @@ Block ActionsDAG::updateHeader(const Block & header) const
     }
 
     Block res;
-    res.reserve(result_columns.size());
+    res.reserve(result_columns.size() + header.columns() - num_input_positions);
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    res.reserve(header.columns() - pos_to_remove.size());
     for (size_t i = 0; i < header.columns(); i++)
     {
-        if (!pos_to_remove.contains(i))
+        if (!is_input_position[i])
             res.insert(header.data[i]);
     }
 
@@ -2054,8 +2094,10 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     ColumnsWithTypeAndName result_columns;
     result_columns.reserve(outputs.size());
 
+    absl::flat_hash_set<const Node *> visited;
     visitNodesPostOrder(
         outputs,
+        visited,
         [&](const Node * node)
         {
             if (node->type == ActionsDAG::ActionType::PLACEHOLDER)
@@ -2116,7 +2158,7 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     {
         auto it = node_to_column.find(output_node);
         if (it != node_to_column.end())
-            result_columns.push_back(node_to_column[output_node]);
+            result_columns.push_back(it->second);
         else
             result_columns.emplace_back(nullptr, output_node->result_type, output_node->result_name);
     }
