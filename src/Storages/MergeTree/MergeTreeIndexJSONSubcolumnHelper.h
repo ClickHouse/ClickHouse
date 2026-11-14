@@ -1,8 +1,6 @@
 #pragma once
 
-#include <functional>
 #include <optional>
-#include <string_view>
 
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -11,15 +9,13 @@
 namespace DB
 {
 
+class ColumnsDescription;
 class ExpressionActions;
 
 /// The type of the argument of every JSON index function of an index expression, by position in the
 /// index sample block. Only positions whose index column is a function over a `JSON` column are
 /// present, which is what the matchers below can match a subcolumn against.
 using JSONIndexArgumentTypes = std::unordered_map<size_t, DataTypePtr>;
-
-/// Whether another column claims the subcolumn `name` of `json_column`, e.g. a column `j.a` beside `JSON` `j`.
-using IsShadowingJSONSubcolumn = std::function<bool(std::string_view name, std::string_view json_column)>;
 
 /// Collect the argument types of the JSON index functions of an index expression.
 JSONIndexArgumentTypes collectJSONIndexArgumentTypes(const ExpressionActions & index_expression);
@@ -45,13 +41,13 @@ struct JSONSubcolumnIndexInfo
 ///   - No matching index column is found in the header
 ///   - The subcolumn is a sub-object access (^ prefix) or a combined literal+sub-object access (@ prefix)
 ///   - The subcolumn reaches inside a declared typed path of the `JSON` type (see the implementation)
-///   - Another column claims the name (`is_shadowing_subcolumn`)
+///   - Another column of `columns` claims the name, e.g. a column `j.a` beside `JSON` `j` (not checked without `columns`)
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
+    const ColumnsDescription * columns = nullptr);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
@@ -59,7 +55,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const Names & index_columns,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
+    const ColumnsDescription * columns = nullptr);
 
 class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 
@@ -71,7 +67,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Block & header,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
+    const ColumnsDescription * columns = nullptr);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
@@ -79,7 +75,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const Names & index_columns,
     const String & json_function_name,
     const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn = {});
+    const ColumnsDescription * columns = nullptr);
 
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:

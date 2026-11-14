@@ -1,15 +1,15 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Core/Names.h>
 #include <base/types.h>
 
-#include <functional>
 #include <optional>
 #include <utility>
 
 namespace DB
 {
+
+class ColumnsDescription;
 
 /// Optimized extraction of values for a given constant key from a Map column
 /// stored as Array(Tuple(K, V)).
@@ -24,16 +24,13 @@ void extractKeyValueFromMap(
     size_t start,
     size_t end);
 
-/// Tells whether the table has a real column (or a subcolumn of one) with the given name.
-using IsShadowingColumn = std::function<bool(const String &)>;
-
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///
-/// Dots are legal in column names, so a real column `m.key_x` may exist beside a Map `m`. It shadows
-/// the subcolumn: a predicate reads that column, not the map, so `is_shadowing_column` must answer
-/// true for such names and the shape is refused. It is asked only about names of that shape.
+/// Dots are legal in column names, so `a.b.key_x` may name something other than key `x` of a Map `a.b`:
+/// a column `a.b.key_x`, an element of a Tuple `a`, or a path of a JSON `a`. A predicate reads that
+/// claimant, not the map, so the shape is refused unless the name resolves to a key of the Map itself.
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
-    const String & column_name, const IsShadowingColumn & is_shadowing_column);
+    const String & column_name, const ColumnsDescription & columns);
 
 }

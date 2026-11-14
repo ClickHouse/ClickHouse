@@ -90,43 +90,6 @@ const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCa
     return index.expression->getRequiredColumnsWithTypes();
 }
 
-IsShadowingColumn IMergeTreeIndex::getMapSubcolumnShadowingCheck() const
-{
-    /// Subcolumn names are flat, so a Tuple element or a typed JSON path can claim `<map>.key_<k>`
-    /// just as a top-level column can, and a predicate on that name reads the claimant. A genuine Map
-    /// key subcolumn is generated per key on demand, so it is not a regular subcolumn and stays parseable.
-    return [metadata = metadata_snapshot](const String & column_name)
-    {
-        auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
-        return metadata->getColumns().tryGetColumn(options, column_name).has_value();
-    };
-}
-
-IsShadowingJSONSubcolumn IMergeTreeIndex::getJSONSubcolumnShadowingCheck() const
-{
-    /// A column or its regular subcolumn wins over a dynamic path, which belongs to the shortest `JSON` column.
-    return [metadata = metadata_snapshot](std::string_view name, std::string_view json_column)
-    {
-        const auto & columns = metadata->getColumns();
-        auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
-
-        if (auto column = columns.tryGetColumn(options, String(name)))
-        {
-            auto json = columns.tryGetColumn(options, String(json_column));
-            if (!json || column->getNameInStorage() != json->getNameInStorage())
-                return true;
-        }
-
-        for (size_t end = json_column.find('.'); end != std::string_view::npos; end = json_column.find('.', end + 1))
-        {
-            auto prefix = columns.tryGetColumn(options, String(json_column.substr(0, end)));
-            if (prefix && isObject(removeNullable(removeLowCardinality(prefix->type))))
-                return true;
-        }
-        return false;
-    };
-}
-
 /// Is a granule written with @from decoded identically when read back as @to?
 ///
 /// This deliberately duplicates part of AlterCommands' isMetadataOnlyConversion() instead of calling

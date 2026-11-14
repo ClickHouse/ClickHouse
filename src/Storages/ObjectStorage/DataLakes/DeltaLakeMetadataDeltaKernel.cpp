@@ -530,13 +530,6 @@ static String getLogicalPath(
     return findLogicalPath(delta_schema.getNames(), delta_schema.getTypes(), name_in_storage, {}).value_or(name_in_storage);
 }
 
-static bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
-{
-    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
-        && lhs.variant_element_name == rhs.variant_element_name
-        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
-}
-
 static std::vector<ISerialization::SubstreamPath> getStaticStreams(const DataTypePtr & type)
 {
     std::vector<ISerialization::SubstreamPath> streams;
@@ -572,7 +565,7 @@ static String getPhysicalSubcolumnName(const DataTypePtr & type, const DataTypeP
         for (size_t i = 0; i < streams.size(); ++i)
         {
             if (streams[i].size() < len || !ISerialization::hasSubcolumnForPath(streams[i], len)
-                || !std::equal(path.begin(), path.begin() + len, streams[i].begin(), isSameSubstream))
+                || !std::equal(path.begin(), path.begin() + len, streams[i].begin(), ISerialization::isSameSubstream))
                 continue;
 
             auto name = ISerialization::getSubcolumnNameForStream(streams[i], len);
