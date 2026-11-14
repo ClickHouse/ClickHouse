@@ -2718,7 +2718,7 @@ IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
     return main_priority->dump();
 }
 
-std::vector<FileSegmentSummaryInfo> FileCache::observeFilesystemCache(
+FileSegmentSummaryInfoList FileCache::observeFilesystemCache(
     UInt64 query_max_elements, UInt64 query_max_total_size, IFileCachePriority::IterationOrder query_order)
 {
     assertInitialized();

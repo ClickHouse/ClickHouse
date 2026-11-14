@@ -102,7 +102,7 @@ private:
     const IFileCachePriority::IterationOrder query_order;
     const size_t max_block_size;
 
-    std::optional<std::vector<FileSegmentSummaryInfo>> infos;
+    std::optional<FileSegmentSummaryInfoList> infos;
     size_t next_row = 0;
 };
 

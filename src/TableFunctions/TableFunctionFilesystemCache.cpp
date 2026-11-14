@@ -133,7 +133,6 @@ Unlike `system.filesystem_cache`, which walks all keys of all caches, it walks t
                 {"The next eviction candidates", "SELECT priority_rank, path, size, queue FROM filesystemCache('s3_cache', 100, 1073741824, 'coldest');", ""},
                 {"A uniform sample of the cache", "SELECT path FROM filesystemCache('s3_cache', 1000, 10737418240, 'random');", ""},
             },
-            /// TODO:(andi) Should I change this?
             .introduced_in = {26, 11},
             .category = FunctionDocumentation::Category::TableFunction,
         },

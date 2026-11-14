@@ -250,7 +250,7 @@ public:
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
     /// See `IFileCachePriority::observeFilesystemCache`.
-    std::vector<FileSegmentSummaryInfo> observeFilesystemCache(
+    FileSegmentSummaryInfoList observeFilesystemCache(
         UInt64 query_max_elements, UInt64 query_max_total_size, IFileCachePriority::IterationOrder query_order);
 
     IFileCachePriority::Type getEvictionPolicyType();

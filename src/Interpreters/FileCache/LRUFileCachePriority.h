@@ -4,11 +4,11 @@
 #include <list>
 #include <mutex>
 #include <optional>
-#include <Interpreters/FileCache/CacheUsage.h>
-#include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
-#include <Interpreters/FileCache/QueueEntryType.h>
+#include <Interpreters/FileCache/CacheUsage.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
 
 class FileCacheTest_MoveEvictionPos_Test;
 

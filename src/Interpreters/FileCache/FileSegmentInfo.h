@@ -1,9 +1,9 @@
 #pragma once
 #include <cctype>
 #include <vector>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/QueueEntryType.h>
 #include <base/types.h>
 
@@ -84,7 +84,7 @@ namespace DB
     struct FileSegmentSummaryInfo
     {
         /// 1-based emission counter: 1 is the first row the walk produced. For 'hottest' and 'coldest' it is the priority order;
-        // for 'random' it is filled but carries no meaning
+        /// for 'random' it is filled but carries no meaning
         UInt64 priority_rank{0};
         /// Real on-disk file, including the _<size> suffix of downloaded segments
         String path;
@@ -99,9 +99,11 @@ namespace DB
         String user_id;
     };
 
+    using FileSegmentSummaryInfoList = std::vector<FileSegmentSummaryInfo>;
+
     struct FileSegmentSummaryInfos
     {
-        std::vector<FileSegmentSummaryInfo> infos;
+        FileSegmentSummaryInfoList infos;
         /// cache total size so that in SplitFileCachePriority we don't need to iterate again before checking system segments
         UInt64 total_size = 0;
         /// Set when the walk stopped on `query_max_elements` or `query_max_total_size`.

@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
-#include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
+#include <Core/Types.h>
 #include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/QueueEntryType.h>
 
 #include <atomic>
@@ -13,7 +14,6 @@
 #include <memory>
 #include <utility>
 
-#include <base/types.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -22,8 +22,6 @@ struct FileCacheReserveStat;
 class EvictionCandidates;
 class FileSegment;
 struct FileSegmentInfo;
-struct FileSegmentSummaryInfo;
-struct FileSegmentSummaryInfos;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsage;
@@ -266,7 +264,11 @@ public:
         RANDOM,
     };
 
-    std::vector<FileSegmentSummaryInfo>
+    /// Returns the file segments of the queue, selected by their priority.
+    /// `query_max_elements`: Upper bound on returned rows
+    /// `query_max_total_size`: upper bound on the sum of size of returned rows; the entry that would cross the bound is not returned.
+    /// `query_order`: Defines the order on returned rows
+    FileSegmentSummaryInfoList
     observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order);
 
     /// Each concrete implementation of IFileCachePriority should know better how to implement this
@@ -330,16 +332,6 @@ public:
 
     virtual PriorityDumpPtr dump() = 0;
 
-protected:
-    /// Whether `observeFilesystemCache` returns the file segment of a queue entry with this state.
-    /// A `PreActive` entry is the copy added to the other SLRU queue during a move:
-    /// the original entry (in `Moving` state) is returned instead.
-    static bool isObservable(Entry::State state)
-    {
-        return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving;
-    }
-
-public:
     /// Which cursor a candidate-collection pass resumes from.
     enum class EvictionCursor
     {
@@ -510,6 +502,14 @@ protected:
     /// No lock is required in releaseImpl unlike holdImpl,
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
+
+    /// Whether `observeFilesystemCache` returns the file segment of a queue entry with this state.
+    /// A `PreActive` entry is the copy added to the other SLRU queue during a move:
+    /// the original entry (in `Moving` state) is returned instead.
+    static bool isObservable(Entry::State state)
+    {
+        return state == Entry::State::Active || state == Entry::State::Evicting || state == Entry::State::Moving;
+    }
 
     /// Guard protecting this priority queue's structure (add/remove/move of entries), so
     /// operations on different queues do not contend. Overridden by `LRUFileCachePriority` to

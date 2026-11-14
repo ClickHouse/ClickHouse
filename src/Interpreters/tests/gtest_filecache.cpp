@@ -4571,7 +4571,7 @@ try
     auto query_scope_holder = DB::QueryScope::create(query_context);
 
     using Order = IFileCachePriority::IterationOrder;
-    const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
+    const size_t file_size = -1; /// the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
     const auto & user = FileCache::getCommonOrigin();
 
@@ -4617,13 +4617,8 @@ try
         String path_part = {};
     };
 
-    auto assert_observed = [&](const std::vector<FileSegmentSummaryInfo> & infos, const std::vector<ExpectedSegment> & expected)
+    auto assert_observed = [&](const FileSegmentSummaryInfoList & infos, const std::vector<ExpectedSegment> & expected)
     {
-        String got;
-        for (const auto & info : infos)
-            got += fmt::format("{}: {} ({}), ", info.priority_rank, info.path, info.queue_entry_type);
-        LOG_DEBUG(testLog(), "Observed: {}", got);
-
         ASSERT_EQ(infos.size(), expected.size());
         for (size_t i = 0; i < infos.size(); ++i)
         {
@@ -4638,14 +4633,14 @@ try
             if (segment.queue)
                 ASSERT_EQ(info.queue_entry_type, toString(*segment.queue));
             ASSERT_TRUE(info.path.ends_with(fmt::format("/{}_{}", segment.range.left, segment.range.size())));
-            /// TODO:(andi) Do I need this check for segment.path_part
+            /// For the split cache, checks that the segment is in the directory of its queue (`Data` or `System`).
             ASSERT_TRUE(segment.path_part.empty() || info.path.contains(segment.path_part));
             ASSERT_TRUE(fs::exists(info.path));
         }
     };
 
     /// `RANDOM` returns the segments in random order.
-    auto sorted_by_rank = [](std::vector<FileSegmentSummaryInfo> infos)
+    auto sorted_by_rank = [](FileSegmentSummaryInfoList infos)
     {
         std::ranges::sort(infos, {}, &FileSegmentSummaryInfo::priority_rank);
         return infos;

@@ -1,16 +1,16 @@
-#include <random>
-#include <Interpreters/FileCache/EvictionCandidates.h>
-#include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
-#include <Interpreters/FileCache/QueueEntryType.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/QueueEntryType.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
-#include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/logger_useful.h>
+#include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
+#include <random>
 
 
 namespace ProfileEvents
@@ -227,7 +227,7 @@ void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_
     const auto protected_type = type_of(QueueEntryType::SLRU_Protected);
     const auto probationary_type = type_of(QueueEntryType::SLRU_Probationary);
 
-    /// underlying implementation if LRUFileCachePriority will take care of respecting query_max_elements, query_max_total_size and query_order
+    /// underlying implementation of LRUFileCachePriority will take care of respecting query_max_elements, query_max_total_size and query_order
     first_queue.iterate(
         query_max_elements, query_max_total_size, query_order, protected_first ? protected_type : probationary_type, result, lock);
     second_queue.iterate(
