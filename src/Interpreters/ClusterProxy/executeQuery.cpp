@@ -634,11 +634,12 @@ void executeQuery(
             /// TODO: support composite sharding key
             sharding_key_expr->getRequiredColumns().size() == 1)
         {
+            chassert(query_info.slot_to_shard);
             OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                 sharding_key_expr,
                 sharding_key_column_name,
                 shard_info,
-                not_optimized_cluster->getSlotToShard(),
+                *query_info.slot_to_shard,
             };
             optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
         }

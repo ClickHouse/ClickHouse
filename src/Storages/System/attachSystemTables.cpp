@@ -61,6 +61,7 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
+#include <Storages/System/StorageSystemDistributedBucketMaps.h>
 #include <Storages/System/StorageSystemServerSettings.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
@@ -3188,6 +3189,27 @@ last_exception:
 
 .see_also
 - [Distributed table engine](/reference/engines/table-engines/special/distributed)
+)DOCS_MD");
+    attach<StorageSystemDistributedBucketMaps>(context, system_database, "distributed_bucket_maps", R"DOCS_MD(
+.description
+Contains the bucket maps loaded by the `Distributed` tables that have the experimental `bucket_map_zookeeper_path` setting. A row of such a table goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to.
+
+.examples
+```sql
+SELECT * FROM system.distributed_bucket_maps FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+database:       default
+table:          dist
+zookeeper_path: /clickhouse/bucket_maps/events
+version:        1
+buckets:        256
+ranges:         [(0,127,1),(128,191,2),(192,255,3)]
+last_exception:
+```
 )DOCS_MD");
     attach<StorageSystemDictionaries>(context, system_database, "dictionaries", R"DOCS_MD(
 .description

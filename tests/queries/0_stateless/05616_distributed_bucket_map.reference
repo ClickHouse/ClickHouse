@@ -1,0 +1,30 @@
+-- the setting is experimental
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+-- a map that does not exist needs the number of buckets
+Set `bucket_map_buckets` to create it
+-- a new map splits the buckets evenly between the shards
+format version: 1
+buckets: 4
+0 1 1
+2 3 2
+
+-- a row goes to the shard of the bucket sharding_key % buckets
+shard_0	[0,1,4,5]
+shard_1	[2,3,6,7]
+0	4	[(0,1,1),(2,3,2)]	
+-- shards are skipped by the bucket map
+1	5
+1	1
+2	2
+1	5
+-- a changed map is loaded and routes the new rows
+shard_0	[0,1,4,5,8,12]
+shard_1	[2,3,6,7,9,10,11,13,14,15]
+2	13
+-- a map that cannot be parsed is not loaded
+1	[(0,0,1),(1,3,2)]
+-- a map with a shard that the cluster does not have is rejected
+assigns buckets to shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards
+-- the table is attached without the experimental setting
+shard_1	[2,3,6,7,9,10,11,13,14,15,102]
