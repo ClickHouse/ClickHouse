@@ -585,8 +585,8 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             bool use_radix_sort = (sort_is_stable && ascending && !is_floating_point<T>) || !sort_is_stable;
             size_t range_size = end - begin;
 
-            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (range_size >= 256 && range_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters and row numbers.
+            if (range_size >= 256 && data.size() <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 /// `trySort` can reorder equal values even when it returns false.
                 /// Stable radix sorting must preserve the incoming order within equal ranges.
