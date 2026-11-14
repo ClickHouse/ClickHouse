@@ -20,18 +20,18 @@ DROP TABLE IF EXISTS squality_exact_array_numeric_check;
 CREATE TABLE squality_exact_array_numeric_check
 (
     a Array(Int64), b Array(Float64),
-    CONSTRAINT c CHECK a NOT IN (b)
+    CONSTRAINT c CHECK a NOT IN materialize(b)
 ) ENGINE = Memory;
 INSERT INTO squality_exact_array_numeric_check VALUES ([0], [-0.6]);
-SELECT a NOT IN (b) FROM squality_exact_array_numeric_check;
+SELECT a NOT IN materialize(b) FROM squality_exact_array_numeric_check;
 DROP TABLE squality_exact_array_numeric_check;
 
 DROP TABLE IF EXISTS squality_exact_map_numeric_check;
 CREATE TABLE squality_exact_map_numeric_check
 (
     a Map(String, Int64), b Map(String, Float64),
-    CONSTRAINT c CHECK a NOT IN (b)
+    CONSTRAINT c CHECK a NOT IN materialize(b)
 ) ENGINE = Memory;
 INSERT INTO squality_exact_map_numeric_check VALUES (map('a', toInt64(0)), map('a', toFloat64(-0.6)));
-SELECT a NOT IN (b) FROM squality_exact_map_numeric_check;
+SELECT a NOT IN materialize(b) FROM squality_exact_map_numeric_check;
 DROP TABLE squality_exact_map_numeric_check;

@@ -1587,7 +1587,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     const auto * left_array_type = typeid_cast<const DataTypeArray *>(removeNullable(left_argument_type).get());
                     const auto * right_array_type = typeid_cast<const DataTypeArray *>(removeNullable(right_argument_type).get());
                     if (left_array_type && right_array_type
-                        && left_array_type->getNumberOfDimensions() == right_array_type->getNumberOfDimensions())
+                        && left_array_type->getNumberOfDimensions() == right_array_type->getNumberOfDimensions()
+                        && !(canContainNull(*right_array_type->getNestedType())
+                            && !isArray(removeNullable(right_array_type->getNestedType()))
+                            && !isMap(removeNullable(right_array_type->getNestedType()))
+                            && !isStringOrFixedString(removeNullable(right_array_type->getNestedType()))))
                         right_argument_is_array = false;
                 }
 
