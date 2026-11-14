@@ -9,7 +9,7 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
 
-LLVM_VERSION = "22"
+LLVM_VERSION = "23"
 
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
 NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"

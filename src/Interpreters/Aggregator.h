@@ -445,13 +445,13 @@ public:
     /// aggregation feeds a descending top-K.
     AdaptiveAggregationSessionPtr createAdaptiveSession(size_t producers) const;
 
-    /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the session with
-    /// its count bins when the aggregation prunes by the top-K; the bins take the rows of `local_variants`, the
-    /// producer's own table, as well. A producer that never froze has no bins and hands `local_variants` over for the
-    /// merge to count instead. Counts the producer toward the verdict of the run, and indexes the cells of its table by
-    /// the partitions of the layout for the merges, or converts a frozen table that cannot be indexed to two-level. Every
-    /// producer with the adaptive context calls it before the finish barrier, so the session holds every producer's
-    /// contribution by the time the last finisher assembles the merge.
+    /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the
+    /// session with its count bins when the aggregation prunes by the top-K; the bins take the rows of
+    /// `local_variants`, the producer's own table, as well. A producer that never froze has no bins and hands
+    /// `local_variants` over for the merge to count instead. Counts the producer toward the verdict of the
+    /// run, and indexes the cells of a single-level table by the partitions of the layout for the merges.
+    /// Every producer with the adaptive context calls it before the finish barrier, so the session holds
+    /// every producer's contribution by the time the last finisher assembles the merge.
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
 
     /// Serves a spill request of the memory scheduler for an adaptive producer: writes its staged records to the
