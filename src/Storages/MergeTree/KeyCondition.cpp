@@ -1677,10 +1677,18 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
                 }
             }
 
-            /// So far we only support the case of two arguments.
+            /// So far we only support the case of two arguments, both `UInt8`, `UInt16` or `UInt32` coordinates.
+            /// This rejects a range mask (`Tuple`) as the first argument, which makes the curve one-dimensional over
+            /// the second argument, and `UInt64`, `Dynamic` and `Variant` arguments, whose values can exceed 32 bits.
+            auto is_supported_coordinate = [](const DataTypePtr & type)
+            {
+                WhichDataType which(removeNullable(removeLowCardinality(type)));
+                return which.isNativeUInt() && !which.isUInt64();
+            };
+
             if (2 == curve.arguments.size()
-                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[0].type))).isUInt64()
-                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[1].type))).isUInt64())
+                && is_supported_coordinate(curve.arguments[0].type)
+                && is_supported_coordinate(curve.arguments[1].type))
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
