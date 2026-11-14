@@ -221,7 +221,7 @@ bool storageMayChangeColumnOnFly(const StorageSnapshotPtr & storage_snapshot, co
     return !materialized_dependencies.findColumnsToRecalculate(name_in_storage, columns_changed_on_fly).empty();
 }
 
-/// Whether the column is used by the primary key, the partition key or a secondary index of the storage.
+/// Whether the column is used by the primary key, the partition key, a secondary index or a projection of the storage.
 /// Index analysis matches the key expressions against the expressions of the query, so a key defined over
 /// `getSubcolumn(tup, 'a')` (or over `tup` itself) is not matched by a direct read of the column `tup.a`,
 /// and the index would no longer prune anything. This is the same gate `FunctionToSubcolumnsPass` applies.
@@ -241,6 +241,12 @@ bool isKeyColumn(const StorageMetadataPtr & metadata, const NameAndTypePair & co
 
     for (const auto & index : metadata->getSecondaryIndices())
         if (contains_any(index.expression->getRequiredColumns()))
+            return true;
+
+    /// Projections are matched against the expressions of the query in the same way: a projection over
+    /// `getSubcolumn(tup, 'a')` would not be selected for a query reading `tup.a` directly.
+    for (const auto & projection : metadata->getProjections())
+        if (contains_any(projection.getRequiredColumns()))
             return true;
 
     return false;
