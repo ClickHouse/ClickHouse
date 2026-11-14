@@ -11,7 +11,8 @@ String trim(const String & str);
 
 std::vector<String> splitTypeArguments(const String & type_str);
 
-DB::DataTypePtr getType(const String & type_name, bool nullable, const String & prefix = "");
+/// `time_as_int64` maps Iceberg `time` to `Int64` instead of `Time64(6)`, see setting `iceberg_time_as_int64`.
+DB::DataTypePtr getType(const String & type_name, bool nullable, bool time_as_int64, const String & prefix = "");
 
 /// Converts Iceberg types to Glue/Hive strings; ClickHouse reads exact types from `metadata.json`.
 String icebergTypeToGlueType(const Poco::Dynamic::Var & type);

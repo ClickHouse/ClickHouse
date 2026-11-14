@@ -422,6 +422,8 @@ static void writeDataFiles(
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getWriteSettings());
 
+        if (column_mapper)
+            Iceberg::checkIcebergTimeColumnsAreWritable(*column_mapper, *sample_block, write_format);
         FormatFilterInfoPtr output_format_filter_info
             = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
         auto output_format = FormatFactory::instance().getOutputFormat(

@@ -21,6 +21,7 @@
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -68,7 +69,8 @@ ORC::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
 }
 
 /// Two ORC types get the same key exactly when `parseORCType` (NativeORCBlockInputFormat.cpp) reads
-/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, and a nested
+/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, a `LONG` with
+/// the attribute `iceberg.long-type` = `TIME` reads as `Time64(6)` unlike a plain `LONG`, and a nested
 /// `UNION` reads as a `Variant`, which sorts its branches, while ORC keeps them positional.
 /// A field name is length-prefixed so a name containing `:` or `,` cannot forge another key.
 String orcTypeDedupKey(const ORC::Type & type)
@@ -78,6 +80,9 @@ String orcTypeDedupKey(const ORC::Type & type)
         return "string";
     if (kind == ORC::TypeKind::DECIMAL)
         return fmt::format("decimal({},{})", type.getPrecision(), type.getScale());
+    /// A `long` marked as an Iceberg `time` is read as `Time64(6)`, not as `Int64`.
+    if (kind == ORC::TypeKind::LONG && type.hasAttributeKey("iceberg.long-type") && type.getAttributeValue("iceberg.long-type") == "TIME")
+        return "time";
 
     VectorWithMemoryTracking<String> children;
     for (size_t i = 0; i < type.getSubtypeCount(); ++i)
@@ -181,6 +186,20 @@ std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::DateTime64:
         {
             result = ORC::Type::createPrimitiveType(ORC::TypeKind::TIMESTAMP);
+            break;
+        }
+        case TypeIndex::Time: [[fallthrough]];
+        case TypeIndex::Time64:
+        {
+            /// ORC has no time-of-day type. Write microseconds since midnight as a `long` marked the
+            /// way Iceberg marks its `time`, so that the type can be recognized when reading.
+            if (WhichDataType(unwrapped).isTime64() && getDecimalScale(*unwrapped) > 6)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Type {} is not supported for ORC output format: time of day is written as microseconds",
+                    unwrapped->getName());
+            result = ORC::Type::createPrimitiveType(ORC::TypeKind::LONG);
+            result->setAttribute("iceberg.long-type", "TIME");
             break;
         }
         case TypeIndex::Int128: [[fallthrough]];
