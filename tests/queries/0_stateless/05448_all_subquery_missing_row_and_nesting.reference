@@ -1,0 +1,17 @@
+empty_result_for_aggregation_by_empty_set
+1
+1
+1
+1
+1
+1	0	1	0	1
+correlated
+0	0	0	0
+1	1	1	1
+comparison with a constant of another type
+0	1	1
+1	0	0
+nesting
+1
+0
+1

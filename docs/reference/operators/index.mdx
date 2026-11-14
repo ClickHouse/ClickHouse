@@ -197,10 +197,12 @@ See [IN operators](/reference/statements/in) and [`EXISTS`](/reference/statement
 `a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
 ### in subquery function {#in-subquery-function-1}
-`a = ALL (subquery)` – The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+`a = ALL (subquery)` – True if the subquery returns no rows, or if all rows it returns are equal to `a`. If the subquery returns a `NULL` or several distinct values, the result is false, not `NULL`. For a `NULL` value of `a` and a subquery that returns rows, the result is the same as for `a IN (SELECT singleValueOrNull(*) FROM subquery)`, so it follows [transform_null_in](/reference/settings/session-settings/other#transform_null_in). The subquery is evaluated once, as a scalar subquery, and a non-`NULL` `a` is compared with the resulting constant as with `a = constant`. In a distributed query the subquery is evaluated on the initiator, regardless of `distributed_product_mode`.
 
 ### notIn subquery function {#notin-subquery-function-1}
 `a != ALL (subquery)` – The `notIn(a, subquery)` function.
+
+The comparisons `a < ALL`, `a <= ALL`, `a > ALL`, `a >= ALL` and `a = ALL` with a subquery that returns no rows are true (vacuous truth).
 
 **Examples**
 
