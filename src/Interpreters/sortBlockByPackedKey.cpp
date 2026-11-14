@@ -203,6 +203,26 @@ int strictOrder(const IColumn & column, size_t rows)
     return order;
 }
 
+/// Whether the values never decrease through the block, or never increase for a descending column.
+bool inSortOrder(const IColumn & column, size_t rows, bool descending)
+{
+    const char * data = column.getRawData().data();
+    bool in_order = false;
+    callWithPackableOrderedBits(column, [&](auto get_bits)
+    {
+        using GetBits = decltype(get_bits);
+        size_t i = 1;
+        if (descending)
+            while (i < rows && !(valueAt<GetBits>(data, i - 1) < valueAt<GetBits>(data, i)))
+                ++i;
+        else
+            while (i < rows && !(valueAt<GetBits>(data, i) < valueAt<GetBits>(data, i - 1)))
+                ++i;
+        in_order = i == rows;
+    });
+    return in_order;
+}
+
 constexpr size_t max_rank_bits = 16;
 constexpr size_t min_rows_per_rank = 16;
 /// Each ranked column keeps a `UInt32` per row until the keys are built.
@@ -658,6 +678,7 @@ size_t trySortByPackedKey(
     size_t sorted_entries = 0;
     size_t total_bits = 0;
     const size_t index_bits = std::bit_width(rows - 1);
+    bool last_column_in_order = false;
 
     /// Kept while the packed columns do not change.
     size_t columns_not_unique = 0;
@@ -688,6 +709,15 @@ size_t trySortByPackedKey(
             break;
 
         const bool descending = column.description.direction == -1;
+
+        /// A last column already in order stays in order under a stable sort by the columns before it.
+        if (i == last_non_const && i != first_non_const && !need_equal_ranges && inSortOrder(*column.column, rows, descending))
+        {
+            last_column_in_order = true;
+            sorted_entries = columns.size();
+            break;
+        }
+
         const size_t bits_left = 64 - total_bits;
         PackedSortColumn packed;
         bool ranked = false;
@@ -738,7 +768,7 @@ size_t trySortByPackedKey(
     if (packed_columns.size() == 1 && packed_columns[0].bits > packed_columns[0].value_bits / 2)
         return 0;
 
-    sortByPackedKey(packed_columns, ranks, total_bits, rows, stable, need_equal_ranges, permutation, equal_ranges);
+    sortByPackedKey(packed_columns, ranks, total_bits, rows, stable || last_column_in_order, need_equal_ranges, permutation, equal_ranges);
     return sorted_entries;
 }
 
