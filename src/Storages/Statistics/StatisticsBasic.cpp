@@ -216,6 +216,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     {
         StatisticsUtils::updateMin(min, other->min);
         StatisticsUtils::updateMax(max, other->max);
+        /// The merged bounds miss whatever the bounds of either side miss.
+        min_max_covers_all_values = min_max_covers_all_values && other->min_max_covers_all_values;
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
@@ -240,6 +242,9 @@ void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & 
     {
         min = min_value;
         max = max_value;
+        /// Unlike a bound built from a column, a NULL bound of a summary is unknown: it misses the values of the rows
+        /// unless all of them are NULL. A column whose default is not NULL has a value in every row.
+        min_max_covers_all_values = (!min.isNull() && !max.isNull()) || (is_nullable && null_count >= rows);
     }
     /// A summary has no byte lengths.
     tracks_string = false;
@@ -252,6 +257,10 @@ void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & 
 
 void StatisticsBasic::serialize(WriteBuffer & buf)
 {
+    /// Bounds read back would be taken to cover every value.
+    if (!min_max_covers_all_values)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize Basic statistics whose min/max miss some values");
+
     writeIntBinary(row_count, buf);
 
     UInt8 mask = 0;

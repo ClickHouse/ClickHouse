@@ -41,9 +41,12 @@ String dumpRelationStatsForLogs(const RelationStats & stats)
             fields.push_back(fmt::format("null {}", *column_stats.null_fraction));
         if (column_stats.avg_bytes != 0)
             fields.push_back(fmt::format("avg_bytes {}", column_stats.avg_bytes));
+        /// The provenance goes last: tests match the NDV and the optional `[...]` fields right after the column name.
+        const String provenance = fmt::format(
+            "(ndv: {}, range: {})", column_stats.ndv_provenance.toString(), column_stats.range_provenance.toString());
         if (fields.empty())
-            return fmt::format("{}: {}", name, column_stats.num_distinct_values);
-        return fmt::format("{}: {} [{}]", name, column_stats.num_distinct_values, fmt::join(fields, ", "));
+            return fmt::format("{}: {} {}", name, column_stats.num_distinct_values, provenance);
+        return fmt::format("{}: {} [{}] {}", name, column_stats.num_distinct_values, fmt::join(fields, ", "), provenance);
     };
     return fmt::format(
         "{}: {} rows, columns: [{}]",
@@ -91,7 +94,11 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
         {
             auto distinct_keys = stat_object->getObject("distinct_keys");
             for (const auto & [key, value] : *distinct_keys)
-                stats.column_stats[key].num_distinct_values = value.convert<UInt64>();
+            {
+                auto & column_stats = stats.column_stats[key];
+                column_stats.num_distinct_values = value.convert<UInt64>();
+                column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
+            }
         }
 
         if (stat_object->isObject("column_bytes"))
@@ -110,8 +117,11 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
                 const auto & range = value.extract<Poco::JSON::Array::Ptr>();
                 if (!range || range->size() != 2)
                     continue;
-                stats.column_stats[key].min_value = Field(range->get(0).convert<Float64>());
-                stats.column_stats[key].max_value = Field(range->get(1).convert<Float64>());
+                auto & column_stats = stats.column_stats[key];
+                column_stats.min_value = Field(range->get(0).convert<Float64>());
+                column_stats.max_value = Field(range->get(1).convert<Float64>());
+                /// Unlike a hinted distinct count, a hinted range gives no guarantee, see `SyntheticOverride`.
+                column_stats.range_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
             }
         }
         LOG_DEBUG(
@@ -155,7 +165,9 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
     for (const auto & col : header)
     {
         UInt64 ndv = 1 + (rng() % stats.estimated_rows.value());
-        stats.column_stats[col.name] = ColumnStats{.num_distinct_values = ndv};
+        auto & column_stats = stats.column_stats[col.name];
+        column_stats.num_distinct_values = ndv;
+        column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
     }
 
     LOG_DEBUG(

@@ -47,7 +47,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 {
     if (filter == nullptr && prewhere == nullptr)
     {
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
     }
     else if (filter == nullptr)
     {
@@ -86,7 +86,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const std::vector<RPNBuilderTreeNode> & nodes) const
 {
     if (nodes.empty())
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
 
     /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
     /// FUNCTION_AND token after every node past the first (standard postfix AND for
@@ -127,21 +127,36 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
 }
 
 /// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
-/// describe the whole relation regardless of the filter.
-static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+/// describe the selected parts regardless of the filter. `described_rows` are the rows the statistics
+/// have to count to cover the relation, deleted rows included.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats, UInt64 described_rows)
 {
     ColumnStats result;
     result.num_distinct_values = num_distinct_values;
     if (!stats)
         return result;
 
+    result.ndv_provenance.origin = stats->hasCardinality() ? ColumnStatsOrigin::MeasuredStatistics : ColumnStatsOrigin::SyntheticFallback;
     auto estimate = stats->getEstimate();
     result.min_value = std::move(estimate.estimated_min);
     result.max_value = std::move(estimate.estimated_max);
+    if (result.min_value && result.max_value)
+        result.range_provenance.origin = ColumnStatsOrigin::MeasuredStatistics;
     if (estimate.estimated_null_count && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
     if (auto avg_string_bytes = stats->getAvgStringBytes())
         result.avg_bytes = *avg_string_bytes;
+
+    /// Bounds merged with a summary that has none (e.g. of a data lake file) miss the values of its rows. The distinct
+    /// count of such statistics is set from data lake metadata, possibly from the bounds (see `ManifestColumnStatistics`),
+    /// so it is marked as well.
+    if (!estimate.min_max_covers_all_values)
+        result.addTransformation(PartialStatisticsCoverage);
+
+    /// Compared with the rows before deletes: the statistics still count the deleted rows, so the live rows can be
+    /// as few as the counted ones although a part or file has no statistic.
+    if (stats->getNumRows() < described_rows)
+        result.addTransformation(PartialStatisticsCoverage);
     return result;
 }
 
@@ -246,19 +261,26 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
-        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
+        const UInt64 estimated_cardinality = estimator.estimateCardinality();
+        UInt64 cardinality = std::min(result.rows, estimated_cardinality);
+        auto column_stats = makeColumnStats(cardinality, estimator.stats, described_rows);
+        column_stats.addTransformation(RowSubset);
+        if (result.rows < estimated_cardinality)
+            column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+        result.column_stats.emplace(column_name, std::move(column_stats));
     }
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata) const
 {
     RelationProfile result;
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
+        if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
+            continue;
+        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats, described_rows));
     }
     return result;
 }
@@ -673,6 +695,13 @@ ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(Conte
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
     estimator->total_rows += rows;
+    estimator->described_rows += rows;
+}
+
+void ConditionSelectivityEstimatorBuilder::subtractDeletedRows(UInt64 rows)
+{
+    chassert(rows <= estimator->total_rows);
+    estimator->total_rows -= std::min(rows, estimator->total_rows);
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)

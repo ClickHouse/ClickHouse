@@ -1,0 +1,21 @@
+-- an alias of a build key over the whole probe range: the probe is merge-joined
+uses a merge join
+-- the negated keys cover the whole probe range too, and the range of `k` says nothing about them: as with the alias
+uses a merge join
+-- a cast that happens to keep every value: no range either, and the same plan as with one over the whole range
+uses a merge join
+-- a build side over a tenth of the probe range, read directly: its range is used, a merge join reads that tenth
+uses a merge join
+-- the same build side behind GROUP BY, ORDER BY LIMIT and LIMIT: its hinted range is dropped, as with an alias over the whole range
+uses a merge join
+uses a merge join
+uses a merge join
+-- a sorted build side over a hundredth of the probe range, runtime filters disabled: a merge join reads that hundredth
+merge join
+-- the results do not depend on the plan
+100	59400
+100	59400
+100	59400
+10	945
+10	945
+100	9900

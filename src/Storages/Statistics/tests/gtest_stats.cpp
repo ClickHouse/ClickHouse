@@ -279,6 +279,18 @@ ColumnStatisticsPtr createTestStats(
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
+ColumnStatisticsPtr buildInt32Stats(const std::vector<StatisticsType> & types, size_t total)
+{
+    const auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr column = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        column->insert(static_cast<Int32>(i));
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(column));
+    return stats;
+}
+
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
 ColumnStatisticsPtr buildNullableInt32Stats(
@@ -301,6 +313,168 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+}
+
+TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto measured_stats = buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, 100);
+    ConditionSelectivityEstimatorBuilder measured_builder(getContext().context);
+    measured_builder.addStatistics("k", measured_stats);
+    measured_builder.addStatistics("j", measured_stats);
+    measured_builder.incrementRowCount(100);
+    auto measured_estimator = measured_builder.getEstimator();
+
+    const auto measured_profile = measured_estimator->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & measured = measured_profile.column_stats.at("k");
+    EXPECT_EQ(measured.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(measured.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_FALSE(measured.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(measured.range_provenance.has(PartialStatisticsCoverage));
+
+    auto basic_stats = buildInt32Stats({StatisticsType::Basic}, 100);
+    ConditionSelectivityEstimatorBuilder basic_builder(getContext().context);
+    basic_builder.addStatistics("k", basic_stats);
+    basic_builder.incrementRowCount(100);
+    const auto basic_profile = basic_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & basic = basic_profile.column_stats.at("k");
+    EXPECT_EQ(basic.ndv_provenance.origin, ColumnStatsOrigin::SyntheticFallback);
+    EXPECT_EQ(basic.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+
+    ConditionSelectivityEstimatorBuilder partial_builder(getContext().context);
+    partial_builder.addStatistics("k", measured_stats);
+    partial_builder.incrementRowCount(1000);
+    const auto partial_profile = partial_builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr);
+    const auto & partial = partial_profile.column_stats.at("k");
+    EXPECT_EQ(partial.ndv_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_EQ(partial.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
+
+    /// The predicate reaches the estimator as an `ActionsDAG` node, as in `estimateRowsFor`.
+    ContextPtr context = getContext().context;
+    ParserExpressionWithOptionalAlias parser(false);
+    ASTPtr ast = parseQuery(parser, "k < 90 AND j < 50", 1000, 1000, 1000);
+    const auto int32_type = std::make_shared<DataTypeInt32>();
+    auto syntax_result = TreeRewriter(context).analyze(ast, NamesAndTypesList{{"k", int32_type}, {"j", int32_type}});
+    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/false, /*remove_unused_result=*/false);
+    const auto * predicate = &dag.findInOutputs(ast->getColumnName());
+    const auto filtered_profile = measured_estimator->estimateRelationProfile(nullptr, predicate);
+    const auto & filtered = filtered_profile.column_stats.at("k");
+    EXPECT_TRUE(filtered.ndv_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.range_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
+}
+
+TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)
+{
+    /// Data lake files summarized by their rows, bounds and NULL counts, as Iceberg manifests give them. A file with a
+    /// NULL count but without bounds has non-NULL values outside the bounds merged with it, unless all its rows are NULL.
+    const auto nullable_int64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    const auto int64 = std::make_shared<DataTypeInt64>();
+
+    /// Values 0..99, with bounds.
+    auto bounded = [](const DataTypePtr & type)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(0)), Field(Int64(99)), 0); };
+    /// E.g. values 1000..1099, without bounds.
+    auto unbounded = [](const DataTypePtr & type, UInt64 nulls)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field{}, Field{}, nulls); };
+
+    auto merge_files = [](const std::vector<ColumnStatisticsPtr> & files)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        for (const auto & file : files)
+        {
+            builder.addStatistics("k", file);
+            builder.incrementRowCount(file->getNumRows());
+        }
+        return builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("k");
+    };
+
+    auto expect_partial_range = [](const ColumnStats & k)
+    {
+        /// The range is kept as measured, for diagnostics, but gives no guarantee.
+        ASSERT_TRUE(k.min_value && k.max_value);
+        EXPECT_EQ(k.min_value->safeGet<Int64>(), 0);
+        EXPECT_EQ(k.max_value->safeGet<Int64>(), 99);
+        EXPECT_EQ(k.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+        EXPECT_TRUE(k.range_provenance.has(PartialStatisticsCoverage));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Exact));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Superset));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Representative));
+        /// A data lake can derive the distinct count from the bounds, so it gives no guarantee either.
+        EXPECT_TRUE(k.ndv_provenance.has(PartialStatisticsCoverage));
+    };
+
+    /// Both files have all their rows counted, so only the bounds tell that the second file's values are missing.
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/0)}));
+    expect_partial_range(merge_files({unbounded(nullable_int64, /*nulls=*/0), bounded(nullable_int64)}));
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/99)}));
+    /// A non-Nullable column has a value in every row, whatever the NULL count says.
+    expect_partial_range(merge_files({bounded(int64), unbounded(int64, /*nulls=*/100)}));
+
+    /// An all-NULL file has no values to miss, so the range stays exact.
+    const auto with_all_null_file = merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/100)});
+    EXPECT_FALSE(with_all_null_file.range_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(with_all_null_file.ndv_provenance.has(PartialStatisticsCoverage));
+    const auto exact = with_all_null_file.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(exact);
+    EXPECT_EQ(exact->min.safeGet<Int64>(), 0);
+    EXPECT_EQ(exact->max.safeGet<Int64>(), 99);
+    ASSERT_TRUE(exact->null_fraction);
+    EXPECT_DOUBLE_EQ(*exact->null_fraction, 0.5);
+    EXPECT_TRUE(with_all_null_file.valueRange(ValueRangeGuarantee::Representative));
+
+    /// Files with bounds cover all values, and so do statistics built from a column.
+    EXPECT_TRUE(merge_files({bounded(nullable_int64), bounded(nullable_int64)}).valueRange(ValueRangeGuarantee::Exact));
+    const auto built = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/1);
+    EXPECT_TRUE(built->getEstimate().min_max_covers_all_values);
+}
+
+TEST(Statistics, DeletedRowsDoNotHideFilesWithoutStatistics)
+{
+    /// Deleted rows, e.g. of Iceberg position deletes, leave the rows of the relation, while the statistics still count
+    /// them. A file without statistics leaves the coverage partial however many rows are deleted.
+    tryRegisterFunctions();
+
+    const auto int64 = std::make_shared<DataTypeInt64>();
+    /// Values 0..199, with bounds.
+    const auto bounded = ColumnStatistics::createBasicFromSummary(int64, 200, Field(Int64(0)), Field(Int64(199)), 0);
+
+    auto merge_files = [&](UInt64 rows_without_statistics, UInt64 deleted_rows)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        builder.addStatistics("k", bounded);
+        builder.incrementRowCount(bounded->getNumRows());
+        builder.incrementRowCount(rows_without_statistics);
+        builder.subtractDeletedRows(deleted_rows);
+        return builder.getEstimator();
+    };
+
+    /// 100 rows of a file without statistics and 100 deleted rows: the live rows are as many as the counted ones.
+    const auto with_unmeasured_file = merge_files(/*rows_without_statistics=*/100, /*deleted_rows=*/100)->estimateRelationProfile(nullptr);
+    EXPECT_EQ(with_unmeasured_file.rows, 200);
+    auto partial = with_unmeasured_file.column_stats.at("k");
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
+    /// The read records the deleted rows as a row subset; the range still misses the values of the other file.
+    partial.addTransformation(RowSubset);
+    EXPECT_FALSE(partial.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Deleted rows alone leave the remaining values within the bounds.
+    const auto deletes_only_estimator = merge_files(/*rows_without_statistics=*/0, /*deleted_rows=*/100);
+    const auto deletes_only = deletes_only_estimator->estimateRelationProfile(nullptr);
+    EXPECT_EQ(deletes_only.rows, 100);
+    auto enclosing = deletes_only.column_stats.at("k");
+    EXPECT_FALSE(enclosing.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(enclosing.range_provenance.has(PartialStatisticsCoverage));
+    enclosing.addTransformation(RowSubset);
+    EXPECT_TRUE(enclosing.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Selectivities are shares of the live rows: half of the values, half of the 100 live rows.
+    EXPECT_NEAR(static_cast<Float64>(estimateRowsFor(deletes_only_estimator, "k < 100", {{"k", int64}})), 50.0, 1.0);
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)

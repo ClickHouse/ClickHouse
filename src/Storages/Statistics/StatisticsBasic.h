@@ -38,7 +38,9 @@ public:
     ~StatisticsBasic() override;
 
     void build(const ColumnPtr & column) override;
-    /// A NULL bound leaves min/max unknown; `null_count` counts only for a column whose default is NULL.
+    /// A summary of data that was not read (e.g. a data lake file). A NULL bound leaves min/max unknown, so they miss the
+    /// values of the rows unless all of them are NULL (see `minMaxCoversAllValues`); `null_count` counts only for a column
+    /// whose default is NULL.
     void build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
     void merge(const StatisticsPtr & other_stats) override;
 
@@ -58,6 +60,10 @@ public:
     bool hasStringLengthAvg() const { return tracks_string; }
     bool hasNullCount() const { return is_nullable && has_default_count; }
     bool hasDefaultCount() const { return has_default_count; }
+    /// Whether `min` and `max` bound every non-NULL value of the rows counted. Bounds built from a column always do: a
+    /// NULL bound there means that no value was non-NULL. A summary without bounds for rows that may be non-NULL has
+    /// values that the bounds merged with it miss.
+    bool minMaxCoversAllValues() const { return min_max_covers_all_values; }
     bool hasSum() const { return sum != nullptr; }
 
     const Field & getMin() const { return min; }
@@ -83,6 +89,8 @@ private:
     bool tracks_string = false;
     bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
+    /// See `minMaxCoversAllValues`. Not serialized: only a summary clears it, and summaries are never written.
+    bool min_max_covers_all_values = true;
 
     /// The state of `sum` over the values, allocated only for the types of `canStatisticsTrackSum`, because the parts
     /// keep the statistics of every column in memory. Null also when deserialized from older code that did not write

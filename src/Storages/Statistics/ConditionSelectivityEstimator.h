@@ -42,11 +42,14 @@ class ConditionSelectivityEstimator : public WithContext
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
+    /// The rows and column statistics of the relation after the given predicates. A statistic whose type differs from
+    /// the type of its column in `metadata` is outdated (an `ALTER MODIFY COLUMN` is not materialized yet) and skipped;
+    /// without `metadata`, every statistic is used.
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
-    RelationProfile estimateRelationProfile() const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata) const;
 
     struct RPNElement
     {
@@ -151,7 +154,13 @@ private:
     static constexpr Float64 default_like_factor = 0.1;
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
+    /// The rows of the relation, which selectivities are shares of: those of the parts or files, less the deleted rows
+    /// that are known.
     UInt64 total_rows = 0;
+    /// The rows that the column statistics have to count to cover the relation: those of the parts or files, deleted
+    /// rows included, as the statistics count them. Statistics over fewer rows miss some parts or files, however many
+    /// rows were deleted.
+    UInt64 described_rows = 0;
     ColumnEstimators column_estimators;
 };
 
@@ -167,7 +176,11 @@ class ConditionSelectivityEstimatorBuilder
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
+    /// Adds the rows of a part or file, which its statistics count.
     void incrementRowCount(UInt64 rows);
+    /// Removes deleted rows from the rows of the relation. The statistics still count them, so they are not subtracted
+    /// from the rows the statistics have to cover.
+    void subtractDeletedRows(UInt64 rows);
     /// See `ColumnStatistics::setCardinality`; the column must have statistics.
     void setCardinality(const String & column_name, UInt64 cardinality);
     ConditionSelectivityEstimatorPtr getEstimator() const;

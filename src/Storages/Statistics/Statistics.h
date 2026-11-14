@@ -137,6 +137,9 @@ struct Estimate
     std::optional<UInt64> estimated_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
+    /// False when `estimated_min` and `estimated_max` can miss some non-NULL values, see
+    /// `StatisticsBasic::minMaxCoversAllValues`.
+    bool min_max_covers_all_values = true;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
     std::optional<Field> estimated_sum;

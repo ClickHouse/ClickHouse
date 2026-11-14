@@ -234,7 +234,9 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
         const auto & metrics = file_metrics[i];
         addToDistinctValuesInputs(distinct_values_inputs[i], metrics);
         /// A file without the NULL count and the bounds adds nothing, as a MergeTree part without the statistic; with the
-        /// bounds alone its NULL count is taken as 0.
+        /// bounds alone its NULL count is taken as 0. With the NULL count alone, the merged bounds miss its non-NULL values,
+        /// which the statistics record (see `StatisticsBasic::minMaxCoversAllValues`), so that neither the bounds nor a
+        /// number of distinct values derived from them give a guarantee.
         if (!metrics.nulls && metrics.min_value.isNull())
             continue;
         statistics_builder.addStatistics(
@@ -275,22 +277,26 @@ std::optional<UInt64> ManifestColumnStatistics::estimateDistinctValues(
 
 void ManifestColumnStatistics::subtractDeletedRows(UInt64 rows)
 {
-    chassert(rows <= total_rows);
-    total_rows -= std::min(rows, total_rows);
+    chassert(rows <= total_rows - deleted_rows);
+    deleted_rows += std::min(rows, total_rows - deleted_rows);
 }
 
 void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
 {
-    estimate.rows = total_rows;
+    const UInt64 live_rows = total_rows - deleted_rows;
+    estimate.rows = live_rows;
 
-    /// Selectivities are shares of these rows.
+    /// Selectivities are shares of the live rows. The statistics still count the deleted rows, so their coverage is
+    /// checked against all rows of the files: a file without metrics leaves it partial, whatever the deletes.
     statistics_builder.incrementRowCount(total_rows);
+    statistics_builder.subtractDeletedRows(deleted_rows);
     const auto estimator = statistics_builder.getEstimator();
     if (!estimator)
         return;
 
-    /// The merged bounds and NULL counts the numbers of distinct values come from.
-    const auto merged = estimator->estimateRelationProfile();
+    /// The merged bounds and NULL counts the numbers of distinct values come from. The statistics were built with the
+    /// current column types, so there are no outdated ones to skip.
+    const auto merged = estimator->estimateRelationProfile(/*metadata=*/nullptr);
     /// Next step estimates NDV count when possible, from data we have from min/max, primary key info, etc.
     /// Similar to MergeTree without `uniq` statistics, estimator would make a blind guess.
     for (size_t i = 0; i < targets.size(); ++i)
@@ -303,7 +309,7 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
         const auto & column_stats = it->second;
         const auto & distinct_value_input = distinct_values_inputs[i];
         /// Without one, the estimator keeps its own guess, as for MergeTree without a `uniq` statistic.
-        if (const auto distinct_values = estimateDistinctValues(col_target, distinct_value_input, column_stats, total_rows))
+        if (const auto distinct_values = estimateDistinctValues(col_target, distinct_value_input, column_stats, live_rows))
             statistics_builder.setCardinality(col_name, *distinct_values);
     }
     estimate.estimator = estimator;
