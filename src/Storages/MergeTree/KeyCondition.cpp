@@ -7423,7 +7423,12 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
-    DataTypePtr current_type = recursiveRemoveLowCardinality(key_type);
+    /// Only a type with subtypes can contain `LowCardinality`.
+    DataTypePtr stripped_key_type;
+    if (key_type->haveSubtypes())
+        stripped_key_type = recursiveRemoveLowCardinality(key_type);
+    chassert(key_type->haveSubtypes() || recursiveRemoveLowCardinality(key_type).get() == key_type.get());
+    const DataTypePtr * current_type = stripped_key_type ? &stripped_key_type : &key_type;
 
     /// The functions are evaluated on the endpoints of a key range, which are values the analysis
     /// substitutes rather than values the query asked about, so they can fail for an endpoint the
@@ -7447,14 +7452,14 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
             IFunction::Monotonicity monotonicity = single_point
                 ? IFunction::Monotonicity{true}
-                : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
+                : func->getMonotonicityForRange(**current_type, key_range.left, key_range.right);
 
             if (!monotonicity.is_monotonic)
             {
                 return {};
             }
 
-            auto result_type = func->getResultType();
+            const DataTypePtr & result_type = func->getResultType();
 
             /// For functions like CAST between integer types that share the same Field representation
             /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
@@ -7464,10 +7469,13 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// A bound referencing a column in the index block is advanced by the application itself:
             /// skipping would leave it on the previous column while `current_type` moves on.
             bool skip_apply = key_range.left.isExplicit() && key_range.right.isExplicit()
-                && functionIsCastPreservingFieldRepresentation(func, current_type, result_type);
+                && functionIsCastPreservingFieldRepresentation(func, *current_type, result_type);
 
             if (!skip_apply)
             {
+                ColumnsWithTypeAndName * left_input_columns = nullptr;
+                size_t left_input_column_idx = 0;
+
                 /// If we apply function to open interval, we can get empty intervals in result.
                 /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
                 /// To avoid this we make range left and right included.
@@ -7475,7 +7483,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// argument leaves a bound with no position in the `Range` order, so the range cannot be analyzed.
                 if (!key_range.left.isNull())
                 {
-                    auto transformed = applyFunction(func, function_number, current_type, key_range.left);
+                    left_input_columns = key_range.left.columns;
+                    left_input_column_idx = key_range.left.column_idx;
+                    auto transformed = applyFunction(func, function_number, *current_type, key_range.left);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -7487,7 +7497,13 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
                 if (!key_range.right.isNull())
                 {
-                    auto transformed = applyFunction(func, function_number, current_type, key_range.right);
+                    /// A bound in the same index column as the left one has its result in the column just found for the left one.
+                    std::optional<FieldRef> transformed;
+                    if (left_input_columns && key_range.right.columns == left_input_columns
+                        && key_range.right.column_idx == left_input_column_idx)
+                        transformed.emplace(key_range.left.columns, key_range.right.row_idx, key_range.left.column_idx);
+                    else
+                        transformed = applyFunction(func, function_number, *current_type, key_range.right);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -7507,7 +7523,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                     key_range.right_included = true;
             }
 
-            current_type = result_type;
+            current_type = &result_type;
 
             if (!monotonicity.is_positive)
                 key_range.invert();
