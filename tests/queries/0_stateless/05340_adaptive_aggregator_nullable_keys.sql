@@ -88,15 +88,19 @@ SELECT 'single_wide',
         FROM numbers_mt(300000) GROUP BY a) SETTINGS enable_adaptive_aggregator = 1)
 SETTINGS log_comment = '05340_arm_single_wide';
 
--- nullable_keys128 with external aggregation
+-- nullable_keys128 with external aggregation. A randomized two-level threshold of a few bytes would make the
+-- ordinary path convert every table to two-level and spill each block as 256 buckets, 200 times slower,
+-- so the arm pins the thresholds; the adaptive path still spills its staged records.
 SELECT 'external',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY a, b) SETTINGS enable_adaptive_aggregator = 0, max_bytes_before_external_group_by = 1)
+        FROM numbers_mt(300000) GROUP BY a, b)
+        SETTINGS enable_adaptive_aggregator = 0, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
     =
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY a, b) SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1)
+        FROM numbers_mt(300000) GROUP BY a, b)
+        SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
 SETTINGS log_comment = '05340_arm_external';
 
 -- nullable_keys128 under ROLLUP. The aggregation under `ROLLUP` is partial, and the adaptive aggregator
