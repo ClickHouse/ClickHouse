@@ -59,9 +59,10 @@ RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
         arm64) tarch=aarch64 ;; \
     esac && \
     curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/${TOOLCHAIN_S3_DIR}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
-      | zstd -d | tar -xf - -C /usr/local/ ./lib/clang ./lib/libbolt_rt_instr.a ./lib/libbolt_rt_hugify.a ./share \
+      | zstd -d | tar -xf - -C /usr/local/ --wildcards ./lib/clang ./lib/libbolt_rt_instr.a ./lib/libbolt_rt_hugify.a ./share \
+        './bin/clang-[0-9]*' './bin/clang++-[0-9]*' \
         $(printf './bin/%s ' \
-          clang clang++ clang-${LLVM_VERSION} clang++-${LLVM_VERSION} clang-cpp ld.lld lld ld64.lld lld-link wasm-ld \
+          clang clang++ clang-cpp ld.lld lld ld64.lld lld-link wasm-ld \
           llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip llvm-install-name-tool llvm-bitcode-strip \
           llvm-objdump llvm-otool llvm-readobj llvm-readelf llvm-size llvm-strings llvm-cxxfilt \
           llvm-symbolizer llvm-addr2line llvm-profdata llvm-cov llvm-dwarfdump llvm-dwp llvm-config \
