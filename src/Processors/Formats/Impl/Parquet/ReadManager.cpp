@@ -92,6 +92,7 @@ void ReadManager::init(
         reader.setFileFooter(Reader::readFileFooter(reader.prefetcher, reader.options.format.parquet.footer_read_size));
 
     row_groups_to_read = std::move(row_groups_to_read_);
+    reader.memory_fraction_per_reader = SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, 1.);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 
@@ -1178,6 +1179,12 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 if (column.decode_dictionary_for_top_k && column.top_k_dictionary_page_prefetch)
                     reader.prefetcher.startPrefetchWithinLimit(
                         {&column.top_k_dictionary_page_prefetch}, &diff, std::numeric_limits<size_t>::max());
+                /// A dictionary decoded early is read before `PREWHERE`, and only because the dictionary pages of the row
+                /// group are small together, see `Reader::initColumnsCache`. Read only the page: `startPrefetch` would let
+                /// the read task take in the adjacent data pages, which may be much larger, while no row may need them.
+                else if (column.decode_dictionary_early && column.dictionary_page_prefetch)
+                    reader.prefetcher.startPrefetchWithinLimit(
+                        {&column.dictionary_page_prefetch}, &diff, std::numeric_limits<size_t>::max());
                 else
                     prefetches.push_back(&column.dictionary_page_prefetch);
                 break;

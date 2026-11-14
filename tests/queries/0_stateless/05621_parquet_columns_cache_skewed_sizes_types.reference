@@ -1,0 +1,19 @@
+--- a variant read as JSON: not cached
+[true,true]
+65536	720896
+65536	720896
+--- GeoParquet strings decoded into a much larger geo type: not cached
+[true]
+65536	4194304
+65536	4194304
+--- chunks of LowCardinality strings served from the cache, converted to strings
+65536	134217728	65536
+a	1	65536
+s	1	65536
+65536	8151857128318959616
+65536	10452236474157039616
+--- chunks of JSON served from the cache, converted to text
+65536	67502080
+65536	67502080
+v	1	65536
+65536	67502080
