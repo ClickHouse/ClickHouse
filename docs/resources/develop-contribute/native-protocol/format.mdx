@@ -1476,6 +1476,7 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9f` | `ZXC`             |
 | `0xa0` | `PCO` (see [Per-column codec frames](#per-column-codec-frames)) |
 | `0xa1` | `GDeflate` (see [Per-column codec frames](#per-column-codec-frames)) |
+| `0xa2` | `Wallaby`         |
 
 `DoubleDelta` (`0x94`) stores second differences as MSB-first prefix/sign/magnitude bits. Word-based decoding preserves this encoding, element count, and final-byte padding.
 
@@ -1492,6 +1493,8 @@ The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs 
 `0xa0` (`PCO`) is a **beta** lossless codec for fixed-width numeric columns, implemented by the pcodec Rust library. A table can be created with `CODEC(PCO)` only when the `enable_pco_codec` setting is set. In builds that include the library, the method byte is always accepted on decompression so that previously written data stays readable. A server built without it (without Rust, or with `ENABLE_PCO=OFF`) does not register the codec and rejects `0xa0` frames with `UNKNOWN_CODEC`.
 
 `0xa1` (`GDeflate`) is an **experimental** Deflate variant whose chunks a GPU can expand in parallel. A table can be created with `CODEC(GDeflate)` only when the `enable_gdeflate_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
+
+`0xa2` (`Wallaby`) is an **experimental** lossless codec for `Float32` and `Float64` columns that splits data into vectors of 1024 values and adaptively picks the cheapest of several encodings per vector (constant collapse, integerization with Frame-of-Reference or zigzag-delta bit-packing, XOR against a ring of 256 recent reference values, or raw). A table can be created with `CODEC(Wallaby)` only when the `enable_wallaby_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 
 ### Checksum {#checksum}
 

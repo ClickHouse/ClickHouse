@@ -39,6 +39,7 @@ const DB::Strings codecs
        "GCD",
        "ALP",
        "PCO",
+       "Wallaby",
        "AES_128_GCM_SIV",
        "AES_256_GCM_SIV",
        "NONE"};
