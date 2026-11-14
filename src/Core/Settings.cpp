@@ -10983,6 +10983,10 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 )", EXPERIMENTAL, allow_experimental_unique_key, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_unique_key`."}, \
         {"26.5", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}) \
+    DECLARE(Bool, enable_bytestreamsplit_codec, false, R"(
+Allows using the experimental `ByteStreamSplit` compression codec.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `ByteStreamSplit` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, enable_pco_codec, false, R"(
 Enables the `PCO` compression codec.
 )", BETA, \
