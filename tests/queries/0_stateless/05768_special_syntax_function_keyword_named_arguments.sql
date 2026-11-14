@@ -7,6 +7,8 @@ SELECT formatQuerySingleLine(formatQuerySingleLine('SELECT substring(s, `for`), 
 SELECT formatQuerySingleLine(formatQuerySingleLine('SELECT overlay(`placing`, ''a'', 1), overlayUTF8(`placing`(s), ''a'', 1)'));
 
 SELECT formatQuerySingleLine('SELECT position(in(a, b), ''y''), position(in IN x), overlay(s PLACING placing FROM 1), substring(from, 1)');
+SELECT formatQuerySingleLine('SELECT overlay(s PLACING from FROM 1)');
+SELECT formatQuerySingleLine('SELECT overlay(s PLACING r FROM for)');
 
 SELECT position('abc' IN 'xabc'), substring('abcdef' FROM 2 FOR 3), overlay('abcdef' PLACING 'XY' FROM 2 FOR 3);
 

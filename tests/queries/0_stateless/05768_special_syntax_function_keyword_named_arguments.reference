@@ -3,5 +3,7 @@ SELECT position(in(a, (b, c)), \'y\'), position(NOT in(a, (b, c)), \'y\', z)
 SELECT substring(s, for), substring(s, for, 2), substring(s, for(1))
 SELECT overlay(placing, \'a\', 1), overlayUTF8(placing(s), \'a\', 1)
 SELECT position(in(a, b), \'y\'), position(x, in), overlay(s, placing, 1), substring(`from`, 1)
+SELECT overlay(s, `from`, 1)
+SELECT overlay(s, r, for)
 2	bcd	aXYef
 2	bcdef	xQz
