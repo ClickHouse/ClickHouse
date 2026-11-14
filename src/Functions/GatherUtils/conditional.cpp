@@ -81,9 +81,9 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
         ColumnString::Offset a_prev = 0;
         ColumnString::Offset b_prev = 0;
         if constexpr (!a_is_const)
-            a_prev = a_offsets[begin - 1];
+            a_prev = a_offsets[static_cast<ssize_t>(begin) - 1];
         if constexpr (!b_is_const)
-            b_prev = b_offsets[begin - 1];
+            b_prev = b_offsets[static_cast<ssize_t>(begin) - 1];
 
         for (size_t row = begin; row < end; ++row)
         {
@@ -141,7 +141,7 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
         }
         else
         {
-            const size_t src_begin = offsets[begin - 1];
+            const size_t src_begin = offsets[static_cast<ssize_t>(begin) - 1];
             const size_t bytes = offsets[end - 1] - src_begin;
             reserve(bytes);
             if (bytes <= max_bytes_for_small_copy)
