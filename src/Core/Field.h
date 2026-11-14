@@ -978,6 +978,10 @@ inline bool isFloatZeroField(const Field & f)
 /// so they say nothing about what a container carries.
 bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &));
 
+/// Like `operator==`, except that aggregate function states compare by the function and the state instead of throwing
+/// when the functions differ: states of different functions can share a type that `IDataType::equals` considers equal.
+bool sameConstantValue(const Field & lhs, const Field & rhs);
+
 }
 
 template <>

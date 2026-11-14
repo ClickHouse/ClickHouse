@@ -116,6 +116,14 @@ void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);
 
+/// Whether the constants `lhs` and `rhs` (row 0) hold states of different aggregate functions, or different states at the
+/// same position, which `IDataType::equals` and `IColumn::compareAt` cannot tell apart. `Dynamic` and `JSON` are not looked into.
+bool haveDifferentAggregateFunctionStates(const IDataType & lhs_type, const IColumn & lhs, const IDataType & rhs_type, const IColumn & rhs);
+
+/// Hashes the aggregate functions with their parameters and state versions nested in `type`, which
+/// `haveDifferentAggregateFunctionStates` compares.
+void updateHashWithAggregateFunctionNames(const IDataType & type, SipHash & hash);
+
 /// Whether all `AggregateFunction` types nested in `lhs` and `rhs` have the same state versions.
 /// `IDataType::equals` ignores the state version, so two equal types may still disagree here.
 bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs);
