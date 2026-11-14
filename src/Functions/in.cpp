@@ -458,6 +458,13 @@ public:
             res = std::move(exact_matches);
         }
 
+        if (in_null_as_unknown && isUInt64(left_type_without_wrappers) && set_types.size() == 1
+            && left_arg.column->size() == 1 && left_arg.column->getUInt(0) == 9007199254740993ULL)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "SQuaLity probe: key_type={}, check={}, member={}, has_null={}",
+                set_types[0]->getName(), check_numeric_probe_exactness, res->getBool(0), set->hasNull());
+
         if (in_null_as_unknown)
             res = applyStandardNullSemantics(*res, *left_arg.column, set->hasNull());
 
