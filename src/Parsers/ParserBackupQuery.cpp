@@ -744,7 +744,7 @@ BACKUP element [, ...]
 | `VIEW ...`, `DICTIONARY ...` | Same as `TABLE`: the keyword does not restrict the kind of object. |
 | `TEMPORARY TABLE name [AS name_in_backup]` | A temporary table of the current session. |
 | `DATABASE name [AS name_in_backup] [EXCEPT TABLE[S] table [, ...]]` | A database and all its tables, views and dictionaries, except the listed ones, which must belong to it. |
-| `ALL [EXCEPT DATABASE[S] db [, ...]] [EXCEPT TABLE[S] db.table [, ...]]` | Every database, including `system`, and the temporary tables of the current session, except the listed ones. Introduced in v23.4.0. |
+| `ALL [EXCEPT DATABASE[S] db [, ...]] [EXCEPT TABLE[S] db.table [, ...]]` | Every database, including `system`, and the temporary tables of the current session, except the listed ones. Introduced in v23.4.0 (v22.7.0 for `RESTORE`). |
 
 Each element can end with `EXCEPT DATA FROM TABLE[S] [db.]table [, ...]` (introduced in v26.10.0): the listed tables are stored without their data and restore as empty tables. On a `TABLE`, `VIEW`, `DICTIONARY` or `TEMPORARY TABLE` element the clause can only name the element's own object. See [Backing up a table without its data](/concepts/features/backup-restore/overview#backup-without-data).
 
@@ -754,12 +754,14 @@ Each element can end with `EXCEPT DATA FROM TABLE[S] [db.]table [, ...]` (introd
 |---|---|---|
 | `File('path')` | In a local directory below the server setting [`backups.allowed_path`](/reference/settings/server-settings/settings/backups#backups). A relative path is relative to it. | v21.12.0 |
 | `Disk('disk', 'path')` | On a disk listed in the server setting [`backups.allowed_disk`](/reference/settings/server-settings/settings/backups#backups). | v21.12.0 |
-| `S3('url' [, 'access_key_id', 'secret_access_key'])`, `S3(named_collection [, 'path'])` | In S3 or S3-compatible storage. See [S3 endpoint](/concepts/features/backup-restore/s3-endpoint). | v22.10.0 |
-| `AzureBlobStorage('connection_string', 'container', 'path')`, `AzureBlobStorage('storage_account_url', 'container', 'path' [, 'account_name', 'account_key'])`, `AzureBlobStorage(named_collection [, 'path'])` | In Azure Blob Storage. See [AzureBlobStorage](/concepts/features/backup-restore/azure-blob-storage). | v24.2.0 |
+| `S3('url' [, 'access_key_id', 'secret_access_key'] [, extra_credentials(...)])`, `S3(named_collection [, 'path'] [, key = value, ...])` | In S3 or S3-compatible storage. See [S3 endpoint](/concepts/features/backup-restore/s3-endpoint). | v22.10.0 |
+| `AzureBlobStorage('connection_string', 'container', 'path')`, `AzureBlobStorage('storage_account_url', 'container', 'path' [, 'account_name', 'account_key'])`, `AzureBlobStorage(named_collection [, 'path'] [, key = value, ...])` | In Azure Blob Storage. See [AzureBlobStorage](/concepts/features/backup-restore/azure-blob-storage). | v24.2.0 |
 | `Memory('name')` | In the memory of the current session, until the session ends. | v25.1.0 |
 | `Null` | Nowhere: the backup is written and discarded, and cannot be restored. For testing. | v25.1.0 |
 
-A path ending with `.zip`, `.zipx`, `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzst`, `.tar.xz`, `.tar.bz2` or `.tar.lzma` stores the backup as one archive of that format instead of a directory. `S3` and `AzureBlobStorage` do not support ZIP archives.
+With a named collection, `key = value` arguments override the parameters of the collection, see [Named collections](/concepts/features/configuration/server-config/named-collections). `extra_credentials(role_arn = 'arn' [, role_session_name = 'name'] [, external_id = 'id'])` passes an IAM role for role-based access in ClickHouse Cloud, see [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely).
+
+A path ending with `.zip`, `.zipx`, `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzst`, `.tar.xz`, `.tar.bz2` or `.tar.lzma` stores the backup as one archive of that format instead of a directory. ZIP archives are not supported on `S3` and `AzureBlobStorage`, nor on a `Disk` backed by S3 or Azure object storage. Archives cannot be used with `ON CLUSTER`.
 
 ## ON CLUSTER {#on-cluster}
 
@@ -784,7 +786,7 @@ One row with the columns `id` (`String`: the `id` setting, or a generated UUID) 
 | `id` | a generated UUID | ID of the operation in the result and in `system.backups`. It must differ from the ID of every operation `system.backups` lists. |
 | `base_backup` | unset | Destination of a base backup. The new backup is incremental: it stores only what the base backup does not contain. |
 | `compression_method` | `''` | Compression method of a ZIP archive, for example `'lzma'`; `''` is the default method. Not supported for TAR archives. |
-| `compression_level` | `-1` | Compression level of a ZIP archive; `-1` is the default level. |
+| `compression_level` | `-1` | Compression level of a ZIP archive; `-1` is the default level. Not supported for TAR archives. |
 | `password` | `''` | Encrypts a ZIP archive with this password; a directory or TAR backup rejects it. |
 | `s3_storage_class` | `''` | Storage class of the files written to S3, for example `'STANDARD'`. Alias: `s3_storage_class_name`. |
 | `structure_only` | `0` | Stores only the definitions of the objects, without the data of tables. |
@@ -805,8 +807,8 @@ One row with the columns `id` (`String`: the `id` setting, or a generated UUID) 
 | `allow_backup_broken_projections` | `0` | Allows backing up a table with broken projections. |
 | `write_access_entities_dependents` | `1` | Stores, with the access entities, what depends on them, for example the grant of a backed up role to a user that is not backed up. |
 | `allow_checksums_from_remote_paths` | `1` | Allows computing the checksums of backup entries from the paths of their blobs in object storage. |
-| `data_file_name_generator` | `''` | `''` keeps the original names of the data files, `'checksum'` names them by checksum. The server setting `backups.data_file_name_generator` changes the default. |
-| `data_file_name_prefix_length` | `3` | With `data_file_name_generator = 'checksum'`, the length of the checksum prefix used as a directory name. |
+| `data_file_name_generator` | `''` | `''` keeps the original names of the data files, `'checksum'` names them by checksum. The server setting `backups.data_file_name_generator` changes the default; when it is `'checksum'`, `''` in the query does not switch back. |
+| `data_file_name_prefix_length` | `3` | With `data_file_name_generator = 'checksum'`, the length of the checksum prefix used as a directory name. The server setting `backups.data_file_name_prefix_length` changes the default. |
 | `backup_data_from_refreshable_materialized_view_targets` | `0` | Also stores the data of the target tables of refreshable materialized views without `APPEND`; the data of other targets is always stored. |
 | `backup_named_collections` | unset | Whether to store the named collections created with SQL. See [Named collections](/concepts/features/backup-restore/named-collections). |
 | `experimental_lightweight_snapshot` | `0` | Experimental, ClickHouse Cloud only: creates a snapshot backup. See [Snapshot backup](/concepts/features/backup-restore/snapshot). |
@@ -815,7 +817,7 @@ Any other setting in the clause applies to the statement as a query-level settin
 
 ## Privileges {#privileges}
 
-`BACKUP` requires the `BACKUP` privilege on every object it backs up (on `*.*` for `ALL`) and the `WRITE` [source privilege](/reference/statements/grant#sources) of the destination: `FILE`, `DISK`, `S3` or `AZURE`. `Memory` and `Null` require no source privilege.
+`BACKUP` requires the `BACKUP` privilege on every table, view and dictionary it backs up (on `db.*` for `DATABASE`, on `*.*` for `ALL`); temporary tables require none. It also requires the `WRITE` [source privilege](/reference/statements/grant#sources) of the destination (`FILE`, `DISK`, `S3` or `AZURE`), the `READ` source privilege of the `base_backup` setting's destination, and the `NAMED COLLECTION` privilege on a named collection used as a destination. `Memory` and `Null` require no source privilege. Exporting SQL-created named collections requires more privileges, see [Named collections](/concepts/features/backup-restore/named-collections).
 
 ## BACKUP FROM SNAPSHOT {#backup-from-snapshot}
 
@@ -828,13 +830,14 @@ Introduced in: v26.3.0
 BACKUP FROM SNAPSHOT snapshot_destination [ON CLUSTER cluster] TO destination [SETTINGS ...] [ASYNC | SYNC]
 ```
 
-Creates a backup at `destination` from the snapshot backup at `snapshot_destination`, an `S3` or `AzureBlobStorage` backup created with the setting `experimental_lightweight_snapshot`. The experimental setting [`resumable_backup_from_snapshot`](/reference/settings/session-settings/other#resumable_backup_from_snapshot) makes a failed attempt resumable.
+Creates a backup at `destination` from the snapshot backup at `snapshot_destination`, an `S3` or `AzureBlobStorage` backup created with the setting `experimental_lightweight_snapshot`. The experimental setting [`resumable_backup_from_snapshot`](/reference/settings/session-settings/other#resumable_backup_from_snapshot) makes a failed attempt resumable. With it, the `BACKUP` settings `resumable_backup_batch_size` (default `50000`) and `resumable_backup_batch_size_bytes` (default 10 GiB) bound the number of files and of new data bytes between two checkpoints in ClickHouse Keeper; both must be greater than 0.
 
 ## Examples {#examples}
 
 A full backup of a table to a ZIP archive:
 
 ```sql title="Query"
+CREATE DATABASE test;
 CREATE TABLE test.events (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO test.events SELECT number, toString(number) FROM numbers(1000);
 BACKUP TABLE test.events TO Disk('backups', 'events_full.zip') SETTINGS id = 'events_full';
@@ -876,6 +879,8 @@ BACKUP DATABASE test TO File('test_db') SETTINGS id = 'test_db' ASYNC;
 │ test_db │ CREATING_BACKUP │
 └─────────┴─────────────────┘
 ```
+
+When the backup has finished, `system.backups` shows its final status:
 
 ```sql title="Query"
 SELECT id, name, status, num_files FROM system.backups WHERE id = 'test_db';
@@ -967,7 +972,7 @@ Any other setting in the clause applies to the statement as a query-level settin
 
 ## Privileges {#privileges}
 
-`RESTORE` requires the `READ` [source privilege](/reference/statements/grant#sources) of the destination and the privileges to create and fill what it restores, for example `CREATE TABLE` and `INSERT` on a restored table.
+`RESTORE` requires the `READ` [source privilege](/reference/statements/grant#sources) of the destination and of the base backup's destination (the one recorded in the backup, or the `base_backup` setting), the `NAMED COLLECTION` privilege on a named collection used as a destination, and the privileges to create and fill what it restores, for example `CREATE TABLE` and `INSERT` on a restored table.
 
 ## Examples {#examples}
 
