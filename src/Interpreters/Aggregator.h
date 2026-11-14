@@ -1749,7 +1749,7 @@ private:
     void mergeSingleLevelPartitionsImpl(
         Method & dst_method,
         const std::vector<AggregatedDataVariants *> & sources,
-        bool indexed,
+        bool merge_by_cell_index,
         Arena * arena,
         size_t num_partitions,
         size_t first_partition,
