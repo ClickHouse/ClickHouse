@@ -291,12 +291,17 @@ void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat
     iterateImpl(queue.begin(), func, stat, lock);
 }
 
-FileSegmentSummaryInfos LRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank)
+FileSegmentSummaryInfos LRUFileCachePriority::iterate(
+    UInt64 query_max_elements,
+    UInt64 query_max_total_size,
+    IterationOrder query_order,
+    UInt64 start_priority_rank,
+    QueueEntryType queue_entry_type)
 {
     assertNotSealed("iterate");
     FileSegmentSummaryInfos result;
     auto lock = getPriorityGuard().readLock();
-    iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, result, lock);
+    iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, queue_entry_type, result, lock);
     return result;
 }
 
@@ -305,12 +310,13 @@ void LRUFileCachePriority::iterate(
     UInt64 query_max_total_size,
     IterationOrder query_order,
     UInt64 start_priority_rank,
+    QueueEntryType queue_entry_type,
     FileSegmentSummaryInfos & result,
     const CachePriorityGuard::ReadLock &)
 {
     /// return early since result is aggregation for e.g probationary and protected queue in the case of SLRUFileCachePriority and
     /// an aggregation of system cache and data cache in the case of SplitFileCachePriority
-    if (result.infos.size() >= query_max_elements)
+    if (result.limit_reached || result.infos.size() >= query_max_elements)
         return;
 
     UInt64 next_priority_rank = start_priority_rank;
@@ -334,7 +340,7 @@ void LRUFileCachePriority::iterate(
         if (!file_segment_metadata)
             return true;
 
-        auto info = FileSegment::getSummaryInfo(file_segment_metadata->file_segment);
+        auto info = FileSegment::getSummaryInfo(file_segment_metadata->file_segment, queue_entry_type);
         if (info.size == 0)
             return true;
 
@@ -356,7 +362,10 @@ void LRUFileCachePriority::iterate(
         for (const auto & entry : entries)
         {
             if (!add_entry(entry))
+            {
+                result.limit_reached = true;
                 return;
+            }
         }
     };
 

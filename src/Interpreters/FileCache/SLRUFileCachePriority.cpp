@@ -213,7 +213,7 @@ void SLRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & sta
     probationary_queue.iterateImpl(probationary_queue.queue.begin(), func, stat, lock);
 }
 
-FileSegmentSummaryInfos SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank)
+FileSegmentSummaryInfos SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank, QueueEntryType queue_entry_type)
 {
     FileSegmentSummaryInfos result;
 
@@ -224,8 +224,9 @@ FileSegmentSummaryInfos SLRUFileCachePriority::iterate(UInt64 query_max_elements
     auto & second_queue = query_order == IterationOrder::COLDEST ? protected_queue : probationary_queue;
 
     /// underlying implementation if LRUFileCachePriority will take care of respecting query_max_elements, query_max_total_size and query_order
-    first_queue.iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, result, lock);
-    second_queue.iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank + result.infos.size(), result, lock);
+    first_queue.iterate(query_max_elements, query_max_total_size, query_order, start_priority_rank, queue_entry_type, result, lock);
+    second_queue.iterate(
+        query_max_elements, query_max_total_size, query_order, start_priority_rank + result.infos.size(), queue_entry_type, result, lock);
 
     return result;
 }

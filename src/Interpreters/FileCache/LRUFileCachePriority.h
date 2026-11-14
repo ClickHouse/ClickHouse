@@ -123,7 +123,7 @@ public:
 
     PriorityDumpPtr dump() override;
 
-    FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank) override;
+    FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank, QueueEntryType queue_entry_type) override;
 
     bool modifySizeLimits(
         size_t max_size_,
@@ -259,6 +259,7 @@ private:
 
     /// Appends the file segments of this queue to `result` in `query_order`, until `result` has `query_max_elements`
     /// segments or the next one would make `result.total_size` exceed `query_max_total_size`.
+    /// Sets `result.limit_reached` when it stops on a limit, and does nothing if it is already set.
     /// SLRU calls it for both of its sub-queues with the same `result` and its shared lock.
     /// The appended segments get consecutive ranks starting from `start_priority_rank`.
     void iterate(
@@ -266,6 +267,7 @@ private:
         UInt64 query_max_total_size,
         IterationOrder query_order,
         UInt64 start_priority_rank,
+        QueueEntryType queue_entry_type,
         FileSegmentSummaryInfos & result,
         const CachePriorityGuard::ReadLock &);
 

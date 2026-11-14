@@ -115,6 +115,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 reserve_granularity;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsBool use_split_cache;
+    extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
@@ -4546,4 +4548,218 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
+}
+
+TEST_F(FileCacheTest, ObserveFilesystemCache)
+try
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    std::string query_id = "query_id"; /// To work with cache need query_id and query context.
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    using Order = IFileCachePriority::IterationOrder;
+    const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
+    size_t file_cache_name = 0;
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Every cache has its own directory under `cache_base_path`, which `TearDown` removes.
+    auto make_settings = [&](const String & name, FileCachePolicy policy, bool use_split_cache)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = fs::path(cache_base_path) / name;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 10;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = policy;
+        settings[FileCacheSetting::slru_size_ratio] = 0.5;
+        settings[FileCacheSetting::use_split_cache] = use_split_cache;
+        settings[FileCacheSetting::split_cache_ratio] = 0.5;
+        return settings;
+    };
+
+    /// cache miss, init with EMPTY state
+    auto add_range = [&](FileCache & cache, const FileCacheKey & key, const FileCacheOriginInfo & origin, size_t offset, size_t size)
+    {
+        auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, origin);
+        assertEqual(holder, {Range(offset, offset + size - 1)}, {State::EMPTY});
+        download(*holder->begin());
+    };
+
+    /// A cache hit
+    auto hit_range = [&](FileCache & cache, const FileCacheKey & key, const FileCacheOriginInfo & origin, size_t offset, size_t size)
+    {
+        auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, origin);
+        assertEqual(holder, {Range(offset, offset + size - 1)}, {State::DOWNLOADED});
+        increasePriority(holder);
+    };
+
+    struct ExpectedSegment
+    {
+        FileCacheKey key;
+        Range range;
+        /// Not checked if not set.
+        std::optional<QueueEntryType> queue = std::nullopt;
+        /// A directory which the path must contain, if not empty.
+        String path_part = {};
+    };
+
+    auto assert_observed = [&](const std::vector<FileSegmentSummaryInfo> & infos, const std::vector<ExpectedSegment> & expected)
+    {
+        String got;
+        for (const auto & info : infos)
+            got += fmt::format("{}: {} ({}), ", info.priority_rank, info.path, info.queue_entry_type);
+        LOG_DEBUG(testLog(), "Observed: {}", got);
+
+        ASSERT_EQ(infos.size(), expected.size());
+        for (size_t i = 0; i < infos.size(); ++i)
+        {
+            const auto & info = infos[i];
+            const auto & segment = expected[i];
+            ASSERT_EQ(info.priority_rank, i + 1);
+            ASSERT_EQ(info.key, segment.key.toString());
+            ASSERT_EQ(info.offset, segment.range.left);
+            ASSERT_EQ(info.size, segment.range.size());
+            ASSERT_EQ(info.state, "DOWNLOADED");
+            ASSERT_EQ(info.user_id, user.user_id);
+            if (segment.queue)
+                ASSERT_EQ(info.queue_entry_type, toString(*segment.queue));
+            ASSERT_TRUE(info.path.ends_with(fmt::format("/{}_{}", segment.range.left, segment.range.size())));
+            /// TODO:(andi) Do I need this check for segment.path_part
+            ASSERT_TRUE(segment.path_part.empty() || info.path.contains(segment.path_part));
+            ASSERT_TRUE(fs::exists(info.path));
+        }
+    };
+
+    /// LRU
+    {
+        auto cache = DB::FileCache(std::to_string(++file_cache_name), make_settings("observe_lru", FileCachePolicy::LRU, false));
+        cache.initialize();
+        const auto key = FileCacheKey::fromPath("observe_lru_key");
+
+        add_range(cache, key, user, 0, 10);
+        add_range(cache, key, user, 10, 5);
+        add_range(cache, key, user, 15, 5);
+        hit_range(cache, key, user, 0, 10);
+        assertEqual(cache.dumpQueue(), {Range(10, 14), Range(15, 19), Range(0, 9)});
+
+        const ExpectedSegment first{key, Range(10, 14), QueueEntryType::LRU};
+        const ExpectedSegment second{key, Range(15, 19), QueueEntryType::LRU};
+        const ExpectedSegment third{key, Range(0, 9), QueueEntryType::LRU};
+
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::COLDEST), {first, second, third});
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::HOTTEST), {third, second, first});
+
+        /// The walk stops after `query_max_elements` segments.
+        assert_observed(cache.observeFilesystemCache(2, 100, Order::COLDEST), {first, second});
+        /// The walk stops before the segment which would exceed `query_max_total_size`, even if a later one would fit.
+        assert_observed(cache.observeFilesystemCache(10, 9, Order::COLDEST), {first});
+        assert_observed(cache.observeFilesystemCache(10, 9, Order::HOTTEST), {});
+        /// A segment which fills `query_max_total_size` exactly is returned.
+        assert_observed(cache.observeFilesystemCache(10, 10, Order::COLDEST), {first, second});
+        assert_observed(cache.observeFilesystemCache(10, 10, Order::HOTTEST), {third});
+        assert_observed(cache.observeFilesystemCache(10, 20, Order::COLDEST), {first, second, third});
+        assert_observed(cache.observeFilesystemCache(10, 0, Order::COLDEST), {});
+        /// Whichever limit is reached first stops the walk.
+        assert_observed(cache.observeFilesystemCache(1, 100, Order::HOTTEST), {third});
+        assert_observed(cache.observeFilesystemCache(2, 5, Order::COLDEST), {first});
+    }
+
+    /// SLRU
+    {
+        auto cache = DB::FileCache(std::to_string(++file_cache_name), make_settings("observe_slru", FileCachePolicy::SLRU, false));
+        cache.initialize();
+        const auto key = FileCacheKey::fromPath("observe_slru_key");
+
+        add_range(cache, key, user, 0, 10);
+        add_range(cache, key, user, 10, 5);
+        add_range(cache, key, user, 15, 5);
+        add_range(cache, key, user, 20, 5);
+        hit_range(cache, key, user, 0, 10);
+        hit_range(cache, key, user, 10, 5);
+        assertProbationary(cache.dumpQueue(), {Range(15, 19), Range(20, 24)});
+        assertProtected(cache.dumpQueue(), {Range(0, 9), Range(10, 14)});
+
+        const ExpectedSegment probationary_head{key, Range(15, 19), QueueEntryType::SLRU_Probationary};
+        const ExpectedSegment probationary_tail{key, Range(20, 24), QueueEntryType::SLRU_Probationary};
+        const ExpectedSegment protected_head{key, Range(0, 9), QueueEntryType::SLRU_Protected};
+        const ExpectedSegment protected_tail{key, Range(10, 14), QueueEntryType::SLRU_Protected};
+
+        /// The probationary queue is colder than the protected one.
+        assert_observed(
+            cache.observeFilesystemCache(10, 100, Order::COLDEST), {probationary_head, probationary_tail, protected_head, protected_tail});
+        assert_observed(
+            cache.observeFilesystemCache(10, 100, Order::HOTTEST), {protected_tail, protected_head, probationary_tail, probationary_head});
+
+        /// The limits and the ranks continue from the first sub-queue to the second one.
+        assert_observed(cache.observeFilesystemCache(3, 100, Order::COLDEST), {probationary_head, probationary_tail, protected_head});
+        assert_observed(cache.observeFilesystemCache(3, 100, Order::HOTTEST), {protected_tail, protected_head, probationary_tail});
+
+        /// `query_max_total_size` is filled exactly by the first sub-queue.
+        assert_observed(cache.observeFilesystemCache(10, 10, Order::COLDEST), {probationary_head, probationary_tail});
+        assert_observed(cache.observeFilesystemCache(10, 15, Order::HOTTEST), {protected_tail, protected_head});
+        /// `query_max_total_size` is filled exactly in the second sub-queue.
+        assert_observed(cache.observeFilesystemCache(10, 20, Order::COLDEST), {probationary_head, probationary_tail, protected_head});
+        assert_observed(cache.observeFilesystemCache(10, 20, Order::HOTTEST), {protected_tail, protected_head, probationary_tail});
+        assert_observed(cache.observeFilesystemCache(10, 0, Order::HOTTEST), {});
+        /// The first sub-queue stops on `protected_head` (5 + 10 > 14), so the second one is not walked,
+        /// even though `probationary_tail` would fit.
+        assert_observed(cache.observeFilesystemCache(10, 14, Order::HOTTEST), {protected_tail});
+    }
+
+    /// SplitFileCachePriority (with LRU sub-queues)
+    {
+        auto cache = DB::FileCache(std::to_string(++file_cache_name), make_settings("observe_split", FileCachePolicy::LRU, true));
+        cache.initialize();
+        const auto data_key = FileCacheKey::fromPath("observe_split_data_key");
+        const auto system_key = FileCacheKey::fromPath("observe_split_system_key");
+        const auto data_origin = cache.getCommonOriginWithSegmentKeyType(FileSegmentKeyType::Data);
+        const auto system_origin = cache.getCommonOriginWithSegmentKeyType(FileSegmentKeyType::System);
+
+        add_range(cache, data_key, data_origin, 0, 10);
+        add_range(cache, data_key, data_origin, 10, 10);
+        add_range(cache, system_key, system_origin, 0, 5);
+        add_range(cache, system_key, system_origin, 5, 5);
+        hit_range(cache, data_key, data_origin, 0, 10);
+
+        const ExpectedSegment data_head{data_key, Range(10, 19), QueueEntryType::SplitCache_Data, "/Data/"};
+        const ExpectedSegment data_tail{data_key, Range(0, 9), QueueEntryType::SplitCache_Data, "/Data/"};
+        const ExpectedSegment system_head{system_key, Range(0, 4), QueueEntryType::SplitCache_System, "/System/"};
+        const ExpectedSegment system_tail{system_key, Range(5, 9), QueueEntryType::SplitCache_System, "/System/"};
+
+        /// The data queue comes first in both orders.
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::COLDEST), {data_head, data_tail, system_head, system_tail});
+        assert_observed(cache.observeFilesystemCache(10, 100, Order::HOTTEST), {data_tail, data_head, system_tail, system_head});
+
+        /// The limits and the ranks continue from the data queue to the system queue.
+        assert_observed(cache.observeFilesystemCache(3, 100, Order::COLDEST), {data_head, data_tail, system_head});
+        /// The data queue stops on its second segment (10 + 10 > 15), so the system queue is not walked,
+        /// even though `system_head` would fit.
+        assert_observed(cache.observeFilesystemCache(10, 15, Order::COLDEST), {data_head});
+        assert_observed(cache.observeFilesystemCache(10, 15, Order::HOTTEST), {data_tail});
+        assert_observed(cache.observeFilesystemCache(10, 25, Order::COLDEST), {data_head, data_tail, system_head});
+        assert_observed(cache.observeFilesystemCache(10, 25, Order::HOTTEST), {data_tail, data_head, system_tail});
+        /// The data queue fills `query_max_total_size` exactly, so the system queue is not walked.
+        assert_observed(cache.observeFilesystemCache(10, 20, Order::COLDEST), {data_head, data_tail});
+        assert_observed(cache.observeFilesystemCache(10, 30, Order::HOTTEST), {data_tail, data_head, system_tail, system_head});
+        assert_observed(cache.observeFilesystemCache(10, 0, Order::COLDEST), {});
+    }
+}
+catch (...)
+{
+    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
+    throw;
 }

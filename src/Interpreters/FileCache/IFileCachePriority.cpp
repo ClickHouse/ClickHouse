@@ -99,6 +99,6 @@ void IFileCachePriority::IPriorityDump::merge(const IPriorityDump & other)
 std::vector<FileSegmentSummaryInfo>
 IFileCachePriority::observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order)
 {
-    return iterate(query_max_elements, query_max_total_size, query_order, /* start_priority_rank */ 1).infos;
+    return iterate(query_max_elements, query_max_total_size, query_order, /* start_priority_rank */ 1, QueueEntryType::None).infos;
 }
 }

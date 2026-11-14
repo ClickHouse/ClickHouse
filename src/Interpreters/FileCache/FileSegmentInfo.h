@@ -106,5 +106,8 @@ namespace DB
         std::vector<FileSegmentSummaryInfo> infos;
         /// cache total size so that in SplitFileCachePriority we don't need to iterate again before checking system segments
         UInt64 total_size = 0;
+        /// Set when the walk stopped on `query_max_elements` or `query_max_total_size`.
+        /// The next sub-queue (SLRU's second one, Split's system one) is then not walked at all.
+        bool limit_reached = false;
     };
 }

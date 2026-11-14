@@ -195,7 +195,8 @@ public:
     static FileSegmentInfo getInfo(const FileSegmentPtr & file_segment);
 
     /// Only the fields returned by `IFileCachePriority::observeFilesystemCache`.
-    static FileSegmentSummaryInfo getSummaryInfo(const FileSegmentPtr & file_segment);
+    /// If `queue_entry_type` is `None`, the type of the segment's own queue entry is reported.
+    static FileSegmentSummaryInfo getSummaryInfo(const FileSegmentPtr & file_segment, QueueEntryType queue_entry_type);
 
     bool isDetached() const;
 

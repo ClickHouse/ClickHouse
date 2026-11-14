@@ -268,7 +268,8 @@ public:
     observeFilesystemCache(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order);
 
     /// Each concrete implementation of IFileCachePriority should know better how to implement this
-    virtual FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank) = 0;
+    /// If `queue_entry_type` is not `None`, it is reported for every segment instead of the type of the segment's own queue entry.
+    virtual FileSegmentSummaryInfos iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, UInt64 start_priority_rank, QueueEntryType queue_entry_type) = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
