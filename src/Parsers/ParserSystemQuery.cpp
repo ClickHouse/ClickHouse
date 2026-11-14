@@ -1596,7 +1596,7 @@ SYSTEM FLUSH LOGS query_log, system.query_views_log;
 
 Introduced in: v23.7.0
 
-Writes the data of the pending [asynchronous inserts](/concepts/features/operations/insert/asyncinserts) to their tables now, without waiting for the buffer timeout, and returns after the data is written. With a list of tables, only the inserts into these tables are written. The pending inserts are shown in [`system.asynchronous_inserts`](/reference/system-tables/asynchronous_inserts).
+Writes the data of the pending [asynchronous inserts](/concepts/features/operations/insert/asyncinserts) to their tables now, without waiting for the buffer timeout. Without a list of tables, it returns after all the queued data is processed, including the batches that a background flush has already taken from the queue. With a list of tables, only the inserts into these tables are written, and the statement waits only for the batches it takes from the queue itself. An insert whose data cannot be written, for example because it does not parse, does not make the statement fail: its rows are not inserted and the error is recorded in [`system.asynchronous_insert_log`](/reference/system-tables/asynchronous_insert_log). The pending inserts are shown in [`system.asynchronous_inserts`](/reference/system-tables/asynchronous_inserts).
 
 ```sql
 SYSTEM FLUSH ASYNC INSERT QUEUE [ON CLUSTER cluster_name] [[db.]table [, ...]]
@@ -1913,10 +1913,10 @@ Introduced in: v26.5.0
 
 <ExperimentalBadge/>
 
-Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order. A merge whose parts are not is never performed, and the merges scheduled after it wait for it.
+Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order, and within the size limits of the other background merges, such as [`max_bytes_to_merge_at_max_space_in_pool`](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool). While a scheduled merge does not meet these conditions, neither it nor the merges scheduled after it are performed. The scheduled merges are kept only in the server's memory and are lost when the server restarts.
 
 <Note>
-This is an experimental feature. `SYSTEM SCHEDULE MERGE` and `SYSTEM SYNC MERGES` work only for a table of the MergeTree family whose experimental MergeTree setting [`merge_selector_algorithm`](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) is `'Manual'`, and fail with `BAD_ARGUMENTS` for other tables. The background merges of such a table merge only the scheduled parts (`OPTIMIZE TABLE ... FINAL` still merges all parts).
+This is an experimental feature. `SYSTEM SCHEDULE MERGE` and `SYSTEM SYNC MERGES` work only for a table of the MergeTree family whose experimental MergeTree setting [`merge_selector_algorithm`](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) is `'Manual'`, and fail with `BAD_ARGUMENTS` for other tables. The regular background merges of such a table merge only the scheduled parts; TTL merges still run on their own, and `OPTIMIZE TABLE ... FINAL` still merges all parts.
 </Note>
 
 ```sql
@@ -2000,6 +2000,8 @@ SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 
 Introduced in: v23.9.0
 
+<CloudNotSupportedBadge/>
+
 Stops the background cleanup of tables in the MergeTree family, which removes outdated data parts, temporary directories and other obsolete data. While the cleanup is stopped, the outdated parts stay on disk.
 
 ```sql
@@ -2011,6 +2013,8 @@ As with [`SYSTEM STOP MERGES`](#stop-merges), without a table name the cleanup i
 ### SYSTEM START CLEANUP {#start-cleanup}
 
 Introduced in: v23.9.0
+
+<CloudNotSupportedBadge/>
 
 Starts the background cleanup again after `SYSTEM STOP CLEANUP`.
 
@@ -2078,7 +2082,7 @@ Removes from ClickHouse Keeper all the locks of the snapshot `snapshot_id`, a li
 SYSTEM UNLOCK SNAPSHOT 'snapshot_id' [FROM backup_destination]
 ```
 
-Requires the `SYSTEM UNLOCK SNAPSHOT` privilege.
+Requires the `SYSTEM UNLOCK SNAPSHOT` privilege. A destination named in `FROM` is also checked against the [`SOURCES`](/reference/statements/grant#sources) grants, as for `RESTORE`: `READ` on `S3` or `AZURE`.
 
 ### SYSTEM WAIT LOADING PARTS {#wait-loading-parts}
 
