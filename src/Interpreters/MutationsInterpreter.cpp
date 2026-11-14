@@ -9,6 +9,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/misc.h>
@@ -797,6 +798,99 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
+/// Whether the identifiers of `ast` use the column `column_name`. They may be qualified, and a subcolumn of the column is
+/// `column.subcolumn`.
+static bool usesColumn(const ASTPtr & ast, const String & column_name)
+{
+    return std::ranges::any_of(
+        IdentifiersCollector::collect(ast),
+        [&](const ASTIdentifier * identifier)
+        {
+            const auto & name = identifier->name();
+            return name == column_name || identifier->shortName() == column_name || name.starts_with(column_name + ".");
+        });
+}
+
+/// Whether the column `name`, computed from its default for the part, is computed from the column `column_name`, also through
+/// the defaults of other such columns. An `ALIAS` is always computed from its expression when read, even if the part still
+/// stores data of a former column with its name. A subcolumn, such as `x.v` of a `Tuple`, is computed with its column; the
+/// column metadata tells it from a column whose name has a dot.
+static bool isComputedFromColumn(
+    const String & name,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_computed_for_part,
+    NameSet & visited)
+{
+    const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+    if (!column)
+        return false;
+    const String name_in_storage = column->getNameInStorage();
+    if (!visited.emplace(name_in_storage).second)
+        return false;
+
+    const auto column_default = columns.getDefault(name_in_storage);
+    if (!column_default || !column_default->expression)
+        return false;
+    if (column_default->kind != ColumnDefaultKind::Alias && !is_computed_for_part(name_in_storage))
+        return false;
+
+    if (usesColumn(column_default->expression, column_name))
+        return true;
+    for (const auto * identifier : IdentifiersCollector::collect(column_default->expression))
+        if (isComputedFromColumn(identifier->name(), column_name, columns, is_computed_for_part, visited))
+            return true;
+    return false;
+}
+
+bool MutationsInterpreter::projectionComputesFromColumn(
+    const ProjectionDescription & projection,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_computed_for_part)
+{
+    /// An input of the projection is the column or one of its subcolumns, such as `x.dt` of a `Tuple`. The column metadata tells a
+    /// subcolumn from a column whose name has a dot.
+    auto is_column_or_subcolumn = [&](const String & name)
+    {
+        if (name == column_name)
+            return true;
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        return column && column->isSubcolumn() && column->getNameInStorage() == column_name;
+    };
+
+    const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+    const auto & sorting_key = projection.metadata->getSortingKey();
+    const Names sorting_key_columns = sorting_key.expression ? sorting_key.expression->getRequiredColumns() : Names{};
+    const bool column_in_key = std::ranges::any_of(pk_columns, is_column_or_subcolumn)
+        || std::ranges::any_of(sorting_key_columns, is_column_or_subcolumn);
+    if (column_in_key)
+        return true;
+
+    if (projection.where_clause_ast && usesColumn(projection.where_clause_ast, column_name))
+        return true;
+
+    NameSet visited;
+    for (const auto & required_column : projection.required_columns)
+        if (!is_column_or_subcolumn(required_column) && isComputedFromColumn(required_column, column_name, columns, is_computed_for_part, visited))
+            return true;
+
+    const bool column_read = std::ranges::any_of(projection.required_columns, is_column_or_subcolumn);
+    /// A part that does not store the column computes it from its default with the new type, while the projection keeps converting
+    /// the values it stores, so a projection that reads the column is rebuilt for such a part.
+    if (column_read && is_computed_for_part(column_name))
+        return true;
+    /// `_parent_part_offset` is the `_part_offset` of the table renamed, not computed from its columns.
+    const bool computes_columns = std::ranges::any_of(
+        projection.sample_block,
+        [&](const auto & column)
+        {
+            return column.name != "_parent_part_offset"
+                && std::ranges::find(projection.required_columns, column.name) == projection.required_columns.end();
+        });
+    return column_read && computes_columns;
+}
+
 void MutationsInterpreter::prepare(bool dry_run)
 {
     auto component_guard = Coordination::setCurrentComponent("MutationsInterpreter");
@@ -1434,7 +1528,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 continue;
             }
             const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
+            if (command.rebuild_existing_projection || !source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
                 for (const auto & column : projection.required_columns)
                     dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -1584,8 +1678,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
-                /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-                /// that depend on it. We should rebuild such projections and indices
+                /// Check if the type of this column is changed and there are projections or indices that depend on it.
+                /// We should rebuild such projections and indices
                 DataTypePtr old_type;
                 if (const auto column = merge_tree_data_part->tryGetColumn(command.column_name))
                     old_type = column->type;
@@ -1602,10 +1696,21 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 {
+                    /// A column that the part does not store is computed from its default when read.
+                    const auto part = source.getMergeTreeDataPart();
+                    const auto & alter_conversions = source.getAlterConversions();
+                    auto is_computed_for_part = [&](const String & name)
+                    {
+                        if (!part)
+                            return false;
+                        const String name_in_part = alter_conversions && alter_conversions->isColumnRenamed(name)
+                            ? alter_conversions->getColumnOldName(name) : name;
+                        return !part->getColumns().contains(name_in_part);
+                    };
+
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
-                        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                        if (projectionComputesFromColumn(projection, command.column_name, columns_desc, is_computed_for_part))
                         {
                             for (const auto & col : projection.required_columns)
                                 dependencies.emplace(col, ColumnDependency::PROJECTION);
