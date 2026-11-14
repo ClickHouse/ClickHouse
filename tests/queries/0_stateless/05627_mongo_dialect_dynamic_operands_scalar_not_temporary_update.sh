@@ -25,6 +25,8 @@ user="user_05627_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS mongo_dyn_ops;
+    DROP TABLE IF EXISTS mongo_dyn_num;
+    DROP TABLE IF EXISTS mongo_dyn_dec;
     DROP TABLE IF EXISTS mongo_pow_zero;
     DROP TABLE IF EXISTS mongo_not;
     DROP TABLE IF EXISTS mongo_tmp_update;
@@ -34,6 +36,11 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO mongo_dyn_ops SELECT 2, 3::Int64;
     INSERT INTO mongo_dyn_ops SELECT 3, toDecimal128('5', 0);
     INSERT INTO mongo_dyn_ops SELECT 4, 2.5::Float64;
+    CREATE TABLE mongo_dyn_num (id Int32, v Dynamic) ENGINE = MergeTree ORDER BY id;
+    INSERT INTO mongo_dyn_num SELECT 2, 3::Int64;
+    INSERT INTO mongo_dyn_num SELECT 4, 2.5::Float64;
+    CREATE TABLE mongo_dyn_dec (id Int32, v Dynamic) ENGINE = MergeTree ORDER BY id;
+    INSERT INTO mongo_dyn_dec SELECT 3, toDecimal128('5', 0);
     CREATE TABLE mongo_pow_zero (id Int32, b Float64, e Float64) ENGINE = MergeTree ORDER BY id;
     INSERT INTO mongo_pow_zero VALUES (1, 0, -1);
     CREATE TABLE mongo_not (id Int32, x Int32) ENGINE = MergeTree ORDER BY id;
@@ -54,9 +61,12 @@ mongo --query 'db.mongo_dyn_ops.aggregate([{"$match" : {"id" : 2}}, {"$project" 
 
 echo '-- a decimal held by a Dynamic in $divide'
 err --query 'db.mongo_dyn_ops.aggregate([{"$match" : {"id" : 3}}, {"$project" : {"_id" : 0, "q" : {"$divide" : ["$v", 2]}}}]);'
-err --query 'db.mongo_dyn_ops.find({"id" : 3, "$expr" : {"$eq" : [{"$divide" : ["$v", 2]}, 2.5]}}, {"_id" : 0, "id" : 1});'
+# The condition of `$expr` is evaluated for every row of a block read, not only for the ones a
+# condition on `id` would select, so the queries with `$expr` read tables of a single kind of value:
+# otherwise the date or the decimal of another row fails the query first.
+err --query 'db.mongo_dyn_dec.find({"$expr" : {"$eq" : [{"$divide" : ["$v", 2]}, 2.5]}}, {"_id" : 0, "id" : 1});'
 mongo --query 'db.mongo_dyn_ops.aggregate([{"$match" : {"id" : 2}}, {"$project" : {"_id" : 0, "q" : {"$divide" : ["$v", 2]}}}]);'
-mongo --query 'db.mongo_dyn_ops.find({"id" : {"$in" : [2, 4]}, "$expr" : {"$eq" : [{"$divide" : ["$v", 2]}, 1.5]}}, {"_id" : 0, "id" : 1});'
+mongo --query 'db.mongo_dyn_num.find({"$expr" : {"$eq" : [{"$divide" : ["$v", 2]}, 1.5]}}, {"_id" : 0, "id" : 1});'
 
 echo '-- $pow of a Dynamic'
 err --query 'db.mongo_dyn_ops.aggregate([{"$match" : {"id" : 3}}, {"$project" : {"_id" : 0, "p" : {"$pow" : ["$v", 2]}}}]);'
@@ -95,6 +105,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id, x FROM mongo_tmp_update"
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE mongo_dyn_ops;
+    DROP TABLE mongo_dyn_num;
+    DROP TABLE mongo_dyn_dec;
     DROP TABLE mongo_pow_zero;
     DROP TABLE mongo_not;
     DROP TABLE mongo_tmp_update;
