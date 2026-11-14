@@ -1,11 +1,15 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <map>
 #include <mutex>
 #include <utility>
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Access/ContextAccess.h>
+#include <Access/ContextAccessParams.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
@@ -270,10 +274,12 @@ public:
     /// its set with `markExternalTableExpected`, which other threads collecting the same set would write concurrently.
     void collect(QueryTreeNodePtr & expression, PlannerContextPtr planner_context)
     {
+        auto identity = getIdentity(planner_context->getQueryContext());
         std::lock_guard lock(mutex);
         auto & prepared_sets = planner_context->getPreparedSets();
-        for (const auto & subquery : sets.getSubqueries())
-            prepared_sets.addOrReplaceSubquery(subquery);
+        if (const auto * sets = findSets(identity))
+            for (const auto & subquery : sets->getSubqueries())
+                prepared_sets.addOrReplaceSubquery(subquery);
 
         collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
     }
@@ -291,9 +297,12 @@ public:
         if (unbuilt.empty())
             return true;
 
+        auto identity = getIdentity(planner_context->getQueryContext());
+
         /// The lock is held while the sets are built, so that the threads that need the same set wait for it
         /// instead of building it as well.
         std::lock_guard lock(mutex);
+        auto & sets = sets_by_identity[identity];
         for (const auto & subquery : unbuilt)
             if (sets.findSubquery(subquery->getHash()))
                 return false;
@@ -306,8 +315,25 @@ public:
     }
 
 private:
+    /// The readers sharing the sets may read on behalf of different users, for example the children of a `Merge`
+    /// table that are views with different `SQL SECURITY DEFINER`. The contents of a set depend on the privileges and
+    /// the row policies of the user that builds it, and reusing a set skips the access checks of planning its
+    /// subquery, so a set is shared only by the readers with the same access and the same settings constraints.
+    using Identity = std::pair<ContextAccessParams, std::shared_ptr<const SettingsConstraintsAndProfileIDs>>;
+
+    static Identity getIdentity(const ContextPtr & context)
+    {
+        return {context->getAccess()->getParams(), context->getSettingsConstraintsAndCurrentProfiles()};
+    }
+
+    const PreparedSets * findSets(const Identity & identity) const TSA_REQUIRES(mutex)
+    {
+        auto it = sets_by_identity.find(identity);
+        return it == sets_by_identity.end() ? nullptr : &it->second;
+    }
+
     std::mutex mutex;
-    PreparedSets sets TSA_GUARDED_BY(mutex);
+    std::map<Identity, PreparedSets> sets_by_identity TSA_GUARDED_BY(mutex);
 };
 
 DefaultExpressionsSetsPtr createDefaultExpressionsSets()
