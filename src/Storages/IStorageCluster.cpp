@@ -110,7 +110,7 @@ std::optional<ActionsDAG> remapListingFilterInputsToStorageColumns(
 
     const auto identifier_to_column = query_info.buildNodeNameToInputNodeColumn();
 
-    std::unordered_map<std::string, ColumnWithTypeAndName> replacements;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> replacements;
     for (const auto * input : filter.getInputs())
     {
         if (input->type != ActionsDAG::ActionType::INPUT)
