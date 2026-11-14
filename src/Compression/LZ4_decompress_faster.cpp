@@ -459,7 +459,7 @@ template <>
 #endif
 }
 
-template <size_t copy_amount, bool branchless = false>
+template <size_t copy_amount, bool branchless = false, bool short_pairs = false>
 bool NO_INLINE decompressImpl(const char * const source, char * const dest, size_t source_size, size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
@@ -491,6 +491,30 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token >> 4;
 
         UInt8 * copy_end = nullptr;
+
+        if constexpr (short_pairs)
+        {
+            /// Decode a short literal/match pair with one set of buffer bounds checks.
+            /// Keep small offsets and extended lengths on the existing overlap-copy path.
+            /// The margins cover 14 literals plus the offset, and 14 literals plus a match of up to 18 bytes.
+            if (length < 15 && (token & 0x0F) < 15 && input_end - ip >= 16 && output_end - op >= 32)
+            {
+                const size_t offset = LZ4_readLE16(ip + length);
+                if (offset >= 8 && offset <= static_cast<size_t>(op - output_begin) + length)
+                {
+                    __builtin_memcpy(op, ip, 16);
+                    ip += length + 2;
+                    op += length;
+                    const UInt8 * match = op - offset;
+                    /// Separate copies preserve matches whose offset is between 8 and 17.
+                    __builtin_memcpy(op, match, 8);
+                    __builtin_memcpy(op + 8, match + 8, 8);
+                    __builtin_memcpy(op + 16, match + 16, 2);
+                    op += (token & 0x0F) + 4;
+                    continue;
+                }
+            }
+        }
 
         /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
@@ -712,6 +736,9 @@ bool decompress(
     /// (AMD 7950X3D), sweeping it from 0 to 32K changes the oracle total by only 0.003%,
     /// because variant 0 is available in the bandit anyway and would be selected for
     /// the same files. The threshold is purely a noise-reduction measure.
+    /// Avoid the extra short-pair checks for tiny blocks and highly compressed runs.
+    if (dest_size >= 1024 && source_size >= dest_size / 2)
+        return decompressImpl<8, false, true>(source, dest, source_size, dest_size);
     return decompressImpl<8>(source, dest, source_size, dest_size);
 }
 

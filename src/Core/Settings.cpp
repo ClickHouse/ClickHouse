@@ -1025,6 +1025,12 @@ Expired time for HSTS. 0 means disable HSTS.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 )", IMPORTANT) \
+    DECLARE(Bool, use_lz4_library_decompression, false, R"(
+Use the upstream `LZ4` library to decompress native ClickHouse blocks, including data compressed with `LZ4HC` or a codec chain containing `LZ4`.
+Disabled by default: ClickHouse's adaptive `LZ4` decoder is used. Both decoders read the same stored data; changing this setting does not require rewriting data parts.
+The setting applies to decompression performed in the query's context. Outside a query, the global context's setting is used, or ClickHouse's decoder if no context exists.
+)", 0, \
+        {"26.11", false, false, "New setting: optionally use the upstream `LZ4` library decoder instead of ClickHouse's adaptive decoder."}) \
     DECLARE(Bool, use_uncompressed_cache, false, R"(
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
 Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
