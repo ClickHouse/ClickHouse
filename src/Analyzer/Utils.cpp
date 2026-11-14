@@ -81,6 +81,7 @@ namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool extremes;
+    extern const SettingsBool lag_lead_use_nulls;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool prefer_global_in_and_join;
@@ -1083,7 +1084,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     else if (function_node->isWindowFunction())
     {
         auto & arguments = function_node->getArguments().getNodes();
-        auto argument_types = bindWindowFunctionArgumentTypes(name, getArgumentNodeTypes(*function_node));
+        auto argument_types = bindWindowFunctionArgumentTypes(name, getArgumentNodeTypes(*function_node), context);
         for (size_t i = 0; i < arguments.size(); ++i)
             if (!arguments[i]->getResultType()->equals(*argument_types[i]))
                 arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
@@ -1234,7 +1235,7 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
 }
 
 /// TODO(Michicosun): Move this to the window function factory.
-DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types)
+DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types, const ContextPtr & context)
 {
     const auto function_name_lowercase = Poco::toLower(function_name);
 
@@ -1243,6 +1244,12 @@ DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataType
                              || function_name_lowercase == "lead" || function_name_lowercase == "leadinframe";
     if (is_lag_or_lead && argument_types.size() == 3)
         argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
+
+    /// Without a default, standard `lag` and `lead` return NULL for a row outside the partition.
+    const bool is_standard_lag_or_lead = function_name_lowercase == "lag" || function_name_lowercase == "lead";
+    if (is_standard_lag_or_lead && !argument_types.empty() && argument_types.size() < 3
+        && context->getSettingsRef()[Setting::lag_lead_use_nulls])
+        argument_types[0] = makeNullableOrLowCardinalityNullableSafe(argument_types[0]);
 
     return argument_types;
 }

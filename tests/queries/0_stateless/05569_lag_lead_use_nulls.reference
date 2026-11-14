@@ -1,0 +1,50 @@
+-- Disabled: the default value of the type
+1	0	Int64	2	Int64
+2	1	Int64	3	Int64
+3	2	Int64	0	Int64
+-- Enabled: NULL, and the result is Nullable
+1	\N	Nullable(Int64)	2	Nullable(Int64)
+2	1	Nullable(Int64)	3	Nullable(Int64)
+3	2	Nullable(Int64)	\N	Nullable(Int64)
+-- With an offset, in any letter case, per partition
+0	\N	4
+1	\N	5
+2	\N	\N
+3	\N	\N
+4	0	\N
+5	1	\N
+-- An explicit default, lagInFrame and leadInFrame are not affected
+0	100	UInt64	0	UInt64	1	UInt64
+1	0	UInt64	0	UInt64	2	UInt64
+2	1	UInt64	1	UInt64	0	UInt64
+-- Argument types: a type that cannot be inside Nullable keeps the default value of the type
+0	\N	Nullable(String)	\N	Nullable(Date)	\N	Nullable(String)	\N	Nullable(UInt64)	\N	Nullable(UInt8)	\N	Nullable(Tuple(UInt64, String))	[]	Array(UInt64)	{}	Map(UInt64, UInt64)
+1	0	Nullable(String)	2024-01-01	Nullable(Date)	0	Nullable(String)	0	Nullable(UInt64)	42	Nullable(UInt8)	(0,'0')	Nullable(Tuple(UInt64, String))	[0]	Array(UInt64)	{0:0}	Map(UInt64, UInt64)
+2	1	Nullable(String)	2024-01-02	Nullable(Date)	1	Nullable(String)	1	Nullable(UInt64)	42	Nullable(UInt8)	(1,'1')	Nullable(Tuple(UInt64, String))	[1]	Array(UInt64)	{1:1}	Map(UInt64, UInt64)
+-- The same as lag and lead over a Nullable argument, across blocks and partitions
+0	21	0	21	1000
+-- Over a grouping key and an aggregate
+0	\N	\N	Nullable(UInt64)
+1	0	18	Nullable(UInt64)
+2	1	12	Nullable(UInt64)
+-- With group_by_use_nulls: the same result as lag and lead over toNullable with the setting disabled
+\N	x	Nullable(String)
+x	\N	Nullable(String)
+\N	x	Nullable(String)
+x	\N	Nullable(String)
+\N	\N	Nullable(UInt64)
+0	\N	Nullable(UInt64)
+1	0	Nullable(UInt64)
+\N	\N	Nullable(UInt64)
+0	\N	Nullable(UInt64)
+1	0	Nullable(UInt64)
+-- With GROUP BY ALL
+0	\N	Nullable(UInt64)
+1	0	Nullable(UInt64)
+-- Evaluated on the shards
+\N
+\N
+0
+0
+1
+1

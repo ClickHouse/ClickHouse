@@ -3202,7 +3202,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
-        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types), scope.context);
         for (size_t i = 0; i < argument_types.size(); ++i)
             function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 

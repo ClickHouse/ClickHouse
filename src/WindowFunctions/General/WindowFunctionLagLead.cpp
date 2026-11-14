@@ -205,7 +205,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](/refe
 
 - `x` — Column name.
 - `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
-- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted, or `NULL` if [`lag_lead_use_nulls`](/reference/settings/session-settings#lag_lead_use_nulls) is enabled).
 
 **Returned value**
 
@@ -353,7 +353,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](/refe
 
 - `x` — Column name.
 - `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
-- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted, or `NULL` if [`lag_lead_use_nulls`](/reference/settings/session-settings#lag_lead_use_nulls) is enabled).
 
 **Returned value**
 

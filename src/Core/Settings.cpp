@@ -6737,6 +6737,17 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 └───────────────┴──────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, lag_lead_use_nulls, false, R"(
+Changes what the window functions [`lag`](/reference/functions/window-functions/lag) and [`lead`](/reference/functions/window-functions/lead) return for a row outside the partition when they are called without the `default` argument.
+
+Possible values:
+
+- 0 - The default value of the argument type is returned.
+- 1 - The functions behave as the SQL standard says: the result type is converted to [Nullable](/reference/data-types/nullable) and [NULL](/reference/syntax#null) is returned. A type that cannot be inside `Nullable`, such as `Array` or `Map`, keeps the default value of the type.
+
+An explicit `default` argument and the functions `lagInFrame` and `leadInFrame` are not affected.
+)", IMPORTANT, \
+        {"26.11", false, false, "New setting to make `lag` and `lead` without the `default` argument return `NULL` for a row outside the partition, as the SQL standard requires."}) \
     DECLARE(AggregateFunctionInputFormat, aggregate_function_input_format, "state", R"(
 How the input formats read columns of the `AggregateFunction` type.
 
