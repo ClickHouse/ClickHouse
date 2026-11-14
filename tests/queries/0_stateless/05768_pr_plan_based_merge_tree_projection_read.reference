@@ -1,0 +1,7 @@
+--- the rows of the projection, not of the table
+10000	499950000	0
+--- a column only the projection has
+30000	30000
+30000
+--- a read of the table that the optimizer answers from the projection
+1429	71435710
