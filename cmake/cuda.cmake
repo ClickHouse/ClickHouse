@@ -13,6 +13,9 @@ if (ENABLE_GPU)
     # gnu_get_libc_version, none of which musl has. And libcuda.so.1 is NVIDIA's closed
     # binary linked against glibc, so a musl process could not load it either way. A musl
     # build wanting GPU work has to put it behind a separate glibc process.
+    #
+    # The Linux toolchain files default USE_MUSL to OFF when ENABLE_GPU is set, so this only
+    # fires for an explicit -DUSE_MUSL=ON, or for a build directory configured for musl first.
     if (USE_MUSL)
         message (FATAL_ERROR "ENABLE_GPU is incompatible with USE_MUSL. See cmake/cuda.cmake.")
     endif ()

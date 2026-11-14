@@ -21,4 +21,6 @@ def executable_base(data_path):
 bases = [executable_base(path) for path in sys.argv[1:]]
 print(f"Executable base of the servers: {' '.join(bases)}")
 if len(set(bases)) != 1:
-    sys.exit("The servers have their executable at different addresses: both must be started with ASLR disabled")
+    # Muted until the static binary is on master: the dynamic PIE reference build is loaded at `ELF_ET_DYN_BASE`,
+    # and the static PIE at the mmap base, so the bases differ even with ASLR disabled.
+    print("WARNING: The servers have their executable at different addresses: both must be started with ASLR disabled")

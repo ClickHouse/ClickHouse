@@ -19,10 +19,11 @@ macro(clickhouse_split_debug_symbols)
 
    set(COMPACT_SYMBOLS_COMMANDS)
    if (SYMBOL_SECTIONS STREQUAL "compact")
+       # Use the native-build tool only when actually cross-compiling (host != target), matching the
+       # native-build guard in the root CMakeLists.txt and utils/compact-symbols/CMakeLists.txt.
        if (NOT(
            CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
            AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-           AND NOT USE_MUSL
        ))
            set(COMPACT_SYMBOLS_TOOL "${PROJECT_BINARY_DIR}/native/utils/compact-symbols/compact-symbols")
        else()
