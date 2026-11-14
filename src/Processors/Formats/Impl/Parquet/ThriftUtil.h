@@ -23,6 +23,11 @@ using ColumnIndices = VectorWithMemoryTracking<size_t>;
 /// For each row group: where each serialized `ColumnChunk` starts, then where the last one ends.
 using ColumnChunkOffsets = VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>>;
 
+/// Old versions of parquet-cpp wrote their own `NA` converted type, 24, for a column of the Arrow null type. The value
+/// is not in parquet.thrift (but is in the range of the enum). Such a column has only nulls, like one with the `UNKNOWN`
+/// (null) logical type.
+constexpr int LEGACY_NULL_CONVERTED_TYPE = 24;
+
 /// Parquet file footer whose column chunks are parsed on demand, see deserializeColumnChunks.
 struct FileFooter
 {
