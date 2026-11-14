@@ -755,7 +755,7 @@ Each element can end with `EXCEPT DATA FROM TABLE[S] [db.]table [, ...]` (introd
 | `File('path')` | In a local directory below the server setting [`backups.allowed_path`](/reference/settings/server-settings/settings/backups#backups). A relative path is relative to it. | v21.12.0 |
 | `Disk('disk', 'path')` | On a disk listed in the server setting [`backups.allowed_disk`](/reference/settings/server-settings/settings/backups#backups). | v21.12.0 |
 | `S3('url' [, 'access_key_id', 'secret_access_key'])`, `S3(named_collection [, 'path'])` | In S3 or S3-compatible storage. See [S3 endpoint](/concepts/features/backup-restore/s3-endpoint). | v22.10.0 |
-| `AzureBlobStorage('connection_string_or_url', 'container', 'path' [, 'account_name', 'account_key'])`, `AzureBlobStorage(named_collection [, 'path'])` | In Azure Blob Storage. See [AzureBlobStorage](/concepts/features/backup-restore/azure-blob-storage). | v24.2.0 |
+| `AzureBlobStorage('connection_string', 'container', 'path')`, `AzureBlobStorage('storage_account_url', 'container', 'path' [, 'account_name', 'account_key'])`, `AzureBlobStorage(named_collection [, 'path'])` | In Azure Blob Storage. See [AzureBlobStorage](/concepts/features/backup-restore/azure-blob-storage). | v24.2.0 |
 | `Memory('name')` | In the memory of the current session, until the session ends. | v25.1.0 |
 | `Null` | Nowhere: the backup is written and discarded, and cannot be restored. For testing. | v25.1.0 |
 
