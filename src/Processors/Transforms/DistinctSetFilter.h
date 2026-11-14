@@ -73,8 +73,9 @@ public:
     /// `LowCardinality` column, or the optimization has disabled itself).
     std::optional<IColumn::Filter> buildMaskIfApplicable(const IColumn & column, size_t num_rows);
 
-    /// Estimates additional bitmap storage without creating dictionary state. Each new dictionary needs
-    /// one byte per entry. Empty input, reused dictionaries, and an inapplicable optimization need none.
+    /// Estimates additional bitmap storage without creating dictionary state. Each new dictionary whose state
+    /// is kept needs one byte per entry. Empty input, reused dictionaries, dictionaries whose state is not
+    /// kept, and an inapplicable optimization need none.
     size_t estimateGrowthMemory(const IColumn & column) const;
 
     /// The memory occupied by the per-dictionary bitmaps of the seen indices. A bitmap is as large as its
@@ -85,11 +86,18 @@ public:
 private:
     std::pair<IColumn::Filter, size_t> buildMask(const ColumnLowCardinality & column, size_t num_rows);
 
+    bool isIdentifiedByContent(const ColumnLowCardinality & column) const;
+
     /// Per-dictionary bitmaps of the seen indices (behind a pointer to keep the hashing machinery
     /// types out of this header).
     struct DictionariesState;
     std::unique_ptr<DictionariesState> dictionaries_state;
     size_t total_byte_count = 0;
+
+    /// Non-shared dictionaries are identified by content until five new ones got a state and none of them recurred.
+    static constexpr size_t NON_SHARED_DICTIONARY_OBSERVATION_COUNT = 5;
+    size_t new_non_shared_dictionaries = 0;
+    bool non_shared_dictionary_recurred = false;
 
     LCOptimizationController lc_optimization_controller;
 };
