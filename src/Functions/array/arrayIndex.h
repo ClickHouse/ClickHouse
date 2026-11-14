@@ -11,10 +11,12 @@
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -821,6 +823,92 @@ private:
         return executeArrayImpl(new_arguments, result_type);
     }
 
+    /// An `Interval` stores a count of its own unit, so the raw numbers of two kinds are not comparable.
+    /// Only the needle is converted, exactly, so `indexOfAssumeSorted` still sees a sorted array; an inexact needle is not found.
+    ColumnPtr executeDifferentIntervalKinds(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        const auto element_type = removeNullable(array_type->getNestedType());
+        const auto needle_type = removeNullable(arguments[1].type);
+        const auto * element_interval = checkAndGetDataType<DataTypeInterval>(element_type.get());
+        const auto * needle_interval = checkAndGetDataType<DataTypeInterval>(needle_type.get());
+        if (!element_interval || !needle_interval)
+        {
+            /// The `Field`s of a constant array lose the kind of an `Interval` nested in a composite value, so compare those in the common type.
+            const auto is_interval = [](const IDataType & type) { return isInterval(type); };
+            if (!isColumnConst(*arguments[0].column) || element_type->equals(*needle_type)
+                || !(anyInTypeTree(*element_type, is_interval) || anyInTypeTree(*needle_type, is_interval)))
+                return nullptr;
+
+            /// The cast can wrap and unsort the array, which `executeConst` binary-searches for a constant needle;
+            /// a non-constant array is searched linearly.
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            {
+                if (isColumnConst(*arguments[1].column))
+                {
+                    ColumnsWithTypeAndName one_row = arguments;
+                    one_row[0].column = assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumnPtr();
+                    one_row[1].column = assert_cast<const ColumnConst &>(*arguments[1].column).getDataColumnPtr();
+                    return result_type->createColumnConst(arguments[0].column->size(), (*executeInCommonType(one_row, result_type))[0]);
+                }
+            }
+            return executeInCommonType(arguments, result_type);
+        }
+
+        if (element_interval->getKind() == needle_interval->getKind())
+            return nullptr;
+
+        const bool needle_is_const = isColumnConst(*arguments[1].column);
+        ColumnWithTypeAndName needle = arguments[1];
+        if (needle_is_const)
+            needle.column = assert_cast<const ColumnConst &>(*needle.column).getDataColumnPtr();
+
+        const auto converted_column = castColumnAccurateOrNull(needle, element_type)->convertToFullColumnIfConst();
+        const auto & converted = assert_cast<const ColumnNullable &>(*converted_column);
+        const auto * needle_nullable = checkAndGetColumn<ColumnNullable>(needle.column.get());
+
+        PaddedPODArray<UInt8> not_representable(converted.size());
+        bool any_not_representable = false;
+        for (size_t row = 0; row < converted.size(); ++row)
+        {
+            not_representable[row] = converted.isNullAt(row) && !(needle_nullable && needle_nullable->isNullAt(row));
+            any_not_representable |= not_representable[row];
+        }
+
+        if (needle_is_const && any_not_representable)
+            return result_type->createColumnConst(arguments[0].column->size(), ResultType(0));
+
+        ColumnsWithTypeAndName new_arguments = arguments;
+        if (needle_nullable)
+        {
+            new_arguments[1].column = ColumnNullable::create(converted.getNestedColumnPtr(), needle_nullable->getNullMapColumnPtr());
+            new_arguments[1].type = makeNullable(element_type);
+        }
+        else
+        {
+            new_arguments[1].column = converted.getNestedColumnPtr();
+            new_arguments[1].type = element_type;
+        }
+        if (needle_is_const)
+            new_arguments[1].column = ColumnConst::create(new_arguments[1].column, arguments[1].column->size());
+
+        auto result = executeArrayImpl(new_arguments, result_type);
+        if (!any_not_representable)
+            return result;
+
+        auto mutable_result = IColumn::mutate(result->convertToFullColumnIfConst());
+        auto & result_data = assert_cast<ResultColumnType &>(*mutable_result).getData();
+        for (size_t row = 0; row < result_data.size(); ++row)
+        {
+            if (not_representable[row])
+                result_data[row] = 0;
+        }
+        return mutable_result;
+    }
+
     /// A constant array is searched by comparing `Field`s, and the `Field` of an `Enum` value is its number,
     /// while the non-constant path compares it with a `String` by name, in their common type.
     /// Cast before `executeArrayImpl` splits a `Nullable` needle: its `NULL` rows hold `0`, maybe not an enum value.
@@ -854,6 +942,9 @@ private:
     ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         if (auto res = executeDifferentDateTimeUnits(arguments, result_type))
+            return res;
+
+        if (auto res = executeDifferentIntervalKinds(arguments, result_type))
             return res;
 
         if (auto res = executeEnumNeedleInConstantStrings(arguments, result_type))
