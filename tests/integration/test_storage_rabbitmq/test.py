@@ -4238,3 +4238,63 @@ def test_rabbitmq_kill_insert(rabbitmq_cluster, db, unique, async_insert):
     channel.queue_delete(queue=exchange)
     channel.exchange_delete(exchange=exchange)
     connection.close()
+
+
+def test_rabbitmq_insert_reconnects(rabbitmq_cluster, db, unique):
+    # The queue holds one message and rejects the rest, so the INSERT is still publishing when the broker closes its
+    # connection. A lost connection is restored, it does not fail the INSERT.
+    suffix = uuid.uuid4().hex
+    queue = f"{unique}_{suffix}"
+    table = f"rabbitmq_{suffix}"
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.confirm_delivery()
+    channel.exchange_declare(exchange=queue, exchange_type="fanout")
+    channel.queue_declare(queue=queue, arguments={"x-max-length": 1, "x-overflow": "reject-publish"})
+    channel.queue_bind(exchange=queue, queue=queue)
+    channel.basic_publish(exchange=queue, routing_key="", body="filler")
+    connection.close()
+    instance.query(
+        f"""
+        CREATE TABLE {db}.{table} (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{queue}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{unique}_unused',
+                     rabbitmq_queue_consume = 1;
+        """
+    )
+
+    errors = []
+
+    def insert():
+        try:
+            instance.query(f"INSERT INTO {db}.{table} VALUES (1)", settings={"async_insert": 0}, timeout=120)
+        except Exception as e:
+            errors.append(e)
+
+    thread = threading.Thread(target=insert, daemon=True)
+    thread.start()
+    instance.wait_for_log_line(f"\\({db}.{table}\\): Producer's channel .* is ready")
+    requests.delete(
+        f"http://{rabbitmq_cluster.rabbitmq_ip}:{rabbitmq_cluster.rabbitmq_management_port}/api/connections/username/root",
+        auth=("root", "clickhouse"),
+        headers={"X-Reason": "test"},
+        timeout=30,
+    ).raise_for_status()
+    instance.wait_for_log_line(f"\\({db}.{table}\\): Producer's channel .* error")
+
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_purge(queue=queue)
+    thread.join(timeout=60)
+    assert not thread.is_alive() and not errors, errors
+    method, _, body = channel.basic_get(queue=queue, auto_ack=True)
+    assert method is not None and json.loads(body) == {"key": 1}, body
+
+    channel.queue_delete(queue=queue)
+    channel.exchange_delete(exchange=queue)
+    connection.close()
