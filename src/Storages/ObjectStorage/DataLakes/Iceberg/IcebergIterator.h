@@ -17,6 +17,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 #include <base/defines.h>
 
@@ -92,6 +93,10 @@ private:
     /// Partially read manifests, each used by one thread at a time.
     std::vector<Iceberg::ManifestIteratorPtr> idle_data_manifests TSA_GUARDED_BY(data_files_mutex);
     size_t data_manifests_in_use TSA_GUARDED_BY(data_files_mutex) = 0;
+    /// The n-th call of `nextDataFileEntry` returns the n-th produced file, kept here until that call takes it.
+    size_t data_file_requests TSA_GUARDED_BY(data_files_mutex) = 0;
+    size_t produced_data_files_count TSA_GUARDED_BY(data_files_mutex) = 0;
+    std::unordered_map<size_t, Iceberg::ProcessedManifestFileEntryPtr> produced_data_files TSA_GUARDED_BY(data_files_mutex);
     std::exception_ptr data_files_exception TSA_GUARDED_BY(data_files_mutex);
 
     std::unique_ptr<Iceberg::RuntimeFilterFilePruning> runtime_filter_pruning;
