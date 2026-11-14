@@ -224,11 +224,11 @@ doc_type: 'guide'
 
   <Step title="任意：ClickHouse Agents を使ってデータを可視化する">
     次に、このデータを可視化してみましょう。以下は任意の実行例です。ClickHouse Agents はモデル駆動型のベータ機能であるため、計画、ツールのトレース、出力は実行ごとに異なる場合があります。
-    [ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents) を使用すると、SQL やオーケストレーションロジックを自分で記述しなくても、会話を通じて ClickHouse のデータを手軽にクエリ・探索できます。
+    [ClickHouse Agents](/ja/agents) を使用すると、SQL やオーケストレーションロジックを自分で記述しなくても、会話を通じて ClickHouse のデータを手軽にクエリ・探索できます。
     エージェントはユーザーの意図を解釈して手順を計画し、設定済みのツールを呼び出して結果を返します。
 
     左側メニューの下部にある組織名の下の **ClickHouse agents** をクリックして、ClickHouse Agents を開きます。
-    [チャット](/ja/products/cloud/features/ai-ml/agents/chat)から ClickHouse agent にメッセージを送信できます。
+    [チャット](/ja/agents/chat)から ClickHouse agent にメッセージを送信できます。
     「Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables」と入力して送信します。
     ある実行例では、エージェントは次の手順を実行しました。
 
@@ -269,7 +269,7 @@ doc_type: 'guide'
 
 次のステップとして、以下のようなことを試してみてください。
 
-* **エージェントに追加で質問する。** `LTE` と `GSM` などの無線方式によって密度がどう異なるか、あるいは `NR` の基地局が最も多い都市はどこかを尋ねてみてください。繰り返し使うプロンプトは[プロンプトライブラリ](/ja/products/cloud/features/ai-ml/agents/prompts)に保存できます。また、[エージェントビルダー](/ja/products/cloud/features/ai-ml/agents/builder)で特定用途向けのエージェントを構築することもできます。
+* **エージェントに追加で質問する。** `LTE` と `GSM` などの無線方式によって密度がどう異なるか、あるいは `NR` の基地局が最も多い都市はどこかを尋ねてみてください。繰り返し使うプロンプトは[プロンプトライブラリ](/ja/agents/prompts)に保存できます。また、[エージェントビルダー](/ja/agents/builder)で特定用途向けのエージェントを構築することもできます。
 * **国ごとに比較する。** 他の国のポリゴンを挿入し、それぞれに対して同じ `pointInPolygon` クエリを実行します。作成した Dictionary を使えば、結果に国名のラベルを付けられます。
 * **H3 や geohash で基地局を集計する。** エージェントは単純な丸め処理によるグリッドを使用しました。ClickHouse には [H3](/ja/reference/functions/regular-functions/geo/h3) 関数や [geohash](/ja/reference/functions/regular-functions/geo/geohash) 関数も用意されています。これらは階層的なセルを生成するため、ズーム可能なマップに適しています。
 * **他のデータセットを探索する。** [NYC タクシー](/ja/get-started/sample-datasets/nyc-taxi)データセットにも乗車地点と降車地点の座標が含まれています。そのほかにも、[サンプルデータセット](/ja/get-started/sample-datasets)の一覧に多数のデータセットが掲載されています。
