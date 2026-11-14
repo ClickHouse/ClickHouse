@@ -100,6 +100,7 @@ namespace Setting
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
+    extern const SettingsBool analyzer_compatibility_qualify_ambiguous_column_names;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
@@ -219,6 +220,35 @@ String getTupleElementName(const QueryTreeNodePtr & tuple_element_node)
 {
     const auto & arguments = tuple_element_node->as<FunctionNode &>().getArguments().getNodes();
     return arguments[1]->as<ConstantNode &>().getValue().safeGet<String>();
+}
+
+/// Whether an `APPLY` transformer of the matcher names its output columns itself, by a prefix or an alias of the lambda body.
+bool hasNamingApplyTransformer(const MatcherNode & matcher_node)
+{
+    for (const auto & transformer : matcher_node.getColumnTransformers().getNodes())
+    {
+        const auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>();
+        if (!apply_transformer)
+            continue;
+
+        if (!apply_transformer->getColumnNamePrefix().empty())
+            return true;
+
+        if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA
+            && apply_transformer->getExpressionNode()->as<const LambdaNode &>().getExpression()->hasAlias())
+            return true;
+    }
+
+    return false;
+}
+
+/// Whether both nodes are the same column of the same source, as a column and its `Nullable` copy.
+bool isSameColumn(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    const auto * lhs_column = lhs->as<ColumnNode>();
+    const auto * rhs_column = rhs->as<ColumnNode>();
+    return lhs_column && rhs_column && lhs_column->getColumnName() == rhs_column->getColumnName()
+        && lhs_column->getColumnSourceOrNull() == rhs_column->getColumnSourceOrNull();
 }
 
 /// True for a `WITH` element declared `AS MATERIALIZED`, before or after its replacement by a `TableNode`.
@@ -1978,15 +2008,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
 /// Resolve query tree nodes functions implementation
 
-/** Qualify column nodes with projection names.
-  *
-  * Example: SELECT * FROM test_table AS t1, test_table AS t2;
-  */
-void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
-    const TableExpressionNodePtr & table_expression_node,
-    const IdentifierResolveScope & scope)
+std::vector<std::string> QueryAnalyzer::getColumnQualificationParts(const TableExpressionNodePtr & table_expression_node) const
 {
-    /// Build additional column qualification parts array
     std::vector<std::string> additional_column_qualification_parts;
 
     if (table_expression_node->hasAlias())
@@ -2016,6 +2039,20 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {query_node->getCTEName()};
     else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
         additional_column_qualification_parts = {union_node->getCTEName()};
+
+    return additional_column_qualification_parts;
+}
+
+/** Qualify column nodes with projection names.
+  *
+  * Example: SELECT * FROM test_table AS t1, test_table AS t2;
+  */
+void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
+    const TableExpressionNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope)
+{
+    /// Build additional column qualification parts array
+    std::vector<std::string> additional_column_qualification_parts = getColumnQualificationParts(table_expression_node);
 
     size_t additional_column_qualification_parts_size = additional_column_qualification_parts.size();
     const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
@@ -2973,7 +3010,7 @@ static bool isInAggregateOrGroupingFunctionScope(const IdentifierResolveScope & 
   * 2. Apply column transformers to matched expression nodes. For strict column transformers save used column names.
   * 3. Validate strict column transformers.
   */
-ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope, std::vector<bool> * is_unchanged_matched_column)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
 
@@ -3128,6 +3165,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
 
+    bool has_naming_apply_transformer = is_unchanged_matched_column && hasNamingApplyTransformer(matcher_node_typed);
+
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
         bool apply_transformer_was_used = false;
@@ -3135,9 +3174,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool execute_apply_transformer = false;
         bool execute_replace_transformer = false;
 
+        QueryTreeNodePtr matched_node = node;
+        std::optional<String> resolved_projection_name;
+
         auto projection_name_it = node_to_projection_name.find(node);
         if (projection_name_it != node_to_projection_name.end())
+        {
             result_projection_names.push_back(projection_name_it->second);
+            if (is_unchanged_matched_column && !has_naming_apply_transformer)
+                resolved_projection_name = projection_name_it->second;
+        }
         else
             result_projection_names.push_back(column_name);
 
@@ -3401,7 +3447,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
 
         if (node)
+        {
             list->getNodes().push_back(node);
+            if (is_unchanged_matched_column)
+            {
+                is_unchanged_matched_column->resize(result_projection_names.size(), false);
+                is_unchanged_matched_column->back() = resolved_projection_name && isSameColumn(node, matched_node)
+                    && result_projection_names.back() == *resolved_projection_name;
+            }
+        }
         else
             result_projection_names.pop_back();
     }
@@ -3879,7 +3933,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     bool allow_table_expression,
     bool ignore_alias,
     bool allow_niladic_functions,
-    bool is_top_level_projection)
+    bool is_top_level_projection,
+    std::vector<bool> * is_unchanged_matched_column)
 {
     checkStackSize();
 
@@ -4217,7 +4272,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         }
         case QueryTreeNodeType::MATCHER:
         {
-            result_projection_names = resolveMatcher(node, scope);
+            result_projection_names = resolveMatcher(node, scope, is_unchanged_matched_column);
             break;
         }
         case QueryTreeNodeType::LIST:
@@ -4486,7 +4541,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     bool allow_lambda_expression,
     bool allow_table_expression,
     bool allow_niladic_functions,
-    bool is_top_level_projection
+    bool is_top_level_projection,
+    Names * bare_column_names,
+    std::vector<bool> * column_references
 )
 {
     auto & node_list_typed = node_list->as<ListNode &>();
@@ -4499,8 +4556,16 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
     for (auto & node : node_list_typed.getNodes())
     {
+        bool collect_references = bare_column_names || column_references;
+        const auto * identifier_node = node->as<IdentifierNode>();
+        bool is_unaliased_identifier = collect_references && identifier_node && !node->hasAlias();
+        bool is_identifier_reference = bare_column_names && is_unaliased_identifier && identifier_node->getIdentifier().isCompound();
+        bool is_matcher_reference = collect_references && node->getNodeType() == QueryTreeNodeType::MATCHER;
+        String written_identifier = is_identifier_reference ? identifier_node->getIdentifier().getFullName() : String{};
+        std::vector<bool> is_unchanged_matched_column;
+
         auto node_to_resolve = node;
-        auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection);
+        auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection, is_matcher_reference ? &is_unchanged_matched_column : nullptr);
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
@@ -4518,6 +4583,59 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
                 "Expression nodes list expected {} projection names. Actual: {}",
                 expected_projection_names_size,
                 expression_node_projection_names.size());
+
+        if (collect_references)
+        {
+            size_t first_result_index = result_nodes.size() - expected_projection_names_size;
+            for (size_t i = 0; i < expected_projection_names_size; ++i)
+            {
+                const auto & result_node = result_nodes[first_result_index + i];
+                const auto * column_node = result_node->as<ColumnNode>();
+                bool is_unchanged_column = is_matcher_reference
+                    ? i < is_unchanged_matched_column.size() && is_unchanged_matched_column[i]
+                    : is_unaliased_identifier;
+
+                if (column_references)
+                    column_references->push_back(column_node && !result_node->hasAlias() && is_unchanged_column);
+
+                if (!bare_column_names)
+                    continue;
+
+                auto & bare_column_name = bare_column_names->emplace_back();
+                if (!(is_identifier_reference || is_matcher_reference) || !column_node)
+                    continue;
+
+                if (is_matcher_reference && !is_unchanged_column)
+                    continue;
+
+                auto column_source = column_node->getColumnSourceOrNull();
+                if (!column_source || !scope.table_expression_node_to_data.contains(column_source))
+                    continue;
+
+                /// The name must be the column name under a qualifier taken from the written identifier or the qualification parts.
+                const auto & name = expression_node_projection_names[i];
+                const auto & column_name = column_node->getColumnName();
+                bool is_qualified_reference = false;
+                if (is_identifier_reference)
+                {
+                    is_qualified_reference = (written_identifier == name || written_identifier.ends_with("." + name))
+                        && name.ends_with("." + column_name);
+                }
+                else
+                {
+                    auto qualification_parts = getColumnQualificationParts(column_source);
+                    String qualified_name = column_name;
+                    for (auto it = qualification_parts.rbegin(); it != qualification_parts.rend() && !is_qualified_reference; ++it)
+                    {
+                        qualified_name = *it + "." + qualified_name;
+                        is_qualified_reference = qualified_name == name;
+                    }
+                }
+
+                if (is_qualified_reference)
+                    bare_column_name = column_name;
+            }
+        }
 
         result_projection_names.insert(result_projection_names.end(), expression_node_projection_names.begin(), expression_node_projection_names.end());
         expression_node_projection_names.clear();
@@ -4981,11 +5099,50 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+/// Column references whose bare column name no other result column has or would get (`SELECT a.id, a.id` is one claimant).
+std::vector<size_t> QueryAnalyzer::findUniqueBareProjectionNames(
+    const NamesAndTypes & projection_columns, const Names & bare_column_names)
 {
-    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+    chassert(projection_columns.size() == bare_column_names.size());
 
-    auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
+    std::unordered_map<std::string_view, std::string_view> name_to_claimant;
+    std::unordered_set<std::string_view> contested_names;
+    auto claim = [&](std::string_view name, std::string_view claimant)
+    {
+        auto [it, inserted] = name_to_claimant.emplace(name, claimant);
+        if (!inserted && it->second != claimant)
+            contested_names.insert(name);
+    };
+
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        claim(projection_columns[i].name, projection_columns[i].name);
+        if (!bare_column_names[i].empty())
+            claim(bare_column_names[i], projection_columns[i].name);
+    }
+
+    std::vector<size_t> result;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        const auto & bare_column_name = bare_column_names[i];
+        if (!bare_column_name.empty() && !contested_names.contains(bare_column_name))
+            result.push_back(i);
+    }
+
+    return result;
+}
+
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
+    QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * column_references)
+{
+    const auto & settings = scope.context->getSettingsRef();
+    bool use_bare_column_names = !settings[Setting::analyzer_compatibility_qualify_ambiguous_column_names]
+        && !(scope.joins_count >= 2 && settings[Setting::analyzer_compatibility_multiple_joins_qualify_column_names]);
+
+    Names bare_column_names;
+    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/, use_bare_column_names ? &bare_column_names : nullptr, column_references);
+
+    auto & projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
 
     NamesAndTypes projection_columns;
@@ -5000,6 +5157,22 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
                 "Projection node must be constant, function, column, query or union");
 
         projection_columns.emplace_back(projection_names[i], projection_node->getResultType());
+    }
+
+    if (!use_bare_column_names)
+        return projection_columns;
+
+    for (size_t i : findUniqueBareProjectionNames(projection_columns, bare_column_names))
+    {
+        projection_columns[i].name = bare_column_names[i];
+
+        /// `ORDER BY ALL`, positional arguments and `INTERPOLATE` read the output name from `resolved_expressions`. A resolved
+        /// node is shared by all of its occurrences, so this position gets a node of its own to carry its name.
+        if (resolved_expressions.contains(projection_nodes[i]))
+        {
+            projection_nodes[i] = projection_nodes[i]->clone();
+            resolved_expressions[projection_nodes[i]] = ProjectionNames{projection_columns[i].name};
+        }
     }
 
     return projection_columns;
@@ -7720,6 +7893,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Resolve query node sections.
 
     NamesAndTypes projection_columns;
+    std::vector<bool> projection_column_references;
 
     /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
@@ -7727,7 +7901,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (!scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, query_node_typed.hasInterpolate() ? &projection_column_references : nullptr);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -7824,54 +7998,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasInterpolate())
-    {
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
-
-        /// A column of `ORDER BY ... WITH FILL` must not also be an `INTERPOLATE` output: the fill
-        /// rows would overwrite the very column they are ordered by. The filling transform checks
-        /// this too, but its sort description carries the written name of the column only on some
-        /// read paths - over a `Distributed` table the query used to run and answer with the fill
-        /// column replaced by the interpolated expression.
-        if (query_node_typed.hasOrderBy())
-        {
-            const auto & interpolate_nodes = query_node_typed.getInterpolate()->as<const ListNode &>().getNodes();
-
-            for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
-            {
-                const auto & sort_node_typed = sort_node->as<const SortNode &>();
-                if (!sort_node_typed.withFill())
-                    continue;
-
-                /// The name of the fill column as it is written in the query. `SortNode::column_name` holds it when
-                /// the fill key is written as an identifier, as in `ORDER BY x WITH FILL ... INTERPOLATE (x AS ...)`.
-                /// For a positional fill key, as in `ORDER BY 1 WITH FILL ... INTERPOLATE (x AS ...)`, that name is
-                /// empty: `replaceNodesWithPositionalArguments` put a clone of the projection expression into the sort
-                /// key, along with the projection name of that expression - which is the output name of the column
-                /// at that position, its alias if it has one. Node equality is not usable here: an alias to another
-                /// column, as `a AS b`, resolves to the same expression as `a` and is still a distinct output column.
-                String fill_column_name = sort_node_typed.getColumnName();
-                if (fill_column_name.empty())
-                {
-                    auto sort_expression_it = resolved_expressions.find(sort_node_typed.getExpression());
-                    if (sort_expression_it != resolved_expressions.end() && sort_expression_it->second.size() == 1)
-                        fill_column_name = sort_expression_it->second.front();
-                }
-
-                if (fill_column_name.empty())
-                    continue;
-
-                for (const auto & interpolate_node : interpolate_nodes)
-                {
-                    const auto & interpolate_node_typed = interpolate_node->as<const InterpolateNode &>();
-                    if (fill_column_name == interpolate_node_typed.getExpressionName())
-                        throw Exception(
-                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                            "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
-                            interpolate_node_typed.getExpressionName());
-                }
-            }
-        }
-    }
 
     if (query_node_typed.hasLimitByLimit())
     {
@@ -7914,11 +8041,73 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, query_node_typed.hasInterpolate() ? &projection_column_references : nullptr);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+    }
+
+    /// A column of `ORDER BY ... WITH FILL` must not also be an `INTERPOLATE` output: the fill
+    /// rows would overwrite the very column they are ordered by. The filling transform checks
+    /// this too, but its sort description carries the written name of the column only on some
+    /// read paths - over a `Distributed` table the query used to run and answer with the fill
+    /// column replaced by the interpolated expression.
+    if (query_node_typed.hasInterpolate() && query_node_typed.hasOrderBy())
+    {
+        const auto & interpolate_nodes = query_node_typed.getInterpolate()->as<const ListNode &>().getNodes();
+
+        for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+        {
+            const auto & sort_node_typed = sort_node->as<const SortNode &>();
+            if (!sort_node_typed.withFill())
+                continue;
+
+            /// The name of the fill column as it is written in the query. `SortNode::column_name` holds it when
+            /// the fill key is written as an identifier, as in `ORDER BY x WITH FILL ... INTERPOLATE (x AS ...)`.
+            /// For a positional fill key, as in `ORDER BY 1 WITH FILL ... INTERPOLATE (x AS ...)`, that name is
+            /// empty: `replaceNodesWithPositionalArguments` put a clone of the projection expression into the sort
+            /// key, along with the projection name of that expression - which is the output name of the column
+            /// at that position, its alias if it has one. Node equality is not usable here: an alias to another
+            /// column, as `a AS b`, resolves to the same expression as `a` and is still a distinct output column.
+            String fill_column_name = sort_node_typed.getColumnName();
+            if (fill_column_name.empty())
+            {
+                auto sort_expression_it = resolved_expressions.find(sort_node_typed.getExpression());
+                if (sort_expression_it != resolved_expressions.end() && sort_expression_it->second.size() == 1)
+                    fill_column_name = sort_expression_it->second.front();
+            }
+
+            NameSet fill_column_names;
+            if (!fill_column_name.empty())
+                fill_column_names.insert(fill_column_name);
+
+            /// An unaliased reference to the fill column is that column in the output too, whatever its output name, as `id` for
+            /// `ORDER BY t.id`. A fill key naming an aliased output, as `ORDER BY k` for `a.id AS k`, is that output only.
+            const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+            const auto & sort_expression = sort_node_typed.getExpression();
+            chassert(projection_column_references.size() == projection_nodes.size());
+
+            bool is_aliased_output = false;
+            for (size_t i = 0; i < projection_nodes.size() && !is_aliased_output; ++i)
+                is_aliased_output = !projection_column_references[i] && projection_columns[i].name == fill_column_name
+                    && isSameColumn(projection_nodes[i], sort_expression);
+
+            for (size_t i = 0; i < projection_nodes.size() && !is_aliased_output; ++i)
+                if (projection_column_references[i] && isSameColumn(projection_nodes[i], sort_expression))
+                    fill_column_names.insert(projection_columns[i].name);
+
+            for (const auto & interpolate_node : interpolate_nodes)
+            {
+                const auto & interpolate_node_typed = interpolate_node->as<const InterpolateNode &>();
+                const auto & interpolate_column_name = interpolate_node_typed.getExpressionName();
+                if (fill_column_names.contains(interpolate_column_name))
+                    throw Exception(
+                        ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                        "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
+                        interpolate_column_name);
+            }
+        }
     }
 
     /** Resolve nodes with duplicate aliases.

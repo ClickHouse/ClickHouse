@@ -10212,6 +10212,15 @@ SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN
 ```
 )", 0, \
         {"26.8", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."}) \
+    DECLARE(Bool, analyzer_compatibility_qualify_ambiguous_column_names, false, R"(
+When enabled, a column selected by a qualified reference (`SELECT a.id`) or by a matcher (`a.*`, `*`, `COLUMNS(...)`) keeps its table qualifier in the result column name whenever another table of the `FROM` clause has a column with the same name (except for the left table of a single `JOIN`), as in versions before 26.11. For example, `SELECT a.id FROM a JOIN b ON a.id = b.id JOIN c ON a.id = c.id` returns a column named `a.id`. By default the qualifier is kept only if the bare column name would duplicate the name of another result column of the same `SELECT`, so this query returns a column named `id`.
+
+Possible values:
+
+- 0 - A column reference is named by its bare column name unless another result column of the same `SELECT` has, or would get, that name.
+- 1 - A column reference keeps its table qualifier when another table of the `FROM` clause has a column with the same name.
+)", 0, \
+        {"26.11", true, false, "Columns selected by a qualified reference or a matcher are named by their bare column name when it is unique in the SELECT list. previous_value=true so `compatibility` with versions before 26.11 restores the old names."}) \
     DECLARE(Bool, analyzer_compatibility_allow_cte_redefinition, false, R"(
 Allow a Common Table Expression name to be defined more than once in a single `WITH` clause. A reference to such a name binds to the latest definition that is not being resolved at that moment: a redefinition can read the previous definition of the same name, and the query body reads the last one. This matches the query analysis that ClickHouse used before v24.3, where a later definition silently shadowed the earlier ones. One shape differs from that analysis: a CTE declared between two definitions of a name also binds to the last definition, where the old analysis bound it to the definition visible at its declaration point. By default a redefinition is rejected with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`. A CTE declared as `MATERIALIZED` and a CTE in a `WITH RECURSIVE` clause cannot be redefined even when the setting is enabled.
 

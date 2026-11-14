@@ -1,17 +1,3 @@
--- Before:
---  where  d_year = 1999 and
---        avg_monthly_sales > 0 and
---        case when avg_monthly_sales > 0 then abs(sum_sales - avg_monthly_sales) / avg_monthly_sales else null end > 0.1
---  order by sum_sales - avg_monthly_sales, s_store_name
-
--- After:
---  where  v1.d_year = 1999 and
---        v1.avg_monthly_sales > 0 and
---        case when v1.avg_monthly_sales > 0 then abs(v1.sum_sales - v1.avg_monthly_sales) / v1.avg_monthly_sales else null end > 0.1
---  order by v1.sum_sales - v1.avg_monthly_sales, v1.s_store_name
-
--- This is not explicitly allowed by the TPC-DS specification, must be fixed: https://github.com/ClickHouse/ClickHouse/issues/94858
-
 WITH
     v1 AS
     (
@@ -63,8 +49,8 @@ WITH
     )
 SELECT *
 FROM v2
-WHERE (v1.d_year = 1999)
-    AND (v1.avg_monthly_sales > 0)
-    AND (CASE WHEN v1.avg_monthly_sales > 0 THEN abs(v1.sum_sales - v1.avg_monthly_sales) / v1.avg_monthly_sales ELSE NULL END > 0.1)
-ORDER BY v1.sum_sales - v1.avg_monthly_sales, v1.s_store_name
+WHERE (d_year = 1999)
+    AND (avg_monthly_sales > 0)
+    AND (CASE WHEN avg_monthly_sales > 0 THEN abs(sum_sales - avg_monthly_sales) / avg_monthly_sales ELSE NULL END > 0.1)
+ORDER BY sum_sales - avg_monthly_sales, s_store_name
 LIMIT 100;
