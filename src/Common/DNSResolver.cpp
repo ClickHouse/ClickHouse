@@ -18,7 +18,6 @@
 #include <Common/MultiVersion.h>
 #include <unordered_set>
 #include <Common/DNSPTRResolverProvider.h>
-#include <Common/Silk/FiberMutex.h>
 #include <Common/Silk/FiberScheduler.h>
 
 #include "config.h"
@@ -232,7 +231,7 @@ struct DNSResolver::Impl
     using HostWithConsecutiveFailures = std::unordered_map<String, UInt32>;
     using AddressWithConsecutiveFailures = std::unordered_map<Poco::Net::IPAddress, UInt32>;
 
-    CacheBase<std::string, DNSResolver::CacheEntry, std::hash<std::string>, EqualWeightFunction<DNSResolver::CacheEntry>, Silk::FiberMutex> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
+    CacheBase<std::string, DNSResolver::CacheEntry> cache_host{CurrentMetrics::DNSHostsCacheBytes, CurrentMetrics::DNSHostsCacheSize, 1024};
     CacheBase<Poco::Net::IPAddress, std::unordered_set<std::string>> cache_address{CurrentMetrics::DNSAddressesCacheBytes, CurrentMetrics::DNSAddressesCacheSize, 1024};
 
     std::mutex drop_mutex;

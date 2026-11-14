@@ -27,8 +27,6 @@
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3Defines.h>
 
-#    include <Common/Silk/FiberMutex.h>
-
 class SipHash;
 namespace DB::S3
 {
@@ -188,7 +186,7 @@ private:
     LoggerPtr logger;
     uint64_t expiration_window_seconds;
     std::atomic<Int64> last_loaded_ms{0};
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 };
 
 class SSOCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -267,7 +265,7 @@ public:
     void SetNeedRefresh() override;
 
 private:
-    Silk::FiberMutex mutex;
+    std::mutex mutex;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> cached_provider;
 };
 

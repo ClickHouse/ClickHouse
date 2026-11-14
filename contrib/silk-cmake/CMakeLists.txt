@@ -1,27 +1,14 @@
-if(NOT OS_LINUX)
-    message(STATUS "Not building silk because it requires io_uring (Linux-only)")
-    return()
-endif()
-
-if(NOT (ARCH_AMD64 OR ARCH_AARCH64))
-    message(STATUS "Not building silk because it supports only x86_64 and aarch64")
-    return()
-endif()
-
-# Silk needs support for 128-bit atomics.
-if(ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
-    message(STATUS "Not building silk because it requires x86-64-v2 or higher")
+if(NOT ENABLE_SILK)
+    message(STATUS "Not using silk")
     return()
 endif()
 
 if(NOT TARGET ch_contrib::liburing)
-    message(STATUS "Not building silk because liburing is disabled")
-    return()
+    message(FATAL_ERROR "ENABLE_SILK requires liburing, pass -DENABLE_SILK=0 to build without Silk")
 endif()
 
 if(NOT TARGET ch_contrib::librseq)
-    message(STATUS "Not building silk because librseq is disabled")
-    return()
+    message(FATAL_ERROR "ENABLE_SILK requires librseq, pass -DENABLE_SILK=0 to build without Silk")
 endif()
 
 set(SILK_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/silk")
@@ -43,7 +30,7 @@ add_library(ch_contrib::silk_util ALIAS _silk_util)
 
 # silk-fibers
 file(GLOB SILK_FIBERS_SOURCES CONFIGURE_DEPENDS "${SILK_SOURCE_DIR}/src/fibers/*.cpp")
-add_library(_silk_fibers STATIC ${SILK_FIBERS_SOURCES})
+add_library(_silk_fibers STATIC ${SILK_FIBERS_SOURCES} "${ClickHouse_SOURCE_DIR}/base/libcxx-external-threading/external_threading.cpp")
 target_include_directories(_silk_fibers SYSTEM
     PUBLIC "${SILK_SOURCE_DIR}/include"
     PRIVATE "${SILK_SOURCE_DIR}/src"
@@ -53,3 +40,5 @@ target_link_libraries(_silk_fibers
     PRIVATE boost::context ch_contrib::liburing
 )
 add_library(ch_contrib::silk_fibers ALIAS _silk_fibers)
+
+target_link_libraries(cxx PUBLIC $<LINK_ONLY:ch_contrib::silk_fibers>)

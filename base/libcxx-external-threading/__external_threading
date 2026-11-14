@@ -1,0 +1,122 @@
+#ifndef _LIBCPP___EXTERNAL_THREADING
+#define _LIBCPP___EXTERNAL_THREADING
+
+#include <__chrono/convert_to_timespec.h>
+#include <__chrono/duration.h>
+#include <__config>
+#include <errno.h>
+#include <pthread.h>
+#include <sched.h>
+#include <stdint.h>
+#include <time.h>
+
+#ifndef _LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER
+#  pragma GCC system_header
+#endif
+
+_LIBCPP_BEGIN_NAMESPACE_STD
+
+using __libcpp_timespec_t _LIBCPP_NODEBUG = ::timespec;
+
+typedef pthread_once_t __libcpp_exec_once_flag;
+#define _LIBCPP_EXEC_ONCE_INITIALIZER PTHREAD_ONCE_INIT
+
+inline _LIBCPP_HIDE_FROM_ABI int __libcpp_execute_once(__libcpp_exec_once_flag* __flag, void (*__init_routine)()) {
+  return pthread_once(__flag, __init_routine);
+}
+
+typedef pthread_t __libcpp_thread_id;
+
+inline _LIBCPP_HIDE_FROM_ABI bool __libcpp_thread_id_equal(__libcpp_thread_id __t1, __libcpp_thread_id __t2) {
+  return __t1 == __t2;
+}
+
+inline _LIBCPP_HIDE_FROM_ABI bool __libcpp_thread_id_less(__libcpp_thread_id __t1, __libcpp_thread_id __t2) {
+  return __t1 < __t2;
+}
+
+#define _LIBCPP_NULL_THREAD ((__libcpp_thread_t()))
+typedef pthread_t __libcpp_thread_t;
+
+inline _LIBCPP_HIDE_FROM_ABI __libcpp_thread_id __libcpp_thread_get_id(const __libcpp_thread_t* __t) { return *__t; }
+
+inline _LIBCPP_HIDE_FROM_ABI bool __libcpp_thread_isnull(const __libcpp_thread_t* __t) {
+  return __libcpp_thread_get_id(__t) == 0;
+}
+
+inline _LIBCPP_HIDE_FROM_ABI int __libcpp_thread_create(__libcpp_thread_t* __t, void* (*__func)(void*), void* __arg) {
+  return pthread_create(__t, nullptr, __func, __arg);
+}
+
+inline _LIBCPP_HIDE_FROM_ABI __libcpp_thread_id __libcpp_thread_get_current_id() { return pthread_self(); }
+
+inline _LIBCPP_HIDE_FROM_ABI int __libcpp_thread_join(__libcpp_thread_t* __t) { return pthread_join(*__t, nullptr); }
+
+inline _LIBCPP_HIDE_FROM_ABI int __libcpp_thread_detach(__libcpp_thread_t* __t) { return pthread_detach(*__t); }
+
+inline _LIBCPP_HIDE_FROM_ABI void __libcpp_thread_yield() { sched_yield(); }
+
+inline _LIBCPP_HIDE_FROM_ABI void __libcpp_thread_sleep_for(const chrono::nanoseconds& __ns) {
+  __libcpp_timespec_t __ts = std::__convert_to_timespec<__libcpp_timespec_t>(__ns);
+  while (nanosleep(&__ts, &__ts) == -1 && errno == EINTR)
+    ;
+}
+
+#define _LIBCPP_TLS_DESTRUCTOR_CC /* nothing */
+
+typedef pthread_key_t __libcpp_tls_key;
+
+inline _LIBCPP_HIDE_FROM_ABI int __libcpp_tls_create(__libcpp_tls_key* __key, void (*__at_exit)(void*)) {
+  return pthread_key_create(__key, __at_exit);
+}
+
+inline _LIBCPP_HIDE_FROM_ABI void* __libcpp_tls_get(__libcpp_tls_key __key) { return pthread_getspecific(__key); }
+
+inline _LIBCPP_HIDE_FROM_ABI int __libcpp_tls_set(__libcpp_tls_key __key, void* __p) {
+  return pthread_setspecific(__key, __p);
+}
+
+struct __libcpp_mutex_t {
+  uint32_t __state;
+};
+#define _LIBCPP_MUTEX_INITIALIZER {}
+
+#undef _LIBCPP_HAS_TRIVIAL_MUTEX_DESTRUCTION
+#define _LIBCPP_HAS_TRIVIAL_MUTEX_DESTRUCTION 1
+
+struct __libcpp_recursive_mutex_t {
+  __libcpp_mutex_t __mutex;
+  uint32_t __count;
+  uint64_t __owner_fiber;
+  uint64_t __owner_thread;
+};
+
+struct __clickhouse_condvar_waiter;
+
+struct __libcpp_condvar_t {
+  uint32_t __lock;
+  __clickhouse_condvar_waiter* __head;
+  __clickhouse_condvar_waiter* __tail;
+};
+#define _LIBCPP_CONDVAR_INITIALIZER {}
+
+int __libcpp_recursive_mutex_init(__libcpp_recursive_mutex_t* __m);
+int __libcpp_recursive_mutex_lock(__libcpp_recursive_mutex_t* __m);
+bool __libcpp_recursive_mutex_trylock(__libcpp_recursive_mutex_t* __m);
+int __libcpp_recursive_mutex_unlock(__libcpp_recursive_mutex_t* __m);
+int __libcpp_recursive_mutex_destroy(__libcpp_recursive_mutex_t* __m);
+
+int __libcpp_mutex_lock(__libcpp_mutex_t* __m);
+bool __libcpp_mutex_trylock(__libcpp_mutex_t* __m);
+int __libcpp_mutex_unlock(__libcpp_mutex_t* __m);
+int __libcpp_mutex_destroy(__libcpp_mutex_t* __m);
+
+int __libcpp_condvar_signal(__libcpp_condvar_t* __cv);
+int __libcpp_condvar_broadcast(__libcpp_condvar_t* __cv);
+int __libcpp_condvar_wait(__libcpp_condvar_t* __cv, __libcpp_mutex_t* __m);
+int __libcpp_condvar_timedwait(__libcpp_condvar_t* __cv, __libcpp_mutex_t* __m, __libcpp_timespec_t* __ts);
+int __libcpp_condvar_destroy(__libcpp_condvar_t* __cv);
+
+_LIBCPP_END_NAMESPACE_STD
+
+#endif

@@ -71,6 +71,9 @@ add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (optimized-routines-cmake optimized-routines)
 add_contrib (llvm-project-cmake llvm-project)
+add_contrib (liburing-cmake liburing)
+add_contrib (librseq-cmake librseq)
+add_contrib (silk-cmake silk)
 
 enable_dummy_launchers_if_needed()
 enable_heavy_build_check_if_needed()
@@ -192,7 +195,6 @@ add_contrib (simdutf-cmake simdutf)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
-add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (azure-cmake azure)
 add_contrib (fmtlib-cmake fmtlib)
@@ -328,9 +330,6 @@ add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
 
 add_contrib (ipcrypt2-cmake ipcrypt2)
-
-add_contrib (librseq-cmake librseq)
-add_contrib (silk-cmake silk)
 
 add_contrib (sz3-cmake sz3)
 
