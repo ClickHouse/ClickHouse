@@ -34,6 +34,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty string is not an MGRS coordinate.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

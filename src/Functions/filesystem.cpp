@@ -38,6 +38,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// An empty string is not a disk name.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
