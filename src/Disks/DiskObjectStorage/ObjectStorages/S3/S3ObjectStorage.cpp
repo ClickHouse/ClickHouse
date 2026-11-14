@@ -597,7 +597,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 {
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, {}, /* with_metadata= */ true, with_tags);
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, uri.version_id, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -620,7 +620,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     S3::ObjectInfo object_info;
     try
     {
-        object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+        object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
     catch (DB::Exception & e)
     {
@@ -631,7 +631,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
             if (new_client)
             {
                 client.set(std::move(new_client));
-                object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+                object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
                 updated = true;
             }
         }
