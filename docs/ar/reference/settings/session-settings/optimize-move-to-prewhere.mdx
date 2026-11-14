@@ -35,7 +35,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يؤدي إلى تمكين أو تعطيل تحسين [PREWHERE](/ar/reference/statements/select/prewhere) التلقائي في استعلامات [SELECT](/ar/reference/statements/select/index) التي تستخدم المُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier).
 
 لا تُنقل إلا الشروط التي تعتمد على مفتاح الفرز وحده وتكون حتمية ضمن الاستعلام،
-ومن ثَمّ لا تتأثر نتيجة `FINAL`.
+ومن ثَمّ لا تتأثر نتيجة `FINAL`. في جداول [GraphiteMergeTree](/ar/reference/engines/table-engines/mergetree-family/graphitemergetree)،
+يدمج `FINAL` الصفوف المتجاورة التابعة للمسار نفسه في صف واحد. ولذلك لا ينقل التحسين إلا الشروط الواقعة على عمود المسار،
+وبشرط أن يكون المسار هو العمود الأول في مفتاح الفرز.
 
 يعمل فقط مع جداول [*MergeTree](/ar/reference/engines/table-engines/mergetree-family/index).
 
