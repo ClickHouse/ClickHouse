@@ -53,14 +53,14 @@ public:
     // Encoding format:
     // - [byte] flag
     // - [varfloat64] count of the zero bin
-    const Flag FlagZeroCountVarFloat = Flag(flagTypeSketchFeatures, 1 << numBitsForType);
+    static inline const Flag FlagZeroCountVarFloat = Flag(flagTypeSketchFeatures, 1 << numBitsForType);
 
     // INDEX MAPPING
     // Encoding format:
     // - [byte] flag
     // - [float64LE] gamma
     // - [float64LE] index offset
-    const Flag FlagIndexMappingBaseLogarithmic = Flag(FlagTypeIndexMapping, 0 << numBitsForType);
+    static inline const Flag FlagIndexMappingBaseLogarithmic = Flag(FlagTypeIndexMapping, 0 << numBitsForType);
 
     // BINS
     // Encoding format:
