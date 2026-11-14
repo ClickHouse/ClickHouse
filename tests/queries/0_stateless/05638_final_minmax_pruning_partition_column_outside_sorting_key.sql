@@ -30,10 +30,13 @@ ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY k;
 SYSTEM STOP MERGES t_final_minmax_dnm;
 INSERT INTO t_final_minmax_dnm VALUES (1, '2026-01-01', 1);
 INSERT INTO t_final_minmax_dnm VALUES (1, '2026-01-02', 2);
+INSERT INTO t_final_minmax_dnm VALUES (2, '2026-02-01', 1);
 
 SELECT 'do_not_merge_across_partitions_select_final';
 SELECT * FROM t_final_minmax_dnm FINAL WHERE d = '2026-01-01' SETTINGS do_not_merge_across_partitions_select_final = 1;
 SELECT * FROM t_final_minmax_dnm FINAL WHERE d = '2026-01-02' SETTINGS do_not_merge_across_partitions_select_final = 1;
+-- Pruning by partition value still skips the other month.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT * FROM t_final_minmax_dnm FINAL WHERE d = '2026-01-01' SETTINGS do_not_merge_across_partitions_select_final = 1) WHERE explain LIKE '%Parts: 2/3%';
 
 DROP TABLE t_final_minmax_replacing;
 DROP TABLE t_final_minmax_collapsing;
