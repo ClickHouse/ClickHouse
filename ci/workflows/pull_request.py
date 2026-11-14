@@ -102,9 +102,10 @@ workflow = Workflow.Config(
             job.set_run_after(REGULAR_BUILD_NAMES)
             for job in JobConfigs.release_build_jobs_with_examples
         ],
+        # The other cross-compiled builds run in the merge queue, see `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.special_build_jobs
+            for job in JobConfigs.special_build_pr_jobs
         ],
         # Gated like the regular builds rather than like the special ones: it is the only job
         # that compiles the standalone parser at all, and it needs no build artifact, so there
