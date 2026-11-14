@@ -1,0 +1,8 @@
+-- make_distributed_plan = 0
+same document
+-- make_distributed_plan = 0, pretty = 1
+same document
+-- fallback to local execution
+<   }
+>   },
+>   "fallbackReason": "make_distributed_plan does not support WITH TOTALS"

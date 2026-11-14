@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/ParallelReplicasProtocolDefines.h>
+
 namespace DB
 {
 
@@ -61,14 +63,6 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PR
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
-static constexpr auto DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION = 3;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD = 4;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION = 5;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK = 6;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE = 8;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST = 9;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 9;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
@@ -241,6 +235,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 2 of `Distinct` and `PreDistinct`, adding the limit hint.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT = 21;
 /// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
 /// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and

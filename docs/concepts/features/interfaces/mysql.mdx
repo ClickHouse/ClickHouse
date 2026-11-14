@@ -7,8 +7,6 @@ title: 'MySQL interface'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse supports the MySQL wire protocol. This allows certain clients that don't have native ClickHouse connectors leverage the MySQL protocol instead, and it has been validated with the following BI tools:
 
 - [Looker Studio](/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -35,23 +33,55 @@ This can't be turned off and it can lead in rare edge cases to different behavio
 
 <br/>
 
-<Image img="/images/interfaces/mysql0.webp" alt="Credentials screen - Prompt" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Credentials screen - Prompt](/images/interfaces/mysql0.webp)
+
+</Frame>
+
+</div>
 
 2. Change the `Connect with` drop-down to `MySQL`. 
 
 <br/>
 
-<Image img="/images/interfaces/mysql1.webp" alt="Credentials screen - MySQL selected" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Credentials screen - MySQL selected](/images/interfaces/mysql1.webp)
+
+</Frame>
+
+</div>
 
 3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
 
 <br/>
 
-<Image img="/images/interfaces/mysql2.webp" alt="Credentials screen - Enabled MySQL" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Credentials screen - Enabled MySQL](/images/interfaces/mysql2.webp)
+
+</Frame>
+
+</div>
 
 Copy the MySQL connection string shown.
 
-<Image img="/images/interfaces/mysql3.webp" alt="Credentials screen - Connection String" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Credentials screen - Connection String](/images/interfaces/mysql3.webp)
+
+</Frame>
+
+</div>
 
 ## Creating multiple MySQL users in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 

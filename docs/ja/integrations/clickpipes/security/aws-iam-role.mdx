@@ -1,0 +1,58 @@
+---
+title: 'ClickPipes 向け AWS IAM role認証'
+sidebarTitle: 'AWS IAM role'
+slug: /integrations/clickpipes/security/aws-iam-role
+description: 'AWS IAM roleを使用すると、AWS アクセスキーを保存せずに ClickPipes からデータソースへのアクセスを許可できます。'
+doc_type: 'guide'
+keywords: ['clickpipes', 'aws', 'iam role', 'role-based access', 'authentication']
+---
+
+AWS IAM role認証を使用すると、ClickPipes は AWS アクセスキーを保存せずに、サポート対象の AWS ソースへアクセスできます。AWS アカウントでロールを作成し、ClickHouse Cloud サービスがそのロールを引き受けられるように設定したうえで、ソースに対するアクセス許可をロールに付与します。
+
+## はじめる前に {#before-you-begin}
+
+* IAM role 認証を使用するには、ClickHouse Cloud サービスが AWS 上で稼働している必要があります。
+* ソースを所有する AWS アカウントで、IAM roleを作成および設定するためのアクセス許可が必要です。
+* RDS または Aurora のデータベース認証を使用する場合は、IAM データベース認証を有効化し、データベースユーザーを設定するためのアクセス許可も必要です。
+
+## 仕組み {#how-it-works}
+
+1. ClickHouse Cloud サービスの **Settings → Network security information** で **Service role ID (IAM)** を確認します。この ARN は、ClickPipes がアクセスをリクエストする際に使用するロールを識別するものです。
+2. AWS アカウントでロールを作成し、ClickHouse のサービスロールがそのロールを引き受けられるよう信頼関係を設定します。
+3. 以下にある各ソースのセットアップガイドに従い、ソースで必要なアクセス許可をそのロールに付与します。
+4. 作成したロールの ARN を使用するよう ClickPipe を設定します。ClickPipes はソースに接続する際にこのロールを引き受けます。
+
+## 信頼ポリシーを設定する {#configure-trust-policy}
+
+AWS アカウントでロールを作成する際は、次の信頼ポリシーを使用してください。`{ClickHouse_IAM_ARN}` は、ClickHouse Cloud サービスの **Service role ID (IAM)** に表示される ARN に置き換えてください。
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+**RDS および Aurora の IAM データベース認証**を使用する場合は、`Action` フィールドで `sts:AssumeRole` と `sts:TagSession` の両方を許可してください。IAM が有効なデータベースユーザーの作成を含む設定手順全体については、[データベース別の IAM 認証ガイド](/ja/integrations/clickpipes/postgres/auth)を参照してください。
+
+ロールの**アクセス許可ポリシー**や、ロール名に関する要件はソースによって異なります。以下のソース別ガイドに従って設定してください。
+
+## ソースを選択する {#choose-your-source}
+
+| ソースまたはインテグレーション                                                     | セットアップガイド                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Amazon S3                                                           | [S3 の IAM role 認証](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role)。SQS 通知を利用した継続的インジェストを行う場合は、[unordered モードの IAM role 設定手順](/ja/integrations/clickpipes/object-storage/amazon-s3/unordered-mode#configure-iam-role)に従ってください。 |
+| Amazon Kinesis                                                      | [Kinesis のロールベースのアクセス](/ja/integrations/clickpipes/kinesis/auth#setup)。                                                                                                                                                                            |
+| Amazon MSK                                                          | [MSK の IAM 権限と信頼関係](/ja/integrations/clickpipes/kafka/best-practices#iam)。                                                                                                                                                                         |
+| Amazon RDS (PostgreSQL、MySQL、MariaDB) および Aurora (PostgreSQL、MySQL) | 該当する[データベース別の IAM 認証ガイド](/ja/integrations/clickpipes/postgres/auth)を参照してください。これらのソースでは、IAM 認証が有効化されたデータベースユーザーと `rds-db:connect` のアクセス許可も必要です。                                                                                                     |
+| AWS Glue Schema Registry                                            | [MSK の IAM role を再利用するか、レジストリ専用のロールを設定します](/ja/integrations/clickpipes/kafka/schema-registries#glue-iam-setup)。                                                                                                                                    |
+
+IAM role 認証で制御されるのは、ソースへのアクセスのみです。ソースがプライベートな場合は、[ネットワーク接続](/ja/integrations/clickpipes/networking/index)を別途設定してください。
