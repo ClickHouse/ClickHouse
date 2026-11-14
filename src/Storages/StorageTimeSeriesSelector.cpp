@@ -38,6 +38,7 @@
 #include <Storages/TimeSeries/TimeSeriesIDRange.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/tryGetLiteralAlternatives.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -582,12 +583,15 @@ namespace
     /// The conditions on the time range are added only if the tags table stores it itself (tables of earlier versions),
     /// otherwise the time range filter is applied by applyTimeRangeFilterToSelectIDsQuery.
     /// The bounds of `time_range_to_filter_ids` must have the scale of `table_timestamp_type`.
+    /// `row_policy_filter` is the TimeSeries table's SELECT row policy translated for the tags table
+    /// (see makeRowPolicyFilterForTagsTable); nullptr when none applies.
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
-        const DataTypePtr & table_timestamp_type)
+        const DataTypePtr & table_timestamp_type,
+        ASTPtr row_policy_filter)
     {
         ASTs asts;
         for (const auto & matcher : matchers)
@@ -598,6 +602,9 @@ namespace
 
         if (!time_ranges_table_id)
             insertAtEnd(asts, makeTimeRangeConditions(time_range_to_filter_ids, table_timestamp_type));
+
+        if (row_policy_filter)
+            asts.push_back(std::move(row_policy_filter));
 
         return makeASTForLogicalAnd(std::move(asts));
     }
@@ -630,7 +637,8 @@ namespace
         const StorageID & time_ranges_table_id,
         const TableTimeRange & time_range_to_filter_ids,
         const std::optional<TimeSeriesIDRanges> & metric_id_ranges,
-        const DataTypePtr & table_timestamp_type)
+        const DataTypePtr & table_timestamp_type,
+        ASTPtr row_policy_filter)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -672,7 +680,9 @@ namespace
 
         /// WHERE <filter>
         {
-            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type);
+            auto where_filter = makeWhereFilterForTagsTable(
+                matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type,
+                std::move(row_policy_filter));
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -1107,8 +1117,11 @@ namespace
                     {makeASTFunction("not", makeASTForLogicalAnd(std::move(other_matcher_conditions))), std::move(counterexample)});
             }
 
+            /// The probe is advisory (a primary-key range hint); the exact `id IN` set carries the row policy.
             ASTPtr probe_where = makeASTForLogicalAnd(
-                {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type),
+                {makeWhereFilterForTagsTable(
+                     name_matcher_only, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type,
+                     /*row_policy_filter=*/ nullptr),
                  std::move(counterexample)});
 
             /// SELECT id FROM tags_table WHERE <probe_where>
@@ -1213,7 +1226,7 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
             matchers, getIDGenerator(time_series_settings, tags_table_metadata->getColumns(), table_id_type), table_id_type);
         select_query = makeSelectQueryFromTagsTable(
             tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), time_ranges_table_id, time_range_to_filter_ids,
-            metric_id_ranges, table_timestamp_type);
+            metric_id_ranges, table_timestamp_type, makeRowPolicyFilterForTagsTable(time_series_storage, context));
     }
 
     /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
@@ -1331,7 +1344,7 @@ void StorageTimeSeriesSelector::readImpl(
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges,
-        config.table_timestamp_type);
+        config.table_timestamp_type, makeRowPolicyFilterForTagsTable(*time_series_storage, context));
 
     if (whole_metric_id_range_condition)
     {

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -1518,6 +1519,38 @@ Keep the `TTL` of the samples table longer than that, otherwise a query whose ti
 can return samples which are already deleted from the samples table.
 
 By default the [tags](#tags-table) table has no `TTL`: a time series stays in it after all its samples are deleted.
+
+## Row policies {#row-policies}
+
+A [row policy](/reference/statements/create/row-policy) on a `TimeSeries` table filters `SELECT` queries on the table
+and PromQL reads of the table: the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions,
+the Prometheus HTTP API (`/api/v1/query`, `/api/v1/query_range`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`)
+and the remote read protocol.
+
+PromQL reads select time series from the [tags](#tags-table) target. The `TimeSeries` table translates its own `SELECT`
+row policy into a predicate over that target and adds it to every tags-table read it generates. A filter written with
+`metric_name` and `tags['<name>']` keeps its meaning for older rows that omit promoted tags from the stored map: the
+predicate uses the dedicated tag columns, and the [text index](#tags-table) serves Map accesses for the other tags.
+No `tags_to_columns` entry is required for the policy to apply.
+
+```sql
+CREATE TABLE my_table ENGINE = TimeSeries;
+CREATE ROW POLICY tenant_a ON my_table FOR SELECT USING tags['tenant'] = 'a' TO user_a;
+```
+
+With this policy the user `user_a` reads only the time series of the tenant `a` through every PromQL entry point and
+through a `SELECT` from the `TimeSeries` table. The `/api/v1/metadata` endpoint returns only the metric families which
+have a time series visible to the user. The [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags)
+table function is refused while a row policy applies: it would otherwise return the raw tags target without the filter.
+A direct read of the inner tags table is an implementation detail and is not filtered by the owner's policy; grant
+`SELECT` on that table only to users who may see every series.
+
+A filter which uses a column the tags target doesn't have, for example `samples`, still works for a `SELECT` from
+the `TimeSeries` table, but makes a PromQL read fail with an unknown identifier error.
+
+The policy covers the tags target only. A user who can `SELECT` from the inner [samples](#samples-table) table, or who
+can call the [timeSeriesSamples](/reference/functions/table-functions/timeSeriesSamples) table function, reads the
+samples of every time series. To restrict such a user, create row policies on the samples tables as well.
 
 ## Altering settings {#altering-settings}
 

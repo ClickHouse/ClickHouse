@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionPrometheusQuery.h>
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
@@ -18,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -96,6 +98,23 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ColumnsDescription /* cached_columns */,
         bool /* is_insert_query */) const
 {
+    if constexpr (target_kind == ViewTarget::Tags)
+    {
+        /// PromQL and SELECT paths push the TimeSeries table's row policy into the generated tags-table
+        /// read. timeSeriesTags returns the raw target, so a policy on the owner would not apply;
+        /// refuse the read rather than return unfiltered rows.
+        auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+        if (getEffectiveRowPolicyFilter(*time_series_storage, context))
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Table function {} is not allowed when a row policy applies to TimeSeries table {}. "
+                "Query the TimeSeries table or use PromQL instead",
+                name,
+                time_series_storage_id.getNameForLogs());
+        }
+    }
+
     return getTargetTable(context);
 }
 
