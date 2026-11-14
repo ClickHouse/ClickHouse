@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['репликация', 'высокая доступность', 'настройка кластера', 'избыточность данных', 'отказоустойчивость']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/ru/_config_explanation.mdx';
 import ListenHost from '/snippets/ru/_listen_host.mdx';
 import ServerParameterTable from '/snippets/ru/_server_parameter_table.mdx';
@@ -17,6 +15,7 @@ import KeeperConfigExplanation from '/snippets/ru/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ru/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ru/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ru/_working_example.mdx';
+
 import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
 > В этом примере вы узнаете, как настроить простой кластер ClickHouse с
@@ -26,7 +25,15 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
 Ниже показана архитектура кластера, который вы будете настраивать:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="Схема архитектуры для 1 сегмента и 2 реплик с ReplicatedMergeTree" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Схема архитектуры для 1 сегмента и 2 реплик с ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
+
+</Frame>
+
+</div>
 
 <DedicatedKeeperServers />
 

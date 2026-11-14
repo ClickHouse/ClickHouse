@@ -5,14 +5,17 @@
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <base/PackedStringRef.h>
 #include <base/unaligned.h>
+#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -29,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -713,7 +717,13 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     {
         size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
         size_t string_size = offsets[i] - offsets[i - 1];
-        res_chars_size += size_to_replicate * string_size;
+        size_t replicated_size = 0;
+        if (common::mulOverflow(size_to_replicate, string_size, replicated_size)
+            || common::addOverflow(res_chars_size, replicated_size, res_chars_size))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large size of String column after replication: {} rows",
+                replicate_offsets.back());
     }
     res_chars.resize_exact(res_chars_size);
 
@@ -754,9 +764,12 @@ void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     size_t new_chars_size = chars.size();
     for (const auto & source_column : source_columns)
     {
-        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
-        new_size += source_string_column.size();
-        new_chars_size += source_string_column.chars.size();
+        const auto * source_string_column = typeid_cast<const ColumnString *>(source_column.get());
+        if (!source_string_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not String, but {}", getName(), source_column->getName());
+
+        new_size += source_string_column->size();
+        new_chars_size += source_string_column->chars.size();
     }
 
     offsets.reserve_exact(new_size * factor);
@@ -1028,6 +1041,88 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
 bool ColumnString::hasOnlyTypeDefaults() const
 {
     return chars.empty();
+}
+
+ColumnPtr ColumnString::createWithOffsets(
+    const Offsets & positions, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    const size_t num_values = positions.size();
+    if (num_values + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", num_values, shift, size());
+
+    if (num_values > total_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} non-default values do not fit into {} rows", num_values, total_rows);
+
+    const auto & default_column = assert_cast<const ColumnString &>(column_with_default_value.getDataColumn());
+    const size_t default_size = default_column.sizeAt(0);
+    const UInt8 * default_data = &default_column.chars[default_column.offsetAt(0)];
+
+    const size_t values_begin = offsetAt(shift);
+    const size_t values_bytes = chars.size() - values_begin;
+
+    auto res = ColumnString::create();
+    res->chars.resize(values_bytes + default_size * (total_rows - num_values));
+    res->offsets.resize(total_rows);
+
+    UInt8 * res_chars = res->chars.data();
+    Offset * res_offsets = res->offsets.data();
+    size_t row = 0;
+    size_t res_size = 0;
+
+    /// The writes below go through raw pointers, so every position is checked before it is used.
+    auto check_position = [&](size_t position, size_t next_row)
+    {
+        if (position < next_row || position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Offset of a non-default value {} is out of range [{}, {})", position, next_row, total_rows);
+    };
+
+    if (default_size == 0)
+    {
+        /// Defaults add no bytes, so the values keep their relative offsets.
+        if (values_bytes)
+            memcpy(res_chars, &chars[values_begin], values_bytes);
+
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            const size_t position = positions[i];
+            check_position(position, row);
+            std::fill(res_offsets + row, res_offsets + position, res_size);
+            res_size = offsets[i + shift] - values_begin;
+            res_offsets[position] = res_size;
+            row = position + 1;
+        }
+        std::fill(res_offsets + row, res_offsets + total_rows, res_size);
+    }
+    else
+    {
+        auto insert_defaults = [&](size_t end)
+        {
+            for (; row < end; ++row)
+            {
+                memcpySmallAllowReadWriteOverflow15(res_chars + res_size, default_data, default_size);
+                res_size += default_size;
+                res_offsets[row] = res_size;
+            }
+        };
+
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            const size_t position = positions[i];
+            check_position(position, row);
+            insert_defaults(position);
+            const size_t value_size = sizeAt(i + shift);
+            memcpySmallAllowReadWriteOverflow15(res_chars + res_size, &chars[offsetAt(i + shift)], value_size);
+            res_size += value_size;
+            res_offsets[position] = res_size;
+            row = position + 1;
+        }
+        insert_defaults(total_rows);
+    }
+
+    chassert(res_size == res->chars.size());
+    return res;
 }
 
 /// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].

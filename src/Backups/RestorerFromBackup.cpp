@@ -486,6 +486,32 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
+
+                /// The hosts of `RESTORE ... ON CLUSTER` create the tables without the user, so the engines they will
+                /// create are checked here. Only a value in the query reaches every host: a host may drop a session value.
+                if (mode == Mode::CHECK_ACCESS_ONLY)
+                {
+                    const bool hosts_replace_external_engines_to_null
+                        = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                        && restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr;
+                    auto add_engine = [&](const ASTStorage & storage)
+                    {
+                        if (!storage.engine)
+                            return;
+                        if (hosts_replace_external_engines_to_null
+                            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, "Null");
+                        else
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, storage.engine->name);
+                    };
+                    if (create.storage)
+                        add_engine(*create.storage);
+                    if (create.targets)
+                    {
+                        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+                            add_engine(*inner_engine);
+                    }
+                }
             }
 
             if (restore_settings.shouldRestoreTableData() && table_info.has_data)
@@ -830,7 +856,14 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
     constexpr auto setting_name = "storage_policy";
     if (query_ptr && restore_settings.storage_policy.has_value())
     {
-        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+
+        /// A materialized view with an inner table keeps its engine (and thus its `storage_policy` setting)
+        /// in the target definition rather than in `storage`, so we have to look there too.
+        ASTStorage * storage = create_query.storage;
+        if (!storage && create_query.is_materialized_view_with_inner_table())
+            storage = create_query.getTargetInnerEngine(ViewTarget::To);
+
         if (storage && storage->settings)
         {
             if (restore_settings.storage_policy.value().empty())

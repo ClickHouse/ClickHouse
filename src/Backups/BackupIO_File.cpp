@@ -164,6 +164,16 @@ void BackupWriterFile::removeEmptyDirectories()
     removeEmptyDirectoriesImpl(root_path);
 }
 
+void BackupWriterFile::removeEmptyRootDirectory()
+{
+    if (root_path.empty())
+        return;
+    const fs::path path = root_path.has_filename() ? root_path : root_path.parent_path();
+    const auto status = fs::symlink_status(path);
+    if (fs::is_directory(status) && fs::is_empty(path))
+        (void)fs::remove(path);
+}
+
 void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 {
     checkStackSize();
