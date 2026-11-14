@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Utils.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -1626,7 +1627,7 @@ void pushOrderByIntoView(
         const auto * col = node->as<SortNode>()->getExpression()->as<ColumnNode>();
         if (!inner_header->has(col->getColumnName()))
             return;
-        if (!col->getColumnType()->equals(*inner_header->getByName(col->getColumnName()).type))
+        if (!isIdentityConversion(*inner_header->getByName(col->getColumnName()).type, *col->getColumnType()))
             return;
     }
 
@@ -2526,7 +2527,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     continue;
                                 }
                                 auto it = inner_types.find(name);
-                                if (it == inner_types.end() || !view_columns.get(name).type->equals(*it->second))
+                                if (it == inner_types.end() || !isIdentityConversion(*it->second, *view_columns.get(name).type))
                                 {
                                     column_checks_passed = false;
                                     break;

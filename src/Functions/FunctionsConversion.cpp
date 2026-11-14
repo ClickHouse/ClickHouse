@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/Utils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -3353,7 +3354,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
     else if (const auto * from_type_custom_name = from_type->getCustomName())
         safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
 
-    if (from_type->equals(*to_type) && safe_convert_custom_types)
+    if (isIdentityConversion(*from_type, *to_type) && safe_convert_custom_types)
     {
         /// We can only use identity conversion for DataTypeAggregateFunction when they are strictly equivalent.
         if (typeid_cast<const DataTypeAggregateFunction *>(from_type.get()))

@@ -1,5 +1,6 @@
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -104,7 +105,7 @@ void writeRemoteConvert(
         return;
     }
 
-    if (!blocksHaveEqualStructure(distributed_header.block_header, remote.getHeader()))
+    if (!isIdentityConversion(distributed_header.block_header, remote.getHeader()))
     {
         LOG_WARNING(log,
             "Structure does not match (remote: {}, local: {}), implicit conversion will be done",

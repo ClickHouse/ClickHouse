@@ -27,6 +27,7 @@
 #include <Interpreters/ProcessList.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Utils.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -139,7 +140,7 @@ bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
 
 static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
 {
-    if (blocksHaveEqualStructure(header, block))
+    if (isIdentityConversion(block, header))
         return block;
 
     LOG_WARNING(log,

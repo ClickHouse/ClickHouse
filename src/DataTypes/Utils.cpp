@@ -1,6 +1,8 @@
 #include <DataTypes/Utils.h>
+#include <Core/Block.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -8,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -385,6 +388,83 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
         return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
 
     return false;
+}
+
+namespace
+{
+
+bool isBoolNode(const IDataType & type)
+{
+    const auto * custom_name = type.getCustomName();
+    return custom_name && custom_name->getName() == "Bool";
+}
+
+}
+
+bool convertsToBool(const IDataType & from, const IDataType & to)
+{
+    /// `CAST` removes `LowCardinality` and `Nullable` from each side independently.
+    if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&from))
+        return convertsToBool(*from_low_cardinality->getDictionaryType(), to);
+    if (const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&to))
+        return convertsToBool(from, *to_low_cardinality->getDictionaryType());
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from))
+        return convertsToBool(*from_nullable->getNestedType(), to);
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
+        return convertsToBool(from, *to_nullable->getNestedType());
+    if (isBoolNode(to))
+        return !isBoolNode(from);
+    /// `CAST` copies a `JSON` typed path as is and matches `Variant` alternatives by name, so their children do not count.
+    if (to.getTypeId() == TypeIndex::Object || to.getTypeId() == TypeIndex::Variant)
+        return false;
+    /// `CAST` matches the elements of named tuples by name when they share one.
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(&from);
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(&to);
+    if (from_tuple && to_tuple && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+        && from_tuple->getElementNames() != to_tuple->getElementNames())
+    {
+        const auto & from_names = from_tuple->getElementNames();
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> from_positions;
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+
+        bool has_common_name = false;
+        const auto & to_names = to_tuple->getElementNames();
+        for (size_t i = 0; i < to_names.size(); ++i)
+        {
+            const auto it = from_positions.find(to_names[i]);
+            if (it == from_positions.end())
+                continue;
+            has_common_name = true;
+            if (convertsToBool(*from_tuple->getElement(it->second), *to_tuple->getElement(i)))
+                return true;
+        }
+        if (has_common_name)
+            return false;
+    }
+    const size_t num_children = to.getNumberOfChildren();
+    if (num_children != from.getNumberOfChildren())
+        return false;
+    for (size_t i = 0; i < num_children; ++i)
+        if (convertsToBool(*from.getChild(i), *to.getChild(i)))
+            return true;
+    return false;
+}
+
+bool isIdentityConversion(const IDataType & from, const IDataType & to)
+{
+    return from.equals(to) && !convertsToBool(from, to);
+}
+
+bool isIdentityConversion(const Block & from, const Block & to)
+{
+    if (!blocksHaveEqualStructure(from, to))
+        return false;
+    for (size_t i = 0; i < from.columns(); ++i)
+        if (!isIdentityConversion(*from.getByPosition(i).type, *to.getByPosition(i).type))
+            return false;
+    return true;
 }
 
 }

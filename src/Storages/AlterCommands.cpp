@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -1495,7 +1496,7 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     while (true)
     {
         /// types are equal, obviously pure metadata alter
-        if (from->equals(*to))
+        if (isIdentityConversion(*from, *to))
             return true;
 
         /// We just adding something to enum, nothing changed on disk
@@ -1603,7 +1604,7 @@ bool isNamedTupleSubfieldAddition(
         const auto * map_to = typeid_cast<const DataTypeMap *>(to);
         if (!map_to)
             return false;
-        if (!map_from->getKeyType()->equals(*map_to->getKeyType()))
+        if (!isIdentityConversion(*map_from->getKeyType(), *map_to->getKeyType()))
             return false;
         return isNamedTupleSubfieldAddition(
             map_from->getValueType().get(), map_to->getValueType().get(), context, nested_lazy_settings);
@@ -1631,7 +1632,7 @@ bool isNamedTupleSubfieldAddition(
         last_to_index = to_index;
         const IDataType * old_elem = from_types[i].get();
         const IDataType * new_elem = to_types[*to_index].get();
-        if (old_elem->equals(*new_elem))
+        if (isIdentityConversion(*old_elem, *new_elem))
             continue;
 
         if (isNamedTupleSubfieldAddition(old_elem, new_elem, context, nested_lazy_settings))

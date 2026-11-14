@@ -44,6 +44,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
@@ -1600,7 +1601,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         old_type = DataTypeFactory::instance().get(missing->type_name);
                 }
 
-                if (old_type && command.data_type && !old_type->equals(*command.data_type))
+                if (old_type && command.data_type && !isIdentityConversion(*old_type, *command.data_type))
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {

@@ -37,6 +37,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -179,7 +180,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         const auto & column_in_block = block.getByName(required_column.name);
-        if (column_in_block.type->equals(*required_column.type))
+        if (isIdentityConversion(*column_in_block.type, *required_column.type))
             continue;
 
         /// Converting a column from nullable to non-nullable may cause 'Cannot convert column' error when NULL values exist.
