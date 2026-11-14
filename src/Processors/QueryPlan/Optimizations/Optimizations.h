@@ -348,7 +348,7 @@ void optimizeJoinByShards(QueryPlan::Node & root);
 /// primary key range pruning (see SealGatedReadTransform).
 void markSealGatedReading(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
-void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeDistinctInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep`.
 void useShuffleForOrderByRand(QueryPlan::Node & node);

@@ -536,7 +536,7 @@ void optimizeTreeSecondPass(
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order && !make_distributed_plan)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+                optimizeDistinctInOrder(stack, nodes, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -697,7 +697,7 @@ void optimizeTreeSecondPass(
                 optimizeWindowPerPartition(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order && !cascades_active)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+                optimizeDistinctInOrder(stack, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)
                 optimizeLimitByInOrder(frame_node, nodes, optimization_settings);

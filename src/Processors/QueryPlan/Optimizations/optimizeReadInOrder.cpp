@@ -29,6 +29,8 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1693,7 +1695,30 @@ bool sortPrefixCanGroupDistinctKeys(const InputOrder & order_info, const Names &
     return getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, header).size() == order_info.sort_description.size();
 }
 
-InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+/// Whether a `LIMIT` above the step at the top of `stack` stops reading early, i.e. only streaming steps lie in between.
+bool canStopReadingEarly(const Stack & stack)
+{
+    for (size_t i = stack.size(); i-- > 0;)
+    {
+        const IQueryPlanStep * step = stack[i].node->step.get();
+        if (const auto * limit = typeid_cast<const LimitStep *>(step))
+            return !limit->alwaysReadTillEnd();
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(step))
+        {
+            if (distinct->getLimitHint())
+                return true;
+            continue;
+        }
+        if (!typeid_cast<const ExpressionStep *>(step) && !typeid_cast<const FilterStep *>(step)
+            && !typeid_cast<const ArrayJoinStep *>(step) && !typeid_cast<const LimitByStep *>(step)
+            && !typeid_cast<const OffsetStep *>(step))
+            return false;
+    }
+    return false;
+}
+
+InputOrder buildInputOrderInfo(
+    DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings, bool can_stop_early)
 {
     /// Here we allow improving existing in-order optimization.
     /// Example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
@@ -1727,8 +1752,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return {};
 
-        /// Reading in order turns vertical `FINAL` off, which costs more than the in-order `DISTINCT` saves.
-        if (reading->getEnableVerticalFinal())
+        /// Reading in order turns vertical `FINAL` off, which pays off only when the `DISTINCT` can stop reading early.
+        if (reading->getEnableVerticalFinal() && !can_stop_early)
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -2283,8 +2308,9 @@ void optimizeUniqExactInOrderLayers(QueryPlan::Node & node)
         aggregating->clearUniqExactInOrder();
 }
 
-void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeDistinctInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    auto & node = *stack.back().node;
     if (node.children.size() != 1)
         return;
 
@@ -2298,7 +2324,7 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     if (!distinct->getSortDescription().empty())
         return;
 
-    auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), optimization_settings);
+    auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), optimization_settings, canStopReadingEarly(stack));
     if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description));
 }
