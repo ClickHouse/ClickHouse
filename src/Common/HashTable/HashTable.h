@@ -1607,6 +1607,12 @@ public:
             emplaceNonZero(key_holder, it, inserted, hash_value);
     }
 
+    /// Emplaces a key that an iteration of a table of this type handed out, with its hash.
+    void ALWAYS_INLINE emplaceIteratedKey(const Key & key, LookupResult & it, bool & inserted, size_t hash_value)
+    {
+        emplace(key, it, inserted, hash_value);
+    }
+
     /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
     void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
     {

@@ -224,11 +224,11 @@ doc_type: 'guide'
 
   <Step title="可选：使用 ClickHouse 智能体可视化数据">
     接下来，我们希望将这些数据可视化。以下是一次可选的示例运行：ClickHouse 智能体是由模型驱动的 Beta 功能，因此每次运行时，其执行计划、工具调用 trace 和输出都可能有所不同。
-    [ClickHouse 智能体](/zh/products/cloud/features/ai-ml/agents)让您可以通过对话轻松查询和探索 ClickHouse 数据，无需自行编写 SQL 或编排逻辑。
+    [ClickHouse 智能体](/zh/agents)让您可以通过对话轻松查询和探索 ClickHouse 数据，无需自行编写 SQL 或编排逻辑。
     智能体会理解您的意图、规划步骤、调用您已配置的工具，并将结果返回给您。
 
     在左侧菜单底部，点击组织名称下方的 **ClickHouse agents**，即可打开 ClickHouse 智能体。
-    您可以通过[聊天](/zh/products/cloud/features/ai-ml/agents/chat)向 ClickHouse 智能体发送消息。
+    您可以通过[聊天](/zh/agents/chat)向 ClickHouse 智能体发送消息。
     输入“Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables”，然后点击发送。
     在某次运行中，智能体执行了以下步骤：
 
@@ -269,7 +269,7 @@ doc_type: 'guide'
 
 接下来，您可以：
 
-* **向智能体继续提问。** 例如，询问 `LTE` 和 `GSM` 等不同制式的基站密度有何差异，或者哪些城市的 `NR` 基站最多。您可以将常用的提示词保存到[提示词库](/zh/products/cloud/features/ai-ml/agents/prompts)中，或在[智能体构建器](/zh/products/cloud/features/ai-ml/agents/builder)中构建专用智能体。
+* **向智能体继续提问。** 例如，询问 `LTE` 和 `GSM` 等不同制式的基站密度有何差异，或者哪些城市的 `NR` 基站最多。您可以将常用的提示词保存到[提示词库](/zh/agents/prompts)中，或在[智能体构建器](/zh/agents/builder)中构建专用智能体。
 * **比较不同国家。** 插入其他国家的多边形，并对每个国家运行相同的 `pointInPolygon` 查询。借助您创建的字典，可以为结果标注国家名称。
 * **使用 H3 或 geohash 对基站进行分桶。** 智能体使用的是简单的舍入网格。ClickHouse 还提供 [H3](/zh/reference/functions/regular-functions/geo/h3) 和 [geohash](/zh/reference/functions/regular-functions/geo/geohash) 函数，可生成层级化的单元，非常适合可缩放的地图。
 * **探索其他数据集。** [纽约出租车](/zh/get-started/sample-datasets/nyc-taxi)数据集同样包含上车和下车坐标，[示例数据集](/zh/get-started/sample-datasets)索引页中还列出了更多数据集。
