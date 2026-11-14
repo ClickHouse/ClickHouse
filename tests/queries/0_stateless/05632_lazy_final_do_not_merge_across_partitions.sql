@@ -22,6 +22,22 @@ FROM (EXPLAIN SELECT p, ver FROM t_lazy_final_partitions FINAL WHERE v = 1 SETTI
 
 DROP TABLE t_lazy_final_partitions;
 
+-- Merged parts whose key ranges partly overlap: lazy FINAL splits off the disjoint tail of partition 1.
+DROP TABLE IF EXISTS t_lazy_final_tail;
+CREATE TABLE t_lazy_final_tail (k UInt64, p UInt8, v UInt8, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY p ORDER BY k
+SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi';
+INSERT INTO t_lazy_final_tail SELECT number, 1, number IN (0, 900), 1 FROM numbers(1000);
+INSERT INTO t_lazy_final_tail SELECT number, 2, number = 0, 2 FROM numbers(500);
+OPTIMIZE TABLE t_lazy_final_tail FINAL;
+
+SELECT 'tail', arraySort(groupArray((p, k, ver))) FROM t_lazy_final_tail FINAL WHERE v = 1
+SETTINGS do_not_merge_across_partitions_select_final = 1;
+SELECT 'tail, split', countIf(explain LIKE '%NonIntersectingSplit%') > 0
+FROM (EXPLAIN indexes = 1 SELECT p, k, ver FROM t_lazy_final_tail FINAL WHERE v = 1 SETTINGS do_not_merge_across_partitions_select_final = 0);
+
+DROP TABLE t_lazy_final_tail;
+
 -- Without a partition key, or with one computed from the primary key, a key is in one partition: lazy FINAL applies.
 DROP TABLE IF EXISTS t_lazy_final_by_key;
 CREATE TABLE t_lazy_final_by_key (k UInt64, v UInt8, ver UInt64)
