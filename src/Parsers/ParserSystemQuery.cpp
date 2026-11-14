@@ -1913,7 +1913,7 @@ Introduced in: v26.5.0
 
 <ExperimentalBadge/>
 
-Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order, and within the size limits of the other background merges, such as [`max_bytes_to_merge_at_max_space_in_pool`](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool). While a scheduled merge does not meet these conditions, neither it nor the merges scheduled after it are performed. The scheduled merges are kept only in the server's memory and are lost when the server restarts or the table or its database is renamed.
+Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order, and within the size limits of the other background merges, such as [`max_bytes_to_merge_at_max_space_in_pool`](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool). While a scheduled merge does not meet these conditions, neither it nor the merges scheduled after it are performed. The scheduled merges are kept only in the server's memory and are lost when the server restarts. They stay with the name of the table: after the table or its database is renamed they are not performed, until the table gets its old name back.
 
 <Note>
 This is an experimental feature. `SYSTEM SCHEDULE MERGE` and `SYSTEM SYNC MERGES` work only for a table of the MergeTree family whose experimental MergeTree setting [`merge_selector_algorithm`](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) is `'Manual'`, and fail with `BAD_ARGUMENTS` for other tables. The regular background merges of such a table merge only the scheduled parts; TTL merges still run on their own, and `OPTIMIZE TABLE ... FINAL` still merges all parts.
@@ -2002,7 +2002,7 @@ Introduced in: v23.9.0
 
 <CloudNotSupportedBadge/>
 
-Stops the background cleanup of tables in the MergeTree family, which removes outdated data parts, temporary directories and other obsolete data. While the cleanup is stopped, the outdated parts stay on disk.
+Stops the background cleanup of tables in the MergeTree family, which removes outdated data parts, temporary directories and other obsolete data. While the cleanup is stopped, the background cleanup removes no outdated parts. A cleanup that is already running when the statement is executed is not interrupted.
 
 ```sql
 SYSTEM STOP CLEANUP [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
