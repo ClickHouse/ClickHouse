@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '会话回放', '浏览器 SDK', '前端可观测性', '用户会话', '调试']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 中的会话回放会捕获并重建用户在 Web 应用中的交互，让你能够以可视化方式精确回放用户在一次会话中看到的内容及其执行的操作。它并非视频录制；SDK 记录的是 DOM 变化、鼠标移动、点击、滚动、键盘输入、控制台日志、网络请求 (XHR、Fetch、WebSocket) 以及 JavaScript 异常，然后再在浏览器中还原整个过程。
 
 由于会话回放与日志、链路追踪和指标一起存储在 ClickHouse 中，你可以从查看用户体验，快速切换到检查支撑该体验的后端链路追踪和数据库查询——这一切只需点击几下即可完成。这使会话回放非常适合用于调试生产环境问题、理解用户行为、识别 UX 卡点，以及直观确认支持团队报告的问题。
@@ -95,11 +93,27 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 
 在 ClickStack UI (HyperDX) 中，从左侧边栏进入 **Client Sessions**。此视图会列出所有已捕获的浏览器会话，包括其耗时和事件数量。
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="会话回放搜索视图" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![会话回放搜索视图](/images/clickstack/session-replay/replay-search-view.webp)
+
+</Frame>
+
+</div>
 
 点击任意会话上的 play 按钮即可回放。回放视图右侧显示重建的用户体验，左侧则显示浏览器事件时间线，包括网络请求、控制台日志和错误。
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="会话回放播放" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![会话回放播放](/images/clickstack/session-replay/session-replay.webp)
+
+</Frame>
+
+</div>
 
 在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间线上显示的详细程度。错误会以红色标注，点击任意事件都会将回放跳转到该会话中的相应位置。
 
@@ -121,7 +135,15 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 
 这种关联在反向场景下同样成立。在 **搜索** 视图中查看某个 trace 时，点击它打开 trace 详情，然后选择 **会话回放** 标签页，即可看到用户在该 trace 发生时的实际体验。这在排查 error 或请求缓慢时尤其有用——你可以从 backend 问题入手，立即切换到用户视角。
 
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="会话回放 trace 视图" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![会话回放 trace 视图](/images/clickstack/session-replay/trace-to-replay.webp)
+
+</Frame>
+
+</div>
 
 <div id="data-storage">
   ## 会话数据如何存储
