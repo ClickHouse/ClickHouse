@@ -152,6 +152,9 @@ void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
 /// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
 MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
+/// The storage and the path, resolved for a local storage to the directory it opens: the same for every spelling of a directory.
+String getTableDirectoryKey(const IObjectStorage & object_storage, const String & table_path);
+
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
 /// is spelled in still counts, and a listing these callers cannot order unambiguously is refused.

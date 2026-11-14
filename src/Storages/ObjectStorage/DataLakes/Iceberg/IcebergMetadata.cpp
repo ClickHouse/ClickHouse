@@ -275,6 +275,7 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
         .metadata_compression_method = compression_method,
         .table_path = table_path,
         .table_uuid = table_uuid,
+        .table_directory_key = getTableDirectoryKey(*object_storage, table_path),
         .path_resolver = IcebergPathResolver(
             table_location, root_derivation.table_root, Iceberg::BlobStorageDescription::fromConfiguration(*configuration)),
         .table_root_was_derived = root_derivation.relation == IcebergPathResolver::RootRelation::AdoptedDescendant,
@@ -2332,6 +2333,7 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         .metadata_compression_method = metadata_compression_method,
         .table_path = standard_persistent_components.table_path,
         .table_uuid = standard_persistent_components.table_uuid,
+        .table_directory_key = standard_persistent_components.table_directory_key,
         .path_resolver = IcebergPathResolver(
             table_location,
             standard_persistent_components.table_path,

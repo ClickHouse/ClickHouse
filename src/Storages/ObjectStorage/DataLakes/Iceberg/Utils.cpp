@@ -67,6 +67,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -1748,11 +1749,18 @@ void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
         default_spec_id);
 }
 
+String getTableDirectoryKey(const IObjectStorage & object_storage, const String & table_path)
+{
+    String directory = table_path;
+    if (object_storage.getType() == ObjectStorageType::Local)
+        directory = fs::weakly_canonical(resolvePathRelativelyToBase(table_path, object_storage.getCommonKeyPrefix())).string();
+    return getObjectStorageHash(object_storage) + '\0' + directory + '\0';
+}
+
 template <typename LoadFunc>
 static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
-    const String & table_path,
-    const std::optional<String> & table_uuid,
+    const String & cache_key,
     const ContextPtr & local_context,
     bool force_fetch_latest_metadata,
     LoadFunc && load_fn)
@@ -1766,8 +1774,7 @@ static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
     if (metadata_cache)
     {
         return metadata_cache->getOrSetLatestMetadataVersion(
-            table_path,
-            table_uuid,
+            cache_key,
             load_fn,
             tolerated_staleness_ms
         )->latest_metadata;
@@ -2112,7 +2119,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
-    return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
+    const auto cache_key = IcebergMetadataFilesCache::getLatestMetadataVersionKey(
+        getTableDirectoryKey(*object_storage, table_path),
+        table_path,
+        use_table_uuid_for_metadata_file_selection ? table_uuid : std::nullopt);
+    return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -2203,7 +2214,9 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                 /* force_fetch_latest_metadata */ true,
                 ignore_metadata_pointer_overrides);
         };
-        return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
+        const auto cache_key
+            = IcebergMetadataFilesCache::getLatestMetadataVersionKey(getTableDirectoryKey(*object_storage, table_path), table_path);
+        return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
     }
 
     {

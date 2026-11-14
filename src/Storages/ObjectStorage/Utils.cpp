@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/FullyQualifiedObjectPath.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -155,6 +156,12 @@ void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string
                 lake_name, position);
         ++position;
     }
+}
+
+String getObjectStorageHash(const IObjectStorage & object_storage)
+{
+    const String description = object_storage.getDescription();
+    return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
 }
 
 std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path)
