@@ -6,6 +6,8 @@ keywords: ['денормализация данных', 'денормализо�
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 Денормализация данных — это метод в ClickHouse, при котором используются плоские таблицы, чтобы минимизировать задержку выполнения запросов, избегая операций JOIN.
 
 <div id="comparing-normalized-vs-denormalized-schemas">
@@ -16,15 +18,7 @@ doc_type: 'guide'
 
 Этот подход снижает потребность в сложных JOIN во время выполнения запроса и может значительно ускорить операции чтения, поэтому он хорошо подходит для приложений с высокой нагрузкой на чтение и сложными запросами. Однако он может усложнить запись и сопровождение данных, поскольку любые изменения в дублируемых данных нужно распространять на все экземпляры, чтобы сохранять согласованность.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Денормализация в ClickHouse](/images/data-modeling/denormalization-diagram.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="Денормализация в ClickHouse" />
 
 <br />
 
@@ -93,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
 ```
 
 ```response
@@ -153,15 +147,7 @@ LIMIT 5
 
 Теперь рассмотрим наши `Users` и `Badges`:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![схема Users и Badges](/images/data-modeling/denormalization-schema.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="схема Users и Badges" />
 
 <p />
 
@@ -202,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
 ```
 
 ```response
@@ -210,7 +196,7 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
 ```
 
 ```response
@@ -255,7 +241,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
 ```
 
 ```response
@@ -281,7 +267,7 @@ ORDER BY c DESC LIMIT 5
 └──────────┴─────┘
 ```
 
-Аналогично, эти связи возникают не слишком часто:
+Аналогично, эти связи не относятся к событиям, которые происходят слишком часто:
 
 ```sql
 SELECT

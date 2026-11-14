@@ -395,17 +395,12 @@ try
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
-    else if (!cwd.empty() && !cwd.starts_with('/'))
-    {
-        response_json.set("message", "Invalid cwd: must be an absolute path starting with '/'.");
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid cwd");
-    }
     else
     {
         std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         KeeperClientBase client(stream, stream);
         client.zookeeper = keeper_client->get();
-        client.cwd = client.getAbsolutePath(cwd);
+        client.cwd = cwd;
         client.ask_confirmation = false;  // Confirmations are not supported in UI
 
         client.processQueryText(command);

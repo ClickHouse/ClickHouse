@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## Вставка в ClickHouse в сравнении с OLTP-базами данных
 </div>
@@ -74,15 +76,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 
 При асинхронных вставках данные сначала попадают в буфер, а затем позже записываются в хранилище базы данных в 3 этапа, как показано на схеме ниже:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Вставки Postgres](/images/guides/postgres-inserts.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Вставки Postgres" />
 
 Когда асинхронные вставки включены, ClickHouse:
 
@@ -107,7 +101,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 У ClickHouse есть клиенты для самых популярных языков программирования.
 Они оптимизированы для корректного выполнения вставок и изначально поддерживают асинхронные вставки — либо напрямую, как, например, [клиент Go](/ru/integrations/language-clients/go/clickhouse-api#async-insert), либо косвенно, если они включены в настройках на уровне запроса, пользователя или соединения.
 
-Полный список доступных клиентов и драйверов ClickHouse см. в разделе [Native Clients and Interfaces](/ru/concepts/features/interfaces/native-clients-interfaces-index).
+Полный список доступных клиентов и драйверов ClickHouse см. в разделе [Clients and Drivers](/ru/concepts/features/interfaces/cli).
 
 <div id="prefer-the-native-format">
   ### Предпочитайте формат Native

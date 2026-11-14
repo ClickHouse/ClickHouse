@@ -6,6 +6,8 @@ keywords: ['índice primário esparso', 'índice primário', 'índice']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <Tip>
   **Procurando detalhes avançados sobre indexação?**
 
@@ -30,15 +32,7 @@ Para ilustrar como o índice primário esparso é construído, usamos a tabela [
 
 Como [lembrete](/pt-BR/concepts/core-concepts/parts), na nossa tabela de exemplo ① com a chave primária (town, street), os dados ② inseridos são ③ armazenados em disco, ordenados pelos valores das colunas da chave primária e comprimidos, em arquivos separados para cada coluna:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
 
 <br />
 
@@ -48,15 +42,7 @@ Para processamento, os dados de cada coluna são ④ divididos logicamente em gr
 
 Essa estrutura em grânulos também é o que torna o índice primário **esparso**: em vez de indexar cada linha, o ClickHouse armazena ⑤ os valores da chave primária de apenas uma linha por grânulo — especificamente, a primeira linha. Isso resulta em uma entrada de índice por grânulo:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
 
 <br />
 
@@ -70,37 +56,19 @@ Graças à sua esparsidade, o índice primário é pequeno o suficiente para cab
 
 Mostramos como o índice primário esparso é usado para acelerar consultas com outra animação:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/primary-index-light_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
 
 <br />
 
 <br />
 
-<Steps>
-  <Step title="Analisar o predicado da consulta">
-    A consulta de exemplo inclui um predicado em ambas as colunas da chave primária: `town = 'LONDON' AND street = 'OXFORD STREET'`.
-  </Step>
+① A consulta de exemplo inclui um predicado em ambas as colunas da chave primária: `town = 'LONDON' AND street = 'OXFORD STREET'`.
 
-  <Step title="Carregar o índice primário">
-    Para acelerar a consulta, o ClickHouse carrega na memória o índice primário da tabela.
-  </Step>
+② Para acelerar a consulta, o ClickHouse carrega na memória o índice primário da tabela.
 
-  <Step title="Identificar grânulos correspondentes">
-    Em seguida, ele percorre as entradas do índice para identificar quais grânulos podem conter linhas que correspondam ao predicado — em outras palavras, quais grânulos não podem ser ignorados.
-  </Step>
+③ Em seguida, ele percorre as entradas do índice para identificar quais grânulos podem conter linhas que correspondam ao predicado — em outras palavras, quais grânulos não podem ser ignorados.
 
-  <Step title="Carregar e processar grânulos">
-    Esses grânulos potencialmente relevantes são então carregados e [processados](/pt-BR/concepts/core-concepts/query-parallelism) na memória, junto com os grânulos correspondentes de quaisquer outras colunas necessárias para a consulta.
-  </Step>
-</Steps>
+④ Esses grânulos potencialmente relevantes são então carregados e [processados](/pt-BR/concepts/core-concepts/query-parallelism) na memória, junto com os grânulos correspondentes de quaisquer outras colunas necessárias para a consulta.
 
 <div id="monitoring-primary-indexes">
   ## Monitoramento de índices primários

@@ -24,15 +24,11 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!(expression_step || filter_step) || !array_join_step)
         return 0;
 
-    /// The fused filter reads these too, so treat them like the joined columns.
-    Names pinned_columns = array_join_step->getColumns();
-    if (const auto & element_filter = array_join_step->getElementFilter())
-        for (const auto & name : element_filter->getRequiredColumnsNames())
-            pinned_columns.push_back(name);
+    const auto & array_join_columns = array_join_step->getColumns();
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
 
-    auto split_actions = expression.splitActionsBeforeArrayJoin(pinned_columns);
+    auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns);
 
     /// No actions can be moved before ARRAY JOIN.
     if (split_actions.first.trivial())
@@ -54,12 +50,8 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (expression_step)
         new_step = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second));
     else
-    {
-        auto new_filter_step = std::make_unique<FilterStep>(array_join_step->getOutputHeader(), std::move(split_actions.second),
-                                                            filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-        new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
-        new_step = std::move(new_filter_step);
-    }
+        new_step = std::make_unique<FilterStep>(array_join_step->getOutputHeader(), std::move(split_actions.second),
+                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
 
     new_step->setStepDescription(fmt::format("{} [split]", parent->getStepDescription()), settings.max_step_description_length);
     parent = std::move(new_step);

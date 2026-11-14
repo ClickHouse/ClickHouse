@@ -7,13 +7,11 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'IA', 'observability', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 ClickStack intègre un serveur [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) qui permet aux assistants IA d’interagir avec vos données d’observability. Une fois connecté, un assistant IA peut interroger les logs, les traces et les métriques ; gérer les tableaux de bord et les alertes ; explorer les sources de données ; et utiliser les recherches enregistrées — le tout en langage naturel.
 
 Vous pouvez ainsi utiliser des outils comme [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/) ou tout client compatible MCP pour analyser des incidents, créer des tableaux de bord et gérer votre configuration d’observability sans quitter votre environnement de développement.
-
-<Frame>
-  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
-</Frame>
 
 <div id="availability">
   ## Disponibilité
@@ -146,20 +144,14 @@ Sans l’en-tête `x-service-id`, les requêtes sont dirigées par défaut vers 
 
 Les déploiements Open Source et BYOC utilisent l&#39;endpoint MCP intégré de votre instance ClickStack avec une authentification par jeton Bearer.
 
-### Prérequis {#oss-prerequisites}
+<div id="oss-prerequisites">
+  ### Prérequis
+</div>
 
 * Une instance ClickStack active (voir [Déploiement](/fr/clickstack/deployment/overview) pour les options de déploiement)
 * Une **Personal API Access Key** — trouvez la vôtre dans HyperDX, sous **Team Settings → API Keys → Personal API Access Key**
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Personal API Access Key dans Team Settings](/images/clickstack/api-key-personal.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/api-key-personal.webp" alt="Personal API Access Key dans Team Settings" size="md" border />
 
 <Note>
   La **Personal API Access Key** est différente de la **clé API d’ingestion** disponible dans Team Settings, qui sert à authentifier les données de télémétrie envoyées au collecteur OpenTelemetry.
@@ -178,7 +170,6 @@ Le serveur MCP est disponible sur le chemin `/api/mcp` de l’URL du frontend Cl
 Le serveur MCP utilise le transport **Streamable HTTP** avec une authentification par **Bearer token**.
 
 <div id="managed-connecting-a-client">
-  <a id="oss-connecting-a-client" />
   ### Connexion d’un client MCP
 </div>
 
@@ -268,15 +259,15 @@ Remplacez `<YOUR_CLICKSTACK_URL>` par l’URL de votre instance (par exemple, `h
 </Tabs>
 
 <div id="capabilities">
-  ## Que pouvez-vous faire avec MCP ?
+  ## Que pouvez-vous faire avec MCP ?
 </div>
 
-Une fois connecté, votre assistant IA a accès à un ensemble d’outils couvrant les principaux domaines de ClickStack. Il s’agit notamment de :
+Une fois connecté, votre assistant IA a accès à un ensemble d’outils couvrant les principaux domaines de ClickStack. Il s’agit notamment de :
 
 * **Interrogation des données** — Recherchez et agrégerez les logs, les traces et les métriques à l’aide du query builder de ClickStack, de la syntaxe de recherche ou de SQL brut.
 * **Sources de données** — Répertoriez les sources de données disponibles, les connexions aux bases de données, les schémas de colonnes et les clés d’attribut.
 * **Tableaux de bord** — Créez, mettez à jour, supprimez et inspectez les tableaux de bord ainsi que leurs tuiles.
-* **Alertes** — Créez, mettez à jour et inspectez les alertes, ainsi que leur historique d’évaluation. Lorsque la [détection d’anomalies](/fr/clickstack/features/anomaly-detection) est activée, les assistants peuvent également tester rétrospectivement les paramètres des alertes d’anomalie sur l’historique récent avant de les enregistrer.
+* **Alertes** — Créez, mettez à jour et inspectez les alertes, ainsi que leur historique d’évaluation.
 * **Recherches enregistrées** — Créez, mettez à jour et inspectez des définitions de recherches enregistrées réutilisables.
 * **Webhooks** — Répertoriez les destinations webhook disponibles pour les notifications d’alerte.
 * **Équipes** — Répertoriez les équipes auxquelles appartient l’utilisateur actuel et identifiez l’équipe active.

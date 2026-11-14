@@ -10,7 +10,7 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { CloudSQLIAMAuthentication } from "/snippets/clickpipes/_cloudsql_iam_authentication.mdx";
+import { Image } from "/snippets/components/Image.jsx";
 
 <Info>
 
@@ -27,36 +27,12 @@ Anything on or after Postgres 12
 
 1. Click on **Edit** button on the Overview page.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Edit Button in Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp" alt="Edit Button in Cloud SQL Postgres" size="lg" border/>
 
 2. Go to Flags and change `cloudsql.logical_decoding` to on. This change will need restarting your Postgres server.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Change cloudsql.logical_decoding to on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
-
-</Frame>
-
-</div>
-<div className="ch-image-lg">
-
-<Frame>
-
-![Restart Server](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="Change cloudsql.logical_decoding to on" size="lg" border/>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="Restart Server" size="lg" border/>
 
 ## Creating ClickPipes user and granting permissions {#creating-clickpipes-user-and-granting-permissions}
 
@@ -102,10 +78,6 @@ Connect to your Cloud SQL Postgres through the admin user and run the below comm
 
    The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
 
-## Using IAM database authentication (optional, Beta) {#iam-database-authentication}
-
-<CloudSQLIAMAuthentication engine="postgres" />
-
 [//]: # (TODO Add SSH Tunneling)
 
 ## Add ClickPipes IPs to Firewall {#add-clickpipes-ips-to-firewall}
@@ -119,48 +91,16 @@ If your are using SSH Tunneling, then you need to add the [ClickPipes IPs](/inte
 
 1. Go to **Connections** section
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Connections Section in Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="Connections Section in Cloud SQL" size="lg" border/>
 
 2. Go to the Networking subsection
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Networking Subsection in Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Networking Subsection in Cloud SQL" size="lg" border/>
 
 3. Add the [public IPs of ClickPipes](/integrations/clickpipes/networking/static-ips)
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Add ClickPipes Networks to Firewall](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
-
-</Frame>
-
-</div>
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickPipes Networks Added to Firewall](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="Add ClickPipes Networks to Firewall" size="lg" border/>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="ClickPipes Networks Added to Firewall" size="lg" border/>
 
 ## What's next? {#whats-next}
 

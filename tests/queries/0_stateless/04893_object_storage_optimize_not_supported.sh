@@ -34,15 +34,19 @@ EOF
 
 cp -r "${CUR_DIR}/data_minio/paimon_no_partition" "${ROOT}/paimon"
 
-echo "-- delta"
-${CLICKHOUSE_CLIENT} --query "
-    DROP TABLE IF EXISTS t_delta;
-    CREATE TABLE t_delta ENGINE = DeltaLakeLocal('${ROOT}/delta');
-    OPTIMIZE TABLE t_delta;
-" 2>&1 | grep -o 'Method `optimize` is not implemented for DeltaLake' | head -n 1
+# DeltaLake, through both metadata readers: allow_delta_kernel_rs picks
+# DeltaLakeMetadataDeltaKernel (1) or DeltaLakeMetadata (0), and both inherit the default.
+for kernel in 1 0; do
+    echo "-- delta, allow_delta_kernel_rs = ${kernel}"
+    ${CLICKHOUSE_CLIENT} --allow_delta_kernel_rs="${kernel}" --query "
+        DROP TABLE IF EXISTS t_delta;
+        CREATE TABLE t_delta ENGINE = DeltaLakeLocal('${ROOT}/delta');
+        OPTIMIZE TABLE t_delta;
+    " 2>&1 | grep -o 'Method `optimize` is not implemented for DeltaLake' | head -n 1
+done
 
 echo "-- paimon"
-${CLICKHOUSE_CLIENT} --enable_paimon_storage_engine=1 --query "
+${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine=1 --query "
     DROP TABLE IF EXISTS t_paimon;
     CREATE TABLE t_paimon ENGINE = PaimonLocal('${ROOT}/paimon');
     OPTIMIZE TABLE t_paimon;

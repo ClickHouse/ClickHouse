@@ -6,6 +6,8 @@ doc_type: 'guide'
 keywords: ['встроенный ClickStack', 'встроенный ClickHouse', 'ClickStack ClickHouse Server', 'встроенная обсервабилити']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 ClickStack встроен непосредственно в бинарный файл сервера ClickHouse. Это означает, что вы можете получить доступ к интерфейсу ClickStack (HyperDX) прямо из своего экземпляра ClickHouse, не развертывая никаких дополнительных компонентов. Такой вариант развертывания похож на публичное демо по адресу [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), но работает с вашим собственным экземпляром ClickHouse и вашими данными.
 
 <div id="suitable-for">
@@ -57,15 +59,7 @@ ClickStack встроен непосредственно в бинарный ф�
 
         Введите имя пользователя `default` и пароль `password`, чтобы подключиться к локальному экземпляру.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Аутентификация](/images/clickstack/deployment/embedded/authenticate.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Аутентификация" size="lg" />
       </Step>
 
       <Step title="Создайте источник" id="create-a-source-docker">
@@ -73,17 +67,9 @@ ClickStack встроен непосредственно в бинарный ф�
 
         При чистой установке вам будет предложено создать источник. Укажите в поле **Table** нужное имя таблицы (например, `otel_logs`) и нажмите **Save New Source**.
 
-        <div className="ch-image-lg">
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Создать источник" size="lg" />
 
-        <Frame>
-
-        ![Создать источник](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-        </Frame>
-
-        </div>
-
-        Если данных у вас пока нет, см. [ингестия данных](/ru/clickstack/ingesting-data/overview), чтобы узнать о доступных вариантах.
+        Если данных у вас пока нет, см. [ингестия данных](/ru/clickstack/ingesting-data/index), чтобы узнать о доступных вариантах.
       </Step>
     </Steps>
   </Tab>
@@ -152,17 +138,9 @@ ClickStack встроен непосредственно в бинарный ф�
       <Step title="Создайте источник" id="create-a-source-binary">
         Если у вас уже есть таблицы OpenTelemetry, ClickStack обнаружит их и автоматически создаст источники.
 
-        Если данных у вас пока нет, см. [ингестия данных](/ru/clickstack/ingesting-data/overview), чтобы узнать о доступных вариантах.
+        Если данных у вас пока нет, см. [ингестия данных](/ru/clickstack/ingesting-data/index), чтобы узнать о доступных вариантах.
 
-        <div className="ch-image-lg">
-
-        <Frame>
-
-        ![Создать источник](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-        </Frame>
-
-        </div>
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Создать источник" size="lg" />
       </Step>
     </Steps>
   </Tab>

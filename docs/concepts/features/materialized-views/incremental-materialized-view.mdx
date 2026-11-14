@@ -7,6 +7,8 @@ score: 10000
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 ## Background {#background}
 
 Incremental Materialized Views (Materialized Views) allow you to shift the cost of computation from query time to insert time, resulting in faster `SELECT` queries.
@@ -17,15 +19,7 @@ The principal motivation for Materialized Views is that the results inserted int
 
 Materialized views in ClickHouse are updated in real time as data flows into the table they're based on, functioning more like continually updating indexes. This is in contrast to other databases where Materialized Views are typically static snapshots of a query that must be refreshed (similar to ClickHouse [Refreshable Materialized Views](/reference/statements/create/view#refreshable-materialized-view)).
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Materialized view diagram](/images/materialized-view/materialized-view-diagram.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Materialized view diagram"/>
 
 ## Example {#example}
 
@@ -44,7 +38,7 @@ CREATE TABLE votes
     `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId);
+ORDER BY (VoteTypeId, CreationDate, PostId)
 
 INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
 ```
@@ -619,7 +613,7 @@ Note, however, that this result is incorrect.
 
 - **Evaluate insert-time performance.** JOINs increase the cost of inserts, especially with large right-side tables. Benchmark insert rates using representative production data.
 
-- **Prefer dictionaries for simple lookups**. Use [Dictionaries](/concepts/features/dictionaries/index) for key-value lookups (e.g., user ID to name) to avoid expensive JOIN operations. Use a fully loaded dictionary layout for reliable insert-time lookups; [cache-based layouts](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) can make ingestion depend on a local warmed cache.
+- **Prefer dictionaries for simple lookups**. Use [Dictionaries](/concepts/features/dictionaries/index) for key-value lookups (e.g., user ID to name) to avoid expensive JOIN operations.
 
 - **Align `GROUP BY` and `ORDER BY` for merge efficiency.** When using `SummingMergeTree` or `AggregatingMergeTree`, ensure `GROUP BY` matches the `ORDER BY` clause in the target table to allow efficient row merging.
 

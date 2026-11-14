@@ -1,13 +1,4 @@
 <test>
-    <create_query>CREATE TABLE decimal_to_string (value Decimal256(76)) ENGINE = Memory</create_query>
-    <fill_query>
-        INSERT INTO decimal_to_string
-        SELECT reinterpret(toInt256('1234567890123456789012345678901234567890123456789012345678901234567890123456') + number, 'Decimal256(76)')
-        FROM numbers(262144)
-        SETTINGS max_threads = 1
-    </fill_query>
-    <drop_query>DROP TABLE IF EXISTS decimal_to_string</drop_query>
-
     <!-- Formatting of the fractional part of a Decimal: a field of a known width, which is
          written in blocks of digits rather than one division per digit.
          `reinterpret` is used to get a random underlying representation, so that the fractional
@@ -35,7 +26,4 @@
 
     <!-- Through an output format rather than through toString -->
     <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(formatRow('TSV', reinterpret(rand64(), 'Decimal64(9)'))) SETTINGS max_threads = 1</query>
-
-    <!-- Materialized fractions keep input construction outside the timed query. -->
-    <query>SELECT sum(cityHash64(toString(value))) FROM decimal_to_string SETTINGS max_threads = 1</query>
 </test>

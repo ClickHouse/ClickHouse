@@ -11,6 +11,7 @@ INSERT INTO t2_final_join VALUES (1, 'x'), (2, 'y'), (3, 'z');
 
 -- Exactly one table (t1) must be read with FINAL; before the fix t2 was read with FINAL too (count 2).
 
+SET enable_analyzer = 1;
 SELECT 'analyzer tables read with FINAL', countIf(explain LIKE '%FINAL: 1%')
 FROM
 (
@@ -21,7 +22,8 @@ FROM
     WHERE t2_final_join.v = 'x'
 );
 
--- Results must stay correct.
+-- Results must stay correct in both modes.
+SET enable_analyzer = 1;
 SELECT 'result analyzer', t2_final_join.v, t1_final_join.s
 FROM t1_final_join FINAL
 JOIN t2_final_join ON t2_final_join.id = t1_final_join.id
@@ -33,7 +35,8 @@ DROP TABLE t2_final_join;
 -- FINAL is a per-table modifier: every FINAL/JOIN combination must read (and deduplicate) exactly the
 -- tables the `FINAL` keyword is attached to, and only those. Both tables are ReplacingMergeTree with
 -- un-merged duplicate parts; merges are stopped so the un-merged state (and thus the observable effect
--- of FINAL) is deterministic.
+-- of FINAL) is deterministic. Only enable_analyzer = 1 is checked here: the old planner mishandles
+-- FINAL on the right (non-first) table, so it disagrees on the `right`/`both` shapes.
 
 DROP TABLE IF EXISTS lhs_final;
 DROP TABLE IF EXISTS rhs_final;
@@ -48,6 +51,8 @@ INSERT INTO lhs_final VALUES (1, 'l_old', 1);
 INSERT INTO lhs_final VALUES (1, 'l_new', 2);
 INSERT INTO rhs_final VALUES (1, 'r_old', 1);
 INSERT INTO rhs_final VALUES (1, 'r_new', 2);
+
+SET enable_analyzer = 1;
 
 -- The number of tables planned as FINAL reads must equal the number of `FINAL` keywords.
 SELECT 'final reads none',  countIf(explain LIKE '%FINAL: 1%') FROM (EXPLAIN actions = 1 SELECT lhs_final.s, rhs_final.s FROM lhs_final       JOIN rhs_final       ON rhs_final.id = lhs_final.id);

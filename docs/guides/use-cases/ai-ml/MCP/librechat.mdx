@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 > This guide explains how to set up LibreChat with a ClickHouse MCP server using Docker
 > and connect it to the ClickHouse example datasets.
 
@@ -105,7 +107,7 @@ If you want to explore your own data, you can do so by
 using the [host, username and password](/get-started/setup/cloud#connect-with-your-app) 
 of your own ClickHouse Cloud service.
 
-<Card title="Get started with ClickHouse Cloud" href="https://clickhouse.cloud/signUp?loc=docs-guides-use-cases-ai-ml-mcp-librechat" icon="cloud">
+<Card title="Get started with ClickHouse Cloud" href="https://cloud.clickhouse.com/" icon="cloud">
   If you don't have a Cloud account yet, get started with ClickHouse Cloud today and receive $300 in credits. At the end of your 30-day free trial, continue with a pay-as-you-go plan, or contact us to learn more about our volume-based discounts. Visit our pricing page for details.
 </Card>
 </Step>
@@ -193,15 +195,7 @@ your local LLM.
 
 From the chat interface, select `clickhouse-playground` as your MCP server:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Select your MCP server](/images/use-cases/AI_ML/MCP/librechat.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/AI_ML/MCP/librechat.webp" alt="Select your MCP server" size="md"/>
 
 You can now prompt the LLM to explore the ClickHouse example datasets. Give it a go:
 

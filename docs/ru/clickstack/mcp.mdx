@@ -7,13 +7,11 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', 'обсервабилити', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
-ClickStack включает встроенный сервер [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), который позволяет ИИ-ассистентам взаимодействовать с вашими данными обсервабилити. После подключения ИИ-ассистент может выполнять запросы к журналам, трассировкам и метрикам; управлять панелями мониторинга и оповещениями; просматривать источники данных; и работать с сохранёнными поисками — всё это на естественном языке.
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickStack включает встроенный сервер [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), который позволяет AI-ассистентам взаимодействовать с вашими данными обсервабилити. После подключения AI-ассистент может выполнять запросы к журналам, трассировкам и метрикам; управлять панелями мониторинга и оповещениями; просматривать источники данных; и работать с сохранёнными поисками — всё это на естественном языке.
 
 Благодаря этому вы можете использовать такие инструменты, как [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/), или любой клиент, совместимый с MCP, чтобы расследовать инциденты, создавать панели мониторинга и управлять вашей системой обсервабилити, не покидая среду разработки.
-
-<Frame>
-  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
-</Frame>
 
 <div id="availability">
   ## Доступность
@@ -146,27 +144,20 @@ https://mcp.clickhouse.cloud/clickstack
 
 Развертывания Open Source и BYOC используют встроенную конечную точку MCP экземпляра ClickStack с аутентификацией по Bearer-токену.
 
-### Предварительные требования {#oss-prerequisites}
+<div id="oss-prerequisites">
+  ### Предварительные требования
+</div>
 
 * запущенный экземпляр ClickStack (варианты развертывания см. в разделе [Развертывание](/ru/clickstack/deployment/overview))
 * **Personal API Access Key** — его можно найти в HyperDX: **Team Settings → API Keys → Personal API Access Key**
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Personal API Access Key в разделе Team Settings](/images/clickstack/api-key-personal.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/api-key-personal.webp" alt="Personal API Access Key в разделе Team Settings" size="md" border />
 
 <Note>
   Personal API Access Key отличается от **ключ API для приёма данных API key** в Team Settings, который используется для аутентификации телеметрических данных, отправляемых в OpenTelemetry Collector.
 </Note>
 
 <div id="managed-endpoint">
-  <a id="oss-endpoint" />
   ### Конечная точка
 </div>
 
@@ -179,7 +170,6 @@ MCP-сервер доступен по пути `/api/mcp` в URL фронтен
 MCP-сервер использует транспорт **Streamable HTTP** с аутентификацией по **Bearer token**.
 
 <div id="managed-connecting-a-client">
-  <a id="oss-connecting-a-client" />
   ### Подключение MCP-клиента
 </div>
 
@@ -272,12 +262,12 @@ MCP-сервер использует транспорт **Streamable HTTP** с 
   ## Что можно делать с MCP?
 </div>
 
-После подключения ваш ИИ-ассистент получает доступ к набору инструментов, охватывающих основные области ClickStack. В их числе:
+После подключения ваш ИИ-помощник получает доступ к набору инструментов, охватывающих основные области ClickStack. В их числе:
 
 * **Запросы к данным** — Ищите и агрегируйте журналы, трассировки и метрики с помощью конструктора запросов ClickStack, поискового синтаксиса или raw SQL.
 * **Источники данных** — Просматривайте доступные источники данных, подключения к базам данных, схемы столбцов и ключи атрибутов.
 * **Панели мониторинга** — Создавайте, обновляйте, удаляйте и просматривайте панели мониторинга вместе с их плитками.
-* **Оповещения** — Создавайте, обновляйте и просматривайте оповещения вместе с историей их выполнения. Если включено [обнаружение аномалий](/ru/clickstack/features/anomaly-detection), ассистенты также могут перед сохранением проверить настройки оповещений об аномалиях на недавних исторических данных.
+* **Оповещения** — Создавайте, обновляйте и просматривайте оповещения вместе с историей их выполнения.
 * **Сохранённые поиски** — Создавайте, обновляйте и просматривайте повторно используемые определения сохранённых поисков.
 * **Вебхуки** — Просматривайте доступные пункты назначения вебхуков для уведомлений об оповещениях.
 * **Команды** — Просматривайте команды, в которые входит текущий пользователь, и определяйте активную команду.

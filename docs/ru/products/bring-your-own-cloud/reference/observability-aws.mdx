@@ -7,7 +7,9 @@ description: 'Отслеживайте состояние и работу раз
 doc_type: 'reference'
 ---
 
-Развертывания BYOC включают широкие возможности обсервабилити, позволяя отслеживать сервисы ClickHouse с помощью выделенного стека мониторинга Prometheus и прямых конечных точек метрик серверов ClickHouse. Ваши данные мониторинга остаются в пределах вашей облачной учетной записи, обеспечивая полный контроль над инфраструктурой мониторинга. Ограниченная телеметрия использования и состояния, перечисленная в разделе [границы сети](/ru/products/bring-your-own-cloud/reference/network-security#outbound-connections), — единственные данные мониторинга, экспортируемые в ClickHouse; отдельно панели мониторинга ClickHouse и, при утвержденной эскалации, инженеры ClickHouse могут выполнять запросы к этому стеку на месте через Tailscale, при этом на стороне ClickHouse ничего не сохраняется — см. [доступ ClickHouse к данным](/ru/products/bring-your-own-cloud/reference/clickhouse-data-access).
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Развертывания BYOC включают широкие возможности обсервабилити, позволяя отслеживать сервисы ClickHouse с помощью выделенного стека мониторинга Prometheus и прямых конечных точек метрик серверов ClickHouse. Все данные обсервабилити остаются в пределах вашей облачной учетной записи, обеспечивая полный контроль над инфраструктурой мониторинга.
 
 <div id="prometheus-monitoring">
   ## Подходы к мониторингу с Prometheus
@@ -44,7 +46,9 @@ ClickHouse BYOC разворачивает в вашем кластере Kubern
 * кластера Kubernetes и системных компонентов
 * узлов базовой инфраструктуры
 
-### Доступ к стеку Prometheus {#accessing-prometheus-stack}
+<div id="accessing-prometheus-stack">
+  ### Доступ к стеку Prometheus
+</div>
 
 Чтобы подключиться к встроенному стеку Prometheus:
 
@@ -110,7 +114,9 @@ scrape_configs:
 
 Сервисы ClickHouse предоставляют совместимую с Prometheus конечную точку метрик, с которой можно напрямую выполнять сбор из собственного экземпляра Prometheus. Этот подход дает метрики, специфичные для ClickHouse, но не включает метрики Kubernetes или вспомогательных сервисов.
 
-### Доступ к конечной точке метрик {#metrics-endpoint}
+<div id="metrics-endpoint">
+  ### Доступ к конечной точке метрик
+</div>
 
 Конечная точка метрик доступна по пути `/metrics_all` на конечной точке вашего сервиса ClickHouse:
 
@@ -165,7 +171,9 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-### Настройка Prometheus {#configuring-prometheus}
+<div id="configuring-prometheus">
+  ### Настройка Prometheus
+</div>
 
 Настройте экземпляр Prometheus для сбора метрик с конечной точки метрик ClickHouse:
 
@@ -196,66 +204,28 @@ scrape_configs:
 
 Для команд, которым нужен готовый набор панелей мониторинга, ClickHouse предлагает **ClickHouse Mixin** для Prometheus. Это готовая панель мониторинга Grafana, специально разработанная для мониторинга кластеров ClickHouse.
 
-### Настройка Grafana и импорт ClickHouse Mix-in {#setup-grafana-mixin}
+<div id="setup-grafana-mixin">
+  ### Настройка Grafana и импорт ClickHouse Mix-in
+</div>
 
 После интеграции вашего экземпляра Prometheus со стеком мониторинга ClickHouse вы сможете визуализировать метрики в Grafana, выполнив следующие шаги:
 
 1. **Добавьте Prometheus как источник данных в Grafana**
    Перейдите в раздел &quot;Data sources&quot; на боковой панели Grafana, нажмите &quot;Add data source&quot; и выберите &quot;Prometheus&quot;. Укажите URL вашего экземпляра Prometheus и необходимые учетные данные для подключения.
 
-<div className="ch-image-lg ch-image-background-black">
+<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
 
-<Frame>
+<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
 
-![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
-
-</Frame>
-
-</div>
-
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
 
 2. **Импортируйте панель мониторинга ClickHouse**
    В Grafana перейдите в раздел панелей мониторинга и выберите &quot;Import&quot;. Вы можете либо загрузить JSON‑файл панели мониторинга, либо вставить его содержимое напрямую. JSON‑файл доступен в репозитории ClickHouse mixin:
    [JSON панели мониторинга ClickHouse Mix-in](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
 
 3. **Просмотрите свои метрики**
    После импорта панели мониторинга и ее настройки с источником данных Prometheus вы увидите метрики в реальном времени из ваших сервисов ClickHouse Cloud.
 
-<div className="ch-image-lg ch-image-background-black">
-
-<Frame>
-
-![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />

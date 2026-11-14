@@ -9,9 +9,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/Stopwatch.h>
 #include <functional>
-#include <optional>
-#include <span>
-#include <string_view>
 #include <utility>
 
 namespace DB
@@ -48,7 +45,7 @@ namespace JSONUtils
         const FormatSettings & format_settings,
         bool yield_strings);
 
-    Strings makeNamesValidJSONStrings(std::span<const String> names, const FormatSettings & settings, bool validate_utf8);
+    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8);
 
     /// Returns true if the JSON keys derived from `names` (via `makeNamesValidJSONStrings`) would
     /// contain bytes that are not valid UTF-8 under the given settings. This can happen only when
@@ -83,7 +80,7 @@ namespace JSONUtils
     /// types, not the element names, so a `Tuple` of clean value types with a non-UTF-8 element
     /// name skips the buffer even with validation on. The element names come from the header
     /// (walked recursively through `Array`, `Map`, `Nullable`, nested `Tuple`, etc. via
-    /// `forEachInTypeTree`), so text framings can reject or base64-encode accordingly.
+    /// `IDataType::forEachChild`), so text framings can reject or base64-encode accordingly.
     /// Pass `validate_utf8 = false` when the format does not install the validating buffer at all
     /// (for example `CustomSeparated` with the `JSON` escaping rule).
     bool tupleElementNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings, bool validate_utf8);
@@ -130,9 +127,9 @@ namespace JSONUtils
         bool yield_strings,
         const FormatSettings & settings,
         WriteBuffer & out,
-        std::optional<std::string_view> name = std::nullopt,
+        const std::optional<String> & name = std::nullopt,
         size_t indent = 0,
-        std::string_view title_after_delimiter = " ",
+        const char * title_after_delimiter = " ",
         bool pretty_json = false);
 
     void writeColumns(
@@ -196,11 +193,11 @@ namespace JSONUtils
     using NestedDeserialize = std::function<ReturnType(IColumn &, ReadBuffer &)>;
 
     template <typename ReturnType, bool default_column_return_value = true>
-    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested, const IDataType * type = nullptr);
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested);
 
-    extern template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested, const IDataType * type);
-    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
-    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested, const IDataType * type);
+    extern template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
 }
 
 }

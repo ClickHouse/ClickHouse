@@ -1,7 +1,5 @@
 #include <iomanip>
 
-#include <Poco/String.h>
-
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
@@ -85,7 +83,6 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition_by", partition_by);
     w.writeChild("settings_ast", settings_ast);
     w.writeChild("select", select);
-    w.writeChild("returning", returning);
     w.writeChild("infile", infile);
     w.writeChild("compression", compression);
 }
@@ -130,15 +127,14 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// `table_function` is parser-owned as an `ASTFunction` (`INSERT INTO FUNCTION ...`).
     /// `ClientBase::setInsertionTable` and `formatImpl` downcast it with `as<ASTFunction>()`,
     /// so a non-`ASTFunction` from malformed `clickhouse_json` must be rejected here.
-    child = r.readScreenedChildOfType<ASTFunction>("table_function");
+    child = r.readChildOfType<ASTFunction>("table_function");
     if (child)
     {
-        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
         table_function = child;
         children.push_back(table_function);
     }
 
-    child = r.readExpressionChild("partition_by");
+    child = r.readChild("partition_by");
     if (child)
     {
         partition_by = child;
@@ -159,18 +155,11 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// `select` is parser-produced as an `ASTSelectWithUnionQuery` (`INSERT ... SELECT`). Insert
     /// execution downcasts it (`applyTrivialInsertSelectOptimization`, the distributed-insert paths),
     /// so reject any other node type from malformed `clickhouse_json` here.
-    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select");
+    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
     {
         select = child;
         children.push_back(select);
-    }
-
-    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("returning");
-    if (child)
-    {
-        returning = child;
-        children.push_back(returning);
     }
 
     /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
@@ -240,41 +229,24 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     }
     else if (table_id)
     {
-        /// A leading `function` must stay quoted, otherwise it parses as INSERT INTO FUNCTION.
-        auto quote_first = [](const String & name) { return Poco::toUpper(name) == "FUNCTION" ? backQuote(name) : backQuoteIfNeed(name); };
-        if (!table_id.database_name.empty())
-            ostr << quote_first(table_id.database_name) << "." << backQuoteIfNeed(table_id.table_name);
-        else
-            ostr << quote_first(table_id.table_name);
+        ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
     }
     else
     {
-        chassert(table);
-        const auto & first = database ? database : table;
-        String first_name;
-        if (tryGetIdentifierNameInto(first, first_name) && Poco::toUpper(first_name) == "FUNCTION")
-            settings.writeIdentifier(ostr, first_name, /*ambiguous=*/true);
-        else
-            first->format(ostr, settings, state, frame);
-
         if (database)
         {
+            database->format(ostr, settings, state, frame);
             ostr << '.';
-            table->format(ostr, settings, state, frame);
         }
+
+        chassert(table);
+        table->format(ostr, settings, state, frame);
     }
 
     if (columns)
     {
         ostr << " (";
         columns->format(ostr, settings, state, frame);
-        ostr << ")";
-    }
-
-    if (returning)
-    {
-        ostr << " RETURNING (";
-        returning->format(ostr, settings, state, frame);
         ostr << ")";
     }
 

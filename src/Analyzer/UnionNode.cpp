@@ -2,8 +2,6 @@
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -14,17 +12,13 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-
-#include <Common/SettingsChanges.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -51,18 +45,10 @@ namespace Setting
     extern const SettingsBool use_variant_as_common_type;
 }
 
-UnionNode::UnionNode(
-    ContextMutablePtr context_,
-    SelectUnionMode union_mode_,
-    SettingsChanges settings_changes_,
-    std::vector<String> default_settings_,
-    NameToNameVector query_parameters_)
+UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
     : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
-    , settings_changes(std::move(settings_changes_))
-    , default_settings(std::move(default_settings_))
-    , query_parameters(std::move(query_parameters_))
 {
     if (union_mode == SelectUnionMode::UNION_DEFAULT ||
         union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
@@ -227,17 +213,6 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
-    if (hasSettingsChanges())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
-        for (const auto & change : settings_changes)
-            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
-        for (const auto & setting_name : default_settings)
-            buffer << fmt::format(" {}=DEFAULT", setting_name);
-        for (const auto & [name, value] : query_parameters)
-            buffer << fmt::format(" param_{}={}", name, quoteString(value));
-    }
-
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
@@ -257,10 +232,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
-        && union_mode == rhs_typed.union_mode
-        && settings_changes == rhs_typed.settings_changes
-        && default_settings == rhs_typed.default_settings
-        && query_parameters == rhs_typed.query_parameters;
+        && union_mode == rhs_typed.union_mode;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -281,38 +253,11 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(cte_name);
 
     state.update(static_cast<size_t>(union_mode));
-
-    state.update(settings_changes.size());
-    for (const auto & change : settings_changes)
-    {
-        state.update(change.name.size());
-        state.update(change.name);
-
-        const auto & setting_change_value_dump = change.value.dump();
-        state.update(setting_change_value_dump.size());
-        state.update(setting_change_value_dump);
-    }
-
-    state.update(default_settings.size());
-    for (const auto & setting_name : default_settings)
-    {
-        state.update(setting_name.size());
-        state.update(setting_name);
-    }
-
-    state.update(query_parameters.size());
-    for (const auto & [name, value] : query_parameters)
-    {
-        state.update(name.size());
-        state.update(name);
-        state.update(value.size());
-        state.update(value);
-    }
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
 {
-    auto result_union_node = std::make_shared<UnionNode>(context, union_mode, settings_changes, default_settings, query_parameters);
+    auto result_union_node = std::make_shared<UnionNode>(context, union_mode);
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
@@ -326,69 +271,11 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
 
 ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    /// The union's own query-level `SETTINGS` clause is intentionally NOT serialized onto the
-    /// `ASTSelectWithUnionQuery` here. The SQL grammar has no place for it on a *nested* union: the
-    /// parser attaches a trailing `SETTINGS` clause of a union to its LAST arm (only the top-level
-    /// query gets `ASTQueryWithOutput::settings_ast`), and `QueryTreeBuilder` reads it back from
-    /// there. That last arm is a `QueryNode` which carries the very same clause and serializes it
-    /// itself, so the clause survives the query-tree -> AST -> text round trip in the one form that
-    /// can be re-parsed. Writing it to `settings_ast` instead would format a nested union as
-    /// `((SELECT ...) UNION ALL (SELECT ...) SETTINGS ...)`, which no parser accepts.
     auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
     select_with_union_query->is_normalized = true;
     select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
-
-    /// Every `QueryNode` is converted to a `ASTSelectWithUnionQuery` wrapping its `ASTSelectQuery`, which is
-    /// formatted in parentheses, and a parenthesized SELECT keeps its `SETTINGS` clause to itself
-    /// (see `ParserUnionQueryElement`). So if the clause of the last arm is the union's own trailing clause,
-    /// leave the arm bare, so that it is read back as the clause of the whole union.
-    if (hasSettingsChanges())
-    {
-        auto is_own_trailing_clause = [&](const ASTPtr & arm)
-        {
-            const auto * select = arm->as<ASTSelectQuery>();
-            const auto * select_settings = select && select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr;
-            return select_settings
-                && select_settings->changes == settings_changes
-                && select_settings->default_settings == default_settings
-                && select_settings->query_parameters == query_parameters;
-        };
-
-        auto is_intersect = [](SelectUnionMode mode)
-        {
-            return mode == SelectUnionMode::INTERSECT_ALL || mode == SelectUnionMode::INTERSECT_DISTINCT;
-        };
-
-        auto & arms = select_with_union_query->list_of_selects->children;
-        auto * last_arm = arms.empty() ? nullptr : arms.back()->as<ASTSelectWithUnionQuery>();
-        if (last_arm && last_arm->list_of_selects && !last_arm->list_of_selects->children.empty())
-        {
-            auto & last_arm_selects = last_arm->list_of_selects->children;
-            if (last_arm_selects.size() == 1)
-            {
-                if (is_own_trailing_clause(last_arm_selects.front()))
-                {
-                    ASTPtr bare_select = last_arm_selects.front();
-                    arms.back() = std::move(bare_select);
-                }
-            }
-            else if (is_intersect(last_arm->union_mode) && !is_intersect(union_mode) && is_own_trailing_clause(last_arm_selects.back()))
-            {
-                /// The last arm is an `INTERSECT` that got the same clause, as in `A UNION ALL B INTERSECT ALL C SETTINGS ...`:
-                /// its own last arm is already bare. Parenthesized, it would again keep the clause to itself, so emit it
-                /// in the shape the parser gives it: `INTERSECT` binds tighter than `UNION` and `EXCEPT`, so no parentheses
-                /// are needed around it (see `ASTSelectWithUnionQuery::formatQueryImpl`).
-                auto intersect_query = make_intrusive<ASTSelectIntersectExceptQuery>();
-                intersect_query->final_operator = last_arm->union_mode == SelectUnionMode::INTERSECT_ALL
-                    ? ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL
-                    : ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT;
-                intersect_query->children = std::move(last_arm_selects);
-                arms.back() = std::move(intersect_query);
-            }
-        }
-    }
 
     ASTPtr result_query = std::move(select_with_union_query);
     bool set_subquery_cte_name = options.set_subquery_cte_name;

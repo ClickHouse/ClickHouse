@@ -1,8 +1,0 @@
-[package]
-workspace = "../rust-contrib-workspace"
-name = "_ch_rust_chdig"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-chdig = { path = "../chdig", default-features = false, features = ["tls"] }

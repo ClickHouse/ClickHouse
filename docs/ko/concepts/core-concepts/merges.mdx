@@ -6,6 +6,8 @@ keywords: ['merges']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <div id="what-are-part-merges-in-clickhouse">
   ## ClickHouse의 파트 병합이란 무엇인가요?
 </div>
@@ -24,15 +26,7 @@ ClickHouse는 [스토리지 계층(storage layer)](https://www.vldb.org/pvldb/vo
 
 다음 다이어그램은 이 백그라운드 병합 과정을 개략적으로 보여줍니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="파트 병합" />
 
 <br />
 
@@ -75,15 +69,7 @@ ORDER BY name ASC;
 
 ClickHouse 24.10에서는 새로운 [병합 대시보드](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)가 기본 제공 [모니터링 대시보드](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)에 추가되었습니다. OSS와 Cloud 모두에서 `/merges` HTTP handler를 통해 사용할 수 있으며, 이를 이용해 예시 테이블의 모든 파트 병합을 시각화할 수 있습니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="파트 병합" />
 
 <br />
 
@@ -101,33 +87,19 @@ ClickHouse 24.10에서는 새로운 [병합 대시보드](https://presentations.
 
 단일 ClickHouse 서버는 여러 개의 백그라운드 [병합 스레드](/ko/reference/settings/server-settings/settings/background#background_pool_size)를 사용해 동시에 파트 병합을 수행합니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="파트 병합" />
 
 <br />
 
 각 병합 스레드는 다음과 같은 루프를 수행합니다:
 
-<Steps>
-  <Step title="파트를 메모리에 로드">
-    다음에 병합할 파트를 결정하고, 해당 파트를 메모리에 로드합니다.
-  </Step>
+① 다음에 병합할 파트를 결정하고, 해당 파트를 메모리에 로드합니다.
 
-  <Step title="파트 병합">
-    메모리에 로드된 파트들을 더 큰 파트로 병합합니다.
-  </Step>
+② 메모리에 로드된 파트들을 더 큰 파트로 병합합니다.
 
-  <Step title="디스크에 기록">
-    병합된 파트를 디스크에 기록한 후 1단계로 돌아갑니다.
-  </Step>
-</Steps>
+③ 병합된 파트를 디스크에 기록합니다.
+
+①로 돌아갑니다
 
 CPU 코어 수와 RAM 용량을 늘리면 백그라운드 병합 처리량을 높일 수 있습니다.
 
@@ -143,41 +115,23 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 아래 다이어그램은 ClickHouse에서 단일 백그라운드 [병합 스레드](/ko/concepts/core-concepts/merges#concurrent-merges)가 파트를 어떻게 머지하는지 보여줍니다(기본적으로 [수직 머지](/ko/concepts/core-concepts/merges#memory-optimized-merges)는 사용하지 않음):
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="파트 병합" />
 
 <br />
 
 파트 병합은 여러 단계에 걸쳐 수행됩니다:
 
-<Steps>
-  <Step title="압축 해제 및 로드">
-    머지할 파트의 [압축된 바이너리 컬럼 파일](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)을 압축 해제해 메모리에 로드합니다.
-  </Step>
+**① 압축 해제 및 로드**: 머지할 파트의 [압축된 바이너리 컬럼 파일](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)을 압축 해제해 메모리에 로드합니다.
 
-  <Step title="머지">
-    데이터를 더 큰 컬럼 파일로 머지합니다.
-  </Step>
+**② 머지**: 데이터를 더 큰 컬럼 파일로 머지합니다.
 
-  <Step title="인덱싱">
-    머지된 컬럼 파일에 대해 새로운 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 생성합니다.
-  </Step>
+**③ 인덱싱**: 머지된 컬럼 파일에 대해 새로운 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 생성합니다.
 
-  <Step title="압축 및 저장">
-    새 컬럼 파일과 인덱스를 [압축](/ko/reference/statements/create/table/codec)한 뒤, 머지된 데이터 파트를 나타내는 새 [디렉터리](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)에 저장합니다.
-  </Step>
-</Steps>
+**④ 압축 및 저장**: 새 컬럼 파일과 인덱스를 [압축](/ko/reference/statements/create/table/codec)한 뒤, 머지된 데이터 파트를 나타내는 새 [디렉터리](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)에 저장합니다.
 
 보조 데이터 스키핑 인덱스, 컬럼 통계, 체크섬, MinMax 인덱스와 같은 [데이터 파트의 추가 메타데이터](/ko/concepts/core-concepts/parts)도 머지된 컬럼 파일을 기반으로 다시 생성됩니다. 여기서는 단순화를 위해 이러한 세부 사항을 생략했습니다.
 
-머지 단계의 구체적인 동작 방식은 사용 중인 [MergeTree 엔진](/ko/reference/engines/table-engines/mergetree-family/index)에 따라 달라집니다. 엔진마다 머지를 처리하는 방식이 서로 다르기 때문입니다. 예를 들어, 행이 집계되거나 오래된 경우 대체될 수 있습니다. 앞서 언급했듯이, 이 접근 방식은 **모든 데이터 처리를 백그라운드 머지로 오프로드**하므로 쓰기 작업을 가볍고 효율적으로 유지할 수 있어 **매우 빠른 삽입**이 가능합니다.
+② 단계의 구체적인 동작 방식은 사용 중인 [MergeTree 엔진](/ko/reference/engines/table-engines/mergetree-family/index)에 따라 달라집니다. 엔진마다 머지를 처리하는 방식이 서로 다르기 때문입니다. 예를 들어, 행이 집계되거나 오래된 경우 대체될 수 있습니다. 앞서 언급했듯이, 이 접근 방식은 **모든 데이터 처리를 백그라운드 머지로 오프로드**하므로 쓰기 작업을 가볍고 효율적으로 유지할 수 있어 **매우 빠른 삽입**이 가능합니다.
 
 다음으로, MergeTree 엔진 계열의 특정 엔진별 머지 메커니즘을 간략히 살펴보겠습니다.
 
@@ -187,15 +141,7 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 아래 다이어그램은 표준 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에서 파트가 어떻게 머지되는지 보여줍니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges_04.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="파트 병합" />
 
 <br />
 
@@ -209,15 +155,7 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블의 파트 병합은 [표준 병합](/ko/concepts/core-concepts/merges#standard-merges)과 유사하게 동작하지만, 각 행의 최신 버전만 유지되고 이전 버전은 삭제됩니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges_05.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="파트 병합" />
 
 <br />
 
@@ -235,15 +173,7 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 [SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree) 테이블의 파트가 머지되는 동안 숫자 데이터는 자동으로 합산됩니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges_06.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="파트 병합" />
 
 <br />
 
@@ -257,15 +187,7 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 위의 `SummingMergeTree` 테이블 예시는 [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 테이블의 특수한 변형으로, 파트 병합 중 [90+](/ko/reference/functions/aggregate-functions/reference-index)개의 집계 함수를 적용해 [자동 증분 데이터 변환](https://www.youtube.com/watch?v=QDAJTKZT8y4)을 수행할 수 있습니다:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![파트 병합](/images/managing-data/core-concepts/merges_07.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="파트 병합" />
 
 <br />
 

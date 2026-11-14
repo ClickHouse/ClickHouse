@@ -10,8 +10,6 @@
 #include <filesystem>
 
 #include <Common/VectorWithMemoryTracking.h>
-#include <Interpreters/SecretArgumentsRegistry.h>
-#include <Parsers/SecretArguments.h>
 
 namespace
 {
@@ -122,7 +120,6 @@ std::pair<std::string_view, MainFunc> examples[] =
     {"select_parser", mainEntryExampleSelectParser},
     {"create_parser", mainEntryExampleCreateParser},
     {"parser_memory_profiler", mainEntryExampleParserMemoryProfiler},
-    {"storage_memory_profiler", mainEntryExampleStorageMemoryProfiler},
     {"merge_selector", mainEntryExampleMergeSelector},
     {"merge_selector2", mainEntryExampleMergeSelector2},
     {"get_current_inserts_in_replicated", mainEntryExampleGetCurrentInsertsInReplicated},
@@ -141,8 +138,6 @@ void printHelp()
 
 int main(int argc, char ** argv)
 {
-    DB::setSecretArgumentsFinder(&DB::SecretArgumentsRegistry::instance());
-
     DB::VectorWithMemoryTracking<char *> args(argv, argv + argc);
 
     if (args.empty())

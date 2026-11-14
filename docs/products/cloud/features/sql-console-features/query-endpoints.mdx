@@ -1,11 +1,13 @@
 ---
-sidebar_title: 'Overview'
+sidebar_title: 'Query API endpoints'
 slug: /cloud/features/query-api-endpoints
 description: 'Easily spin up REST API endpoints from your saved queries'
 keywords: ['api', 'query api endpoints', 'query endpoints', 'query rest api']
 title: 'Query API endpoints'
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/components/Image.jsx";
 
 Building interactive data-driven applications requires not only a fast database, well-structured data, and optimized queries.
 Your front-end and microservices also need an easy way to consume the data returned by those queries, preferably via well-structured APIs.
@@ -24,27 +26,11 @@ To restrict which clients can call your Query API endpoints:
 
 1. Go to ClickHouse Cloud Console → **Organization** → **API Keys**
 
-<div className="ch-image-md">
-
-<Frame>
-
-![API Keys](/images/cloud/guides/query-endpoints/console-api-keys.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API Keys"/>
 
 2. Click **Edit** next to the API key used for Query API endpoints
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Edit](/images/cloud/guides/query-endpoints/api-key-edit.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit"/>
 </Step>
 <Step title="Add allowed IP addresses" id="add-ips">
 
@@ -52,15 +38,7 @@ To restrict which clients can call your Query API endpoints:
 2. Enter IP addresses or CIDR ranges (e.g., `203.0.113.1` or `203.0.113.0/24`)
 3. Add multiple entries as needed
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Specific locations](/images/cloud/guides/query-endpoints/specific-locations.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Specific locations"/>
 
 Creating Query API endpoints requires an Admin Console Role and an API key with appropriate permissions.
 </Step>

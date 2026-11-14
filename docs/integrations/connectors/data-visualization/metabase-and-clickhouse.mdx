@@ -12,6 +12,7 @@ integration:
   - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
@@ -24,15 +25,7 @@ Metabase is an easy-to-use, open source UI tool for asking questions about your 
 
 In this guide you will ask some questions of your ClickHouse data with Metabase and visualize the answers.  One of the answers will look like this:
 
-  <div className="ch-image-md">
-
-  <Frame>
-
-  ![Metabase pie chart visualization showing data from ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Metabase pie chart visualization showing data from ClickHouse" border />
 <p/>
 
 <Tip>
@@ -67,29 +60,13 @@ If you don't have a dataset to work with you can add one of the examples.  This 
 
 3. If your driver installation worked, you will see **ClickHouse** in the dropdown menu for **Database type**:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Metabase database selection showing ClickHouse as an option](/images/integrations/data-visualization/metabase_01.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Metabase database selection showing ClickHouse as an option" border />
 
 4. Give your database a **Display name**, which is a Metabase setting - so use any name you like.
 
 5. Enter the connection details of your ClickHouse database. Enable a secure connection if your ClickHouse server is configured to use SSL. For example:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Metabase connection details form for ClickHouse database](/images/integrations/data-visualization/metabase_02.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Metabase connection details form for ClickHouse database" border />
 
 6. Click the **Save** button and Metabase will scan your database for tables.
 
@@ -100,66 +77,26 @@ If you don't have a dataset to work with you can add one of the examples.  This 
 
 2. In the top-right corner, click the **+ New** menu and notice you can ask questions, run SQL queries, and build a dashboard:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Metabase New menu showing options to create questions, SQL queries, and dashboards](/images/integrations/data-visualization/metabase_03.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Metabase New menu showing options to create questions, SQL queries, and dashboards" border />
 
 3. For example, here is a SQL query run on a table named `uk_price_paid` that returns the average price paid by year from 1995 to 2022:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Metabase SQL editor showing a query on UK price paid data](/images/integrations/data-visualization/metabase_04.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="Metabase SQL editor showing a query on UK price paid data" border />
 
 </Step>
 <Step title="Ask a question" id="5-ask-a-question">
 
 1. Click on **+ New** and select **Question**. Notice you can build a question by starting with a database and table. For example, the following question is being asked of a table named `uk_price_paid` in the `default` database. Here is a simple question that calculates the average price by town, within the county of Greater Manchester:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Metabase question builder interface with UK price data](/images/integrations/data-visualization/metabase_06.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Metabase question builder interface with UK price data" border />
 
 2. Click the **Visualize** button to see the results in a tabular view.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Metabase visualization showing tabular results of average prices by town](/images/integrations/data-visualization/metabase_07.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Metabase visualization showing tabular results of average prices by town" border />
 
 3. Below the results, click the **Visualization** button to change the visualization to a bar chart (or any of the other options available):
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Metabase pie chart visualization of average prices by town in Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
-
-    </Frame>
-
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Metabase pie chart visualization of average prices by town in Greater Manchester" border />
 
 </Step>
 </Steps>

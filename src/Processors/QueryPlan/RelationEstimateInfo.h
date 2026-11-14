@@ -4,7 +4,6 @@
 #include <string_view>
 #include <base/types.h>
 #include <fmt/format.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
 {
@@ -26,8 +25,6 @@ enum class RowEstimateSource : UInt8
     Randomized,
     /// Measured row count reused from a previous run's hash table.
     HashTableCache,
-    /// Row count from data lake metadata (Iceberg manifest files).
-    DataLakeMetadata,
 };
 
 /// Imprecise specifically because column statistics are missing (excludes the synthetic test sources).
@@ -53,8 +50,6 @@ constexpr std::string_view rowEstimateSourceTag(RowEstimateSource source)
             return "cache";
         case RowEstimateSource::NoSource:
         case RowEstimateSource::Statistics:
-        /// Labelled like MergeTree: no tag when exact, `no_stats` from `displayName` when imprecise.
-        case RowEstimateSource::DataLakeMetadata:
             return "";
     }
     return "";
@@ -72,7 +67,6 @@ struct RelationEstimateInfo
     bool imprecise_estimate = false;
     /// A relation composed of sub-joins is rendered as the chain only, without its own estimate.
     bool composite = false;
-    std::unordered_map<String, ColumnStats> column_stats = {};
 
     /// `name[source~rows]`, e.g. `a[no_stats~1000]`, `b[100]`, `c[hint~?]`.
     String displayName() const

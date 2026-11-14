@@ -50,7 +50,7 @@ void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory & factor
 void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
@@ -79,7 +79,7 @@ SELECT quantileTDigest(number) FROM numbers(10);
         )",
         R"(
 ┌─quantileTDigest(number)─┐
-│                       4 │
+│                     4.5 │
 └─────────────────────────┘
         )"
     }
@@ -88,7 +88,7 @@ SELECT quantileTDigest(number) FROM numbers(10);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileTDigest::name, {createAggregateFunctionQuantile<FuncQuantileTDigest>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantileTDigest::name, {createAggregateFunctionQuantile<FuncQuantileTDigest>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
@@ -117,7 +117,7 @@ SELECT quantilesTDigest(0.25, 0.5, 0.75)(number) FROM numbers(100);
         )",
         R"(
 ┌─quantilesTDigest(0.25, 0.5, 0.75)(number)─┐
-│ [24,49,74]                                │
+│ [24.75,49.5,74.25]                        │
 └───────────────────────────────────────────┘
         )"
     }

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
@@ -17,15 +18,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   ## إجراءات الخدمة والتحجيم
 </div>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![إجراءات الخدمة والتحجيم](/images/managed-postgres/service-actions.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/service-actions.webp" alt="إجراءات الخدمة والتحجيم" size="md" border />
 
 يوفّر شريط الأدوات **إجراءات الخدمة** عناصر تحكم لإدارة مثيل ClickHouse Managed Postgres لديك:
 
@@ -40,26 +33,10 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   ## تغيير معلمات التكوين
 </div>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![تكوين معلمات Postgres](/images/managed-postgres/postgres-parameters.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="تكوين معلمات Postgres" size="md" border />
 
 لتعديل معلمة، حدِّد زر **تعديل المعلمات**. ثم حدِّد المعلمات التي تريد تعديلها وغيّر قيمها وفقًا لذلك. بعد أن تنتهي من التغييرات وتكون راضيًا عنها، اضغط زر **حفظ التغييرات**.
 
 عادةً ما تُحفَظ جميع التغييرات التي تُجرى على معلمات التكوين في المثيل خلال دقيقة واحدة. وتتطلب بعض المعلمات إعادة تشغيل قاعدة البيانات حتى تدخل حيّز التنفيذ. وستُطبَّق هذه التغييرات بعد إعادة التشغيل التالية، والتي يمكنك تشغيلها يدويًا من شريط أدوات **إجراءات الخدمة**.
 
 راجِع [الوثائق](https://www.postgresql.org/docs/current/runtime-config.html) الرسمية الخاصة بمعلمات التكوين. وسيجري قريبًا توسيع قائمة المعلمات المتاحة للإعداد. وحتى ذلك الحين، تواصل مع [الدعم](https://clickhouse.com/support/program) لطلب معلمة غير مدعومة حاليًا.
-
-<div id="scheduled-upgrades">
-  ## الترقيات المجدولة
-</div>
-
-يتيح لك قسم **التهيئة** أيضًا التحكم في موعد تطبيق صيانة المنصة — مثل ترقيات إصدارات PostgreSQL الثانوية، وتحديثات ميزات الخدمة المُدارة، وتصحيحات نظام التشغيل — على مثيلك. اختر **تهيئة الجدول الزمني** في القسم الفرعي **الترقيات المجدولة** لتحديد نافذة مدتها ساعتان بتوقيت UTC، ويمكنك اختياريًا تحديد أيام الأسبوع التي يجوز خلالها تطبيق الترقيات.
-
-للاطلاع على النوافذ المتاحة وما يغطيه الجدول الزمني وما لا يغطيه، راجع [الترقيات المجدولة](/ar/products/managed-postgres/upgrades#scheduled-upgrades).

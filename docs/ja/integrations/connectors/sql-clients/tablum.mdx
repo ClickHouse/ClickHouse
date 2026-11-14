@@ -10,6 +10,8 @@ integration:
   - category: 'sql_client'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -26,15 +28,7 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
   <Step title="サービスにサインアップまたはサインインする" id="1-sign-up-or-sign-in-to-the-service">
     まず、メールアドレスを使って TABLUM.IO にサインアップするか、Google または Facebook のアカウントでクイックログインします。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![TABLUM.IO のログインページ](/images/integrations/sql-clients/tablum-ch-0.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="TABLUM.IO のログインページ" />
   </Step>
 
   <Step title="ClickHouse コネクタを追加する" id="2-add-a-clickhouse-connector">
@@ -48,29 +42,13 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
       通常、TLS を使用する場合のポートは 8443、TLS を使用しない場合は 8123 です。
     </Tip>
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![TABLUM.IO で ClickHouse コネクタを追加する](/images/integrations/sql-clients/tablum-ch-1.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="TABLUM.IO で ClickHouse コネクタを追加する" />
   </Step>
 
   <Step title="コネクタを選択する" id="3-select-the-connector">
     **Dataset** タブに移動します。ドロップダウンから、先ほど作成した ClickHouse コネクタを選択します。右側のパネルに、利用可能なテーブルとスキーマの一覧が表示されます。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![TABLUM.IO で ClickHouse コネクタを選択する](/images/integrations/sql-clients/tablum-ch-2.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="TABLUM.IO で ClickHouse コネクタを選択する" />
   </Step>
 
   <Step title="SQL クエリを入力して実行する" id="4-input-a-sql-query-and-run-it">
@@ -80,15 +58,7 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
       カラム名を右クリックすると、ソート、フィルター、その他のアクションを含むドロップダウンメニューが開きます。
     </Tip>
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![TABLUM.IO で SQL クエリを実行する](/images/integrations/sql-clients/tablum-ch-3.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="TABLUM.IO で SQL クエリを実行する" />
 
     <Note>
       TABLUM.IO では、次のことができます

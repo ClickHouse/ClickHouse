@@ -7,6 +7,7 @@
 -- `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
 
 -- The shipping path under test only exists in the analyzer.
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_join_alias;
 DROP TABLE IF EXISTS t_join_plain;

@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## إدراج البيانات في ClickHouse مقارنةً بقواعد بيانات OLTP
 </div>
@@ -74,15 +76,7 @@ doc_type: 'guide'
 
 مع الإدراج غير المتزامن، تُدرج البيانات أولًا في مخزن مؤقت، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات عبر 3 خطوات، كما يوضح المخطط أدناه:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![عمليات إدراج في Postgres](/images/guides/postgres-inserts.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="عمليات إدراج في Postgres" />
 
 عند تمكين الإدراج غير المتزامن، يقوم ClickHouse بما يلي:
 
@@ -107,7 +101,7 @@ doc_type: 'guide'
 يوفّر ClickHouse عملاءً لأكثر لغات البرمجة شيوعًا.
 وقد جرى تحسين هذه العملاء لضمان تنفيذ عمليات الإدراج بشكل صحيح، كما أنها تدعم الإدراجات غير المتزامنة دعمًا أصيلًا، إما مباشرةً كما في [Go client](/ar/integrations/language-clients/go/clickhouse-api#async-insert)، أو بصورة غير مباشرة عند تمكينها في إعدادات مستوى الاستعلام أو المستخدم أو الاتصال.
 
-راجع [العملاء والواجهات الأصلية](/ar/concepts/features/interfaces/native-clients-interfaces-index) للاطلاع على القائمة الكاملة لعملاء ClickHouse وبرامج التشغيل المتاحة.
+راجع [Clients and Drivers](/ar/concepts/features/interfaces/cli) للاطلاع على القائمة الكاملة لعملاء ClickHouse وبرامج التشغيل المتاحة.
 
 <div id="prefer-the-native-format">
   ### فضّل تنسيق Native

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
@@ -15,55 +16,25 @@ As réplicas de leitura permitem criar uma ou mais cópias do seu banco de dados
 
 Para gerenciar réplicas de leitura, clique no ícone de edição no seu warehouse:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Visualização do warehouse com ícone de edição](/images/managed-postgres/warehouse-view.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/warehouse-view.webp" alt="Visualização do warehouse com ícone de edição" size="md" border />
 
 Isso abre a caixa de diálogo do warehouse, onde você pode ver os serviços existentes e criar novas réplicas de leitura:
 
-<div className="ch-image-md">
+<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Caixa de diálogo de gerenciamento de réplicas de leitura" size="md" border />
 
-<Frame>
-
-![Caixa de diálogo de gerenciamento de réplicas de leitura](/images/managed-postgres/read-replica-dialog.webp)
-
-</Frame>
-
+<div id="managing-read-replicas">
+  ## Gerenciando réplicas de leitura
 </div>
-
-## Gerenciando réplicas de leitura {#managing-read-replicas}
 
 A página de **réplicas de leitura** oferece duas visualizações, alternadas pelos controles **Flow** e **Table** no canto superior direito.
 
 A visualização **Flow** exibe a topologia de replicação — sua **instância primária** no topo, com setas descendo até cada réplica associada, mostrando tier, região e status de forma resumida:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Visualização Flow de réplicas de leitura mostrando a topologia da primária e das réplicas](/images/managed-postgres/read-replicas-flow.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Visualização Flow de réplicas de leitura mostrando a topologia da primária e das réplicas" size="lg" border />
 
 A visualização **Table** lista cada réplica com seu nome de serviço, provedor de Cloud e região, status do serviço, horário de criação e uma ação **Detach service**:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Visualização Table de réplicas de leitura](/images/managed-postgres/read-replicas-table.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Visualização Table de réplicas de leitura" size="lg" border />
 
 Para criar uma nova réplica, clique em **Create réplica de leitura** no canto superior direito de qualquer uma das visualizações.
 
@@ -89,7 +60,9 @@ Ao direcionar consultas analíticas e de inteligência de negócios para réplic
 
 As réplicas de leitura podem desempenhar um papel fundamental na recuperação de desastres. Se o seu banco de dados primário falhar, uma réplica de leitura pode ser promovida a primária, minimizando o tempo de indisponibilidade e a perda de dados. Isso oferece uma camada adicional de resiliência além das suas instâncias de standby de alta disponibilidade.
 
-## Como as réplicas de leitura funcionam {#how-read-replicas-work}
+<div id="how-read-replicas-work">
+  ## Como as réplicas de leitura funcionam
+</div>
 
 As réplicas de leitura no ClickHouse Managed Postgres usam uma arquitetura de WAL shipping em vez de replicação por streaming. Essa opção de arquitetura prioriza minimizar o impacto no banco de dados primário.
 
@@ -97,7 +70,7 @@ As réplicas de leitura no ClickHouse Managed Postgres usam uma arquitetura de W
   ### WAL shipping a partir do armazenamento de objetos
 </div>
 
-Quando seu banco de dados primário processa transações, ele gera registros de Write-Ahead Log (WAL). Esses segmentos de WAL são continuamente arquivados no armazenamento de objetos. As réplicas de leitura buscam e reaplicam esses segmentos de WAL do armazenamento de objetos para permanecer sincronizadas com o primário.
+Quando seu banco de dados primário processa transações, ele gera registros de Write-Ahead Log (WAL). Esses segmentos de WAL são continuamente arquivados no armazenamento de objetos (S3). As réplicas de leitura buscam e reaplicam esses segmentos de WAL do armazenamento de objetos para permanecer sincronizadas com o primário.
 
 Essa arquitetura difere dos [standbys de alta disponibilidade](/pt-BR/products/managed-postgres/high-availability), que usam replicação por streaming com uma conexão direta ao primário.
 

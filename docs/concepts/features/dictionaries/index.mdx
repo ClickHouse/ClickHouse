@@ -6,35 +6,21 @@ description: 'A dictionary provides a key-value representation of data for fast 
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 A dictionary in ClickHouse provides an in-memory [key-value](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) representation of data from various [internal and external sources](/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimizing for super-low latency lookup queries.
 
 Dictionaries are useful for:
 - Improving the performance of queries, especially when used with `JOIN`s
 - Enriching ingested data on the fly without slowing down the ingestion process
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Use cases for Dictionary in ClickHouse](/images/dictionary/dictionary-use-cases.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Use cases for Dictionary in ClickHouse"/>
 
 ## Speeding up joins using a Dictionary {#speeding-up-joins-using-a-dictionary}
 
 Dictionaries can be used to speed up a specific type of `JOIN`: the [`LEFT ANY` type](/reference/statements/select/join#supported-types-of-join) where the join key needs to match the key attribute of the underlying key-value storage.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![Using Dictionary with LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Using Dictionary with LEFT ANY JOIN"/>
 
 If this is the case, ClickHouse can exploit the dictionary to perform a [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). This is ClickHouse's fastest join algorithm and is applicable when the underlying [table engine](/reference/engines/table-engines/index) for the right-hand side table supports low-latency key-value requests. ClickHouse has three table engines providing this: [Join](/reference/engines/table-engines/special/join) (that is basically a pre-calculated hash table), [EmbeddedRocksDB](/reference/engines/table-engines/integrations/embedded-rocksdb) and [Dictionary](/reference/engines/table-engines/special/dictionary). We will describe the dictionary-based approach, but the mechanics are the same for all three engines.
 
@@ -129,10 +115,6 @@ SELECT PostId,
 FROM votes
 GROUP BY PostId
 ```
-
-<Note title="ClickHouse Cloud">
-When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
-</Note>
 
 To create our dictionary requires the following DDL - note the use of our above query:
 
@@ -278,10 +260,6 @@ Peak memory usage: 248.84 MiB.
 ## Index time enrichment {#index-time-enrichment}
 
 In the above example, we used a dictionary at query time to remove a join. Dictionaries can also be used to enrich rows at insert time. This is typically appropriate if the enrichment value doesn't change and exists in an external source which can be used to populate the dictionary. In this case, enriching the row at insert time avoids the query time lookup to the dictionary.
-
-<Note>
-Avoid cache-based dictionary layouts for insert-time enrichment when predictable latency and source availability matter. Every server maintains an independent local cache, and a restart or replacement leaves it empty, making inserts depend on cold-cache lookups to the dictionary source. ClickHouse Cloud autoscaling and managed node replacement make this condition more likely. Choose a layout that loads the complete dictionary on each server. See [Cache dictionaries in ingestion paths](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
-</Note>
 
 Let's suppose that the `Location` of a user in Stack Overflow never changes (in reality they do) - specifically the `Location` column of the `users` table. Suppose we want to do an analytics query on the posts table by location. This contains a `UserId`.
 

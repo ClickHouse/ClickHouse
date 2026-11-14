@@ -6,6 +6,8 @@ keywords: ['часть']
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <div id="what-are-table-parts-in-clickhouse">
   ## Что такое части таблицы в ClickHouse?
 </div>
@@ -32,37 +34,19 @@ ORDER BY (town, street);
 
 Часть данных создается каждый раз, когда в таблицу вставляется набор строк. Это показано на следующей диаграмме:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/part.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
 
 <br />
 
 Когда сервер ClickHouse обрабатывает пример вставки 4 строк (например, с помощью [оператора INSERT INTO](/ru/reference/statements/insert-into)), показанный на диаграмме выше, он выполняет несколько шагов:
 
-<Steps>
-  <Step title="Сортировка">
-    Строки сортируются по ключу сортировки таблицы `(town, street)`, и для отсортированных строк создается [разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
-  </Step>
+① **Сортировка**: Строки сортируются по ключу сортировки таблицы `(town, street)`, и для отсортированных строк создается [разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-  <Step title="Разделение">
-    Отсортированные данные разбиваются на столбцы.
-  </Step>
+② **Разделение**: Отсортированные данные разбиваются на столбцы.
 
-  <Step title="Сжатие">
-    Каждый столбец [сжимается](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
-  </Step>
+③ **Сжатие**: Каждый столбец [сжимается](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
 
-  <Step title="Запись на диск">
-    Сжатые столбцы сохраняются как бинарные файлы столбцов в новом каталоге, соответствующем части данных этой вставки. Разреженный первичный индекс также сжимается и сохраняется в том же каталоге.
-  </Step>
-</Steps>
+④ **Запись на диск**: Сжатые столбцы сохраняются как бинарные файлы столбцов в новом каталоге, соответствующем части данных этой вставки. Разреженный первичный индекс также сжимается и сохраняется в том же каталоге.
 
 В зависимости от конкретного движка таблицы помимо сортировки [могут](/ru/reference/settings/session-settings) выполняться и дополнительные преобразования.
 
@@ -74,15 +58,7 @@ ORDER BY (town, street);
 
 Чтобы управлять количеством частей в таблице, [задача фонового слияния](/ru/concepts/core-concepts/merges) периодически объединяет более мелкие части в более крупные, пока они не достигнут [настраиваемого](/ru/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) сжатого размера (обычно ~150 ГБ). Слитые части помечаются как неактивные и удаляются через [настраиваемый](/ru/reference/settings/merge-tree-settings/other#old_parts_lifetime) интервал времени. Со временем этот процесс формирует иерархическую структуру слитых частей, поэтому такая таблица называется MergeTree:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/merges.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 
 <br />
 

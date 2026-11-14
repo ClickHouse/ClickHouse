@@ -6,6 +6,8 @@ keywords: ['ClickStack 구성', '관측성 구성', 'HyperDX 설정', 'collector
 doc_type: '참고'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 ClickStack의 각 구성 요소에 대해 다음 구성 옵션을 사용할 수 있습니다:
 
 <div id="modifying-settings">
@@ -115,15 +117,7 @@ ClickStack UI에서는 각 관측성 데이터 타입/축에 대해 사용자가
 
 이 구성은 애플리케이션의 `Team Settings -> Sources`에서 수행할 수 있으며, 아래는 로그에 대한 예시입니다:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![HyperDX 소스 구성](/images/use-cases/observability/hyperdx-25.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX 소스 구성" size="md" />
 
 각 소스를 생성할 때는 최소 1개의 테이블을 지정해야 하며, HyperDX가 데이터를 쿼리할 수 있도록 컬럼 집합도 함께 지정해야 합니다.
 
@@ -151,19 +145,18 @@ ClickStack과 함께 제공되는 [기본 OpenTelemetry (OTel) 스키마](/ko/gu
 | `타임스탬프 컬럼`                | 프라이머리 키에 포함된 DateTime 컬럼 또는 표현식.                                                                                                                                                                                                                                                                                              | 예   | 예           | `TimestampTime`                                    |
 | `기본 선택 항목`                | 기본 검색 결과에 표시되는 컬럼.                                                                                                                                                                                                                                                                                                            | 예   | 예           | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
 | `서비스 이름 표현식`              | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                     | 예   | 예           | `ServiceName`                                      |
-| `서비스 버전 표현식`              | 서비스에서 실행 중인 릴리스를 식별하는 표현식 또는 컬럼입니다. 대시보드 차트에 [릴리스 마커](/ko/clickstack/features/dashboards/release-markers)를 표시하는 데 사용됩니다. 비워 두면 OpenTelemetry `service.version` 리소스 속성을 기본값으로 사용합니다.                                                                                                                                              | 아니요 | 아니요         | `ResourceAttributes['service.version']`            |
 | `로그 레벨 표현식`               | 로그 레벨에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                      | 예   | 예           | `SeverityText`                                     |
 | `본문 표현식`                  | 로그 메시지에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                     | 예   | 예           | `Body`                                             |
 | `로그 속성 표현식`               | 사용자 지정 로그 속성의 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | 예   | 예           | `LogAttributes`                                    |
 | `리소스 속성 표현식`              | 리소스 수준 속성의 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                      | 예   | 예           | `ResourceAttributes`                               |
-| `표시 타임스탬프 컬럼`             | UI 표시에 사용하는 선택적 고정밀도 타임스탬프 컬럼입니다. 지정하지 않으면 Timestamp Column을 기본값으로 사용합니다.                                                                                                                                                                                                                                                     | No  | Yes         | `Timestamp`                                        |
-| `연관된 메트릭 소스`              | 연결된 메트릭 소스(예: HyperDX 메트릭).                                                                                                                                                                                                                                                                                                   | No  | No          | –                                                  |
+| `표시 타임스탬프 컬럼`             | UI 표시에 사용하는 선택적 고정밀도 타임스탬프 컬럼입니다. 지정하지 않으면 Timestamp Column을 기본값으로 사용합니다.                                                                                                                                                                                                                                                     | 아니요 | 예           | `Timestamp`                                        |
+| `연관된 메트릭 소스`              | 연결된 메트릭 소스(예: HyperDX 메트릭)입니다.                                                                                                                                                                                                                                                                                                | 아니요 | No          | –                                                  |
 | `연관된 트레이스 소스`             | 연결된 trace source(예: HyperDX traces).                                                                                                                                                                                                                                                                                          | No  | No          | –                                                  |
 | `트레이스 ID 표현식`             | 트레이스 ID 추출에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                 | 예   | 예           | `TraceId`                                          |
 | `스팬 ID 표현식`               | 스팬 ID 추출에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | 예   | 예           | `SpanId`                                           |
 | `암시적 컬럼 표현식`              | 필드를 지정하지 않은 경우 전문 검색(Lucene 스타일)에 사용하는 컬럼입니다. 일반적으로 로그 본문입니다.                                                                                                                                                                                                                                                                 | 예   | 예           | `Body`                                             |
-| `알려진 컬럼 목록`               | 대상 테이블의 컬럼 집합이 서로 다른 [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 또는 [`Merge`](/ko/reference/engines/table-engines/special/merge) 테이블의 소스에 사용합니다. 전체 행 데이터(예: 행 측면 패널)를 가져올 때 `SELECT *` 대신 사용할 수 있도록, 모든 대상 테이블에 공통으로 있는 컬럼을 쉼표로 구분해 나열합니다. 모든 컬럼을 선택하려면 비워 두십시오. 컬럼명만 지정할 수 있으며 표현식이나 별칭은 사용할 수 없습니다. | No  | No          | –                                                  |
-| `텍스트 인덱스 사용`              | Lucene 기반 검색에서 암시적 컬럼을 검색할 때 `hasAllTokens`를 사용할지 여부입니다.                                                                                                                                                                                                                                                                      | No  | No          | `자동 (스키마에서 감지)`                                    |
+| `알려진 컬럼 목록`               | 대상 테이블의 컬럼 집합이 서로 다른 [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 또는 [`Merge`](/ko/reference/engines/table-engines/special/merge) 테이블의 소스에 사용합니다. 전체 행 데이터(예: 행 측면 패널)를 가져올 때 `SELECT *` 대신 사용할 수 있도록, 모든 대상 테이블에 공통으로 있는 컬럼을 쉼표로 구분해 나열합니다. 모든 컬럼을 선택하려면 비워 두십시오. 컬럼명만 지정할 수 있으며 표현식이나 별칭은 사용할 수 없습니다. | 아니요 | No          | –                                                  |
+| `텍스트 인덱스 사용`              | Lucene 기반 검색에서 암시적 컬럼을 검색할 때 `hasAllTokens`를 사용할지 여부입니다.                                                                                                                                                                                                                                                                      | No  | No          | `자동 (스키마에서 자동 감지)`                                 |
 | `강조 표시 속성`                | 로그 세부 정보를 열 때 표시할 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                                     | No  | No          | –                                                  |
 | `강조 표시된 추적 속성`            | 트레이스의 각 로그에서 추출되어 트레이스 워터폴 위에 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                                                                                                                                                                                                                                    | No  | No          | –                                                  |
 | `Materialized Views`      | 이 소스에 등록된 사전 집계 [materialized views](/ko/clickstack/managing/materialized-views)입니다. 적합한 쿼리의 속도를 높이는 데 자동으로 사용됩니다. [Materialized views](#materialized-views-settings)를 참조하십시오.                                                                                                                                                   | No  | No          | –                                                  |
@@ -198,7 +191,6 @@ ClickStack과 함께 제공되는 [기본 OpenTelemetry (OTel) 스키마](/ko/gu
 | `Status Code Expression`       | 스팬 상태 코드에 대한 표현식입니다.                                                                                                                                                                                                                                                                                                        | Yes   | Yes         | `StatusCode`                                                                                          |
 | `Status Message Expression`    | 스팬 상태 메시지에 대한 표현식입니다.                                                                                                                                                                                                                                                                                                       | Yes   | Yes         | `StatusMessage`                                                                                       |
 | `Service Name Expression`      | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | Yes   | Yes         | `ServiceName`                                                                                         |
-| `Service Version Expression`   | 서비스의 실행 중인 릴리스를 식별하는 표현식 또는 컬럼으로, 대시보드 차트에 [릴리스 마커](/ko/clickstack/features/dashboards/release-markers)를 표시하는 데 사용됩니다. 비워 두면 OpenTelemetry `service.version` 리소스 속성이 기본값으로 사용됩니다.                                                                                                                                              | No    | No          | `ResourceAttributes['service.version']`                                                               |
 | `리소스 속성 표현식`                   | 리소스 수준 속성에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                | Yes   | Yes         | `ResourceAttributes`                                                                                  |
 | `Event Attributes Expression`  | 이벤트 속성에 사용할 표현식 또는 컬럼입니다.                                                                                                                                                                                                                                                                                                   | Yes   | Yes         | `SpanAttributes`                                                                                      |
 | `Sample Rate Expression`       | 업스트림 샘플링 가중치(`1/N`)를 저장하는 컬럼 또는 표현식입니다. 설정하면 집계(`count`, `avg`, `sum`, `quantile`)가 샘플링을 보정합니다. 이후 백분위수에는 근삿값인 `quantileTDigestWeighted`가 사용되므로 정확한 값과 약간 다를 수 있습니다. 스팬이 샘플링되지 않은 경우 비워 둡니다.                                                                                                                                | No    | No          | –                                                                                                     |
@@ -302,39 +294,15 @@ Materialized view를 Log 및 Trace 데이터 소스에 등록하면, 조건에 �
 
 예를 들어, 이 trace 소스는 강조 속성과 강조 트레이스 속성으로 구성되어 있습니다.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![강조 속성 구성](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="강조 속성 구성" size="md" />
 
 이러한 속성은 로그 또는 스팬을 클릭한 뒤 사이드 패널에 표시됩니다.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![강조 속성](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="강조 속성" size="md" />
 
 속성을 클릭하면 해당 속성을 검색 값으로 사용하는 옵션이 표시됩니다. 속성 구성에 선택적 Lucene 표현식이 제공된 경우, 검색에는 SQL 표현식 대신 Lucene 표현식이 사용됩니다.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![강조 속성 검색](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="강조 속성 검색" size="md" />
 
 <div id="correlated-sources">
   ### 상관관계 소스
@@ -351,15 +319,7 @@ ClickStack에서 소스 간 전체 상호 연관을 사용하려면 로그, 트�
 
 예를 들어, 아래는 상관관계 소스로 구성된 로그 소스입니다:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![상관관계 소스가 구성된 HyperDX 소스](/images/use-cases/observability/hyperdx-26.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="상관관계 소스가 구성된 HyperDX 소스" size="md" />
 
 <div id="application-configuration-settings">
   ### 애플리케이션 구성 설정

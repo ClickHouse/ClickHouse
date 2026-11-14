@@ -163,7 +163,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = true};
 
     FunctionDocumentation::Description description = R"(
 Computes an approximate [`quantile`](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
@@ -210,7 +210,7 @@ SELECT quantile(val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
@@ -246,7 +246,7 @@ SELECT quantiles(0.25, 0.5, 0.75, 0.9)(val) FROM t;
         )",
             R"(
 ┌─quantiles(0.25, 0.5, 0.75, 0.9)(val)─┐
-│ [2.5,5,7.5,9]                        │
+│ [3, 5.5, 8, 9.5]                     │
 └──────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in_quantiles = {1, 1};

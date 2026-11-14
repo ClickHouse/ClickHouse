@@ -83,44 +83,7 @@ public:
         ContextPtr context,
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
-        bool use_query_condition_cache = true,
-        /// Whether the query condition cache entries a TopK read writes under its `PREWHERE` key may
-        /// be consulted here. Projection candidate analysis is the only place a warm query consults
-        /// the cache before the plan is final, so it has to pass the gate of the read it analyses;
-        /// every other caller runs before `tryOptimizeTopK` and keeps the conservative default.
-        bool allow_top_k_prewhere_query_condition_cache = false) const;
-
-    static MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPartPtr & part,
-        const MarkRanges & part_ranges,
-        size_t part_starting_offset_in_query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const KeyCondition * part_offset_condition,
-        const KeyCondition * total_offset_condition,
-        MarkRanges * exact_ranges,
-        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
-        const Settings & settings,
-        LoggerPtr log);
-
-    /// Maps each primary-key column position to the slot of the matching column in a part's partition
-    /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
-    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
-
-    /// Works on any part description, not only on an `IMergeTreeDataPart`.
-    static MarkRanges markRangesFromPKRange(
-        const IMergeTreeDataPartInfoForReader & part,
-        const MarkRanges & part_ranges,
-        size_t part_starting_offset_in_query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const KeyCondition * part_offset_condition,
-        const KeyCondition * total_offset_condition,
-        MarkRanges * exact_ranges,
-        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
-        const Settings & settings,
-        LoggerPtr log);
+        bool use_query_condition_cache = true) const;
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
@@ -136,8 +99,8 @@ public:
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
-        const KeyCondition * key_condition_rpn_template,
-        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        const std::optional<KeyCondition> & key_condition_rpn_template,
+        MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
         const MergeTreeReaderSettings & reader_settings,
@@ -149,7 +112,7 @@ public:
         LoggerPtr log);
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
-        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        MergeTreeData::DataPartPtr part,
         MergeTreeIndexPtr skip_index_minmax,
         const MarkRanges & ranges,
         int direction,
@@ -159,13 +122,13 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache);
 
-    /// Whether evaluation of OR-connected filter conditions using skip indexes (setting `use_skip_indexes_for_disjunctions`)
-    /// may be used for a filter whose RPN has `rpn_size` elements (setting `use_skip_indexes_for_disjunctions_max_rpn_elements`).
-    /// One bit per RPN element per mark is consumed to store the partial evaluation results.
+    /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
+    /// 'use_skip_indexes_for_disjunctions') is enabled.
+    /// One bit per RPN element is consumed to store the partial evaluation results.
     /// Example:
     /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
     /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
-    static bool isRPNSizeAllowedForSkipIndexesForDisjunctions(size_t rpn_size, const Settings & settings);
+    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 32;
 
 private:
     const MergeTreeData & data;
@@ -239,28 +202,14 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    /// Loading statistics costs a few reads per data part, so they pay off only for a read of at least
-    /// `min_marks_per_part` marks for each part whose statistics are not in memory yet.
-    /// Returns the number of marks to compare with the read, zero if no statistics would be loaded.
-    static size_t getMinMarksToLoadStatistics(size_t min_marks_per_part, size_t parts_to_load_statistics);
-
-    /// Whether fewer than `limit` marks of the parts are left to read after the primary key analysis.
-    /// Stops the analysis as soon as `limit` marks are found, and bounds the analysis of each part,
-    /// so the answer is false when it cannot be established cheaply. Always false if `limit` is zero.
-    static bool hasFewerMarksToReadThan(
-        const RangesInDataParts & parts,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ConditionTemplate<KeyCondition>::Ptr & key_condition,
-        size_t limit,
-        const Settings & settings,
-        LoggerPtr log);
-
-    /// Apply snapshot, virtual-column, min-max and partition filters before range analysis.
+    /// Apply snapshot, virtual-column, min-max, partition and statistics filters before range analysis.
     static RangesInDataParts filterParts(
         const RangesInDataParts & parts,
         const ReadFromMergeTree::Indexes & indexes,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
@@ -277,26 +226,18 @@ public:
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats,
-        bool check_index_usage = true);
+        ReadFromMergeTree::IndexStats & index_stats);
 
     /// Filter parts using column statistics.
     /// Returns filtered parts and updates index_stats with statistics pruning info.
-    /// Parts whose statistics are in memory are always pruned. Loading statistics costs a few reads per part,
-    /// so the other parts are not pruned if `key_condition` leaves fewer than `min_marks_per_part_to_load_statistics`
-    /// marks to read in them per part (see `getMinMarksToLoadStatistics` and `hasFewerMarksToReadThan`).
-    /// If `deferred_parts` is not nullptr, the parts left unpruned for that reason are written to it.
     static RangesInDataParts filterPartsByStatistics(
         const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-        const ConditionTemplate<KeyCondition>::Ptr & key_condition,
-        size_t min_marks_per_part_to_load_statistics,
         const ContextPtr & context,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats,
-        RangesInDataParts * deferred_parts = nullptr);
+        ReadFromMergeTree::IndexStats & index_stats);
 
     struct IndexAnalysisContext
     {
@@ -313,7 +254,6 @@ public:
         bool is_parallel_reading_from_replicas;
         bool has_projections;
         bool check_row_limits;
-        bool use_primary_key = true;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
@@ -330,8 +270,6 @@ public:
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const std::optional<TopKFilterInfo> & top_k_filter_info,
-        bool allow_top_k_prewhere_query_condition_cache,
-        bool use_sampling,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
@@ -345,10 +283,8 @@ public:
     /// set of indexes (e.g. use_skip_indexes = 0, an index dropped/ignored, or a different
     /// disjunction mode) never consults a verdict produced by an index it did not run.
     /// Both the write side (ReadFromMergeTree) and the read side (filterPartsByQueryConditionCache)
-    /// pass the same Indexes and the same distributed_index_analysis value, so the salt is identical
-    /// on both.
-    static UInt64 getSkipIndexProfiledConditionHash(
-        UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes, bool distributed_index_analysis);
+    /// pass the same Indexes, so the salt is identical on both.
+    static UInt64 getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
@@ -371,43 +307,22 @@ public:
 
     /// Calculate row limits for reading based on settings and query info.
     /// Returns limits and leaf_limits that should be applied during part processing.
-    static RowLimits getRowLimits(const Context & context, const SelectQueryInfo & query_info);
+    static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
-        const IMergeTreeDataPartInfoForReader & part_info,
+        MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
         const PartialDisjunctionResult & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
-    /// Returns an error if the index depends on a column updated on the fly. A value update
-    /// (@value_updated_columns: ALTER UPDATE / patches / pending DROP COLUMN), a pending RENAME COLUMN,
-    /// or a MATERIALIZED column the read recalculates from an updated one, always makes it stale. A
-    /// value-preserving type change is tolerated when @part records the granules were built against the
-    /// current read type. Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes` as
-    /// @all_updated_columns (it also holds the names touched by a pending DROP/RENAME COLUMN).
-    /// @part is optional: some callers aggregate updated columns across parts and decide once.
+    /// Check if a skip index can be used when there are lightweight updates.
+    /// Returns an error message if the index depends on a column that will be updated on the fly.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns,
-        const NameSet & value_updated_columns,
-        const ContextPtr & context,
-        const IMergeTreeDataPart * part = nullptr);
-
-    /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
-    /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,
-    /// `hasMetadataMutations`) also include finished mutations kept for `system.mutations`, so only the
-    /// commands newer than the part are checked.
-    static bool partHasPendingAlterOrMetadataMutations(
-        const MergeTreeData::DataPartPtr & part,
-        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
-
-    /// Same as `partHasPendingAlterOrMetadataMutations` for any of the parts.
-    static bool hasPendingAlterOrMetadataMutations(
-        const RangesInDataParts & parts,
-        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
+        const NameSet & all_updated_columns);
 
 
 };

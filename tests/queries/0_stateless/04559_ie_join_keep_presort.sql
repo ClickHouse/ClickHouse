@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- The pre-join sorts IEJoin relies on are not redundant: `query_plan_remove_redundant_sorting`
 -- must keep both `Sort ... before JOIN` steps under an outer ORDER BY, and the result must
 -- stay correct.

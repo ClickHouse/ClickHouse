@@ -12,19 +12,27 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを設定するためのもので、ClickHouseのソースコードから自動生成されています。
 
-## primary_index_cache_policy {#primary_index_cache_policy}
+<div id="primary_index_cache_policy">
+  ## primary_index_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />プライマリインデックスキャッシュのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />プライマリインデックスキャッシュのポリシー名。
 
-## primary_index_cache_prewarm_ratio {#primary_index_cache_prewarm_ratio}
+<div id="primary_index_cache_prewarm_ratio">
+  ## primary_index_cache_prewarm_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />プリウォーム時に埋める mark cache の総サイズに対する比率。
 
-## primary_index_cache_size {#primary_index_cache_size}
+<div id="primary_index_cache_size">
+  ## primary_index_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />MergeTree family テーブルのプライマリインデックス用cacheの最大サイズ。
 
-## primary_index_cache_size_ratio {#primary_index_cache_size_ratio}
+<div id="primary_index_cache_size_ratio">
+  ## primary_index_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />プライマリインデックスキャッシュにおける protected queue (SLRU ポリシーの場合) のサイズを、キャッシュ全体のサイズに対する比率で示します。
 

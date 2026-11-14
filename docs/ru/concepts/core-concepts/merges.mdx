@@ -6,6 +6,8 @@ keywords: ['слияние']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <div id="what-are-part-merges-in-clickhouse">
   ## Что такое слияния частей в ClickHouse?
 </div>
@@ -24,15 +26,7 @@ ClickHouse [работает быстро](/ru/get-started/about/why-clickhouse-
 
 Следующая диаграмма схематично показывает этот фоновый процесс слияния:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
@@ -75,15 +69,7 @@ ORDER BY name ASC;
 
 В ClickHouse 24.10 во встроенные [панели мониторинга](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) была добавлена новая [панель мониторинга слияний](https://presentations.clickhouse.com/2024-release-24.10/index.html#17). Она доступна как в OSS, так и в Cloud через HTTP-обработчик `/merges` и позволяет визуализировать все слияния частей для таблицы из нашего примера:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
@@ -101,33 +87,19 @@ ORDER BY name ASC;
 
 Один сервер ClickHouse использует несколько фоновых [потоков слияния](/ru/reference/settings/server-settings/settings/background#background_pool_size) для выполнения параллельных слияний частей:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
 Каждый поток слияния выполняет цикл:
 
-<Steps>
-  <Step title="Загрузка частей в память">
-    Определяет, какие части сливать следующими, и загружает их в память.
-  </Step>
+① Определяет, какие части сливать следующими, и загружает их в память.
 
-  <Step title="Слияние частей">
-    Объединяет части в памяти в одну более крупную часть.
-  </Step>
+② Объединяет части в памяти в одну более крупную часть.
 
-  <Step title="Запись на диск">
-    Записывает слитую часть на диск, затем возвращается к шагу 1.
-  </Step>
-</Steps>
+③ Записывает слитую часть на диск.
+
+Вернитесь к ①
 
 Обратите внимание: увеличение числа ядер CPU и объема оперативной памяти позволяет повысить пропускную способность фоновых слияний.
 
@@ -143,41 +115,23 @@ ClickHouse не обязательно загружает в память все
 
 Диаграмма ниже показывает, как один фоновый [поток слияния](/ru/concepts/core-concepts/merges#concurrent-merges) в ClickHouse объединяет части (по умолчанию без [вертикального слияния](/ru/concepts/core-concepts/merges#memory-optimized-merges)):
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
 Слияние частей выполняется в несколько этапов:
 
-<Steps>
-  <Step title="Декомпрессия и загрузка">
-    [сжатые бинарные файлы столбцов](/ru/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) из частей, подлежащих слиянию, распаковываются и загружаются в память.
-  </Step>
+**① Декомпрессия и загрузка**: [сжатые бинарные файлы столбцов](/ru/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) из частей, подлежащих слиянию, распаковываются и загружаются в память.
 
-  <Step title="Слияние">
-    Данные сливаются в более крупные файлы столбцов.
-  </Step>
+**② Слияние**: Данные сливаются в более крупные файлы столбцов.
 
-  <Step title="Индексация">
-    Для слитых файлов столбцов создаётся новый [разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
-  </Step>
+**③ Индексация**: Для слитых файлов столбцов создаётся новый [разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-  <Step title="Сжатие и хранение">
-    Новые файлы столбцов и индекс [сжимаются](/ru/reference/statements/create/table/codec) и сохраняются в новом [каталоге](/ru/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse), который представляет слитую часть данных.
-  </Step>
-</Steps>
+**④ Сжатие и хранение**: Новые файлы столбцов и индекс [сжимаются](/ru/reference/statements/create/table/codec) и сохраняются в новом [каталоге](/ru/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse), который представляет слитую часть данных.
 
 Дополнительные [метаданные в частях данных](/ru/concepts/core-concepts/parts), такие как вторичные индексы пропуска данных, статистика столбцов, контрольные суммы и min-max-индексы, также пересоздаются на основе слитых файлов столбцов. Для простоты мы опустили эти детали.
 
-Механика этапа слияния зависит от конкретного [движка MergeTree](/ru/reference/engines/table-engines/mergetree-family/index), поскольку разные движки выполняют слияние по-разному. Например, устаревшие строки могут агрегироваться или заменяться. Как уже упоминалось, такой подход **переносит всю обработку данных в фоновые слияния**, обеспечивая **сверхбыстрые вставки** за счёт того, что операции записи остаются лёгкими и эффективными.
+Механика этапа ② зависит от конкретного [движка MergeTree](/ru/reference/engines/table-engines/mergetree-family/index), поскольку разные движки выполняют слияние по-разному. Например, устаревшие строки могут агрегироваться или заменяться. Как уже упоминалось, такой подход **переносит всю обработку данных в фоновые слияния**, обеспечивая **сверхбыстрые вставки** за счёт того, что операции записи остаются лёгкими и эффективными.
 
 Далее мы кратко рассмотрим механику слияния в конкретных движках семейства MergeTree.
 
@@ -187,15 +141,7 @@ ClickHouse не обязательно загружает в память все
 
 На схеме ниже показано, как выполняется слияние частей в стандартной таблице [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree):
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЯ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_04.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="СЛИЯНИЯ ЧАСТЕЙ" />
 
 <br />
 
@@ -209,15 +155,7 @@ DDL-оператор на схеме выше создаёт таблицу `Mer
 
 Слияния частей в таблице [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) работают аналогично [стандартным слияниям](/ru/concepts/core-concepts/merges#standard-merges), но сохраняется только самая новая версия каждой строки, а более старые версии отбрасываются:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_05.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
@@ -235,15 +173,7 @@ DDL-оператор на диаграмме выше создаёт табли�
 
 Числовые данные автоматически суммируются при слиянии частей таблицы [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree):
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_06.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
@@ -257,15 +187,7 @@ DDL-оператор на схеме выше определяет таблиц�
 
 Пример таблицы `SummingMergeTree`, приведённый выше, — это специализированный вариант таблицы [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree), который позволяет выполнять [автоматическое инкрементальное преобразование данных](https://www.youtube.com/watch?v=QDAJTKZT8y4), применяя любую из [90+](/ru/reference/functions/aggregate-functions/reference-index) функций агрегации при слиянии частей:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_07.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 

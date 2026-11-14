@@ -1,3 +1,0 @@
-{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
-{"metaData":{"id":"c23cd784-bc31-46e5-a95b-73bcbe1111a5","format":{"provider":"parquet","options":{}},"partitionColumns":[],"configuration":{},"createdTime":1603723991975,"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}"}}
-{"add":{"path":"/some/unqualified/with%20space/p@%23h","partitionValues":{},"size":100,"modificationTime":10,"dataChange":true}}

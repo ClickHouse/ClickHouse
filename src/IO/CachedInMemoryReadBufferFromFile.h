@@ -40,7 +40,6 @@ public:
 
     VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
     bool supportsReadAtRetainCells() const override { return innerSupportsReadAt(); }
-    bool readsThroughPageCache() const override { return true; }
 
     PageCache::MappedPtr getPageCacheCell() const { return chunk; }
     PageCachePtr getPageCache() const { return cache; }

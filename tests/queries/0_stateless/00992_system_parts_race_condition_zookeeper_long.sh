@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Tags: race, zookeeper, no-parallel
-# Random settings limits: index_granularity=(100, None)
-# One granule per row makes every queued mutation a per-row read, and the ALTER waits outlast the timeout.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

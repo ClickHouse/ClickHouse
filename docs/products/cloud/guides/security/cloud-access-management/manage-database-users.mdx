@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['database users', 'access management', 'security', 'permissions', 'user management']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 This guide demonstrates two ways to manage database users, within SQL console and directly within the database.
 
 ### SQL console passwordless authentication {#sql-console-passwordless-authentication}
@@ -14,11 +16,13 @@ SQL console users are created for each session and authenticated using X.509 cer
 
 ## SQL console users and roles {#sql-console-users-and-roles}
 
-Basic SQL console roles can be assigned to users with Service Read Only and Service Admin permissions. For more information, refer to [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). This guide demonstrates how to create a custom role for a SQL console user.
+Basic SQL console roles can be assigned to users with Service Read Only and Service Admin permissions. For more information, refer to [Manage SQL Console Role Assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). This guide demonstrates how to create a custom role for a SQL console user.
 
-<Tip>
-Prefer [cloud-managed database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) to manage database access from the console. `sql-console-role:<email>` roles are not compatible with JWT sessions within the SQL console.
-</Tip>
+<Note>
+**Manage database roles from the console (beta)**
+
+You can also manage database roles directly from the ClickHouse Cloud console by adding data permissions to custom roles. This feature is in beta and is available for services running ClickHouse version 26.4 and above. Roles assigned manually using the `sql-console-role:<email>` naming convention take precedence over roles assigned through the console. For more information, see [Manage database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
+</Note>
 
 To create a custom role for a SQL console user and grant it a general role, run the following commands. The email address must match the user's email address in the console. 
 
@@ -86,21 +90,13 @@ Configure the following within the services and databases using the SQL [GRANT](
 | Default               | Full administrative access to services                                        |
 | Custom                | Configure using the SQL [`GRANT`](/reference/statements/grant) statement |
 
-- Database roles are additive. This means if a user is a member of two roles, the user has the most access granted to the two roles. They don't lose access by adding roles. This applies to SQL roles granted inside a service. A console custom role with a `Data` policy using `Custom` access replaces the built-in SQL console database access instead. See [Manage database roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
+- Database roles are additive. This means if a user is a member of two roles, the user has the most access granted to the two roles. They don't lose access by adding roles.
 - Database roles can be granted to other roles, resulting in a hierarchical structure. Roles inherit all permissions of the roles for which it is a member.
 - Database roles are unique per service and may be applied across multiple databases within the same service.
 
 The illustration below shows the different ways a user could be granted permissions.
 
-<div className="ch-image-md ch-image-background-black">
-
-<Frame>
-
-![An illustration showing the different ways a user could be granted permissions](/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt='An illustration showing the different ways a user could be granted permissions' size="md" background="black"/>
 
 ### Initial settings {#initial-settings}
 Databases have an account named `default` that is added automatically and granted the default_role upon service creation. The user that creates the service is presented with the automatically generated, random password that is assigned to the `default` account when the service is created. The password isn't shown after initial setup, but may be changed by any user with Service Admin permissions in the console at a later time. This account or an account with Service Admin privileges within the console may set up additional database users and roles at any time.

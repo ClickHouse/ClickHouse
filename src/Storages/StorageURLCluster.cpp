@@ -2,7 +2,6 @@
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/StringUtils.h>
-#include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -10,7 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/ClusterFunctionReadTask.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
@@ -38,7 +36,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool enable_url_encoding;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsBool use_hive_partitioning;
 }
@@ -58,7 +55,7 @@ StorageURLCluster::StorageURLCluster(
 {
     auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context->getHTTPHeaderFilter().checkHeaders(headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -113,24 +110,20 @@ StorageURLCluster::StorageURLCluster(
 }
 
 void StorageURLCluster::updateQueryToSendIfNeeded(
-    ASTPtr & query,
-    const StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context,
-    const String & target_cluster_name,
-    bool add_structure_and_format)
+    ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
-    if (!expression_list || expression_list->children.empty())
+    if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     if (add_structure_and_format)
         TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
-            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
+            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
             format_name,
             context
         );
@@ -139,20 +132,11 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
     /// (`urlCluster`) and prepend the cluster name argument. This ensures that on the shard,
     /// `TableFunctionURLCluster` is used, which correctly handles `distributed_processing`.
-    ASTs & args = expression_list->children;
     if (!endsWith(table_function->name, "Cluster"))
     {
-        args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
+        ASTs & args = expression_list->children;
+        args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
         table_function->name += "Cluster";
-    }
-    else
-    {
-        /// The function is already `urlCluster`, so it carries a cluster name the user wrote. Replace it with
-        /// the cluster whose nodes will actually run the query - the two differ when the destination drives
-        /// the fan-out, and those nodes reject a name their own `remote_servers` does not define even though
-        /// they take their share of the work from the initiator rather than dispatching by it.
-        if (!target_cluster_name.empty())
-            args.front() = make_intrusive<ASTLiteral>(target_cluster_name);
     }
 }
 
@@ -160,22 +144,13 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, urlWithGlobs(uri), context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
 
-    auto next_callback = [iter = std::move(iterator), context](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto url = iter->next();
         if (url.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
-
-        /// The workers check the credentials under their own configuration, which can differ from this one.
-        const auto & settings = context->getSettingsRef();
-        for (const auto & option : parseRemoteDescription(url, 0, url.size(), '|', settings[Setting::glob_expansion_max_elements]))
-        {
-            Poco::Net::HTTPBasicCredentials credentials;
-            setCredentialsFromURL(credentials, Poco::URI(option, settings[Setting::enable_url_encoding]), context->getHTTPHeaderFilter());
-        }
-
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));

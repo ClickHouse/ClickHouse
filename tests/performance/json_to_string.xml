@@ -30,13 +30,11 @@
     <fill_query>OPTIMIZE TABLE json_to_string_shared_data FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE json_to_string_dynamic FINAL</fill_query>
 
-    <!-- #0 and #2 run in one thread: with several, every value copies a pointer to a cached serialization whose reference
-         counter all threads write, and what that costs differs between server processes. -->
-    <query>SELECT sum(length(toString(payload))) FROM json_to_string SETTINGS max_threads = 1</query>
+    <query>SELECT sum(length(toString(payload))) FROM json_to_string</query>
     <query>SELECT sum(length(toString(payload))) FROM json_to_string_shared_data</query>
     <!-- Dynamic(JSON): exercises SerializationDynamic's text fast path resolving a
          non-poolable SerializationJSON through DataTypesCache, not just plain JSON. -->
-    <query>SELECT sum(length(toString(payload))) FROM json_to_string_dynamic SETTINGS max_threads = 1</query>
+    <query>SELECT sum(length(toString(payload))) FROM json_to_string_dynamic</query>
 
     <drop_query>DROP TABLE IF EXISTS json_to_string</drop_query>
     <drop_query>DROP TABLE IF EXISTS json_to_string_shared_data</drop_query>

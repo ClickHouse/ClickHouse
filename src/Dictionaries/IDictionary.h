@@ -326,9 +326,6 @@ public:
 
     virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
 
-    /// False if the rows returned by `read` are not keys with their attributes, so `dictGetKeys` cannot scan them.
-    virtual bool supportsReverseLookup() const { return true; }
-
     bool supportUpdates() const override { return true; }
 
     bool isModified() const override
@@ -374,12 +371,17 @@ public:
             key_types.emplace_back(key.type);
         }
 
-        /// Prepare probe keys as `HashJoin` does: dictionary sources read key columns as plain columns, so drop
-        /// `Const`/`Sparse`/`ColumnReplicated` and `LowCardinality`. Track NULL rows and unwrap the outer `Nullable`
-        /// before `convertKeyColumns`: casting a real NULL to a non-Nullable declared type would throw.
+        /// Normalize wrapper-compatible key columns to the declared key schema via `convertKeyColumns`.
+        /// Track NULL rows and unwrap the outer `Nullable` first: casting a real NULL to a
+        /// non-Nullable declared type would throw.
         PaddedPODArray<UInt8> key_row_is_null;
         for (size_t i = 0; i < key_columns.size(); ++i)
         {
+            if (!isNullableOrLowCardinalityNullable(key_types[i]))
+                continue;
+
+            /// Drop `Const`/`Sparse`/`ColumnReplicated` and `LowCardinality` (as `HashJoin` prepares
+            /// probe keys) so the null map is exposed, then peel off the outer `Nullable`.
             ColumnPtr full_column = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_columns[i]->convertToFullColumnIfConst()));
             DataTypePtr full_type = recursiveRemoveLowCardinality(key_types[i]);
 
