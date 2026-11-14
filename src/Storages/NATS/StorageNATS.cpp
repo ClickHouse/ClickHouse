@@ -12,6 +12,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -638,7 +639,10 @@ static void addMaterializedColumns(Pipe & pipe, const Block & header, const Colu
     if (!has_missing)
         return;
 
-    auto actions = std::make_shared<ExpressionActions>(addMissingDefaults(pipe_header, header.getNamesAndTypesList(), columns, context));
+    auto adding_missing_defaults_dag = addMissingDefaults(pipe_header, header.getNamesAndTypesList(), columns, context);
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(pipe_header, adding_missing_defaults_dag.getRequiredColumnsNames(), context);
+    auto actions = std::make_shared<ExpressionActions>(
+        ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
     pipe.addSimpleTransform(
         [&](const SharedHeader & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
 }

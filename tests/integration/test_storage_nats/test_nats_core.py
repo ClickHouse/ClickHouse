@@ -366,6 +366,31 @@ def test_nats_materialized_column(nats_cluster):
     assert int(instance.query("SELECT count() FROM test.view2")) == 50
 
 
+def test_nats_materialized_column_from_subcolumn(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, payload Tuple(x UInt64), value UInt64 MATERIALIZED payload.x)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'mvsubcolumn',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query("CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT key, value FROM test.nats")
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
+
+    messages = [json.dumps({"key": i, "payload": {"x": i}}) for i in range(50)]
+    asyncio.run(publish_messages(nats_cluster, "mvsubcolumn", messages))
+
+    nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
+
+
 def test_nats_protobuf(nats_cluster):
     instance.query(
         """
