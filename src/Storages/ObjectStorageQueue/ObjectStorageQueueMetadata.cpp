@@ -17,6 +17,7 @@
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/DimensionalMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -56,6 +57,11 @@ namespace ErrorCodes
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_fail_register_once[];
 }
 
 namespace Setting
@@ -824,6 +830,11 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
     {
         Coordination::Stat stat;
         std::string registry_str;
+        /// Set when this attempt queues a create of `/registry` for `tryMulti`.
+        /// A response lost after that submit still owns the metadata. `isRetry()`
+        /// is the wrong signal: `DETACH` and shutdown leave this table registered,
+        /// and a retry that never reached the create must not claim that entry.
+        bool sent_create = false;
 
         Coordination::Requests requests;
         Coordination::Responses responses;
@@ -831,6 +842,11 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
+            fiu_do_on(FailPoints::object_storage_queue_fail_register_once, {
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS, "Failed to register table");
+            });
+
             auto zk_client = getZooKeeper();
             bool registry_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (registry_exists)
@@ -838,7 +854,8 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                 std::vector<std::string_view> registered;
                 splitInto<','>(registered, registry_str);
 
-                if (zk_retries.isRetry() && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
+                /// Own create applied, response lost. See `sent_create` above.
+                if (sent_create && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
                 {
                     LOG_TRACE(log, "Table {} is already registered after retry", self.table_id);
                     created_new_metadata = true;
@@ -876,6 +893,8 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
                 if (!zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
                     zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(), drop_lock_path);
+
+                sent_create = true;
             }
 
             code = zk_client->tryMulti(requests, responses);
