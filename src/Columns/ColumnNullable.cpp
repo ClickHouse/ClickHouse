@@ -1054,9 +1054,12 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
-        new_size += source_nullable_column.size();
-        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
+        const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        new_size += source_nullable_column->size();
+        nested_source_columns.push_back(source_nullable_column->getNestedColumnPtr());
     }
 
     nested_column->prepareForSquashing(nested_source_columns, factor);
@@ -1345,19 +1348,29 @@ void ColumnNullable::chooseDynamicStructureForMerge(const VectorWithMemoryTracki
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    {
+        const auto * source_nullable = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_nullable->getNestedColumnPtr());
+    }
     nested_column->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnNullable::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    nested_column->takeExactDynamicStructureFrom(assert_cast<const ColumnNullable &>(source).getNestedColumn());
+    const auto * source_nullable = typeid_cast<const ColumnNullable *>(&source);
+    if (!source_nullable)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot take dynamic structure for {} from {}: it is not Nullable", getName(), source.getName());
+
+    nested_column->takeExactDynamicStructureFrom(source_nullable->getNestedColumn());
 }
 
 bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
 {
-    const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();
-    return nested_column->dynamicStructureEquals(rhs_nested_column);
+    const auto * rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs);
+    return rhs_nullable && nested_column->dynamicStructureEquals(rhs_nullable->getNestedColumn());
 }
 
 void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
@@ -1365,7 +1378,13 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    {
+        const auto * source_nullable = typeid_cast<const ColumnNullable *>(source_column.get());
+        if (!source_nullable)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for statistics of {} is not Nullable, but {}", getName(), source_column->getName());
+
+        nested_source_columns.push_back(source_nullable->getNestedColumnPtr());
+    }
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 

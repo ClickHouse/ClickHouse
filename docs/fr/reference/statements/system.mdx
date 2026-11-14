@@ -99,6 +99,11 @@ Vide le cache de marques.
 Efface le cache de l’index primaire, qui stocke en mémoire les clés primaires des tables [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 Sa taille est configurée à l’aide du paramètre de niveau serveur [`primary_index_cache_size`](/fr/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Vide le cache des statistiques, qui conserve en mémoire les statistiques de colonne des parts des tables [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree), à raison d&#39;une entrée par part et par colonne.
+Sa taille se configure via le paramètre au niveau du serveur `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Vide le cache des métadonnées Iceberg.
@@ -183,7 +188,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
-Vide les caches d&#39;une table `TimeSeries` qui permettent aux insertions d&#39;ignorer les lignes déjà présentes dans ses tables cibles. Il existe deux caches de ce type : le cache de déduplication de la table des familles de métriques et le cache de déduplication de la table des tags (utilisé uniquement lorsque `store_min_time_and_max_time` est désactivé) ; voir les paramètres `metric_families_deduplication_cache_expiration_seconds` et `tags_deduplication_cache_expiration_seconds` de la table. Ces caches sont propres à chaque serveur et ne détectent pas les modifications apportées directement aux tables cibles. Un tel écart se résorbe de lui-même à l&#39;expiration des entrées ; utilisez ce statement pour que la prochaine insertion écrive toutes ses lignes sans attendre (par exemple, après avoir vidé la table des familles de métriques). Un `TRUNCATE TABLE` sur une table `TimeSeries` ne vide que les caches du serveur qui l&#39;exécute ; si les tables cibles sont répliquées, exécutez ensuite ce statement avec `ON CLUSTER` afin de vider les caches des autres répliques.
+Vide les caches d&#39;une table `TimeSeries` qui permettent aux insertions d&#39;ignorer les lignes déjà présentes dans ses tables cibles. Il existe deux caches de ce type : le cache de déduplication de la table des familles de métriques et le cache de déduplication de la table des tags ; voir les paramètres `metric_families_deduplication_cache_expiration_seconds` et `tags_deduplication_cache_expiration_seconds` de la table. Ces caches sont propres à chaque serveur et ne détectent pas les modifications apportées directement aux tables cibles. Un tel écart se résorbe de lui-même à l&#39;expiration des entrées ; utilisez ce statement pour que la prochaine insertion écrive toutes ses lignes sans attendre (par exemple, après avoir vidé la table des familles de métriques). Un `TRUNCATE TABLE` sur une table `TimeSeries` ne vide que les caches du serveur qui l&#39;exécute ; si les tables cibles sont répliquées, exécutez ensuite ce statement avec `ON CLUSTER` afin de vider les caches des autres répliques.
 
 ```sql
 SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table

@@ -452,7 +452,11 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
                         table_name.empty() ? "" : " for table " + table_name);
 
-    skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
+    /// The values are in the order of the INSERT column list, which can differ from CREATE (mysqldump omits generated columns).
+    Names insert_column_names;
+    skipToDataInInsertQuery(in, &insert_column_names);
+    if (!insert_column_names.empty())
+        column_names = std::move(insert_column_names);
 }
 
 void MySQLDumpRowInputFormat::readPrefix()
@@ -488,7 +492,7 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     }
     skipEndOfRow(*in, table_name);
 
-    column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
+    column_mapping->insertDefaultsForNotSeenColumns(columns, types, ext.read_columns);
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.
     if (!format_settings.defaults_for_omitted_fields)
@@ -515,7 +519,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization, type.get());
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
     return true;

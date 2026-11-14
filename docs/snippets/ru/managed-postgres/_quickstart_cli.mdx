@@ -2,37 +2,33 @@
 title: Краткое руководство по CLI
 ---
 
-На этой странице описаны развертывание ClickHouse Managed Postgres, загрузка данных, их репликация в ClickHouse и выполнение запросов к ним — всё из командной строки с помощью [ClickHouse CLI](/ru/products/cloud/features/cli) (`clickhousectl`) и `psql`. Команды выполняются в неинтерактивном режиме; `clickhousectl` выводит JSON при использовании `--json`.
+На этой странице описаны подготовка ClickHouse Managed Postgres, загрузка данных, их репликация в ClickHouse и выполнение запросов к ним — всё из командной строки с помощью [clickhousectl](/ru/concepts/features/interfaces/cli) и `psql`. Все команды, кроме необязательного входа с `--interactive`, выполняются в неинтерактивном режиме. `clickhousectl` выводит JSON при указании `--json`, а также автоматически, если обнаруживает ИИ-агента для написания кода; чтобы получить значения в виде обычного текста, передайте `--format` команде `cloud service query`.
 
-<div id="prerequisites">
-  ## Требования
-</div>
+## Предварительные требования {#prerequisites}
 
-Установите ClickHouse CLI:
+Установите clickhousectl:
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-Вам также понадобятся `psql` (клиентские инструменты PostgreSQL; на macOS — `brew install libpq`) и `jq`.
+Скрипт устанавливает `~/.local/bin/clickhousectl` и псевдоним `chctl`. Убедитесь, что каталог `~/.local/bin` добавлен в переменную `PATH`.
 
-Для операций записи (создание, удаление) требуется [аутентификация по ключу API](/ru/products/cloud/features/admin-features/api/openapi); вход через OAuth доступен только для чтения:
+Также потребуются `psql` (клиентские инструменты PostgreSQL; на macOS — `brew install libpq`) и `jq`.
+
+Для операций записи (создание, удаление) необходим [ключ API](/ru/products/cloud/features/admin-features/api/openapi); вход через OAuth (`clickhousectl cloud auth login` без флагов) даёт доступ только для чтения. Войдите с помощью своего ключа: с флагом `--interactive` ключ и секрет запрашиваются интерактивно, поэтому секрет не попадает в историю командной оболочки:
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-Либо задайте переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Проверьте командой `clickhousectl cloud auth status`; в выводе должна быть запись с областью действия `read/write`.
+Либо передайте ключ и секрет команде `clickhousectl cloud auth login` через параметры `--api-key` и `--api-secret`, либо задайте переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. При входе команда проверяет учётные данные и выводит идентичность; позже её можно проверить повторно командой `clickhousectl cloud auth whoami`. Если вы состоите в нескольких организациях, добавляйте `--org-id <id>` (или `--org-name <name>`) к каждой команде.
 
-<div id="part-1-create-and-load">
-  ## Часть 1: Создайте Postgres и загрузите данные
-</div>
+## Часть 1: Создайте Postgres и загрузите данные {#part-1-create-and-load}
 
-<div id="create-postgres-service">
-  ### Создайте сервис Postgres
-</div>
+### Создайте сервис Postgres {#create-postgres-service}
 
-Создайте сервис и сохраните полученный ответ; пароль отображается только один раз:
+Создайте сервис и сохраните ответ — пароль отображается только один раз:
 
 ```bash
 clickhousectl cloud postgres create \
@@ -43,41 +39,49 @@ clickhousectl cloud postgres create \
   --json > pg.json
 ```
 
-В ответе указаны идентификатор сервиса, имя хоста и готовая к использованию строка подключения:
+AWS используется в качестве провайдера по умолчанию. GCP доступен в закрытой предварительной версии (Private Preview); чтобы использовать его, укажите `--provider gcp`, а также регион и размер GCP, например `--region us-central1 --size c4-standard-lssd-4`.
+
+Если флаги доступа не указаны, сервис принимает соединения с любого IPv4- или IPv6-адреса на портах Postgres (5432) и PgBouncer (6432). Чтобы ограничить доступ, укажите по одному правилу `--ip-allow` для каждого CIDR и диапазона портов, например `--ip-allow '203.0.113.0/24:5432..6432=office'`. Если задано хотя бы одно правило, действуют только явно перечисленные правила. Чтобы впоследствии изменить правила, выполните `clickhousectl cloud postgres update <postgres-id>` с параметром `--add-ip-allow <rule>` или `--remove-ip-allow <rule-id>`; идентификаторы правил можно получить с помощью команды `cloud postgres get`.
+
+Ответ содержит идентификатор сервиса, имя хоста и готовую к использованию строку подключения (в сокращённом виде):
 
 ```json
 {
-  "id": "3b5a3112-bf02-82d0-bd02-fbe67d5caa7a",
+  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@quickstart-pg-c959cbf0.pgn9sre8vvsp3qnej7awh00y0a.c0.us-east-1.aws.pg.clickhouse.cloud:5432/postgres?sslmode=require&channel_binding=require",
+  "createdAt": "2026-10-23T11:13:21Z",
+  "haType": "none",
+  "hostname": "quickstart-pg-c959cbf0.pgn9sre8vvsp3qnej7awh00y0a.c0.us-east-1.aws.pg.clickhouse.cloud",
+  "id": "aa738723-7bcd-86d0-bd5d-23ab91003c05",
+  "ipAccessList": [
+    {"description": "", "id": "frshr7cvsgke0h42aphabk7zc2", "portRange": "5432", "source": "0.0.0.0/0"},
+    {"description": "", "id": "fr5tjdsywqpj4qhhe76dzjv3a6", "portRange": "6432", "source": "0.0.0.0/0"}
+  ],
+  "isPrimary": true,
   "name": "quickstart-pg",
+  "password": "vV6cfEr2p_-TzkCDrZOx",
+  "postgresVersion": "18",
   "provider": "aws",
   "region": "us-east-1",
-  "postgresVersion": "18",
   "size": "m6gd.large",
-  "storageSize": 118,
-  "haType": "none",
   "state": "creating",
-  "createdAt": "2026-07-22T13:21:22Z",
-  "hostname": "quickstart-pg-c1406b50.pg7dd324nz0a1qm1fqskxbjn7m.c0.us-east-1.aws.pg.clickhouse.cloud",
-  "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@quickstart-pg-c1406b50.pg7dd324nz0a1qm1fqskxbjn7m.c0.us-east-1.aws.pg.clickhouse.cloud:5432/postgres?channel_binding=require",
-  "isPrimary": true,
-  "tags": []
+  "storageSize": 118,
+  "tags": [],
+  "username": "postgres"
 }
 ```
 
-Получите всё, что понадобится далее в этом руководстве:
+Сохраните значения, которые понадобятся далее в этом руководстве:
 
 ```bash
 PG_ID=$(jq -r .id pg.json)
-PG_URL=$(jq -r .connectionString pg.json)
+PG_URL="$(jq -r .connectionString pg.json | sed 's/sslmode=require/sslmode=verify-full/')&sslrootcert=pg-ca.pem"
 ```
 
-Если пароль потерян, сгенерируйте новый с помощью `clickhousectl cloud postgres reset-password $PG_ID --generate`.
+Если переключить `sslmode` на `verify-full` и добавить `sslrootcert`, `psql` будет проверять сертификат сервера с помощью CA, который вы скачаете ниже. При значении по умолчанию `sslmode=require` `psql` шифрует соединение, но не проверяет идентичность сервера.
 
-<div id="wait-for-provisioning">
-  ### Дождитесь, пока сервис будет создан
-</div>
+Если пароль утерян, сгенерируйте новый командой `clickhousectl cloud postgres reset-password "$PG_ID" --generate`.
+
+### Дождитесь, пока сервис будет создан {#wait-for-provisioning}
 
 Подготовка занимает несколько минут. Проверяйте состояние, пока оно не станет `running`:
 
@@ -87,9 +91,15 @@ while [ "$(clickhousectl cloud postgres get "$PG_ID" --json | jq -r .state)" != 
 done
 ```
 
-<div id="load-sample-data">
-  ### Загрузите пример данных
-</div>
+### Скачайте CA‑сертификат {#download-ca-certificate}
+
+У каждого инстанса ClickHouse Managed Postgres есть собственный CA, который не входит в число общедоверенных. Сохраните его в файл: и `psql`, и ClickPipe из части 2 используют его для проверки TLS:
+
+```bash
+clickhousectl cloud postgres certs get "$PG_ID" --output pg-ca.pem
+```
+
+### Загрузите пример данных {#load-sample-data}
 
 Создайте две таблицы и вставьте 1 миллион событий через `psql`:
 
@@ -175,19 +185,15 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-Вставка 1 млн строк выполняется примерно за 7 секунд на `m6gd.large` (самом маленьком типоразмере) благодаря NVMe-хранилищу. Проверьте это запросом; количество строк от запуска к запуску различается, потому что данные генерируются с помощью `random()`:
+Вставка 1 млн строк выполняется примерно за 20 секунд на `m6gd.large` (одном из самых маленьких типоразмеров) благодаря NVMe-хранилищу. Проверьте это запросом; количество строк от запуска к запуску различается, потому что данные генерируются с помощью `random()`:
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
 ```
 
-<div id="part-2-replicate">
-  ## Часть 2: Репликация данных в ClickHouse
-</div>
+## Часть 2: Репликация данных в ClickHouse {#part-2-replicate}
 
-<div id="create-clickhouse-service">
-  ### Создайте сервис ClickHouse
-</div>
+### Создайте сервис ClickHouse {#create-clickhouse-service}
 
 Создайте сервис в том же регионе и сохраните ответ; пароль отображается только в ответе на создание:
 
@@ -211,11 +217,9 @@ done
 
 Чтобы использовать существующий сервис, задайте `CH_ID`, взяв его из вывода `clickhousectl cloud service list`, а в `CH_PASSWORD` укажите пароль пользователя `default`, который потребуется на этапе `pg_clickhouse`.
 
-<div id="replicate-to-clickhouse">
-  ### Реплицируйте таблицы в ClickHouse
-</div>
+### Репликация таблиц в ClickHouse {#replicate-to-clickhouse}
 
-Создайте Postgres CDC ClickPipe в сервисе ClickHouse, указав имя хоста ClickHouse Managed Postgres. Пайп скопирует существующие строки, а затем будет поддерживать синхронизацию ClickHouse с текущими изменениями:
+Создайте Postgres CDC ClickPipe в сервисе ClickHouse, указав имя хоста ClickHouse Managed Postgres. Пайп копирует существующие строки, а затем синхронизирует ClickHouse с текущими изменениями. По умолчанию ClickPipes проверяет сертификат источника, поэтому передайте сертификат CA, скачанный в Части 1, с помощью `--ca-certificate`:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -227,6 +231,7 @@ clickhousectl cloud clickpipe create postgres "$CH_ID" \
   --pg-database postgres \
   --username postgres \
   --password "$PG_PASSWORD" \
+  --ca-certificate pg-ca.pem \
   --table-mapping public.events:public_events \
   --table-mapping public.users:public_users \
   --json > pipe.json
@@ -236,13 +241,12 @@ PIPE_ID=$(jq -r .id pipe.json)
 
 Примечания:
 
-* Реплицируемые таблицы попадают в базу данных `default` сервиса ClickHouse и получают имена в соответствии с целями `--table-mapping`
-* Публикация и слот репликации создаются автоматически; публикация при этом ограничивается сопоставленными таблицами. Передайте `--publication-name`, чтобы использовать публикацию, которой вы управляете самостоятельно
-* Используйте прямое имя хоста Postgres; репликация через PgBouncer не поддерживается
+* Реплицируемые таблицы создаются в базе данных `default` сервиса ClickHouse; их имена задаются целевыми значениями `--table-mapping`. Чтобы использовать другую базу данных, передайте `--destination-database <name>`
+* `--table-mapping` создаёт таблицы `ReplacingMergeTree`. Обновления и удаления поступают в виде новых версий строк, поэтому для чтения текущего состояния используйте `FINAL` и `WHERE _peerdb_is_deleted = 0`, как в запросах ниже
+* Публикация и слот репликации создаются автоматически, причём публикация охватывает только сопоставленные таблицы. Чтобы использовать собственную публикацию, передайте `--publication-name`
+* Указывайте прямое имя хоста Postgres: репликация через PgBouncer не поддерживается
 
-<div id="wait-for-pipe">
-  ### Дождитесь, пока пайп не перейдёт в состояние `Running`
-</div>
+### Дождитесь, пока пайп не перейдёт в состояние `Running` {#wait-for-pipe}
 
 Пайп проходит состояния `Provisioning`, `Setup` и (для больших таблиц) `Snapshot`, прежде чем перейти в `Running`; для первого пайпа в сервисе это занимает около 4 минут. `Failed` и `InternalError` — конечные состояния:
 
@@ -251,25 +255,25 @@ while :; do
   STATE=$(clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json | jq -r .state)
   case "$STATE" in
     Running) break ;;
-    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; exit 1 ;;
+    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; break ;;
   esac
   sleep 15
 done
 ```
 
-<div id="query-clickhouse">
-  ### Выполните запрос к реплицированным данным в ClickHouse
-</div>
+### Выполните запрос к реплицированным данным в ClickHouse {#query-clickhouse}
 
-Выполняйте SQL-запросы к сервису ClickHouse напрямую из CLI. При первом вызове автоматически создаются конечная точка Query API и ключ API, ограниченный этим сервисом:
+Выполняйте SQL-запросы к сервису ClickHouse напрямую из CLI. При первом вызове clickhousectl добавляет ваш ключ API к конечной точке API запросов сервиса и при необходимости создаёт эту конечную точку; новый ключ при этом не создаётся. Чтобы вместо этого команда завершалась с ошибкой, передайте флаг `--no-auto-enable`. С `--format TabSeparated` выводится только само значение — на этом основано приведённое ниже сравнение:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
-  --query "SELECT count() FROM public_events"
+clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+  --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0"
 ```
 
+Первая строка выводится в stderr и появляется, только когда clickhousectl изменяет конечную точку:
+
 ```text
-Provisioning Query API endpoint + key for service 'quickstart-ch'...
+Binding the authenticated API key to the Query API endpoint for service 'quickstart-ch'...
 1000000
 ```
 
@@ -278,15 +282,13 @@ Provisioning Query API endpoint + key for service 'quickstart-ch'...
 ```bash
 psql "$PG_URL" -c "INSERT INTO events (event_name, event_type, user_id, user_ip) VALUES ('cdc-test', 'click', 42, '10.0.0.1');"
 
-while [ "$(clickhousectl cloud service query --id "$CH_ID" \
-  --query "SELECT count() FROM public_events")" != "1000001" ]; do
+while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+  --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0")" != "1000001" ]; do
   sleep 10
 done
 ```
 
-<div id="query-clickhouse-from-postgres">
-  ### Запросы к ClickHouse из Postgres
-</div>
+### Запросы к ClickHouse из Postgres {#query-clickhouse-from-postgres}
 
 Расширение [`pg_clickhouse`](/ru/products/managed-postgres/extensions/pg_clickhouse/introduction) позволяет Postgres выступать в качестве единого слоя для запросов как к транзакционным, так и к аналитическим данным. Получите HTTPS-имя хоста ClickHouse, затем настройте расширение через `psql`:
 
@@ -309,25 +311,17 @@ Heredoc намеренно оставлен без кавычек, чтобы о
 
 По результатам измерений на `m6gd.large` с этим набором данных аналитические запросы через внешние таблицы выполняются в 6–9 раз быстрее (например, `GROUP BY` с 5 агрегациями: 176 мс через ClickHouse против 1 133 мс локально; JOIN с агрегациями: 298 мс против 2 764 мс).
 
-<div id="cleanup-resources">
-  ## Очистка
-</div>
+## Очистка {#cleanup-resources}
 
-Сначала удалите ClickPipe, затем сервис Postgres. При удалении сервиса все его данные удаляются без возможности восстановления:
+Сначала удалите ClickPipe, затем сервис Postgres. При удалении сервиса все его данные удаляются без возможности восстановления. Сервис Postgres можно удалить, не останавливая его:
 
 ```bash
 clickhousectl cloud clickpipe delete "$CH_ID" "$PIPE_ID"
 clickhousectl cloud postgres delete "$PG_ID"
 ```
 
-Нельзя удалить работающий сервис ClickHouse напрямую. Остановите его, дождитесь состояния `stopped`, затем удалите:
+Нельзя удалить работающий сервис ClickHouse напрямую. Флаг `--force` останавливает его, дожидается завершения остановки, а затем удаляет:
 
 ```bash
-clickhousectl cloud service stop "$CH_ID"
-
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "stopped" ]; do
-  sleep 10
-done
-
-clickhousectl cloud service delete "$CH_ID"
+clickhousectl cloud service delete "$CH_ID" --force
 ```

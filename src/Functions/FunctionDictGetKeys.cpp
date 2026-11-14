@@ -58,10 +58,30 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
 {
+
+VectorWithMemoryTracking<size_t> getColumnPositions(const Block & header, const Names & column_names)
+{
+    VectorWithMemoryTracking<size_t> positions;
+    positions.reserve(column_names.size());
+    for (const auto & name : column_names)
+        positions.push_back(header.getPositionByName(name));
+    return positions;
+}
+
+void checkDictionarySupportsReverseLookup(const IDictionary & dict)
+{
+    if (!dict.supportsReverseLookup())
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Function dictGetKeys does not support dictionary {} of type {}",
+            dict.getFullName(),
+            dict.getTypeName());
+}
 
 inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
 {
@@ -145,12 +165,17 @@ class DictGetKeysMatchingRowsSink final : public ISink
 {
 public:
     DictGetKeysMatchingRowsSink(
-        SharedHeader header, FunctionBasePtr equals_function_, ColumnPtr value_column_, DataTypePtr attr_type_, size_t num_keys_)
+        SharedHeader header,
+        FunctionBasePtr equals_function_,
+        ColumnPtr value_column_,
+        DataTypePtr attr_type_,
+        VectorWithMemoryTracking<size_t> column_positions_)
         : ISink(std::move(header))
         , equals_function(std::move(equals_function_))
         , value_column(std::move(value_column_))
         , attr_type(std::move(attr_type_))
-        , num_keys(num_keys_)
+        , column_positions(std::move(column_positions_))
+        , num_keys(column_positions.size() - 1)
     {
     }
 
@@ -166,23 +191,20 @@ protected:
         if (chunk.getNumRows() == 0)
             return;
 
-        chassert(chunk.getColumns().size() == num_keys + 1);
-
         /// The multi-stream coordinator path (`DictionarySource`) tags every chunk with its sequential
         /// block number, so the merge in `executeConstPath` can restore the original dictionary scan
         /// order regardless of how blocks were distributed across reading streams (otherwise the
         /// user-visible array order would be scheduler-dependent and could differ from the vector path).
-        /// Single-stream layouts (`DIRECT`, `POLYGON`, `REGEXP_TREE`, ...) deliver their chunks in order
+        /// Single-stream layouts (`DIRECT`, `POLYGON`, ...) deliver their chunks in order
         /// to the single sink and do not attach a block number, so it is optional here; the merge keeps
         /// the insertion order in that case.
         size_t block_number = 0;
         if (auto block_info = chunk.getChunkInfos().get<DictionaryBlockNumber>())
             block_number = block_info->number;
 
-        /// Chunk layout: key columns followed by the attribute column
         auto chunk_columns = chunk.detachColumns();
 
-        ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[num_keys]);
+        ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[column_positions[num_keys]]);
         chassert(attr_col != nullptr);
 
         const size_t rows_in_chunk = attr_col->size();
@@ -215,7 +237,7 @@ protected:
         Columns filtered_keys(num_keys);
         for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
         {
-            ColumnPtr key_col = removeSpecialRepresentations(chunk_columns[key_pos]);
+            ColumnPtr key_col = removeSpecialRepresentations(chunk_columns[column_positions[key_pos]]);
             chassert(key_col != nullptr);
             filtered_keys[key_pos] = key_col->filter(filter, matched_in_chunk);
         }
@@ -228,6 +250,8 @@ private:
     FunctionBasePtr equals_function;
     ColumnPtr value_column;
     DataTypePtr attr_type;
+    /// Positions of the key columns, then of the attribute, in the read chunks.
+    VectorWithMemoryTracking<size_t> column_positions;
     size_t num_keys = 0;
     std::vector<DictGetKeysMatchedChunk> matched_chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t matched_rows = 0;
@@ -360,6 +384,7 @@ private:
     {
         auto dict = helper.getDictionary(dict_name);
         chassert(dict != nullptr);
+        checkDictionarySupportsReverseLookup(*dict);
 
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
@@ -392,6 +417,8 @@ private:
 
         /// Read the dictionary as a pipeline and attach sinks to collect matching keys per stream
         auto pipe = dict->read(column_names, settings[Setting::max_block_size], max_threads);
+        /// Some layouts (DIRECT) return all source columns, so find the requested ones by name.
+        const auto column_positions = getColumnPositions(pipe.getHeader(), column_names);
 
         const size_t num_threads = std::max<size_t>(1, std::min(max_threads, pipe.maxParallelStreams()));
         const size_t num_streams = pipe.numOutputPorts();
@@ -404,7 +431,7 @@ private:
         for (size_t stream = 0; stream < num_streams; ++stream)
         {
             auto sink = std::make_shared<DictGetKeysMatchingRowsSink>(
-                pipe.getOutputPort(stream)->getSharedHeader(), equals_function, values_column, attribute_column_type, num_keys);
+                pipe.getOutputPort(stream)->getSharedHeader(), equals_function, values_column, attribute_column_type, column_positions);
             connect(*pipe.getOutputPort(stream), sink->getPort());
             processors->emplace_back(sink);
             sinks.emplace_back(std::move(sink));
@@ -446,7 +473,7 @@ private:
         /// shared counter (so each sink ends up with an arbitrary, scheduler-dependent subset) but tags
         /// every chunk with its sequential block number. Sorting by it reproduces the single-stream scan
         /// order, keeping the result deterministic and consistent with the vector path. Single-stream
-        /// layouts (`DIRECT`, `POLYGON`, `REGEXP_TREE`, ...) deliver their chunks in order to the single
+        /// layouts (`DIRECT`, `POLYGON`, ...) deliver their chunks in order to the single
         /// sink and do not attach a block number, so we keep that sink's insertion order for them.
         if (num_streams > 1)
             std::sort(
@@ -495,6 +522,7 @@ private:
     {
         auto dict = helper.getDictionary(dict_name);
         chassert(dict != nullptr);
+        checkDictionarySupportsReverseLookup(*dict);
 
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
@@ -722,6 +750,7 @@ private:
         column_names.push_back(attr_name);
 
         auto pipe = dict->read(column_names, helper.context->getSettingsRef()[Setting::max_block_size], 1);
+        const auto column_positions = getColumnPositions(pipe.getHeader(), column_names);
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
@@ -736,15 +765,14 @@ private:
         while (executor.pull(chunk))
         {
             Columns columns = chunk.detachColumns();
-            chassert(columns.size() >= num_keys + 1);
 
-            ColumnPtr attr_col = removeSpecialRepresentations(columns[num_keys]);
+            ColumnPtr attr_col = removeSpecialRepresentations(columns[column_positions[num_keys]]);
             const size_t rows_in_chunk = attr_col->size();
 
             VectorWithMemoryTracking<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
             {
-                key_columns[key_pos] = removeSpecialRepresentations(columns[key_pos]);
+                key_columns[key_pos] = removeSpecialRepresentations(columns[column_positions[key_pos]]);
                 chassert(key_columns[key_pos]->size() == rows_in_chunk);
             }
 
