@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -579,6 +580,26 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     if (to_signed)
         return which.isInt256() ? nullptr : std::make_shared<DataTypeInt256>();
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
+}
+
+/// Whether `src` is a string that the text of a `Variant` reads as NULL, such as 'NULL'.
+bool isNullText(const Field & src)
+{
+    if (src.getType() != Field::Types::String)
+        return false;
+    ReadBufferFromString buf(src.safeGet<String>());
+    return SerializationNullable::tryDeserializeNullText(buf) && buf.eof();
+}
+
+/// Whether the element `converted` from `src` makes its composite unconvertible: a NULL that `type` cannot hold, or a NULL from a
+/// value. Outside `strict`, a string that a `Variant` reads as NULL, such as 'NULL', is a NULL, as in `CAST`.
+bool isUnconvertibleElement(const Field & src, const Field & converted, const IDataType & type, bool strict)
+{
+    if (!converted.isNull())
+        return false;
+    if (!canContainNull(type))
+        return true;
+    return !src.isNull() && (strict || !isVariant(type) || !isNullText(src));
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -1168,8 +1189,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < src_arr_size; ++i)
             {
                 res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
-                /// Strict: a value that is not representable is not a NULL element.
-                if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_arr[i].isNull())))
+                if (isUnconvertibleElement(src_arr[i], res[i], element_type, strict))
                 {
                     // See the comment for Tuples below.
                     have_unconvertible_element = true;
@@ -1201,7 +1221,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
                 res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
-                if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_tuple[i].isNull())))
+                if (isUnconvertibleElement(src_tuple[i], res[i], element_type, strict))
                 {
                     /*
                      * Either the source element was Null, or the conversion did not
@@ -1394,11 +1414,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
 
-                if (updated_entry[0].isNull() && (!canContainNull(key_type) || (strict && !key.isNull())))
+                if (isUnconvertibleElement(key, updated_entry[0], key_type, strict))
                     have_unconvertible_element = true;
 
                 updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
-                if (updated_entry[1].isNull() && (!canContainNull(value_type) || (strict && !value.isNull())))
+                if (isUnconvertibleElement(value, updated_entry[1], value_type, strict))
                     have_unconvertible_element = true;
 
                 res[i] = updated_entry;
