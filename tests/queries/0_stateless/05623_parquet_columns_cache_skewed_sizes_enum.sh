@@ -42,4 +42,24 @@ $CLICKHOUSE_CLIENT -q "
     ${ENTRIES};
     ${QUERY}, use_columns_cache = 1"
 
+# A missing `Tuple` of 16 `Enum8` with names of 64 bytes, filled with defaults: 16 names per row, 70 MiB as strings.
+# It has no primitive columns to charge the names to, so the size of a value must count all of them.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('${FILE}', Parquet, 'id UInt64') SELECT number FROM numbers(65536)
+    SETTINGS engine_file_truncate_on_insert = 1"
+touch -d "1 minute ago" "${FILE_PATH}"
+
+NAME=$(printf 'x%.0s' {1..64})
+ELEMENTS="e0 Enum8(\\'${NAME}\\' = 0)"
+for i in {1..15}; do ELEMENTS="${ELEMENTS}, e${i} Enum8(\\'${NAME}\\' = 0)"; done
+STRUCTURE="'id UInt64, missing Tuple(${ELEMENTS})'"
+QUERY="SELECT count(), sum(id), sum(cityHash64(toString(missing))) FROM file('${FILE}', Parquet, ${STRUCTURE})
+    SETTINGS ${SETTINGS}, input_format_parquet_allow_missing_columns = 1"
+
+echo "--- a missing tuple of enums"
+$CLICKHOUSE_CLIENT -q "
+    SYSTEM DROP COLUMNS CACHE;
+    ${QUERY}, use_columns_cache = 0;
+    ${QUERY}, use_columns_cache = 1"
+
 rm -f "${FILE_PATH}"

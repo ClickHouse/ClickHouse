@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/hasNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -179,18 +180,17 @@ static std::optional<size_t> maxByteSizeWithExpandedValues(const IColumn & colum
     return res;
 }
 
-/// The memory that a value of an `Enum` in the type takes when it is converted to its name, e.g. by `toString`: the
-/// longest name, its terminating zero, and an offset of `ColumnString`. Zero if there is no `Enum` in the type. The
-/// column of an `Enum` takes only an integer per value, so this is not bounded by its size.
-static size_t maxEnumBytesPerValue(const IDataType & type)
+/// Calls `callback` for every `Enum` in the type, nested ones included, with the memory that its value takes when it
+/// is converted to its name, e.g. by `toString`: the longest name, its terminating zero, and an offset of
+/// `ColumnString`. The column of an `Enum` takes only an integer per value, so this is not bounded by its size.
+static void forEachEnumBytesPerValue(const IDataType & type, const std::function<void(size_t)> & callback)
 {
-    size_t max_name_bytes = 0;
-    bool has_enum = false;
     auto add_names = [&](const auto & values)
     {
-        has_enum = true;
+        size_t max_name_bytes = 0;
         for (const auto & [name, _] : values)
             max_name_bytes = std::max(max_name_bytes, name.size());
+        callback(max_name_bytes + 1 + sizeof(UInt64));
     };
     forEachInTypeTree(type, [&](const IDataType & nested_type)
     {
@@ -199,7 +199,25 @@ static size_t maxEnumBytesPerValue(const IDataType & type)
         else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&nested_type))
             add_names(enum16->getValues());
     });
-    return has_enum ? max_name_bytes + 1 + sizeof(UInt64) : 0;
+}
+
+/// The memory that a value of any single `Enum` in the type takes when it is converted to its name, see
+/// `forEachEnumBytesPerValue`. Zero if there is no `Enum` in the type.
+static size_t maxEnumBytesPerValue(const IDataType & type)
+{
+    size_t res = 0;
+    forEachEnumBytesPerValue(type, [&](size_t bytes) { res = std::max(res, bytes); });
+    return res;
+}
+
+/// The memory that a value of the whole type takes with all its `Enum` values converted to their names, e.g. of all
+/// elements of a `Tuple`. Used for a column filled with defaults, which has no primitive columns to charge each `Enum`
+/// to.
+static size_t sumEnumBytesPerValue(const IDataType & type)
+{
+    size_t res = 0;
+    forEachEnumBytesPerValue(type, [&](size_t bytes) { res += bytes; });
+    return res;
 }
 
 template <typename E>
@@ -1295,7 +1313,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         {
             auto column = info.output_type->createColumn();
             column->insertDefault();
-            info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0) + maxEnumBytesPerValue(*info.output_type));
+            info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0) + sumEnumBytesPerValue(*info.output_type));
         }
         /// The names of the values of an `Enum`, which a query may take for each value, e.g. by `toString`. They are
         /// charged to every primitive column under the type with an `Enum`, which is an upper bound.
