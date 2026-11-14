@@ -43,7 +43,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Planner/PlannerProjections.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -317,32 +317,18 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
-    Block source_block;
-    for (const auto & column : metadata_snapshot->getColumns().getByNames(
-             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
-        source_block.insert({column.type->createColumn(), column.type, column.name});
-
-    /// This is a bad approach.
-    /// We'd better have a separate interpreter for projections.
-    /// Now it's not obvious we didn't miss anything here.
-    ///
-    /// Setting ignoreASTOptimizations is used because some of them are invalid for projections.
-    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
-    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
-    InterpreterSelectQuery interpreter(
-        projection.query_ast,
-        context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(source_block)))),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
-
-    const auto & analysis_result = interpreter.getAnalysisResult();
-    const auto & query_analyzer = interpreter.getQueryAnalyzer();
+    auto source_columns = metadata_snapshot->getColumns().getByNames(
+        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns);
+    /// a projection that only counts rows can need no column, but the planner needs a table with a column
+    if (source_columns.empty())
+        source_columns = metadata_snapshot->getColumns().getAllPhysical();
+    ProjectionPlanner projection_planner(projection.query_ast, ColumnsDescription(std::move(source_columns)), context);
 
     AggregateProjectionInfo info;
-    info.context = interpreter.getContext();
-    info.before_aggregation = analysis_result.before_aggregation->dag.clone();
-    info.keys = query_analyzer->aggregationKeys().getNames();
-    info.aggregates = query_analyzer->aggregates();
+    info.context = projection_planner.getContext();
+    info.before_aggregation = projection_planner.buildBeforeAggregationActions();
+    info.keys = projection_planner.getAggregationKeys();
+    info.aggregates = projection_planner.getAggregates();
 
     /// Add part/partition virtual columns to projection aggregation keys.
     /// We can do it because projection is stored for every part separately.

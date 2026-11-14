@@ -5,15 +5,15 @@ digraph
 {
   rankdir="LR";
   { node [shape = rect]
-    n0[label="MergeTreeSelect_5"];
-    n1[label="FilterTransform_6"];
-    n2[label="ExpressionTransform_7"];
-    n3[label="AggregatingTransform_8"];
-    n4[label="ExpressionTransform_9"];
-    n5[label="PartialSortingTransform_10"];
-    n6[label="LimitsCheckingTransform_11"];
-    n7[label="MergeSortingTransform_12"];
-    n8[label="ExpressionTransform_13"];
+    n0[label="MergeTreeSelect_4"];
+    n1[label="FilterTransform_5"];
+    n2[label="ExpressionTransform_6"];
+    n3[label="AggregatingTransform_7"];
+    n4[label="ExpressionTransform_8"];
+    n5[label="PartialSortingTransform_9"];
+    n6[label="LimitsCheckingTransform_10"];
+    n7[label="MergeSortingTransform_11"];
+    n8[label="ExpressionTransform_12"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -26,21 +26,21 @@ digraph
 }
 
 
-('AggregatingTransform_8','Aggregating_4')
-('ConvertingAggregatedToChunksTransform_18','Aggregating_4')
+('AggregatingTransform_7','Aggregating_4')
+('ConvertingAggregatedToChunksTransform_17','Aggregating_4')
 ('CreatingSetsTransform_2','CreatingSet_23')
 ('EmptySink_3','')
 ('ExpressionTransform_1','Expression_25')
-('ExpressionTransform_13','Expression_18')
-('ExpressionTransform_7','Expression_3')
-('ExpressionTransform_9','Expression_16')
-('FilterTransform_6','Filter_14')
-('LazyOutputFormat_15','')
-('LimitsCheckingTransform_11','Sorting_7')
-('LimitsCheckingTransform_14','')
-('MergeSortingTransform_12','Sorting_7')
-('MergeTreeSelect_5','ReadFromMergeTree_0')
+('ExpressionTransform_12','Expression_18')
+('ExpressionTransform_6','Expression_3')
+('ExpressionTransform_8','Expression_16')
+('FilterTransform_5','Filter_14')
+('LazyOutputFormat_14','')
+('LimitsCheckingTransform_10','Sorting_7')
+('LimitsCheckingTransform_13','')
+('MergeSortingTransform_11','Sorting_7')
+('MergeTreeSelect_4','ReadFromMergeTree_0')
+('NullSource_15','')
 ('NullSource_16','')
-('NullSource_17','')
 ('NumbersRange_0','ReadFromSystemNumbers_19')
-('PartialSortingTransform_10','Sorting_7')
+('PartialSortingTransform_9','Sorting_7')

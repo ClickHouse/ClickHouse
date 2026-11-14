@@ -23,6 +23,8 @@ class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 using ColumnNodes = std::vector<ColumnNodePtr>;
 
+using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
+
 /** Planner actions visitor is responsible for adding necessary actions to calculate query tree expression node
   * into actions dag.
   *
@@ -39,10 +41,12 @@ using ColumnNodes = std::vector<ColumnNodePtr>;
 class PlannerActionsVisitor
 {
 public:
+    /// the visitor reads the names of the nodes from node_to_name and adds new names to it
     explicit PlannerActionsVisitor(
       const PlannerContextPtr & planner_context_,
       const ColumnNodePtrWithHashSet & correlated_columns_set_,
-      bool use_column_identifier_as_action_node_name_ = true);
+      bool use_column_identifier_as_action_node_name_ = true,
+      QueryTreeNodeToName * node_to_name_ = nullptr);
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -54,6 +58,7 @@ private:
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
     bool use_column_identifier_as_action_node_name = true;
+    QueryTreeNodeToName * node_to_name = nullptr;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.
@@ -61,7 +66,6 @@ private:
   *
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-using QueryTreeNodeToName = std::unordered_map<QueryTreeNodePtr, String>;
 String calculateActionNodeName(const QueryTreeNodePtr & node,
     const PlannerContext & planner_context,
     QueryTreeNodeToName & node_to_name,
