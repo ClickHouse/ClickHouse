@@ -902,9 +902,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
     }
 
-    /// Under the restriction the request-auth material of the server `<s3>` config is dropped, so that an anonymous request or one with
-    /// the query's own credentials carries none of it. The headers of the matched endpoint section stay with a request that the static
-    /// keys of the server config sign.
+    /// Under the restriction the server `<s3>` request-auth material is dropped, so that an anonymous request or one with the query's
+    /// own credentials carries none of it. Only a request signed with the server-config keys keeps the matched endpoint's headers.
     if (restrict_server_credentials)
     {
         const auto & auth = s3_settings->auth_settings;
