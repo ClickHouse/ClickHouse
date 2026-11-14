@@ -331,6 +331,10 @@ void processAndOptimizeTextIndexFunctions(
     const FindSingleNodeRead & find_single_node_read,
     const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+/// Whether the step does per-row work that runs once per input stream: a filter, an `ARRAY JOIN`,
+/// an expression that is more than renames and constants. Such a step loses its parallelism when
+/// per-part `PrefetchingConcat` concatenates the streams of a part right at the read.
+bool stepComputesPerStream(const IQueryPlanStep & step);
 /// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
 /// reach it keeps its default stream count.
 void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
@@ -359,7 +363,7 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep`.
 void useShuffleForOrderByRand(QueryPlan::Node & node);
-void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeLimitByInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
