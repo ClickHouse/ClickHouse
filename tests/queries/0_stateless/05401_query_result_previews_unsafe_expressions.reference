@@ -1,0 +1,15 @@
+-- stateful function
+0	65536
+-- stateful function in a lambda
+[65536]
+-- function that throws on an intermediate value
+0
+-- HAVING that throws on an intermediate value
+0	65536
+1	65536
+-- the same queries without previews
+0	65536
+[65536]
+0
+0	65536
+1	65536

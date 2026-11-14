@@ -74,6 +74,12 @@ public:
 
     String getName() const override { return "WindowTransform"; }
 
+    /// Preview chunks are computed standalone by a fresh one-shot transform, out of band
+    /// (see `QueryResultPreview.h`): the window functions apply to the preview alone, so e.g.
+    /// `max(x) OVER ()` is the maximum of the intermediate result and converges to the final value.
+    /// A preview on which a window function throws is dropped.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     Status prepare() override;
     void work() override;
 
@@ -84,6 +90,23 @@ private:
     std::optional<Chunk> pending_input;
     DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
+
+    /// For the standalone evaluation of query result previews (see `QueryResultPreview.h`):
+    /// a copy of the constructor argument to build the fresh one-shot transform, the diverted
+    /// input chunk, and the computed preview waiting for the output port.
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions_for_preview;
+    Chunk query_result_preview_input;
+    Chunk pending_query_result_preview;
+
+    /// Set on the one-shot transform computing a query result preview: the cancellation flag of the
+    /// transform in the pipeline, which the one-shot one is not a part of, so the executor never cancels it.
+    const std::atomic<bool> * outer_cancellation_flag = nullptr;
+
+    void computeQueryResultPreview();
+    bool isCancelledOrOuterCancelled() const
+    {
+        return isCancelled() || (outer_cancellation_flag && outer_cancellation_flag->load(std::memory_order_acquire));
+    }
 
     /// Row walk.
     SlidingBlocks blocks;
@@ -102,6 +125,14 @@ private:
     /// Pending batch for evaluation.
     WindowBounds bounds;
     RowNumber batch_start;
+    /// The number of rows the aggregate functions add to their states to evaluate the pending batch. The batch
+    /// is evaluated early when it exceeds `max_batch_frame_rows`, so that the row walk checks cancellation
+    /// between the batches (see `computeReadyRows`). The frame of the previous row in the partition is needed
+    /// to compute it.
+    Int64 batch_frame_rows = 0;
+    Int64 previous_frame_start = 0;
+    Int64 previous_frame_end = 0;
+    static constexpr Int64 max_batch_frame_rows = 1 << 20;
 };
 
 }

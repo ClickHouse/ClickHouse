@@ -1,3 +1,4 @@
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 
 namespace DB
@@ -15,6 +16,11 @@ StreamInQueryResultCacheTransform::StreamInQueryResultCacheTransform(
 
 void StreamInQueryResultCacheTransform::transform(Chunk & chunk)
 {
+    /// Query result previews (see `QueryResultPreview.h`) are not part of the result and must
+    /// never be written into the query result cache.
+    if (isQueryResultPreview(chunk))
+        return;
+
     compactReplicatedColumns(chunk);
     query_result_cache_writer->buffer(chunk.clone(), chunk_type);
 }

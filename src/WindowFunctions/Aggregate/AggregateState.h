@@ -27,7 +27,9 @@ public:
 
     void recreate();
     void add(const WindowArguments & arguments, Int64 begin, Int64 end);
-    void insertResultInto(IColumn & result);
+    /// `frame_rows` is the number of rows in the state: finalization can cost as much as all of them
+    /// (e.g. `quantileExact` selects over them), so it is charged to the cancellation budget too.
+    void insertResultInto(IColumn & result, Int64 frame_rows);
 
 private:
     AggregateFunctionPtr function;

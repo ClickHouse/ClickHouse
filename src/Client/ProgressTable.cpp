@@ -192,13 +192,13 @@ void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 
 }
 
-void ProgressTable::writeTable(
+bool ProgressTable::writeTable(
     WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &, bool show_table, bool toggle_enabled, bool is_final)
 {
     /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
     /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
     if (message.isCanceled())
-        return;
+        return false;
 
     std::lock_guard lock{mutex};
     message << HIDE_CURSOR;
@@ -206,17 +206,17 @@ void ProgressTable::writeTable(
     {
         message << CLEAR_TO_END_OF_SCREEN << "\nPress the space key to toggle the display of the progress table." << moveUpNLines(1);
         message.next();
-        return;
+        return true;
     }
 
     const auto & event_name_to_event = getEventNameToEvent();
 
     auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
     if (terminal_width < column_event_name_width + COLUMN_VALUE_WIDTH + COLUMN_PROGRESS_WIDTH)
-        return;
+        return false;
 
     if (metrics.empty())
-        return;
+        return false;
 
     message << "\n";
     writeWithWidth(message, COLUMN_EVENT_NAME, column_event_name_width);
@@ -307,6 +307,7 @@ void ProgressTable::writeTable(
         message << "\n\n" << SHOW_CURSOR;
 
     message.next();
+    return true;
 }
 
 void ProgressTable::writeFinalTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & lock)

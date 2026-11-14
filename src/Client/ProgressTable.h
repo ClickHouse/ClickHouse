@@ -25,7 +25,9 @@ public:
     }
 
     /// Write progress table with metrics.
-    void writeTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock,
+    /// Returns whether the band of the terminal below the cursor line was repainted (and so
+    /// anything painted there before, such as a query result preview, is gone from the screen).
+    bool writeTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock,
             bool show_table, bool toggle_enabled, bool is_final);
     void clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
     void writeFinalTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);

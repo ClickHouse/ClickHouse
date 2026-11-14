@@ -331,6 +331,7 @@ Packet MultiplexedConnections::drain()
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
+            case Protocol::Server::PreviewData:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
             case Protocol::Server::Totals:
@@ -451,6 +452,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
+        case Protocol::Server::PreviewData:
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:
         case Protocol::Server::Totals:
