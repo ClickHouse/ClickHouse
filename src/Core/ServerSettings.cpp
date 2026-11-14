@@ -2021,6 +2021,23 @@ Enabling this option is recommended but will lead to increased startup time for 
 ```
 )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
+    DECLARE(Bool, quick_startup, false, R"(
+Start up as fast as possible by skipping the optional work that the server does at startup:
+- `<mlock>` of the executable, as with `mlock_executable` = `false`;
+- remapping of the executable to huge pages, as with `remap_executable` = `false`;
+- the integrity check of the executable, as with `skip_binary_checksum_checks` = `true`;
+- the checks of the environment (such as the clock source, transparent huge pages, memory overcommit, kernel limits, delay accounting and disk readahead), which only produce warnings in `system.warnings`.
+
+The validation of the configuration is not skipped.
+
+The executable code is about 500 MiB, and both the `<mlock>` and the integrity check read all of it. On a cold page cache and a network disk, that takes several seconds, most of the startup time. It is useful where the server is often restarted, such as in tests, benchmarks and short-lived instances. The cost is that the code can be paged out under memory pressure, and a corrupted executable is not detected at startup.
+
+**Example**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+)", 0) \
     DECLARE(SeccompMode, seccomp, SeccompMode::Log, R"(
 What the Linux kernel does when the server makes a system call that it is not supposed to make.
 

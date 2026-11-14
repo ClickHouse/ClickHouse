@@ -3,6 +3,7 @@ import functools
 import hashlib
 import json
 import os
+import re
 from hashlib import md5
 from pathlib import Path
 from typing import List
@@ -98,6 +99,19 @@ class Digest:
                     dataclasses.asdict(artifact_configs[a])
                 )
         filtered_job_dict["provides"] = job_provides_artifact_configs
+        # Docker memory limits (`--memory=`, `--memory-reservation=`, and the
+        # budgets derived from them) are computed from the physical memory of
+        # the host that evaluates the job configs. The digest is calculated in
+        # "Config Workflow", whose runner is not the job's one and has a slightly
+        # different amount of memory from run to run, so these values would give
+        # the job a new digest - and a cache miss - on every run, including a
+        # rerun of the same commit. The job applies the limits of its own runner
+        # anyway. Mask byte counts (10+ digits, 1 GB and more) so they do not
+        # affect the digest.
+        if filtered_job_dict.get("run_in_docker"):
+            filtered_job_dict["run_in_docker"] = re.sub(
+                r"=\d{10,}\b", "=<bytes>", filtered_job_dict["run_in_docker"]
+            )
 
         config_digest = hashlib.md5(
             json.dumps(filtered_job_dict, sort_keys=True).encode()

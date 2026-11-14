@@ -9,9 +9,7 @@ doc_type: 'reference'
 このセクションでは、ClickHouse の SQL 構文について見ていきます。
 ClickHouse は SQL ベースの構文を採用していますが、さまざまな拡張機能や最適化も提供しています。
 
-<div id="query-parsing">
-  ## クエリのパース
-</div>
+## クエリのパース {#query-parsing}
 
 ClickHouse には 2 種類のパーサーがあります。
 
@@ -54,16 +52,12 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
   フォーマットパーサーの詳細については、[Formats](/ja/reference/formats/index) セクションを参照してください。
 </Note>
 
-<div id="spaces">
-  ## 空白
-</div>
+## 空白 {#spaces}
 
 * 構文要素の間には、任意の数の空白文字を入れられます (クエリの先頭と末尾を含む) 。
 * 空白文字には、スペース、タブ、改行、CR、およびフォームフィードが含まれます。
 
-<div id="comments">
-  ## コメント
-</div>
+## コメント {#comments}
 
 ClickHouse は、SQL スタイルと C スタイルの両方のコメントをサポートしています。
 
@@ -87,9 +81,7 @@ SELECT
     # TODO: 時間/分のバリアントを追加する
 ```
 
-<div id="keywords">
-  ## キーワード
-</div>
+## キーワード {#keywords}
 
 ClickHouse のキーワードは、コンテキストに応じて *大文字と小文字を区別する* 場合と *大文字と小文字を区別しない* 場合があります。
 
@@ -114,9 +106,7 @@ ClickHouse のキーワードは、コンテキストに応じて *大文字と�
 SELECT "FROM" FROM table_name
 ```
 
-<div id="identifiers">
-  ## 識別子
-</div>
+## 識別子 {#identifiers}
 
 識別子には、次のものがあります。
 
@@ -127,14 +117,22 @@ SELECT "FROM" FROM table_name
 
 識別子は引用符で囲むことも囲まないこともできますが、推奨されるのは後者です。
 
-引用符で囲まない識別子は、正規表現 `^[a-zA-Z_][0-9a-zA-Z_]*$` に一致する必要があり、[キーワード](#keywords) と同じ名前にはできません。
+引用符で囲まない識別子は、ASCII 英字、数字、アンダースコア (`_`)、ドル記号 (`$`) で構成され、次の規則に従います。
+
+* 英字または `_` で始まる識別子は、正規表現 `^[a-zA-Z_][0-9a-zA-Z_$]*$` に一致します (例: `xyz` や `a$b`)。
+* 識別子は、次の文字が英字、数字、または `_` である場合に限り、`$` で始めることができます (例: `$doc` や `$1`)。`$` 単体は識別子になりません。
+* 識別子は、[数値リテラル](#numeric) でない場合に限り、数字で始めることができます (例: `1x` や `2nd_col`。ただし `1e5` や `0x1F` は不可)。このような識別子には `$` を含めることはできません。
+* 識別子が `$tag$` (`tag` は 1 文字以上の英字、数字、またはアンダースコア) で始まり、同じ `$tag$` がクエリ内の後方に再び現れる場合、最初の `$tag$` から 2 番目の `$tag$` までのテキストは識別子ではなく [ヒアドキュメント](#heredoc) としてパースされます。たとえば、`SELECT 1 AS $a$b, 2 AS $a$c` は失敗します。このような識別子は `` `$a$b` `` のように引用符で囲んでください。
+
+このように綴られた語が常に識別子として解釈されるとは限りません。その位置で [キーワード](#keywords) やリテラルも記述できる場合は、そちらとして解釈されることがあります。たとえば、`SELECT 1 AS from` は動作しますが、`SELECT 1 from` では `from` が `FROM` 句の開始として扱われます。また、式の中では `inf`、`nan`、`true`、`false` という名前のカラムはリテラルとして解釈されます。このような識別子は、`"from"` や `` `inf` `` のように引用符で囲んでください。
+
 有効な識別子と無効な識別子の例については、以下の表を参照してください。
 
-| 有効な識別子                                         | 無効な識別子                                 |
-| ---------------------------------------------- | -------------------------------------- |
-| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+| 有効な識別子                                                              | 無効な識別子                                        |
+| ------------------------------------------------------------------- | --------------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_`, `a$b`, `$doc`, `1x` | `1a$b`, `$`, `tom@gmail.com`, `äußerst_schön` |
 
-キーワードと同じ名前の識別子を使いたい場合や、識別子に他の記号を使いたい場合は、たとえば `"id"` や `` `id` `` のように、二重引用符またはバッククォートで囲んでください。
+キーワードと同じ名前の識別子を使いたい場合や、識別子に他の記号を使いたい場合は、たとえば `"id"` や `` `id` `` のように、ダブルクォートまたはバッククォートで囲んでください。
 
 <Note>
   引用符付き識別子のエスケープに関する規則は、文字列リテラルにも同様に適用されます。詳細については [String](#string) を参照してください。
@@ -149,9 +147,7 @@ SELECT "FROM" FROM table_name
   意図的に `Nested` のセマンティクスが必要な場合を除き、カラム名のドットの代わりにアンダースコア (`_`) や別の区切り文字を使用してください。
 </Tip>
 
-<div id="literals">
-  ## リテラル
-</div>
+## リテラル {#literals}
 
 ClickHouse では、リテラルとはクエリ内に直接記述される値のことです。
 つまり、クエリの実行中に変化しない固定の値です。
@@ -166,9 +162,7 @@ ClickHouse では、リテラルとはクエリ内に直接記述される値の
 
 以下の各セクションで、それぞれについて詳しく見ていきます。
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 文字列リテラルはシングルクォートで囲む必要があります。ダブルクォートはサポートされていません。
 
@@ -206,9 +200,7 @@ ClickHouse では、リテラルとはクエリ内に直接記述される値の
   文字列リテラルでは、少なくとも `'` と `\` は、エスケープコード `\'` (または `''`) および `\\` を使ってエスケープする必要があります。
 </Note>
 
-<div id="numeric">
-  ### Numeric
-</div>
+### Numeric {#numeric}
 
 数値リテラルは、次のようにパースされます。
 
@@ -263,9 +255,7 @@ ClickHouse では、リテラルとはクエリ内に直接記述される値の
   解釈ミスを避けるため、8 進数リテラルはサポートされていません。
 </Note>
 
-<div id="compound">
-  ### 複合型
-</div>
+### 複合型 {#compound}
 
 Array は `[]` で構築します: `[1, 2, 3]`。Tuple は `()` で構築します: `(1, 'Hello, world!', 2)`。
 厳密には、これらはリテラルではなく、それぞれ Array 作成演算子および Tuple 作成演算子を使った式です。
@@ -276,9 +266,7 @@ Array は少なくとも 1 つの要素を含んでいる必要があり、Tuple
   クエリ結果には Tuple を含めることができますが、Tuple をデータベースに保存することはできません ([Memory](/ja/reference/engines/table-engines/special/memory) エンジンを使用するテーブルを除く) 。
 </Note>
 
-<div id="null">
-  ### NULL
-</div>
+### NULL {#null}
 
 `NULL` は、値が存在しないことを示すために使用されます。
 テーブルのフィールドに `NULL` を格納するには、そのフィールドが [Nullable](/ja/reference/data-types/nullable) 型である必要があります。
@@ -291,9 +279,7 @@ Array は少なくとも 1 つの要素を含んでいる必要があり、Tuple
   * クエリでは、[`IS NULL`](/ja/reference/functions/regular-functions/functions-for-nulls#isNull) および [`IS NOT NULL`](/ja/reference/functions/regular-functions/functions-for-nulls#isNotNull) 演算子、ならびに関連する関数 `isNull` と `isNotNull` を使用して `NULL` を確認できます。
 </Note>
 
-<div id="heredoc">
-  ### ヒアドキュメント
-</div>
+### ヒアドキュメント {#heredoc}
 
 [ヒアドキュメント](https://en.wikipedia.org/wiki/Here_document) は、元のフォーマットを保ったまま文字列 (多くの場合、複数行) を定義する方法です。
 ヒアドキュメント は、2 つの `$` 記号の間に置くカスタム文字列リテラルとして定義します。
@@ -316,9 +302,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   * ヒアドキュメントを使うと、SQL、HTML、XML などのコードスニペットを埋め込めます。
 </Tip>
 
-<div id="defining-and-using-query-parameters">
-  ## クエリパラメータの定義と使用
-</div>
+## クエリパラメータの定義と使用 {#defining-and-using-query-parameters}
 
 クエリパラメータを使用すると、具体的な識別子の代わりに抽象的なプレースホルダーを含む汎用的なクエリを記述できます。
 クエリパラメータを含むクエリを実行すると、
@@ -387,9 +371,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   主に、識別子またはリテラルの代わりとして `SELECT` ステートメント内で使用することを想定して設計されています。
 </Note>
 
-<div id="functions">
-  ## 関数
-</div>
+## 関数 {#functions}
 
 関数呼び出しは、識別子に `()` で囲んだ引数のリスト (空の場合もあります) を続ける形で記述します。
 標準SQLとは異なり、引数のリストが空であっても括弧は必須です。
@@ -417,9 +399,7 @@ quantile (0.9)(x)
   パラメーターのない集約関数の構文は、通常の関数と同じです。
 </Note>
 
-<div id="operators">
-  ## 演算子
-</div>
+## 演算子 {#operators}
 
 演算子は、クエリのパース時に、優先順位と結合規則を考慮して対応する関数に変換されます。
 
@@ -435,9 +415,7 @@ quantile (0.9)(x)
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
-<div id="data-types-and-database-table-engines">
-  ## データ型とデータベースのテーブルエンジン
-</div>
+## データ型とデータベースのテーブルエンジン {#data-types-and-database-table-engines}
 
 `CREATE`クエリ内のデータ型とテーブルエンジンは、識別子や関数と同じように記述します。
 つまり、括弧付きの引数リストを含むことも、含まないこともあります。
@@ -448,9 +426,7 @@ plus(plus(1, multiply(2, 3)), 4)`
 * [テーブルエンジン](/ja/reference/engines/table-engines/index)
 * [CREATE](/ja/reference/statements/create/index).
 
-<div id="expressions">
-  ## 式
-</div>
+## 式 {#expressions}
 
 式には、次のいずれかを指定できます。
 
@@ -470,9 +446,7 @@ plus(plus(1, multiply(2, 3)), 4)`
 定数式とは、クエリ解析中、つまり実行前に結果が判明している式です。
 たとえば、リテラルに対する式は定数式です。
 
-<div id="expression-aliases">
-  ## 式の別名
-</div>
+## 式の別名 {#expression-aliases}
 
 別名とは、クエリ内の[式](#expressions)に付けるユーザー定義の名前です。
 
@@ -488,9 +462,7 @@ expr AS alias
 | `expr`  | ClickHouse でサポートされる任意の式です。                                                 | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                          |
 | `alias` | `expr` に付ける名前です。別名は [identifiers](#identifiers) の構文に従う必要があります。             | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                          |
 
-<div id="notes-on-usage">
-  ### 使用上の注意
-</div>
+### 使用上の注意 {#notes-on-usage}
 
 * 別名はクエリまたはサブクエリ全体で有効で、任意の式に対する別名をクエリ内のどの部分でも定義できます。たとえば、次のようになります。
 
@@ -539,9 +511,7 @@ ClickHouse は式 `argMax(a, b)` 内の `b` を式 `sum(b)` に置き換えま�
   この既定の動作は、[prefer&#95;column&#95;name&#95;to&#95;alias](/ja/reference/settings/session-settings/prefer#prefer_column_name_to_alias) を `1` に設定することで変更できます。
 </Note>
 
-<div id="asterisk">
-  ## アスタリスク
-</div>
+## アスタリスク {#asterisk}
 
 `SELECT`クエリでは、アスタリスクを式の代わりに使用できます。
 詳しくは、[SELECT](/ja/reference/statements/select/index#asterisk)のセクションを参照してください。

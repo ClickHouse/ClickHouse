@@ -6,8 +6,6 @@ keywords: ['part']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="what-are-table-parts-in-clickhouse">
   ## ClickHouse의 테이블 파트란 무엇입니까?
 </div>
@@ -34,7 +32,15 @@ ORDER BY (town, street);
 
 테이블에 행 집합이 삽입될 때마다 데이터 파트가 생성됩니다. 아래 다이어그램은 이를 개략적으로 보여줍니다:
 
-<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/part.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -68,7 +74,15 @@ ClickHouse 서버가 위 다이어그램에 표시된 4개 행의 예시 삽입(
 
 테이블별 파트 수를 관리하기 위해 [백그라운드 머지](/ko/concepts/core-concepts/merges) 작업이 주기적으로 더 작은 파트를 더 큰 파트로 머지하며, [설정 가능한](/ko/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) 압축된 크기(일반적으로 약 150 GB)에 도달할 때까지 이 과정을 반복합니다. 머지된 파트는 비활성 상태로 표시되며, [설정 가능한](/ko/reference/settings/merge-tree-settings/other#old_parts_lifetime) 시간 간격이 지나면 삭제됩니다. 시간이 지나면서 이 과정은 머지된 파트의 계층적 구조를 형성하며, 이것이 MergeTree 테이블이라는 이름이 붙은 이유입니다:
 
-<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/merges.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

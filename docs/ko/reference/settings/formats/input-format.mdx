@@ -131,8 +131,8 @@ CapnProto 포맷의 스키마 추론 시 지원되지 않는 타입의 컬럼을
 지원되는 모드:
 
 * match&#95;case: 대소문자를 구분하여 일치
-  * ignore&#95;case: 대소문자를 구분하지 않고 일치
-  * auto: 먼저 대소문자를 구분하여 일치를 시도하고, 실패하면 대소문자를 구분하지 않고 일치를 시도합니다.
+* ignore&#95;case: 대소문자를 구분하지 않고 일치
+* auto: 먼저 대소문자를 구분하여 일치를 시도하고, 실패하면 대소문자를 구분하지 않고 일치를 시도합니다.
 
 ## input_format_connection_handling {#input_format_connection_handling}
 
@@ -855,7 +855,7 @@ ORC 포맷에서 스키마 추론 시 지원되지 않는 타입의 컬럼을 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquet 파일의 geo 컬럼을 사용하기 위한 새로운 설정"}]}]} />
 
-geo 컬럼 파서를 사용해 Array(UInt8)을 Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon 타입으로 변환합니다
+Parquet 파일을 읽을 때 지오메트리 컬럼을 ClickHouse 기하 데이터 타입(geo types)(`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` 또는 `Geometry`)으로 디코딩합니다. GeoParquet `geo` 메타데이터에 기술된 컬럼과 Parquet `GEOMETRY` 또는 `GEOGRAPHY` 논리 타입이 지정된 컬럼에 적용됩니다. 비활성화하면 지리 데이터 타입(geo type)을 명시적으로 요청하지 않는 한 이러한 컬럼은 원시 WKB(또는 WKT) 바이트를 담은 `String`으로 읽힙니다.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -878,6 +878,14 @@ Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE 표현식과 블�
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Parquet 컬럼을 CH 컬럼과 매칭할 때 대소문자를 구분하지 않습니다.
+
+## input_format_parquet_detect_variant_by_structure {#input_format_parquet_detect_variant_by_structure}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`VARIANT` 논리 타입이 없는 Spark variant 컬럼을 `Tuple` 대신 `Dynamic`으로 읽기 위한 새로운 설정"}]}]} />
+
+`VARIANT` 논리 타입은 없지만 shredding되지 않은 variant의 레이아웃(layout)(`BYTE_ARRAY` 타입의 `metadata` 필드와 `value` 필드)을 갖는 Parquet 그룹을 `Tuple`이 아닌 variant, 즉 `Dynamic`으로 읽습니다. Spark 4.0은 variant 컬럼을 이러한 방식으로 기록합니다. `VARIANT` 논리 타입이 지정된 그룹은 항상 variant로 읽습니다.
 
 ## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
@@ -913,9 +921,9 @@ Parquet 파일을 읽을 때 WHERE/PREWHERE 표현식과 Parquet 메타데이터
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "적응형 Parquet 푸터 초기 읽기 크기를 고정 바이트 수로 재정의하는 새로운 설정입니다. 0으로 설정하면 적응형 동작이 유지됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Parquet 푸터 초기 읽기 크기에 대한 새로운 설정입니다. 0으로 설정하면 로컬 파일은 64 KiB를 읽고, 그 외 소스에서는 읽기 크기를 적응적으로 결정합니다."}]}]} />
 
-리더 v3으로 파일을 열 때 Parquet 푸터(`FileMetaData`)를 가져오기 위해 파일 끝부분에서 처음 읽어 들이는 크기(바이트 단위)입니다. `0`(기본값)이면 읽기 크기가 파일에 맞춰 적응적으로 결정됩니다. 즉, 파일 크기의 1%를 `[128 KiB, 2 MiB]` 범위로 제한한 값을 사용하므로, 컬럼이 수백 개인 wide 파일이라도 대개 한 번의 읽기로 푸터 전체를 가져올 수 있습니다. 적응형 크기 대신 고정된 초기 읽기 크기를 사용하려면 0이 아닌 값을 설정하십시오. 이 설정은 지연 시간이 매우 긴 객체 스토리지에서 유용하며, 처음부터 끝부분을 더 크게 읽어 두 번째 왕복 요청을 피할 수 있습니다. 이 값은 파일 크기를 초과하지 않도록 제한됩니다.
+리더 v3으로 파일을 열 때 Parquet 푸터(`FileMetaData`)를 가져오기 위해 파일 끝부분에서 처음 읽어 들이는 크기(바이트 단위)입니다. `0`(기본값)이면 로컬 파일 시스템에서 파일을 직접 읽을 때는 끝부분 64 KiB를 읽고, 그 외 소스(객체 스토리지, URL, HDFS)에서는 읽기 크기가 적응적으로 결정됩니다. 즉, 파일 크기의 1%를 `[128 KiB, 2 MiB]` 범위로 제한한 값을 사용하므로, 컬럼이 수백 개인 wide 파일이라도 대개 한 번의 읽기로 푸터 전체를 가져올 수 있습니다. 적응형 크기 대신 고정된 초기 읽기 크기를 사용하려면 0이 아닌 값을 설정하십시오. 이 설정은 지연 시간이 매우 긴 객체 스토리지에서 유용하며, 처음부터 끝부분을 더 크게 읽어 두 번째 왕복 요청을 피할 수 있습니다. 이 값은 파일 크기를 초과하지 않도록 제한됩니다.
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 

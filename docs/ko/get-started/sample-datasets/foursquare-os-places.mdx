@@ -7,8 +7,6 @@ keywords: ['예시 데이터셋', 'Foursquare', '지리 공간', 'Iceberg', '시
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 Foursquare OS Places에는 상점, 레스토랑, 공원, 놀이터, 기념물 등 1억 개가 넘는 상업 시설 관심 지점(POI)이 포함되어 있습니다. 이 가이드에서는 ClickHouse를 Foursquare의 Iceberg 카탈로그에 연결하고, 데이터셋을 살펴본 다음 지리 공간 쿼리에 최적화된 테이블로 로드합니다.
 
 데이터셋은 [Foursquare Places Portal](https://places.foursquare.com/)에서 제공되며, Apache 2.0 라이선스에 따라 무료로 사용할 수 있습니다.
@@ -369,10 +367,42 @@ WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 사내 해커톤에서 ClickHouse 공동 창립자이자 CTO인 Alexey Milovidov는 ClickHouse를 사용하여
 Foursquare 데이터셋에서 다음 시각화를 만들었습니다.
 
-<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="유럽 내 관심 지점의 밀도 지도" />
+<div className="ch-image-md">
 
-<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="일본의 사케 바" />
+<Frame>
 
-<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="ATM" />
+![유럽 내 관심 지점의 밀도 지도](/images/getting-started/example-datasets/visualization_1.webp)
 
-<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="국가별로 분류된 관심 지점이 표시된 유럽 지도" />
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![일본의 사케 바](/images/getting-started/example-datasets/visualization_2.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![ATM](/images/getting-started/example-datasets/visualization_3.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![국가별로 분류된 관심 지점이 표시된 유럽 지도](/images/getting-started/example-datasets/visualization_4.webp)
+
+</Frame>
+
+</div>

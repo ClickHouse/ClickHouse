@@ -6,11 +6,9 @@ tags: ['Seguridad y autenticación', 'Administración de Cloud']
 keywords: ['Confluent Cloud', 'PrivateLink', 'Private Service Connect', 'Kafka', 'ClickPipes']
 ---
 
-<div id="overview">
-  ## Descripción general
-</div>
+## Descripción general {#overview}
 
-Esta guía explica cómo conectar ClickPipes a un clúster de Kafka existente de Confluent Cloud mediante conectividad privada.
+Esta guía explica cómo conectar ClickPipes a un clúster de Kafka existente de Confluent Cloud mediante conectividad de red privada.
 
 Usa esta guía para:
 
@@ -21,18 +19,12 @@ Esta guía asume que el clúster de Kafka de Confluent Cloud, el topic y las cre
 Se centra en la conectividad privada y en los reverse private endpoints (RPE) de ClickPipes.
 
 <Warning>
-  Actualmente, no puedes completar esta configuración de Confluent Cloud usando solo la consola de ClickHouse Cloud.
-
-  Confluent Cloud requiere varias asignaciones personalizadas de DNS privado para un único reverse private endpoint.
-  La consola de ClickHouse Cloud actualmente solo admite un nombre de DNS privado personalizado por RPE.
-
-  Usa la [OpenAPI de ClickHouse Cloud](/es/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
-  o Terraform para crear o actualizar las asignaciones personalizadas de DNS de los RPE.
+  Con los puntos de acceso sin servidor de Confluent Cloud, es necesario actualizar las asignaciones de DNS del RPE después de crear el punto de acceso.
+  Usa la [OpenAPI de ClickHouse Cloud](/es/products/cloud/api-reference/clickpipes/update-reverse-private-endpoint)
+  o Terraform para actualizar un RPE existente. La consola admite varios nombres DNS privados personalizados al crear un RPE.
 </Warning>
 
-<div id="how-the-setup-works">
-  ## Cómo funciona la configuración
-</div>
+## Cómo funciona la configuración {#how-the-setup-works}
 
 Los client de Kafka se conectan a un hostname de bootstrap, recuperan metadata y luego se conectan a los hostnames de los broker que anuncia Confluent Cloud.
 En las redes privadas de Confluent Cloud, esos hostnames deben resolverse dentro de la red de ClickPipes al endpoint privado creado por ClickPipes.
@@ -43,24 +35,17 @@ ClickPipes usa:
 * Asignaciones personalizadas de DNS privado en ese RPE para que los hostnames de bootstrap y de broker de Confluent se resuelvan de forma privada.
 * El endpoint de bootstrap de Kafka de Confluent Cloud como dirección del broker en el ClickPipe.
 
-<div id="requirements">
-  ## Requisitos
-</div>
+## Requisitos {#requirements}
 
 * Un servicio de ClickHouse Cloud en el que crearás el Kafka ClickPipe.
 * Un clúster de Kafka de Confluent Cloud en la misma nube y región a las que quieras conectarte de forma privada.
 * Una clave de API de Kafka o credenciales de una cuenta de servicio que ClickPipes pueda usar.
-* Para AWS PrivateLink, el [DNS privado personalizado de ClickPipes](/es/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) está en vista previa privada; ponte en contacto con el soporte de ClickHouse si no está habilitado en tu servicio.
 
-<div id="dedicated-clusters">
-  ## Clústeres Dedicated
-</div>
+## Clústeres Dedicated {#dedicated-clusters}
 
 Utiliza esta sección para los clústeres Dedicated de Confluent Cloud conectados mediante una red privada de Confluent.
 
-<div id="collect-dedicated-network-details">
-  ### Recopile los detalles de red de Confluent Cloud
-</div>
+### Recopile los detalles de red de Confluent Cloud {#collect-dedicated-network-details}
 
 En la red de Confluent Cloud asociada a su clúster Dedicated, recopile lo siguiente:
 
@@ -73,9 +58,7 @@ Los valores de zona forman parte de los nombres DNS que ClickPipes debe resolver
 En AWS, son ID de zonas de disponibilidad como `use1-az1`.
 En GCP, son zonas como `us-central1-a`.
 
-<div id="authorize-clickpipes-dedicated">
-  ### Autoriza ClickPipes en Confluent Cloud
-</div>
+### Autoriza ClickPipes en Confluent Cloud {#authorize-clickpipes-dedicated}
 
 Agrega una entrada de acceso de PrivateLink o PSC en Confluent Cloud para la identidad del consumidor de ClickPipes:
 
@@ -84,20 +67,17 @@ Agrega una entrada de acceso de PrivateLink o PSC en Confluent Cloud para la ide
 
 Esta autorización es necesaria para que el RPE de ClickPipes pueda conectarse a la red privada de Confluent Cloud.
 
-<div id="create-dedicated-rpes">
-  ### Cree los RPE de ClickPipes
-</div>
+### Cree los RPE de ClickPipes {#create-dedicated-rpes}
 
-Cree los RPE con [OpenAPI](/es/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
-o Terraform.
+Cree los RPE en la consola de ClickHouse Cloud, con
+[OpenAPI](/es/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) o con Terraform.
+En la consola, use `Add DNS name` para adjuntar varios nombres DNS privados personalizados al RPE.
 
 Con OpenAPI, use `customPrivateDnsMappings` en la solicitud de creación.
 Si actualiza un RPE existente con la [operación de actualización](/es/products/cloud/api-reference/clickpipes/update-reverse-private-endpoint),
 recuerde que `customPrivateDnsMappings` es una lista de reemplazo completa.
 
-<div id="aws-dedicated">
-  #### AWS Dedicated
-</div>
+#### AWS Dedicated {#aws-dedicated}
 
 Cree un RPE `VPC_ENDPOINT_SERVICE` que apunte al servicio de endpoint de PrivateLink de Confluent Cloud.
 
@@ -130,9 +110,7 @@ Ejemplo de cuerpo de la solicitud de OpenAPI:
 }
 ```
 
-<div id="gcp-dedicated">
-  #### GCP Dedicated
-</div>
+#### GCP Dedicated {#gcp-dedicated}
 
 Cree un `GCP_PSC_SERVICE_ATTACHMENT` RPE por cada zona de Confluent Cloud.
 Cada RPE apunta al service attachment de PSC de esa zona.
@@ -173,15 +151,11 @@ Ejemplo del cuerpo de la solicitud de OpenAPI para additional-zone:
 }
 ```
 
-<div id="serverless-clusters">
-  ## Clústeres sin servidor
-</div>
+## Clústeres sin servidor {#serverless-clusters}
 
 Utiliza esta sección para los clústeres sin servidor de Confluent Cloud que usan gateways privados de ingreso y puntos de acceso de Confluent.
 
-<div id="create-ingress-gateway">
-  ### Crear una puerta de enlace de Ingreso para conectividad privada de Confluent
-</div>
+### Crear una puerta de enlace de Ingreso para conectividad privada de Confluent {#create-ingress-gateway}
 
 Cree la puerta de enlace de Ingreso privada en Confluent Cloud para la misma nube y región que el clúster de Kafka de Confluent:
 
@@ -193,9 +167,7 @@ Anote el destino de la puerta de enlace al que ClickPipes debe conectarse:
 * AWS: el nombre del servicio de VPC endpoint de la puerta de enlace.
 * GCP: el service attachment de PSC de la puerta de enlace.
 
-<div id="create-serverless-rpe">
-  ### Crear el RPE de ClickPipes
-</div>
+### Crear el RPE de ClickPipes {#create-serverless-rpe}
 
 Cree un RPE de ClickPipes para el gateway de Ingreso de Confluent.
 
@@ -222,9 +194,7 @@ En GCP, cree un RPE `GCP_PSC_SERVICE_ATTACHMENT`:
 Espere hasta que la respuesta del RPE incluya un `endpointId`.
 Necesitará este ID para crear el punto de acceso de Confluent.
 
-<div id="create-access-point">
-  ### Crear el punto de acceso de Confluent
-</div>
+### Crear el punto de acceso de Confluent {#create-access-point}
 
 Cree un punto de acceso de ingreso de Confluent Cloud para el endpoint de ClickPipes:
 
@@ -236,9 +206,7 @@ Después de crear el punto de acceso, recopile lo siguiente:
 * El dominio DNS del punto de acceso, que se muestra a continuación como `{access_point_dns_domain}`.
 * El endpoint de bootstrap del punto de acceso.
 
-<div id="patch-serverless-rpe-dns">
-  ### Aplique un parche a las asignaciones personalizadas de DNS privado del RPE
-</div>
+### Aplique un parche a las asignaciones personalizadas de DNS privado del RPE {#patch-serverless-rpe-dns}
 
 Aplique al RPE de ClickPipes ambas asignaciones personalizadas de DNS privado:
 
@@ -266,9 +234,7 @@ Ejemplo de cuerpo de la solicitud de actualización de OpenAPI:
   actualmente no es posible crear varios puntos de acceso de Ingreso de Confluent en la misma cloud y región para el mismo servicio de ClickHouse.
 </Note>
 
-<div id="terraform-setup">
-  ## Configuración de Terraform
-</div>
+## Configuración de Terraform {#terraform-setup}
 
 Con Terraform, utilice:
 
@@ -283,9 +249,7 @@ Los módulos de Terraform de ClickPipes también proporcionan ejemplos completos
 Utilice los mismos patrones de asignación de DNS de esta guía.
 En Terraform, los nombres de campo usan snake&#95;case, por ejemplo `vpc_endpoint_service_name`, `gcp_service_attachment` y `private_dns_name`.
 
-<div id="create-the-kafka-clickpipe">
-  ## Crear el Kafka ClickPipe
-</div>
+## Crear el Kafka ClickPipe {#create-the-kafka-clickpipe}
 
 Después de que los RPE estén listos:
 
@@ -298,9 +262,7 @@ Después de que los RPE estén listos:
 Si usas Confluent Schema Registry a través de Private networking, configura la URL del schema registry en el ClickPipe y asegúrate de que su hostname se resuelva mediante la misma configuración de DNS privada personalizada del RPE.
 Para obtener más información, consulta [Registros de esquemas para Kafka ClickPipe](/es/integrations/clickpipes/kafka/schema-registries).
 
-<div id="troubleshooting">
-  ## Solución de problemas
-</div>
+## Solución de problemas {#troubleshooting}
 
 * Si el RPE sigue pendiente, verifica la autorización de red privada de Confluent Cloud y acepta o completa la conexión en Confluent Cloud.
 * Si falla la comprobación de conectividad de ClickPipe, verifica que cada hostname de bootstrap y de broker devuelto por Confluent Cloud coincida con una de las asignaciones personalizadas de DNS privado.
