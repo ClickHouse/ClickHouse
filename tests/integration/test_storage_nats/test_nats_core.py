@@ -531,6 +531,34 @@ def test_nats_insert(nats_cluster):
     nats_helpers.check_result(result, True)
 
 
+def test_nats_insert_materialized_column(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, m UInt64 MATERIALIZED a * 10, b UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert_materialized',
+                     nats_format = 'TSV',
+                     nats_row_delimiter = '\\n';
+    """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    async def insert_and_receive():
+        nc = await nats_connect_ssl(nats_cluster)
+        sub = await nc.subscribe("insert_materialized")
+        await nc.flush()
+        await asyncio.to_thread(
+            instance.query_with_retry, "INSERT INTO test.nats (a, b) VALUES (1, 2), (3, 4)"
+        )
+        messages = [(await sub.next_msg(60)).data.decode() for _ in range(2)]
+        await nc.drain()
+        return messages
+
+    # The MATERIALIZED column sits between the ordinary ones and is not written to the messages.
+    assert asyncio.run(insert_and_receive()) == ["1\t2\n", "3\t4\n"]
+
+
 def test_fetching_messages_without_mv(nats_cluster):
     instance.query(
         """
