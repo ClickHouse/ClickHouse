@@ -1160,7 +1160,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&attribute_column))
                     {
                         values_column = &nullable_column->getNestedColumn();
-                        null_map = &nullable_column->getNullMapData();
+                        null_map = nullable_column->tryGetNullMapData();
                     }
                 }
 

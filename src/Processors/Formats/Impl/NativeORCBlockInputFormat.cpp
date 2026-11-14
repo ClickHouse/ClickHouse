@@ -2532,7 +2532,7 @@ matchORCTupleElementsByName(const ColumnWithTypeAndName & column, const DataType
             removeNullable(requested_type),
             case_insensitive);
         return {
-            ColumnNullable::create(nested.column, nullable_column.getNullMapColumnPtr()),
+            ColumnNullable::create(nested.column, nullable_column.tryGetNullMapColumnPtr()),
             std::make_shared<DataTypeNullable>(nested.type),
             column.name};
     }
