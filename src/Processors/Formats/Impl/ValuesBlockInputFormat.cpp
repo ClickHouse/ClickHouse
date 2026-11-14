@@ -468,6 +468,81 @@ namespace
             }
         }
     }
+
+    /// Whether a value has a NULL at any depth in a place where its type cannot hold one.
+    bool hasNullThatTypeCannotHold(const Field & value, const IDataType & data_type)
+    {
+        checkStackSize();
+
+        if (value.isNull())
+            return !canContainNull(data_type);
+
+        const auto type = removeNullable(removeLowCardinality(data_type.getPtr()));
+
+        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()); type_array && value.getType() == Field::Types::Array)
+        {
+            const auto & element_type = *type_array->getNestedType();
+            return std::ranges::any_of(value.safeGet<Array>(), [&](const Field & element) { return hasNullThatTypeCannotHold(element, element_type); });
+        }
+
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()); type_tuple && value.getType() == Field::Types::Tuple)
+        {
+            const auto & tuple = value.safeGet<Tuple>();
+            const auto & element_types = type_tuple->getElements();
+            for (size_t i = 0; i < std::min(tuple.size(), element_types.size()); ++i)
+                if (hasNullThatTypeCannotHold(tuple[i], *element_types[i]))
+                    return true;
+            return false;
+        }
+
+        if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()); type_map && value.getType() == Field::Types::Map)
+        {
+            return std::ranges::any_of(value.safeGet<Map>(), [&](const Field & entry)
+            {
+                const auto & key_and_value = entry.safeGet<Tuple>();
+                return hasNullThatTypeCannotHold(key_and_value[0], *type_map->getKeyType())
+                    || hasNullThatTypeCannotHold(key_and_value[1], *type_map->getValueType());
+            });
+        }
+
+        return false;
+    }
+
+    /// Whether `value` is a string that the text of a `Nullable` or `Variant` type reads as NULL, such as 'NULL'.
+    bool isNullText(const Field & value)
+    {
+        if (value.getType() != Field::Types::String)
+            return false;
+        ReadBufferFromString buf(value.safeGet<String>());
+        return SerializationNullable::tryDeserializeNullText(buf) && buf.eof();
+    }
+
+    /// Whether the conversion of `source` gave NULL at any depth where `source` is not NULL: the element there does not fit its type.
+    /// An element of a `Nullable` type that does not fit becomes NULL inside a value that stays non-NULL. A string read as NULL, such
+    /// as 'NULL' for a `Variant` element, is a NULL of the source.
+    bool hasNullFromFailedConversion(const Field & source, const Field & converted)
+    {
+        checkStackSize();
+
+        if (converted.isNull())
+            return !source.isNull() && !isNullText(source);
+
+        auto any_element = [](const auto & source_elements, const auto & converted_elements)
+        {
+            for (size_t i = 0; i < std::min(source_elements.size(), converted_elements.size()); ++i)
+                if (hasNullFromFailedConversion(source_elements[i], converted_elements[i]))
+                    return true;
+            return false;
+        };
+
+        if (source.getType() == Field::Types::Array && converted.getType() == Field::Types::Array)
+            return any_element(source.safeGet<Array>(), converted.safeGet<Array>());
+        if (source.getType() == Field::Types::Tuple && converted.getType() == Field::Types::Tuple)
+            return any_element(source.safeGet<Tuple>(), converted.safeGet<Tuple>());
+        if (source.getType() == Field::Types::Map && converted.getType() == Field::Types::Map)
+            return any_element(source.safeGet<Map>(), converted.safeGet<Map>());
+        return false;
+    }
 }
 
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
@@ -679,6 +754,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
     /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
     Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+
+    /// A value of a composite type with an element that does not fit, e.g. a `Map` with a negative value for `UInt64`, is converted to NULL,
+    /// or, for an element of a `Nullable` type, gets NULL in place of that element, e.g. `map('a', tuple(-1, 'kept'))` for
+    /// `Map(String, Nullable(Tuple(UInt64, String)))`. It is not a NULL value: inserting NULL or the default instead would silently lose the
+    /// value, so it is rejected. A NULL element that the type cannot hold is reported as a NULL below (with `input_format_null_as_default` it
+    /// is replaced above), but a NULL in a `Nullable` element of the source is valid and stays. A `Variant` converts the value to one of its
+    /// types, so an element of a composite one can get NULL the same way; when no type fits, the whole value is NULL, as for a scalar.
+    const auto nested_type = removeNullable(removeLowCardinality(type.getPtr()));
+    const bool is_composite = isArray(nested_type) || isMap(nested_type) || isTuple(nested_type);
+    if ((is_composite || (isVariant(nested_type) && !value.isNull())) && !expression_value.isNull()
+        && !hasNullThatTypeCannotHold(expression_value, type) && hasNullFromFailedConversion(expression_value, value))
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot convert value '{}' from {}: it cannot be represented as {}",
+                        fieldToString(expression_value), value_raw.second->getName(), type.getName());
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !canContainNull(type))
