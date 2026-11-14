@@ -1060,6 +1060,7 @@ private:
         const Stopwatch & watch,
         ProfileEventsScope & profile_events_scope,
         const StorageMetadataPtr & metadata_snapshot,
+        const StorageMetadataPtr & source_metadata_snapshot,
         const MergeTreeData & src_data,
         const String & partition_id,
         const zkutil::ZooKeeperPtr & zookeeper,
