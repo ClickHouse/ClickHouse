@@ -19,7 +19,10 @@
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateHandlerQuery.h>
+#include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserCreateResourceQuery.h>
+#include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
@@ -64,14 +67,17 @@ void registerParsers()
     registry.registerParser<ParserColumnsTransformers>();
     registry.registerParser<ParserCreateFunctionQuery>();
     registry.registerParser([]() -> std::unique_ptr<IParserBase> { return std::make_unique<ParserCreateHandlerQuery>(/*end_*/ nullptr); });
+    registry.registerParser<ParserCreateIndexQuery>();
     registry.registerParser<ParserCreateMaskingPolicy>();
     registry.registerParser<ParserCreateQuery>();
     registry.registerParser<ParserCreateQuotaQuery>();
+    registry.registerParser<ParserCreateResourceQuery>();
     registry.registerParser<ParserCreateRoleQuery>();
     registry.registerParser<ParserCreateRowPolicyQuery>();
     registry.registerParser<ParserCreateSettingsProfileQuery>();
     registry.registerParser<ParserCreateTokenQuery>();
     registry.registerParser<ParserCreateUserQuery>();
+    registry.registerParser<ParserCreateWorkloadQuery>();
     registry.registerParser<ParserDeleteQuery>();
     registry.registerParser<ParserDescribeTableQuery>();
     registry.registerParser<ParserDropQuery>();

@@ -11,6 +11,9 @@ namespace DB
 
 class ParserCreateIndexQuery : public IParserBase
 {
+public:
+    std::map<String, Documentation> getDocumentation() const override;
+
 protected:
     const char * getName() const override { return "CREATE INDEX query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
