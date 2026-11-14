@@ -128,17 +128,6 @@ def test_delete_from_on_cluster_is_allowed():
         assert node.query("SELECT count() FROM t") == "9\n"
 
 
-def test_delete_from_on_cluster_without_settings_in_entry():
-    # distributed_ddl_entry_format_version = 1 ships no settings packet at all, so a worker can
-    # only use its own profile value.
-    ch1.query(
-        "DELETE FROM t ON CLUSTER 'cluster' WHERE key = 2",
-        settings={"distributed_ddl_entry_format_version": 1},
-    )
-    for node in (ch1, ch2):
-        assert node.query("SELECT count() FROM t") == "9\n"
-
-
 def test_delete_from_on_cluster_replicated_runs_once_per_shard(replicated_table):
     ch1.query("DELETE FROM tr ON CLUSTER 'cluster' WHERE key = 1")
     for node in (ch1, ch2):

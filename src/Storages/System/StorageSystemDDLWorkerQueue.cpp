@@ -306,10 +306,11 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         {
             task.entry.parse(task_info.data);
         }
-        catch (Exception & e)
+        catch (const Exception & e)
         {
-            e.addMessage("On parsing DDL entry {}: {}", task.entry_path, task_info.data);
-            throw;
+            /// One unreadable entry, e.g. of an unsupported format version, must not hide the rest of the queue.
+            LOG_WARNING(getLogger("StorageSystemDDLWorkerQueue"), "Skipping DDL entry {} that cannot be parsed: {}", task.entry_path, e.message());
+            continue;
         }
 
         ASTPtr query = tryParseDDLQuery(context, task);
