@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 using namespace DB;
 using namespace DB::QueryPlanOptimizations;
@@ -344,7 +343,7 @@ TEST(LazyFrontier, RecomputesAGatedValueOnlyUnderAMaskAndWhenItCannotThrow)
     const auto * quotient_in_merged = findNodeContaining(merged, "intDiv(");
     ASSERT_TRUE(sum_in_merged != nullptr);
     ASSERT_TRUE(quotient_in_merged != nullptr);
-    const VectorWithMemoryTracking<size_t> sort_keys{outputPosition(merged, "a")};
+    const std::vector<size_t> sort_keys{outputPosition(merged, "a")};
 
     /// With no mask, neither can be recomputed: both are computed below the LIMIT, where the join pads them.
     {

@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -128,8 +127,6 @@ public:
     bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
 
-    bool hasLimitByHint() const { return !limit_by_columns.empty(); }
-
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     void enableBuffering() { use_buffering = true; }
@@ -181,11 +178,10 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
-    bool hasTopKThresholdTracker() const { return threshold_tracker != nullptr; }
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
-    VectorWithMemoryTracking<size_t> getStepGroups() const override;
+    std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     void describePipeline(FormatSettings & settings) const override;

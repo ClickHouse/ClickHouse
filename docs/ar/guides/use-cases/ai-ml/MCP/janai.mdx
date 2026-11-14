@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 > يشرح هذا الدليل كيفية استخدام خادم ClickHouse MCP مع [Jan.ai](https://jan.ai/docs).
 
 <Steps>
@@ -23,30 +25,14 @@ doc_type: 'guide'
 
     لتمكين OpenAI، نحتاج إلى تقديم مفتاح API، كما هو موضح أدناه:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![تمكين نماذج OpenAI](/images/use-cases/AI_ML/MCP/0_janai_openai.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="تمكين نماذج OpenAI" size="md" />
   </Step>
 
   <Step title="تمكين خوادم MCP" id="enable-mcp-servers">
     وقت كتابة هذا الدليل، كانت خوادم MCP ميزة تجريبية في Jan.ai.
     ويمكننا تمكينها عبر تفعيل الميزات التجريبية:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![تمكين خوادم MCP](/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp" alt="تمكين خوادم MCP" size="md" />
 
     بمجرد الضغط على مفتاح التبديل هذا، سنرى `MCP servers` في القائمة اليسرى.
   </Step>
@@ -54,115 +40,43 @@ doc_type: 'guide'
   <Step title="تهيئة خادم ClickHouse MCP" id="configure-clickhouse-mcp-server">
     إذا نقرنا على قائمة `MCP servers`، فسنرى قائمة بخوادم MCP التي يمكننا الاتصال بها:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![قائمة خوادم MCP](/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="قائمة خوادم MCP" size="md" />
 
     جميع هذه الخوادم تكون معطّلة افتراضيًا، لكن يمكننا تمكينها بالنقر على مفتاح التبديل.
 
     لتثبيت خادم ClickHouse MCP، نحتاج إلى النقر على الرمز `+` ثم ملء النموذج بما يلي:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![إضافة خادم MCP](/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp" alt="إضافة خادم MCP" size="md" />
 
     بعد إكمال ذلك، سنحتاج إلى تفعيل ClickHouse Server إذا لم يكن مفعّلًا بالفعل:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![تمكين خادم MCP](/images/use-cases/AI_ML/MCP/4_janai_toggle.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/4_janai_toggle.webp" alt="تمكين خادم MCP" size="md" />
 
     ستظهر الآن أدوات خادم ClickHouse MCP في نافذة الدردشة:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![أدوات خادم ClickHouse MCP](/images/use-cases/AI_ML/MCP/5_jani_tools.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="أدوات خادم ClickHouse MCP" size="md" />
   </Step>
 
   <Step title="التحدث إلى خادم ClickHouse MCP باستخدام Jan.ai" id="chat-to-clickhouse-mcp-server">
     حان الوقت لبدء محادثة حول بعض البيانات المخزنة في ClickHouse!
     لنطرح سؤالًا:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![سؤال](/images/use-cases/AI_ML/MCP/6_janai_question.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/6_janai_question.webp" alt="سؤال" size="md" />
 
     سيطلب Jan.ai تأكيدًا قبل استدعاء أداة:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![تأكيد الأداة](/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp" alt="تأكيد الأداة" size="md" />
 
     ثم سيعرض لنا قائمة باستدعاءات الأدوات التي تم تنفيذها:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![الأدوات التي تم استدعاؤها](/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp" alt="الأدوات التي تم استدعاؤها" size="md" />
 
     وإذا نقرنا على استدعاء الأداة، يمكننا رؤية تفاصيله:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![الأدوات التي تم استدعاؤها موسعة](/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp" alt="الأدوات التي تم استدعاؤها موسعة" size="md" />
 
     ثم سنرى النتيجة في الأسفل:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![النتيجة](/images/use-cases/AI_ML/MCP/10_janai_result.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/10_janai_result.webp" alt="النتيجة" size="md" />
   </Step>
 </Steps>

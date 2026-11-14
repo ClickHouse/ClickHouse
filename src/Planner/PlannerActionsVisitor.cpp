@@ -2,6 +2,8 @@
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <WindowFunctions/IWindowFunction.h>
+
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -371,7 +373,7 @@ public:
                 if (function_node.isWindowFunction())
                 {
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(function_node.getWindowNode());
+                    buffer << calculateWindowNodeActionName(node, function_node.getWindowNode());
                     buffer << ')';
                 }
 
@@ -450,8 +452,9 @@ public:
         return name + "_" + constant_node.getResultType()->getName();
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node_)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
     {
+        const auto & function_node = function_nodew_node_->as<const FunctionNode&>();
         const auto & window_node = window_node_->as<const WindowNode &>();
         WriteBufferFromOwnString buffer;
 
@@ -519,9 +522,10 @@ public:
             }
         }
 
-        const WindowFrame & window_frame = window_node.getWindowFrame();
-        if (!window_frame.is_default)
+        auto window_frame_opt = extractWindowFrame(function_node);
+        if (window_frame_opt)
         {
+            auto & window_frame = *window_frame_opt;
             if (window_node.hasPartitionBy() || window_node.hasOrderBy())
                 buffer << ' ';
 
@@ -1554,11 +1558,11 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-String calculateWindowNodeActionName(const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(window_node);
+    return helper.calculateWindowNodeActionName(function_node, window_node);
 }
 
 }

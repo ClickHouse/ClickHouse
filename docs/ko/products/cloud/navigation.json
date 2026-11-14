@@ -252,6 +252,8 @@
       "group": "AI 도구 및 에이전트",
       "pages": [
         "ko/products/cloud/features/ai-ml/index",
+        "ko/products/cloud/features/ai-ml/aichat/using-ai-chat",
+        "ko/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
         "ko/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
@@ -259,6 +261,32 @@
           "pages": [
             "ko/products/cloud/features/ai-ml/remote-mcp",
             "ko/products/cloud/features/ai-ml/mcp/remote-mcp"
+          ]
+        },
+        {
+          "group": "ClickHouse Agents",
+          "pages": [
+            "ko/products/cloud/features/ai-ml/agents/index",
+            "ko/products/cloud/features/ai-ml/agents/quickstart",
+            "ko/products/cloud/features/ai-ml/agents/chat",
+            {
+              "group": "Agent Builder",
+              "pages": [
+                "ko/products/cloud/features/ai-ml/agents/builder/index",
+                "ko/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                "ko/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                "ko/products/cloud/features/ai-ml/agents/builder/web-search",
+                "ko/products/cloud/features/ai-ml/agents/builder/image-generation",
+                "ko/products/cloud/features/ai-ml/agents/builder/vision",
+                "ko/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                "ko/products/cloud/features/ai-ml/agents/builder/skills",
+                "ko/products/cloud/features/ai-ml/agents/builder/subagents"
+              ]
+            },
+            "ko/products/cloud/features/ai-ml/agents/prompts",
+            "ko/products/cloud/features/ai-ml/agents/memory",
+            "ko/products/cloud/features/ai-ml/agents/marketplace",
+            "ko/products/cloud/features/ai-ml/agents/sharing-and-access"
           ]
         },
         "ko/products/cloud/features/ai-ml/model-developer-terms"
@@ -328,5 +356,6 @@
       "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }

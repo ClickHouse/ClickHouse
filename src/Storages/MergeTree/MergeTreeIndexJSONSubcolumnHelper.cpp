@@ -95,18 +95,16 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const JSONIndexArgumentTypes & json_argument_types)
 {
-    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name, json_argument_types, is_shadowing_subcolumn);
+    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name, json_argument_types);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Names & index_columns,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const JSONIndexArgumentTypes & json_argument_types)
 {
     /// Scan the index columns, not the dot positions of the name: the name can embed a folded
     /// constant, so its length is unbounded while `index_columns` is not.
@@ -143,7 +141,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         matched = true;
     }
 
-    if (!matched || (is_shadowing_subcolumn && is_shadowing_subcolumn(name, matched_json_column)))
+    if (!matched)
         return std::nullopt;
 
     /// Sub-object (^) and combined literal+sub-object (@) access cannot use the index: such
@@ -172,20 +170,18 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Block & header,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const JSONIndexArgumentTypes & json_argument_types)
 {
-    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name, json_argument_types, is_shadowing_subcolumn);
+    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name, json_argument_types);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Names & index_columns,
     const String & json_function_name,
-    const JSONIndexArgumentTypes & json_argument_types,
-    const IsShadowingJSONSubcolumn & is_shadowing_subcolumn)
+    const JSONIndexArgumentTypes & json_argument_types)
 {
-    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
+    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name, json_argument_types);
 
     /// Try CAST unwrapping: CAST(json.path, 'Type') or _CAST(json.path, 'Type')
     if (!json_info && node.isFunction())
@@ -194,7 +190,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
         auto fname = func.getFunctionName();
         if ((fname == "CAST" || fname == "_CAST") && func.getArgumentsSize() == 2)
             json_info = tryMatchJSONSubcolumnToIndex(
-                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types, is_shadowing_subcolumn);
+                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name, json_argument_types);
     }
 
     return json_info;

@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Profiling/Time/TimeIntervals.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <functional>
 #include <queue>
 #include <algorithm>
@@ -21,7 +20,7 @@ TimeIntervals collapseSortedIntervals(TimeIntervals sorted)
     return sorted;
 }
 
-TimeIntervals mergeSortedIntervals(const VectorWithMemoryTracking<TimeIntervals> & sorted_sequences)
+TimeIntervals mergeSortedIntervals(const std::vector<TimeIntervals> & sorted_sequences)
 {
     /// Cursor into one input sequence: which sequence, and the next unread position in it.
     struct Cursor
@@ -41,13 +40,13 @@ TimeIntervals mergeSortedIntervals(const VectorWithMemoryTracking<TimeIntervals>
              > sorted_sequences[rhs.sequence][rhs.position].start;
     };
 
-    VectorWithMemoryTracking<Cursor> initial;
+    std::vector<Cursor> initial;
 
     for (size_t i = 0; i < sorted_sequences.size(); ++i)
         if (!sorted_sequences[i].empty())
         initial.push_back({i, 0});
 
-    std::priority_queue<Cursor, VectorWithMemoryTracking<Cursor>, decltype(later_start)> heads(later_start, std::move(initial));
+    std::priority_queue<Cursor, std::vector<Cursor>, decltype(later_start)> heads(later_start, std::move(initial));
 
 
     TimeIntervals merged;
@@ -65,7 +64,7 @@ TimeIntervals mergeSortedIntervals(const VectorWithMemoryTracking<TimeIntervals>
     return merged;
 }
 
-TimeIntervals uniteSortedIntervals(const VectorWithMemoryTracking<TimeIntervals> & sorted_sequences)
+TimeIntervals uniteSortedIntervals(const std::vector<TimeIntervals> & sorted_sequences)
 {
     return collapseSortedIntervals(mergeSortedIntervals(sorted_sequences));
 }

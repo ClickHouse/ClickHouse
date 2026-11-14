@@ -27,7 +27,7 @@ echo "$page" | grep -oE '^ *for \(let i = head; i < digits\.length; i \+= 3\) \{
 echo '--- a numeric cell of at least five digits is grouped (as in `clickhouse-client`), shorter ones are not'
 echo "$page" | grep -oF 'if (this._column_is_number[name] && text.match(/^\d{5,}$/))' | head -n1
 echo '--- and so is a row number of at least five digits'
-echo "$page" | grep -oF 'if (row_number.length >= 5) { td.innerHTML = trustedHTML(digitGroupsHTML(row_number)); }' | head -n1
+echo "$page" | grep -oF 'if (row_number.length >= 5) { td.innerHTML = digitGroupsHTML(row_number); }' | head -n1
 
 echo '--- the value the cell reports to the filter menu is the raw text, not the grouped rendering'
 echo "$page" | grep -oE '^ *td\._filterText = text;$' | head -n1

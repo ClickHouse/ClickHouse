@@ -87,43 +87,13 @@ public:
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
 
-    /// Returns true only if the copy completed. A false result requires the caller to use `copyFileFromDiskWithFallback`.
-    /// `start_pos` and `length` specify the source range; `copy_encrypted` selects encrypted source bytes.
-    virtual bool copyFileFromDiskNatively(
-        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
-        = 0;
-
-    /// Completes a copy after the native attempt returned false. Disk destinations may use `IDisk::copyFile`,
-    /// which can copy on the storage side or through buffers; the default implementation reads and writes through buffers.
-    virtual void copyFileFromDiskWithFallback(
-        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
-        = 0;
-
-    /// The function copyFileFromBlobPath() provides a fast path for copying files between object storages
-    /// using native copy operations (e.g., S3 CopyObject, Azure Copy Blob).
+    /// The function copyFileFromDisk() can be much faster than copyDataToFile()
+    /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
     /// Parameters:
-    /// `src_disk` - the source disk (needed to get the object storage client)
-    /// `src_blob_key` - the blob key/path in the source object storage
-    /// `src_blob_namespace` - the bucket/container name in the source object storage
-    /// `copy_encrypted` - whether to copy encrypted data
-    /// `start_pos` and `length` - specify a part of the file to copy
-    /// `src_object_size` - the size of the whole source blob, so that a copy of a part of it can be told
-    ///                     from a copy of all of it (S3 copies a range and a whole object differently)
-    /// `create_fallback_read_buffer` - used to read the data if the native copy fails midway
-    ///                                 (the source disk must not be read instead: it may have been
-    ///                                 repointed to a different namespace since `src_blob_key` was
-    ///                                 recorded, and `src_blob_key` is not a path on the disk anyway)
-    /// Returns true if the native copy was performed, false if it should fall back to buffer copy.
-    virtual bool copyFileFromBlobPath(
-        const String & path_in_backup,
-        DiskPtr src_disk,
-        const String & src_blob_key,
-        const String & src_blob_namespace,
-        bool copy_encrypted,
-        UInt64 start_pos,
-        UInt64 length,
-        UInt64 src_object_size,
-        const CreateReadBufferFunction & create_fallback_read_buffer)
+    /// `start_pos` and `length` specify a part of the file on `src_disk` to copy to the backup.
+    /// `copy_encrypted` specify whether this function should copy encrypted data of the file `src_path` to the backup.
+    virtual void copyFileFromDisk(
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         = 0;
 
     virtual void copyFile(const String & destination, const String & source, size_t size) = 0;
@@ -134,9 +104,6 @@ public:
 
     /// Removes the backup folder if it's empty or contains empty subfolders.
     virtual void removeEmptyDirectories() = 0;
-
-    /// Removes the root directory of the backup if it is empty, without looking inside it.
-    virtual void removeEmptyRootDirectory() = 0;
 
     /// fsync one already-written file and remember its parent directories for
     /// `syncDirectoriesToDisk`. No-op where a completed upload is already durable.

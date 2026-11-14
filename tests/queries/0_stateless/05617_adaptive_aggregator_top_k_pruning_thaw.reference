@@ -1,8 +1,0 @@
-String key, count and min	0	1	1	1	1	1
-String key, count and min	1	1	1	0	1	1
-Lone count, uniform staged keys	0	1	1	1	1	1
-Lone count, cold staged keys	0	1	1	0	1	1
-Lone count, hot keys staged	0	1	1	0	1	1
-Lone count, fewer groups than the limit	0	1	1	1	0	0
-Lone count, hot keys of each lane	0	1	1	1	1	1
-Verdict of top-K runs	1	1	1	1	1

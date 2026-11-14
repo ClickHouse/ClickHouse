@@ -648,7 +648,7 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
   - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
 
-When the column isn't used anywhere else in the query, the function can read only the [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null != 0 FROM TABLE`. This optimization is controlled by the [optimize_functions_to_subcolumns](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null != 0 FROM TABLE`.
 
 {/* */}
 
@@ -681,7 +681,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-When the column isn't used anywhere else in the query, the function can read only the [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`. This optimization is controlled by the [optimize_functions_to_subcolumns](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
 
 ## Checking Boolean Values {#checking-boolean-values}
 

@@ -20,25 +20,10 @@
                 <value>large_str</value>
             </values>
         </substitution>
-        <substitution>
-            <name>large</name>
-            <values>
-                <value>large_int_50m</value>
-                <value>large_str_28m</value>
-            </values>
-        </substitution>
-        <substitution>
-            <name>large_28m</name>
-            <values>
-                <value>large_int_28m</value>
-                <value>large_str_28m</value>
-            </values>
-        </substitution>
     </substitutions>
 
-    <create_query>CREATE TABLE large_int_50m (a Int32, b Int32, c Int32, d Int32, e Int32, f Int32, g Int32, h Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE large_int_28m (a Int32, b Int32, c Int32, d Int32, e Int32, f Int32, g Int32, h Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE large_str_28m (a Int32, b Int32, c Int32, s1 String, s2 String, s3 String, s4 String, s5 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE large_int (a Int32, b Int32, c Int32, d Int32, e Int32, f Int32, g Int32, h Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE large_str (a Int32, b Int32, c Int32, s1 String, s2 String, s3 String, s4 String, s5 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE small1 (a Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE small2 (b Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE small3 (c Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
@@ -46,9 +31,8 @@
     <create_query>CREATE TABLE small2_dup (b Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE small3_dup (c Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
-    <fill_query>INSERT INTO large_int_50m SELECT number % 10000, number % 12500, number % 11000, number * 2, number * 3, number * 4, number * 5, number * 6 FROM numbers(50000000) ORDER BY rand()</fill_query>
-    <fill_query>INSERT INTO large_int_28m SELECT number % 10000, number % 12500, number % 11000, number * 2, number * 3, number * 4, number * 5, number * 6 FROM numbers(28000000) ORDER BY rand()</fill_query>
-    <fill_query>INSERT INTO large_str_28m SELECT number % 10000, number % 12500, number % 11000, toString(number), toString(number * 2), toString(number * 3), toString(number * 4), toString(number * 5) FROM numbers(28000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO large_int SELECT number % 10000, number % 12500, number % 11000, number * 2, number * 3, number * 4, number * 5, number * 6 FROM numbers(100000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO large_str SELECT number % 10000, number % 12500, number % 11000, toString(number), toString(number * 2), toString(number * 3), toString(number * 4), toString(number * 5) FROM numbers(100000000) ORDER BY rand()</fill_query>
 
     <fill_query>INSERT INTO small1 SELECT number FROM numbers(8000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO small2 SELECT number FROM numbers(10000) ORDER BY rand()</fill_query>
@@ -61,55 +45,33 @@
     <fill_query>INSERT INTO small3_dup SELECT number FROM numbers(9000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO small3_dup SELECT number FROM numbers(9000) ORDER BY rand()</fill_query>
 
-    <!-- `query_plan_lazy_materialization_for_join` is pinned off in the queries with a `LIMIT`: otherwise the payload
-         columns are read only for the rows of the `LIMIT`, so the joins do not carry them, and the queries no longer
-         measure the lazy indexing of the join columns. -->
     <!-- 1 join, no duplicates -->
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s ON l.a = s.a ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s ON l.a = s.a ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash'</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s ON l.a = s.a ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash'</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s ON l.a = s.a ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash'</query>
 
     <!-- 1 join, with duplicates -->
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1_dup s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1_dup s ON l.a = s.a ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1_dup s ON l.a = s.a ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
+    <query>SELECT * FROM {large_table} l JOIN small1_dup s ON l.a = s.a LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash'</query>
+    <query>SELECT * FROM {large_table} l JOIN small1_dup s ON l.a = s.a ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash'</query>
+    <query>SELECT * FROM {large_table} l JOIN small1_dup s ON l.a = s.a ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash'</query>
 
     <!-- 3 joins, no duplicates -->
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
 
     <!-- 3 joins, with duplicates -->
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c LIMIT 80000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
 
     <!-- 3 joins, mixed duplicates -->
-    <query disabled="1">SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
+    <query>SELECT * FROM {large_table} l JOIN small1 s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
 
-    <!-- The offset is the output size of large_int_50m JOIN small1: the joins without duplicates return no rows, the joins with duplicates return 10, on both large tables. -->
-    <query>SELECT * FROM {large} l JOIN small1 s ON l.a = s.a LIMIT 40000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query>SELECT * FROM {large} l JOIN small1 s ON l.a = s.a ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query>SELECT * FROM {large} l JOIN small1 s ON l.a = s.a ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query>SELECT * FROM {large} l JOIN small1_dup s ON l.a = s.a LIMIT 40000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query>SELECT * FROM {large} l JOIN small1_dup s ON l.a = s.a ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query>SELECT * FROM {large} l JOIN small1_dup s ON l.a = s.a ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash'</query>
-    <query>SELECT * FROM {large} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c LIMIT 40000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query>SELECT * FROM {large} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query>SELECT * FROM {large} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query>SELECT * FROM {large} l JOIN small1 s1 ON l.a = s1.a JOIN small2 s2 ON l.b = s2.b JOIN small3 s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query>SELECT * FROM {large} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c LIMIT 40000000, 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <!-- These joins replicate every row 8 times, so they read the 28M-row tables. -->
-    <query>SELECT * FROM {large_28m} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c ORDER BY l.a LIMIT 10 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query>SELECT * FROM {large_28m} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c ORDER BY l.a LIMIT 1000 SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, query_plan_lazy_materialization_for_join = 0, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query>SELECT * FROM {large_28m} l JOIN small1_dup s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-    <query>SELECT * FROM {large} l JOIN small1 s1 ON l.a = s1.a JOIN small2_dup s2 ON l.b = s2.b JOIN small3_dup s3 ON l.c = s3.c FORMAT NULL SETTINGS query_plan_min_columns_for_join_lazy_indexing = {lazy_indexing}, join_algorithm = 'hash', query_plan_join_swap_table = false</query>
-
-    <drop_query>DROP TABLE IF EXISTS large_int_50m</drop_query>
-    <drop_query>DROP TABLE IF EXISTS large_int_28m</drop_query>
-    <drop_query>DROP TABLE IF EXISTS large_str_28m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS large_int</drop_query>
+    <drop_query>DROP TABLE IF EXISTS large_str</drop_query>
     <drop_query>DROP TABLE IF EXISTS small1</drop_query>
     <drop_query>DROP TABLE IF EXISTS small2</drop_query>
     <drop_query>DROP TABLE IF EXISTS small3</drop_query>

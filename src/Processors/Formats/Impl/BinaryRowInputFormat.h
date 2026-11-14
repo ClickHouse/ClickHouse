@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 
 
@@ -23,7 +22,7 @@ public:
     BinaryFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
-    bool readFieldImpl(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization);
+    bool readFieldImpl(IColumn & column, const SerializationPtr & serialization);
 
     void skipField(size_t file_column) override;
 
@@ -31,9 +30,9 @@ public:
     void skipTypes() override;
     void skipHeaderRow();
 
-    VectorWithMemoryTracking<String> readNames() override;
-    VectorWithMemoryTracking<String> readTypes() override;
-    VectorWithMemoryTracking<String> readHeaderRow();
+    std::vector<String> readNames() override;
+    std::vector<String> readTypes() override;
+    std::vector<String> readHeaderRow();
 
 private:
     /// Data types read from input data.

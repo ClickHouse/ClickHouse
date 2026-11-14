@@ -175,7 +175,7 @@ struct RuntimeDataflowStatisticsBlock
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
-    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- mirrors `IMergeTreeDataPart::ColumnSizeByName`, which the callers pass directly
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using Statistics = RuntimeDataflowStatisticsBlock::Statistics;
     using InputStatisticsType = RuntimeDataflowStatisticsBlock::InputStatisticsType;
     using OutputStatisticsType = RuntimeDataflowStatisticsBlock::OutputStatisticsType;

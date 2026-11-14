@@ -45,7 +45,7 @@ public:
 
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
-    void copyFileFromDiskWithFallback(
+    void copyFileFromDisk(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
 
@@ -53,7 +53,6 @@ public:
 
     void removeFile(const String & file_name) override;
     void removeEmptyDirectories() override;
-    void removeEmptyRootDirectory() override;
 
     void syncFileToDisk(const String & file_name) override;
     void syncDirectoriesToDisk() override;

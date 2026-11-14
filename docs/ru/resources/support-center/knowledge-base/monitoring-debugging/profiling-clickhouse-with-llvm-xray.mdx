@@ -5,6 +5,8 @@ description: "Узнайте, как профилировать ClickHouse с п
 tags: ['Производительность и оптимизация', 'Инструменты и утилиты']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <div id="types-of-profilers">
   ## Типы профилировщиков
 </div>
@@ -49,15 +51,7 @@ SYSTEM INSTRUMENT REMOVE ALL
 
 Мы преобразуем данные, собранные в system.trace&#95;log, [в формат Chrome](/ru/reference/system-tables/trace_log#chrome-event-trace-format), чтобы визуализировать их в [Perfetto](https://ui.perfetto.dev). Обратите внимание на query&#95;id, cpu&#95;id и трассировку стека для каждой записи.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![по времени](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="по времени" />
 
 <div id="profiling-a-native-application-using-xray">
   ## Профилирование нативного приложения с помощью XRay
@@ -167,43 +161,19 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
   #### Хронологический порядок
 </div>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
 
 <div id="left-heavy">
   #### Перекос влево
 </div>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![перекос влево](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="перекос влево" />
 
 <div id="sandwitch">
   #### Сэндвич
 </div>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![сэндвич](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="сэндвич" />
 
 <div id="check-out-the-docs">
   ## Ознакомьтесь с документацией

@@ -472,8 +472,9 @@ GTEST_TEST(Field, ReadBinaryDecimalOutOfRangeScaleThrows)
 }
 
 
-/// The text `Field` dump reader `restoreFromDump` shares the out-of-range-scale problem with the
-/// binary reader. The exponent form `Decimal64_'1e-1000'` builds a `DecimalField` with scale 1000 (the
+/// The text `Field` dump reader `restoreFromDump` shares the out-of-range-scale hazard with the
+/// binary reader: it is reachable from the pre-auth native settings path for a `CUSTOM`-flagged
+/// setting. The exponent form `Decimal64_'1e-1000'` builds a `DecimalField` with scale 1000 (the
 /// `e`/`E` branch of `readDigits` bypasses the closing-quote check the plain-fraction form hits),
 /// which an unfixed reader would hand to the decimal text writer. The scale must be rejected.
 GTEST_TEST(Field, RestoreFromDumpDecimalOutOfRangeScaleThrows)

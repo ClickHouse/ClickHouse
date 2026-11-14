@@ -61,13 +61,9 @@ void TTLColumnAlgorithm::execute(Block & block)
             default_column = default_column->convertToFullColumnIfConst();
             result_column->insertRangeFrom(*default_column, 0, block.rows());
         }
-        else if (column_with_type.type->isDefaultInsertTrivial())
-        {
-            result_column->insertManyDefaults(block.rows());
-        }
         else
         {
-            column_with_type.type->insertManyDefaultsInto(*result_column, block.rows());
+            result_column->insertManyDefaults(block.rows());
         }
 
         column_with_type.column = std::move(result_column);
@@ -108,7 +104,7 @@ void TTLColumnAlgorithm::execute(Block & block)
             if (default_column)
                 result_column->insertFrom(*default_column, i);
             else
-                column_with_type.type->insertDefaultInto(*result_column);
+                result_column->insertDefault();
         }
         else
         {

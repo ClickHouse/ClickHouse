@@ -1,5 +1,4 @@
 #include <base/arithmeticOverflow.h>
-#include <Formats/FormatSettings.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>

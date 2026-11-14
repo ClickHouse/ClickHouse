@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -71,9 +70,9 @@ public:
 
     bool checkForSuffix() override;
 
-    VectorWithMemoryTracking<String> readHeaderRow();
-    VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
-    VectorWithMemoryTracking<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow();
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
 
     bool checkForEndOfRow() override;
 

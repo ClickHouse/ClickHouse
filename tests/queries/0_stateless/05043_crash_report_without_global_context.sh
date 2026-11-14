@@ -158,18 +158,6 @@ report_checks() {
         || echo "$label: no null dereference"
 }
 
-# The fault belongs in the parked thread, which is the main one. `kill` signals the whole process, so
-# any thread not blocking the signal can take it, the signal listener included, and a handler running
-# on the listener waits for itself and reports nothing.
-fault_main_thread() {
-    python3 -c "
-import ctypes, signal, sys
-pid = int(sys.argv[1])
-if ctypes.CDLL(None, use_errno=True).tgkill(pid, pid, int(signal.SIGSEGV)) != 0:
-    sys.exit('tgkill failed: errno %d' % ctypes.get_errno())
-" "$1"
-}
-
 ##########################################################################################
 # Arm 1: keeper. The UUID is read before the global context is created, so the context is absent.
 ##########################################################################################
@@ -237,7 +225,7 @@ done
 # process has not passed that point.
 grep -q 'Initializing DateLUT' "$klog" && { echo "keeper: the global context already exists"; exit 1; }
 
-fault_main_thread "$keeper_pid"
+kill -SEGV "$keeper_pid"
 report_checks "$kdir" "keeper" "$keeper_pid" "$kerr" "$klog"
 
 ##########################################################################################
@@ -308,5 +296,5 @@ done
 [ -s "$sdir/data/status" ] || { echo "server: the global context does not exist yet"; exit 1; }
 grep -q 'Initializing DateLUT' "$slog" && { echo "server: the server UUID is already loaded"; exit 1; }
 
-fault_main_thread "$server_pid"
+kill -SEGV "$server_pid"
 report_checks "$sdir" "server" "$server_pid" "$serr" "$slog"

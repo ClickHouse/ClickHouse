@@ -24,10 +24,6 @@ public:
 
     bool isFIPSEnabled() const;
 
-    /// Whether the `MD5` digest can be fetched with the current default properties. It cannot under FIPS.
-    /// The result is cached on the first call.
-    bool isMD5Available() const;
-
 private:
     OpenSSLInitializer();
     ~OpenSSLInitializer();

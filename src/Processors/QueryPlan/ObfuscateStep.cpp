@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ObfuscateStep.h>
-#include <Formats/FormatSettings.h>
 
 #include <Core/Settings.h>
 #include <IO/Operators.h>

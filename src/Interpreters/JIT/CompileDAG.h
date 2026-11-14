@@ -11,9 +11,6 @@
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/ActionsDAG.h>
-
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace llvm
 {
@@ -86,14 +83,6 @@ private:
     std::vector<Node> nodes;
     size_t input_nodes_count = 0;
 };
-
-/// The part of the expression of `root` that compiles, as `ActionsDAG::compileFunctions` takes it: a node that does not
-/// compile is an input of the result, which is appended to `children`, in the order of the inputs. A function that is
-/// executed lazily, of `lazy_executed_nodes`, does not compile.
-CompileDAG getCompilableDAG(
-    const ActionsDAG::Node * root,
-    ActionsDAG::NodeRawConstPtrs & children,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes);
 
 }
 

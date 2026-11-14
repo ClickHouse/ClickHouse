@@ -1,7 +1,6 @@
 #pragma once
 
 #include <deque>
-#include <Common/DequeWithMemoryTracking.h>
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
@@ -98,7 +97,7 @@ private:
     /// for the chunk info they may carry, e.g. from `RestoreChunkInfosTransform`) and, once seen, the
     /// single held candidate itself (`held` points at its slot). Replayed into the fallback pipeline
     /// if eligibility is lost, discarded otherwise (the queue divert only ever needs `*held`).
-    DequeWithMemoryTracking<Chunk> pending;
+    std::deque<Chunk> pending;
     /// Points into `pending`, valid until eligibility is lost or the block is diverted; `pending`'s
     /// push_back does not invalidate it.
     Chunk * held = nullptr;

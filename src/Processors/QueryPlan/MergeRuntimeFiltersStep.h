@@ -2,7 +2,6 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -43,7 +42,7 @@ public:
         String input_exchange_id_,
         Strings source_buckets_,
         size_t fan_in_,
-        VectorWithMemoryTracking<Output> outputs_);
+        std::vector<Output> outputs_);
 
     MergeRuntimeFiltersStep(const MergeRuntimeFiltersStep & other) = default;
 
@@ -55,7 +54,7 @@ public:
     inputStreams(const String & exchange_id, const Strings & source_buckets, size_t bucket_index, size_t fan_in);
 
     /// The streams that task `bucket_index` writes, in the order of `outputs`.
-    static VectorWithMemoryTracking<ExchangeStreamId> outputStreams(const VectorWithMemoryTracking<Output> & outputs, size_t bucket_index, size_t fan_in);
+    static std::vector<ExchangeStreamId> outputStreams(const std::vector<Output> & outputs, size_t bucket_index, size_t fan_in);
 
     String getName() const override { return "MergeRuntimeFilters"; }
 
@@ -82,7 +81,7 @@ private:
     /// Ordered buckets of the level below; each task consumes its `fan_in`-sized slice.
     Strings source_buckets;
     size_t fan_in;
-    VectorWithMemoryTracking<Output> outputs;
+    std::vector<Output> outputs;
 };
 
 }

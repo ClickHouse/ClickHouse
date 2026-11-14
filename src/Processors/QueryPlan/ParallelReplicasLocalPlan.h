@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
@@ -15,9 +14,6 @@ using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-/// Builds the plan fragment shipped to the other replicas, with its coordinated read marked.
-/// Returns null when that read cannot be marked - the caller must then send the query text instead,
-/// because a plan with no read marked makes every replica read the whole table.
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const Block & header,
@@ -33,7 +29,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     QueryPlanStepPtr read_from_merge_tree,
     size_t replica_number);
 
-VectorWithMemoryTracking<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected = nullptr);
+std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected = nullptr);
 
 QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     ContextPtr context,
@@ -46,6 +42,6 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     QueryPlanPtr plan_fragment,
     ParallelReplicasReadingCoordinatorPtr coordinator,
     const ClusterPtr & cluster,
-    const VectorWithMemoryTracking<ConnectionPoolPtr> & connection_pool,
+    const std::vector<ConnectionPoolPtr> & connection_pool,
     std::optional<size_t> exclude_pool_index);
 }

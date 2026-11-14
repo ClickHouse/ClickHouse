@@ -7,7 +7,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StatisticsDescription.h>
-#include <Storages/SubcolumnCodecsDescription.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
@@ -27,10 +26,6 @@
 
 namespace DB
 {
-
-struct StorageID;
-class AccessRights;
-class AccessFlags;
 
 namespace ErrorCodes
 {
@@ -105,7 +100,6 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
-    SubcolumnCodecsDescription subcolumn_codecs;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;
@@ -124,7 +118,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, bool include_codec) const;
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -231,28 +225,6 @@ public:
 
     Names getNamesOfPhysical() const;
 
-    /// Returns the column names to pass to the `SELECT` access check on `table_id` when a query reads `column_names`.
-    /// A subcolumn (e.g. `t.a` for a `Tuple` column `t`) inherits the grants of its column, so it is mapped to the
-    /// parent storage column and `GRANT SELECT(t)` covers `t.a`, `t.b`, etc. This includes dynamic subcolumns of
-    /// `Dynamic` / `JSON` / dynamic `Map` columns (e.g. `json.a.b`), which are resolved by the same type-aware,
-    /// first-matching-prefix logic as identifier resolution, so the check authorizes exactly the column the query
-    /// reads from. A grant or revoke on the exact subcolumn name takes precedence over its column, so such a
-    /// subcolumn is returned unchanged. Names that are not subcolumns (real columns, including columns literally
-    /// containing a dot, or unknown names such as virtual columns) are returned unchanged. The result is deduplicated
-    /// while preserving the order of first appearance.
-    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
-
-    /// Returns the names of the real subcolumns of the column `column_name` that have a grant of `flags` on their exact
-    /// name which they do not inherit from the column (e.g. ``GRANT SELECT(`json.a`)`` without a grant on `json`).
-    /// Grants are matched by name only, so a granted name is returned only if it resolves, by the same type-aware
-    /// resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a subcolumn of this column.
-    Names getSubcolumnsWithExplicitGrant(
-        const AccessRights & access_rights,
-        const AccessFlags & flags,
-        const String & database,
-        const String & table,
-        const String & column_name) const;
-
     bool hasPhysical(const String & column_name) const;
     bool hasNotAlias(const String & column_name) const;
     bool hasAlias(const String & column_name) const;
@@ -269,9 +241,6 @@ public:
     std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
 
-    /// A subcolumn of any column by its full name (`payload.ts`). Nothing for the name of a column or for an unknown name.
-    std::optional<NameAndTypePair> tryGetSubcolumn(const String & subcolumn_name) const;
-
     std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
 
@@ -280,7 +249,7 @@ public:
     bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
-    /// Does column has non default specified compression codec, for the column itself or for any of its subcolumns
+    /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
     /// Does the column's compression codec pipeline contain a `Default` stage (`CODEC(Default)`,
@@ -290,9 +259,7 @@ public:
     /// non-default codec.
     bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
 
-    /// Subcolumn codecs are written as `CODEC name (...)` lines after the columns.
-    /// `include_codecs = false` is for readers that need only names, types and defaults, such as older clients.
-    String toString(bool include_comments, bool include_codecs = true) const;
+    String toString(bool include_comments) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -375,12 +342,6 @@ struct DefaultExpressionsInfo
     /// MATERIALIZED). ALIAS (read-time) and EPHEMERAL (a non-stored insert input) are not included.
     NameSet insert_time_default_columns;
 };
-
-/// If the column carries a `Quantized(...)` codec, attaches the serialization that writes the quantized companion stream
-/// and exposes the `<column>.quantized` subcolumn. `ColumnsDescription::add` does this itself; it is needed when
-/// the codec is set on a column that is already added. The customization is attached to this column's own
-/// (freshly parsed, non-shared) type instance, so it does not affect any other column of the same type.
-void attachQuantizeSerializationIfNeeded(ColumnDescription & column);
 
 /// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
 void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);

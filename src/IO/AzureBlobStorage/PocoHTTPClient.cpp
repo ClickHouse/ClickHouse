@@ -10,7 +10,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -297,7 +296,6 @@ PocoAzureHTTPClient::PocoAzureHTTPClient(const PocoAzureHTTPClientConfiguration 
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , for_disk_azure(client_configuration.for_disk_azure)
-    , publish_connection_info(client_configuration.publish_connection_info)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {}
@@ -374,8 +372,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     /// validated at CREATE time (OneLake writes go to the `.dfs` host, reads to
     /// `.blob`). Normalize scheme and host as Poco::URI does at CREATE time (the
     /// scheme resolves the default port; the host is lower-cased) so both agree.
-    /// Disks are exempt; their redirects are still checked below.
-    if (!for_disk_azure)
     {
         Poco::URI request_uri;
         request_uri.setScheme(url.GetScheme());
@@ -388,10 +384,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 
     try
     {
-        /// Count this attempt before anything can fail: an attempt that times out while connecting
-        /// never reaches the pooled session, but the SDK still retries it inside the logged entry.
-        DB::beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
-
         /// Test-only: raise a real Poco timeout so the TimeoutException -> TransportException path is what's tested.
         fiu_do_on(DB::FailPoints::azure_inject_poco_timeout,
             { throw Poco::TimeoutException("connect timed out (injected by failpoint)"); });
@@ -476,14 +468,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             &connect_time
         );
 
-        const Poco::Net::HTTPHeaderLimits response_header_limits{
-            .fields = static_cast<int>(http_max_fields),
-            .name_length = static_cast<int>(http_max_field_name_size),
-            .value_length = static_cast<int>(http_max_field_value_size)};
-
         Stopwatch watch;
-        auto request_body = sendHTTPRequest(
-            *session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time, response_header_limits);
+        auto request_body = sendHTTPRequest(*session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time);
 
         observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
         observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
@@ -515,6 +501,10 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
 
         // Get response
         Poco::Net::HTTPResponse poco_response;
+        poco_response.setFieldLimit(static_cast<int>(http_max_fields));
+        poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
+        poco_response.setValueLengthLimit(static_cast<int>(http_max_field_value_size));
+
         auto response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
 
         int status = static_cast<int>(poco_response.getStatus());
@@ -650,9 +640,6 @@ std::shared_ptr<Azure::Core::Http::HttpTransport> AzureSdkGetCustomHttpTransport
             .for_disk_azure = false,
             .request_throttler = {},
             .extra_headers = {},
-            /// Only the credentials' token requests go through here. They may share a scope with a
-            /// logged blob request, but must never be reported as its connection.
-            .publish_connection_info = false,
         });
     return transport;
 }

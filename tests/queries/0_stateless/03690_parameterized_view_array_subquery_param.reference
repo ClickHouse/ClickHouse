@@ -33,6 +33,7 @@ EXPLAIN SYNTAX subquery param
 1
 1
 1
+direct literal param, legacy analyzer
 direct literal param, EXPLAIN SYNTAX
 1
 1

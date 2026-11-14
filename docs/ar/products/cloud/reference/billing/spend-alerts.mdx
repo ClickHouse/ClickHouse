@@ -7,6 +7,8 @@ keywords: ['الفوترة', 'تنبيهات الإنفاق', 'حدود الاس
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 تُخطرك تنبيهات الإنفاق عندما يصل استخدام مؤسستك إلى العتبات المُعدّة خلال فترة الفوترة، مما يساعدك على تجنّب الرسوم غير المتوقعة. وهي تقتصر على إرسال الإشعارات فقط؛ أما العتبات التي تؤدي إلى إصدار الفواتير تلقائيًا، فراجع [عتبات الدفع](/ar/products/cloud/reference/billing/payment-thresholds).
 
 <div id="prerequisites">
@@ -37,15 +39,7 @@ doc_type: 'guide'
     1. انتقل إلى **Organization &gt; Billing** في وحدة تحكم ClickHouse Cloud.
     2. انقر على **Actions &gt; Add spend alerts**.
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![صفحة Billing مع فتح قائمة Actions وتمييز Add spend alerts](/images/cloud/reference/billing/spend-alerts-actions.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="صفحة Billing مع فتح قائمة Actions وتمييز Add spend alerts" size="lg" />
   </Step>
 
   <Step title="اضبط التنبيه واحفظه" id="configure-and-save">
@@ -53,15 +47,7 @@ doc_type: 'guide'
     2. حدِّد قنوات الإشعارات: **Email** و**UI** و/أو **Slack**.
     3. انقر على **Save**.
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![مربع حوار تنبيهات إنفاق Organization مع حد الإنفاق وتنبيهات العتبة التلقائية وقنوات الإشعارات](/images/cloud/reference/billing/spend-alerts-config.png)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="مربع حوار تنبيهات إنفاق Organization مع حد الإنفاق وتنبيهات العتبة التلقائية وقنوات الإشعارات" size="md" />
   </Step>
 </Steps>
 

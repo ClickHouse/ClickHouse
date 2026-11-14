@@ -1,6 +1,0 @@
-`c` Nullable(Int32)
-ENGINE = Other
-data_source_format 'CSV'
-`c` Nullable(Int32)
-ENGINE = Other
-data_source_format 'CSV'

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
 
@@ -55,11 +54,11 @@ private:
     size_t field_number = 0;
     size_t row_number = 0;
 
-    using NamesAndPaddings = VectorWithMemoryTracking<String>;
+    using NamesAndPaddings = std::vector<String>;
     NamesAndPaddings names_and_paddings;
 
-    VectorWithMemoryTracking<UInt8> is_number;
-    VectorWithMemoryTracking<UInt8> is_json;
+    std::vector<UInt8> is_number;
+    std::vector<UInt8> is_json;
     bool color;
 };
 

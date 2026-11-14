@@ -83,7 +83,7 @@ on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}
 
 concurrency:
-  group: {CONCURRENCY_GROUP}{CONCURRENCY_QUEUE}
+  group: ${{{{{{{{ github.workflow }}}}}}}}{CONCURRENCY_QUEUE}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -167,8 +167,8 @@ jobs:
         TEMPLATE_JOB_0 = """
   {JOB_NAME_NORMALIZED}:
     runs-on: [{RUNS_ON}]
-    needs:{NEEDS}{IF_EXPRESSION}
-    name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}{READ_TOKEN_PERMISSIONS}
+    needs: [{NEEDS}]{IF_EXPRESSION}
+    name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
       pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
@@ -194,7 +194,6 @@ jobs:
 {DOWNLOADS_GITHUB}
       - name: Run
         id: run
-{READ_TOKEN_ENV}\
         run: |
           . {ENV_SETUP_SCRIPT}
           PYTHONUNBUFFERED=1 python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci --timestamp
@@ -321,14 +320,8 @@ class PullRequestPushYamlGen:
         job_items = []
         for i, job in enumerate(self.workflow_config.jobs):
             job_name_normalized = Utils.normalize_string(job.name)
-            normalized_needs = sorted(
-                map(Utils.normalize_string, _all_needs(job.name))
-            )
-            # Keep an empty sequence compact, but render dependencies one per line.
-            needs = (
-                "\n" + "\n".join(f"    - {need}" for need in normalized_needs)
-                if normalized_needs
-                else " []"
+            needs = ", ".join(
+                sorted(map(Utils.normalize_string, _all_needs(job.name)))
             )
             job_name = job.name
             uploads_github = []
@@ -420,22 +413,11 @@ class PullRequestPushYamlGen:
                     )
                 )
 
-            read_token = orig_job and orig_job.enable_gh_read_token
             job_item = YamlGenerator.Templates.TEMPLATE_JOB_0.format(
                 JOB_NAME_NORMALIZED=job_name_normalized,
                 IF_EXPRESSION=if_expression,
                 TIMEOUT_MINUTES=timeout_minutes,
                 CHECKOUT_EXTRA=checkout_extra,
-                READ_TOKEN_PERMISSIONS=(
-                    "\n    permissions:\n      contents: read\n      pull-requests: read\n      actions: read"
-                    if read_token
-                    else ""
-                ),
-                READ_TOKEN_ENV=(
-                    "        env:\n          PRAKTIKA_GITHUB_READ_TOKEN: ${{ github.token }}\n"
-                    if read_token
-                    else ""
-                ),
                 RUNS_ON=", ".join(job.runs_on),
                 NEEDS=needs,
                 JOB_NAME_GH=job_name.replace('"', '\\"'),
@@ -514,13 +496,8 @@ class PullRequestPushYamlGen:
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
                 )
-                # A fixed group serializes overlapping push runs; cancel-in-progress is left at its default false, so a running apply is never interrupted mid-tofu.
-                format_kwargs["CONCURRENCY"] = (
-                    "concurrency:\n"
-                    f"  group: {self.parser.config.concurrency_group}\n\n"
-                    if self.parser.config.concurrency_group
-                    else ""
-                )
+                # github.event.pull_request is null on a push.
+                format_kwargs["CONCURRENCY"] = ""
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {
@@ -530,11 +507,6 @@ class PullRequestPushYamlGen:
                 # generated YAML is unchanged for inputs-less schedules.
                 "DISPATCH_INPUTS_BLOCK": (
                     f"\n    inputs:{dispatch_inputs}" if dispatch_inputs else ""
-                ),
-                # Four braces survive the second .format() pass as `${{ github.workflow }}`.
-                "CONCURRENCY_GROUP": (
-                    self.parser.config.concurrency_group
-                    or "${{{{ github.workflow }}}}"
                 ),
             }
             ENV_CHECKOUT_REFERENCE = (

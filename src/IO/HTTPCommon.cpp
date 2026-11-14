@@ -3,10 +3,9 @@
 #include <IO/ReadHelpers.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Common/Exception.h>
-#include <Common/HiddenSecret.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 #include "config.h"
 
@@ -122,7 +121,7 @@ Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
 
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects,
-    const Strings & response_secrets)
+    const Strings & body_secrets)
 {
     auto status = response.getStatus();
 
@@ -140,52 +139,8 @@ void assertResponseIsOk(
         std::string body_text;
         readStringUntilEOF(body_text, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body_text, response_secrets);
+        throw HTTPException(code, uri, status, response.getReason(), body_text, body_secrets);
     }
-}
-
-namespace
-{
-
-/// Replaces each run of characters covered by a secret with one `[HIDDEN]`. Matches are found in the original text only,
-/// so a marker is never searched again and the output grows at most linearly.
-std::string scrubSecrets(std::string_view text, const Strings & secrets)
-{
-    VectorWithMemoryTracking<bool> hidden(text.size());
-    for (const auto & secret : secrets)
-    {
-        if (secret.empty())
-            continue;
-        for (size_t pos = text.find(secret); pos != std::string_view::npos; pos = text.find(secret, pos + secret.size()))
-            std::fill_n(hidden.begin() + pos, secret.size(), true);
-    }
-
-    std::string result;
-    result.reserve(text.size());
-    for (size_t i = 0; i < text.size(); ++i)
-    {
-        if (!hidden[i])
-            result += text[i];
-        else if (i == 0 || !hidden[i - 1])
-            result += HIDDEN_SECRET;
-    }
-    return result;
-}
-
-Strings collectRequestCredentials(const std::string & uri, const Strings & request_secrets)
-{
-    Strings secrets = presignedURLCredentials(uri);
-    secrets.insert(secrets.end(), request_secrets.begin(), request_secrets.end());
-    std::ranges::sort(secrets);
-    secrets.erase(std::ranges::unique(secrets).begin(), secrets.end());
-    return secrets;
-}
-
-}
-
-std::string scrubRequestCredentials(std::string_view text, const std::string & uri, const Strings & request_secrets)
-{
-    return scrubSecrets(text, collectRequestCredentials(uri, request_secrets));
 }
 
 Exception HTTPException::makeExceptionMessage(
@@ -194,21 +149,24 @@ Exception HTTPException::makeExceptionMessage(
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body,
-    const Strings & response_secrets)
+    const Strings & body_secrets)
 {
     std::string masked_uri = uri;
     maskURICredentials(masked_uri);
 
-    /// The reason phrase and the body are remote content that can reflect the request's own credentials back (e.g. an
-    /// auth error naming the token). Scrub those exact credential strings, keeping the rest - a useful diagnostic that
-    /// does not carry a credential. `uri` arrives unmasked, so that the credentials it carries are scrubbed here too.
-    const Strings secrets = collectRequestCredentials(uri, response_secrets);
+    /// The response body is remote content that can reflect the request's own credentials back, which
+    /// a server may echo verbatim (e.g. an auth error naming the user). Scrub those exact credential
+    /// strings, keeping the rest of the body - a useful diagnostic that does not carry a credential.
+    std::string masked_body = body;
+    for (const auto & secret : body_secrets)
+        if (!secret.empty())
+            boost::replace_all(masked_body, secret, "[HIDDEN]");
 
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        masked_uri, static_cast<int>(http_status), scrubSecrets(reason, secrets), body.length(), scrubSecrets(body, secrets));
+        masked_uri, static_cast<int>(http_status), reason, body.length(), masked_body);
 }
 
 }

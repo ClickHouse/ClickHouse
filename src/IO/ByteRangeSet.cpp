@@ -92,28 +92,6 @@ ByteRangeSet ByteRangeSet::intersect(ByteRange range) const
     return out;
 }
 
-std::optional<size_t> ByteRangeSet::intervalEndAhead(size_t offset, size_t max_lead) const
-{
-    auto it = std::partition_point(
-        intervals.begin(), intervals.end(), [&](const ByteRange & interval) { return interval.end() <= offset; });
-    if (it == intervals.end() || (it->offset > offset && it->offset - offset > max_lead))
-        return std::nullopt;
-    return it->end();
-}
-
-ByteRangeSet ByteRangeSet::mergeGapsUpTo(size_t max_gap) const
-{
-    ByteRangeSet out;
-    for (const auto & i : intervals)
-    {
-        if (!out.intervals.empty() && i.offset - out.intervals.back().end() <= max_gap)
-            out.intervals.back().size = i.end() - out.intervals.back().offset;
-        else
-            out.intervals.push_back(i);
-    }
-    return out;
-}
-
 void ByteRangeSet::shift(size_t delta)
 {
     for (auto & i : intervals)

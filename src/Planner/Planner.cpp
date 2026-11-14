@@ -17,10 +17,6 @@
 #include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
-#include <Access/AccessControl.h>
-#include <Access/SettingsProfile.h>
-#include <Access/SettingsProfilesInfo.h>
-
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -41,9 +37,7 @@
 #include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
-#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
-#include <Processors/QueryPlan/BypassExtremesSteps.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -90,7 +84,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/traverseQueryTree.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectMaterializedCTE.h>
@@ -108,7 +101,6 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 #include <base/types.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -123,7 +115,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -172,7 +163,6 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 min_bytes_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
@@ -181,7 +171,6 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
-    extern const SettingsBool adaptive_aggregator_disable_thaw;
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -213,7 +202,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -338,29 +326,21 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
-    /// Disable parallel replicas to collect filters, in every (sub)query: each one is planned with its own context,
-    /// which the clone still shares with the original tree, and an `IN` subquery keeps its real tables.
-    /// A materialized CTE keeps its contexts: the plan built for it here is stored in the handle the query shares and executes.
-    auto not_materialized_cte = [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    /// disable parallel replicas to collect filters
     {
-        const auto * table_node = parent->as<TableNode>();
-        return !table_node || child != table_node->getMaterializedCTESubquery();
-    };
-    traverseQueryTree(updated_query_tree, not_materialized_cte, [](const QueryTreeNodePtr & node)
-    {
-        if (auto * query_node = node->as<QueryNode>())
+        if (auto * query_node = updated_query_tree->as<QueryNode>())
         {
             auto new_context = Context::createCopy(query_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             query_node->getMutableContext() = new_context;
         }
-        else if (auto * union_node = node->as<UnionNode>())
+        else if (auto * union_node = updated_query_tree->as<UnionNode>())
         {
             auto new_context = Context::createCopy(union_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             union_node->getMutableContext() = new_context;
         }
-    });
+    }
 
     std::unordered_map<const IStorage *, QueryTreeNodePtr> dummy_storage_to_table;
 
@@ -521,15 +501,14 @@ struct LimitRangeConditions
 
 /// Builds the boundary conditions of a `LIMIT` range as one DAG over the columns of `header`, so a
 /// subexpression shared by `AFTER` and `UNTIL` is computed once; the DAG keeps only the inputs the
-/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the target's
-/// column (see `addWithFillStepIfNeeded`), while the projection expression the
+/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the column
+/// named after the interpolated alias (see `addWithFillStepIfNeeded`), while the projection expression the
 /// alias was computed from keeps default values on the filled rows. A boundary that refers to such an alias
 /// is therefore redirected to the alias column, as `Project names` does for the query result.
 LimitRangeConditions buildLimitRangeConditions(
     const SharedHeader & header,
     const QueryNode & query_node,
-    const PlannerContextPtr & planner_context,
-    const NameToNameMap & interpolate_target_column_names)
+    const PlannerContextPtr & planner_context)
 {
     ActionsDAG actions;
     for (const auto & column : header->getColumnsWithTypeAndName())
@@ -575,8 +554,7 @@ LimitRangeConditions buildLimitRangeConditions(
         for (const auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
         {
             const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            const auto & alias_column = interpolated_columns.findInOutputs(
-                interpolate_target_column_names.at(interpolate_node_typed.getExpressionName()));
+            const auto & alias_column = interpolated_columns.findInOutputs(interpolate_node_typed.getExpressionName());
             auto expression_name = calculateActionNodeName(interpolate_node_typed.getExpression(), *planner_context);
             interpolated_columns.addOrReplaceInOutputs(interpolated_columns.addAlias(alias_column, expression_name));
         }
@@ -613,11 +591,6 @@ public:
         query_has_with_totals_in_any_subquery_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(query_tree);
 
         sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
-
-        /// The sort description of `SHUFFLE` is used to merge the shuffled streams from remote servers by the internal
-        /// key column, which is added only to the result of a shard (see `addShuffleStep`).
-        if (query_node.isShuffle())
-            sort_description.emplace_back(ShuffleStep::internal_key_column_name, 1, 1);
 
         if (query_node.hasLimit())
         {
@@ -751,8 +724,6 @@ ALWAYS_INLINE void addFilterStep(
         std::move(actions),
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
-    where_step->setOptimizeConstantColumnsAfterFilter(
-        planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_constant_columns_after_filter]);
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
@@ -803,7 +774,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_two_level_threshold_bytes],
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
-        settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
@@ -825,7 +795,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
-        settings[Setting::adaptive_aggregator_disable_thaw],
         settings[Setting::use_aggregation_memory_tracker]);
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
@@ -1368,7 +1337,7 @@ bool limitAlwaysReadsTillEnd(
         return true;
 
     if (query_node.isGroupByWithTotals())
-        return !query_node.hasOrderBy() && !query_node.isShuffle();
+        return !query_node.hasOrderBy();
 
     return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
@@ -1419,7 +1388,7 @@ void addDistinctStep(QueryPlan & query_plan,
       *    `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if (!query_node.isShuffle() && (!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
+    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
         && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && limit_length != 0
         && !query_analysis_result.is_limit_length_negative
@@ -1445,7 +1414,7 @@ void addDistinctStep(QueryPlan & query_plan,
 
     /// The `DISTINCT` that runs after the `ORDER BY` sits above the sort in the plan: the sorted order has
     /// to survive it up to the result.
-    if (!before_order && (query_node.hasOrderBy() || query_node.isShuffle()))
+    if (!before_order && query_node.hasOrderBy())
         distinct_step->preserveInputOrder();
 
     query_plan.addStep(std::move(distinct_step));
@@ -1466,52 +1435,6 @@ void addSortingStep(QueryPlan & query_plan,
         sort_settings);
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
-}
-
-/// `SHUFFLE`: shuffle the rows. The random choices are made just in time, no random values are stored for the rows.
-/// If the result is not final (it is sent from a shard to the initiator), `ShuffleStep` appends an internal key column
-/// with sorted random keys, so that the streams of the shards can be merged by `addMergeSortingStep`.
-void addShuffleStep(QueryPlan & query_plan,
-    const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & query_processing_info)
-{
-    const auto & query_context = planner_context->getQueryContext();
-    const auto & settings = query_context->getSettingsRef();
-
-    std::optional<ShuffleStep::Key> key;
-    if (query_processing_info.getToStage() != QueryProcessingStage::Complete)
-    {
-        const String key_column_name = ShuffleStep::internal_key_column_name;
-        if (query_plan.getCurrentHeader()->has(key_column_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column name `{}` is reserved for `SHUFFLE`", key_column_name);
-        key = ShuffleStep::Key{.column_name = key_column_name, .replace = false, .direction = 1};
-    }
-
-    auto shuffle_step = std::make_unique<ShuffleStep>(
-        query_plan.getCurrentHeader(),
-        std::move(key),
-        query_analysis_result.partial_sorting_limit,
-        settings[Setting::max_block_size]);
-    shuffle_step->setStepDescription("Shuffle for SHUFFLE");
-    query_plan.addStep(std::move(shuffle_step));
-}
-
-/// On a shard, `addShuffleStep` appends the internal key column of `SHUFFLE`, by which the initiator merges the streams
-/// of the shards. The expression analysis does not know about this column, so keep it in the output of `actions`
-/// that are applied after the shuffle (for example, before `LIMIT BY`).
-void preserveShuffleKeyColumn(ActionsDAG & actions, const QueryPlan & query_plan)
-{
-    const auto * key_column = query_plan.getCurrentHeader()->findByName(String(ShuffleStep::internal_key_column_name));
-    if (!key_column)
-        return;
-
-    for (const auto * output : actions.getOutputs())
-        if (output->result_name == key_column->name)
-            return;
-
-    const auto & input = actions.addInput(key_column->name, key_column->type);
-    actions.getOutputs().push_back(&input);
 }
 
 template<size_t size>
@@ -1607,14 +1530,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         else
         {
             ActionsDAG rename_dag;
-            const auto & target_column_names = sort_analysis_result.interpolate_target_column_names;
-
-            /// `FillingTransform` rejects an ORDER BY column as an INTERPOLATE output by name, which a renamed target column no longer has.
-            for (const auto & description : query_analysis_result.sort_description)
-                for (const auto & name : {description.alias, description.column_name})
-                    if (auto it = target_column_names.find(name); !name.empty() && it != target_column_names.end() && it->second != name)
-                        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                            "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output", name);
 
             /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
             std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
@@ -1622,18 +1537,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-                const auto & column_name = target_column_names.at(interpolate_node_typed.getExpressionName());
-
-                /// The expression reads the previous value of its target through a column named by the target name.
-                QueryTreeNodePtr interpolate_expression_node = interpolate_node_typed.getInterpolateExpression();
-                if (column_name != interpolate_node_typed.getExpressionName())
-                {
-                    interpolate_expression_node = interpolate_expression_node->clone();
-                    auto target_column_node = std::make_shared<ColumnNode>(
-                        NameAndTypePair(column_name, interpolate_node_typed.getExpression()->getResultType()),
-                        std::static_pointer_cast<ITableExpressionNode>(interpolate_node));
-                    replaceColumns(interpolate_expression_node, interpolate_node, {{interpolate_node_typed.getExpressionName(), target_column_node}});
-                }
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
@@ -1644,14 +1547,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
                 auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
-                    interpolate_expression_node);
+                    interpolate_node_typed.getInterpolateExpression());
                 interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
-                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, column_name);
+                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, interpolate_node_typed.getExpressionName());
             }
 
             for (const auto & [interpolate_expression, target_type, target_name] : interpolated_columns)
@@ -1764,7 +1667,6 @@ void addLimitRangeStep(
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node,
-    const NameToNameMap & interpolate_target_column_names,
     UsefulSets & useful_sets)
 {
     if (query_node.isLimitWithTies())
@@ -1785,13 +1687,13 @@ void addLimitRangeStep(
     if (query_node.hasLimit())
         limit_length = query_analysis_result.limit_length;
 
-    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context, interpolate_target_column_names);
+    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context);
     appendSetsFromActionsDAG(conditions.actions, useful_sets);
 
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy() && !query_node.isShuffle())
+    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
         always_read_till_end = true;
     if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
         always_read_till_end = true;
@@ -1958,17 +1860,6 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
     if (expressions_analysis_result.hasSort())
         addSortingStep(query_plan, query_analysis_result, planner_context);
-    else if (query_node.isShuffle() && query_processing_info.isIntermediateStage())
-        /// With nested `Distributed` tables, the incoming streams are already shuffled by the shards below
-        /// and sorted by the internal key column. Merging them by this key keeps the result uniformly shuffled
-        /// and lets the initiator merge the streams of this server in the same way.
-        addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge shuffled streams for SHUFFLE");
-    else if (query_node.isShuffle())
-        addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
-
-    /// Keep every candidate for the global `DISTINCT` followed by a fresh `SHUFFLE` on the initiator.
-    if (query_node.isShuffle() && query_node.isDistinct())
-        return;
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -1989,7 +1880,6 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     if (expressions_analysis_result.hasLimitBy())
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
-        preserveShuffleKeyColumn(limit_by_analysis_result.before_limit_by_actions->dag, query_plan);
         addExpressionStep(
             planner_context,
             query_plan,
@@ -2433,16 +2323,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
-
-    /// The extremes are computed before `LIMIT`, and the result filter, which comes after it, must not filter them either.
-    const bool bypass_extremes = settings[Setting::extremes];
-    if (bypass_extremes)
-        query_plan.addStep(std::make_unique<DetachExtremesStep>(query_plan.getCurrentHeader()));
-
     query_plan.addStep(std::move(filter_step));
-
-    if (bypass_extremes)
-        query_plan.addStep(std::make_unique<AttachExtremesStep>(query_plan.getCurrentHeader()));
 }
 
 /// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
@@ -2482,10 +2363,15 @@ void addReadFromQueryResultCacheStep(
     std::unique_ptr<SourceFromChunks> source_totals,
     std::unique_ptr<SourceFromChunks> source_extremes)
 {
-    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(
-        std::shared_ptr<SourceFromChunks>(std::move(source)),
-        std::shared_ptr<SourceFromChunks>(std::move(source_totals)),
-        std::shared_ptr<SourceFromChunks>(std::move(source_extremes)));
+    auto pipe = Pipe();
+    if (source)
+        pipe.addSource(std::shared_ptr<SourceFromChunks>(source.release()));
+    if (source_totals)
+        pipe.addTotalsSource(std::shared_ptr<SourceFromChunks>(source_totals.release()));
+    if (source_extremes)
+        pipe.addExtremesSource(std::shared_ptr<SourceFromChunks>(source_extremes.release()));
+
+    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(std::move(pipe));
     query_plan.addStep(std::move(read_from_query_result_cache_step));
 }
 
@@ -2588,6 +2474,16 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
+/// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
+/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
+/// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
+/// By default, `use_query_cache` does NOT propagate.
+///
+/// Regardless of opt-in, never use the cache for execution kinds where caching is unsafe:
+/// internal queries (e.g. background system queries) and non-initial queries (e.g. `SECONDARY_QUERY`
+/// executed by a replica as part of a distributed query). Caching in those kinds would write/read
+/// per-replica or per-internal entries that the outer query already manages or that bypass the
+/// safety gate `executeQuery` applies via `Context::setCanUseQueryResultCache`.
 /// Gate every Planner-level cache use by the query kind, so an explicit `SETTINGS use_query_cache`
 /// on a subquery cannot bypass the safety check that `executeQuery` performs for the outer query.
 /// Caching internal queries (e.g. background system queries) or non-initial queries (e.g. a
@@ -2600,76 +2496,30 @@ static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context
         && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 }
 
-/// Never use the cache in plans that are serialized for remote execution: logical plans are
-/// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
-/// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
-/// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
-/// representation. The cache is populated and read by the plan the initiator executes itself.
-///
-/// Plan-based parallel replicas (`parallel_replicas_plan_based`) are another such case: the plan is
-/// built locally, and `QueryPlanOptimizations::applyParallelReplicas` later serializes a fragment of
-/// it - including the plans of `IN` subquery sets - for the replicas. A fragment holding a cache step
-/// is kept local instead, so the cache would silently disable parallel replicas, and on a warm cache
-/// the remote/local decision would depend on cache contents. The setting is checked on both the local
-/// and the query-level context, so a subquery cannot escape the ban with its own SETTINGS clause.
-static bool isPlanEligibleForSubqueryCache(const SelectQueryOptions & select_query_options, const ContextPtr & query_context)
-{
-    if (select_query_options.build_logical_plan)
-        return false;
-
-    const auto uses_plan_based_parallel_replicas = [](const ContextPtr & context)
-    {
-        return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
-    };
-    return !uses_plan_based_parallel_replicas(query_context)
-        && !(query_context->hasQueryContext() && uses_plan_based_parallel_replicas(query_context->getQueryContext()));
-}
-
 /// Returns the explicit `use_query_cache` opt-in / opt-out carried by a node's own query-level
-/// `SETTINGS` clause, or `std::nullopt` when the clause does not set the setting, neither literally
-/// nor through a `profile` it applies. `QueryNode` and `UnionNode` store the clause the same way,
-/// so a plain subquery and a `UNION` subquery are handled alike.
+/// `SETTINGS` clause, or `std::nullopt` when the clause does not mention the setting. `QueryNode`
+/// and `UnionNode` store the clause the same way, so a plain subquery and a `UNION` subquery are
+/// handled alike.
 ///
 /// The clause is only inspected for the *presence* of the setting; the value is then read from the
 /// node's own context, which already has the whole clause applied in order (and clamped against the
 /// constraints). `ParserSetQuery` keeps every occurrence, so `SETTINGS use_query_cache = 1,
-/// use_query_cache = 0` - or an assignment followed by `= DEFAULT`, or a literal followed by a
-/// profile that sets it the other way - has a last-wins effective value, which the first entry of
-/// `settings_changes` does not report. Returning that first entry would make this path disagree with
-/// every other consumer of the setting, e.g. taking the cache path (and possibly raising
-/// `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
-///
-/// A profile stays in the clause as written (`profile = 'p'`), so that every shard of a distributed
-/// query applies its own profile under its own constraints; it is resolved here instead. A profile
-/// that sets `use_query_cache` is this clause's opt-in / opt-out exactly like the literal, while a
-/// profile that does not mention it contributes nothing, so an outer `use_query_cache` still does
-/// not propagate into the subquery (#119019).
-template <typename Node>
-static std::optional<bool> explicitUseQueryCacheSetting(const Node & node)
+/// use_query_cache = 0` - or an assignment followed by `= DEFAULT` - has a last-wins effective value,
+/// which the first entry of `settings_changes` does not report. Returning that first entry would make
+/// this path disagree with every other consumer of the setting, e.g. taking the cache path (and
+/// possibly raising `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
+static std::optional<bool> explicitUseQueryCacheSetting(
+    const SettingsChanges & settings_changes, const std::vector<String> & default_settings, const ContextPtr & node_context)
 {
-    const ContextPtr & node_context = node.getContext();
-    const SettingsChanges & settings_changes = node.getSettingsChanges();
-
-    bool mentioned_in_clause = settings_changes.tryGet("use_query_cache") != nullptr
-        || std::ranges::contains(node.getDefaultSettings(), "use_query_cache");
-
-    if (!mentioned_in_clause)
-    {
-        /// The profile lookup needs the mutable `AccessControl`, which only the global context exposes.
-        AccessControl & access_control = node_context->getGlobalContext()->getAccessControl();
-        for (const SettingChange & change : settings_changes)
-        {
-            if (change.name != "profile")
-                continue;
-            /// The profile resolved when the clause was applied to the node's context; one dropped since is not consulted.
-            auto profile_id = access_control.find<SettingsProfile>(change.value.safeGet<String>());
-            if (profile_id && access_control.getSettingsProfileInfo(*profile_id)->settings.tryGet("use_query_cache"))
-            {
-                mentioned_in_clause = true;
-                break;
-            }
-        }
-    }
+    bool mentioned_in_clause
+        = std::any_of(
+              settings_changes.begin(),
+              settings_changes.end(),
+              [](const auto & change) { return change.name == "use_query_cache"; })
+        || std::any_of(
+              default_settings.begin(),
+              default_settings.end(),
+              [](const auto & setting_name) { return setting_name == "use_query_cache"; });
 
     if (!mentioned_in_clause)
         return {};
@@ -2677,28 +2527,23 @@ static std::optional<bool> explicitUseQueryCacheSetting(const Node & node)
     return node_context->getSettingsRef()[Setting::use_query_cache];
 }
 
-/// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
-/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
-/// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
-/// By default, `use_query_cache` does NOT propagate.
 static bool shouldUseQueryCacheForSubquery(
     const QueryNode & query_node,
     bool outer_can_use_cache,
     const Settings & settings,
-    const SelectQueryOptions & select_query_options,
+    bool is_subquery,
     bool allow_propagation,
     const ContextPtr & query_context)
 {
-    if (!isQueryKindEligibleForSubqueryCache(query_context) || !isPlanEligibleForSubqueryCache(select_query_options, query_context))
+    if (!isQueryKindEligibleForSubqueryCache(query_context))
         return false;
-
-    const bool is_subquery = select_query_options.is_subquery;
 
     /// Only check explicit per-node `use_query_cache` for actual subqueries.
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
     if (is_subquery)
     {
-        if (auto explicit_setting = explicitUseQueryCacheSetting(query_node))
+        if (auto explicit_setting = explicitUseQueryCacheSetting(
+                query_node.getSettingsChanges(), query_node.getDefaultSettings(), query_node.getContext()))
             return *explicit_setting;
     }
 
@@ -2849,11 +2694,11 @@ void Planner::buildPlanForUnionNode()
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
     std::optional<bool> explicit_use_query_cache;
     if (select_query_options.is_subquery)
-        explicit_use_query_cache = explicitUseQueryCacheSetting(union_node);
+        explicit_use_query_cache = explicitUseQueryCacheSetting(
+            union_node.getSettingsChanges(), union_node.getDefaultSettings(), union_node.getContext());
 
     bool should_cache = select_query_options.is_subquery && query_result_cache != nullptr
         && isQueryKindEligibleForSubqueryCache(query_context)
-        && isPlanEligibleForSubqueryCache(select_query_options, query_context)
         && explicit_use_query_cache.value_or(false);
 
     /// An explicit opt-out covers the whole set operation: its arms must not be cached through the
@@ -2878,13 +2723,10 @@ void Planner::buildPlanForUnionNode()
             return;
     }
 
-    /// Each arm is checked only against its own context, so compare the arms with the union here.
-    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
-
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
-    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> query_plans;
+    std::vector<std::unique_ptr<QueryPlan>> query_plans;
     query_plans.reserve(queries_size);
 
     SharedHeaders query_plans_headers;
@@ -3020,7 +2862,7 @@ void Planner::buildPlanForQueryNode()
     /// 2. `query_cache_for_subqueries` propagates from outer query (applies to all Planner invocations)
     /// 3. By default, `use_query_cache` does NOT propagate from outer query to subqueries
     bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings,
-        select_query_options, allow_query_cache_for_subqueries_propagation, query_context);
+        select_query_options.is_subquery, allow_query_cache_for_subqueries_propagation, query_context);
 
     /// Query result cache must actually exist
     if (should_cache && !query_result_cache)
@@ -3053,8 +2895,7 @@ void Planner::buildPlanForQueryNode()
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
     current_storage_limits.push_back(select_query_info.local_storage_limits);
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(current_storage_limits);
-    /// `SHUFFLE` reorders the rows like `ORDER BY`, so the storage must not stop reading after `LIMIT` rows.
-    select_query_info.has_order_by = query_node.hasOrderBy() || query_node.isShuffle();
+    select_query_info.has_order_by = query_node.hasOrderBy();
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
@@ -3078,9 +2919,6 @@ void Planner::buildPlanForQueryNode()
 
         query_node.getHaving() = {};
     }
-
-    /// Before collecting sets and materialized CTEs, whose subqueries are planned separately.
-    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
 
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
@@ -3110,17 +2948,14 @@ void Planner::buildPlanForQueryNode()
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
     /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
     /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
-    /// the combination works there and the check is skipped. Plan-based parallel replicas ships the
-    /// plan the same way, whatever `serialize_query_plan` says, so the check is skipped there too.
+    /// the combination works there and the check is skipped.
     if (query_context->canUseParallelReplicasOnInitiator()
         && !settings[Setting::serialize_query_plan]
-        && !settings[Setting::parallel_replicas_plan_based]
         && !settings[Setting::additional_table_filters].value.empty())
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "additional_table_filters is not supported with parallel replicas unless the plan is "
-                "shipped (parallel_replicas_plan_based=1 or serialize_query_plan=1)");
+                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -3507,23 +3342,7 @@ void Planner::buildPlanForQueryNode()
             /// There are no aggregation or windows, all expressions before ORDER BY executed on shards
         }
 
-        const bool distinct_shuffle = query_node.isShuffle() && query_node.isDistinct();
-        const bool finalize_distinct_shuffle = distinct_shuffle && query_processing_info.isFinalizingStage();
-
-        if (finalize_distinct_shuffle)
-        {
-            /// Sample distinct result rows, not occurrences in individual streams or shards.
-            /// Incoming shard keys are not part of the projection columns used for deduplication.
-            addDistinctStep(query_plan,
-                query_analysis_result,
-                planner_context,
-                expression_analysis_result.getProjection().projection_column_names,
-                query_node,
-                true /*before_order*/,
-                false /*pre_distinct*/);
-            addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
-        }
-        else if (expression_analysis_result.hasSort() || query_node.isShuffle())
+        if (expression_analysis_result.hasSort())
         {
             /** If there is an ORDER BY for distributed query processing,
               * but there is no aggregation, then on the remote servers ORDER BY was made
@@ -3540,8 +3359,6 @@ void Planner::buildPlanForQueryNode()
                 !expression_analysis_result.hasWindow() &&
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
-            else if (query_node.isShuffle())
-                addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
             else
                 addSortingStep(query_plan, query_analysis_result, planner_context);
         }
@@ -3557,7 +3374,7 @@ void Planner::buildPlanForQueryNode()
             select_query_options);
 
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
-        if (!finalize_distinct_shuffle && !query_processing_info.isFromAggregationState() && query_node.isDistinct())
+        if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
         {
             addDistinctStep(query_plan,
                 query_analysis_result,
@@ -3568,11 +3385,9 @@ void Planner::buildPlanForQueryNode()
                 false /*pre_distinct*/);
         }
 
-        if ((!query_processing_info.isFromAggregationState() || finalize_distinct_shuffle)
-            && (!distinct_shuffle || finalize_distinct_shuffle) && expression_analysis_result.hasLimitBy())
+        if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
-            preserveShuffleKeyColumn(limit_by_analysis_result.before_limit_by_actions->dag, query_plan);
             addExpressionStep(
                 planner_context,
                 query_plan,
@@ -3632,13 +3447,7 @@ void Planner::buildPlanForQueryNode()
                     "Before LIMIT range (AFTER/UNTIL)",
                     useful_sets);
 
-            addLimitRangeStep(
-                query_plan,
-                query_analysis_result,
-                planner_context,
-                query_node,
-                expression_analysis_result.hasSort() ? expression_analysis_result.getSort().interpolate_target_column_names : NameToNameMap{},
-                useful_sets);
+            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
         }
         else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
@@ -3702,9 +3511,7 @@ void Planner::buildPlanForQueryNode()
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const
 {
-    auto select_query_info = ::DB::buildSelectQueryInfo(query_tree, planner_context);
-    select_query_info.is_secondary_query_root = select_query_options.is_secondary_query_root;
-    return select_query_info;
+    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)

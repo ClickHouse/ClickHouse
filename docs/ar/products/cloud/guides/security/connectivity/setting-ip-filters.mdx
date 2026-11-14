@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['مرشحات IP', 'قائمة الوصول لعناوين IP']
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="setting-ip-filters">
   ## إعداد عوامل تصفية IP
 </div>
@@ -62,15 +64,7 @@ keywords: ['مرشحات IP', 'قائمة الوصول لعناوين IP']
 
 تُظهر لقطة الشاشة هذه قائمة وصول تسمح بحركة المرور من نطاق من عناوين IP، وموسومة باسم &quot;NY Office range&quot;:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![قائمة وصول حالية في ClickHouse Cloud](/images/cloud/security/ip-filtering-after-provisioning.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="قائمة وصول حالية في ClickHouse Cloud" border />
 
 <div id="possible-actions">
   ### الإجراءات الممكنة
@@ -80,15 +74,7 @@ keywords: ['مرشحات IP', 'قائمة الوصول لعناوين IP']
 
 يوضح هذا المثال إضافة عنوان IP واحد، مع الوصف `London server`:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![إضافة عنوان IP واحد إلى قائمة الوصول لعناوين IP في ClickHouse Cloud](/images/cloud/security/ip-filter-add-single-ip.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="إضافة عنوان IP واحد إلى قائمة الوصول لعناوين IP في ClickHouse Cloud" border />
 
 2. احذف إدخالاً موجودًا
 

@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
 SET optimize_move_to_prewhere = 1;
+SET enable_analyzer = 1;
 SET use_statistics = 1;
 -- The statistics are declared in `CREATE TABLE` and built on insert, so the test does not need slow `MATERIALIZE STATISTICS` mutations.
 SET materialize_statistics_on_insert = 1;

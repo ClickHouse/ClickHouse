@@ -124,7 +124,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
         {
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(
-                    *columns[index], field_buf, format_settings, serializations[index], type.get());
+                    *columns[index], field_buf, format_settings, serializations[index]);
             else
             {
                 serializations[index]->deserializeWholeText(*columns[index], field_buf, format_settings);
@@ -226,7 +226,7 @@ void registerInputFormatRegexp(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<RegexpRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    }, /*supports_reset_parser=*/ true);
+    });
 
     factory.setDocumentation("Regexp", Documentation{
         .description = R"DOCS_MD(

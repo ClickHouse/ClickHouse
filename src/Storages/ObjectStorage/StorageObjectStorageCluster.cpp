@@ -13,6 +13,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -37,6 +39,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool iceberg_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsMilliseconds cluster_function_wait_for_replica_ms;
@@ -52,6 +55,56 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char storage_cluster_read_sleep[];
+}
+
+/// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
+static String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns)
+{
+    const auto names = columns.getAll().getNameSet();
+    std::unordered_map<String, NameSet> reads;
+    for (const auto & column : columns)
+    {
+        if (column.default_desc.kind != ColumnDefaultKind::Default || !column.default_desc.expression
+            || column.default_desc.expression->hasSecretParts())
+            continue;
+        reads.emplace(column.name, getStorageColumnsReadByDefault(columns, column));
+    }
+
+    /// The least fixed point, so cycles and self-reads are never sent.
+    NameSet sent;
+    for (bool changed = true; changed;)
+    {
+        changed = false;
+        for (const auto & [name, required] : reads)
+        {
+            if (!sent.contains(name) && std::ranges::all_of(required, [&](const String & read)
+                    {
+                        if (names.contains(read))
+                            return !columns.hasDefault(read) || sent.contains(read);
+                        /// Not a column of the table the `DEFAULT`s come from either: the nodes resolve the name the same way as
+                        /// this server, as a function, dictionary, table or set.
+                        return !insertion_columns || !insertion_columns->hasColumnOrSubcolumn(GetColumnsOptions::All, read);
+                    }))
+                changed |= sent.insert(name).second;
+        }
+    }
+
+    WriteBufferFromOwnString buf;
+    bool first = true;
+    for (const auto & column : columns)
+    {
+        if (!std::exchange(first, false))
+            writeCString(", ", buf);
+        writeBackQuotedString(column.name, buf);
+        writeChar(' ', buf);
+        writeString(column.type->getName(), buf);
+        if (sent.contains(column.name))
+        {
+            writeCString(" DEFAULT ", buf);
+            writeString(column.default_desc.expression->formatWithSecretsOneLine(), buf);
+        }
+    }
+    return buf.str();
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -204,46 +257,9 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     setInMemoryMetadata(metadata);
 }
 
-StorageObjectStorageCluster::StorageObjectStorageCluster(
-    const String & cluster_name_,
-    StorageObjectStorageConfigurationPtr configuration_,
-    ObjectStoragePtr object_storage_,
-    const StorageID & table_id_,
-    const StorageMetadataPtr & metadata_,
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path_,
-    std::optional<FormatSettings> format_settings_,
-    std::shared_ptr<DataLake::ICatalog> catalog_,
-    ConstStoragePtr table_)
-    : IStorageCluster(
-        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
-    , configuration{configuration_}
-    , object_storage(object_storage_)
-    , format_settings(std::move(format_settings_))
-    , catalog(std::move(catalog_))
-    , hive_partition_columns_to_read_from_file_path(std::move(hive_partition_columns_to_read_from_file_path_))
-    , table(std::move(table_))
-{
-    setInMemoryMetadata(*metadata_);
-}
-
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
-}
-
-std::optional<QualifiedTableName> StorageObjectStorageCluster::getTableReadOnReplicas() const
-{
-    if (!table)
-        return {};
-    const auto table_id = getStorageID();
-    return QualifiedTableName{table_id.database_name, table_id.table_name};
-}
-
-void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context)
-{
-    /// The same per-query update as `StorageObjectStorage::read` does for the table.
-    if (table && !configuration->isDataLakeConfiguration())
-        configuration->update(object_storage, context);
 }
 
 SinkToStoragePtr StorageObjectStorageCluster::write(
@@ -339,16 +355,13 @@ void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr
 
 void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
-    if (std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MODIFY SETTING and RESET SETTING are not supported by storage {}", getName());
-
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
 Pipe StorageObjectStorageCluster::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
-    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
 }
 
 void StorageObjectStorageCluster::checkAlterPartitionIsPossible(
@@ -375,35 +388,26 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
 
 void StorageObjectStorageCluster::drop()
 {
-    StorageObjectStorage::dropTable(configuration, catalog, getStorageID());
+    /// We cannot use query context here, because drop is executed in the background.
+    auto drop_context = Context::getGlobalContextInstance();
+    if (catalog)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
+        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+    }
+    configuration->drop(drop_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    return totalRowsInSnapshot(nullptr, query_context);
-}
-
-std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
-{
-    if (query_context->totalsWithoutStorageAccess())
-        return std::nullopt;
-
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
-
-    std::optional<DataLakeTableStateSnapshot> state;
-    if (storage_snapshot && storage_snapshot->metadata)
-        state = storage_snapshot->metadata->datalake_table_state;
-
-    return configuration->totalRows(query_context, state);
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    if (query_context->totalsWithoutStorageAccess())
-        return std::nullopt;
-
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -578,10 +582,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
-            configuration,
+            configuration->format,
             object_storage,
-            local_context,
-            getStorageID());
+            local_context
+        );
     }
 
     std::vector<std::string> ids_of_hosts;

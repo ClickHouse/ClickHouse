@@ -18,13 +18,3 @@
 7
 8
 9
-{
-	"meta":
-	[
-		{
-			"name": "number",
-			"type": "UInt64"
-		}
-	],
-
-	"data":

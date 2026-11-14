@@ -30,12 +30,10 @@ guide):
    its output. The working tree is restored afterwards; the failure message
    names the exact command to run.
 
-3. Homepage links. English and localized homepage anchors must use
-   root-relative hrefs without the `/docs` mount, because Mintlify adds the
-   deployment's base path to them when it renders the link and handles their
-   clicks client-side. Localized links must also use the page's locale before
-   hydration. This keeps middle-click, copied links, and no-JavaScript clients
-   on the final published destination.
+3. Homepage links. English and localized homepages must render the canonical
+   `/docs` mount during server-side rendering. Localized links must also use the
+   page's locale before hydration. This keeps middle-click, copied links, and
+   no-JavaScript clients on the final published destination.
 
 4. Install-page Cloud banner parity. The English and localized install pages
    must render the same recommended Cloud banner, attributed signup link, and
@@ -85,7 +83,64 @@ LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
 CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
 INSTALL_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-install-page-banner"
 EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 43
-QUICKSTART_NAVIGATION_LABELS_PATH = "_site/quickstart-navigation-labels.json"
+LOCALIZED_QUICKSTART_GROUPS = {
+    "ar": [
+        "الأدلة السريعة",
+        "جميع حالات الاستخدام",
+        "التحليلات في الوقت الفعلي",
+        "مستودعات البيانات",
+        "أوبزرفابيليتي",
+    ],
+    "es": [
+        "Guías de inicio rápido",
+        "Todos los casos de uso",
+        "Análisis en tiempo real",
+        "Almacenamiento de datos",
+        "Observabilidad",
+    ],
+    "fr": [
+        "Guides de démarrage rapide",
+        "Tous les cas d’usage",
+        "Analytique en temps réel",
+        "Entrepôt de données",
+        "Observabilité",
+    ],
+    "ja": [
+        "クイックスタート",
+        "すべてのユースケース",
+        "リアルタイム分析",
+        "データウェアハウジング",
+        "オブザーバビリティ",
+    ],
+    "ko": [
+        "빠른 시작",
+        "모든 사용 사례",
+        "실시간 분석",
+        "데이터 웨어하우징",
+        "관측성",
+    ],
+    "pt-BR": [
+        "Guias de início rápido",
+        "Todos os casos de uso",
+        "Analytics em tempo real",
+        "Armazenamento de dados",
+        "Observabilidade",
+    ],
+    "ru": [
+        "Быстрый старт",
+        "Все сценарии использования",
+        "Аналитика в реальном времени",
+        "Хранилище данных",
+        "Обсервабилити",
+    ],
+    "zh": [
+        "快速入门",
+        "所有用例",
+        "实时分析",
+        "数据仓库",
+        "可观测性",
+    ],
+}
 LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES = {
     "ar": "البدء السريع عبر Cloud",
     "es": "Inicio rápido en Cloud",
@@ -235,10 +290,6 @@ def generated_paths(docs_root: Path) -> list:
     paths = list(all_quickstart_pages(docs_root))
     paths += sorted(docs_root.glob("snippets/components/QuickStartsGrid/quickstarts-data.jsx"))
     paths += sorted(docs_root.glob("snippets/*/components/QuickStartsGrid/quickstarts-data.jsx"))
-    paths += [
-        docs_root / locale / "get-started" / "navigation.json"
-        for locale in LOCALES
-    ]
     return paths
 
 
@@ -546,11 +597,12 @@ def check_cloud_setup_link_labels(docs_root: Path) -> list:
 
 
 def check_localized_homepage_links(docs_root: Path) -> list:
-    """Ensure homepage links leave the docs mount to Mintlify and keep the locale."""
+    """Ensure homepage links include the docs mount and locale before hydration."""
     component = re.compile(
         r"export const QuickstartPill = \(\{ children \}\) => \{"
         r".*?const path = ['\"](?P<path>[^'\"]+)['\"];"
-        r".*?href=\{path\}",
+        r".*?const href = withDocsBase\(path\);"
+        r".*?href=\{href\}",
         re.DOTALL,
     )
     helper = re.compile(
@@ -576,20 +628,40 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         r".*?const path = localizeHref\("
         r"['\"]/resources/support-center/knowledge-base/setup-installation/"
         r"set-up-clickhouse-documentation-mcp-server['\"]\);"
-        r".*?href=\{path\}",
+        r".*?const href = withDocsBase\(path\);"
+        r".*?href=\{href\}",
         re.DOTALL,
+    )
+    docs_base_helper = (
+        "export const withDocsBase = (href) => {\n"
+        "    if (!href || !href.startsWith('/')) return href;\n"
+        "    const base = typeof window === 'undefined' || "
+        "window.location.pathname.startsWith('/docs') ? '/docs' : '';\n"
+        "    return base + href;\n"
+        "};"
+    )
+    navigation_helper = (
+        "export const navigateTo = (event, href) => {\n"
+        "    if (event.defaultPrevented) return;\n"
+        "    if (event.metaKey || event.ctrlKey || event.shiftKey || "
+        "event.altKey || event.button !== 0) return;\n"
+        "    event.preventDefault();\n"
+        "    window.location.href = href;\n"
+        "};"
     )
     docs_base_requirements = {
         "const assetBase = typeof window === 'undefined' || "
         "window.location.pathname.startsWith('/docs') ? '/docs' : '';": 3,
-        "href={href}": 2,
-        "href={path}": 3,
-        "href={link.href}": 1,
-        "const path = localizeHref('/integrations/home');": 1,
+        "const resolvedHref = withDocsBase(href);": 1,
+        "href={resolvedHref}": 2,
+        "href={withDocsBase(link.href)}": 1,
+        "onClick={(event) => navigateTo(event, resolvedHref)}": 2,
+        "onClick={(event) => navigateTo(event, "
+        "withDocsBase(link.href))}": 1,
+        "onClick={(event) => navigateTo(event, href)}": 3,
+        "const href = withDocsBase(localizeHref('/integrations/home'));": 1,
+        "const href = withDocsBase(path);": 2,
     }
-    # Mintlify adds the deployment's base path to these anchors and routes
-    # their clicks client-side, so adding `/docs` in the page doubles it.
-    forbidden_markers = ["withDocsBase", "navigateTo"]
     cloud_link = 'localizeHref("/get-started/setup/cloud")'
     errors = []
 
@@ -599,17 +671,21 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         source = page.read_text(encoding="utf-8")
         name = page.relative_to(docs_root)
 
-        for marker in forbidden_markers:
-            if marker in source:
-                errors.append(
-                    f"{name}: homepage links must not add the `/docs` mount "
-                    f"themselves (found {marker!r}); Mintlify adds it"
-                )
+        if source.count(docs_base_helper) != 1:
+            errors.append(
+                f"{name}: withDocsBase must default to the canonical `/docs` "
+                "mount during server-side rendering"
+            )
+        if source.count(navigation_helper) != 1:
+            errors.append(
+                f"{name}: navigateTo must preserve modifier and non-primary "
+                "clicks before overriding same-tab navigation"
+            )
         for marker, count in docs_base_requirements.items():
             if source.count(marker) != count:
                 errors.append(
                     f"{name}: expected {count} occurrence(s) of {marker!r} "
-                    "so homepage anchors render root-relative, localized hrefs"
+                    "so rendered homepage anchors include `/docs`"
                 )
 
         expected_path = "/get-started/setup/cloud"
@@ -619,13 +695,14 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         if not component_match:
             errors.append(
                 f"{name}: could not find a static QuickstartPill path "
-                "rendered as its own href"
+                "resolved through withDocsBase"
             )
         elif component_match.group("path") != expected_path:
             errors.append(
                 f"{name}: QuickstartPill path is "
                 f"{component_match.group('path')!r}; expected "
-                f"{expected_path!r}"
+                f"{expected_path!r}, which resolves to "
+                f"{f'/docs{expected_path}'!r} during server rendering"
             )
 
     for locale in LOCALES:
@@ -843,16 +920,6 @@ def navigation_groups(node):
 def check_localized_quickstart_navigation(docs_root: Path) -> list:
     """Ensure the new quickstart groups are translated in every locale."""
     errors = []
-    labels_path = docs_root / QUICKSTART_NAVIGATION_LABELS_PATH
-    try:
-        expected_groups = json.loads(labels_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as ex:
-        return [f"could not read Quickstarts navigation labels: {ex}"]
-    if set(expected_groups) != set(LOCALES):
-        return [
-            "Quickstarts navigation labels must cover exactly: "
-            + ", ".join(LOCALES)
-        ]
     for locale in LOCALES:
         path = docs_root / locale / "get-started" / "navigation.json"
         navigation = json.loads(path.read_text(encoding="utf-8"))
@@ -876,7 +943,7 @@ def check_localized_quickstart_navigation(docs_root: Path) -> list:
             for page in quickstarts_group["pages"]
             if isinstance(page, dict) and "group" in page
         ]
-        expected = expected_groups[locale]
+        expected = LOCALIZED_QUICKSTART_GROUPS[locale]
         if labels != expected:
             errors.append(
                 f"{path.relative_to(docs_root)}: localized quickstart groups "

@@ -1,6 +1,6 @@
 #pragma once
 #include <memory>
-#include <Core/FileCachePolicy.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {

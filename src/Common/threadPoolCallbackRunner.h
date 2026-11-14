@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
@@ -381,25 +380,6 @@ public:
     }
 
     void waitForAllToFinishAndRethrowFirstError() { waitForAllToFinishAndRethrowFirstError(tasks); }
-
-    /// Cancel the tasks that have not started yet, wait for the started ones and rethrow the first error.
-    /// Useful when the caller also does the work itself (e.g. takes work items from a shared counter until
-    /// there are none left): when the pool is busy, it should not wait for the tasks to be picked up
-    /// only to find nothing to do.
-    void cancelScheduledAndWaitForStartedAndRethrowFirstError()
-    {
-        cancelScheduledTasks();
-        waitForAllToFinish(tasks);
-
-        for (auto & task : tasks)
-        {
-            /// The future of a cancelled task is never set.
-            if (task->state != CANCELLED && task->future.valid())
-                task->future.get();
-        }
-
-        tasks.clear();
-    }
 };
 
 /// Has a task queue and a set of threads from ThreadPool.
@@ -441,7 +421,7 @@ public:
 
     void operator()(std::function<void()> f);
 
-    void bulkSchedule(VectorWithMemoryTracking<std::function<void()>> fs);
+    void bulkSchedule(std::vector<std::function<void()>> fs);
 
     /// Returns true if a task was run, false if queue is empty.
     bool runTaskInline();

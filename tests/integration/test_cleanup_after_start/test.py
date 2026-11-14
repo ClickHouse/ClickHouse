@@ -122,9 +122,7 @@ def test_writable_workers_after_cleanup_error(start_cluster):
         error = node1.query_and_get_error(
             "ALTER TABLE readonly_cleanup_error MODIFY SETTING table_readonly = 0"
         )
-        # strerror(ELOOP) differs between libcs: glibc says "Too many levels of symbolic links",
-        # musl says "Symbolic link loop".
-        assert "Too many levels of symbolic links" in error or "Symbolic link loop" in error
+        assert "Too many levels of symbolic links" in error
         node1.exec_in_container(["rm", bad_dir + "/loop"])
 
         node1.query("INSERT INTO readonly_cleanup_error VALUES (0)")

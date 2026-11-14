@@ -16,7 +16,6 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/HTTPConnectionInfo.h>
 
 
 #include <azure/core/credentials/credentials.hpp>
@@ -179,7 +178,6 @@ namespace
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -223,7 +221,6 @@ namespace
             if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -330,7 +327,6 @@ namespace
             auto block_id = getRandomASCIIString(64);
             block_ids[part_index] = block_id;
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -391,7 +387,7 @@ void copyDataToAzureBlobStorageFile(
 }
 
 
-bool copyAzureBlobStorageFile(
+void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
@@ -403,8 +399,7 @@ bool copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    BlobStorageLogWriterPtr blob_storage_log,
-    bool allow_copy_through_buffers)
+    BlobStorageLogWriterPtr blob_storage_log)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
@@ -424,7 +419,6 @@ bool copyAzureBlobStorageFile(
 
             auto source_uri = block_blob_client_src.GetUrl();
 
-            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto log_copy = [&](Int32 error_code, const String & error_message)
             {
@@ -523,8 +517,6 @@ bool copyAzureBlobStorageFile(
     }
     if (!is_native_copy_done)
     {
-        if (!allow_copy_through_buffers)
-            return false;
         /// Copy through read and write
         LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
         auto create_read_buffer = [&]
@@ -536,7 +528,6 @@ bool copyAzureBlobStorageFile(
         UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
         helper.performCopy();
     }
-    return true;
 }
 
 }

@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <limits>
@@ -40,14 +39,14 @@ void updateJoinKeyDistinctCounts(
         right_stats.num_distinct_values = minimum;
 }
 
-void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions)
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     /// Column statistics are usually absent; do not pay for a full lineage walk of the
     /// `ActionsDAG` when there is nothing to remap.
     if (mapped.empty())
         return;
 
-    UnorderedMapWithMemoryTracking<String, ColumnStats> original;
+    std::unordered_map<String, ColumnStats> original;
     original.swap(mapped);
 
     const auto lineage = traceActionsDAGLineage(actions);

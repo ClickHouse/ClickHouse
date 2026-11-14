@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Common/ListWithMemoryTracking.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
@@ -11,7 +10,6 @@
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
-#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
@@ -32,7 +30,6 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace Setting
@@ -63,7 +60,7 @@ QueryPlanAndSets::QueryPlanAndSets(QueryPlanAndSets &&) noexcept = default;
 struct QueryPlanAndSets::Set
 {
     CityHash_v1_0_2::uint128 hash;
-    ListWithMemoryTracking<ColumnSet *> columns;
+    std::list<ColumnSet *> columns;
 };
 struct QueryPlanAndSets::SetFromStorage : public QueryPlanAndSets::Set
 {
@@ -225,15 +222,6 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
 
-            if (num_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Suspiciously many columns ({}) in a serialized set (maximum: {})",
-                    num_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
-            if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Suspiciously many rows ({}) in a serialized set (maximum: {})",
-                    num_rows, DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS);
-
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);
 
@@ -279,7 +267,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
     return res;
 }
 
-static void makeSetsFromStorage(ListWithMemoryTracking<QueryPlanAndSets::SetFromStorage> sets, const ContextPtr & context)
+static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets, const ContextPtr & context)
 {
     for (auto & set : sets)
     {
@@ -300,7 +288,7 @@ static void makeSetsFromStorage(ListWithMemoryTracking<QueryPlanAndSets::SetFrom
     }
 }
 
-static void makeSetsFromTuple(ListWithMemoryTracking<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
+static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     const FutureSetSettings set_settings(settings);
@@ -313,7 +301,7 @@ static void makeSetsFromTuple(ListWithMemoryTracking<QueryPlanAndSets::SetFromTu
     }
 }
 
-static void makeSetsFromSubqueries(QueryPlan & plan, ListWithMemoryTracking<QueryPlanAndSets::SetFromSubquery> sets, const ContextPtr & context)
+static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets::SetFromSubquery> sets, const ContextPtr & context)
 {
     if (sets.empty())
         return;
@@ -345,18 +333,6 @@ static void makeSetsFromSubqueries(QueryPlan & plan, ListWithMemoryTracking<Quer
         prepared_sets_cache);
 
     plan.addStep(std::move(step));
-}
-
-void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out)
-{
-    SerializationFlags flags;
-    flags.sets_must_be_ready = true;
-    serializeSets(registry, out, flags);
-}
-
-void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
-{
-    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, 0), context);
 }
 
 QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)

@@ -37,7 +37,7 @@ do
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
     found=$($CLICKHOUSE_CLIENT --query "
         SELECT count() > 0 FROM system.text_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND startsWith(logger_name, currentDatabase() || '.$TABLE')
+        WHERE startsWith(logger_name, currentDatabase() || '.$TABLE')
           AND message LIKE '%Removing stale temporary directory%'
           AND message LIKE '%/tmp_insert_%'
     ")
@@ -52,5 +52,5 @@ else
     echo "tmp_insert_ reclaim warning NOT found, messages logged for the table:"
     $CLICKHOUSE_CLIENT --query "
         SELECT logger_name, message FROM system.text_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND startsWith(logger_name, currentDatabase() || '.$TABLE') ORDER BY event_time_microseconds"
+        WHERE startsWith(logger_name, currentDatabase() || '.$TABLE') ORDER BY event_time_microseconds"
 fi

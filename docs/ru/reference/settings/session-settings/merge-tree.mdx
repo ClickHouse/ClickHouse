@@ -14,7 +14,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## merge_tree_coarse_index_granularity {#merge_tree_coarse_index_granularity}
+<div id="merge_tree_coarse_index_granularity">
+  ## merge_tree_coarse_index_granularity
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -24,21 +26,27 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Любое положительное чётное целое число.
 
-## merge_tree_compact_parts_min_granules_to_multibuffer_read {#merge_tree_compact_parts_min_granules_to_multibuffer_read}
+<div id="merge_tree_compact_parts_min_granules_to_multibuffer_read">
+  ## merge_tree_compact_parts_min_granules_to_multibuffer_read
+</div>
 
 <CloudOnlyBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="16" />
 
-Действует только в ClickHouse Cloud. Число гранул в stripe компактной части таблиц MergeTree, при котором используется multibuffer reader, поддерживающий параллельное чтение и предварительную выборку. При чтении из remote fs использование multibuffer reader увеличивает число запросов на чтение.
+Действует только в ClickHouse Cloud. Число гранул в stripe компактной части таблиц MergeTree, при котором используется multibuffer reader, поддерживающий параллельное чтение и prefetch. При чтении из remote fs использование multibuffer reader увеличивает число запросов на чтение. Часть читается одним буфером, если она содержит меньше гранул, чем этот порог, и меньше гранул, чем число читаемых столбцов, поскольку в этом случае reader с одним буфером отправляет меньше запросов на чтение, чем multibuffer reader.
 
-## merge_tree_determine_task_size_by_prewhere_columns {#merge_tree_determine_task_size_by_prewhere_columns}
+<div id="merge_tree_determine_task_size_by_prewhere_columns">
+  ## merge_tree_determine_task_size_by_prewhere_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Определяет, использовать ли для определения размера задачи чтения только размер столбцов PREWHERE.
 
-## merge_tree_generic_exclusion_search_max_steps {#merge_tree_generic_exclusion_search_max_steps}
+<div id="merge_tree_generic_exclusion_search_max_steps">
+  ## merge_tree_generic_exclusion_search_max_steps
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -56,7 +64,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * 0 — неограниченное количество шагов, либо любое положительное целое число.
 
-## merge_tree_max_bytes_to_use_cache {#merge_tree_max_bytes_to_use_cache}
+<div id="merge_tree_max_bytes_to_use_cache">
+  ## merge_tree_max_bytes_to_use_cache
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2013265920" />
 
@@ -68,7 +78,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Любое положительное целое число.
 
-## merge_tree_max_rows_to_use_cache {#merge_tree_max_rows_to_use_cache}
+<div id="merge_tree_max_rows_to_use_cache">
+  ## merge_tree_max_rows_to_use_cache
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -80,7 +92,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Любое положительное целое число.
 
-## merge_tree_min_bytes_for_concurrent_read {#merge_tree_min_bytes_for_concurrent_read}
+<div id="merge_tree_min_bytes_for_concurrent_read">
+  ## merge_tree_min_bytes_for_concurrent_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="251658240" />
 
@@ -90,7 +104,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Положительное целое число.
 
-## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem}
+<div id="merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem">
+  ## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -102,7 +118,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Положительное целое число.
 
-## merge_tree_min_bytes_for_seek {#merge_tree_min_bytes_for_seek}
+<div id="merge_tree_min_bytes_for_seek">
+  ## merge_tree_min_bytes_for_seek
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -112,7 +130,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Любое положительное целое число.
 
-## merge_tree_min_bytes_per_read_stream {#merge_tree_min_bytes_per_read_stream}
+<div id="merge_tree_min_bytes_per_read_stream">
+  ## merge_tree_min_bytes_per_read_stream
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
@@ -130,7 +150,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Неотрицательное целое число.
 
-## merge_tree_min_bytes_per_task_for_remote_reading {#merge_tree_min_bytes_per_task_for_remote_reading}
+<div id="merge_tree_min_bytes_per_task_for_remote_reading">
+  ## merge_tree_min_bytes_per_task_for_remote_reading
+</div>
 
 **Псевдонимы**: `filesystem_prefetch_min_bytes_for_single_read_task`
 
@@ -140,7 +162,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Минимальное число байтов, считываемых за одну задачу.
 
-## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
+<div id="merge_tree_min_read_task_size">
+  ## merge_tree_min_read_task_size
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -148,7 +172,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Жесткий нижний предел размера задачи (даже если число гранул мало, а количество доступных потоков велико, мы не будем выделять задачи меньшего размера
 
-## merge_tree_min_rows_for_concurrent_read {#merge_tree_min_rows_for_concurrent_read}
+<div id="merge_tree_min_rows_for_concurrent_read">
+  ## merge_tree_min_rows_for_concurrent_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="163840" />
 
@@ -158,7 +184,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Положительное целое число.
 
-## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem}
+<div id="merge_tree_min_rows_for_concurrent_read_for_remote_filesystem">
+  ## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -170,7 +198,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Положительное целое число.
 
-## merge_tree_min_rows_for_seek {#merge_tree_min_rows_for_seek}
+<div id="merge_tree_min_rows_for_seek">
+  ## merge_tree_min_rows_for_seek
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -180,7 +210,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * Любое положительное целое число.
 
-## merge_tree_prefetch_json_shared_data_substreams {#merge_tree_prefetch_json_shared_data_substreams}
+<div id="merge_tree_prefetch_json_shared_data_substreams">
+  ## merge_tree_prefetch_json_shared_data_substreams
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -188,7 +220,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Включает предварительное чтение под-потоков общих данных JSON в частях Wide, которые считываются с seek к метке. Такое предварительное чтение начинается с начала гранулы, тогда как под-поток обычно считывается не с этой позиции, поэтому оно может оказаться бесполезным. Отключите настройку, чтобы пропустить эти операции предварительного чтения.
 
-## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
+<div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
+  ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -196,7 +230,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Для тестирования `PartsSplitter` — с указанной вероятностью при каждом чтении из MergeTree разделять диапазоны чтения на пересекающиеся и непересекающиеся.
 
-## merge_tree_storage_snapshot_sleep_ms {#merge_tree_storage_snapshot_sleep_ms}
+<div id="merge_tree_storage_snapshot_sleep_ms">
+  ## merge_tree_storage_snapshot_sleep_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -210,13 +246,17 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 * 0 - Без задержки (по умолчанию)
 * N - Задержка в миллисекундах
 
-## merge_tree_use_const_size_tasks_for_remote_reading {#merge_tree_use_const_size_tasks_for_remote_reading}
+<div id="merge_tree_use_const_size_tasks_for_remote_reading">
+  ## merge_tree_use_const_size_tasks_for_remote_reading
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Использовать ли задачи фиксированного размера для чтения из удалённой таблицы.
 
-## merge_tree_use_deserialization_prefixes_cache {#merge_tree_use_deserialization_prefixes_cache}
+<div id="merge_tree_use_deserialization_prefixes_cache">
+  ## merge_tree_use_deserialization_prefixes_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -224,7 +264,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Включает кэширование метаданных столбцов из префиксов файлов при чтении с удалённых дисков в MergeTree.
 
-## merge_tree_use_prefixes_deserialization_thread_pool {#merge_tree_use_prefixes_deserialization_thread_pool}
+<div id="merge_tree_use_prefixes_deserialization_thread_pool">
+  ## merge_tree_use_prefixes_deserialization_thread_pool
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -232,7 +274,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Включает использование пула потоков для параллельного чтения префиксов в частях Wide в MergeTree. Размер этого пула потоков задаётся настройкой сервера `max_prefixes_deserialization_thread_pool_size`.
 
-## merge_tree_use_v1_object_and_dynamic_serialization {#merge_tree_use_v1_object_and_dynamic_serialization}
+<div id="merge_tree_use_v1_object_and_dynamic_serialization">
+  ## merge_tree_use_v1_object_and_dynamic_serialization
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

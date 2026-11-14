@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <QueryPipeline/Pipe.h>
@@ -36,7 +35,7 @@ struct DistributedReadBucket
 {
     RangesInDataPartsDescription marks;
     bool needs_merge = false;
-    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders;
+    std::vector<std::vector<Field>> borders;
     size_t index = 0;
 };
 
@@ -71,7 +70,7 @@ Pipe buildFullFinalMergePipe(
 /// non-intersecting lanes, all united. `read_lane_in_order` and `read_non_intersecting` turn lane marks into
 /// pipes (the part-source seam).
 Pipe buildDistributedFinalPipe(
-    const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
+    const std::vector<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
     MergeTreeData::MergingParams merging_params,
     size_t max_block_size_rows,

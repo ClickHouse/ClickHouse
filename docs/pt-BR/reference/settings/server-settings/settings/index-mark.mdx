@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações definem o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-## index_mark_cache_policy {#index_mark_cache_policy}
+<div id="index_mark_cache_policy">
+  ## index_mark_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache de marcas de índice secundário. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="Não" />Nome da política do cache de marcas de índice secundário.
 
-## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
+<div id="index_mark_cache_prewarm_ratio">
+  ## index_mark_cache_prewarm_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="Não" />A razão do tamanho total do cache de marcas de índice a ser preenchida durante o pré-aquecimento.
 
-## index_mark_cache_size {#index_mark_cache_size}
+<div id="index_mark_cache_size">
+  ## index_mark_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -32,7 +38,9 @@ Tamanho máximo do cache de marcas de índice.
   Essa configuração pode ser modificada em tempo de execução e entrará em vigor imediatamente.
 </Note>
 
-## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
+<div id="index_mark_cache_size_ratio">
+  ## index_mark_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.3" changeable_without_restart="No" />O tamanho da fila protegida (no caso da política SLRU) no cache de marcas de índice secundário, em relação ao tamanho total do cache.
 

@@ -87,8 +87,7 @@ namespace
 /// (float vs signed-int vs unsigned-int) and width; any consistent choice round-trips losslessly,
 /// so types whose representation matches a supported width are accepted (Date, DateTime, Decimal,
 /// IPv4, Enum, etc. via their underlying integer).
-/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
-std::optional<UInt8> getPcoTypeByte(const IDataType & column_type, bool throw_if_not_applicable)
+UInt8 getPcoTypeByte(const IDataType & column_type)
 {
     WhichDataType which(column_type);
 
@@ -98,24 +97,16 @@ std::optional<UInt8> getPcoTypeByte(const IDataType & column_type, bool throw_if
         return PCO_F64;
 
     if (!column_type.isValueRepresentedByNumber())
-    {
-        if (!throw_if_not_applicable)
-            return {};
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Codec 'PCO' is not applicable for {} because it is not a number", column_type.getName());
-    }
 
     size_t size = column_type.getSizeOfValueInMemory();
     if (size != 1 && size != 2 && size != 4 && size != 8)
-    {
-        if (!throw_if_not_applicable)
-            return {};
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Codec 'PCO' is only applicable for numeric types of size 1, 2, 4 or 8 bytes, but {} has size {}",
             column_type.getName(),
             size);
-    }
 
     bool is_signed = which.isInt() || which.isDate32() || which.isEnum() || which.isDecimal() || which.isDateTime64()
         || which.isTime() || which.isTime64() || which.isInt128() || which.isInt256() || which.isInterval();
@@ -324,7 +315,7 @@ void registerCodecPco(CompressionCodecFactory & factory)
         UInt8 pco_type_byte = 0;
         if (column_type)
         {
-            pco_type_byte = *getPcoTypeByte(*column_type, /*throw_if_not_applicable=*/ true);
+            pco_type_byte = getPcoTypeByte(*column_type);
             data_bytes_size = widthOfPcoType(pco_type_byte);
         }
 
@@ -350,8 +341,7 @@ void registerCodecPco(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecPco>(data_bytes_size, pco_type_byte, level);
     };
-    factory.registerCompressionCodecWithType("PCO", method_code, codec_builder,
-        {.is_applicable_to_type = [](const IDataType & type) { return getPcoTypeByte(type, /*throw_if_not_applicable=*/ false).has_value(); }});
+    factory.registerCompressionCodecWithType("PCO", method_code, codec_builder);
 }
 
 }

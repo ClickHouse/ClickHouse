@@ -119,7 +119,7 @@ void CustomSeparatedRowInputFormat::resetReadBuffer()
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_), default_csv_delimiter(format_settings_.csv.delimiter)
+    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
 {
 }
 
@@ -138,12 +138,7 @@ void CustomSeparatedFormatReader::skipRowStartDelimiter()
 void CustomSeparatedFormatReader::skipFieldDelimiter()
 {
     skipSpaces();
-    /// This is called for every field, so check the common one-character delimiter inline instead of calling `assertString`.
-    const auto & delimiter = format_settings.custom.field_delimiter;
-    if (delimiter.size() == 1)
-        assertChar(delimiter.front(), *buf);
-    else
-        assertString(delimiter, *buf);
+    assertString(format_settings.custom.field_delimiter, *buf);
 }
 
 void CustomSeparatedFormatReader::skipRowEndDelimiter()
@@ -161,25 +156,10 @@ void CustomSeparatedFormatReader::skipRowBetweenDelimiter()
 void CustomSeparatedFormatReader::skipField()
 {
     skipSpaces();
-    /// Skipping is the main cost of reading a few columns from a wide file, so the `Escaped` and `Raw`
-    /// rules read the field directly, as `TabSeparatedFormatReader::skipField` does, instead of going
-    /// through the generic `skipFieldByEscapingRule` for every field.
-    NullOutput out;
-    switch (format_settings.custom.escaping_rule)
-    {
-        case FormatSettings::EscapingRule::Escaped:
-            readEscapedStringInto<NullOutput, false>(out, *buf);
-            break;
-        case FormatSettings::EscapingRule::Raw:
-            readStringInto(out, *buf);
-            break;
-        case FormatSettings::EscapingRule::CSV:
-            readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
-            break;
-        default:
-            skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
-            break;
-    }
+    if (format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
+        readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
+    else
+        skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
 }
 
 bool CustomSeparatedFormatReader::checkForEndOfRow()
@@ -235,9 +215,9 @@ String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_l
 }
 
 template <CustomSeparatedFormatReader::ReadFieldMode mode>
-VectorWithMemoryTracking<String> CustomSeparatedFormatReader::readRowImpl()
+std::vector<String> CustomSeparatedFormatReader::readRowImpl()
 {
-    VectorWithMemoryTracking<String> values;
+    std::vector<String> values;
     skipRowStartDelimiter();
 
     if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
@@ -418,9 +398,6 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
-    columns = 0;
-    format_settings.csv.delimiter = default_csv_delimiter;
-    format_settings.csv.custom_delimiter.clear();
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
@@ -438,7 +415,7 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (no_more_data || reader.checkForSuffix())
     {
@@ -484,7 +461,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
-            }, /*supports_reset_parser=*/ true);
+            });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);

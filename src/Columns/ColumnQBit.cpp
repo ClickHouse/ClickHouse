@@ -5,17 +5,11 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <IO/Operators.h>
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 ColumnQBit::ColumnQBit(MutableColumnPtr && tuple_, size_t dimension_, size_t stride_)
     : tuple(std::move(tuple_))
@@ -166,13 +160,7 @@ void ColumnQBit::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> &
     VectorWithMemoryTracking<ColumnPtr> source_tuple_columns;
     source_tuple_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-    {
-        const auto * source_qbit = typeid_cast<const ColumnQBit *>(source_column.get());
-        if (!source_qbit)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not QBit, but {}", getName(), source_column->getName());
-
-        source_tuple_columns.push_back(source_qbit->getTuple());
-    }
+        source_tuple_columns.push_back(assert_cast<const ColumnQBit &>(*source_column).getTuple());
     tuple->prepareForSquashing(source_tuple_columns, factor);
 }
 

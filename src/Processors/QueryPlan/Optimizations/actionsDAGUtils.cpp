@@ -1,8 +1,4 @@
 #include <Common/Exception.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/SetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Block.h>
@@ -18,7 +14,6 @@
 #include <Interpreters/Set.h>
 
 #include <stack>
-#include <Common/StackWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -41,12 +36,12 @@ MatchedTrees::Matches matchTrees(
     bool check_monotonicity,
     size_t max_size_for_sets_from_tuple_to_compare)
 {
-    using Parents = SetWithMemoryTracking<const ActionsDAG::Node *>;
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Parents> inner_parents;
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> inner_inputs;
+    using Parents = std::set<const ActionsDAG::Node *>;
+    std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
 
     {
-        StackWithMemoryTracking<const ActionsDAG::Node *> stack;
+        std::stack<const ActionsDAG::Node *> stack;
         for (const auto * out : inner_dag)
         {
             if (inner_parents.contains(out))
@@ -81,7 +76,7 @@ MatchedTrees::Matches matchTrees(
     };
 
     MatchedTrees::Matches matches;
-    StackWithMemoryTracking<Frame> stack;
+    std::stack<Frame> stack;
 
     for (const auto & node : outer_dag.getNodes())
     {
@@ -155,7 +150,7 @@ MatchedTrees::Matches matchTrees(
 
                     if (frame.mapped_children.size() > 1)
                     {
-                        VectorWithMemoryTracking<Parents *> other_parents;
+                        std::vector<Parents *> other_parents;
                         size_t mapped_children_size = frame.mapped_children.size();
                         other_parents.reserve(mapped_children_size);
                         for (size_t i = 1; i < mapped_children_size; ++i)
@@ -312,7 +307,7 @@ MatchedTrees::Matches matchTrees(
 struct PossiblyMonotonicChain
 {
     const ActionsDAG::Node * input_node = nullptr;
-    VectorWithMemoryTracking<size_t> non_const_arg_pos;
+    std::vector<size_t> non_const_arg_pos;
     bool changes_order = false;
     bool is_strict = true;
 };
@@ -320,7 +315,7 @@ struct PossiblyMonotonicChain
 /// Build a chain of functions which may be monotonic.
 static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node * node)
 {
-    VectorWithMemoryTracking<size_t> chain;
+    std::vector<size_t> chain;
 
     while (node->type != ActionsDAG::ActionType::INPUT)
     {
@@ -425,11 +420,11 @@ void applyActionsToSortDescription(
         bool changes_order = false;
     };
 
-    VectorWithMemoryTracking<SortColumn> sort_columns(descr_size);
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_to_sort_column;
+    std::vector<SortColumn> sort_columns(descr_size);
+    std::unordered_map<const ActionsDAG::Node *, size_t> input_to_sort_column;
 
     {
-        UnorderedMapWithMemoryTracking<std::string_view, size_t> desc_name_to_pos;
+        std::unordered_map<std::string_view, size_t> desc_name_to_pos;
         for (size_t pos = 0; pos < descr_size; ++pos)
             desc_name_to_pos.emplace(description[pos].column_name, pos);
 
@@ -508,9 +503,9 @@ void applyActionsToSortDescription(
     description.resize(prefix_size);
 }
 
-std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,
+    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     struct Frame
@@ -519,9 +514,9 @@ std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const Act
         size_t next_child_to_visit = 0;
     };
 
-    StackWithMemoryTracking<Frame> stack;
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
+    std::stack<Frame> stack;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
 
     for (const auto * node : nodes)
     {
@@ -598,20 +593,20 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
 }
 
-VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
+std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
 {
     using TraceState = std::optional<ActionsDAGInputLineage>;
 
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_positions;
+    std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
     const auto & inputs = actions.getInputs();
     for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
         input_positions[inputs[input_position]] = input_position;
 
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, TraceState> traced;
+    std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
     const auto & outputs = actions.getOutputs();
     for (const auto * output : outputs)
     {
-        StackWithMemoryTracking<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
+        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
         nodes_to_process.push({output, false});
         while (!nodes_to_process.empty())
         {
@@ -662,7 +657,7 @@ VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const A
         }
     }
 
-    VectorWithMemoryTracking<ActionsDAGOutputLineage> result;
+    std::vector<ActionsDAGOutputLineage> result;
     result.reserve(outputs.size());
     for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
         result.push_back({output_position, traced.at(outputs[output_position])});
@@ -682,7 +677,7 @@ HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtr
 {
     /// Input positions are pushed in reverse so that the front-most one is taken first, which pairs the
     /// n-th input of a name with the n-th header column of that name.
-    UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<size_t>> name_to_inputs;
+    std::unordered_map<std::string_view, std::vector<size_t>> name_to_inputs;
     for (size_t position = inputs.size(); position != 0; --position)
         name_to_inputs[inputs[position - 1]->result_name].push_back(position - 1);
 
@@ -707,6 +702,32 @@ HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtr
             header.dumpNames(), read_columns, inputs.size());
 
     return result;
+}
+
+NodeSet findReachableNodes(
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
+{
+    NodeSet visited;
+    std::stack<const ActionsDAG::Node *> stack;
+    for (const auto * root : roots)
+        if (visited.insert(root).second)
+            stack.push(root);
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (is_barrier && is_barrier(current))
+            continue;
+
+        for (const auto * child : current->children)
+            if (visited.insert(child).second)
+                stack.push(child);
+    }
+
+    return visited;
 }
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)
@@ -797,9 +818,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:
-                /// An exploded array element is not a per-row function of its source row, so the key
-                /// value it feeds is not determined by the allowed nodes.
-                break;
+                UNREACHABLE();
             case ActionsDAG::ActionType::COLUMN:
                 /// Constants doesn't matter, so let's always consider them matched.
                 res = true;
@@ -833,9 +852,9 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 }
 
 
-VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
 {
-    VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> res;
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
     if (!predicate)
         return res;
 
@@ -843,7 +862,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
     /// be applied to every row. An `__applyFilter` sitting elsewhere in the DAG — under an
     /// OR or a NOT, or in an unrelated expression computed alongside the filter — must not
     /// be used for pruning.
-    VectorWithMemoryTracking<const ActionsDAG::Node *> conjuncts = {predicate};
+    std::vector<const ActionsDAG::Node *> conjuncts = {predicate};
     while (!conjuncts.empty())
     {
         const auto * node = conjuncts.back();
@@ -897,33 +916,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
         /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
         /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
         /// the negating filter exposes neither recorded key values nor a key range.)
-        if (casts > 1)
-            continue;
-
-        /// The global row index of the read, `_part_starting_offset + _part_offset` in either order, is reported
-        /// as a global row index key: it is not a column, but granules can be skipped easily using that.
-        if (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
-            && key_arg->function_base->getName() == "plus" && key_arg->children.size() == 2)
-        {
-            auto input_name = [](const ActionsDAG::Node * arg) -> std::optional<String>
-            {
-                while (arg->type == ActionsDAG::ActionType::ALIAS)
-                    arg = arg->children.front();
-                if (arg->type != ActionsDAG::ActionType::INPUT)
-                    return std::nullopt;
-                return arg->result_name;
-            };
-            auto lhs = input_name(key_arg->children[0]);
-            auto rhs = input_name(key_arg->children[1]);
-            if (lhs && rhs
-                && ((*lhs == "_part_offset" && *rhs == "_part_starting_offset") || (*lhs == "_part_starting_offset" && *rhs == "_part_offset")))
-            {
-                res.push_back({std::move(filter_id), String(runtime_filter_global_row_index_key_name), key_arg->result_type, /*is_global_row_index=*/true});
-            }
-            continue;
-        }
-
-        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+        if (key_arg->type != ActionsDAG::ActionType::INPUT || casts > 1)
             continue;
 
         res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
@@ -932,7 +925,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
     return res;
 }
 
-VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
 {
     return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }

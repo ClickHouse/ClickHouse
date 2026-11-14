@@ -1,23 +1,18 @@
 #include <DataTypes/IDataType.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
-#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -30,13 +25,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
-    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
-    extern const SettingsBool force_index_by_date;
-    extern const SettingsBool force_primary_key;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
+    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
@@ -89,8 +82,7 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        /// The replicas leave what a projection answers without reading to the initiator's local plan.
-        bool support_projection = ClusterProxy::canUseLocalPlanForParallelReplicas(reading->getContext())
+        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
             && query_settings[Setting::parallel_replicas_support_projection];
 
         if (!support_projection)
@@ -108,17 +100,13 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return std::unexpected("the table has unmaterialized mutations or patch parts");
 
-    /// A projection part rebuilt by a lightweight delete does not store the deleted rows.
-    if (!query_settings[Setting::apply_deleted_mask] && mutations_snapshot->hasLightweightDeletedMask())
-        return std::unexpected("setting apply_deleted_mask is disabled and the table has lightweight-deleted rows");
-
     return {};
 }
 
 void rejectProjections(
-    UnorderedMapWithMemoryTracking<String, String> & reject_reasons,
-    const VectorWithMemoryTracking<const ProjectionDescription *> & projections,
-    const VectorWithMemoryTracking<const ProjectionDescription *> & kept,
+    std::unordered_map<String, String> & reject_reasons,
+    const std::vector<const ProjectionDescription *> & projections,
+    const std::vector<const ProjectionDescription *> & kept,
     const String & reason)
 {
     for (const auto * projection : projections)
@@ -126,7 +114,7 @@ void rejectProjections(
             reject_reasons.try_emplace(projection->name, reason);
 }
 
-void filterProjectionCandidates(VectorWithMemoryTracking<const ProjectionDescription *> & projections, const String & preferred_name)
+void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name)
 {
     auto is_preferred = [&](const auto * projection) { return projection->name == preferred_name; };
     if (std::ranges::none_of(projections, is_preferred))
@@ -245,8 +233,6 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             return false;
 
         filter_nodes.push_back(filter_expression);
-        optimize_constant_columns_after_filter = FilterStep::combineOptimizeConstantColumnsAfterFilter(
-            optimize_constant_columns_after_filter, filter->getOptimizeConstantColumnsAfterFilter());
         return true;
     }
 
@@ -307,7 +293,7 @@ bool QueryDAG::build(QueryPlan::Node & node)
 }
 
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> & valid_parts)
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
 {
     size_t filtered_parts = 0;
     auto & parts_with_ranges = reading_select_result.parts_with_ranges;
@@ -420,26 +406,6 @@ static bool partHasPendingMetadataMutationsOnColumns(
     return false;
 }
 
-/// Projection candidate analysis is an optional optimization: when the filter does not constrain
-/// a projection's primary key, the candidate is rejected, not the query. The `force_primary_key`
-/// and `force_index_by_date` guardrails apply to the main table read, which is analyzed with the
-/// original context, so disable them for the analysis of projection parts. Otherwise a query
-/// whose filter uses the main table's primary key fails with `INDEX_NOT_USED` as soon as the
-/// table has an unrelated projection. The guardrail is enforced on the chosen plan instead: a
-/// candidate whose key is unused is not eligible to serve the read (see the `pk_condition_useful`
-/// checks below).
-static ContextPtr getContextForProjectionAnalysis(const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::force_primary_key] && !settings[Setting::force_index_by_date])
-        return context;
-
-    auto projection_context = Context::createCopy(context);
-    projection_context->setSetting("force_primary_key", false);
-    projection_context->setSetting("force_index_by_date", false);
-    return projection_context;
-}
-
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
@@ -482,7 +448,6 @@ bool analyzeProjectionCandidate(
         {
             candidate.parent_parts.emplace(part_with_ranges.data_part.get());
             parent_parts_sum_marks += part_with_ranges.getMarksCount();
-            candidate.parent_rows += part_with_ranges.getRowsCount();
         }
     }
 
@@ -496,7 +461,7 @@ bool analyzeProjectionCandidate(
         candidate.projection->metadata,
         projection_query_info,
         top_k_filter_info,
-        getContextForProjectionAnalysis(context),
+        context,
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
         /// The candidate's marks are reused by the projection read, so it must not consult the cache
@@ -508,17 +473,12 @@ bool analyzeProjectionCandidate(
     if (!projection_result_ptr->isUsable())
         return false;
 
-    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
+    std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)
         valid_parts.emplace(part.data_part->getParentPart());
 
     /// Remove ranges whose data parts are fully filtered by projection.
     size_t filtered_parts = filterPartsByProjection(parent_reading_select_result, valid_parts);
-
-    /// Under `force_primary_key` a scan must be restricted by the primary key of whatever is read.
-    /// Only check after filterPartsByProjection to still utilize parts pruning
-    if (context->getSettingsRef()[Setting::force_primary_key] && !projection_result_ptr->pk_condition_useful)
-        return false;
 
     candidate.selected_parts = projection_result_ptr->selected_parts;
     candidate.selected_marks = projection_result_ptr->selected_marks;
@@ -532,26 +492,6 @@ bool analyzeProjectionCandidate(
     return true;
 }
 
-void recordHypotheticalOutcome(
-    HypotheticalProjection & hypothetical, const UseProjectionsResult & result, const ProjectionCandidate * candidate, bool chosen)
-{
-    auto & outcome = hypothetical.outcome;
-    if (auto it = result.projection_reject_reasons.find(hypothetical.projection.name); it != result.projection_reject_reasons.end())
-        outcome.reason = it->second;
-    if (candidate && candidate->stat)
-    {
-        outcome.marks = candidate->sum_marks;
-        outcome.rows = candidate->selected_rows + candidate->parent_rows;
-        outcome.chosen = chosen;
-        if (!candidate->stat->description.empty())
-            outcome.reason = candidate->stat->description;
-        if (candidate->merge_tree_projection_select_result_ptr)
-            for (const auto & part : candidate->merge_tree_projection_select_result_ptr->parts_with_ranges)
-                outcome.ranges[part.parent_part->name] = part.ranges;
-    }
-    outcome.forced = outcome.forced && outcome.chosen;
-}
-
 void filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
@@ -563,7 +503,7 @@ void filterPartsAndCollectProjectionCandidates(
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
-    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts;
+    std::unordered_set<const IMergeTreeDataPart *> valid_parts;
 
     /// Route a drifted projection part (see projectionPartHasRequiredColumns) to a parent read rather
     /// than evaluating the filter over it, which would prune the wrong parent rows. Only the filter
@@ -629,7 +569,7 @@ void filterPartsAndCollectProjectionCandidates(
         projection.metadata,
         projection_query_info,
         reading.getTopKFilterInfo(),
-        getContextForProjectionAnalysis(context),
+        context,
         context->getSettingsRef()[Setting::max_threads],
         /*max_block_numbers_to_read=*/nullptr,
         /// The result filters the parts of the actual read, so keep the read's own cache gate.
@@ -640,13 +580,6 @@ void filterPartsAndCollectProjectionCandidates(
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
         return;
 
-    /// Under `force_primary_key`, read the projection index only when its own key did the filtering.
-    /// Marks can also be dropped without the key (through the query condition cache), which would
-    /// otherwise let a full-scan projection read in. Part-level pruning below stays: it only removes
-    /// parent parts whose ranges are proven empty and reads nothing from the projection.
-    bool projection_index_allowed
-        = !context->getSettingsRef()[Setting::force_primary_key] || projection_result_ptr->pk_condition_useful;
-
     size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
     size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
     auto & desc = reading.getProjectionIndexReadDescription();
@@ -654,8 +587,7 @@ void filterPartsAndCollectProjectionCandidates(
     for (auto & part : projection_result_ptr->parts_with_ranges)
     {
         valid_parts.emplace(part.data_part->getParentPart());
-        if (projection_index_allowed && projection.sample_block.has("_parent_part_offset")
-            && part.getRowsCount() <= max_projection_rows_to_use_projection_index
+        if (projection.sample_block.has("_parent_part_offset") && part.getRowsCount() <= max_projection_rows_to_use_projection_index
             && part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index)
         {
             desc.read_ranges[part.part_index_in_query].push_back(std::move(part));

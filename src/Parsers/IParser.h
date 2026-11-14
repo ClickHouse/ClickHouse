@@ -17,7 +17,6 @@ namespace DB
 {
 
 struct LiteralTokenMap;
-struct FailedKeywordReadings;
 
 namespace ErrorCodes
 {
@@ -87,9 +86,6 @@ struct Expected
     /// and for LIKE/SIMILAR_TO/REGEXP syntax highlighting.
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
-
-    /// Positions of CASE and INTERVAL tokens whose keyword reading failed in this parse; copies share it.
-    std::shared_ptr<FailedKeywordReadings> failed_keyword_readings;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)

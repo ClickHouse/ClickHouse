@@ -6,11 +6,15 @@ title: 'Fonctions de manipulation de Geometry'
 doc_type: 'reference'
 ---
 
-## Geometry {#geometry}
+<div id="geometry">
+  ## Geometry
+</div>
 
 Les fonctions de géométrie vous permettent de calculer le périmètre et l&#39;aire de types géométriques tels que POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING et POINT. Utilisez les géométries dans le type Geometry. Si la valeur d&#39;entrée est `NULL`, toutes les fonctions ci-dessous renverront 0.
 
-## perimeterCartesian {#perimetercartesian}
+<div id="perimetercartesian">
+  ## perimeterCartesian
+</div>
 
 Calcule le périmètre de l’objet Geometry donné dans le système de coordonnées cartésien (plan).
 
@@ -42,7 +46,9 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-## areaCartesian {#areacartesian}
+<div id="areacartesian">
+  ## areaCartesian
+</div>
 
 Calcule l’aire de l’objet Geometry spécifié dans le système de coordonnées cartésien.
 
@@ -74,7 +80,9 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-## perimeterSpherical {#perimeterspherical}
+<div id="perimeterspherical">
+  ## perimeterSpherical
+</div>
 
 Calcule le périmètre d&#39;un objet de type Geometry à la surface d&#39;une sphère.
 
@@ -90,7 +98,7 @@ perimeterSpherical(geom)
 
 **Valeurs renvoyées**
 
-* Nombre — Périmètre sur une sphère de rayon 1, en radians (les coordonnées sont la longitude et la latitude, exprimées en degrés). Multipliez ce résultat par le rayon de la sphère pour obtenir une longueur, par exemple par 6371 pour obtenir des kilomètres sur la Terre. [Float64](/fr/reference/data-types/float).
+* Nombre — Périmètre. [Float64](/fr/reference/data-types/float).
 
 **Exemple**
 
@@ -102,11 +110,13 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│      0.06981051179132045 │
+│ 0                        │
 └──────────────────────────┘
 ```
 
-## areaSpherical {#areaspherical}
+<div id="areaspherical">
+  ## areaSpherical
+</div>
 
 Calcule l’aire d’un objet Geometry à la surface d’une sphère.
 
@@ -122,7 +132,7 @@ areaSpherical(geom)
 
 **Valeurs renvoyées**
 
-* Nombre — Aire sur une sphère de rayon 1, en stéradians (les coordonnées correspondent à la longitude et à la latitude, exprimées en degrés). Multipliez par le carré du rayon de la sphère pour obtenir l’aire. [Float64](/fr/reference/data-types/float).
+* Nombre — Aire. [Float64](/fr/reference/data-types/float).
 
 **Exemple**
 

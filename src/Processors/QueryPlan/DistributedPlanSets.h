@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/LoggingFormatStringHelpers.h>
 
@@ -28,7 +27,7 @@ std::optional<PreformattedMessage> getReasonSetsCannotBeShipped(const DelayedCre
 
 /// Detaches the IN-subquery sets from the delayed set steps and removes those steps from the
 /// plan, so the fragments never carry them; the caller re-adds the sets to the initiator plan.
-PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root);
+std::vector<FutureSetFromSubqueryPtr> extractSetsForDistributedPlan(QueryPlan::Node *& root);
 
 /// Makes a set subquery source run as a distributed plan: the values are deduplicated on the
 /// workers (bounded by `max_rows_to_transfer`, so an over-limit set fails during the build)

@@ -21,10 +21,8 @@
 #include <Backups/BackupsHelper.h>
 #endif
 #include <Common/FailPoint.h>
-#include <Access/ContextAccess.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -45,7 +43,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
-#include <base/insertAtEnd.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -79,7 +76,6 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char backup_pause_on_start[];
-    extern const char backups_hold_registration_until_ddl_worker_stops[];
     extern const char backups_pause_before_publishing_progress[];
     extern const char restore_pause_before_publishing_final_progress[];
     extern const char restore_pause_on_start[];
@@ -90,7 +86,6 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int UNFINISHED;
@@ -156,26 +151,6 @@ namespace
     size_t getNumActiveRestoresChange(BackupStatus status)
     {
         return status == BackupStatus::RESTORING;
-    }
-
-    /// A host fills the unqualified names from its address's `default_database`, or else from its own
-    /// default database, so without an address default they are resolved here, as `executeDDLQueryOnCluster` does.
-    void setCurrentDatabaseForOtherHosts(
-        ASTBackupQuery & query, const Cluster & cluster, size_t shard_num, size_t replica_num, const String & current_database)
-    {
-        bool with_default_database = false;
-        bool without_default_database = false;
-        for (const auto * address : cluster.filterAddressesByShardOrReplica(shard_num, replica_num))
-            (address->default_database.empty() ? without_default_database : with_default_database) = true;
-
-        if (!without_default_database)
-            return;
-
-        if (with_default_database
-            && std::ranges::any_of(query.elements, [](const auto & element) { return element.hasEmptyDatabaseNames(); }))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mixed local default DB and shard default DB in DDL query");
-
-        query.setCurrentDatabase(current_database);
     }
 
     /// A base backup is only ever opened for reading, lazily, and an internal leg's context has no user,
@@ -539,58 +514,6 @@ struct BackupsWorker::BackupStarter
             backup_query->cluster = backup_context->getMacros()->expand(backup_query->cluster);
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
-            setCurrentDatabaseForOtherHosts(*backup_query, *cluster, backup_settings.shard_num, backup_settings.replica_num, backup_context->getCurrentDatabase());
-
-            /// With `backup_named_collections` unset, a DATABASE or ALL element exports the named
-            /// collections only if the user may read their values. That decision belongs to the
-            /// initiating user, but with the default `distributed_ddl_use_initial_user_and_roles = false`
-            /// the other hosts execute the dispatched query with full access and would always export, so
-            /// it is taken here. A refusal is applied by excluding the table from the dispatched wildcard
-            /// elements through `EXCEPT TABLES`, not by forwarding a resolved
-            /// `backup_named_collections = false`: every host understands the long-established EXCEPT
-            /// clause, while a host predating the setting would reject a query carrying it (e.g. during
-            /// a rolling upgrade). The hosts executing the dispatched query trust the elements to carry
-            /// this decision only when the initiator's backup coordination version shows it was taken;
-            /// a query dispatched by an older initiator, which checks none of the rights the export
-            /// requires, never exports the collections (see `backupNamedCollections`).
-            if (!backup_settings.backup_named_collections.has_value()
-                && BackupUtils::wildcardSelectionExportsSystemNamedCollections(backup_query->elements))
-            {
-                /// An element explicitly naming the table (without excluding its data) keeps its hard
-                /// access requirement (see `getRequiredAccessToBackup`) whether or not the wildcard
-                /// elements are rewritten, so the query is about to fail the access check: skip the
-                /// warning and the rewrite. The element may be written unqualified, so it is checked
-                /// against the effective database of every selected address, the same way the access
-                /// check resolves it.
-                bool explicitly_selected = false;
-                for (const auto * address : cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num))
-                {
-                    auto elements = backup_query->elements;
-                    ASTBackupQuery::setCurrentDatabase(
-                        elements, address->default_database.empty() ? backup_context->getCurrentDatabase() : address->default_database);
-                    if (BackupUtils::explicitSelectionExportsSystemNamedCollections(elements))
-                    {
-                        explicitly_selected = true;
-                        break;
-                    }
-                }
-
-                if (!explicitly_selected)
-                {
-                    auto access = query_context->getAccess();
-                    if (!access->isGranted(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS})
-                        || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
-                    {
-                        LOG_WARNING(
-                            log,
-                            "Not exporting the named collections to the backup: the initiating user has no rights to read "
-                            "their values (`SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and "
-                            "`displaySecretsInShowAndSelect`). Set backup_named_collections = 1 to make this an error, or "
-                            "backup_named_collections = 0 to silence this warning");
-                        BackupUtils::excludeSystemNamedCollectionsFromWildcardSelection(backup_query->elements);
-                    }
-                }
-            }
         }
 
         /// Check access rights before opening the backup destination (e.g., S3).
@@ -599,7 +522,7 @@ struct BackupsWorker::BackupStarter
         if (!on_cluster)
         {
             backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
-            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements, backup_settings.backup_named_collections);
+            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
             query_context->checkAccess(required_access);
         }
 
@@ -658,15 +581,12 @@ struct BackupsWorker::BackupStarter
         }
 
         /// Remove files of the corrupted backup.
-        bool can_remove_files_in_backup = backup && backup_is_corrupted
+        bool should_remove_files_in_backup = backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure
             && backup_coordination && backup_coordination->isErrorSet() &&
             (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
 
-        if (can_remove_files_in_backup && backups_worker.remove_backup_files_after_failure)
+        if (should_remove_files_in_backup)
             backup->tryRemoveAllFiles();
-        /// Files are kept, but a lock with nothing else to keep would fence the destination against every retry.
-        else if (can_remove_files_in_backup && !on_cluster)
-            backup->tryRemoveLockFileIfNothingWritten();
 
         backup.reset();
 
@@ -798,19 +718,6 @@ void BackupsWorker::doBackup(
         if (zookeeper->exists(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup ID {} has existed. Please unlock this backup or change another name", backup_id);
     }
-
-    /// Fail fast, before collecting backup entries and building file infos for the whole table: a lightweight
-    /// snapshot backup only references object keys in the original object storage and stores no data, so using
-    /// it as the base of an incremental backup would compute diffs against data that is not present in the base.
-    if (backup_settings.base_backup_info)
-    {
-        auto base_backup = backup->getBaseBackup();
-        if (base_backup && !base_backup->getOriginalEndpoint().empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "A lightweight snapshot backup {} cannot be used as the base backup of an incremental backup",
-                backup_settings.base_backup_info->toStringForLogging());
-    }
 #endif
 
     bool is_internal_backup = backup_settings.internal;
@@ -833,32 +740,12 @@ void BackupsWorker::doBackup(
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
-        /// On a cluster whose addresses set `default_database`, the elements are sent to the other hosts
-        /// unresolved, and each host fills empty database names in from its address's default database
-        /// (see `DDLTask::setClusterInfo`), so an element written unqualified can select a different table
-        /// on each host. Compute the required access per effective database, resolving the elements the
-        /// way the addresses will, and authorize the union - the same way `doRestore` checks the restore
-        /// rights per address. The hosts cannot be relied upon for these checks: with the default
-        /// `distributed_ddl_use_initial_user_and_roles = false` they execute the query with full access.
-        std::set<String> effective_databases;
-        auto addresses = cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num);
-        for (const auto * address : addresses)
-            effective_databases.insert(
-                address->default_database.empty() ? context->getCurrentDatabase() : address->default_database);
-
-        AccessRightsElements required_access;
-        for (const auto & effective_database : effective_databases)
-        {
-            auto elements = backup_query->elements;
-            ASTBackupQuery::setCurrentDatabase(elements, effective_database);
-            insertAtEnd(required_access, BackupUtils::getRequiredAccessToBackup(elements, backup_settings.backup_named_collections));
-        }
+        auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
 
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);
         sendQueryToOtherHosts(*backup_query, cluster, backup_settings.shard_num, backup_settings.replica_num,
                               context, required_access, backup_coordination->getOnClusterInitializationKeeperRetriesInfo());
-        context->onQueryExecutionStarted();
         backup_coordination->setBackupQueryIsSentToOtherHosts();
 
         /// Wait until all the hosts have written their backup entries.
@@ -866,42 +753,29 @@ void BackupsWorker::doBackup(
     }
     else
     {
-        context->onQueryExecutionStarted();
         backup_query->setCurrentDatabase(context->getCurrentDatabase());
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);
 
-        chassert(backup);
-        chassert(backup_coordination);
-        chassert(context);
-
-        /// The entries without their names: building the file infos moves each name into the info it
-        /// belongs to. Scoped so that the pairs are gone before the backup is written, and so that a
-        /// reader of a name added between the two phases does not compile.
-        std::vector<BackupEntryPtr> backup_entries;
+        /// Prepare backup entries.
+        BackupEntries backup_entries;
         {
-            /// Prepare backup entries.
-            BackupEntries entries_with_names;
-            {
-                BackupEntriesCollector backup_entries_collector(
-                    backup_query->elements,
-                    backup_settings,
-                    backup_id,
-                    backup_coordination,
-                    read_settings,
-                    context,
-                    getThreadPool(backup_thread_pool_id));
-                entries_with_names = backup_entries_collector.run();
-            }
-
-            auto built = buildFileInfosForBackupEntries(
-                backup, std::move(entries_with_names), read_settings, backup_coordination, backup_thread_pool_id,
-                context->getProcessListElement());
-            backup_coordination->addFileInfos(std::move(built.file_infos));
-            backup_entries = std::move(built.entries);
+            BackupEntriesCollector backup_entries_collector(
+                backup_query->elements,
+                backup_settings,
+                backup_id,
+                backup_coordination,
+                read_settings,
+                context,
+                getThreadPool(backup_thread_pool_id));
+            backup_entries = backup_entries_collector.run();
         }
 
         /// Write the backup entries to the backup.
+        chassert(backup);
+        chassert(backup_coordination);
+        chassert(context);
+        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, backup_thread_pool_id, context->getProcessListElement());
         writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, backup_thread_pool_id, context->getProcessListElement());
 
         /// We have written our backup entries (there is no need to sync it with other hosts because it's the last stage).
@@ -940,17 +814,16 @@ void BackupsWorker::doBackup(
 }
 
 
-BackupFileInfosAndEntries BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries && backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
-    return ::DB::buildFileInfosForBackupEntries(
-        std::move(backup_entries), backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element);
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element));
 }
 
 
 void BackupsWorker::writeBackupEntries(
     BackupMutablePtr backup,
-    std::vector<BackupEntryPtr> && backup_entries,
+    BackupEntries && backup_entries,
     const OperationID & backup_id,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     bool is_internal_backup,
@@ -993,7 +866,7 @@ void BackupsWorker::writeBackupEntries(
 
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
-        auto & entry = backup_entries[index];
+        auto & entry = backup_entries[index].second;
 
         if (entry->isFromRemoteFile())
         {
@@ -1164,7 +1037,6 @@ struct BackupsWorker::RestoreStarter
             restore_query->cluster = restore_context->getMacros()->expand(restore_query->cluster);
             cluster = restore_context->getCluster(restore_query->cluster);
             restore_settings.cluster_host_ids = cluster->getHostIDs();
-            setCurrentDatabaseForOtherHosts(*restore_query, *cluster, restore_settings.shard_num, restore_settings.replica_num, restore_context->getCurrentDatabase());
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
         restore_coordination->startup();
@@ -1349,7 +1221,6 @@ void BackupsWorker::doRestore(
         restore_settings.copySettingsToQuery(*restore_query);
         sendQueryToOtherHosts(*restore_query, cluster, restore_settings.shard_num, restore_settings.replica_num,
                               context, {}, restore_coordination->getOnClusterInitializationKeeperRetriesInfo());
-        context->onQueryExecutionStarted();
         restore_coordination->setRestoreQueryIsSentToOtherHosts();
 
         /// Wait until all the hosts have done with their restoring work.
@@ -1485,15 +1356,6 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
                                                      const String & query_id, bool internal, QueryStatusPtr process_list_element,
                                                      BackupStatus status, std::map<String, String> settings)
 {
-    /// Outside `infos_mutex`, so that the hold does not block the shutdown wait.
-    /// During shutdown the DDL worker is stopped only after `ProcessList::killAllQueries`.
-    fiu_do_on(FailPoints::backups_hold_registration_until_ddl_worker_stops,
-    {
-        const auto & ddl_worker = Context::getGlobalContextInstance()->getDDLWorker();
-        while (fiu_fail(FailPoints::backups_hold_registration_until_ddl_worker_stops) && ddl_worker.isCurrentlyActive())
-            sleepForMilliseconds(10);
-    });
-
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
     info.id = id;

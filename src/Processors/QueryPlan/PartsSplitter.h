@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Interpreters/Context_fwd.h>
@@ -41,7 +40,7 @@ struct SplitPartsWithRangesByPrimaryKeyResult
     Pipes merging_pipes;
     /// Borders between consecutive `merging_pipes` in the table's key order (see `SplitPartsByRanges::borders`);
     /// empty when the intersecting ranges were not split into layers.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders;
+    std::vector<std::vector<Field>> borders;
 };
 
 /** Splits parts ranges into:
@@ -77,10 +76,10 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndex(
 
 struct SplitPartsByRanges
 {
-    using Values = VectorWithMemoryTracking<Field>;
+    using Values = std::vector<Field>;
 
-    VectorWithMemoryTracking<RangesInDataParts> layers;
-    VectorWithMemoryTracking<Values> borders;
+    std::vector<RangesInDataParts> layers;
+    std::vector<Values> borders;
     bool in_reverse_order = false;
 };
 
@@ -104,7 +103,7 @@ Pipes readByLayers(
 void addLayerRangeFilterToPipe(
     Pipe & pipe,
     const KeyDescription & primary_key,
-    const VectorWithMemoryTracking<SplitPartsByRanges::Values> & borders,
+    const std::vector<std::vector<Field>> & borders,
     size_t layer_index,
     bool in_reverse_order,
     ContextPtr context);

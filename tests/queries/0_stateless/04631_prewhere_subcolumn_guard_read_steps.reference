@@ -4,5 +4,3 @@ read ahead bytes	1
 interleaved steps	1
 nested grouped steps	1
 nested split steps	1
-top-k where steps	1
-top-k prewhere steps	1

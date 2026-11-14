@@ -1,4 +1,0 @@
-without SHOW COLUMNS the error of another index is not shown
-ACCESS_DENIED
-with SHOW COLUMNS the error is the one of ALTER TABLE ADD INDEX
-BAD_ARGUMENTS

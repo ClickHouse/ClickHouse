@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -115,7 +114,7 @@ struct StepMetric
     MetricValue value;
 };
 
-using MetricList = VectorWithMemoryTracking<StepMetric>;
+using MetricList = std::vector<StepMetric>;
 
 struct MetricGroup
 {
@@ -123,7 +122,7 @@ struct MetricGroup
     MetricList metrics;
 };
 
-using StepAnalysisReport = VectorWithMemoryTracking<MetricGroup>;
+using StepAnalysisReport = std::vector<MetricGroup>;
 
 inline const MetricGroup * findGroup(const StepAnalysisReport & report, MetricGroupKey key)
 {

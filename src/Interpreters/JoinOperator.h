@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -31,22 +30,22 @@ struct JoinOperator
     JoinLocality locality;
 
     /// An expression in ON/USING clause of a JOIN statement
-    VectorWithMemoryTracking<JoinActionRef> expression = {};
+    std::vector<JoinActionRef> expression = {};
     /// Additional filter after join (e.g. from WHERE clause)
     /// Difference is for OUTER JOINs, where expression used to match row or return NULL
     /// but residual filter is used to filter rows after join.
     /// For INNER JOINs, residual filter is the same as expression
-    VectorWithMemoryTracking<JoinActionRef> residual_filter = {};
+    std::vector<JoinActionRef> residual_filter = {};
 
     /// Runtime filters that `HashJoin` should publish as shared `FixedHashMap` runtime filters.
     /// Set by the `joinRuntimeFilter` optimizer pass.
-    VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
+    std::vector<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
 
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
         JoinLocality locality_ = JoinLocality::Unspecified,
-        VectorWithMemoryTracking<JoinActionRef> expression_ = {})
+        std::vector<JoinActionRef> expression_ = {})
         : kind(kind_)
         , strictness(strictness_)
         , locality(locality_)
@@ -114,7 +113,6 @@ struct JoinSettings
     bool collect_hash_table_stats_during_joins;
     UInt64 max_size_to_preallocate_for_joins;
     UInt64 parallel_hash_join_threshold;
-    HashJoinLayout hash_join_layout;
     UInt64 join_output_by_rowlist_perkey_rows_threshold;
     bool allow_experimental_join_right_table_sorting;
     UInt64 join_to_sort_minimum_perkey_rows;
@@ -128,25 +126,16 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
     bool enable_hash_join_row_store;
     Float64 min_rows_ratio_for_hash_join_row_store;
-    UInt64 min_string_column_bytes_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
-    bool enable_robin_hood_hash_for_joins;
     bool join_runtime_filter_from_fixed_hash_table;
-    /// A deserialized plan without these names compares `String` keys exactly.
-    bool enable_packed_string_keys_in_hash_join;
-    UInt64 min_rows_for_packed_string_keys_in_hash_join;
 
     /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
     JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
-
-    /// Whether `join_algorithms` is the built-in default of `join_algorithm`, whose algorithm the join order optimizer may
-    /// choose per join. Any other list is a priority list the user chose, used as it is.
-    bool hasDefaultJoinAlgorithms() const;
 
     /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
     /// handed to an older peer depends on which algorithm of the preference list that step reaches.

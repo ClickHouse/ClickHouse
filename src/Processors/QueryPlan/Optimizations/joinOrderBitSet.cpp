@@ -1,6 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -61,12 +59,12 @@ std::optional<JoinKind> isValidJoinOrder(
     return {};
 }
 
-VectorWithMemoryTracking<JoinActionRef *> getApplicableExpressions(
+std::vector<JoinActionRef *> getApplicableExpressions(
     QueryGraph & query_graph,
     const BitSet & left,
     const BitSet & right)
 {
-    VectorWithMemoryTracking<JoinActionRef *> applicable;
+    std::vector<JoinActionRef *> applicable;
 
     BitSet joined_rels = left | right;
     for (auto & edge : query_graph.edges)
@@ -100,7 +98,7 @@ SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
-    const VectorWithMemoryTracking<JoinActionRef *> & edges,
+    const std::vector<JoinActionRef *> & edges,
     const BitSet & left,
     const BitSet & right)
 {
@@ -108,7 +106,7 @@ SelectivityEstimate computeSelectivity(
 
     /// Also account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-    UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
+    std::unordered_set<ConstClassPtr> visited;
 
     for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
     {

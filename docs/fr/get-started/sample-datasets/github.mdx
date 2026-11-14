@@ -9,6 +9,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 Ce jeu de données contient l’ensemble des commits et des modifications du dépôt ClickHouse. Il peut être généré à l’aide de l’outil `git-import` natif distribué avec ClickHouse.
 
 Les données générées fournissent un fichier `tsv` pour chacune des tables suivantes :
@@ -570,27 +572,11 @@ Ces données se prêtent bien à la visualisation. Ci-dessous, nous utilisons Su
 
 **Pour les lignes ajoutées et supprimées :**
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Pour les lignes ajoutées et supprimées](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="Pour les lignes ajoutées et supprimées" size="md" />
 
 **Pour les commits et les auteurs :**
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Pour les commits et les auteurs](/images/getting-started/example-datasets/superset-commits-authors.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="Pour les commits et les auteurs" size="md" />
 
 <div id="list-files-with-maximum-number-of-authors">
   ### Lister les fichiers avec le plus grand nombre d’auteurs
@@ -1379,27 +1365,11 @@ LIMIT 100
 
 Un diagramme de Sankey (SuperSet) permet de visualiser cela de façon claire. Notez que nous portons `LIMIT BY` à 3 afin d’obtenir, pour chaque auteur, les 3 personnes qui suppriment le plus de code, ce qui rend la visualisation plus variée.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Matrice des auteurs Superset](/images/getting-started/example-datasets/superset-authors-matrix.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Matrice des auteurs Superset" size="md" />
 
 Alexey aime manifestement supprimer le code des autres. Excluons-le pour obtenir une vue plus équilibrée de la suppression de code.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Matrice des auteurs Superset v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Matrice des auteurs Superset v2" size="md" />
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
   ### Quel contributeur a le pourcentage le plus élevé pour chaque jour de la semaine ?

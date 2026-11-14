@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <optional>
 #include <vector>
 #include <Processors/QueryPlan/Profiling/Analysis/JoinBranchCosts.h>
@@ -20,10 +18,10 @@ bool sameCluster(const JoinStep * lhs, const JoinStep * rhs)
     return lhs->getClusterId() != 0 && lhs->getClusterId() == rhs->getClusterId();
 }
 
-VectorWithMemoryTracking<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * root)
+std::vector<const QueryPlan::Node *> collectPostOrder(const QueryPlan::Node * root)
 {
-    VectorWithMemoryTracking<const QueryPlan::Node *> post_order;
-    VectorWithMemoryTracking<const QueryPlan::Node *> to_visit{root};
+    std::vector<const QueryPlan::Node *> post_order;
+    std::vector<const QueryPlan::Node *> to_visit{root};
 
     while (!to_visit.empty())
     {
@@ -53,12 +51,12 @@ JoinBranchCosts::JoinBranchCosts(const QueryPlan & plan, const CardinalityByJoin
 
 void JoinBranchCosts::accumulate(const QueryPlan::Node * root, const CardinalityByJoinStep & cardinality_by_join_step)
 {
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, VectorWithMemoryTracking<const JoinStep *>> joins_below;
+    std::unordered_map<const QueryPlan::Node *, std::vector<const JoinStep *>> joins_below;
 
     for (const auto * node : collectPostOrder(root))
     {
         /// collect the joins from children
-        VectorWithMemoryTracking<const JoinStep *> joins_below_the_curren_node;
+        std::vector<const JoinStep *> joins_below_the_curren_node;
         for (const auto * child : node->children)
         {
             const auto it = joins_below.find(child);

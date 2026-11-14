@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Client/IConnections.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -27,7 +26,7 @@ public:
         ClusterPtr cluster_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         ContextPtr context_,
-        VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use,
+        std::vector<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
@@ -54,7 +53,7 @@ private:
     ParallelReplicasReadingCoordinatorPtr coordinator;
     ContextPtr context;
     LoggerPtr log;
-    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
+    std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
 };

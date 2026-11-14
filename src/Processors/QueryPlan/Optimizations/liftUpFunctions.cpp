@@ -1,5 +1,4 @@
 #include <Interpreters/ActionsDAG.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -34,7 +33,7 @@ namespace DB::QueryPlanOptimizations
 /// This is ok for DAG, but may introduce a bug in a SotringStep cause columns are selected by name.
 static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
-    UnorderedSetWithMemoryTracking<std::string_view> names;
+    std::unordered_set<std::string_view> names;
     for (const auto & node : nodes)
     {
         if (!names.emplace(node->result_name).second)
@@ -87,7 +86,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     /// the sort here prevents the two optimizations from moving the same nodes in opposite
     /// directions forever. The rest of the DAG is still lifted, preserving the previous behavior
     /// for unsupported overloads and mixed expressions.
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> volume_reducing_functions;
+    std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
     if (settings.push_down_volume_reducing_functions)
         volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expression);
     auto [needed_for_sorting, unneeded_for_sorting, _]

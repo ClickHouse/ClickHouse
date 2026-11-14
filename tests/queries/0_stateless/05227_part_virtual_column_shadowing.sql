@@ -3,7 +3,6 @@
 -- to filter parts by virtual columns. Two places looked the virtual column up unconditionally and the
 -- query failed with `NOT_FOUND_COLUMN_IN_BLOCK`.
 
-SET allow_reserved_column_names = 1;
 DROP TABLE IF EXISTS t_part_shadow;
 CREATE TABLE t_part_shadow (`_part` UInt32, x UInt32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_part_shadow VALUES (1, 100), (2, 200), (3, 300);

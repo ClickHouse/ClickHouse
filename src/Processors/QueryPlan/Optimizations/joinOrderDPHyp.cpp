@@ -1,6 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 
@@ -73,8 +71,8 @@ private:
     };
 
     /// DPhyp hyperedge representation (built lazily by buildHyperedges)
-    VectorWithMemoryTracking<Hyperedge> hyperedges;
-    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
+    std::vector<Hyperedge> hyperedges;
+    std::vector<std::vector<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
 
     /// Set by `tryJoin` when it encounters a single-table or constant predicate inside the join edges
     /// that `dphyp` does not yet know how to attach. `solve` returns `nullptr` so the fallback
@@ -139,7 +137,7 @@ void DPHypJoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & r
         return;
 
     auto applicable_predicates = getApplicableExpressions(query_graph, left_rels, right_rels);
-    VectorWithMemoryTracking<JoinActionRef *> connecting_predicates;
+    std::vector<JoinActionRef *> connecting_predicates;
     for (auto * predicate : applicable_predicates)
     {
         if (connects(predicate, left_rels, right_rels))
@@ -233,7 +231,7 @@ void DPHypJoinOrderOptimizer::buildHyperedges()
     /// neighborhood traversal would never discover the pair.
 
     /// Build a connectivity matrix from explicit edges to avoid duplicating them.
-    VectorWithMemoryTracking<BitSet> connected_rels(num_relations);
+    std::vector<BitSet> connected_rels(num_relations);
     for (const auto & hyperedge : hyperedges)
     {
         auto left_rel = hyperedge.left.getSingleBit();
@@ -246,7 +244,7 @@ void DPHypJoinOrderOptimizer::buildHyperedges()
     }
 
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-    UnorderedSetWithMemoryTracking<ConstClassPtr> processed_classes;
+    std::unordered_set<ConstClassPtr> processed_classes;
 
     for (const auto & [member, equiv_class] : query_graph.column_equivalences.getMemberToClassMap())
     {
@@ -255,7 +253,7 @@ void DPHypJoinOrderOptimizer::buildHyperedges()
 
         /// Collect all distinct relations in this equivalence class.
         BitSet seen_rels;
-        VectorWithMemoryTracking<size_t> class_rels;
+        std::vector<size_t> class_rels;
         for (const auto & column : *equiv_class)
         {
             auto relation = column.getSourceRelations().getSingleBit();
@@ -334,7 +332,7 @@ BitSet DPHypJoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
 template <typename F>
 void forEachNonEmptySubset(const BitSet & mask, F && func)
 {
-    VectorWithMemoryTracking<size_t> bit_positions;
+    std::vector<size_t> bit_positions;
     for (auto bit : mask)
         bit_positions.push_back(bit);
 
@@ -444,7 +442,7 @@ void DPHypJoinOrderOptimizer::emitCsg(const BitSet & csg)
     LOG_TEST(log, "DPhyp: emitCsg neighborhood={{ {} }}, exclusion={{ {} }}",
         fmt::join(csg_neighborhood, ","), fmt::join(exclusion, ","));
 
-    VectorWithMemoryTracking<size_t> neighbor_nodes;
+    std::vector<size_t> neighbor_nodes;
     for (size_t n : csg_neighborhood)
         neighbor_nodes.push_back(n);
 
