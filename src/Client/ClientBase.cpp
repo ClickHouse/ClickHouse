@@ -216,6 +216,8 @@ namespace ProfileEvents
     extern const Event ThrottlerSleepMicroseconds;
     extern const Event SchedulerIOReadWaitMicroseconds;
     extern const Event SchedulerIOWriteWaitMicroseconds;
+    extern const Event GPUSMActiveMicroseconds;
+    extern const Event GPUTensorActiveMicroseconds;
 }
 
 namespace
@@ -2307,6 +2309,8 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
         std::string_view scheduler_io_read_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOReadWaitMicroseconds);
         std::string_view scheduler_io_write_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOWriteWaitMicroseconds);
+        std::string_view gpu_sm_active_name = ProfileEvents::getName(ProfileEvents::GPUSMActiveMicroseconds);
+        std::string_view gpu_tensor_active_name = ProfileEvents::getName(ProfileEvents::GPUTensorActiveMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2339,6 +2343,10 @@ void ClientBase::onProfileEvents(Block & block)
             /// (workload resource requests), summed up into a single "waited" figure.
             else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
                 thread_times[host_name].waited_us += value;
+            else if (event_name == gpu_sm_active_name)
+                thread_times[host_name].gpu_sm_active_us += value;
+            else if (event_name == gpu_tensor_active_name)
+                thread_times[host_name].gpu_tensor_active_us += value;
             /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
             /// from several queued snapshots of one source, or from several shards on one server.
             /// Summing would multiply one source's usage by the number of coalesced snapshots,
@@ -2352,6 +2360,10 @@ void ClientBase::onProfileEvents(Block & block)
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
                 thread_times[host_name].temp_data_on_disk_usage = std::max(thread_times[host_name].temp_data_on_disk_usage, static_cast<UInt64>(value));
+            else if (event_name == ProfileEvents::GPU_MEMORY_USAGE_EVENT_NAME)
+                thread_times[host_name].gpu_memory_usage = std::max(thread_times[host_name].gpu_memory_usage, static_cast<UInt64>(value));
+            else if (event_name == ProfileEvents::GPU_MEMORY_PEAK_USAGE_EVENT_NAME)
+                thread_times[host_name].gpu_peak_memory_usage = std::max(thread_times[host_name].gpu_peak_memory_usage, static_cast<UInt64>(value));
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);

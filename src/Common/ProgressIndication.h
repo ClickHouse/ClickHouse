@@ -26,6 +26,11 @@ struct ThreadEventData
     UInt64 waited_us    = 0;
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
+    UInt64 gpu_memory_usage = 0;
+    UInt64 gpu_peak_memory_usage = 0;
+    /// Increments: the active time of the SMs and of the tensor pipes of the GPU accounted to the query.
+    UInt64 gpu_sm_active_us = 0;
+    UInt64 gpu_tensor_active_us = 0;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
@@ -97,6 +102,15 @@ public:
         UInt64 max = 0;
     };
 
+    struct GPUMemoryUsage
+    {
+        UInt64 total = 0;
+        UInt64 peak = 0;
+    };
+
+    /// The device memory of the GPU the query holds on all hosts, and the sum of the peaks of the hosts.
+    GPUMemoryUsage getGPUMemoryUsage() const;
+
     /// Total amount of temporary data on disk used by the query across all hosts and the maximum per host (in bytes).
     TempDataOnDiskUsage getTempDataOnDiskUsage() const;
 
@@ -110,6 +124,11 @@ private:
         double waited = 0;
         MemoryUsage memory;
         TempDataOnDiskUsage temp_data_on_disk;
+        GPUMemoryUsage gpu_memory;
+        /// GPUs busy, over the last seconds, and whether the activity of the GPU is sampled at all.
+        double gpu_sm = 0;
+        double gpu_tensor = 0;
+        bool gpu_activity = false;
     };
 
     /// All resource usage values at once, consistent with each other.
@@ -117,6 +136,7 @@ private:
 
     static MemoryUsage sumMemoryUsage(const HostToTimesMap & hosts);
     static TempDataOnDiskUsage sumTempDataOnDiskUsage(const HostToTimesMap & hosts);
+    static GPUMemoryUsage sumGPUMemoryUsage(const HostToTimesMap & hosts);
 
     UInt64 getElapsedNanoseconds() const;
 
@@ -151,6 +171,11 @@ private:
 
     EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
     EventRateMeter waited_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4};
+    /// The active time of the SMs and of the tensor pipes of the GPU, as GPUs busy, and in total since the start.
+    EventRateMeter gpu_sm_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4};
+    EventRateMeter gpu_tensor_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4};
+    UInt64 gpu_sm_active_us = 0;
+    UInt64 gpu_tensor_active_us = 0;
     HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local

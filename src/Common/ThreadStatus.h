@@ -105,6 +105,10 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
+    /// The device memory of the GPU the query holds and the most it held, in bytes: see `GPU::trackDeviceAllocation`.
+    std::atomic<Int64> gpu_memory_usage{0};
+    std::atomic<Int64> gpu_peak_memory_usage{0};
+
     /// This query's memory-pressure monitor; its parent is repointed to the user monitor at query start.
     MemoryPressureMonitor memory_pressure_monitor{memory_tracker, getGlobalMemoryPressureMonitor()};
 
