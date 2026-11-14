@@ -1,0 +1,35 @@
+-- a constant granule from the stored bytes
+Baseline (after PK + partition + existing indexes):
+marks: 7
+With p_k (normal projection, hypothetical):
+marks: 6
+marks_span: 3 to 12
+verdict: too close to call
+real: ReadFromMergeTree (p_k)
+real: Granules: 6/53
+-- a compact part, the block in memory is over min_bytes_for_wide_part
+real part: Compact
+Baseline (after PK + partition + existing indexes):
+marks: 6
+With p_b (normal projection, hypothetical):
+marks: 7
+marks_span: 5 to 7
+verdict: too close to call
+real: from the base table
+real forced: Granules: 7/13
+-- a merged part of a sparse column: a part does not record which of the parts it merged were sparse
+Baseline (after PK + partition + existing indexes):
+marks: 7
+With p_b (normal projection, hypothetical):
+marks: 8
+verdict: too close to call
+real: ReadFromMergeTree (p_b)
+real: Granules: 6/59
+-- the same parts merged after the ratio disables sparse columns: the current ratio does not show how the merged parts were written
+Baseline (after PK + partition + existing indexes):
+marks: 7
+With p_b (normal projection, hypothetical):
+marks: 8
+verdict: too close to call
+real: ReadFromMergeTree (p_b)
+real: Granules: 6/59

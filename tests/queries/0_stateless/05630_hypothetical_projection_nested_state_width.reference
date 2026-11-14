@@ -1,0 +1,7 @@
+Baseline (after PK + partition + existing indexes):
+marks: 25
+With p_b (normal projection, hypothetical):
+marks: 3
+verdict: too close to call
+real: from the base table
+real forced: Granules: 25/250
