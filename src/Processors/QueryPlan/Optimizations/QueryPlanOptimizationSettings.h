@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <functional>
+#include <memory>
 
 namespace DB
 {
@@ -28,8 +29,14 @@ class ReadFromMergeTree;
 
 struct DistributedPlanLocalObject;
 
+struct TableOccurrences;
+
 /// The read of the single-node plan that a read of the plan with parallel replicas stands for, or nullptr.
 using FindSingleNodeRead = std::function<const ReadFromMergeTree *(const ReadFromMergeTree &)>;
+/// Makes `FindSingleNodeRead` once the builder of the plan with parallel replicas has the tables of both query trees,
+/// the single-node one first (`collectTableOccurrences`).
+using MakeSingleNodeReadFinder
+    = std::function<FindSingleNodeRead(std::shared_ptr<const TableOccurrences>, std::shared_ptr<const TableOccurrences>)>;
 
 /// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
 /// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
@@ -47,10 +54,14 @@ struct PlanWithParallelReplicas
 
     std::unique_ptr<QueryPlan> plan;
     SkipReason skip_reason = SkipReason::None;
+    /// The tables of the single-node query tree and of the tree `plan` was built from (`collectTableOccurrences`),
+    /// which tell apart the reads of a table read more than once.
+    std::shared_ptr<const TableOccurrences> single_node_table_occurrences = nullptr;
+    std::shared_ptr<const TableOccurrences> replicas_table_occurrences = nullptr;
 };
 
 using QueryPlanWithParallelReplicasBuilder
-    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const FindSingleNodeRead &, const LoggerPtr &)>;
+    = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const MakeSingleNodeReadFinder &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {

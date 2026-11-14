@@ -10,6 +10,8 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -39,6 +41,7 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
@@ -2129,6 +2132,119 @@ bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID &
     return view_source && storage == view_source && !context->isViewInnerQuery()
         && storage_id.database_name == ITableFunction::getDatabaseName()
         && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name);
+}
+
+
+namespace
+{
+
+bool findPathInAST(const IAST & node, const IAST * target, std::vector<size_t> & path)
+{
+    if (&node == target)
+        return true;
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
+        path.push_back(i);
+        if (findPathInAST(*node.children[i], target, path))
+            return true;
+        path.pop_back();
+    }
+    return false;
+}
+
+/// The `SELECT` a query node was built from, if there is one with a `FROM`.
+const ASTSelectQuery * getScopeSelect(const IAST * scope_ast)
+{
+    /// A subquery's node keeps the union around its `SELECT`, which is the scope when it is the only one.
+    if (const auto * select_with_union = scope_ast ? scope_ast->as<ASTSelectWithUnionQuery>() : nullptr;
+        select_with_union && select_with_union->list_of_selects && select_with_union->list_of_selects->children.size() == 1)
+        scope_ast = select_with_union->list_of_selects->children.front().get();
+
+    const auto * select = scope_ast ? scope_ast->as<ASTSelectQuery>() : nullptr;
+    if (!select || !select->tables())
+        return nullptr;
+    return select;
+}
+
+/// The whole `SELECT` is hashed, with the role of each clause and its flags, so `WHERE` and `PREWHERE` over the
+/// same condition differ. A shallow copy without the `SETTINGS` clause leaves the query itself untouched.
+SipHash hashScopeSelect(const ASTSelectQuery & select)
+{
+    SipHash hash;
+    ASTSelectQuery scope_without_settings(select);
+    scope_without_settings.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+    scope_without_settings.updateTreeHash(hash, /*ignore_aliases=*/false);
+    return hash;
+}
+
+}
+
+TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree)
+{
+    TableOccurrences result;
+    std::vector<const IQueryTreeNode *> stack{tree.get()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        /// Walked by hand rather than with `extractTableExpressions`: an unresolved query, such as the argument
+        /// of a `view` table function, has an identifier for its join tree, and that is not an error here.
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            const auto * scope_select = getScopeSelect(query_node->getOriginalAST().get());
+            /// Taken at the first table found in this scope, and then for all of them.
+            std::optional<SipHash> scope_hash;
+            std::vector<const IQueryTreeNode *> join_tree{query_node->getJoinTreeNode().get()};
+            while (!join_tree.empty())
+            {
+                const auto * table_expression = join_tree.back();
+                join_tree.pop_back();
+                if (!table_expression)
+                    continue;
+
+                if (const auto * join_node = table_expression->as<JoinNode>())
+                {
+                    join_tree.push_back(join_node->getLeftTableExpressionNode().get());
+                    join_tree.push_back(join_node->getRightTableExpressionNode().get());
+                }
+                else if (const auto * cross_join_node = table_expression->as<CrossJoinNode>())
+                {
+                    for (const auto & cross_joined : cross_join_node->getTableExpressions())
+                        join_tree.push_back(cross_joined.get());
+                }
+                else if (const auto * array_join_node = table_expression->as<ArrayJoinNode>())
+                {
+                    join_tree.push_back(array_join_node->getTableExpressionNode().get());
+                }
+                else if (table_expression->getNodeType() == QueryTreeNodeType::TABLE)
+                {
+                    const auto & table_expression_ast = table_expression->getOriginalAST();
+                    std::vector<size_t> path;
+                    if (!scope_select || !table_expression_ast
+                        || !findPathInAST(*scope_select->tables(), table_expression_ast.get(), path))
+                        continue;
+
+                    if (!scope_hash)
+                        scope_hash = hashScopeSelect(*scope_select);
+                    SipHash hash = *scope_hash;
+                    hash.update(path.size());
+                    for (size_t index : path)
+                        hash.update(index);
+                    const auto identity = hash.get128();
+
+                    ++result.counts[identity];
+                    result.identity_by_ast.emplace(table_expression_ast, identity);
+                }
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            stack.push_back(child.get());
+    }
+    return result;
 }
 
 }
