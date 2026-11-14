@@ -1246,7 +1246,14 @@ public:
 
     bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String & error)
     {
-        return extract_tree->insertResultToColumn(dest, element, insert_settings, format_settings, error);
+        /// The caller's format settings decide how JSON paths are escaped and how typed paths are
+        /// handled. The insert settings are otherwise fixed per function instance, but these flags
+        /// are per query.
+        JSONExtractInsertSettings settings = insert_settings;
+        settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+        settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+        settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+        return extract_tree->insertResultToColumn(dest, element, settings, format_settings, error);
     }
 
 protected:
@@ -1309,9 +1316,14 @@ public:
         auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
         auto & col_value = col_tuple.getColumn(1);
 
+        JSONExtractInsertSettings settings = insert_settings;
+        settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+        settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+        settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+
         for (const auto & [key, value] : object)
         {
-            if (extract_tree->insertResultToColumn(col_value, value, insert_settings, format_settings, error))
+            if (extract_tree->insertResultToColumn(col_value, value, settings, format_settings, error))
                 col_key.insertData(key.data(), key.size());
         }
 
