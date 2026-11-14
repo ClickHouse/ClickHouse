@@ -335,6 +335,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesRemoveAllTagsExcept",
     "timeSeriesRemoveTag",
     "timeSeriesRemoveTags",
+    "timeSeriesSortGroupsByTags",
     "timeSeriesTagsToGroup",
     "timeSeriesThrowDuplicateSeriesIf",
     "timeSeriesFromGrid",

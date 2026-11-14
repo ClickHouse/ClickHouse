@@ -1,0 +1,15 @@
+Row 1:
+──────
+library_name: golang
+license_type: BSD 3-clause
+license_path: /utils/list-licenses/ported/golang/LICENSE
+license_text: Copyright 2009 The Go Authors.
+
+
+Row 2:
+──────
+library_name: natsort
+license_type: BSD 3-clause
+license_path: /utils/list-licenses/ported/natsort/LICENSE
+license_text: Copyright (c) 2015, Vincent Batoufflet and Marc Falzon
+
