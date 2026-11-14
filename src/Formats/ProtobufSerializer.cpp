@@ -1980,6 +1980,7 @@ namespace
             {
                 ReadBufferFromMemory buf(str.data(), str.length());
                 aggregate_function->deserialize(data, buf, std::nullopt, &arena);
+                checkMemoryLimitAfterReadingState(*aggregate_function);
                 return data;
             }
             catch (...)
