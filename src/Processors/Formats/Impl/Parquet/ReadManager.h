@@ -148,6 +148,8 @@ private:
 
     /// Whether readAheadColumnData starts ColumnData prefetches of schedulable row groups ahead of their decoding.
     bool column_data_read_ahead = false;
+    /// Row groups a reader may keep in flight, decoding or read ahead, at least.
+    size_t min_read_ahead_depth = 0;
     /// Held shared by ColumnData admission rounds and exclusively by readAheadColumnData, which never overlaps them.
     SharedMutex column_data_prefetch_mutex;
     /// Row groups whose current ColumnData prefetches were started by read-ahead and whose decoding

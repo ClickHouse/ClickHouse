@@ -3,6 +3,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
+#include <unordered_set>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -90,6 +91,21 @@ private:
     std::atomic<size_t> index = 0;
 };
 
+/// The state shared by the sources that read the buckets of one object, see `DeferredObjectSplit`.
+struct SplitObjectReadState
+{
+    explicit SplitObjectReadState(size_t num_buckets_) : num_buckets(num_buckets_) {}
+
+    const size_t num_buckets;
+
+    std::mutex mutex;
+    /// The query condition cache entry describes the whole object, so it is written only after all buckets are read.
+    bool can_write_query_condition_cache TSA_GUARDED_BY(mutex) = true;
+    size_t total_row_groups TSA_GUARDED_BY(mutex) = 0;
+    std::unordered_set<size_t> matched_row_groups TSA_GUARDED_BY(mutex);
+    size_t buckets_read TSA_GUARDED_BY(mutex) = 0;
+};
+
 class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
@@ -164,6 +180,13 @@ public:
     /// The key for a table with a UUID, from the path of the object within its storage.
     static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
     static std::optional<String> makeQueryConditionCacheKey(const String & identifier, const ObjectInfo & object_info, bool is_data_lake);
+
+    static UUID getQueryConditionCacheTableId(
+        const StorageID & storage_id,
+        const StorageObjectStorageConfiguration & configuration,
+        const StorageSnapshotPtr & storage_snapshot,
+        const FormatFilterInfo & format_filter_info,
+        const std::optional<FormatSettings> & format_settings);
 
 protected:
     StorageID storage_id;
@@ -280,6 +303,10 @@ protected:
     void writePendingTopKQueryConditionCacheEntries();
 
     std::future<ReaderHolder> createReaderAsync();
+
+    /// Adds the matching row groups of a split object's bucket; the source finishing the last bucket writes the cache entry.
+    void finishReadingSplitObjectBucket(
+        const ObjectInfo & object_info, const IInputFormat & input_format, const std::optional<String> & query_condition_cache_key);
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
     /// Add the number of rows of the object recorded in the table metadata (e.g. `record_count` of an
