@@ -1526,6 +1526,7 @@ static QueryTreeNodePtr buildPortableNullSafeEquals(
     {
         const bool both_numeric = isNumber(left_type) && isNumber(right_type);
         if (both_numeric
+            && context->getSettingsRef()[Setting::allow_lossy_numeric_supertype]
             && ((isDecimal(left_type) != isDecimal(right_type))
                 || !tryGetLeastSupertype(DataTypes{left_type, right_type})))
         {
