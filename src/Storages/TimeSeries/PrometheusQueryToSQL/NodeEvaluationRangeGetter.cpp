@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/alignTimestampWithStep.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionInfo.h>
 
 
 namespace DB::ErrorCodes
@@ -181,7 +182,10 @@ void NodeEvaluationRangeGetter::setWindows()
     /// Assign windows for instant selectors.
     for (auto & [node, node_range] : map)
     {
-        if (node->node_type == NodeType::InstantSelector)
+        /// info() reads its info series like an instant selector.
+        bool is_info = node->node_type == NodeType::Function
+            && isFunctionInfo(static_cast<const PrometheusQueryTree::Function *>(node)->function_name);
+        if (node->node_type == NodeType::InstantSelector || is_info)
         {
             /// The following setting may be overwritten later if this instant selector node is a part of a range selector
             /// (see below).

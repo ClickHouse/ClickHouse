@@ -5,6 +5,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionInfo.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFusedAggregationBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
@@ -70,7 +71,11 @@ namespace
                 std::vector<SQLQueryPiece> arguments;
                 for (const auto * arg_node : function->getArguments())
                 {
-                    arguments.push_back(visitNode(arg_node, context));
+                    /// The label selector of info() isn't evaluated.
+                    if (isFunctionInfo(function->function_name) && !arguments.empty())
+                        arguments.emplace_back(arg_node, arg_node->result_type, StoreMethod::EMPTY);
+                    else
+                        arguments.push_back(visitNode(arg_node, context));
                 }
                 return applyFunction(function, std::move(arguments), context);
             }

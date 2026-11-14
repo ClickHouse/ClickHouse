@@ -1,0 +1,21 @@
+-- @ and offset limit the time range of the info series
+info(metric @ 300) from 0 to 900 step 300
+[('__name__','metric'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1),(900000,1)]
+info(metric @ 300) from 300 to 900 step 300
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	[(300000,1),(600000,1),(900000,1)]
+info(metric offset 5m) from 300 to 900 step 300
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	[(300000,0),(600000,1)]
+[('__name__','metric'),('instance','a'),('job','1')]	[(900000,2)]
+info(metric @ 300, {data=~".+"}) from 300 to 900 step 300
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	[(300000,1)]
+info(sum by (instance, job) (metric @ 300)) from 300 to 900 step 300
+[('data','new'),('instance','a'),('job','1')]	[(300000,1),(600000,1),(900000,1)]
+info(metric offset 5m) at 600
+[('__name__','metric'),('instance','a'),('job','1')]	1
+info(metric offset 4m) at 600
+[('__name__','metric'),('instance','a'),('job','1')]	1
+info(metric) at 600
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	2
+-- info(metric @ 300, {data=~".*"} @ 300) from 300 to 900 step 300
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	[(300000,1),(600000,1),(900000,1)]
+-- invalid arguments

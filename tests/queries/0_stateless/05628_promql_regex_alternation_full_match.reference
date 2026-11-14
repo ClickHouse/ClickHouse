@@ -1,0 +1,30 @@
+-- =~ in a selector
+[('__name__','m'),('version','1.0')]	1
+[('__name__','m'),('version','2.0')]	2
+-- !~ in a selector
+[('__name__','m'),('version','1.0-extra')]	3
+[('__name__','m'),('version','x2.0')]	4
+-- =~ in the label selector of info
+-- !~ in the label selector of info
+[('__name__','metric'),('instance','a'),('job','1'),('version','1.0-extra')]	5
+-- escaped $ in a selector
+[('__name__','n'),('data','a$')]	6
+[('__name__','n'),('data','a$extra')]	7
+[('__name__','n'),('data','foo')]	9
+[('__name__','n'),('data','foo|bar')]	8
+-- quoted regex in a selector
+[('__name__','n'),('data','foo|bar')]	8
+[('__name__','n'),('data','a$')]	6
+[('__name__','n'),('data','a$extra')]	7
+[('__name__','n'),('data','foo')]	9
+-- escaped $ in the label selector of info
+[('__name__','metric2'),('data','a$extra'),('instance','b'),('job','1')]	10
+-- quoted regex in the label selector of info
+[('__name__','metric3'),('data','foo|bar'),('instance','c'),('job','1')]	11
+[('__name__','metric3'),('instance','c'),('job','1')]	11
+[('__name__','metric3'),('data','foo|bar'),('instance','c'),('job','1')]	11
+-- multiline flag in a selector
+[('__name__','p'),('data','foo')]	13
+[('__name__','p'),('data','foo\nbar')]	12
+-- multiline flag in the label selector of info
+[('__name__','metric4'),('data','foo\nbar'),('instance','d'),('job','1')]	14

@@ -1,0 +1,5 @@
+-- the newest info series is chosen by the exact timestamp of a DateTime64(9) table
+[('__name__','metric'),('data','second'),('instance','a'),('job','1')]	1
+-- the same over a range longer than 2^53 nanoseconds
+[('__name__','metric'),('data','second'),('instance','a'),('job','1')]	[('2026-11-11 00:00:01.000000000',1)]
+-- two info series with the same nanosecond timestamp are still a conflict

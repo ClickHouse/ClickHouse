@@ -29,7 +29,10 @@ namespace
     SQLQueryPiece fromRangeSelector(std::string_view instant_selector_text,
                                     const Node * node,
                                     bool filter_stale_markers,
-                                    ConverterContext & context)
+                                    ConverterContext & context,
+                                    std::optional<std::pair<TimestampType, TimestampType>> time_bounds = {},
+                                    ASTPtr series_filter = nullptr,
+                                    ASTPtr selector_argument = nullptr)
     {
         auto node_range = context.node_range_getter.get(node);
         if (node_range.empty())
@@ -88,15 +91,32 @@ namespace
         /// of the table itself, rounding them towards the inside of the range.
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
+        bool no_samples_in_bounds = false;
+        if (time_bounds)
+        {
+            min_time = std::max(min_time, time_bounds->first);
+            max_time = std::min(max_time, time_bounds->second);
+            /// No sample is within the bounds: read nothing, but don't return EMPTY, which would drop the series of info().
+            no_samples_in_bounds = (min_time > max_time);
+            if (no_samples_in_bounds)
+                min_time = max_time;
+        }
 
         builder.from_table_function = makeASTFunction(
             "timeSeriesSelector",
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
             make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
-            make_intrusive<ASTLiteral>(String{instant_selector_text}),
+            selector_argument ? std::move(selector_argument) : make_intrusive<ASTLiteral>(String{instant_selector_text}),
             timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
             timeSeriesTimestampToAST(max_time, context.result_timestamp_type),
             make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
+
+        if (no_samples_in_bounds)
+            builder.where = make_intrusive<ASTLiteral>(UInt64{0});
+
+        /// The filter is applied to the series (the column `group`) before their samples are processed.
+        if (series_filter)
+            builder.where = builder.where ? makeASTFunction("and", std::move(builder.where), std::move(series_filter)) : std::move(series_filter);
 
         res.select_query = builder.getSelectQuery();
         return res;
@@ -185,9 +205,42 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_
 
 SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSelector * instant_selector_node, ConverterContext & context)
 {
-    auto instant_selector_text = instant_selector_node->toString(*context.promql_tree);
+    return fromSelectorSampleTimestamps(
+        instant_selector_node, instant_selector_node->toString(*context.promql_tree), {}, nullptr, nullptr, SampleTimestampKind::SECONDS, context);
+}
+
+
+SQLQueryPiece fromSelectorSampleTimestamps(
+    const Node * node,
+    const String & instant_selector_text,
+    std::optional<std::pair<TimestampType, TimestampType>> time_bounds,
+    ASTPtr series_filter,
+    ASTPtr selector_argument,
+    SampleTimestampKind timestamp_kind,
+    ConverterContext & context)
+{
     auto range_selector = fromRangeSelector(
-        instant_selector_text, instant_selector_node, /* filter_stale_markers = */ false, context);
+        instant_selector_text, node, /* filter_stale_markers = */ false, context, time_bounds, std::move(series_filter),
+        std::move(selector_argument));
+
+    const auto node_range = context.node_range_getter.get(node);
+    auto sample_timestamp_value = [&](ASTPtr timestamp) -> ASTPtr
+    {
+        if (timestamp_kind == SampleTimestampKind::SECONDS)
+            return makeASTFunction("CAST", std::move(timestamp), make_intrusive<ASTLiteral>("Float64"));
+        auto range_start = timeSeriesTimestampToAST(node_range.start_time - node_range.window + 1, context.result_timestamp_type);
+        auto range_start_in_table_scale = makeASTFunction("CAST", std::move(range_start), makeASTFunction("toTypeName", timestamp->clone()));
+        ASTPtr ticks = makeASTFunction(
+            "minus",
+            makeASTFunction("reinterpretAsInt64", std::move(timestamp)),
+            makeASTFunction("reinterpretAsInt64", std::move(range_start_in_table_scale)));
+        constexpr UInt64 low_part_size = 1ULL << 26;
+        if (timestamp_kind == SampleTimestampKind::TICKS_HIGH)
+            ticks = makeASTFunction("intDiv", std::move(ticks), make_intrusive<ASTLiteral>(low_part_size));
+        else if (timestamp_kind == SampleTimestampKind::TICKS_LOW)
+            ticks = makeASTFunction("modulo", std::move(ticks), make_intrusive<ASTLiteral>(low_part_size));
+        return makeASTFunction("CAST", std::move(ticks), make_intrusive<ASTLiteral>("Float64"));
+    };
 
     /// Replaces the value of every sample with its timestamp. Stale markers are kept so that last_over_time() can still
     /// select them and they are turned into absence below, exactly as for a plain instant selector.
@@ -213,7 +266,7 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
                 "if",
                 isStaleMarker(sample_value()),
                 makeASTFunction("CAST", sample_value(), make_intrusive<ASTLiteral>("Float64")),
-                makeASTFunction("CAST", sample_timestamp(), make_intrusive<ASTLiteral>("Float64")));
+                sample_timestamp_value(sample_timestamp()));
 
             auto samples = makeASTFunction(
                 "arrayMap",
@@ -245,7 +298,7 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
                 "if",
                 isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value)),
                 makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Value), make_intrusive<ASTLiteral>("Float64")),
-                makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>("Float64")));
+                sample_timestamp_value(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp)));
             value->setAlias(ColumnNames::Value);
             builder.select_list.push_back(std::move(value));
 
@@ -271,7 +324,7 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
     }
 
     auto vector_grid = applyFunctionOverRange(
-        instant_selector_node, "last_over_time", {std::move(range_selector)}, context);
+        node, "last_over_time", {std::move(range_selector)}, context);
     return replaceStaleMarkersWithNulls(std::move(vector_grid), context);
 }
 
