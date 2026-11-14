@@ -510,7 +510,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
             QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
-            /// Analyzed on its own, a table function is the table of remote() or cluster() (see buildQueryTreeDistributed) or comes from a received query plan.
+            /// A table function analyzed on its own is the table of remote() or cluster(), or comes from a received query plan.
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/, true /*remote_target*/);
             break;
         }
