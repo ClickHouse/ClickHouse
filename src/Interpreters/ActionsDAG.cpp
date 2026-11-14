@@ -1212,7 +1212,7 @@ bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
     return removeUnreachableNodes(nodes, inputs, roots, allow_constant_folding, evaluate_constants);
 }
 
-bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
+bool ActionsDAG::removeUnusedActions(const UnorderedSetWithMemoryTracking<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
 {
     NodeRawConstPtrs roots;
     roots.reserve(outputs.size() + used_inputs.size());
