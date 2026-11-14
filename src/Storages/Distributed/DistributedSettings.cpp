@@ -34,6 +34,7 @@ namespace ErrorCodes
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_sleep_time_ms, 0, "Default - distributed_background_insert_sleep_time_ms", 0, monitor_sleep_time_ms) \
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_max_sleep_time_ms, 0, "Default - distributed_background_insert_max_sleep_time_ms", 0, monitor_max_sleep_time_ms) \
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
+    DECLARE(String, partition_moves_zookeeper_path, "", "Experimental. Path in ZooKeeper of the partitions that are being moved between shards. While a partition is moved, queries read only the copy the move points to and skip the other one. The path may start with the name of an auxiliary ZooKeeper. Requires `allow_experimental_distributed_partition_moves`.", 0) \
 
 DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)

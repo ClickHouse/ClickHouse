@@ -9,6 +9,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/quoteString.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -156,6 +157,46 @@ namespace
     /// regression test would no longer exercise the reuse path it is meant to guard. Suppress the test failpoint
     /// while the discarded probe plan is built (the probe and the real build run on the same thread in sequence).
     thread_local bool in_insert_select_suitability_probe = false;
+
+    /// Makes the query for a shard skip `partitions` of `table`, the table that the query reads, with `additional_table_filters`
+    /// in the `SETTINGS` clause of the query. The shard applies the filter when it reads the table, and a local plan does as well.
+    /// The clause replaces the whole value of the setting, so the other entries are kept. Only the first entry matching a table
+    /// is applied, so the filter goes first, combined with the entry that the shard would apply otherwise.
+    void skipPartitionsInQueryForShard(QueryTreeNodePtr & query_tree, const Settings & settings, const StorageID & table, const Strings & partitions)
+    {
+        auto * query_node = query_tree->as<QueryNode>();
+        if (!query_node)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a query node in the query for a shard, got {}", query_tree->getNodeTypeName());
+
+        String filter = "_partition_id NOT IN (";
+        for (size_t i = 0; i < partitions.size(); ++i)
+        {
+            if (i)
+                filter += ", ";
+            filter += quoteString(partitions[i]);
+        }
+        filter += ")";
+
+        /// An unqualified name of the table is resolved in the current database of the shard, the same as in the query.
+        const String key = table.database_name.empty() ? table.table_name : table.database_name + "." + table.table_name;
+
+        Map filters = settings[Setting::additional_table_filters].value;
+        for (const auto & entry : filters)
+        {
+            const auto & tuple = entry.safeGet<Tuple>();
+            const auto & entry_table = tuple.at(0).safeGet<String>();
+            if (entry_table == table.table_name || entry_table == key)
+            {
+                filter = fmt::format("({}) AND ({})", tuple.at(1).safeGet<String>(), filter);
+                break;
+            }
+        }
+        filters.insert(filters.begin(), Tuple{key, filter});
+
+        SettingsChanges changes = query_node->getSettingsChanges();
+        changes.setSetting("additional_table_filters", filters);
+        query_node->setSettingsChanges(std::move(changes));
+    }
 }
 
 namespace ClusterProxy
@@ -647,6 +688,12 @@ void executeQuery(
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);
         const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
+
+        if (query_info.partitions_to_skip_by_shard)
+        {
+            if (auto it = query_info.partitions_to_skip_by_shard->find(shard_info.shard_num); it != query_info.partitions_to_skip_by_shard->end())
+                skipPartitionsInQueryForShard(query_for_shard, new_context->getSettingsRef(), main_table, it->second);
+        }
 
         stream_factory.createForShard(
             shard_info,

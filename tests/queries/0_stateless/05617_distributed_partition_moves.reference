@@ -1,0 +1,33 @@
+-- the setting is experimental
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+-- the node is created without moves
+format version: 1
+
+6	39
+1	202401	3
+2	202402	3
+-- the copy on the destination is skipped while queries read the source
+6	39
+1	202401	3
+2	202402	3
+6
+6
+6
+5
+5
+1	[('202401',1,2,'source')]	
+-- INSERT SELECT does not copy the skipped copy
+6	39
+-- the copy on the source is skipped while queries read the destination
+6	39
+2	202401	3
+2	202402	3
+-- the source copy is dropped and the move is removed
+6	39
+2	202401	3
+2	202402	3
+-- moves that cannot be parsed are not loaded
+3	[]
+-- a move with a shard that the cluster does not have is rejected
+has a move with shard 3, but cluster test_cluster_two_shards_different_databases has 2 shards
