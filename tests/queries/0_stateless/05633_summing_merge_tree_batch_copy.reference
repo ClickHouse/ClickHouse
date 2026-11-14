@@ -13,3 +13,5 @@ merge rows	0
 merge bytes	91087	0
 merge bytes	0
 merge bytes	0
+variant insert	1024	1
+variant final	1024	1

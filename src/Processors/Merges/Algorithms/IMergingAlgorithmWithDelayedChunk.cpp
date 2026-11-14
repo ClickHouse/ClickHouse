@@ -107,13 +107,13 @@ bool IMergingAlgorithmWithDelayedChunk::sourcesHaveLongBatchesOfUniqueKeys() con
     while (sample_queue.isValid() && rows < rows_to_check)
     {
         auto [cursor, batch_size] = sample_queue.current();
-        /// The next chunk of the source is not available here.
-        if ((*cursor)->isLast(batch_size))
-            break;
-
         rows += batch_size;
         if (batch_size >= min_batch_size_to_take && !(*cursor)->permutation && sourceHasUniqueKeys((*cursor)->order))
             rows_in_long_batches += batch_size - 2;
+
+        /// The next chunk of the source is not available here; a batch up to the end of the chunk is at least that long.
+        if ((*cursor)->isLast(batch_size))
+            break;
 
         sample_queue.next(batch_size);
     }

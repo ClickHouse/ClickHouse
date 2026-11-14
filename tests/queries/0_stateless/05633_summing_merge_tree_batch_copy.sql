@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS t_merged_rows;
 DROP TABLE IF EXISTS t_merged_bytes;
 DROP TABLE IF EXISTS merged_expected;
+DROP TABLE IF EXISTS t_variant;
 
 CREATE TABLE src (k UInt64, a Int64, f Float64, f32 Float32, dec Decimal(18, 4), s String, lc LowCardinality(String)) ENGINE = Memory;
 
@@ -92,8 +93,18 @@ SELECT 'merge bytes', count(), countIf(f = 0 AND 1 / f < 0) FROM t_merged_bytes;
 SELECT 'merge bytes', count() FROM (SELECT * FROM t_merged_bytes EXCEPT SELECT * FROM merged_expected);
 SELECT 'merge bytes', count() FROM (SELECT * FROM merged_expected EXCEPT SELECT * FROM t_merged_bytes);
 
+-- All values of a `Variant` column keep the same alternative, whether the rows are copied in bulk or one at a time.
+CREATE TABLE t_variant (k UInt64, s UInt64, v Variant(Date, UInt64)) ENGINE = SummingMergeTree ORDER BY k;
+INSERT INTO t_variant SELECT number, 1, number FROM numbers(1024) SETTINGS max_block_size = 1024, min_insert_block_size_rows = 1024,
+    min_insert_block_size_bytes = 0, max_insert_block_size = 1024, max_threads = 1, max_insert_threads = 1;
+SELECT 'variant insert', count(), uniqExact(variantType(v)) FROM t_variant;
+TRUNCATE TABLE t_variant;
+INSERT INTO t_variant SELECT number, 1, number FROM numbers(1024) SETTINGS optimize_on_insert = 0;
+SELECT 'variant final', count(), uniqExact(variantType(v)) FROM t_variant FINAL;
+
 DROP TABLE src;
 DROP TABLE t;
 DROP TABLE t_merged_rows;
 DROP TABLE t_merged_bytes;
 DROP TABLE merged_expected;
+DROP TABLE t_variant;

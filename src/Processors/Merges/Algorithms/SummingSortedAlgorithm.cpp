@@ -615,9 +615,11 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         }
     }
 
-    /// Columns with a dynamic structure (JSON, Dynamic) are copied one row at a time (see `setRow`).
+    /// Not for columns that `setRow` copies one row at a time (JSON, Dynamic) or through a `Field`, which can change the
+    /// alternative of a `Variant` value.
+    const auto is_variant = [](const IDataType & type) { return WhichDataType(type).isVariant(); };
     for (const auto & column : header_flatten)
-        if (column.type->hasDynamicStructure())
+        if (column.type->hasDynamicStructure() || anyInTypeTree(*column.type, is_variant))
             def.can_copy_rows_of_own_groups = false;
 
     /// `finishGroup` removes a row only if every aggregated column has `remove_default_values` and all of them are zero.
