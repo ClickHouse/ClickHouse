@@ -1224,7 +1224,15 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
         file_iterator->refreshExpiringBucketLocks();
-        max_files_override = 0;
+
+        /// Restore the full batch size only after a batch which actually committed files,
+        /// and only if no other task halved the override since this iteration started.
+        /// Otherwise idle tasks (with `parallel_inserts` there is one task per processing thread)
+        /// would keep resetting the halving after committing empty batches,
+        /// and the bad file would never end up alone in a batch.
+        if (processing_progress->processed_files.load() > 0)
+            max_files_override.compare_exchange_strong(effective_max_files, 0);
+
         total_rows += rows;
 
         /// Park after the durable boundary and before the blocked check below, so a test can
