@@ -247,9 +247,9 @@ KILL TRANSACTION [ON CLUSTER cluster]
 ```
 
 Rolls back the running [transactions](/reference/statements/transactions) selected from the [`system.transactions`](/reference/system-tables/transactions) table by the `WHERE` clause.
-In the session of a killed transaction, `COMMIT` and the other queries then throw an `INVALID_TRANSACTION` exception until the session runs `ROLLBACK`.
+The session of a killed transaction is then in the same state as after a failed query: until it runs `ROLLBACK`, `COMMIT` and its other queries throw an `INVALID_TRANSACTION` exception, see [`COMMIT`](/reference/statements/transactions#commit).
 
-The statement requires the `KILL TRANSACTION` privilege.
+The statement requires the `KILL TRANSACTION` privilege and `SELECT` on `system.transactions`.
 The response contains the `kill_status` column, which is `waiting` for a transaction that was rolled back, followed by the `tid`, `tid_hash`, `elapsed`, `is_readonly` and `state` columns of `system.transactions`.
 
 A test query (`TEST`) only checks the user's rights and displays a list of transactions to roll back.
@@ -292,7 +292,7 @@ Cancels the moves of parts between shards, started by `ALTER TABLE ... MOVE PART
 A cancelled move is rolled back in the background, and its `state` in `system.part_moves_between_shards` becomes `CANCELLED`.
 A move that has reached the `SOURCE_DROP` state can no longer be cancelled and runs to completion.
 
-The statement requires the `ALTER MOVE PARTITION` privilege on the table and the `MOVE PARTITION BETWEEN SHARDS` privilege.
+The statement requires `SELECT` on `system.part_moves_between_shards` and, to cancel a move, the `ALTER MOVE PARTITION` privilege on its table and the `MOVE PARTITION BETWEEN SHARDS` privilege.
 The response contains the `kill_status` column, which is `waiting` for a cancelled move and `cant_cancel` for a move that can no longer be cancelled, followed by the `database`, `table`, `task_name`, `task_uuid`, `part_name`, `to_shard` and `state` columns of `system.part_moves_between_shards`.
 
 A test query (`TEST`) only displays a list of moves to cancel. The `SYNC` modifier is not supported and throws a `NOT_IMPLEMENTED` exception.

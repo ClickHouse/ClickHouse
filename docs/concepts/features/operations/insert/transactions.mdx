@@ -204,6 +204,16 @@ Ok.
 
 #### Begin a transaction and insert a row {#begin-a-transaction-and-insert-a-row}
 
+Asynchronous inserts are not supported inside a transaction, and [`async_insert`](/reference/settings/session-settings/async-insert#async_insert) is enabled by default, so disable it in the session first:
+
+```sql
+SET async_insert = 0
+```
+
+```response
+Ok.
+```
+
 ```sql
 BEGIN TRANSACTION
 ```

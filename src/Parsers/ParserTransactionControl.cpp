@@ -98,7 +98,7 @@ Nested transactions are not supported: `BEGIN TRANSACTION` inside a transaction 
 Commits the current transaction and makes its changes visible to other transactions.
 `COMMIT` without a current transaction throws an `INVALID_TRANSACTION` exception.
 
-If a query inside the transaction fails, the transaction is rolled back. `COMMIT` and the other queries that follow, except `ROLLBACK` and `EXPLAIN`, then throw an `INVALID_TRANSACTION` exception until `ROLLBACK` ends the transaction.
+If a query inside the transaction fails, the transaction is rolled back. Until `ROLLBACK` ends the transaction, `COMMIT` and the other queries that follow throw an `INVALID_TRANSACTION` exception. Only `ROLLBACK`, `SET TRANSACTION SNAPSHOT` and the `EXPLAIN` queries other than `EXPLAIN ANALYZE` still run.
 
 The [`wait_changes_become_visible_after_commit_mode`](/reference/settings/session-settings/other#wait_changes_become_visible_after_commit_mode) setting controls what `COMMIT` waits for.
 
@@ -110,18 +110,18 @@ Rolls back the current transaction and discards its changes.
 ## SET TRANSACTION SNAPSHOT {#set-transaction-snapshot}
 
 Changes the snapshot that the current transaction reads to the commit sequence number (CSN) `snapshot`, for example a value that [`transactionLatestSnapshot`](/reference/functions/regular-functions/other-functions#transactionLatestSnapshot) returned in an earlier transaction.
-The transaction then sees the data written outside transactions and the changes of the transactions committed up to that CSN.
+The transaction then sees its own changes, the data written outside transactions and the changes of the transactions committed up to that CSN.
 `SET TRANSACTION SNAPSHOT` without a current transaction throws an `INVALID_TRANSACTION` exception.
 
 The values from `0` to `32` are reserved and throw an `INVALID_TRANSACTION` exception, except two:
-`1` makes only the data written outside transactions visible, and `3` makes all the parts of a table visible, including the parts that transactions removed or rolled back.
+`1` makes only the data written outside transactions and the transaction's own changes visible, and `3` makes all the parts of a table visible, including the parts that transactions removed or rolled back.
 
 ## Queries inside a transaction {#queries-inside-a-transaction}
 
 A transaction can run `SELECT`, `INSERT`, `DELETE`, `OPTIMIZE`, `TRUNCATE TABLE`, `SET` and `EXPLAIN` queries, and the `ALTER TABLE` mutations and partition operations.
 Other queries, for example `CREATE TABLE`, `UPDATE` or `ALTER TABLE ... ADD COLUMN`, throw a `NOT_IMPLEMENTED` exception, and so do queries over tables that do not support transactions, for example `ReplicatedMergeTree` or `Memory` tables, or `system.transactions`.
 
-Asynchronous inserts are not supported inside a transaction, and [`async_insert`](/reference/settings/session-settings/async-insert#async_insert) is enabled by default, so an `INSERT` inside a transaction throws a `NOT_IMPLEMENTED` exception unless `async_insert` is disabled, for example with `SET async_insert = 0`.
+Asynchronous inserts are not supported inside a transaction, and [`async_insert`](/reference/settings/session-settings/async-insert#async_insert) is enabled by default, so an `INSERT ... VALUES` or `INSERT ... SELECT` inside a transaction throws a `NOT_IMPLEMENTED` exception unless `async_insert` is disabled, for example with `SET async_insert = 0`.
 
 With [`throw_on_unsupported_query_inside_transaction`](/reference/settings/session-settings/throw-on#throw_on_unsupported_query_inside_transaction) set to `0`, some of these queries run outside the transaction instead of throwing, so `ROLLBACK` does not undo them: for example, a `CREATE TABLE` or an `INSERT` into a `Memory` table.
 
