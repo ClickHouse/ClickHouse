@@ -252,6 +252,12 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     return result;
 }
 
+bool ConditionSelectivityEstimator::hasCardinality(const String & column_name) const
+{
+    const auto it = column_estimators.find(column_name);
+    return it != column_estimators.end() && it->second.stats && it->second.stats->hasCardinality();
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
 {
     RelationProfile result;
