@@ -50,6 +50,8 @@ GRANT SELECT ON $db.param_view TO $user;
 GRANT SELECT ON $db.none_view TO $user;
 GRANT SELECT ON $db.policy_view TO $user;
 GRANT SELECT ON $db.view_policy_view TO $user;
+GRANT SELECT ON $db.dist_view TO $user;
+GRANT SELECT ON $db.view_over_dist TO $user;
 EOF
 
 echo "--- an outer expression is not evaluated on the hidden rows"
@@ -61,8 +63,9 @@ for view in definer_view none_view policy_view view_policy_view; do
 done
 
 echo "--- nor on a remote server"
+# A local replica would run the query as the initiator, the definer of the view, rather than as the user.
 for serialize in 0 1; do
-    ${CLICKHOUSE_CLIENT} --serialize_query_plan "$serialize" --query "
+    ${CLICKHOUSE_CLIENT} --serialize_query_plan "$serialize" --prefer_localhost_replica 0 --query "
         SELECT secret FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '$db', 'definer_view', '$user', '')
         WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
 done
@@ -70,7 +73,7 @@ done
 echo "--- nor through a \`Distributed\` table, with the plan shipped to the shard or built there"
 for table in dist_view view_over_dist; do
     for serialize in 0 1; do
-        ${CLICKHOUSE_CLIENT} --serialize_query_plan "$serialize" --prefer_localhost_replica 0 --query "
+        ${CLICKHOUSE_CLIENT} --user "$user" --serialize_query_plan "$serialize" --prefer_localhost_replica 0 --query "
             SELECT secret FROM $db.$table WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
     done
 done
@@ -84,7 +87,7 @@ echo "--- nor in a distributed query plan, which is built for the view's plan on
 ${CLICKHOUSE_CLIENT} --user "$user" --make_distributed_plan 1 --distributed_plan_execute_locally 1 --distributed_plan_max_rows_to_broadcast 0 --enable_parallel_replicas 0 --query "
     SELECT secret FROM $db.definer_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
 ${CLICKHOUSE_CLIENT} --make_distributed_plan 1 --distributed_plan_execute_locally 1 --distributed_plan_max_rows_to_broadcast 0 --enable_parallel_replicas 0 --query "
-    SELECT countIf(explain LIKE '%Exchange%') > 0 FROM (EXPLAIN SELECT secret FROM $db.definer_view WHERE secret = 'x')"
+    SELECT countIf(explain LIKE '%Exchange%') > 0 FROM (EXPLAIN SELECT secret FROM $db.none_view WHERE secret = 'x')"
 
 echo "--- an outer predicate does not skip data by the values of the hidden rows"
 # The table is sorted by `secret`, so a predicate on it would skip granules by the primary key.
@@ -123,6 +126,9 @@ echo "--- a plan fragment that reads the view can be cloned"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT secret FROM $db.definer_view AS v WHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = length(v.secret))
     SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT secret FROM $db.none_view AS v WHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = length(v.secret))
+    SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0"
 
 echo "--- only a view that runs with other privileges and can hide rows is sealed"
 for view in definer_view none_view invoker_view projection_view policy_view; do
@@ -130,8 +136,14 @@ for view in definer_view none_view invoker_view projection_view policy_view; do
     ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.$view WHERE secret = 'x')"
 done
 
+echo -n "definer_view for another user: "
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.definer_view WHERE secret = 'x'" | grep -c ReadFromSealedView
+
 echo -n "param_view: "
 ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.param_view(owner = 'alice') WHERE secret = 'x')"
+
+echo -n "param_view for another user: "
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.param_view(owner = 'alice') WHERE secret = 'x'" | grep -c ReadFromSealedView
 
 echo -n "view_policy_view for the user with the policy: "
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.view_policy_view WHERE secret = 'x'" | grep -c ReadFromSealedView

@@ -1,5 +1,5 @@
 -- Lazy materialization over joins is not used where a source can produce a block of totals, also when the source keeps
--- the plan that produces it as a plan of its own: a view with `SQL SECURITY DEFINER`, which is read as a sealed plan,
+-- the plan that produces it as a plan of its own: a view with `SQL SECURITY NONE`, which is read as a sealed plan,
 -- and a `Merge` table over it. The results are compared with the optimization disabled.
 
 SET enable_analyzer = 1;
@@ -19,7 +19,7 @@ DROP TABLE IF EXISTS r;
 
 CREATE TABLE l (k UInt64, payload String) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE r (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE VIEW totals_view SQL SECURITY DEFINER AS SELECT k, count() AS c FROM r GROUP BY k WITH TOTALS;
+CREATE VIEW totals_view SQL SECURITY NONE AS SELECT k, count() AS c FROM r GROUP BY k WITH TOTALS;
 CREATE TABLE merged (k UInt64, c UInt64) ENGINE = Merge(currentDatabase(), '^totals_view$');
 
 INSERT INTO l SELECT number, concat('p', toString(number)) FROM numbers(10);
