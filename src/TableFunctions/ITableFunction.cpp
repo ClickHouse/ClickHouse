@@ -8,6 +8,7 @@
 #include <Common/StringUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Poco/URI.h>
 
 #include <algorithm>
 

@@ -387,8 +387,8 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
-    M(GlueCatalogSchemaCacheBytes, "Size of the cache of current Iceberg schema field types in Glue catalogs in bytes") \
-    M(GlueCatalogSchemaCacheEntries, "Number of entries in the cache of current Iceberg schema field types in Glue catalogs") \
+    M(IcebergRESTCatalogWarehouseCacheSize, "Size of the warehouse cache of the Iceberg REST catalog server. Each warehouse counts as 1") \
+    M(IcebergRESTCatalogWarehouseCacheEntries, "Number of warehouses in the warehouse cache of the Iceberg REST catalog server") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
@@ -532,6 +532,9 @@
     \
     M(DiskConnectionsStored, "Total count of sessions stored in the session pool for disks") \
     M(DiskConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for disks") \
+    \
+    M(AmberConnectionsStored, "Total count of sessions stored in the session pool for Amber") \
+    M(AmberConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for Amber") \
     \
     M(BlobKillerThreads, "Number of threads in the thread pool of the object storage disk background removal process") \
     M(BlobKillerThreadsActive, "Number of threads in the thread pool of the object storage disk background removal process running a task") \

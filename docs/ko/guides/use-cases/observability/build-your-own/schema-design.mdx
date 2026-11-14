@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 다음과 같은 이유로 로그와 트레이스에는 항상 자체 스키마를 생성하는 것을 권장합니다:
 
 * **프라이머리 키(primary key) 선택** - 기본 스키마는 특정 액세스 패턴에 최적화된 `ORDER BY`를 사용합니다. 대부분의 경우 실제 액세스 패턴은 여기에 맞지 않습니다.
@@ -256,7 +254,15 @@ Peak memory usage: 3.16 MiB.
 
 Materialized Views를 사용하면 계산 비용을 쿼리 시점에서 삽입 시점으로 옮길 수 있습니다. ClickHouse materialized view는 테이블에 데이터 블록이 삽입될 때 해당 블록에 대해 쿼리를 실행하는 트리거일 뿐입니다. 이 쿼리의 결과는 두 번째 &quot;대상&quot; 테이블에 삽입됩니다.
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="materialized view" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![materialized view](/images/use-cases/observability/observability-10.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **실시간 업데이트**
@@ -411,7 +417,15 @@ FROM otel_logs
 
 위 내용은 아래와 같이 시각화됩니다:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Otel MV](/images/use-cases/observability/observability-11.webp)
+
+</Frame>
+
+</div>
 
 이제 [&quot;Exporting to ClickHouse&quot;](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)에서 사용한 collector 구성을 다시 시작하면 데이터가 원하는 포맷으로 `otel_logs_v2`에 표시됩니다. typed JSON extract 함수를 사용한다는 점에 유의하십시오.
 
@@ -645,7 +659,15 @@ LIMIT 5
 
 [딕셔너리](/ko/reference/statements/create/dictionary)은 ClickHouse의 [핵심 기능](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)으로, 다양한 내부 및 외부 [소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 인메모리 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 초저지연 조회 쿼리에 최적화되어 있습니다.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="관측성과 딕셔너리" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![관측성과 딕셔너리](/images/use-cases/observability/observability-12.webp)
+
+</Frame>
+
+</div>
 
 이 기능은 다양한 시나리오에서 유용합니다. 예를 들어 수집 성능 저하 없이 수집된 데이터를 실시간으로 보강할 수 있고, 전반적인 쿼리 성능도 향상할 수 있으며, 특히 JOIN에서 큰 이점을 얻을 수 있습니다.
 관측성 사용 사례에서는 조인이 필요한 경우는 드물지만, 딕셔너리는 여전히 보강 용도로 유용하며 삽입 시점과 쿼리 시점 모두에서 활용할 수 있습니다. 아래에서 두 경우의 예시를 제공합니다.
@@ -1473,7 +1495,15 @@ ClickHouse 프로젝션을 사용하면 하나의 테이블에 여러 `ORDER BY`
   프로젝션은 materialized view와 비슷한 기능을 많이 제공하지만, 대개는 후자가 더 적합하므로 제한적으로 사용하는 것이 좋습니다. 어떤 단점이 있는지, 그리고 언제 적절한지 이해해야 합니다. 예를 들어 프로젝션을 사용해 집계를 사전 계산할 수는 있지만, 이 용도에는 Materialized views를 사용할 것을 권장합니다.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="관측성과 프로젝션" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![관측성과 프로젝션](/images/use-cases/observability/observability-13.webp)
+
+</Frame>
+
+</div>
 
 다음 쿼리를 살펴보겠습니다. 이 쿼리는 `otel_logs_v2` 테이블에서 500 오류 코드를 기준으로 필터링합니다. 사용자가 오류 코드로 필터링하려는 경우가 많기 때문에, 이는 로깅에서 흔한 액세스 패턴일 가능성이 높습니다:
 

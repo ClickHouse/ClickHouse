@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'replay de sessão', 'sdk do navegador', 'observabilidade de frontend', 'sessões de usuários', 'depuração']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O replay de sessão no ClickStack captura e reconstrói as interações do usuário no seu aplicativo web, permitindo reproduzir visualmente exatamente o que ele viu e fez durante a sessão. Em vez de gravar um vídeo, o SDK registra alterações no DOM, movimentos do mouse, cliques, rolagens, entradas de teclado, logs do console, requisições de rede (XHR, Fetch, WebSocket) e exceções de JavaScript — e depois reconstrói a experiência no navegador.
 
 Como os replays de sessão são armazenados no ClickHouse junto com seus logs, traces e métricas, você pode passar de assistir à experiência de um usuário para inspecionar os traces de backend e as consultas ao banco de dados que a viabilizaram — tudo em poucos cliques. Isso torna o replay de sessão útil para debugging de problemas em produção, entender o comportamento do usuário, identificar pontos de atrito na UX e confirmar visualmente problemas relatados ao suporte.
@@ -95,11 +93,27 @@ O SDK Browser também oferece suporte a [mascaramento de campos de entrada e tex
 
 Navegue até **Client Sessions** na barra lateral esquerda da UI do ClickStack (HyperDX). Essa visualização lista todas as sessões de navegador capturadas, com sua duração e contagem de eventos.
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Visualização de pesquisa de replay de sessão" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Visualização de pesquisa de replay de sessão](/images/clickstack/session-replay/replay-search-view.webp)
+
+</Frame>
+
+</div>
 
 Clique no botão de reprodução de qualquer sessão para reproduzi-la. A visualização do replay mostra, à direita, a experiência do usuário reconstruída, com uma linha do tempo dos eventos do navegador — solicitações de rede, logs do console e erros — à esquerda.
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Reprodução de replay de sessão" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Reprodução de replay de sessão](/images/clickstack/session-replay/session-replay.webp)
+
+</Frame>
+
+</div>
 
 Alterne entre os modos **Highlighted** e **All Events** para ajustar o nível de detalhe exibido na linha do tempo. Os erros são destacados em vermelho, e clicar em qualquer evento leva a reprodução até esse ponto da sessão.
 
@@ -121,7 +135,15 @@ Isso funciona porque a configuração `tracePropagationTargets` vincula spans do
 
 A correlação também funciona no sentido inverso. Ao visualizar um trace na exibição **Busca**, clique nele para abrir os detalhes do trace e, em seguida, selecione a aba **replay de sessão** para ver exatamente o que o usuário estava fazendo no momento daquele trace. Isso é especialmente útil ao investigar erros ou requisições lentas — você pode começar pelo problema no backend e ver imediatamente a experiência do usuário.
 
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="Visualização do trace na reprodução de sessão" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Visualização do trace na reprodução de sessão](/images/clickstack/session-replay/trace-to-replay.webp)
+
+</Frame>
+
+</div>
 
 <div id="data-storage">
   ## Como os dados de sessão são armazenados

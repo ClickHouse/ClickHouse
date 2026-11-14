@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -30,22 +31,22 @@ struct JoinOperator
     JoinLocality locality;
 
     /// An expression in ON/USING clause of a JOIN statement
-    std::vector<JoinActionRef> expression = {};
+    VectorWithMemoryTracking<JoinActionRef> expression = {};
     /// Additional filter after join (e.g. from WHERE clause)
     /// Difference is for OUTER JOINs, where expression used to match row or return NULL
     /// but residual filter is used to filter rows after join.
     /// For INNER JOINs, residual filter is the same as expression
-    std::vector<JoinActionRef> residual_filter = {};
+    VectorWithMemoryTracking<JoinActionRef> residual_filter = {};
 
     /// Runtime filters that `HashJoin` should publish as shared `FixedHashMap` runtime filters.
     /// Set by the `joinRuntimeFilter` optimizer pass.
-    std::vector<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
+    VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
 
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
         JoinLocality locality_ = JoinLocality::Unspecified,
-        std::vector<JoinActionRef> expression_ = {})
+        VectorWithMemoryTracking<JoinActionRef> expression_ = {})
         : kind(kind_)
         , strictness(strictness_)
         , locality(locality_)
@@ -131,7 +132,11 @@ struct JoinSettings
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
+    bool enable_robin_hood_hash_for_joins;
     bool join_runtime_filter_from_fixed_hash_table;
+    /// A deserialized plan without these names compares `String` keys exactly.
+    bool enable_packed_string_keys_in_hash_join;
+    UInt64 min_rows_for_packed_string_keys_in_hash_join;
 
     /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
