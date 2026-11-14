@@ -1,0 +1,16 @@
+wide part columns	id
+0	['a']
+1	[]
+2	[]
+3	[]
+4	[]
+['a']	{'a':['UInt32']}
+0	{"a":0}
+1	{"a":0}
+compact part	Compact
+0	['a']
+1	[]
+2	[]
+3	[]
+4	[]
+['a']
