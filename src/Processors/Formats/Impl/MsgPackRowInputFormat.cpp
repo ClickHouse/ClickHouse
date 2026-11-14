@@ -319,7 +319,10 @@ static void insertNull(IColumn & column, DataTypePtr type, UInt8 * read, bool nu
         if (!null_as_default)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
-        column.insertDefault();
+        if (type->isDefaultInsertTrivial())
+            column.insertDefault();
+        else
+            type->insertDefaultInto(column);
         /// In case of default on null column can have defined DEFAULT expression that should be used.
         if (read)
             *read = false;
@@ -809,7 +812,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.registerFileExtension("messagepack", "MsgPack");
 
     factory.setDocumentation("MsgPack", Documentation{

@@ -1538,11 +1538,26 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
+namespace
+{
+
+/// Source columns are addressed by the global discriminators of the column, so they must have the same number of variants.
+const ColumnVariant & getSourceVariantColumn(const IColumn & source, const ColumnVariant & column, std::string_view operation)
+{
+    const auto * source_variant = typeid_cast<const ColumnVariant *>(&source);
+    if (!source_variant || source_variant->getNumVariants() != column.getNumVariants())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Source column for {} of {} is not a Variant with the same number of variants, but {}", operation, column.getName(), source.getName());
+    return *source_variant;
+}
+
+}
+
 void ColumnVariant::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
     for (const auto & source_column : source_columns)
-        new_size += source_column->size();
+        new_size += getSourceVariantColumn(*source_column, *this, "squashing").size();
     reserve(new_size * factor);
 
     for (size_t i = 0; i != variants.size(); ++i)
@@ -1969,7 +1984,7 @@ void ColumnVariant::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variant_col = assert_cast<const ColumnVariant &>(*source_column);
+        const auto & source_variant_col = getSourceVariantColumn(*source_column, *this, "merge");
         for (size_t i = 0; i != num_variants; ++i)
             variants_source_columns[i].push_back(source_variant_col.getVariantPtrByGlobalDiscriminator(i));
     }
@@ -1980,7 +1995,7 @@ void ColumnVariant::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
 
 void ColumnVariant::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_variant = assert_cast<const ColumnVariant &>(source);
+    const auto & source_variant = getSourceVariantColumn(source, *this, "dynamic structure");
     size_t num_variants = variants.size();
     for (size_t i = 0; i != num_variants; ++i)
         getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(source_variant.getVariantByGlobalDiscriminator(i));
@@ -2037,6 +2052,9 @@ bool ColumnVariant::hasStatistics() const
 
 void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
+    for (const auto & source_column : source_columns)
+        getSourceVariantColumn(*source_column, *this, "statistics");
+
     /// Iterate by global discriminator: source columns are addressed by global discriminator,
     /// so the destination variant must be too (local order may differ from global order).
     for (size_t i = 0; i != variants.size(); ++i)

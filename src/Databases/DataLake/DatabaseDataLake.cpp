@@ -1009,6 +1009,13 @@ std::optional<DataLake::TableMetadata> DatabaseDataLake::tryGetNewTableMetadata(
     if (!location)
         return std::nullopt;
 
+    /// A catalog can report a placeholder instead of a location, e.g. Databricks reports `not_used` for a schema of managed tables.
+    if (!location->contains("://"))
+    {
+        LOG_DEBUG(log, "Ignoring location {} reported by the catalog for new table {}: it is not a URI", *location, name);
+        return std::nullopt;
+    }
+
     LOG_DEBUG(log, "Location assigned by the catalog for new table {}: {}", name, *location);
 
     auto table_metadata = DataLake::TableMetadata().withLocation();
@@ -1962,7 +1969,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr /* context_ */,
+    ContextPtr context_,
     bool throw_on_error) const
 {
     const auto settings_version = database_settings.get();
@@ -2002,7 +2009,18 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    for (const auto & column_type_and_name : getTableSchema(*catalog, table_metadata, settings))
+    auto columns = getTableSchema(*catalog, table_metadata, settings);
+    if (columns.empty() && table_metadata.isDefaultReadableTable())
+    {
+        /// The catalog left the schema to the table storage, which reads it from the table metadata.
+        if (auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false))
+        {
+            auto metadata = table->getInMemoryMetadataPtr(context_, false);
+            columns = metadata->getColumns().getOrdinary();
+        }
+    }
+
+    for (const auto & column_type_and_name : columns)
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();

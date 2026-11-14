@@ -65,13 +65,15 @@ NativeReader::NativeReader(
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
     BlockMissingValues * block_missing_values_,
-    NativeReaderTypeCache * type_cache_)
+    NativeReaderTypeCache * type_cache_,
+    ISerialization::KindSet allowed_kinds_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
     , block_missing_values(block_missing_values_)
     , type_cache(type_cache_)
+    , allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -383,7 +385,15 @@ Block NativeReader::read()
             }
             else
             {
-                tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
+                MutableColumnPtr column;
+                if (col.type->isDefaultInsertTrivial())
+                    column = col.type->createColumn()->cloneResized(rows);
+                else
+                {
+                    column = col.type->createColumn();
+                    col.type->insertManyDefaultsInto(*column, rows);
+                }
+                tmp_res.insert({std::move(column), col.type, col.name});
                 if (block_missing_values)
                     block_missing_values->setBits(column_i, rows);
             }

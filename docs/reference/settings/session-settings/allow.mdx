@@ -510,6 +510,14 @@ By default this is disallowed: `REPLACE PARTITION` from a source that has no dat
 
 Enable this setting to restore the previous behavior, for example when you intentionally use an empty source partition to clear data in the destination. For an unconditional drop, prefer `ALTER TABLE ... DROP PARTITION ...` instead.
 
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Reject columns named like a virtual column of a MergeTree table"}]}]}/>
+
+Allow a column of a `MergeTree`-family table to have the name of one of the table's virtual columns (for example `_part`, `_part_offset` or `_table`) in `CREATE TABLE`, `ATTACH TABLE` with a full definition, and `ALTER TABLE ... ADD COLUMN` and `RENAME COLUMN`. Such a column hides the virtual column. Tables that already have such a column are loaded regardless of this setting. Names of persistent virtual columns are always rejected.
+
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

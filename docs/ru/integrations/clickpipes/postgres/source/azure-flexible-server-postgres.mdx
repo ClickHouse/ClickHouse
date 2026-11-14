@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickPipes поддерживает Postgres версии 12 и более поздних версий.
 
 <div id="enable-logical-replication">
@@ -22,15 +20,39 @@ ClickPipes поддерживает Postgres версии 12 и более по�
 
 1. Нажмите на раздел **Server parameters**
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp" alt="Server Parameters в Azure Flexible Server for Postgres" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Server Parameters в Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
+
+</Frame>
+
+</div>
 
 2. Измените значение `wal_level` на `logical`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp" alt="Изменение wal_level на logical в Azure Flexible Server for Postgres" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Изменение wal_level на logical в Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
+
+</Frame>
+
+</div>
 
 3. Для применения этого изменения потребуется перезапуск сервера. Перезапустите его, когда появится запрос.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp" alt="Перезапуск сервера после изменения wal_level" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Перезапуск сервера после изменения wal_level](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
+
+</Frame>
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## Создание пользователей ClickPipes и выдача разрешений
@@ -87,7 +109,15 @@ ClickPipes поддерживает Postgres версии 12 и более по�
 1. Перейдите на вкладку **Networking** и добавьте [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) в брандмауэр
    вашего Azure Flexible Server Postgres или Jump Server/бастиона, если вы используете SSH-туннелирование.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Добавление IP-адресов ClickPipes в брандмауэр Azure Flexible Server for Postgres" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Добавление IP-адресов ClickPipes в брандмауэр Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
+
+</Frame>
+
+</div>
 
 <div id="whats-next">
   ## Что дальше?

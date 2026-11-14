@@ -2168,10 +2168,42 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         return std::move(col_to);
     }
 
+    /// NaN/Inf cannot be converted from float to integer. Unless they become NULL, look for them in a separate
+    /// pass over the column: the check is then a reduction without a branch, and the conversion loop below
+    /// has neither a check nor an exit per row (`intDiv` #2, `toUInt32` of `Float64`).
+    /// Not for the result types narrower than 32 bits: the conversion of a value outside of their range is undefined,
+    /// and without the check per row clang 23 lowers it differently, so `toInt16` of a big `Float64` would return
+    /// another value than before (`00950_test_double_delta_codec`).
+    constexpr bool is_float_to_int = is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>;
+    constexpr bool check_finite_in_separate_pass = is_float_to_int && sizeof(ToFieldType) >= 4
+        && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>;
+
+    if constexpr (check_finite_in_separate_pass)
+    {
+        bool all_finite = true;
+        for (size_t i = 0; i < input_rows_count; ++i)
+            all_finite &= isFinite(vec_from[i]);
+
+        if (!all_finite)
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+
+        if constexpr (!std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+        {
+            /// The loop must remain scalar. A value outside of the range of the result type wraps around here,
+            /// while the vector instructions saturate or return another value, and the result of a row
+            /// would depend on whether it is converted by the vectorized body or by the scalar remainder.
+            #pragma clang loop vectorize(disable)
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+
+            return std::move(col_to);
+        }
+    }
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         /// Handle NaN/Inf when converting from float to integer
-        if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType>)
+        if constexpr (is_float_to_int && !check_finite_in_separate_pass)
         {
             if (!isFinite(vec_from[i]))
             {
