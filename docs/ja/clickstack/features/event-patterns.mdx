@@ -7,11 +7,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'イベントパターン', 'ログ分析', 'パターンマッチング', 'オブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickStack のイベントパターンを使うと、類似したメッセージが自動的にクラスター化されるため、大量のログやトレースの内容をすばやく把握できます。何百万もの個々のイベントを掘り下げる代わりに、意味のある少数のグループを確認するだけで済みます。
 
-<Image img="/images/use-cases/observability/event_patterns.webp" alt="イベントパターン" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![イベントパターン](/images/use-cases/observability/event_patterns.webp)
+
+</Frame>
+
+</div>
 
 これにより、どのエラーや警告が新しいのか、どれが繰り返し発生しているのか、どれがログ量の急増を引き起こしているのかを、はるかに見つけやすくなります。イベントパターンは動的に生成されるため、正規表現を定義したり、パースルールを管理したりする必要はありません。ClickStack がフォーマットに関係なくイベントに自動的に適応します。
 
@@ -25,7 +31,15 @@ ClickStack のイベントパターンを使うと、類似したメッセージ
 
 左上の **Analysis Mode** セレクターで **イベントパターン** を選択すると、標準の **Results Table** から、類似したイベントをクラスターごとにまとめて表示するビューへ切り替わります。
 
-<Image img="/images/use-cases/observability/event_patterns_highlight.webp" alt="イベントパターン" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![イベントパターン](/images/use-cases/observability/event_patterns_highlight.webp)
+
+</Frame>
+
+</div>
 
 これにより、個々のログやトレースを 1 件ずつスクロールして確認する既定の **Results Table** とは別の表示方法を利用できます。
 

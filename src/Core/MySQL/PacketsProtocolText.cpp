@@ -1,4 +1,5 @@
 #include <Core/MySQL/PacketsProtocolText.h>
+#include <Formats/FormatSettings.h>
 
 #include <Core/MySQL/MySQLUtils.h>
 #include <Columns/ColumnNullable.h>

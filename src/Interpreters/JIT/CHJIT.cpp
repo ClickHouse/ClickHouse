@@ -35,6 +35,13 @@
 #include <Core/Types.h>
 
 
+#if USE_GPU
+extern "C" void LLVMInitializeNVPTXTargetInfo();
+extern "C" void LLVMInitializeNVPTXTarget();
+extern "C" void LLVMInitializeNVPTXTargetMC();
+extern "C" void LLVMInitializeNVPTXAsmPrinter();
+#endif
+
 namespace DB
 {
 
@@ -649,15 +656,26 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     mpm.run(module, mam);
 }
 
-std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
+void initializeLLVMTargets()
 {
-    static std::once_flag llvm_target_initialized;
-    std::call_once(llvm_target_initialized, []()
+    static std::once_flag llvm_targets_initialized;
+    std::call_once(llvm_targets_initialized, []()
     {
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+#if USE_GPU
+        LLVMInitializeNVPTXTargetInfo();
+        LLVMInitializeNVPTXTarget();
+        LLVMInitializeNVPTXTargetMC();
+        LLVMInitializeNVPTXAsmPrinter();
+#endif
     });
+}
+
+std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
+{
+    initializeLLVMTargets();
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();

@@ -14,7 +14,7 @@
 #include <Interpreters/ComparisonTupleEliminationVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
-#include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
+#include <Interpreters/ExpressionActions.h> /// getCheapestColumnToRead()
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
@@ -82,6 +82,8 @@ namespace Setting
     extern const SettingsBool legacy_column_name_of_tuple_literal;
     extern const SettingsBool normalize_function_names;
     extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool optimize_group_by_function_keys;
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsBool optimize_move_to_prewhere;
@@ -1153,39 +1155,9 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
-        struct ColumnSizeTuple
-        {
-            size_t compressed_size;
-            size_t type_size;
-            size_t uncompressed_size;
-            String name;
-
-            bool operator<(const ColumnSizeTuple & that) const
-            {
-                return std::tie(compressed_size, type_size, uncompressed_size)
-                    < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
-            }
-        };
-
-        std::vector<ColumnSizeTuple> columns;
-        if (storage)
-        {
-            auto column_sizes = storage->getColumnSizes();
-            for (const auto & source_column : columns_for_fallback)
-            {
-                auto c = column_sizes.find(source_column.name);
-                if (c == column_sizes.end())
-                    continue;
-                size_t type_size = source_column.type->haveMaximumSizeOfValue() ? source_column.type->getMaximumSizeOfValueInMemory() : 100;
-                columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
-            }
-        }
-
-        if (!columns.empty())
-            required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!columns_for_fallback.empty())
-            /// If we have no information about columns sizes, choose a column of minimum size of its data type.
-            required.insert(ExpressionActions::getSmallestColumn(columns_for_fallback).name);
+        if (!columns_for_fallback.empty())
+            required.insert(ExpressionActions::getCheapestColumnToRead(
+                columns_for_fallback, storage ? storage->getColumnSizes() : IStorage::ColumnSizeByName{}).name);
     }
     else if (is_select && storage_snapshot && !columns_context.has_array_join)
     {
@@ -1554,7 +1526,19 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         && !select_options.ignore_ast_optimizations;
 
     bool optimize_multiif_to_if_v = ast_optimizations_allowed && settings[Setting::optimize_multiif_to_if];
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], optimize_multiif_to_if_v);
+    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
+    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
+    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
+    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
+    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
+    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
+    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
+    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
+    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
+    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
+        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+             && !settings[Setting::optimize_if_transform_strings_to_enum]);
+    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, optimize_multiif_to_if_v);
 
     if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
@@ -1670,7 +1654,19 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], false);
+    /// The legacy AST rewrite of an `if` chain to `multiIf` is purely syntactic: the synthesized `multiIf`
+    /// is resolved from the query settings, so with `optimize_if_transform_const_strings_to_lowcardinality`
+    /// it returns `LowCardinality(String)` while the `if` chain it replaces returns plain `String`
+    /// (`FunctionIf` strips `LowCardinality` from its arguments before inferring the return type, and the
+    /// else-branch of the outer `if` is a nested `if`, not a constant). The analyzer's `IfChainToMultiIfPass`
+    /// keeps the type by building its `multiIf` with the optimization disabled, which an AST-level rewrite
+    /// cannot express. Disable the legacy rewrite instead, so that the result type does not depend on
+    /// `enable_analyzer`. The condition mirrors `FunctionMultiIf::create`, where
+    /// `optimize_if_transform_strings_to_enum` supersedes the `LowCardinality` optimization.
+    const bool if_chain_to_multiif = settings[Setting::optimize_if_chain_to_multiif]
+        && !(settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+             && !settings[Setting::optimize_if_transform_strings_to_enum]);
+    TreeOptimizer::optimizeIf(query, result.aliases, if_chain_to_multiif, false);
 
     if (allow_aggregations)
     {
