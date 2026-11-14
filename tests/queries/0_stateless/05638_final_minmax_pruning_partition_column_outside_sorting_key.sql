@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_final_minmax_dnm;
 DROP TABLE IF EXISTS t_final_float_partition;
 DROP TABLE IF EXISTS t_final_name_collision;
 DROP TABLE IF EXISTS t_final_lambda;
+DROP TABLE IF EXISTS t_final_lambda_bindings;
 
 CREATE TABLE t_final_minmax_replacing (k UInt64, d Date, ver UInt64)
 ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY (toYYYYMM(d), k);
@@ -76,9 +77,20 @@ SELECT 'lambda with another body';
 SELECT * FROM t_final_lambda FINAL WHERE arrayMap(x -> x + b, a) = [3];
 SELECT * FROM t_final_lambda FINAL WHERE arrayMap(x -> x + b, a) = [5];
 
+-- Nor with the same name but other parameter bindings: both lambdas are named `lambda(tuple(a, b, a), plus(a, c))`.
+CREATE TABLE t_final_lambda_bindings (xs Array(UInt64), ys Array(UInt64), c UInt64, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY arrayMap((a, `b, a`) -> a + c, xs, ys) ORDER BY arrayMap((`a, b`, a) -> a + c, xs, ys);
+SYSTEM STOP MERGES t_final_lambda_bindings;
+INSERT INTO t_final_lambda_bindings VALUES ([0], [0], 2, 1);
+INSERT INTO t_final_lambda_bindings VALUES ([1], [0], 2, 2);
+
+SELECT 'lambda with other parameter bindings';
+SELECT * FROM t_final_lambda_bindings FINAL WHERE arrayMap((a, `b, a`) -> a + c, xs, ys) = [2];
+
 DROP TABLE t_final_minmax_replacing;
 DROP TABLE t_final_minmax_collapsing;
 DROP TABLE t_final_minmax_dnm;
 DROP TABLE t_final_float_partition;
 DROP TABLE t_final_name_collision;
 DROP TABLE t_final_lambda;
+DROP TABLE t_final_lambda_bindings;

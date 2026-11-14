@@ -3628,8 +3628,8 @@ ReadFromMergeTree::FinalPartitionPruning ReadFromMergeTree::getFinalPartitionPru
         if (const auto * node = sorting_key_dag.tryFindInOutputs(column_name))
             sorting_key_nodes.insert(node);
 
-    /// Matched by structure and by name: a column named `toYYYYMM(d)` is not the expression `toYYYYMM(d)`,
-    /// and `matchTrees` does not compare lambda bodies, which only the name spells out.
+    /// Matched by structure and by name: a column named `toYYYYMM(d)` is not the expression `toYYYYMM(d)`.
+    /// Neither proves two lambdas equal (names do not quote identifiers), so a partition key with a lambda never matches.
     const auto & partition_key_dag = partition_key.expression->getActionsDAG();
     const auto matches = matchTrees({sorting_key_nodes.begin(), sorting_key_nodes.end()}, partition_key_dag, /*check_monotonicity=*/ false);
     auto is_sorting_key_node = [&](const ActionsDAG::Node * node)
@@ -3639,7 +3639,9 @@ ReadFromMergeTree::FinalPartitionPruning ReadFromMergeTree::getFinalPartitionPru
             && it->second.node->result_name == node->result_name;
     };
 
-    bool exprs_match = std::ranges::all_of(partition_key_dag.findInOutputs(partition_key.column_names), is_sorting_key_node);
+    bool has_lambda = std::ranges::any_of(
+        partition_key_dag.getNodes(), [](const auto & node) { return WhichDataType(node.result_type).isFunction(); });
+    bool exprs_match = !has_lambda && std::ranges::all_of(partition_key_dag.findInOutputs(partition_key.column_names), is_sorting_key_node);
     bool columns_match = std::ranges::all_of(partition_key_dag.getInputs(), is_sorting_key_node);
 
     const auto & partition_required_columns = partition_key.expression->getRequiredColumnsWithTypes();
