@@ -35,6 +35,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool promql_exact_rate;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -161,6 +162,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
     evaluation_settings.step = step;
+    evaluation_settings.exact_rate = context->getSettingsRef()[Setting::promql_exact_rate];
     return config;
 }
 
