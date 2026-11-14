@@ -1125,6 +1125,12 @@ Chunk StorageObjectStorageSource::generate()
 #if USE_AVRO
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
             {
+                /// Without `first_row_id` the row lineage of every row is NULL, also where the data file stores it.
+                if (!iceberg_info->info.first_row_id.has_value())
+                {
+                    materialized_row_ids = nullptr;
+                    materialized_last_updated_sequence_numbers = nullptr;
+                }
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
                 first_row_id = iceberg_info->info.first_row_id;
                 if (first_row_id.has_value())
