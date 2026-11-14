@@ -15,6 +15,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Functions/indexHint.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/IReadBufferMetadataProvider.h>
@@ -361,6 +362,96 @@ static ActionsDAG substituteIdentityPartitionColumns(
     }
 
     return ActionsDAG::merge(std::move(substitution), dag.clone());
+}
+
+/// Returns `filter` rewritten to read the columns `schema_transform` reads (the data file's own), or nullptr
+/// if the filter reads a subcolumn of a column that the transform changes beyond a rename. An indexHint reading
+/// a renamed or changed column is replaced by 1.
+static std::shared_ptr<const ActionsDAG> getFilterOverFileColumns(const ActionsDAG & filter, const ActionsDAG & schema_transform)
+{
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> current_columns;
+    for (const auto * output : schema_transform.getOutputs())
+        current_columns.emplace(output->result_name, output);
+
+    auto file_column = [](const ActionsDAG::Node * output) -> const ActionsDAG::Node *
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_type->equals(*output->result_type))
+            return node;
+        return nullptr;
+    };
+
+    /// The current column `name` is, or the one it is a subcolumn of, and the subcolumn suffix (".null", ".x").
+    auto find_column = [&](std::string_view name) -> std::pair<const ActionsDAG::Node *, std::string_view>
+    {
+        if (auto it = current_columns.find(name); it != current_columns.end())
+            return {it->second, {}};
+        for (size_t pos = name.rfind('.'); pos != std::string_view::npos && pos > 0; pos = name.rfind('.', pos - 1))
+            if (auto it = current_columns.find(name.substr(0, pos)); it != current_columns.end())
+                return {it->second, name.substr(pos)};
+        return {nullptr, {}};
+    };
+
+    ActionsDAG::NodeRawConstPtrs needed;
+    std::vector<std::tuple<String, DataTypePtr, String>> renamed_subcolumns;
+    for (const auto * input : filter.getInputs())
+    {
+        auto [column, subcolumn] = find_column(input->result_name);
+        if (!column)
+            continue;
+        if (subcolumn.empty())
+        {
+            needed.push_back(column);
+            continue;
+        }
+        const auto * source = file_column(column);
+        if (!source)
+            return nullptr;
+        if (source->result_name != column->result_name)
+            renamed_subcolumns.emplace_back(source->result_name + String(subcolumn), input->result_type, input->result_name);
+    }
+
+    auto reads_changed_column = [&](this const auto & self, const ActionsDAG & actions) -> bool
+    {
+        for (const auto * input : actions.getInputs())
+        {
+            const auto * column = find_column(input->result_name).first;
+            if (!column)
+                continue;
+            const auto * source = file_column(column);
+            if (!source || source->result_name != column->result_name)
+                return true;
+        }
+        for (const auto & node : actions.getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION)
+                if (const auto * index_hint = FunctionIndexHint::tryGet(node.function_base); index_hint && self(index_hint->getActions()))
+                    return true;
+        return false;
+    };
+
+    auto filter_copy = filter.clone();
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> hints_over_changed_columns;
+    for (const auto & node : filter_copy.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+            if (const auto * index_hint = FunctionIndexHint::tryGet(node.function_base); index_hint && reads_changed_column(index_hint->getActions()))
+                hints_over_changed_columns.emplace(
+                    &node,
+                    ColumnWithTypeAndName{DataTypeUInt8().createColumnConst(1, 1u), std::make_shared<DataTypeUInt8>(), node.result_name});
+    filter_copy.substitute(hints_over_changed_columns);
+
+    auto file_to_current = ActionsDAG::cloneSubDAG(needed, /*remove_aliases=*/ false);
+    for (const auto & [file_name, type, current_name] : renamed_subcolumns)
+    {
+        const auto & file_input = file_to_current.addInput(file_name, type);
+        file_to_current.getOutputs().push_back(&file_to_current.addAlias(file_input, current_name));
+    }
+
+    const size_t num_filter_outputs = filter.getOutputs().size();
+    auto composed = ActionsDAG::merge(std::move(file_to_current), std::move(filter_copy));
+    ActionsDAG::NodeRawConstPtrs outputs(composed.getOutputs().begin(), composed.getOutputs().begin() + num_filter_outputs);
+    return std::make_shared<const ActionsDAG>(ActionsDAG::cloneSubDAG(outputs, /*remove_aliases=*/ true));
 }
 
 static std::optional<ActionsDAG> buildIdentityPartitionColumnsDag(
@@ -1826,13 +1917,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     stripped_prewhere_info = format_filter_info->prewhere_info;
             }
 
+            const auto schema_transformer = schema_changed ? configuration->getSchemaTransformer(context_, object_info) : nullptr;
+
+            /// The reader of a schema-evolved file sees the file's own columns, so it gets the filter over them.
+            std::shared_ptr<const ActionsDAG> filter_actions_dag = format_filter_info->filter_actions_dag;
+            const bool filter_over_file_columns = schema_transformer && filter_actions_dag;
+            if (filter_over_file_columns)
+                filter_actions_dag = getFilterOverFileColumns(*filter_actions_dag, *schema_transformer);
+
             auto row_level_filter = format_filter_info->row_level_filter;
             auto prewhere_info = format_filter_info->prewhere_info;
             bool filters_substituted = false;
             /// A filter evaluated inside the reader must see the identity-partitioned columns of this
             /// data file as the manifest defines them, because the file itself need not store them.
-            if (format_supports_prewhere && !identity_partition_columns.empty()
-                && (!schema_changed || configuration->getSchemaTransformer(context_, object_info) == nullptr))
+            if (format_supports_prewhere && !identity_partition_columns.empty() && !schema_transformer)
             {
                 if (row_level_filter && readsIdentityPartitionColumn(row_level_filter->actions, identity_partition_columns))
                 {
@@ -1872,8 +1970,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// (getSchemaTransformer() == null, no rename) the mapper already yields
                     /// the current names, so keep the filters in the reader to preserve
                     /// Parquet row-group / page pruning.
-                    const bool has_schema_transform
-                        = configuration->getSchemaTransformer(context_, object_info) != nullptr;
+                    const bool has_schema_transform = schema_transformer != nullptr;
                     if (format_supports_prewhere && has_schema_transform)
                     {
                         if (format_filter_info->row_level_filter)
@@ -1883,7 +1980,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     }
                     const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
                     auto result = std::make_shared<FormatFilterInfo>(
-                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? row_level_filter : nullptr,
                         keep_in_reader ? prewhere_info : nullptr);
@@ -1892,9 +1989,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
-                    result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper
-                        ? format_filter_info->current_schema_column_mapper
-                        : format_filter_info->column_mapper;
+                    if (filter_over_file_columns)
+                        result->current_schema_column_mapper = nullptr;
+                    else
+                        result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper
+                            ? format_filter_info->current_schema_column_mapper
+                            : format_filter_info->column_mapper;
                     if (top_k_filter_allowed)
                         result->top_k_filter = format_filter_info->top_k_filter;
                     /// With a schema transform the reader sees the names of the file's schema, which the filters do not use.
@@ -1913,23 +2013,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (!format_supports_prewhere)
             {
                 auto result = std::make_shared<FormatFilterInfo>(
-                    format_filter_info->filter_actions_dag,
+                    filter_actions_dag,
                     format_filter_info->context.lock(),
                     column_mapper,
                     nullptr, nullptr);
-                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                result->current_schema_column_mapper
+                    = filter_over_file_columns ? nullptr : format_filter_info->current_schema_column_mapper;
                 return result;
             }
 
             if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed)
-                || column_mapper != format_filter_info->column_mapper)
+                || column_mapper != format_filter_info->column_mapper
+                || filter_actions_dag != format_filter_info->filter_actions_dag)
             {
                 auto result = std::make_shared<FormatFilterInfo>(
-                    format_filter_info->filter_actions_dag,
+                    filter_actions_dag,
                     format_filter_info->context.lock(),
                     column_mapper,
                     row_level_filter, prewhere_info);
-                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                result->current_schema_column_mapper
+                    = filter_over_file_columns ? nullptr : format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
                 result->join_runtime_filter_predicate = format_filter_info->join_runtime_filter_predicate;

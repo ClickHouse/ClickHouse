@@ -1123,6 +1123,12 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         old_id,
                         new_id);
                 }
+                /// An unchanged nested type passes through like an unchanged primitive one.
+                if (typesAreStructurallyIdentical(old_json->get(f_type), field->get(f_type), {}) && old_node->result_type->equals(*type))
+                {
+                    outputs.push_back(old_json->getValue<String>(f_name) == name ? old_node : &dag->addAlias(*old_node, name));
+                    continue;
+                }
                 auto old_type = getFieldType(old_json, "type", required);
                 /// EvolutionFunctionStruct does not convert primitives, so promoted nested ones are cast afterwards.
                 Poco::JSON::Object::Ptr evolved_field = new Poco::JSON::Object(*field);
