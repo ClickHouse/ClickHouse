@@ -1,0 +1,9 @@
+-- unqualified upload
+-- database-prefixed upload
+-- inserted rows
+1
+2
+-- formatting round trip
+INSERT INTO `function` SELECT 1
+INSERT INTO `function`.t SELECT 1
+INSERT INTO `FuNcTiOn`.function SELECT 1

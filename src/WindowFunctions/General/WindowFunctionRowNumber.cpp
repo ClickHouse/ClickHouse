@@ -25,11 +25,13 @@ public:
         return WindowFunctionRequirements{};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnUInt64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
             data.push_back(bounds.row[i] + 1);
+
+        return bounds.row.back() + 1;
     }
 };
 

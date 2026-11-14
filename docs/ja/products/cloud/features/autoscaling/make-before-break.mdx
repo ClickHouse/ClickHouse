@@ -7,8 +7,6 @@ title: 'ClickHouse Cloud における Make before break（MBB）の操作'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse Cloud は、**Make Before Break** (MBB) アプローチを用いて、クラスターのアップグレードとスケーリングを実行します。
 このアプローチでは、古いレプリカをクラスターから削除する前に、新しいレプリカをクラスターに追加します。
 これは、先に古いレプリカを削除してから新しいレプリカを追加する break-first アプローチとは対照的です。
@@ -21,7 +19,15 @@ MBB アプローチには、いくつかの利点があります。
 
 以下の画像は、サービスを垂直スケーリングする際に、レプリカが 3 つあるクラスターでこれがどのように発生するかを示しています。
 
-<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="垂直スケーリングされる 3 個のレプリカを持つクラスターの例の図" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![垂直スケーリングされる 3 個のレプリカを持つクラスターの例の図](/images/cloud/features/mbb/vertical_scaling.webp)
+
+</Frame>
+
+</div>
 
 全体として、MBB は、従来の break-first アプローチと比べて、シームレスで影響の少ないスケーリングおよびアップグレードを実現します。
 

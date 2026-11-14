@@ -2264,6 +2264,7 @@ SELECT * FROM system.dns_cache;
     attachNoDescription<StorageSystemSymbols>(context, system_database, "symbols", R"DOCS_MD(
 .description
 Contains information for introspection of `clickhouse` binary. It requires the introspection privilege to access.
+Only symbols of the main executable are listed; addresses are offsets inside it.
 This table is only useful for C++ experts and ClickHouse engineers.
 
 .examples

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # the cases whose answer depends on how the writer would lay the projection part out
 # every case has a twin table with the same projection materialized, the estimate must match what it reads
 

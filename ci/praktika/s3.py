@@ -33,11 +33,13 @@ from .utils import Utils
 
 try:
     import boto3
+    from botocore.config import Config
     from botocore.exceptions import ClientError, NoCredentialsError
 
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
+    Config = None
     ClientError = None
     NoCredentialsError = None
 
@@ -114,6 +116,8 @@ class S3:
             return None
         if cls._boto3_client is None:
             region = Settings.AWS_REGION or None
+            # Standard mode caps a backoff at 20 s, so 13 attempts retry for up to about 3 minutes.
+            config = Config(retries={"mode": "standard", "total_max_attempts": 13})
             try:
                 if Settings.AWS_PROFILE:
                     import botocore.session
@@ -125,11 +129,15 @@ class S3:
                         cls._boto3_client = boto3.Session(
                             profile_name=Settings.AWS_PROFILE,
                             region_name=region,
-                        ).client("s3")
+                        ).client("s3", config=config)
                     else:
-                        cls._boto3_client = boto3.client("s3", region_name=region)
+                        cls._boto3_client = boto3.client(
+                            "s3", region_name=region, config=config
+                        )
                 else:
-                    cls._boto3_client = boto3.client("s3", region_name=region)
+                    cls._boto3_client = boto3.client(
+                        "s3", region_name=region, config=config
+                    )
             except Exception as e:
                 print(f"WARNING: Failed to initialize boto3 client: {e}")
                 return None

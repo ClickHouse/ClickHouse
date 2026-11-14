@@ -1,8 +1,10 @@
 #include <Common/FileChecker.h>
+#include <Formats/FormatSettings.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrorCodes.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -24,12 +26,14 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
 {
     extern const char file_checker_update_and_save_fail_reading_sizes[];
     extern const char file_checker_update_and_save_fail_persisting[];
+    extern const char file_checker_repair_memory_limit_exceeded[];
 }
 
 
@@ -147,6 +151,14 @@ std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & 
 
 void FileChecker::repair()
 {
+    /// Behaves like a memory-tracked allocation that hits the memory limit: it is suppressed
+    /// where the memory tracker would not throw either.
+    fiu_do_on(FailPoints::file_checker_repair_memory_limit_exceeded,
+    {
+        if (!LockMemoryExceptionInThread::isBlocked(VariableContext::Global, true) && !std::uncaught_exceptions())
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injecting memory limit exceeded while repairing the files");
+    });
+
     for (const auto & name_size : map)
     {
         const String & name = name_size.first;

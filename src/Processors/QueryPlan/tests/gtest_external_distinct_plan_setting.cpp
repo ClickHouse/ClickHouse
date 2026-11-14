@@ -30,17 +30,20 @@ namespace QueryPlanSerializationSetting
 using namespace DB;
 
 /// External `DISTINCT` thresholds are serialized only to peers whose plan version supports them.
-/// `QueryPlanSerializationSettings::readBinary` rejects unknown setting names, so older peers receive
+/// The reader of the step settings in an older peer rejects unknown setting names, so older peers receive
 /// neither threshold and use in-memory execution with its memory requirements.
 ///
 /// Step version 1 carries the input-order flag and is introduced at the same global version. Older
 /// peers preserve input order through their in-memory execution; newer peers receive the requirement
 /// for order restoration after spilling.
+///
+/// Step version 2 carries the limit hint. Older peers run the step without it, which only reads more.
 namespace
 {
 
 constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 constexpr UInt64 pre_setting_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT - 1;
+constexpr UInt64 pre_limit_hint_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT - 1;
 
 SharedHeader makeHeader()
 {
@@ -78,7 +81,7 @@ DistinctStep makeStep(const SharedHeader & header, bool preserve_input_order, bo
 
 /// Round-trips a step through its own `serialize` and `deserialize` at the given version, the way a peer
 /// at that version reads it.
-bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader & header, UInt64 version, UInt64 step_version)
+QueryPlanStepPtr roundTrip(const DistinctStep & step, const SharedHeader & header, UInt64 version, UInt64 step_version)
 {
     const String bytes = serializeStep(step, version, step_version, /*for_cache_key=*/ false);
     ReadBufferFromString in(bytes);
@@ -91,16 +94,26 @@ bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader 
     QueryPlanStepRegistry registry;
     registerDistinctStep(registry);
     registry.checkVersionReadable(step.getSerializationName(), step_version);
-    const auto restored = registry.createStep(step.getSerializationName(), deserialization);
+    auto restored = registry.createStep(step.getSerializationName(), deserialization);
     EXPECT_TRUE(in.eof());
-    return dynamic_cast<const DistinctStep &>(*restored).preservesInputOrder();
+    return restored;
 }
 
-/// Checks whether the binary settings stream contains the given setting name.
+bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader & header, UInt64 version, UInt64 step_version)
+{
+    return dynamic_cast<const DistinctStep &>(*roundTrip(step, header, version, step_version)).preservesInputOrder();
+}
+
+UInt64 limitHintAfterRoundTrip(const DistinctStep & step, const SharedHeader & header, UInt64 version, UInt64 step_version)
+{
+    return dynamic_cast<const DistinctStep &>(*roundTrip(step, header, version, step_version)).getLimitHint();
+}
+
+/// Checks whether the settings stream contains the given setting name.
 bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_view name)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains(name);
 }
 
@@ -171,10 +184,10 @@ TEST(ExternalDistinctPlanSetting, MaxBlockSizeRoundTripsOnDeserialization)
         plan_settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
         WriteBufferFromOwnString out;
-        plan_settings.writeChangedBinary(out);
+        plan_settings.write(out);
         ReadBufferFromString in(out.str());
         QueryPlanSerializationSettings restored_settings;
-        restored_settings.readBinary(in);
+        restored_settings.read(in);
 
         EXPECT_EQ(DistinctStep::Settings(restored_settings).max_block_size, max_block_size);
     }
@@ -189,7 +202,7 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)
     {
         const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
         const auto step_version = registry.versionToWrite(step.getSerializationName(), current_version);
-        EXPECT_EQ(step_version, 1);
+        EXPECT_EQ(step_version, 2);
         EXPECT_TRUE(inputOrderFlagAfterRoundTrip(step, header, current_version, step_version));
     }
 }
@@ -225,7 +238,7 @@ TEST(ExternalDistinctPlanSetting, UnknownStepVersionIsRejected)
     QueryPlanStepRegistry registry;
     registerDistinctStep(registry);
     for (const String name : {"Distinct", "PreDistinct"})
-        EXPECT_THROW(registry.checkVersionReadable(name, 2), Exception);
+        EXPECT_THROW(registry.checkVersionReadable(name, 3), Exception);
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)
@@ -253,10 +266,48 @@ TEST(ExternalDistinctPlanSetting, SpillBlockByteTargetRoundTrips)
         original.prefer_external_sort_block_bytes = bytes;
         const auto settings = serializeDistinctStep(original, current_version);
         WriteBufferFromOwnString out;
-        settings.writeChangedBinary(out);
+        settings.write(out);
         ReadBufferFromString in(out.str());
         QueryPlanSerializationSettings restored;
-        restored.readBinary(in);
+        restored.read(in);
         EXPECT_EQ(DistinctStep::Settings(restored).prefer_external_sort_block_bytes, bytes);
     }
+}
+
+TEST(ExternalDistinctPlanSetting, LimitHintRoundTripsAtTheCurrentVersion)
+{
+    const auto header = makeHeader();
+    QueryPlanStepRegistry registry;
+    registerDistinctStep(registry);
+    for (const bool preliminary : {false, true})
+    {
+        const DistinctStep step(header, DistinctStep::Settings{}, /*limit_hint_=*/ 5, Names{"k"}, preliminary);
+        const auto step_version = registry.versionToWrite(step.getSerializationName(), current_version);
+        EXPECT_EQ(limitHintAfterRoundTrip(step, header, current_version, step_version), 5);
+    }
+}
+
+TEST(ExternalDistinctPlanSetting, LimitHintIsNotCarriedTowardsAnOlderPeer)
+{
+    const auto header = makeHeader();
+    QueryPlanStepRegistry registry;
+    registerDistinctStep(registry);
+    for (const bool preliminary : {false, true})
+    {
+        const DistinctStep step(header, DistinctStep::Settings{}, /*limit_hint_=*/ 5, Names{"k"}, preliminary);
+        const auto step_version = registry.versionToWrite(step.getSerializationName(), pre_limit_hint_version);
+        EXPECT_EQ(step_version, 1);
+        EXPECT_EQ(limitHintAfterRoundTrip(step, header, pre_limit_hint_version, step_version), 0);
+    }
+}
+
+TEST(ExternalDistinctPlanSetting, LimitHintIsNotPartOfTheHashTableCacheKey)
+{
+    /// The hint comes from a LIMIT above the step, which is a part of the cache key itself.
+    const auto header = makeHeader();
+    const DistinctStep with_hint(header, DistinctStep::Settings{}, /*limit_hint_=*/ 5, Names{"k"}, /*pre_distinct_=*/ false);
+    const DistinctStep without_hint(header, DistinctStep::Settings{}, /*limit_hint_=*/ 0, Names{"k"}, /*pre_distinct_=*/ false);
+    EXPECT_EQ(
+        serializeStep(with_hint, current_version, /*step_version=*/ 2, /*for_cache_key=*/ true),
+        serializeStep(without_hint, current_version, /*step_version=*/ 2, /*for_cache_key=*/ true));
 }

@@ -1,0 +1,2 @@
+{"commitInfo":{"version":3,"timestamp":1680184468645,"userId":"slawomirpajak","userName":"slawomirpajak","operation":"WRITE","operationParameters":{"queryId":"20230330_135427_00037_5q98z"},"clusterId":"trino-testversion-e7d1a343-22ce-43b2-bdff-b0a59729d02d","readVersion":2,"isolationLevel":"WriteSerializable","isBlindAppend":true}}
+{"add":{"path":"20230330_135427_00037_5q98z-9add1c0c-5871-4eb4-8e21-d59f24908d72","partitionValues":{},"size":1401,"modificationTime":1680184468604,"dataChange":true,"tags":{}}}

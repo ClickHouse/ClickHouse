@@ -34,6 +34,8 @@
 #include <cctz/time_zone.h>
 #pragma clang diagnostic pop
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -856,9 +858,10 @@ buildField(
         }
     }
 
-    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata.
+    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata,
+    /// unless `output_format_arrow_uuid_as_fixed_byte_array` asks for the plain storage type.
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
-    if (isUUID(t))
+    if (isUUID(t) && !settings.arrow.output_uuid_as_fixed_byte_array)
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
@@ -1041,11 +1044,18 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     if (!flatbuf::VerifyFooterBuffer(verifier))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
     const auto * footer = flatbuf::GetFooter(footer_storage.data());
+    if (!isFlatBuffersVectorAligned8(footer->dictionaries()) || !isFlatBuffersVectorAligned8(footer->recordBatches()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer: misaligned block list");
 
     /// The footer carries the metadata version too, and its block list is read under that edition's
     /// assumptions, so an edition this reader does not know is rejected here rather than at the first
     /// message. Each message is checked again in `MessageReader::readNextMessage`.
-    const auto version = footer->version();
+    ///
+    /// Some writers of the V4 era left `Footer.version` unset, so it reads as the default `V1`, while every
+    /// message of the file is V4 (e.g. a part of the Arrow 0.14.1 integration files in `apache/arrow-testing`).
+    /// The Apache Arrow library does not check the footer version either. Read such a footer as V4: the
+    /// messages still carry their own version, and a message older than V4 is rejected by `readNextMessage`.
+    const auto version = std::max(footer->version(), flatbuf::MetadataVersion_V4);
     if (version != flatbuf::MetadataVersion_V4 && version != flatbuf::MetadataVersion_V5)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
