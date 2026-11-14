@@ -253,6 +253,9 @@ struct IdentifierResolveScope
 
     IdentifierResolveScope * getNearestQueryScope();
 
+    /// True while the `ASOF JOIN` expression of the nearest query is being resolved. Functions are not constant-folded there.
+    bool isResolvingAsofJoinExpression() const;
+
     AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node);
 
     const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;

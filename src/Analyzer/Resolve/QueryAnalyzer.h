@@ -227,6 +227,10 @@ private:
         IdentifierResolveScope & scope,
         IdentifierResolveContext identifier_resolve_context = {});
 
+    /// Resolve a function written without parentheses (`NOW`, `CURRENT_DATABASE`) as `resolveFunction` resolves its call.
+    QueryTreeNodePtr resolveNiladicFunction(
+        const std::string & function_name, const FunctionOverloadResolverPtr & function_resolver, const IdentifierResolveScope & scope);
+
     /// Resolve query tree nodes functions
 
     void qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,

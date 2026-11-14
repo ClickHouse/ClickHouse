@@ -2,13 +2,14 @@
 -- group_by_use_nulls=1 promotes a constant-folded comparison to Nullable via
 -- FunctionNode::wrap_with_nullable (a QueryTree/analyzer-only mechanism), while the
 -- un-wrapped base folded a Const(UInt8). The ActionsDAG node result-type check aborted
--- debug/sanitizer builds.
+-- debug/sanitizer builds. `b` must be folded by the ActionsDAG but not by the analyzer, which
+-- does not constant-fold a function with a lambda argument.
 SELECT * FROM
 (
     SELECT DISTINCT
         isDistinctFrom(-2147483647, NULL) AS a,
-        currentDatabase() = database AS b,
-        indexHint((currentDatabase() = database) AND 256, toFixedString(2, NULL)) AS c,
+        arrayExists(x -> x > 0, [1]) = 1 AS b,
+        indexHint((arrayExists(x -> x > 0, [1]) = 1) AND 256, toFixedString(2, NULL)) AS c,
         toString(2147483646) AS d
     GROUP BY GROUPING SETS
         ((toLowCardinality(-9223372036854775807)),
