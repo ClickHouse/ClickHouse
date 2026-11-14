@@ -177,6 +177,13 @@ ALTER COLUMN [IF EXISTS] name
 
 컬럼 압축 코덱 변경 예시는 [컬럼 압축 코덱](/ko/reference/statements/create/table/codec)을 참조하십시오.
 
+`enable_subcolumn_codecs` 실험적 설정을 활성화하면 `name`에 `payload.ts`와 같은 서브컬럼도 지정할 수 있습니다. 이때는 `CODEC`만 변경하거나 제거할 수 있습니다. [서브컬럼용 코덱](/ko/reference/statements/create/table#subcolumn-codecs)을 참조하십시오:
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
+
 컬럼 TTL 변경 예시는 [컬럼 TTL](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl)을 참조하십시오.
 
 컬럼 수준 설정 변경 예시는 [컬럼 수준 설정](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings)을 참조하십시오.
@@ -226,7 +233,7 @@ DESCRIBE users;
 ┌─name─┬─type───┬
 │ c1   │ Int16  │
 │ c2   │ String │
-└──────┴────────┘
+└──────┴────────┴
 ```
 
 `ALTER` 쿼리는 원자적으로 처리됩니다. MergeTree 테이블에서는 잠금 없이 수행됩니다.

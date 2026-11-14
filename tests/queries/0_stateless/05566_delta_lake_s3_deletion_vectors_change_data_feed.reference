@@ -1,0 +1,23 @@
+-- deletion vectors
+112	8739	12
+112	8739
+53	4236
+81	4005
+112	8739
+1	0
+101	1
+-- v2 checkpoint with sidecars
+49	1220
+49	1220
+-- change data feed
+2	update_postimage	1	updated
+2	update_preimage	1	v1
+2	update_postimage	2	updated
+2	update_preimage	2	v2
+3	delete	8	v8
+3	delete	9	v9
+4	insert	10	v10
+4	insert	11	v11
+-- table engine
+112	8739
+100	4950

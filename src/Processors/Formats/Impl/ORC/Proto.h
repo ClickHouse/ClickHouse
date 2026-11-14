@@ -2,11 +2,11 @@
 
 #include <base/types.h>
 #include <base/extended_types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 /// Structures of the ORC file metadata, which is serialized with Protocol Buffers.
 /// See `orc_proto.proto` in the ORC specification: https://orc.apache.org/specification/ORCv1/
@@ -51,7 +51,7 @@ public:
 
     /// Reads a scalar field that can be either packed or not packed.
     /// Returns false (and reads nothing) if the wire type is not suitable.
-    [[nodiscard]] bool readRepeatedVarint(WireType wire_type, std::vector<UInt64> & out);
+    [[nodiscard]] bool readRepeatedVarint(WireType wire_type, VectorWithMemoryTracking<UInt64> & out);
 
 private:
     void check(size_t n) const;
@@ -70,8 +70,8 @@ public:
     void writeSignedVarint(UInt32 field, Int64 value) { writeVarint(field, (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63)); }
     void writeDouble(UInt32 field, double value);
     void writeBytes(UInt32 field, std::string_view value);
-    void writePackedVarint(UInt32 field, const std::vector<UInt64> & values);
-    void writePackedFixed64(UInt32 field, const std::vector<UInt64> & values);
+    void writePackedVarint(UInt32 field, const VectorWithMemoryTracking<UInt64> & values);
+    void writePackedFixed64(UInt32 field, const VectorWithMemoryTracking<UInt64> & values);
 
     static void appendRawVarint(std::string & s, UInt64 value);
 
@@ -99,7 +99,7 @@ struct PostScript
     CompressionKind compression = CompressionKind::NONE;
     /// The default value in the specification.
     UInt64 compression_block_size = 256 * 1024;
-    std::vector<UInt64> version;
+    VectorWithMemoryTracking<UInt64> version;
     UInt64 metadata_length = 0;
     UInt32 writer_version = 0;
     std::string magic;
@@ -129,11 +129,16 @@ struct StringStatistics
     std::optional<Int64> sum;
     std::optional<std::string> lower_bound;
     std::optional<std::string> upper_bound;
+
+    /// The minimum, or the bound that the writer stored instead of a long minimum.
+    const std::optional<std::string> & getLowerBound() const { return minimum ? minimum : lower_bound; }
+    /// The maximum, or the bound that the writer stored instead of a long maximum.
+    const std::optional<std::string> & getUpperBound() const { return maximum ? maximum : upper_bound; }
 };
 
 struct BucketStatistics
 {
-    std::vector<UInt64> count;
+    VectorWithMemoryTracking<UInt64> count;
 };
 
 struct DecimalStatistics
@@ -195,13 +200,13 @@ struct ColumnStatistics
 
 struct RowIndexEntry
 {
-    std::vector<UInt64> positions;
+    VectorWithMemoryTracking<UInt64> positions;
     std::optional<ColumnStatistics> statistics;
 };
 
 struct RowIndex
 {
-    std::vector<RowIndexEntry> entry;
+    VectorWithMemoryTracking<RowIndexEntry> entry;
 
     /// The limits of the number of the repeated objects keep a small malformed message from allocating much memory.
     void parse(std::string_view data, size_t max_entries);
@@ -211,13 +216,13 @@ struct RowIndex
 struct BloomFilter
 {
     UInt32 num_hash_functions = 0;
-    std::vector<UInt64> bitset;
+    VectorWithMemoryTracking<UInt64> bitset;
     std::optional<std::string> utf8bitset;
 };
 
 struct BloomFilterIndex
 {
-    std::vector<BloomFilter> bloom_filter;
+    VectorWithMemoryTracking<BloomFilter> bloom_filter;
 
     void parse(std::string_view data, size_t max_entries);
 };
@@ -264,8 +269,8 @@ struct ColumnEncoding
 
 struct StripeFooter
 {
-    std::vector<Stream> streams;
-    std::vector<ColumnEncoding> columns;
+    VectorWithMemoryTracking<Stream> streams;
+    VectorWithMemoryTracking<ColumnEncoding> columns;
     std::optional<std::string> writer_timezone;
     /// Non-zero if the stripe has encrypted columns, which are not supported.
     size_t encryption_variants = 0;
@@ -283,12 +288,12 @@ struct StringPair
 struct Type
 {
     UInt32 kind = 0;
-    std::vector<UInt64> subtypes;
-    std::vector<std::string> field_names;
+    VectorWithMemoryTracking<UInt64> subtypes;
+    VectorWithMemoryTracking<std::string> field_names;
     std::optional<UInt32> maximum_length;
     std::optional<UInt32> precision;
     std::optional<UInt32> scale;
-    std::vector<StringPair> attributes;
+    VectorWithMemoryTracking<StringPair> attributes;
     /// Only for GEOMETRY and GEOGRAPHY.
     std::optional<std::string> crs;
     std::optional<UInt32> algorithm;
@@ -311,12 +316,12 @@ struct UserMetadataItem
 
 struct StripeStatistics
 {
-    std::vector<ColumnStatistics> col_stats;
+    VectorWithMemoryTracking<ColumnStatistics> col_stats;
 };
 
 struct Metadata
 {
-    std::vector<StripeStatistics> stripe_stats;
+    VectorWithMemoryTracking<StripeStatistics> stripe_stats;
 
     void parse(std::string_view data, size_t max_stripes, size_t max_columns);
     std::string serialize() const;
@@ -326,11 +331,11 @@ struct Footer
 {
     UInt64 header_length = 0;
     UInt64 content_length = 0;
-    std::vector<StripeInformation> stripes;
-    std::vector<Type> types;
-    std::vector<UserMetadataItem> metadata;
+    VectorWithMemoryTracking<StripeInformation> stripes;
+    VectorWithMemoryTracking<Type> types;
+    VectorWithMemoryTracking<UserMetadataItem> metadata;
     UInt64 number_of_rows = 0;
-    std::vector<ColumnStatistics> statistics;
+    VectorWithMemoryTracking<ColumnStatistics> statistics;
     UInt32 row_index_stride = 0;
     std::optional<UInt32> writer;
     bool has_encryption = false;

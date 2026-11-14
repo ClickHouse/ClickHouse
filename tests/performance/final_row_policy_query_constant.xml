@@ -1,0 +1,13 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: they do not support FINAL. -->
+    <create_query>CREATE TABLE final_row_policy_query_constant (c1 String, c2 String, c4 String, c5 DateTime, c6 String, c7 UInt8) ENGINE = ReplacingMergeTree(c5, c7) PARTITION BY c4 ORDER BY (c1, c2, c4)</create_query>
+    <create_query>CREATE ROW POLICY OR REPLACE final_row_policy_query_constant_policy ON final_row_policy_query_constant USING c2 = concat('def', substring(currentUser(), 1, 0)) TO ALL</create_query>
+
+    <fill_query>INSERT INTO final_row_policy_query_constant SELECT toString(cityHash64(number)), if(number % 500 = 0, 'def', toString(number % 997)), ['a','b','c','d'][number % 4 + 1], toDateTime('2026-01-01 00:00:00') + number, concat('{{"p":{{"tags":["x","', if(number % 7 = 0, 'tag1', 'y'), '"],"t":"', repeat('z', 600), '"}}}}'), 0 FROM numbers(1500000)</fill_query>
+    <fill_query>INSERT INTO final_row_policy_query_constant SELECT toString(cityHash64(number)), if(number % 500 = 0, 'def', toString(number % 997)), ['a','b','c','d'][number % 4 + 1], toDateTime('2026-03-01 00:00:00') + number, concat('{{"p":{{"tags":["x","', if(number % 3 = 0, 'tag1', 'y'), '"],"t":"', repeat('z', 600), '"}}}}'), 0 FROM numbers(750000, 1500000)</fill_query>
+
+    <query>SELECT count() FROM final_row_policy_query_constant FINAL WHERE has(JSONExtract(c6, 'p', 'tags', 'Array(String)'), 'tag1')</query>
+
+    <drop_query>DROP ROW POLICY IF EXISTS final_row_policy_query_constant_policy ON final_row_policy_query_constant</drop_query>
+    <drop_query>DROP TABLE IF EXISTS final_row_policy_query_constant</drop_query>
+</test>
