@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -124,7 +125,8 @@ std::optional<ColumnPtr> convertColumnToTypeCheckEnum(
 /// `gtest_convert_column_to_type`).
 bool nativeBatchApplicable(const DataTypePtr & source_type, const DataTypePtr & lhs_type)
 {
-    return isNativeNumber(source_type) && isNativeNumber(lhs_type) && !isBool(source_type) && !isBool(lhs_type);
+    return isNativeNumber(source_type) && isNativeNumber(lhs_type) && !isBool(source_type) && !isBool(lhs_type)
+        && !isSimpleAggregateFunctionOfBool(*lhs_type);
 }
 
 /// Build an `IColumn::filter` (1 = keep) that drops the NULL rows of `null_map` (keeps row `i` where

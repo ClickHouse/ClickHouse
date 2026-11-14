@@ -15,6 +15,7 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -73,7 +74,8 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
     /// `Decimal` and `BFloat16` stay on the `Field` path (a strict `Decimal` must reject scale loss;
     /// `BFloat16` has its own rounding semantics).
     auto is_native_or_wide_number = [](const DataTypePtr & type) { return isNativeNumber(type) || isInteger(type); };
-    if (!is_native_or_wide_number(from) || !is_native_or_wide_number(to) || isBool(from) || isBool(to))
+    if (!is_native_or_wide_number(from) || !is_native_or_wide_number(to) || isBool(from) || isBool(to)
+        || isSimpleAggregateFunctionOfBool(*to))
         return std::nullopt;
 
     ColumnPtr result;

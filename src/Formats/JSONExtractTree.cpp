@@ -31,6 +31,7 @@
 #include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -3026,7 +3027,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type));
+            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type) || isSimpleAggregateFunctionOfBool(*type));
         case TypeIndex::UInt16:
             return std::make_unique<NumericNode<JSONParser, UInt16>>();
         case TypeIndex::UInt32:
@@ -3103,7 +3104,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             switch (dictionary_type->getTypeId())
             {
                 case TypeIndex::UInt8:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, isBool(type));
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(
+                        is_nullable, isBool(dictionary_type) || isSimpleAggregateFunctionOfBool(*dictionary_type));
                 case TypeIndex::UInt16:
                     return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
                 case TypeIndex::UInt32:

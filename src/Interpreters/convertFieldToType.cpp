@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
@@ -940,7 +941,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         /// Bool is not represented in which_type, so we need to handle it separately.
         /// See the comment for `strict` in convertFieldToType.h for details.
-        if (isInt64OrUInt64orBoolFieldType(src.getType()) && type.getName() == "Bool")
+        if (isInt64OrUInt64orBoolFieldType(src.getType()) && (type.getName() == "Bool" || isSimpleAggregateFunctionOfBool(type)))
         {
             if (strict)
             {

@@ -23,6 +23,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -3383,7 +3384,7 @@ struct ConvertImpl
             /// Bool conversion
             if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
             {
-                if (isBool(result_type))
+                if (isBool(result_type) || isSimpleAggregateFunctionOfBool(*result_type))
                 {
                     convertToBool<FromFieldType>(vec_to, vec_from, input_rows_count);
                     RETURN_NULLABLE_IF_NEEDED(col_to);
