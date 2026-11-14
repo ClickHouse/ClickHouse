@@ -2061,6 +2061,10 @@ compares equal to every other. A partition expression can tell exactly those val
 one key can land in different partitions, and skipping the cross-partition merge would return all of them.
 The exclusion also applies when a float is nested inside a key column, for example `Tuple(Float64, UInt8)`
 or `Array(Float64)`.
+
+`Nullable` key columns, including nested ones such as `LowCardinality(Nullable(String))`, are excluded as well:
+every `NULL` compares equal to every other, while a partition expression such as `assumeNotNull(k)` reads the
+value stored under each one.
 )", 0, \
         {"26.2", true, true, "New setting"}) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(

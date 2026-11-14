@@ -50,7 +50,8 @@ INSERT INTO t_lazy_final_nullable SELECT number, nullIf(toUInt64(2), toUInt64(2)
 SELECT 'nullable, per partition', arraySort(groupArray(ver)) FROM t_lazy_final_nullable FINAL WHERE v = 1
 SETTINGS do_not_merge_across_partitions_select_final = 1;
 SELECT 'nullable, across partitions', arraySort(groupArray(ver)) FROM t_lazy_final_nullable FINAL WHERE v = 1
-SETTINGS do_not_merge_across_partitions_select_final = 0, query_plan_optimize_lazy_final = 0;
+SETTINGS do_not_merge_across_partitions_select_final = 0, query_plan_optimize_lazy_final = 0,
+    enable_automatic_decision_for_merging_across_partitions_for_final = 1;
 
 DROP TABLE t_lazy_final_nullable;
 
