@@ -484,9 +484,9 @@ echo "Drop the row policies that cannot be applied to a table they cover"
 row_policy_check_failed=0
 row_policy_drop_failed=0
 # The errors of the server failing to analyze a query: an unknown column, table, database or function, a wrong type or
-# number of arguments or columns, or an invalid constant. A resource limit, a timeout, a lost connection or an error
-# that depends on the reader (access, settings) is none of them.
-analysis_errors='6|20|36|38|41|42|43|44|46|47|53|59|60|69|81|153|184|190|386|407|675'
+# number of arguments or columns, an invalid constant, or a construct the server does not implement. A resource limit,
+# a timeout, a lost connection or an error that depends on the reader (access, settings) is none of them.
+analysis_errors='6|20|36|38|41|42|43|44|46|47|48|53|59|60|69|81|153|184|190|386|407|675'
 if timeout 1m clickhouse-client --query "
         SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
 then
