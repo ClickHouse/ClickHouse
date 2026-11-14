@@ -3229,7 +3229,7 @@ void registerInputFormatORC(FormatFactory & factory)
             const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
             return std::make_shared<NativeORCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ORC");
 
     factory.setDocumentation("ORC", Documentation{
@@ -3273,6 +3273,8 @@ The table below compares supported ORC data types and their corresponding ClickH
 - An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+- `DateTime64` values between `1969-12-31 23:59:59.001` and `1969-12-31 23:59:59.999999999` (UTC) are written as `1970-01-01 00:00:00`. This is a gap in the [ORC specification](https://orc.apache.org/specification/ORCv1/#timestamp-columns), which stores the seconds and the nanoseconds of a timestamp, with the nanoseconds not negative. The reference implementations add one second to a negative timestamp with more than 999999 nanoseconds, and the readers subtract it, but a timestamp between -1 and 0 seconds would then be stored as 0 seconds and read back after the epoch. The implementations write such a timestamp differently: the Java and C++ writers of Apache ORC write it so that it is read back one second later, and the Arrow ORC adapter (PyArrow) writes negative nanoseconds, which the specification does not allow and the Java reader rejects. ClickHouse writes the epoch instead, which all readers read back the same way.
+- When the writer and the reader time zones of a timestamp differ, the Java reader of Apache ORC and ClickHouse subtract that second before converting between the time zones, as the writers add it, while the C++ reader of Apache ORC (also used by PyArrow) subtracts it after the conversion. The C++ reader can then read timestamps before 1970 that are within the time zone offset of the epoch one second off, for the files of any writer.
 
 ## Example usage {#example-usage}
 

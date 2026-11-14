@@ -130,31 +130,31 @@ bool deserializeFieldByEscapingRule(
     {
         case FormatSettings::EscapingRule::Escaped:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextEscaped(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Quoted:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextQuoted(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::CSV:
             if (parse_as_nullable && !isCSVSeparateColumnsTuple(type, format_settings))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextCSV(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::JSON:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextJSON(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Raw:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextRaw(column, buf, format_settings);
             break;

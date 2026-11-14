@@ -76,6 +76,27 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 
 由于尚未实现读时合并 (merge-on-read) ，**无法读取主键表**：读取器返回的是该快照所有数据文件的原始并集，其中仍包含已被后续 upsert 取代的旧版本行。因此，读取 schema 中声明了 `primary-key` 的表时会抛出异常。
 
+## 带有删除向量的表 {#deletion-vectors}
+
+删除向量不会被应用，因此**无法读取带有删除向量的快照**：否则结果中仍会
+包含后续 `DELETE` 和 `UPDATE` 语句已删除的行。因此，如果某个快照的 index manifest 中列出了
+删除向量，读取该快照时会抛出异常，即使已关闭 `deletion-vectors.enabled` 也是如此。
+
+在 Paimon 中执行一次完整合并整理 (`compact_strategy => 'full'`) 会应用删除向量，此后
+创建的快照即可再次读取。
+
+增量读取会在第一个尚未消费且带有删除向量的快照处停止，即使之后执行了完整合并整理，也仍会停在该处，
+因为截至该次合并整理的每个快照都列出了相同的删除向量。此时游标不会前移。
+只有当 Paimon 使这些快照过期，或者将游标移动到完整合并整理对应的快照以放弃这些快照后，读取才会恢复；
+后一种方式会删除截至该快照的所有尚未消费的快照 (参见
+[快照无法读取时](#when-a-snapshot-cannot-be-read)) ：
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+无论哪种情况，这些删除向量所删除的行，仍会保留在增量读取此前已输出的数据中。
+
 ## 设置 {#settings}
 
 该引擎使用与相应对象存储引擎相同的设置，并额外提供了 Paimon 特有的设置：
@@ -141,6 +162,57 @@ SELECT count()
 FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
+
+### 回退仓库 {#rewinding-the-warehouse}
+
+位于 `paimon_keeper_path` 的 Keeper 游标记录了 stream 已消费到的位置，而增量读取的前提是仓库只会向前推进——Paimon 快照 id 单调递增，且永不复用。清理过期的旧快照没有问题：这只是移除一段前缀，其后的 id 不受影响。
+
+而将仓库*向后*回退则会打破这一前提。从较旧的备份恢复仓库、使用其他引擎回滚仓库，或在同一路径下删除并重建 Paimon 表，都会导致快照 id 回退，随后写入器会复用游标已经消费过的 id。
+
+**回退仓库时，必须在同一操作中重置游标。** 一旦 id 被复用，ClickHouse 就无法还原消费者已接收过哪些快照，因此如果回退后游标未被重置，数据投递行为将是未定义的：位于复用 id 上的快照可能会被跳过。
+
+如果回退后游标指向的位置超出了仓库的最新快照，读取将以 `INVALID_STATE` 失败，而不是报告没有新数据，同时错误信息中会给出用于恢复的命令。此时不会读取任何数据，游标也保持不变，因此在问题解决之前，后续每次轮询都会以同样的方式失败：
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+不要通过删除 `committed_snapshot` 节点来进行恢复。游标不存在意味着“从未消费过”，这会导致下一次读取对整张表进行完整重读，而不是从断点继续。
+
+在重置游标之前，请暂停所有共享 `paimon_keeper_path` 的消费者 (包括可刷新materialized view) ，并等待所有在传输中的读取完成。
+
+每次读取的提交都以其所观察到的游标为前提。如果游标在观察之后、提交之前发生了变化，该读取将以 `INVALID_STATE` 失败，不会交付任何数据，并保留您设置的值。已经提交的读取在游标重置后仍可能交付其批次；此时若回退游标，可能导致该批次被重复交付。
+
+不要手动删除或替换 `processing_lock`。它是由正在执行增量读取的 ClickHouse Keeper 会话所持有的临时节点；其生命周期并非供运维人员执行恢复操作的接口。
+
+### 当快照无法读取时 {#when-a-snapshot-cannot-be-read}
+
+已被 Paimon 过期的快照会被自动跳过：过期操作会移除快照 ID 的一段前缀，因此凡是早于该仓库最早快照的快照，都可以确定已不存在，游标会直接越过它们。
+
+读取快照时发生的其他任何失败 (例如暂时性的对象存储错误或已损坏的快照文件) 都会导致查询失败，游标则保持原位。系统有意不提供容忍此类失败的设置。跳过未读取的快照意味着永久丢弃其中已提交的数据，而常驻的“容忍错误”开关会让今后的每一次网络抖动都悄无声息地造成数据丢失。由于游标保持不变，暂时性错误完全无需人工干预：下一次轮询会重新读取同一范围并顺利完成。
+
+如果某个快照确实无法读取，而 stream 又必须继续推进，请显式放弃该快照。错误消息中会给出相应的命令，但请注意其代价：失败的读取没有返回任何数据，因此将游标移动到无法读取的快照，会放弃截至该快照 (含该快照) 的**所有**尚未消费的快照，而不仅仅是那个无法读取的快照。
+
+假设游标位于 1，快照 2、3、4 处于待处理状态，其中快照 3 无法读取：
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+如需保留可读取的快照，请先排空到无法读取的快照为止。每次轮询会消费一个快照并推进游标，直到抵达无法读取的那个快照：
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+无论哪种情况，该决定都会作为运维人员的一次显式操作记录下来，而不是根据某项设置推断得出。
 
 ## 通过可刷新materialized view 将 Paimon 同步到 MergeTree {#paimon-to-mergetree-via-refresh-mv}
 

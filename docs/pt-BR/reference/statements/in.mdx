@@ -127,9 +127,7 @@ ORDER BY EventDate ASC
 Para cada dia após 17 de março, calcule a porcentagem de visualizações de página feitas por usuários que visitaram o site em 17 de março.
 Uma subconsulta na cláusula `IN` é sempre executada apenas uma vez, em um único servidor. Não há subconsultas dependentes.
 
-<div id="null-processing">
-  ## Processamento de NULL
-</div>
+## Processamento de NULL {#null-processing}
 
 Durante o processamento da requisição, o operador `IN` considera que o resultado de uma operação com [NULL](/pt-BR/reference/settings/formats/input-format#input_format_null_as_default) é sempre igual a `0`, independentemente de `NULL` estar à direita ou à esquerda do operador. Os valores `NULL` não são incluídos em nenhum conjunto de dados, não correspondem entre si e não podem ser comparados se [transform&#95;null&#95;in = 0](/pt-BR/reference/settings/session-settings/other#transform_null_in).
 
@@ -164,9 +162,64 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<div id="distributed-subqueries">
-  ## Subconsultas Distribuídas
-</div>
+## IN em memória externa {#in-in-external-memory}
+
+O conjunto que `IN` constrói a partir de uma subconsulta ou de uma tabela pode ser gravado em disco quando é grande demais para
+ser mantido em memória. Nesse caso, as consultas leem o conjunto a partir do disco, o que exige E/S de disco adicional e pode deixar
+as consultas mais lentas. Uma lista de valores, como `IN (1, 2, 3)`, e uma tabela com o motor `Set` sempre
+permanecem em memória.
+
+Duas configurações controlam quando o spill começa:
+
+* `max_bytes_before_external_set` define um limiar, em bytes, para a memória total da consulta. O valor padrão é `0`
+  (desabilitado).
+* `max_bytes_ratio_before_external_set` define uma fração da memória disponível dentro dos limites do servidor ou do usuário,
+  medida no início da execução. O valor padrão é `0.5`, metade da memória disponível, e a configuração
+  não tem efeito quando nenhum desses limites se aplica.
+
+Quando os dois limiares se aplicam, o menor é utilizado. Um conjunto só é gravado em disco quando ocupa pelo menos
+16 MiB, ou o valor do limiar, se este for menor. Por exemplo, esta consulta grava o conjunto em disco assim que ele
+ocupa pelo menos 16 MiB:
+
+```sql
+SELECT count()
+FROM numbers(10000000)
+WHERE number IN (SELECT number * 3 FROM numbers(10000000))
+SETTINGS max_bytes_before_external_set = 16777216;
+```
+
+Um conjunto normalmente é construído antes que o restante da consulta consuma muita memória. Um conjunto que permanece em memória enquanto
+é construído ainda pode ser gravado em disco depois, enquanto a consulta o utiliza: assim que a memória da consulta, somada à
+memória que o conjunto mantém quando está em disco, como seu filtro de Bloom, ultrapassa o limiar, o conjunto é
+gravado em disco, e a maior parte de sua memória é liberada para o restante da consulta, como uma agregação que
+cresce depois que o conjunto é construído.
+
+`max_memory_usage` não afeta a razão. Para configurar o spill em relação a um limite de memória da consulta,
+defina um limiar absoluto abaixo desse limite. Esses limiares não impõem um teto ao uso de memória. Reserve espaço para
+o restante do processamento de consultas e para o próprio spill.
+
+Um conjunto em disco mantém em memória um filtro de Bloom de suas chaves, para que as consultas de chaves que não estão no conjunto
+possam evitar a leitura do disco. `max_bytes_for_external_set_bloom_filter` limita a memória do filtro,
+128 MiB por padrão.
+
+Um conjunto em disco também mantém em cache, na memória, os blocos lidos por suas consultas, para que consultas posteriores de chaves nos
+mesmos blocos não precisem ler o disco novamente. `max_bytes_for_external_set_cache` limita a memória do
+cache, 128 MiB por padrão.
+
+Um conjunto gravado em disco durante sua construção não pode ser usado pela chave primária nem por data skipping indexes. Com
+`GLOBAL IN`, a tabela temporária que envia o resultado da subconsulta aos servidores remotos permanece em
+memória, enquanto os conjuntos que os servidores remotos constroem a partir dela podem ser gravados em disco.
+
+Quando um conjunto é gravado em disco durante sua construção, a subconsulta inteira é lida antes que os limites de tamanho do
+conjunto sejam verificados: `max_rows_in_set` conta suas chaves distintas, e `max_bytes_in_set` conta cada chave pela
+largura que ela ocupa no conjunto, de 1 a 32 bytes, como 8 bytes para um `UInt64` e 16 bytes para uma `String`, mas
+não a memória usada pelas consultas, como o filtro de Bloom e o cache. Com
+`set_overflow_mode = 'break'`, o conjunto mantém, até os limites, as chaves que vêm primeiro na ordem em que ele
+as armazena em disco, e não as chaves das primeiras linhas da subconsulta. Para chaves numéricas,
+de datas e de valores `FixedString` curtos, isoladas ou em uma tupla, essas são as menores chaves. Outras chaves, como
+`String`, formam um subconjunto arbitrário.
+
+## Subconsultas Distribuídas {#distributed-subqueries}
 
 Existem duas opções para operadores `IN` com subconsultas (semelhante aos operadores `JOIN`): o `IN` / `JOIN` normal e o `GLOBAL IN` / `GLOBAL JOIN`. Elas diferem na forma como são executadas no processamento distribuído de consultas.
 
@@ -270,9 +323,7 @@ Isso é mais eficiente do que usar o `IN` normal. No entanto, tenha em mente os 
 
 Também faz sentido especificar uma tabela local na cláusula `GLOBAL IN`, caso essa tabela local esteja disponível apenas no servidor que fez a solicitação e você queira usar os dados dela em servidores remotos.
 
-<div id="distributed-subqueries-and-max_rows_in_set">
-  ### Subconsultas distribuídas e max_rows_in_set
-</div>
+### Subconsultas distribuídas e max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
 Você pode usar [`max_rows_in_set`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_set) e [`max_bytes_in_set`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_set) para controlar o volume de dados transferidos durante consultas distribuídas.
 
@@ -284,9 +335,7 @@ SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_p
 
 Se `some_predicate` não for seletivo o suficiente, ele retornará uma grande quantidade de dados e causará problemas de desempenho. Nesses casos, é recomendável limitar a transferência de dados pela rede. Observe também que [`set_overflow_mode`](/pt-BR/reference/settings/session-settings/other#set_overflow_mode) está definido como `throw` (por padrão), o que significa que uma exceção será gerada quando esses limites forem atingidos.
 
-<div id="distributed-subqueries-and-max_parallel_replicas">
-  ### Subconsultas distribuídas e max_parallel_replicas
-</div>
+### Subconsultas distribuídas e max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
 
 Quando [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) é maior que 1, as consultas distribuídas passam por transformações adicionais.
 
