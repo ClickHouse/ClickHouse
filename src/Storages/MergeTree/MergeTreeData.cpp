@@ -480,6 +480,14 @@ LookupTableState getLookupTableState(
     return result;
 }
 
+/// A snapshot taken without data (e.g. by `MutationsInterpreter`, which analyzes the query with
+/// `getStorageSnapshotWithoutData`) has no parts, so the lookup index cannot be built from it.
+bool hasLookupSnapshotData(const StorageSnapshotPtr & storage_snapshot)
+{
+    const auto * snapshot_data = typeid_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
+    return snapshot_data && snapshot_data->parts;
+}
+
 bool isSameLookupParts(
     const std::vector<std::weak_ptr<const IMergeTreeDataPart>> & lhs,
     const std::vector<std::weak_ptr<const IMergeTreeDataPart>> & rhs)
@@ -15926,6 +15934,9 @@ SetPtr MergeTreeData::tryGetLookupSet(
     if (!findLookupIndex(storage_snapshot->metadata->getLookupIndices(), TABLE_SET_INDEX_TYPE, key_names))
         return {};
 
+    if (!hasLookupSnapshotData(storage_snapshot))
+        return {};
+
     const bool transform_null_in = query_context->getSettingsRef()[Setting::transform_null_in];
     const auto cache_key = serializeLookupKey(transform_null_in ? "table_set_1" : "table_set_0", key_names);
     auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, key_names);
@@ -15976,6 +15987,9 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(
     /// fail with `Cannot find column ... in table lookup cache` or cast payload data from the
     /// wrong type. The regular right-side plan would use the frozen snapshot consistently.
     if (!findLookupIndex(storage_snapshot->metadata->getLookupIndices(), TABLE_JOIN_INDEX_TYPE, key_names))
+        return {};
+
+    if (!hasLookupSnapshotData(storage_snapshot))
         return {};
 
     const auto cache_key = serializeLookupKey("table_join", key_names);
