@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ProtocolDefines.h>
@@ -267,6 +268,27 @@ TEST(DistributedTopKCoordinator, MergesInterleavedCandidatesWithEmptyShard)
     EXPECT_TRUE(empty.selected_ordinals.empty());
     EXPECT_EQ(first.selected_ordinals, (std::vector<UInt64>{0, 1}));
     EXPECT_EQ(second.selected_ordinals, (std::vector<UInt64>{0, 1}));
+}
+
+TEST(DistributedTopKCoordinator, MergesSparseAndFullCandidates)
+{
+    DistributedTopKCoordinator coordinator(makeSettings(2, 3, ascendingPrimary()));
+
+    /// A sparse `[0, 2]`: the values column starts with the default, and the only non-default row is 1.
+    auto values = ColumnUInt64::create();
+    values->insertValue(0);
+    values->insertValue(2);
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(1);
+    Block sparse;
+    sparse.insert(ColumnWithTypeAndName(
+        ColumnSparse::create(std::move(values), std::move(offsets), 2), std::make_shared<DataTypeUInt64>(), "primary"));
+
+    EXPECT_FALSE(coordinator.submit(0, makeRequest(30, std::move(sparse))));
+    EXPECT_TRUE(coordinator.submit(1, makeRequest(31, makeCandidates({{1, 0}, {3, 0}}))));
+
+    EXPECT_EQ(coordinator.takeResponse(0).selected_ordinals, (std::vector<UInt64>{0, 1}));
+    EXPECT_EQ(coordinator.takeResponse(1).selected_ordinals, (std::vector<UInt64>{0}));
 }
 
 TEST(DistributedTopKCoordinator, HonorsCompoundOrdering)

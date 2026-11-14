@@ -140,6 +140,12 @@ bool DistributedTopKCoordinator::submit(size_t participant, QueryCoordinationReq
             throw Exception(ErrorCodes::INCORRECT_DATA, "Logical shard {} submitted distributed Top-K candidates more than once", participant);
     }
 
+    /// The candidates come from a `Native` packet, which may carry sparse, replicated or constant columns.
+    /// Equal types do not imply equal column representations, and the cursors below compare the columns of
+    /// different participants directly, so bring every received sort key to its full form.
+    for (auto & column : request.payload)
+        column.column = column.column->convertToFullIfWrapped();
+
     validateRequest(participant, request);
     const bool fallback_requested = request.mode == QueryCoordinationRequestMode::FallbackAll;
     const size_t rows = fallback_requested ? 0 : request.payload.rows();
