@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import Tagging from '/snippets/_observability_tagging.mdx';
 
 ClickHouse Observability allows you to do a full-text search on your events (logs and traces). You can get started searching by just typing keywords that match your events. For example, if your log contains "Error", you can find it by just typing in "Error" in the search bar.
@@ -30,7 +29,15 @@ The same search syntax is used to filter events in dashboards and charts.
   `Error OR Exception`)
 - Exact matches can be done via double quotes (ex. `"Error tests not found"`)
 
-<Image img="/images/clickstack/observability-search.png" alt="Fully managed Search showing log results for the query failed to watch" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Fully managed Search showing log results for the query failed to watch](/images/clickstack/observability-search.png)
+
+</Frame>
+
+</div>
 
 #### Column/property search {#column-search}
 
@@ -67,11 +74,27 @@ Aliases aren't supported at this time (ex. you cannot use `column as "alias"`).
 
 You can save your searches for quick access later. Once saved, your searches will appear on the `Saved Searches` page, making it easy to revisit frequently used search queries without having to reconstruct them.
 
-<Image img="/images/clickstack/observability-saved-search-listing.png" alt="Saved Searches in fully managed ClickHouse Observability showing My Saved Search" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Saved Searches in fully managed ClickHouse Observability showing My Saved Search](/images/clickstack/observability-saved-search-listing.png)
+
+</Frame>
+
+</div>
 
 To save a search, configure your query, select **Save**, and give the search a descriptive name. When editing an existing saved search, the dialog shows **Update**, as in the example below.
 
-<Image img="/images/clickstack/observability-save-search.png" alt="Save Search dialog showing the query, name, tags, and Update button for an existing saved search" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Save Search dialog showing the query, name, tags, and Update button for an existing saved search](/images/clickstack/observability-save-search.png)
+
+</Frame>
+
+</div>
 
 ### Adding alerts to saved searches {#alerts-on-saved-searches}
 

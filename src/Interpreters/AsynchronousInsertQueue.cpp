@@ -683,6 +683,17 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
     ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
 {
+    /// The flush copies queued blocks into full columns with `insertRangeFrom`, whose `assert_cast` would misread a
+    /// wrapped column (`Sparse`, `Replicated`, ...) at any nesting depth. Every producer materializes before queuing.
+    /// An insert without data queues a block without columns.
+    for (const auto & elem : block)
+        if (elem.column && elem.column->convertToFullIfWrapped().get() != elem.column.get())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Async insert block column '{}' must be materialized before queuing, but has a "
+                "non-default serialization representation: {}",
+                elem.name, elem.column->dumpStructure());
+
     query = query->clone();
     preprocessInsertQuery(query, query_context);
     return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker));
@@ -1659,12 +1670,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     /// by materialized views.
     auto format_context = Context::createCopy(insert_context);
     InterpreterSetQuery::applySettingsFromQuery(key.query, format_context);
-    /// The `SETTINGS` clause must not undo the mandatory overrides of the queue: the parser below is
-    /// reused across entries with `resetParser`, which parallel parsing does not support.
+    /// The `SETTINGS` clause must not undo the mandatory overrides of the queue: the entries are
+    /// small and parsed one after another, so parallel parsing is not used here.
     format_context->setSetting("input_format_parallel_parsing", false);
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, format_context, nullptr);
-    std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+    StreamingFormatExecutor::TransformCreator create_adding_defaults_transform;
 
     /// For diagnostics only: if parsing an entry fails, explain a possible structure mismatch between
     /// the data being inserted and the destination. The data is fed per entry below, so the provider
@@ -1674,7 +1684,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     /// The query parameters of the entry being parsed, which the executor applies to the format per
     /// entry (a parameterized `Values` row): the diagnostic must parse the data with them as well.
     const NameToNameMap * current_entry_query_parameters = nullptr;
-    format->setParseErrorDiagnosticProvider(
+    auto parse_error_diagnostic_provider =
         [&current_entry_data, &current_entry_query_parameters, insert_format, &header, format_context](
             std::optional<size_t> rows_reached_by_parser) -> String
         {
@@ -1687,13 +1697,23 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             }
             return getInsertDataSchemaMismatchDescription(
                 current_entry_data, insert_format, header, diagnostic_context, rows_reached_by_parser);
-        });
+        };
+
+    /// A format that does not support `resetParser` is created anew for each entry, so the provider
+    /// is installed on every created format.
+    auto create_format = [&]
+    {
+        auto format = getInputFormatFromASTInsertQuery(key.query, false, header, format_context, nullptr);
+        format->setParseErrorDiagnosticProvider(parse_error_diagnostic_provider);
+        return format;
+    };
 
     if (format_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && format_context->hasInsertionTableColumnsDescription())
     {
-        const auto & columns = *format_context->getInsertionTableColumnsDescription();
-        if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, format_context);
+        auto columns = format_context->getInsertionTableColumnsDescription();
+        if (columns->hasDefaults())
+            create_adding_defaults_transform = [columns, shared_header = std::make_shared<const Block>(header), format_context](IInputFormat & format)
+            { return std::make_shared<AddingDefaultsTransform>(shared_header, *columns, format, format_context); };
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1711,11 +1731,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     StreamingFormatExecutor executor(
         header,
-        format,
+        std::move(create_format),
         std::move(on_error),
         data->size_in_bytes,
         data->entries.size(),
-        std::move(adding_defaults_transform),
+        std::move(create_adding_defaults_transform),
         [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);

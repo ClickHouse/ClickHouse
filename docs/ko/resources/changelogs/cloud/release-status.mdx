@@ -41,81 +41,93 @@ ClickHouse Cloud는 안정성, 새로운 기능에 대한 접근성, 업그레�
   * 롤아웃은 자동으로 수행되며, 여러 주에 걸쳐 점진적으로 진행됩니다
   * 윈도우가 구성된 서비스는 채널 롤아웃이 종료된 다음 주의 윈도우 동안 업그레이드됩니다 (월요일 00:00 UTC 시작)
   * 롤아웃 일시 중지(예: 휴일 중 동결) 또는 상태 모니터링으로 인해 롤아웃 완료가 지연될 수 있습니다
+  * [EOL 날짜](https://clickhouse.com/legal/support-services-policy)는 Slow 채널 롤아웃이 완료되고 최소 60일이 지난 이후입니다. Slow 채널 종료 날짜가 아직 정해지지 않은 릴리스의 EOL 날짜는 `TBD`로 표시됩니다.
 
   프로덕션 업그레이드 전에 사전 테스트를 하려면 비프로덕션 서비스에는 Fast 또는 Regular 채널을 사용하고, 프로덕션 서비스에는 Slow 채널을 사용하십시오.
 </Warning>
 
 <ReleaseSchedule
   releases={[
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
-   version: '26.8',
-   fast_start_date: '2026-10-12',
-   fast_end_date: 'TBD',
-   regular_start_date: 'TBD',
-   regular_end_date: 'TBD',
-   slow_start_date: 'TBD',
-   slow_end_date: 'TBD',
-   eol_date: 'TBD',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
-   version: '26.6',
-   fast_start_date: '2026-09-07',
-   fast_end_date: '2026-09-14',
-   regular_start_date: '2026-09-28',
-   regular_end_date: 'TBD',
-   slow_start_date: 'TBD',
-   slow_end_date: 'TBD',
-   eol_date: 'TBD',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
-   version: '26.4',
-   fast_start_date: '2026-06-22',
-   fast_end_date: '2026-07-16',
-   regular_start_date: '2026-08-03',
-   regular_end_date: '2026-09-21',
-   slow_start_date: '2026-09-28',
-   slow_end_date: '2026-09-28',
-   eol_date: '2026-11-27',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
-   version: '26.2',
-   fast_start_date: 'Completed',
-   fast_end_date: 'Completed',
-   regular_start_date: 'Completed',
-   regular_end_date: 'Completed',
-   slow_start_date: 'Completed',
-   slow_end_date: 'Completed',
-   eol_date: '2026-09-20',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
-   version: '25.12',
-   fast_start_date: 'Completed',
-   fast_end_date: 'Completed',
-   regular_start_date: 'Completed',
-   regular_end_date: 'Completed',
-   slow_start_date: 'Completed',
-   slow_end_date: 'Completed',
-   eol_date: '2026-06-08',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-  },
+{
+changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
+version: '26.8',
+fast_start_date: '2026-10-19',
+fast_end_date: 'TBD',
+regular_start_date: 'TBD',
+regular_end_date: 'TBD',
+slow_start_date: 'TBD',
+slow_end_date: 'TBD',
+eol_date: 'TBD',
+fast_progress: 'green',
+regular_progress: 'green',
+slow_progress: 'green',
+},
+{
+changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+version: '26.6',
+fast_start_date: '2026-09-07',
+fast_end_date: '2026-09-14',
+regular_start_date: '2026-09-28',
+regular_end_date: 'TBD',
+slow_start_date: 'TBD',
+slow_end_date: 'TBD',
+eol_date: 'TBD',
+fast_progress: 'green',
+regular_progress: 'green',
+slow_progress: 'green',
+},
+{
+changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+version: '26.4',
+fast_start_date: '2026-06-22',
+fast_end_date: '2026-07-16',
+regular_start_date: '2026-08-03',
+regular_end_date: '2026-09-21',
+slow_start_date: '2026-09-28',
+slow_end_date: '2026-09-28',
+eol_date: '2026-11-27 (estimated)',
+fast_progress: 'green',
+regular_progress: 'green',
+slow_progress: 'green',
+},
+{
+changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+version: '26.2',
+fast_start_date: 'Completed',
+fast_end_date: 'Completed',
+regular_start_date: 'Completed',
+regular_end_date: 'Completed',
+slow_start_date: 'Completed',
+slow_end_date: 'Completed',
+eol_date: '2026-10-04',
+fast_progress: 'green',
+regular_progress: 'green',
+slow_progress: 'green',
+},
+{
+changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+version: '25.12',
+fast_start_date: 'Completed',
+fast_end_date: 'Completed',
+regular_start_date: 'Completed',
+regular_end_date: 'Completed',
+slow_start_date: 'Completed',
+slow_end_date: 'Completed',
+eol_date: '2026-06-08',
+fast_progress: 'green',
+regular_progress: 'green',
+slow_progress: 'green',
+},
 ]}
 />
+
+## ClickHouse Private 및 ClickHouse Government 지원 종료 일자 {#private-and-government-eol}
+
+다음 테이블은 ClickHouse Private 및 ClickHouse Government에 포함된 ClickHouse 주 버전별 지원 종료(EOL) 일자입니다.
+
+| 버전   | 릴리스 일자     | EOL 일자          | 상태    |
+| ---- | ---------- | --------------- | ----- |
+| 26.4 | 2026-10-09 | 2026-11-27 (예정) | 지원됨   |
+| 26.2 | 2026-08-07 | 2026-10-04      | 지원 종료 |
+
+이보다 이전 버전은 모두 지원이 종료되었습니다. 예정으로 표시된 EOL 일자는 변경될 수 있습니다.
