@@ -22,7 +22,7 @@ SETTINGS enable_multiple_prewhere_read_steps = 1, max_threads = 1,
 SELECT sum(v) FROM t WHERE a = 1 AND b = 0 SETTINGS optimize_move_to_prewhere = 0;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['RowsReadByMainReader'] FROM system.query_log
+SELECT log_comment, ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05632_one_read', '05632_predictor')
 ORDER BY log_comment;
 
