@@ -126,12 +126,12 @@ bool IcebergRESTCatalogWarehouseRegistry::create(const String & name, IcebergRES
 
     auto component_guard = Coordination::setCurrentComponent("IcebergRESTCatalogWarehouseRegistry::create");
     auto zookeeper = keeper_config.getZooKeeper(*context);
-    zookeeper->createAncestors(keeper_config.zookeeper_path);
+    const auto path = keeper_config.warehousePath(name);
+    zookeeper->createAncestors(path);
 
     definition.uuid = UUIDHelpers::generateV4();
 
     /// The warehouse node and its uuid subtree are created atomically, so a crash cannot leave a half-made warehouse.
-    const auto path = keeper_config.warehousePath(name);
     const auto root = path + "/" + toString(definition.uuid);
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(path, definition.toKeeperData(), zkutil::CreateMode::Persistent));
@@ -165,13 +165,17 @@ IcebergRESTCatalogWarehouseRegistry::replaceCredential(const String & name, cons
     checkStorageAccess(name, definition);
 
     /// The version check keeps a concurrent change from being overwritten.
-    const auto code = zookeeper->trySet(path, definition.toKeeperData(), stat.version);
+    /// The version restarts when the warehouse is dropped and created again. The uuid node check covers that case.
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCheckRequest(path + "/" + toString(definition.uuid), -1));
+    ops.emplace_back(zkutil::makeSetRequest(path, definition.toKeeperData(), stat.version));
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
     if (code == Coordination::Error::ZNONODE)
         return ReplaceCredentialResult::NotFound;
     if (code == Coordination::Error::ZBADVERSION)
         return ReplaceCredentialResult::Conflict;
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, path);
+    zkutil::KeeperMultiException::check(code, ops, responses);
 
     LOG_INFO(log, "Replaced the credential of warehouse {}", name);
     return ReplaceCredentialResult::Replaced;
