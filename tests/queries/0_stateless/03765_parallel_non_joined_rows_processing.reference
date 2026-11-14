@@ -8,3 +8,8 @@
 4
 --- Sequential: NonJoinedBlocksTransform count ---
 0
+--- Parallel: NULL keys and ON-filtered right rows ---
+100000	14286	99314	4999950000
+100314	14600	99314	4999950000
+100000	14286	99314	4999950000
+100314	14600	99314	4999950000
