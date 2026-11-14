@@ -74,7 +74,9 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
             database->waitDatabaseStarted();
 
         /// The definers of SQL-defined HTTP handlers are registered when the handlers are loaded, which happens lazily.
-        SQLDefinedHandlersFactory::instance().loadIfNot();
+        /// With replicated storage, a handler stored on another replica is registered only by the background reload,
+        /// so re-read the handlers to see it.
+        SQLDefinedHandlersFactory::instance().loadLatest();
 
         auto & definer_dependencies = DefinerDependencies::instance();
         for (const auto & name : query.names->toStrings())

@@ -54,6 +54,10 @@ public:
 
     void loadIfNot();
 
+    /// Loads the handlers and, for replicated storage, re-reads them from Keeper, so that the definers registered in
+    /// `DefinerDependencies` include the handlers stored on the other replicas. Used before dropping a user.
+    void loadLatest();
+
     void shutdown();
 
 private:
@@ -69,6 +73,8 @@ private:
     const LoggerPtr log = getLogger("SQLDefinedHandlersFactory");
 
     bool loadIfNot(std::lock_guard<std::mutex> & lock);
+    /// Loads the handlers, and re-reads them from replicated storage.
+    void loadLatest(std::lock_guard<std::mutex> & lock);
     /// `reconcile_definers`: `loaded_handlers` is authoritative, so its definers replace the ones in `DefinerDependencies`.
     void rebuildSnapshot(std::lock_guard<std::mutex> & lock, bool reconcile_definers);
 

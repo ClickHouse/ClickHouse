@@ -390,31 +390,35 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
 }
 
-bool SQLDefinedHandlersFactory::prepareCreate(const String & handler_name)
+void SQLDefinedHandlersFactory::loadLatest(std::lock_guard<std::mutex> & lock)
 {
-    std::lock_guard lock(mutex);
     loadIfNot(lock);
 
     if (!metadata_storage->isReplicated())
-        return loaded_handlers.contains(handler_name);
+        return;
 
     Int32 version = 0;
     loaded_handlers = metadata_storage->getAll(version);
     rebuildSnapshot(lock, /* reconcile_definers */ true);
+}
+
+void SQLDefinedHandlersFactory::loadLatest()
+{
+    std::lock_guard lock(mutex);
+    loadLatest(lock);
+}
+
+bool SQLDefinedHandlersFactory::prepareCreate(const String & handler_name)
+{
+    std::lock_guard lock(mutex);
+    loadLatest(lock);
     return loaded_handlers.contains(handler_name);
 }
 
 String SQLDefinedHandlersFactory::prepareAlter(const String & handler_name)
 {
     std::lock_guard lock(mutex);
-    loadIfNot(lock);
-
-    if (metadata_storage->isReplicated())
-    {
-        Int32 version = 0;
-        loaded_handlers = metadata_storage->getAll(version);
-        rebuildSnapshot(lock, /* reconcile_definers */ true);
-    }
+    loadLatest(lock);
 
     auto it = loaded_handlers.find(handler_name);
     if (it == loaded_handlers.end())
