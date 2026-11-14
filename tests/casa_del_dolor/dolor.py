@@ -1,5 +1,6 @@
 import argparse
 import atexit
+import io
 import logging
 import os
 import pathlib
@@ -499,6 +500,39 @@ def stop_distributed_sends(server) -> None:
     logger.warning(f"Could not stop Distributed sends on {server.name}: {last_error}")
 
 
+S3_RESTART_PROBE = "dolor/restart_probe"
+S3_RESTART_WAIT_SECONDS = 60
+
+
+def wait_s3_server_serving() -> None:
+    """Wait until the S3 server reads the object written before its restart and accepts a write."""
+    start = time.monotonic()
+    while True:
+        try:
+            response = cluster.minio_client.get_object(
+                cluster.minio_bucket, S3_RESTART_PROBE
+            )
+            try:
+                response.read()
+            finally:
+                response.close()
+                response.release_conn()
+            cluster.minio_client.put_object(
+                cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
+            )
+            logger.info(
+                f"The S3 server serves again {time.monotonic() - start:.1f}s after its start"
+            )
+            return
+        except Exception as ex:
+            if time.monotonic() - start >= S3_RESTART_WAIT_SECONDS:
+                logger.warning(
+                    f"The S3 server does not serve {S3_RESTART_WAIT_SECONDS}s after its start: {ex}"
+                )
+                return
+            time.sleep(1)
+
+
 # Set seed first
 seed = args.seed
 if seed == 0:
@@ -984,11 +1018,20 @@ while all_running and (not reached_limit):
             f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {'kill' if kill_server else 'manual shutdown'}"
         )
 
+        if next_pick == "minio":
+            try:
+                cluster.minio_client.put_object(
+                    cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
+                )
+            except Exception as ex:
+                logger.warning(f"Could not write the S3 restart probe: {ex}")
         cluster.process_integration_nodes(
             next_pick, choosen_instances, "kill" if kill_server else "stop"
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+        if next_pick == "minio":
+            wait_s3_server_serving()
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
