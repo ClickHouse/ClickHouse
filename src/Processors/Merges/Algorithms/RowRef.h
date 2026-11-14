@@ -3,15 +3,10 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
+#include <Core/SortCursor.h>
 #include <Processors/Chunk.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
-
-namespace DB
-{
-struct SortCursorImpl;
-struct SortCursor;
-}
 
 namespace DB::detail
 {
@@ -161,12 +156,15 @@ struct RowRefWithOwnedChunk
         source_stream_index = 0;
     }
 
-    void set(SortCursor & cursor, SharedChunkPtr chunk);
-
-
-    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
+    void set(SortCursor & cursor, const SharedChunkPtr & chunk)
     {
-        return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
+        if (owned_chunk != chunk)
+            owned_chunk = chunk;
+        row_num = cursor.impl->getRow();
+        all_columns = &owned_chunk->all_columns;
+        sort_columns = &owned_chunk->sort_columns;
+        current_cursor = cursor.impl;
+        source_stream_index = cursor.impl->order;
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
