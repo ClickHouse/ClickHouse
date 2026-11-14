@@ -36,6 +36,7 @@ For a step-by-step Cloud UI walkthrough, see [Connect a data catalog in ClickHou
 | Name              | Open table format | Auth method                            | Cloud                                                      | Core                                                               | Version |
 | ----------------- | ----------------- | -------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------ | ------- |
 | AWS Glue Catalog  | Iceberg           | IAM role (26.2+), Access keys          | [Guide](/integrations/data-catalogs#aws-glue)      | [Guide](/guides/use-cases/data-warehousing/glue-catalog)           | 25.12+  |
+| Amazon S3 Tables  | Iceberg           | IAM role, Access keys (SigV4)          | —                                                          | [Guide](/guides/use-cases/data-warehousing/s3-tables-catalog)      | 26.8+   |
 | BigLake Metastore | Iceberg           | Google ADC (OAuth)                     | [Guide](/integrations/data-catalogs#biglake)       | [Guide](/guides/use-cases/data-warehousing/biglake-catalog)        | 26.2+   |
 | Lakekeeper        | Iceberg           | OAuth client credentials               | —                                                          | [Guide](/guides/use-cases/data-warehousing/lakekeeper-catalog)     | 25.10+  |
 | Microsoft OneLake | Iceberg           | Azure Active Directory (AAD)           | [Guide](/integrations/data-catalogs#onelake)       | [Guide](/guides/use-cases/data-warehousing/onelake-catalog)        | 25.12+  |
@@ -46,4 +47,3 @@ For a step-by-step Cloud UI walkthrough, see [Connect a data catalog in ClickHou
 | Unity Catalog     | Iceberg           | OAuth client credentials               | [Guide](/integrations/data-catalogs#unity-iceberg) | [Guide](/guides/use-cases/data-warehousing/unity-catalog)          | 25.12+  |
 | Unity Catalog     | Delta             | Personal Access Token (PAT)            | [Guide](/integrations/data-catalogs#unity-delta)   | [Guide](/guides/use-cases/data-warehousing/unity-catalog)          | 25.12+  |
 
-We have more catalogs planned, including the S3 Tables REST endpoint.

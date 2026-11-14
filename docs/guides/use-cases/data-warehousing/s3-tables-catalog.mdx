@@ -1,0 +1,186 @@
+---
+slug: /use-cases/data-lake/s3-tables-catalog
+sidebarTitle: 'Amazon S3 Tables'
+title: 'Amazon S3 Tables catalog'
+description: 'Query and write Iceberg tables in Amazon S3 table buckets through the S3 Tables Iceberg REST endpoint using ClickHouse DataLakeCatalog.'
+keywords: ['S3 Tables', 'table buckets', 'AWS', 'Iceberg', 'Data Lake', 'REST catalog']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge/>
+
+ClickHouse can connect to [Amazon S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables.html)
+through the [Iceberg REST endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-integrating-open-source.html)
+that S3 Tables exposes for each region. This lets you **read and write** the Iceberg tables in a table bucket from ClickHouse
+using the `DataLakeCatalog` database engine with `catalog_type = 's3tables'`.
+
+S3 Tables is related to, but not the same as, the AWS Glue Data Catalog:
+
+| | AWS Glue (`catalog_type = 'glue'`) | S3 Tables (`catalog_type = 's3tables'`) |
+|---|---|---|
+| Endpoint | No URL, the region selects the Glue API | `https://s3tables.<region>.amazonaws.com/iceberg` |
+| Warehouse | Not used | Table bucket ARN, for example `arn:aws:s3tables:us-east-1:111122223333:bucket/my-table-bucket` |
+| Authentication | Access keys or IAM role | Access keys or IAM role. Requests are signed with AWS SigV4 for the `s3tables` service |
+| Writes | Read only | `CREATE TABLE`, `INSERT`, and `DROP TABLE` |
+
+<Note>
+As this feature is beta, enable it with:
+`SET allow_database_iceberg = 1;`
+
+The `s3tables` catalog type is available from version 26.8.
+</Note>
+
+## Prerequisites {#prerequisites}
+
+- An S3 table bucket and its ARN
+- The AWS region of the table bucket
+- An IAM identity that can use the S3 Tables API for that bucket, authenticated with one of:
+  - Access key ID and secret access key
+  - An IAM role that ClickHouse can assume, optionally with a role session name
+- ClickHouse with DataLakeCatalog Iceberg support
+
+The IAM identity needs the S3 Tables actions for the operations you plan to run. For reads, that is
+`s3tables:GetTableBucket`, `s3tables:ListNamespaces`, `s3tables:GetNamespace`, `s3tables:ListTables`,
+`s3tables:GetTable`, `s3tables:GetTableMetadataLocation`, and `s3tables:GetTableData`.
+To create tables and write to them, also grant `s3tables:CreateNamespace`, `s3tables:CreateTable`,
+`s3tables:PutTableData`, and `s3tables:UpdateTableMetadataLocation`, and `s3tables:DeleteTable` to drop tables.
+See the [AWS permission mapping](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-integrating-open-source.html)
+for the full list.
+
+## Creating a connection {#connecting}
+
+Both `region` and `warehouse` are required. Set `warehouse` to the ARN of the table bucket, not its name.
+
+### AWS access key and secret {#aws-access-key-secret}
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE s3_tables
+ENGINE = DataLakeCatalog('https://s3tables.us-east-1.amazonaws.com/iceberg')
+SETTINGS
+    catalog_type = 's3tables',
+    region = 'us-east-1',
+    warehouse = 'arn:aws:s3tables:us-east-1:111122223333:bucket/my-table-bucket',
+    aws_access_key_id = '<access-key>',
+    aws_secret_access_key = '<secret-key>';
+```
+
+### AWS IAM role {#aws-role}
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE s3_tables
+ENGINE = DataLakeCatalog('https://s3tables.us-east-1.amazonaws.com/iceberg')
+SETTINGS
+    catalog_type = 's3tables',
+    region = 'us-east-1',
+    warehouse = 'arn:aws:s3tables:us-east-1:111122223333:bucket/my-table-bucket',
+    aws_role_arn = 'arn:aws:iam::111122223333:role/clickhouse-s3-tables',
+    aws_role_session_name = 'clickhouse-s3-tables-session';
+```
+
+When you set `aws_role_arn` together with `aws_access_key_id` and `aws_secret_access_key`, ClickHouse assumes the role
+with those keys. Without keys, ClickHouse assumes the role with the identity the server runs under, so the role must trust that identity.
+
+ClickHouse reads the table data with the credentials that S3 Tables vends for each table. If the catalog returns none,
+ClickHouse uses the same credentials it uses for the catalog.
+
+## Query Iceberg tables {#query}
+
+```sql
+USE s3_tables;
+SHOW TABLES;
+```
+
+```response
+┌─name─────────────────┐
+│ analytics.page_views │
+│ sales.orders         │
+└──────────────────────┘
+```
+
+```sql
+SELECT count(*) FROM `sales.orders`;
+SHOW CREATE TABLE `sales.orders`;
+```
+
+<Note>
+Tables are addressed as `` `namespace.table` `` in a single backticked identifier.
+S3 Tables supports only one level of namespaces.
+</Note>
+
+## Write path {#write}
+
+With the write permissions listed in the [prerequisites](#prerequisites), ClickHouse can create tables in the table bucket
+and insert into them. S3 Tables chooses the location of each new table, so `ENGINE = Iceberg` takes no arguments.
+If the namespace doesn't exist, ClickHouse creates it.
+
+```sql
+SET allow_database_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
+
+CREATE TABLE s3_tables.`sales.returns`
+(
+    id Int64,
+    reason String
+)
+ENGINE = Iceberg;
+
+INSERT INTO s3_tables.`sales.returns` VALUES (1, 'damaged'), (2, 'wrong size');
+
+SELECT * FROM s3_tables.`sales.returns` ORDER BY id;
+```
+
+```response
+┌─id─┬─reason─────┐
+│  1 │ damaged    │
+│  2 │ wrong size │
+└────┴────────────┘
+```
+
+`PARTITION BY` and `ORDER BY` clauses are passed to the catalog with the new table. `PRIMARY KEY` and `SAMPLE BY` aren't supported for tables created this way.
+
+S3 Tables doesn't accept user-defined object metadata, so ClickHouse doesn't write the
+[`s3_use_idempotency_id`](/reference/settings/session-settings/s3#s3_use_idempotency_id) marker to the data files of these tables
+unless you enable the setting explicitly in the query.
+
+### Dropping tables {#drop}
+
+S3 Tables only drops a table together with its data. Enable `iceberg_delete_data_on_drop` to drop a table from ClickHouse:
+
+```sql
+SET iceberg_delete_data_on_drop = 1;
+
+DROP TABLE s3_tables.`sales.returns`;
+```
+
+Without this setting, `DROP TABLE` fails and the table stays in the table bucket.
+
+## Loading into MergeTree {#loading}
+
+To load data from a table bucket into ClickHouse for faster analytics, create a local table and copy the data with `INSERT INTO SELECT`:
+
+```sql
+CREATE TABLE default.orders
+(
+    id Int64,
+    region String,
+    amount Float64
+)
+ENGINE = MergeTree
+ORDER BY (region, id);
+
+INSERT INTO default.orders
+SELECT * FROM s3_tables.`sales.orders`;
+```
+
+## Limitations {#limitations}
+
+- Only single-level namespaces are supported, which is a limit of S3 Tables.
+- Table maintenance such as compaction and snapshot expiry is handled by the S3 Tables maintenance features, not through the catalog.
+- S3 Tables can't return tables whose `metadata.json` file is larger than 50 MB.
