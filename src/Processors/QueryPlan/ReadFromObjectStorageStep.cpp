@@ -655,8 +655,10 @@ bool ReadFromObjectStorageStep::isReadPinnedToListedGeneration() const
     /// `StoredObject::etag`, so a concurrent in-place overwrite after the object was listed goes
     /// unnoticed. A read is pinned to the listed generation when the backend issues it with the
     /// captured `ETag` and rejects a response whose `ETag` drifted from it, which is atomic with respect
-    /// to an overwrite: S3 with `s3_validate_etag_on_read` (see `ReadBufferFromS3`), and Azure with
-    /// `azure_validate_etag_on_read` (see `ReadBufferFromAzureBlobStorage`). The pin only takes effect
+    /// to an overwrite: S3 with `s3_validate_etag_on_read` (see `ReadBufferFromS3`), Azure with
+    /// `azure_validate_etag_on_read` (see `ReadBufferFromAzureBlobStorage`), and the native GCS
+    /// backend with `s3_validate_etag_on_read`, which sends every read request with
+    /// `IfGenerationMatch` on the captured object generation (see `ReadBufferFromGCS`). The pin only takes effect
     /// when the captured metadata actually carries a non-empty `ETag` (see `createReadBuffer`), and
     /// `GCS` accessed through the S3 API is documented to legitimately return objects without one -
     /// so a `GCS`-provider client is not considered pinned even with the setting on.
@@ -674,6 +676,8 @@ bool ReadFromObjectStorageStep::isReadPinnedToListedGeneration() const
         return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
     }
 #endif
+    if (object_storage->getType() == ObjectStorageType::GCS)
+        return getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read];
     return object_storage->getType() == ObjectStorageType::Azure
         && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read];
 }

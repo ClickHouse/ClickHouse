@@ -103,6 +103,11 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
         else
             validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
 
+        /// The GCS analogue of the S3 re-check above: an `include` can likewise inject a `gcs` backend with
+        /// `service_account_key_file` (a server-side file read) or server-managed credential fields. Unlike
+        /// the S3 path there is no anonymous downgrade -- the check is unconditional and fail-closed.
+        validateResolvedGCSDiskCredentials(*config, context, attach, s3_disk_info);
+
         validateResolvedAzureDiskCredentials(*config, context, attach, for_system_database);
 
         uses_server_credentials = diskUsesServerCredentials(*config, s3_disk_info);
@@ -274,12 +279,15 @@ static bool usesIndirectValues(const ASTs & args)
 struct CredentialsMarkersChange
 {
     std::set<std::string> drop;
+    bool add_s3 = false;
     bool add_azure = false;
 };
 
 static void applyCredentialsMarkersChange(ASTs & args, const CredentialsMarkersChange & change)
 {
     args.erase(std::remove_if(args.begin(), args.end(), [&](const ASTPtr & arg) { return change.drop.contains(getCredentialsMarker(arg)); }), args.end());
+    if (change.add_s3)
+        args.push_back(makeCredentialsMarker(S3_SERVER_CREDENTIALS_MARKER));
     if (change.add_azure)
         args.push_back(makeCredentialsMarker(AZURE_SERVER_CREDENTIALS_MARKER));
 }
@@ -331,6 +339,16 @@ static std::vector<FlattenedDisk> flattenDiskConfiguration(ASTPtr & flat, const 
         if (!hasCredentialsMarker(args, AZURE_SERVER_CREDENTIALS_MARKER) && usesIndirectValues(args))
             changes.push_back({.drop = {}, .add_azure = true});
 
+        /// 26.7 to 26.11 added `_server_credentials_allowed` to any definition with `include`, `from_env` or `from_zk`
+        /// when the session had the opt-in, and 26.11 the Azure marker after it. Now it is added only when the resolved
+        /// definition relies on server credentials, so the same definition of another backend has no markers.
+        if (!hasCredentialsMarker(args, S3_SERVER_CREDENTIALS_MARKER) && !hasCredentialsMarker(args, AZURE_SERVER_CREDENTIALS_MARKER)
+            && usesIndirectValues(args))
+        {
+            changes.push_back({.drop = {}, .add_s3 = true, .add_azure = false});
+            changes.push_back({.drop = {}, .add_s3 = true, .add_azure = true});
+        }
+
         /// 26.7 to 26.10 had no Azure marker, and older versions no marker at all.
         for (std::set<std::string> drop : {std::set<std::string>{AZURE_SERVER_CREDENTIALS_MARKER},
                                            std::set<std::string>{AZURE_SERVER_CREDENTIALS_MARKER, S3_SERVER_CREDENTIALS_MARKER}})
@@ -375,8 +393,8 @@ static std::vector<FlattenedDisk> flattenDiskConfiguration(ASTPtr & flat, const 
             applyCredentialsMarkersChange(getDiskFunctionArguments(candidate), change);
             serializations.push_back(candidate->formatWithSecretsOneLine());
 
-            DiskAlternative form{.name = {}, .edits = {}, .adds_marker = change.add_azure};
-            if (!change.drop.empty() || change.add_azure)
+            DiskAlternative form{.name = {}, .edits = {}, .adds_marker = change.add_s3 || change.add_azure};
+            if (!change.drop.empty() || change.add_s3 || change.add_azure)
                 form.edits.emplace_back(original, change);
             for (size_t i = 0; i < below.size(); ++i)
             {
@@ -404,10 +422,17 @@ static std::vector<FlattenedDisk> flattenDiskConfiguration(ASTPtr & flat, const 
     return {FlattenedDisk{.literal = &flat, .alternatives = std::move(alternatives)}};
 }
 
-/// Persist the credential opt-in into the stored disk definition. For each leaf dynamic S3 disk that resolves
+/// Persist the credential opt-in into the stored disk definition. For each leaf dynamic disk that resolves
 /// server-managed credentials and is currently allowed (the session opted in), add a `_server_credentials_allowed`
 /// marker, so on reload the disk is not re-restricted (the marker is honored only when loading from metadata).
 /// Operates on the original AST (not the flattening clone), so the marker reaches the stored metadata.
+///
+/// The decision is confirmed against the *resolved* configuration, not just the AST. The AST-level answer is
+/// deliberately conservative -- an `include` or a `from_env`/`from_zk` backend type is treated as potentially
+/// S3/GCS -- which is what refusing a create needs, but it would grant a durable exemption to a disk whose
+/// backend is neither. Retargeting that server-side include or environment value at `s3`/`gcs` later would then
+/// inherit an authorization the new backend never earned. So the marker is written only when the configuration
+/// the disk factory will actually build really does rely on server-managed credentials.
 class ServerCredentialMarkerInjector
 {
 public:
@@ -445,14 +470,17 @@ public:
         }
 
         DynamicS3DiskCredentialInfo info;
-        auto xml_document = getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database);
-        if (info.persist_server_credentials_allowance)
+        auto config = resolveDiskConfiguration(
+            getDiskConfigurationFromASTImpl(args, data.context, /* is_loading_from_existing_metadata */ false, &info, data.for_system_database),
+            data.context,
+            /* attach */ false);
+        if (info.may_persist_server_credentials_allowance && resolvedDiskConfigReliesOnServerCredentials(*config, info))
             args.push_back(makeCredentialsMarker(S3_SERVER_CREDENTIALS_MARKER));
 
         /// Decided on the resolved definition, so the marker is added exactly when a session without the opt-in would be
         /// refused the disk. Otherwise the same definition would get a different name depending on the session setting.
         if (!data.context->shouldRestrictUserQueryS3Credentials()
-            && azureDiskUsesServerIdentity(*resolveDiskConfiguration(xml_document, data.context, /* attach */ false)))
+            && azureDiskUsesServerIdentity(*config))
             args.push_back(makeCredentialsMarker(AZURE_SERVER_CREDENTIALS_MARKER));
     }
 };

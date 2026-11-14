@@ -26,10 +26,12 @@
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IPartitionStrategy.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <IO/S3/URI.h>
+#include <Common/re2.h>
 
 namespace DB
 {
@@ -212,6 +214,57 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
+S3::URI S3StorageParsedArguments::parseURI(const String & url_str, const Settings & settings) const
+{
+    const bool allow_archive_path_syntax = settings[Setting::allow_archive_path_syntax];
+    const bool keep_presigned_query_parameters = !settings[Setting::compatibility_s3_presigned_url_query_in_path];
+
+    if (!recognize_gcs_virtual_hosted_urls)
+        return S3::URI(url_str, allow_archive_path_syntax, keep_presigned_query_parameters, settings[Setting::s3_uri_style]);
+
+    /// The native GCS backend: `https://<bucket>.storage.googleapis.com/<key>` is rewritten to the equivalent
+    /// path-style URL of the default GCS endpoint before parsing, so that the bucket is taken from the host (it may
+    /// contain dots) and the key from the whole path. The native client always talks to `storage.googleapis.com`.
+    /// The scheme, the host and the port are compared as `Poco::URI` normalizes them (the scheme and the host are
+    /// case-insensitive), because `S3::URI` and `isDefaultGCSEndpoint` later see the normalized form: a spelling
+    /// such as `HTTPS://bucket-a.STORAGE.GOOGLEAPIS.COM` that was not recognized here would be parsed as path-style
+    /// and address another bucket at the default endpoint. A non-default scheme or port is not the default
+    /// endpoint and is parsed as is. Only the origin is parsed here: the path is kept verbatim for `S3::URI`.
+    if (const size_t scheme_end = url_str.find("://"); scheme_end != String::npos)
+    {
+        const size_t path_begin = std::min(url_str.find_first_of("/?#", scheme_end + 3), url_str.size());
+        const Poco::URI origin(url_str.substr(0, path_begin));
+
+        String host = Poco::toLower(origin.getHost());
+        if (host.ends_with('.'))
+            host.pop_back();
+
+        static constexpr std::string_view default_host_suffix = ".storage.googleapis.com";
+        const auto port = origin.getPort();
+        if (Poco::toLower(origin.getScheme()) == "https" && (port == 0 || port == 443)
+            && host.size() > default_host_suffix.size() && host.ends_with(default_host_suffix))
+        {
+            if (!origin.getUserInfo().empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "User information is not supported in a GCS URL");
+
+            const String bucket = host.substr(0, host.size() - default_host_suffix.size());
+            S3::URI uri(
+                fmt::format("https://storage.googleapis.com/{}{}", bucket, std::string_view(url_str).substr(path_begin)),
+                allow_archive_path_syntax,
+                keep_presigned_query_parameters,
+                S3UriStyle::PATH,
+                /* validate_bucket_name */ false);
+            S3::URI::validateGCSBucket(uri.bucket, uri.uri);
+            return uri;
+        }
+    }
+
+    S3::URI uri(
+        url_str, allow_archive_path_syntax, keep_presigned_query_parameters, settings[Setting::s3_uri_style], /* validate_bucket_name */ false);
+    S3::URI::validateGCSBucket(uri.bucket, uri.uri);
+    return uri;
+}
+
 /// Request settings which the storage definition (arguments or named collection) takes over the `<s3>` config,
 /// see `StorageS3Configuration::getExplicitRequestSettings`.
 static constexpr std::array explicit_request_setting_names = {"upload_checksum_algorithm", "delete_checksum_algorithm"};
@@ -236,17 +289,9 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
-        url = S3::URI(
-            std::filesystem::path(collection_url) / filename,
-            settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+        url = parseURI(std::filesystem::path(collection_url) / filename, settings);
     else
-        url = S3::URI(
-            collection_url,
-            settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+        url = parseURI(collection_url, settings);
 
     const auto & config = context->getConfigRef();
 
@@ -755,11 +800,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         url_str = std::move(resolved_url);
     }
 
-    url = S3::URI(
-        url_str,
-        context->getSettingsRef()[Setting::allow_archive_path_syntax],
-        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
-        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+    url = parseURI(url_str, context->getSettingsRef());
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(
@@ -1225,6 +1266,7 @@ void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArgume
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     S3StorageParsedArguments parsed_arguments;
+    parsed_arguments.recognize_gcs_virtual_hosted_urls = recognize_gcs_virtual_hosted_urls;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(std::move(parsed_arguments));
     setPaths({url.key});
@@ -1254,6 +1296,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     S3StorageParsedArguments parsed_arguments;
+    parsed_arguments.recognize_gcs_virtual_hosted_urls = recognize_gcs_virtual_hosted_urls;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
     setPaths({url.key});

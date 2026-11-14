@@ -16,6 +16,8 @@
 namespace DB
 {
 
+struct Settings;
+
 struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;
@@ -82,6 +84,15 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
     String path_suffix;
+
+    /// Set by the native GCS configuration (`StorageGCSConfiguration`): a URL on the virtual-hosted form
+    /// of the default GCS host, `https://<bucket>.storage.googleapis.com/<key>`, takes the bucket from the
+    /// host and the key from the whole path. The generic `S3::URI` parser does not know this host and would
+    /// take the first path component as the bucket (and validate it as one). The host is compared case-insensitively,
+    /// and the bucket is validated by the GCS naming rules rather than the S3 ones.
+    bool recognize_gcs_virtual_hosted_urls = false;
+
+    S3::URI parseURI(const String & url_str, const Settings & settings) const;
 
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
@@ -169,6 +180,9 @@ public:
     String biglake_service_account_key;
 
 protected:
+    /// See `S3StorageParsedArguments::recognize_gcs_virtual_hosted_urls`.
+    bool recognize_gcs_virtual_hosted_urls = false;
+
     const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }
     void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex)
     {
@@ -177,12 +191,12 @@ protected:
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
-private:
-    void initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
 
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+private:
+    void initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments);
 };
 }
 
