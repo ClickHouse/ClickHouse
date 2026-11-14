@@ -1,0 +1,9 @@
+--- no-op MODIFY COLUMN ---
+ok
+--- MODIFY COLUMN to Nullable ---
+ok
+--- rows ---
+1	2024-01-02 03:04:05.123456	Nullable(DateTime64(6))
+2	\N	Nullable(DateTime64(6))
+--- Iceberg type of the column in the current schema ---
+timestamp optional

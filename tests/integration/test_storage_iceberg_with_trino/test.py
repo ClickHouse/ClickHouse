@@ -385,12 +385,13 @@ def test_v3_primitive_types(iceberg_db):
         ORDER BY id
         """,
     )
+    # ClickHouse declares `DateTime64` columns as `timestamptz`, which Trino renders with the zone.
     expected = (
         "1|100|1000000000000|1.5|2.5|2024-06-15|"
-        "2024-06-15 10:11:12.000000|2024-06-15 10:11:12.000000|"
+        "2024-06-15 10:11:12.000000 UTC|2024-06-15 10:11:12.000000 UTC|"
         "hello|550e8400-e29b-41d4-a716-446655440000|42\n"
         "2|-100|-1000000000000|-1.5|-2.5|1970-01-02|"
-        "1970-01-02 00:00:00.123456|1970-01-02 00:00:00.123456|"
+        "1970-01-02 00:00:00.123456 UTC|1970-01-02 00:00:00.123456 UTC|"
         "world|00000000-0000-0000-0000-000000000000|null\n"
     )
     assert out == expected, f"primitive round-trip:\nexpected:\n{expected!r}\ngot:\n{out!r}"
