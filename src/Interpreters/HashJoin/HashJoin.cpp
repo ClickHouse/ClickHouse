@@ -745,6 +745,16 @@ void HashJoin::dataMapInit(MapsVariant & map)
     joinDispatch(kind, strictness, map, maps_kind, [&](auto, auto, auto & map_)
     {
         map_.create(data->type, table_join->enableRobinHoodHashForJoins());
+        /// With several slots, build threads fill different buckets of the map at the same time,
+        /// so the buckets must not grow together, see `TwoLevelHashTable::disableGroupedGrowth`.
+        if (data->slots.size() > 1)
+        {
+            map_.visit(data->type, []<typename Table>(std::shared_ptr<Table> & table)
+            {
+                if constexpr (requires { table->disableGroupedGrowth(); })
+                    table->disableGroupedGrowth();
+            });
+        }
     });
 
     if (!data)

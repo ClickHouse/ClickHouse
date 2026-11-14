@@ -218,11 +218,11 @@ template <
     typename Allocator = HashTableAllocator,
     size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
 class TwoLevelHashSetTable
-    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
+    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, TwoLevelHashTableBucketAllocator<Allocator>>, BITS_FOR_BUCKET>
 {
 public:
     using Self = TwoLevelHashSetTable;
-    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
+    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, TwoLevelHashTableBucketAllocator<Allocator>>, BITS_FOR_BUCKET>;
 
     using Base::Base;
 
