@@ -125,6 +125,7 @@
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QuerySchedulingGroup.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -1727,7 +1728,6 @@ ContextData::ContextData(const ContextData &o) :
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     totals_without_storage_access(o.totals_without_storage_access),
     temp_data_on_disk(o.temp_data_on_disk),
-    classifier(o.classifier),
     is_metadata_query(o.is_metadata_query),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
@@ -2968,6 +2968,15 @@ namespace
 
 ClassifierPtr Context::getWorkloadClassifier() const
 {
+    return getSchedulingGroup()->getClassifier();
+}
+
+QuerySchedulingGroupPtr Context::getSchedulingGroup() const
+{
+    // A copy of a query context (e.g. the context of a subquery) is a part of that query.
+    if (auto query_context_ptr = query_context.lock(); query_context_ptr && query_context_ptr.get() != this)
+        return query_context_ptr->getSchedulingGroup();
+
     const auto & query_settings = getSettingsRef();
     // Pass the query's scheduling settings so the classifier can build this query's scheduling
     // context. `throw_on_unknown_workload` is read here (not under `mutex`) to avoid locking the
@@ -2981,19 +2990,35 @@ ClassifierPtr Context::getWorkloadClassifier() const
         .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
         .priority = Priority{query_settings[Setting::workload_priority]},
     };
+    const String workload = query_settings[Setting::workload];
     std::lock_guard lock(mutex);
-    // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
-    if (!classifier)
+    // NOTE: Workload cannot be changed after query start, and getSchedulingGroup() should not be called before proper `workload` is set
+    if (!scheduling_group)
     {
-        if (is_metadata_query)
+        if (parent_scheduling_group)
+            scheduling_group = parent_scheduling_group;
+        else if (is_metadata_query)
         {
             static const ClassifierPtr metadata_exempt_classifier = std::make_shared<ExemptClassifier>();
-            classifier = metadata_exempt_classifier;
+            scheduling_group = std::make_shared<QuerySchedulingGroup>(workload, settings, metadata_exempt_classifier);
         }
         else
-            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+            scheduling_group = std::make_shared<QuerySchedulingGroup>(workload, settings, getResourceManager()->acquire(workload, settings));
     }
-    return classifier;
+    return scheduling_group;
+}
+
+void Context::setParentSchedulingGroup(QuerySchedulingGroupPtr group)
+{
+    std::lock_guard lock(mutex);
+    chassert(!scheduling_group);
+    parent_scheduling_group = std::move(group);
+}
+
+QuerySchedulingGroupPtr Context::getParentSchedulingGroup() const
+{
+    std::lock_guard lock(mutex);
+    return parent_scheduling_group;
 }
 
 void Context::setMetadataQuery()
@@ -4668,14 +4693,11 @@ void Context::makeQueryContext()
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
     query_max_threads_snapshot = std::make_shared<QueryMaxThreadsSnapshot>();
-    /// A new query must classify under its own workload and scheduling settings. The ContextData
-    /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
-    /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
-    /// another query context (e.g. parallel sub-queries) would otherwise reuse the parent's scheduler
-    /// state. Drop it so `getWorkloadClassifier()` lazily rebuilds one from this context's settings.
-    /// (Assumes no active query is already running on this context's classifier, which holds at query
-    /// start — the classifier is built lazily on first use, after this point.)
-    classifier.reset();
+    /// A new query gets its own scheduling group, built lazily from its own workload and scheduling
+    /// settings. A part of a query with its own query context (a `PARALLEL WITH` subquery, a task of a
+    /// distributed query) joins the group of its query explicitly with `setParentSchedulingGroup`.
+    scheduling_group.reset();
+    parent_scheduling_group.reset();
 
     /// A context that becomes a query context without going through a client-facing handshake -
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
@@ -4689,13 +4711,13 @@ void Context::makeQueryContext()
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
+    makeQueryContext(); // resets the scheduling group (see makeQueryContext); rebuilt lazily under the merge workload set below
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
+    makeQueryContext(); // resets the scheduling group (see makeQueryContext); rebuilt lazily under the mutation workload set below
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 

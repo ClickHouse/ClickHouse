@@ -250,6 +250,8 @@ using LoadTaskPtrs = std::vector<LoadTaskPtr>;
 
 class IClassifier;
 using ClassifierPtr = std::shared_ptr<IClassifier>;
+class QuerySchedulingGroup;
+using QuerySchedulingGroupPtr = std::shared_ptr<QuerySchedulingGroup>;
 class IResourceManager;
 using ResourceManagerPtr = std::shared_ptr<IResourceManager>;
 
@@ -698,9 +700,12 @@ protected:
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
 
-    /// Resource classifier for a query, holds smart pointers required for ResourceLink
-    /// NOTE: all resource links became invalid after `classifier` destruction
-    mutable ClassifierPtr classifier;
+    /// Scheduling group of the query; holds the resource classifier, which holds smart pointers
+    /// required for ResourceLink. Set only in a query context; not copied.
+    /// NOTE: all resource links became invalid after the classifier destruction
+    mutable QuerySchedulingGroupPtr scheduling_group;
+    /// Group of the query this query context is a part of, see `setParentSchedulingGroup`.
+    QuerySchedulingGroupPtr parent_scheduling_group;
 
     /// The query changes only metadata (see `isMetadataQuery`), so it is exempt from workload scheduling.
     /// Copied to child contexts, so the sub-queries it runs are exempt too.
@@ -1076,6 +1081,19 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Scheduling group of the query, see `QuerySchedulingGroup`. For a copy of a query context, the
+    /// group of that query context. Otherwise the parent group if there is one, or a group created on
+    /// the first call from the `workload` and scheduling settings, so planning may still change them.
+    /// The `workload` and scheduling settings of a part of a query are not used for scheduling.
+    /// NOTE: Workload cannot be changed after the group is created.
+    QuerySchedulingGroupPtr getSchedulingGroup() const;
+    /// Makes this query context a part of the query that owns `group`: the query is scheduled together
+    /// with the other parts of `group`, under the workload and scheduling settings of `group`. Its own
+    /// values of them are not used for scheduling.
+    /// Call after `makeQueryContext` and before the group is created.
+    void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
+    /// The group set by `setParentSchedulingGroup`, or `nullptr` if this query context is not a part of another query.
+    QuerySchedulingGroupPtr getParentSchedulingGroup() const;
     /// Marks the query as a metadata query (see `is_metadata_query`).
     /// Must be called before the workload classifier is first acquired.
     void setMetadataQuery();
