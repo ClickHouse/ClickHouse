@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Short PromQL windows over the samples table of a TimeSeries table with the default granularity. A row of
+        the samples table holds one hour of one series and a granule holds as many consecutive hours of one series
+        as fit in `samples_index_granularity_bytes`, so a one-hour window reads at least one granule per series.
+        The full-range query reads every sample and is the control.
+    -->
+
+    <create_query>CREATE TABLE promql_old_window_ts ENGINE = TimeSeries</create_query>
+
+    <!-- 2000 series of one counter, one sample every 15 s for 7 days (40320 samples, 168 one-hour buckets per
+         series), values with two random decimal digits; merged into one part per partition. -->
+    <fill_query>
+        INSERT INTO promql_old_window_ts (metric_name, tags, samples)
+        SELECT
+            'old_window_metric',
+            map('instance', toString(number), 'job', toString(number % 4)),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), round(1e9 + step * 1500 + (sipHash64(number, step) % 100) / 100, 2)), range(40320))
+        FROM numbers_mt(2000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE promql_old_window_ts FINAL</fill_query>
+
+    <!-- one hour in the middle of the data: one or two granules per series -->
+    <query>SELECT * FROM prometheusQueryRange('promql_old_window_ts', 'rate(old_window_metric[5m])', 1302400, 1306000, 60) SETTINGS max_threads = 4 FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_old_window_ts', 'sum(count_over_time(old_window_metric[6h]))', 1306000) SETTINGS max_threads = 4 FORMAT Null</query>
+
+    <!-- all 7 days: every granule (control) -->
+    <query>SELECT * FROM prometheusQueryRange('promql_old_window_ts', 'sum by (job) (rate(old_window_metric[5m]))', 1000000, 1604800, 900) SETTINGS max_threads = 4 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_old_window_ts</drop_query>
+</test>
