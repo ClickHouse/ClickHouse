@@ -326,10 +326,6 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
 
         auto compressed_payload = [](const NullWriteBuffer & wb, const CompressedWriteBuffer & wbuf)
         {
-            /// `wb.count()` also carries the per-frame checksum and header, which the scaling below would
-            /// multiply by the sampling period - on a hundred cheap states (a `count` state is a varint)
-            /// that fixed cost outweighs the states themselves. The replicas write their states into full
-            /// blocks, where it is amortized away, so charge only the compressed payload.
             const size_t frames = (wbuf.count() + DBMS_DEFAULT_BUFFER_SIZE - 1) / DBMS_DEFAULT_BUFFER_SIZE;
             const size_t frame_overhead = frames * (sizeof(CityHash_v1_0_2::uint128) + COMPRESSED_BLOCK_HEADER_SIZE);
             return wb.count() > frame_overhead ? wb.count() - frame_overhead : 0;
@@ -339,14 +335,12 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         if constexpr (requires { table.hasNullKeyData(); })
             has_null_key = table.hasNullKeyData();
 
-        /// Prices every state of the `j`-th aggregate function, the state of the `NULL` key (stored outside the table)
-        /// included. Returns the compressed payload and the serialized bytes, or nothing if the states take more than
-        /// `max_bytes`: they are serialized into a buffer of that size first, which stops a large state midway.
         auto price_in_full = [&](size_t j, size_t max_bytes) -> std::optional<std::pair<size_t, size_t>>
         {
             MemoryWriteBuffer serialized(max_bytes);
             try
             {
+                /// The state of the `NULL` key is stored outside the table, and `forEachMapped` does not visit it.
                 if constexpr (requires { table.getNullKeyData(); })
                     if (has_null_key)
                         serialize_state(j, table.getNullKeyData(), serialized);
@@ -393,11 +387,14 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                 });
 
             wbuf.finalize();
+            /// `wb.count()` also carries the per-frame checksum and header, which the scaling below would
+            /// multiply by the sampling period - on a hundred cheap states (a `count` state is a varint)
+            /// that fixed cost outweighs the states themselves. The replicas write their states into full
+            /// blocks, where it is amortized away, so charge only the compressed payload.
             const size_t samples = (it + period - 1) / period;
             size_t size = it ? static_cast<size_t>(table.size() * compressed_payload(wb, wbuf) / samples) : 0;
 
-            /// A few large states can hold most of a small table, and the samples can miss them (the state of the `NULL`
-            /// key, always), so a table of at most 1000 states is priced in full while all its states fit into one block.
+            /// The samples can miss the few large states of a small table, so such a table is priced in full if it fits the budget.
             const size_t sampled_bytes = it ? table.size() * wbuf.count() / samples : 0;
             if (bucket == -1 && (table.size() > 100 || has_null_key) && table.size() <= max_states_priced_in_full
                 && full_pricing_budget > 0 && sampled_bytes <= full_pricing_budget)
