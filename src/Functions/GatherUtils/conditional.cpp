@@ -11,12 +11,7 @@ namespace DB::GatherUtils
 namespace
 {
 
-/// The rows of a run of equal conditions are consecutive both in the result and in the column that the run takes,
-/// so a run can be copied with one copy of its bytes instead of one copy per row. Conditions often select long runs,
-/// as in `CASE WHEN c THEN s ELSE '' END`. Alternating or random conditions give runs of one or two rows, for which
-/// copying run by run costs more than copying row by row. So the rows are processed 64 at a time: a group with few
-/// runs is copied run by run, any other group row by row. A group that alternates (almost) every row chooses the
-/// source of a row with a branch, which is predictable for it; other groups choose it without a branch.
+/// Rows are processed 64 at a time: a group with few runs of equal conditions is copied one run per copy, any other group row by row.
 template <typename SourceA, typename SourceB>
 void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink & sink, const PaddedPODArray<UInt8> & condition)
 {
@@ -24,11 +19,9 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
     static constexpr bool b_is_const = std::is_same_v<SourceB, ConstSource<StringSource>>;
     static_assert(!(a_is_const && b_is_const));
 
-    /// A group of 64 rows is copied run by run if it has at most this many runs.
     static constexpr size_t max_runs_to_copy_by_runs = 16;
-    /// A group with at least this many runs is copied row by row with a branch on the condition.
+    /// From this many runs the condition (almost) alternates, so a branch on it is predictable.
     static constexpr size_t min_runs_to_copy_rows_with_branch = 56;
-    /// Runs of more bytes than this are copied with `memcpy`, shorter ones with the inlined small copy.
     static constexpr size_t max_bytes_for_small_copy = 256;
 
     const size_t rows = condition.size();
@@ -37,8 +30,7 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
     auto & res_offsets = sink.offsets;
     auto & res_chars = sink.elements;
 
-    /// A constant is the only row of its source's column, so it is read from the padded chars of that column, like a
-    /// row of a column.
+    /// A constant source reads its value as row 0 of its padded column, like a column source reads a row.
     const UInt8 * a_chars = src_a.elements.data();
     const UInt8 * b_chars = src_b.elements.data();
     const ColumnString::Offset * a_offsets = src_a.offsets.data();
@@ -46,15 +38,13 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
     const size_t a_value_size = a_is_const ? a_offsets[0] : 0;
     const size_t b_value_size = b_is_const ? b_offsets[0] : 0;
 
-    /// As the generic `conditional` does, reserve the size of the larger source and grow if the result needs more.
     /// At least one byte, so that the copies below always write into allocated memory.
     res_chars.reserve_exact(std::max<size_t>({1, src_a.getSizeForReserve(), src_b.getSizeForReserve()}));
     UInt8 * res_data = res_chars.data();
     size_t res_capacity = res_chars.capacity();
     size_t res_size = 0;
 
-    /// The copies may write up to 15 bytes past the copied ones, into the padding of the result or into bytes that
-    /// later copies overwrite.
+    /// Copies may write up to 15 bytes past their end, into the result's padding or into bytes that later copies overwrite.
     auto reserve = [&](size_t bytes)
     {
         if (res_size + bytes > res_capacity) [[unlikely]]
@@ -69,7 +59,6 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
     auto copy_row = [&](const UInt8 * src, size_t size, size_t row)
     {
         reserve(size);
-        /// Copy at least one byte, so that the copy makes one iteration for both empty and short strings.
         memcpySmallAllowReadWriteOverflow15(res_data + res_size, src, std::max<size_t>(size, 1));
         res_size += size;
         res_offsets[row] = res_size;
@@ -77,7 +66,6 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
 
     auto copy_rows = [&]<bool with_branch>(size_t begin, size_t end)
     {
-        /// The offsets of the previous row are kept rather than read again.
         ColumnString::Offset a_prev = 0;
         ColumnString::Offset b_prev = 0;
         if constexpr (!a_is_const)
@@ -161,7 +149,6 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
     {
         const size_t group_rows = std::min<size_t>(64, rows - group);
 
-        /// Bit i is set if row `group + i` takes `src_a`.
         const UInt64 take_a = [&]
         {
             if (group_rows == 64)
@@ -171,7 +158,6 @@ void conditionalStrings(const SourceA & src_a, const SourceB & src_b, StringSink
             return bytes64MaskToBits64Mask(tail);
         }();
 
-        /// Bit i is set if a run starts at row `group + i`.
         const UInt64 group_mask = group_rows == 64 ? ~0ULL : (1ULL << group_rows) - 1;
         UInt64 run_starts = ((take_a ^ (take_a << 1)) | 1) & group_mask;
 

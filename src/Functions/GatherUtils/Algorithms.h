@@ -455,8 +455,7 @@ void NO_INLINE sliceFromRightDynamicLength(Source && src, Sink && sink, const IC
 }
 
 
-/// `conditional` from two `String` sources, at least one of them a column, into a `String` sink (`conditional.cpp`).
-/// For these argument types overload resolution prefers them to the template below.
+/// For `String` sources, at least one of them a column (`conditional.cpp`); overload resolution prefers these to the template below.
 void conditional(StringSource && src_a, StringSource && src_b, StringSink & sink, const PaddedPODArray<UInt8> & condition);
 void conditional(StringSource && src_a, ConstSource<StringSource> && src_b, StringSink & sink, const PaddedPODArray<UInt8> & condition);
 void conditional(ConstSource<StringSource> && src_a, StringSource && src_b, StringSink & sink, const PaddedPODArray<UInt8> & condition);
