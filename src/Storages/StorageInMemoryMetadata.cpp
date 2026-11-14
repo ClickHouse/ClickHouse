@@ -17,6 +17,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/QueryPlan/UncompressedCacheUtils.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -278,6 +279,8 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
 
         new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         new_context->applySettingsChanges(changed_settings);
+        /// The clamping above drops the invoker's default-valued `use_uncompressed_cache = 0`.
+        preserveUncompressedCacheOptOut(*new_context, automaticUncompressedCacheIsOverriddenByOptOut(context->getSettingsRef()));
         new_context->setSetting("allow_ddl", 1);
         /// After the constraints: the definer's profile must not be able to keep the invoker's key alive.
         if (drop_custom_key)
