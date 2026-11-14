@@ -398,12 +398,17 @@ unset "${!THREAD_@}"
 # check aborted before stress.py installed the symlink.
 rm -f /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
+# Async load jobs run after ZooKeeper faults arm, so an injected `Session expired` would fail check_async_load_databases.
+rm -f /etc/clickhouse-server/config.d/zookeeper_fault_injection.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
 start_server 10 600 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
+
+# The listener opens before tables finish loading, so a broken table fails in the background loader, not at startup.
+check_async_load_databases
 
 stop_server
 
