@@ -11,6 +11,7 @@
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -627,6 +628,22 @@ size_t StorageNATS::getMaxBlockSize() const
 }
 
 
+/// The messages do not contain the MATERIALIZED columns: compute the ones `header` needs from their expressions, as an INSERT does.
+static void addMaterializedColumns(Pipe & pipe, const Block & header, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    const auto & pipe_header = pipe.getHeader();
+    bool has_missing = false;
+    for (const auto & column : header)
+        has_missing |= !pipe_header.has(column.name);
+    if (!has_missing)
+        return;
+
+    auto actions = std::make_shared<ExpressionActions>(addMissingDefaults(pipe_header, header.getNamesAndTypesList(), columns, context));
+    pipe.addSimpleTransform(
+        [&](const SharedHeader & stream_header) { return std::make_shared<ExpressionTransform>(stream_header, actions); });
+}
+
+
 void StorageNATS::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -672,17 +689,17 @@ void StorageNATS::read(
         nats_source->setTimeLimit(modified_context->getSettingsRef()[Setting::rabbitmq_max_wait_ms]);
         nats_source->setWaitForFlushInterval(true);
 
+        Pipe pipe(std::move(nats_source));
+        addMaterializedColumns(pipe, sample_block, storage_snapshot->metadata->getColumns(), local_context);
+
         auto converting_dag = ActionsDAG::makeConvertingActions(
-            nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
+            pipe.getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
             local_context);
-
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
-        auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));
-
-        pipes.emplace_back(std::move(nats_source));
-        pipes.back().addTransform(std::move(converting_transform));
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, converting); });
+        pipes.emplace_back(std::move(pipe));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -1057,10 +1074,11 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_building_insert_pipeline);
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
+    // and the MATERIALIZED columns, which addMaterializedColumns computes
     InterpreterInsertQuery interpreter(
         insert,
         new_context,
-        /* allow_materialized */ false,
+        /* allow_materialized */ true,
         /* no_squash */ true,
         /* no_destination */ true,
         /* async_isnert */ false);
@@ -1113,7 +1131,10 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         source->setBackgroundStreaming(true);
     }
 
-    block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (!pipe.empty())
+        addMaterializedColumns(pipe, block_io.pipeline.getHeader(), metadata_snapshot->getColumns(), new_context);
+    block_io.pipeline.complete(std::move(pipe));
 
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
