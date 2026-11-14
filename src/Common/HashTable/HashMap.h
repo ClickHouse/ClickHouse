@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/NoInitTag.h>
 
 
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
@@ -20,10 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 }
-
-struct NoInitTag
-{
-};
 
 /// A pair that does not initialize the elements, if not needed.
 template <typename First, typename Second>

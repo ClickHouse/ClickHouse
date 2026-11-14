@@ -14,6 +14,7 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/NoInitTag.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -212,6 +213,13 @@ struct HashTableCell
     void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
 
 };
+
+/// Whether the serialized form of the cell is only its arithmetic key in little endian, so that many cells can be read at once.
+template <typename Cell>
+constexpr bool is_arithmetic_key_cell = false;
+
+template <typename Key, typename Hash>
+constexpr bool is_arithmetic_key_cell<HashTableCell<Key, Hash, HashTableNoState>> = std::is_arithmetic_v<Key> && !std::is_same_v<Key, bool>;
 
 /** Determines the size of the hash table, and when and how much it should be resized.
   * Has very small state (one UInt8) and useful for Set-s allocated in automatic memory (see uniqExact as an example).
@@ -1166,6 +1174,14 @@ public:
         alloc(grower);
     }
 
+    /// Does not allocate the buffer: the table must be filled by `read` right away, which allocates it for the size it reads.
+    explicit HashTable(NoInitTag)
+        : buf(nullptr)
+    {
+        if (Cell::need_zero_value_storage)
+            this->zeroValue()->setZero();
+    }
+
     HashTable(size_t reserve_for_num_elements) /// NOLINT
     {
         if (Cell::need_zero_value_storage)
@@ -1774,11 +1790,35 @@ public:
         new_grower.set(new_size);
         alloc(new_grower);
 
-        for (size_t i = 0; i < new_size; ++i)
+        if constexpr (is_arithmetic_key_cell<Cell>)
         {
-            Cell x;
-            x.read(rb);
-            insert(x.getValue());
+            /// Read the keys in chunks: it is cheaper than reading them one at a time.
+            /// The keys are inserted in the same order, so the layout of the table is the same.
+            constexpr size_t chunk_elements = 4096 / sizeof(Key);
+            Key chunk[chunk_elements]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by readStrict before use
+
+            for (size_t left = new_size; left > 0;)
+            {
+                const size_t chunk_size = std::min(left, chunk_elements);
+                rb.readStrict(reinterpret_cast<char *>(chunk), chunk_size * sizeof(Key));
+
+                for (size_t i = 0; i < chunk_size; ++i)
+                {
+                    DB::transformEndianness<std::endian::native, std::endian::little>(chunk[i]);
+                    insert(chunk[i]);
+                }
+
+                left -= chunk_size;
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < new_size; ++i)
+            {
+                Cell x;
+                x.read(rb);
+                insert(x.getValue());
+            }
         }
     }
 

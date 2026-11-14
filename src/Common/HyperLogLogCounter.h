@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <string>
 #include <type_traits>
 
@@ -365,6 +366,16 @@ private:
 public:
     using value_type = Value;
 
+    HyperLogLogCounter() = default;
+
+    /// Reads a counter without zeroing the registers first, because `read` overwrites all of them.
+    static std::unique_ptr<HyperLogLogCounter> createAndRead(DB::ReadBuffer & in)
+    {
+        std::unique_ptr<HyperLogLogCounter> counter(new HyperLogLogCounter(NoInitTag{}));
+        counter->read(in);
+        return counter;
+    }
+
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     void ALWAYS_INLINE insert(Value value)
     {
@@ -528,6 +539,8 @@ public:
     }
 
 private:
+    explicit HyperLogLogCounter(NoInitTag tag) : rank_store(tag) {}
+
     /// Extract subset of bits in [begin, end[ range.
     HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
     {
