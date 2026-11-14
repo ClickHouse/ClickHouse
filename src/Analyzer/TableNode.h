@@ -60,6 +60,11 @@ public:
     /// (it is structurally equal to the canonical's).
     void adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const ContextPtr & context_);
 
+    /// Detach this not yet finalized reference from the MaterializedCTE shared with other references, replacing it
+    /// with a fresh one with the same CTE name. Used when the subquery of an automatically materialized CTE
+    /// resolves differently at this reference, so it must not read the temporary table of the other references.
+    void detachMaterializedCTE();
+
     /** Update table node storage.
       * After this call storage, storage_id, storage_lock, storage_snapshot will be updated using new storage.
       */

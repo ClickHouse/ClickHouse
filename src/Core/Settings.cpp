@@ -6694,6 +6694,18 @@ When enabled, a CTE declared as `MATERIALIZED` that is referenced more than once
 When disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 )", EXPERIMENTAL, \
         {"26.3", false, false, "New setting"}) \
+    DECLARE(Bool, enable_automatic_cte_materialization, true, R"(
+Automatically materialize a non-recursive common table expression (`WITH <name> AS (<subquery>)`) that is referenced more than once,
+as if it was declared `AS MATERIALIZED`: it is executed once, stored in a temporary table, and all references read from that table.
+
+Only CTEs whose result is usually small compared to its input and expensive to recompute are materialized automatically:
+the subquery (or each branch of a `UNION`) must contain `GROUP BY`, an aggregate function, `DISTINCT`, or a window function, and must not use `WITH TOTALS`.
+A CTE declared as `AS NOT MATERIALIZED` is never materialized. A CTE is also inlined at each reference
+if its subquery is correlated or resolves differently at different references.
+
+Works independently of the setting `enable_materialized_cte`.
+)", 0, \
+        {"26.11", false, true, "New setting"}) \
     DECLARE(Bool, analyzer_inline_views, false, R"(
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
 )", EXPERIMENTAL, \

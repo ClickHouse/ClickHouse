@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS prometheus;
 
 SET session_timezone = 'UTC';
 SET allow_experimental_time_series_table = 1;
+-- The test checks which subqueries the PromQL translator marks as `MATERIALIZED`, so CTEs are not materialized automatically.
+SET enable_automatic_cte_materialization = 0;
 
 CREATE TABLE prometheus ENGINE = TimeSeries;
 

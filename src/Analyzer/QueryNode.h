@@ -174,6 +174,18 @@ public:
         is_materialized = is_materialized_value;
     }
 
+    /// Returns true if query node is a CTE declared as NOT MATERIALIZED, false otherwise
+    bool isNotMaterialized() const noexcept
+    {
+        return is_not_materialized;
+    }
+
+    /// Set query node is NOT MATERIALIZED CTE value
+    void setIsNotMaterialized(bool is_not_materialized_value) noexcept
+    {
+        is_not_materialized = is_not_materialized_value;
+    }
+
     /// Returns true if query node has RECURSIVE WITH, false otherwise
     bool isRecursiveWith() const
     {
@@ -793,6 +805,7 @@ private:
     bool is_subquery = false;
     bool is_cte = false;
     bool is_materialized = false;
+    bool is_not_materialized = false;
     bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;

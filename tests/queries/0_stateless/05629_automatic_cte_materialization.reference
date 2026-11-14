@@ -1,0 +1,41 @@
+-- aggregation, referenced twice: materialized
+10
+-- the same with the setting disabled: inlined
+0
+-- NOT MATERIALIZED: inlined
+0
+-- no aggregation: inlined
+0
+-- aggregate function without GROUP BY
+1
+-- DISTINCT
+10
+-- window function
+10
+-- IN and JOIN references
+10
+-- UNION ALL of references
+1
+-- referenced from a nested CTE
+10
+-- the CTE body resolves differently at the two references: the results are kept
+1	1	2	1
+-- correlated CTE: inlined, the result is kept
+0	\N
+1	2
+2	4
+-- recursive WITH: not materialized, the result is kept
+15	15
+-- results are the same as without materialization
+0	143	200
+1	143	200
+2	143	200
+0	143	200
+1	143	200
+2	143	200
+-- the table is read twice instead of three times
+2
+3
+-- formatting
+WITH t AS NOT MATERIALIZED (SELECT 1) SELECT * FROM t
+WITH t AS MATERIALIZED (SELECT 1) SELECT * FROM t
