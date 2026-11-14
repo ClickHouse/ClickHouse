@@ -23,9 +23,9 @@ jobs:
           MAX_RERUNS=10
           rerun_count=0
           cutoff=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          # A run awaiting approval expires after 30 days, so no attempt starts later than
-          # that after its run was created; the spare day covers clock skew.
-          LOOKBACK_DAYS=31
+          # GitHub cancels a workflow run after 35 days, waiting and approval included, so no
+          # run fails later than that after it was created; the spare day covers clock skew.
+          LOOKBACK_DAYS=36
           # The busiest single day observed holds ~480 failed runs, half the ceiling below.
           PARTITION_HOURS=24
           # The API caps a filtered search at 1000 results, so a partition returning that many
@@ -37,10 +37,10 @@ jobs:
 
           # Get recent failed runs for the PR workflow that have not been retried yet.
           # A fork PR's first attempt to run jobs is 2, so the loop below filters further.
-          # startedAt, not createdAt: a gated run's createdAt stays pinned to attempt 1.
+          # updatedAt is when the failed attempt finished; a long or gated run began earlier.
 
-          # The listing is ordered by createdAt, so a gated run sits arbitrarily deeper in it
-          # than its startedAt window implies: no row cap and no fixed bound exhausts it.
+          # The listing is ordered by createdAt, so a long or gated run sits arbitrarily deeper
+          # in it than its updatedAt window implies: no row cap and no fixed bound exhausts it.
           run_entries=""
           hour=0
           while [ "$hour" -lt $((LOOKBACK_DAYS * 24)) ]; do
@@ -59,7 +59,7 @@ jobs:
                   --status failure \
                   --created "$from..$to" \
                   --limit "$PAGE_LIMIT" \
-                  --json databaseId,attempt,startedAt); then
+                  --json databaseId,attempt,updatedAt); then
                 break
               fi
               page=""
@@ -82,7 +82,7 @@ jobs:
             fi
 
             matches=$(echo "$page" | jq -r \
-              ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.startedAt) \(.databaseId):\(.attempt)\"")
+              ".[] | select(.attempt <= 2 and .updatedAt >= \"$cutoff\") | \"\(.updatedAt) \(.databaseId):\(.attempt)\"")
             if [ -n "$matches" ]; then
               run_entries=$(printf '%s\n%s' "$run_entries" "$matches")
             fi
@@ -90,7 +90,7 @@ jobs:
             hour=$((hour + PARTITION_HOURS))
           done
           # Both range endpoints are inclusive, so a run on a boundary is listed twice and
-          # would consume two of MAX_RERUNS. Sorting on the leading startedAt (ISO-8601 sorts
+          # would consume two of MAX_RERUNS. Sorting on the leading updatedAt (ISO-8601 sorts
           # chronologically) spends MAX_RERUNS nearest the 6 hour edge, where this tick is a
           # candidate's last; the key is dropped once the order is fixed.
           run_entries=$(echo "$run_entries" | grep -v '^$' | sort -u | awk '{print $2}' || true)
