@@ -325,18 +325,6 @@ bool tryBuildPrewhereSteps(
     ActionsDAG::NodeRawConstPtrs condition_nodes;
     flattenConjunction(&condition_root, condition_nodes);
 
-    /// Conditions covered by the query condition cache attribution get their own steps, unless PREWHERE was rewritten since.
-    size_t num_attributed_conditions = 0;
-    if (const auto & attribution = prewhere_info->query_condition_cache_attribution)
-    {
-        const auto & hashes = attribution->conjunct_hashes;
-        bool matches = !hashes.empty() && hashes.size() < condition_nodes.size();
-        for (size_t i = 0; matches && i < hashes.size(); ++i)
-            matches = condition_nodes[i]->getHash() == hashes[i];
-        if (matches)
-            num_attributed_conditions = hashes.size();
-    }
-
     /// 2. Collect the set of columns that are used in the condition
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
@@ -380,22 +368,16 @@ bool tryBuildPrewhereSteps(
     /// convert the column or fill it from a default expression, because that runs on the whole block
     /// before any filter, so the caller decides (see `MergeTreeReaderSettings::read_ahead_prewhere_columns`).
     std::vector<size_t> group_read_step;
-    size_t num_attributed_steps = 0;
-    for (size_t i = 0; i < condition_nodes.size(); ++i)
+    for (const auto & node : condition_nodes)
     {
-        const auto * node = condition_nodes[i];
         const auto & node_info = nodes_info[node];
-        const bool is_first_unattributed = num_attributed_conditions != 0 && i == num_attributed_conditions;
-        if (is_first_unattributed)
-            num_attributed_steps = condition_groups.size();
-
         const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
         /// `__topKFilter` is the first condition (see `buildTopKDynamicFilterPrewhere`). In its own step the condition runs only
         /// on the rows the threshold passes once it is selective, because the `__topKFilter` step's filter stays optional.
         const bool follows_top_k_filter = same_columns && read_ahead_columns && isTopKFilter(condition_groups.back().front())
             && canBeMovedToTheFrontOfAndChain(node);
 
-        if (same_columns && !node_info.may_throw && !is_first_unattributed && !follows_top_k_filter)
+        if (same_columns && !node_info.may_throw && !follows_top_k_filter)
         {
             condition_groups.back().push_back(node);
             continue;
@@ -547,7 +529,6 @@ bool tryBuildPrewhereSteps(
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
-                .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
                 .is_query_prewhere = step_is_query_prewhere,
                 /// A split step that is not entirely a user predicate carries a synthesized dynamic filter: the
                 /// only non-user conjuncts the splitter sees come from the query predicate's dynamic filters.
