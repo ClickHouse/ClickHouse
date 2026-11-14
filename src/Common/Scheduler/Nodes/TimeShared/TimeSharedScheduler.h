@@ -212,7 +212,7 @@ private:
                 value->next = nullptr;
                 value->prev = nullptr;
                 current = nullptr;
-                busy_periods++;
+                incrementCounter(busy_periods);
                 return;
             }
             // Just move current to next to avoid invalidation

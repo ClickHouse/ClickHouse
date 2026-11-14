@@ -130,7 +130,7 @@ public:
                 std::pop_heap(items.begin(), items.end());
                 items.pop_back();
                 if (items.empty())
-                    busy_periods++;
+                    incrementCounter(busy_periods);
             }
 
             if (request)
