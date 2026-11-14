@@ -313,7 +313,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
         }
 
         auto rhs = args.back();
-        std::vector<JoinActionRef> left_args(args.begin(), std::prev(args.end()));
+        VectorWithMemoryTracking<JoinActionRef> left_args(args.begin(), std::prev(args.end()));
         auto lhs = left_args.size() == 1 ? left_args.front() : JoinActionRef::transform(left_args, using_concat_function);
 
         for (size_t index : args_to_cast)
