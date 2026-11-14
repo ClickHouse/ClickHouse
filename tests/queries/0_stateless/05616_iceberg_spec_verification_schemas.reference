@@ -1,0 +1,187 @@
+schema_core__flat-required-and-optional valid
+id	Int64
+data	Nullable(String)
+schema_core__fields-not-in-id-order valid
+c	Int32
+a	Int32
+b	Nullable(Int32)
+schema_core__nested-struct valid
+id	Int64
+location	Tuple(\n    lat Float64,\n    lon Float64)
+schema_core__list-of-primitive valid
+id	Int64
+tags	Array(Nullable(String))
+schema_core__map-of-primitive valid
+id	Int64
+props	Map(String, Nullable(Int32))
+schema_core__list-of-struct valid
+id	Int64
+points	Array(Tuple(\n    x Int32,\n    y Nullable(Int32)))
+schema_core__map-with-struct-value valid
+id	Int64
+by_name	Map(String, Tuple(\n    count Int64))
+schema_core__schema-id-and-identifier-fields valid
+tenant	String
+key	Int64
+payload	Nullable(String)
+schema_core__field-doc valid
+id	Int64
+data	Nullable(String)
+schema_core__all-primitive-types valid
+f_boolean	Nullable(Bool)
+f_int	Nullable(Int32)
+f_long	Nullable(Int64)
+f_float	Nullable(Float32)
+f_double	Nullable(Float64)
+f_date	Nullable(Date32)
+f_time	Nullable(Time64(6))
+f_timestamp	Nullable(DateTime64(6))
+f_timestamptz	Nullable(DateTime64(6, \'UTC\'))
+f_string	Nullable(String)
+f_uuid	Nullable(UUID)
+f_fixed	Nullable(FixedString(16))
+f_binary	Nullable(String)
+f_decimal	Nullable(Decimal(9, 2))
+schema_core__decimal-max-precision valid
+id	Int64
+amount	Nullable(Decimal(38, 10))
+schema_core__reject-identifier-field-does-not-exist invalid
+exception
+schema_core__reject-identifier-optional-field invalid
+exception
+schema_core__reject-identifier-double-field invalid
+exception
+schema_core__reject-identifier-float-field invalid
+exception
+schema_core__reject-identifier-non-primitive-field invalid
+exception
+schema_core__reject-identifier-nested-in-list invalid
+exception
+schema_core__reject-identifier-nested-in-map-value invalid
+exception
+schema_core__reject-identifier-map-key invalid
+exception
+schema_core__identifier-nested-in-required-struct valid
+id	Int64
+key	Tuple(\n    part String)
+schema_core__reject-identifier-nested-in-optional-struct invalid
+exception
+schema_unknown__unknown-optional valid
+id	Int64
+future	Nullable(Nothing)
+schema_unknown__reject-unknown-required invalid
+exception
+types_geospatial__geometry-crs84 valid
+c	Geometry
+types_geospatial__geometry-srid valid
+c	Geometry
+types_geospatial__geometry-default-crs valid
+c	Geometry
+types_geospatial__geometry-default-crs-write valid
+c	Geometry
+types_geospatial__geography-crs84-spherical valid
+c	Geometry
+types_geospatial__geography-default valid
+c	Geometry
+types_geospatial__geography-default-write valid
+c	Geometry
+types_geospatial__geography-crs-only valid
+c	Geometry
+types_geospatial__geography-vincenty valid
+c	Geometry
+types_geospatial__geography-thomas valid
+c	Geometry
+types_geospatial__geography-andoyer valid
+c	Geometry
+types_geospatial__geography-karney valid
+c	Geometry
+types_geospatial__geography-unknown-algorithm invalid
+exception
+types_nested__struct-single-field valid
+c	Tuple(\n    a Int32)
+types_nested__struct-empty valid
+c	Tuple(\n)
+types_nested__struct-optional-field valid
+c	Tuple(\n    a Nullable(String))
+types_nested__list-required-element valid
+c	Array(String)
+types_nested__list-optional-element valid
+c	Array(Nullable(Int64))
+types_nested__map-string-double valid
+c	Map(String, Nullable(Float64))
+types_nested__struct-nested-list valid
+c	Tuple(\n    tags Array(String))
+types_nested__struct-field-missing-id invalid
+exception
+types_nested__map-string-double-required valid
+c	Map(String, Float64)
+types_nested__list-missing-element-id invalid
+exception
+types_nested__map-missing-key-id invalid
+exception
+types_nested__map-missing-value-id invalid
+exception
+types_primitive__boolean valid
+c	Nullable(Bool)
+types_primitive__int valid
+c	Nullable(Int32)
+types_primitive__long valid
+c	Nullable(Int64)
+types_primitive__float valid
+c	Nullable(Float32)
+types_primitive__double valid
+c	Nullable(Float64)
+types_primitive__date valid
+c	Nullable(Date32)
+types_primitive__time valid
+c	Nullable(Time64(6))
+types_primitive__timestamp valid
+c	Nullable(DateTime64(6))
+types_primitive__timestamptz valid
+c	Nullable(DateTime64(6, \'UTC\'))
+types_primitive__timestamp_ns valid
+c	Nullable(DateTime64(9))
+types_primitive__timestamptz_ns valid
+c	Nullable(DateTime64(9, \'UTC\'))
+types_primitive__string valid
+c	Nullable(String)
+types_primitive__uuid valid
+c	Nullable(UUID)
+types_primitive__binary valid
+c	Nullable(String)
+types_primitive__unknown valid
+c	Nullable(Nothing)
+types_primitive__fixed-1 valid
+c	Nullable(FixedString(1))
+types_primitive__fixed-16 valid
+c	Nullable(FixedString(16))
+types_primitive__decimal-9-2 valid
+c	Nullable(Decimal(9, 2))
+types_primitive__decimal-9-2-spaced valid
+c	Nullable(Decimal(9, 2))
+types_primitive__decimal-9-2-spaced-params valid
+c	Nullable(Decimal(9, 2))
+types_primitive__decimal-38-0 valid
+c	Nullable(Decimal(38, 0))
+types_primitive__decimal-precision-over-38 invalid
+c	Nullable(Decimal(39, 0))
+types_primitive__decimal-missing-scale invalid
+exception
+types_primitive__decimal-empty-params invalid
+exception
+types_primitive__decimal-non-numeric invalid
+exception
+types_primitive__fixed-empty-length invalid
+exception
+types_primitive__fixed-unterminated invalid
+exception
+types_primitive__fixed-non-numeric invalid
+exception
+types_primitive__empty-type invalid
+exception
+types_primitive__unknown-type-name invalid
+exception
+types_variant__variant valid
+c	Dynamic
+types_variant__variant-with-params invalid
+exception

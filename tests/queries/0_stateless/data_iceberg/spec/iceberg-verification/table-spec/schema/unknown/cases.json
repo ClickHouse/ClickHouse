@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "id": "unknown-optional",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          { "id": 2, "name": "future", "required": false, "type": "unknown" }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "future", "parent": null, "required": false, "type": "unknown", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "reject-unknown-required",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          { "id": 2, "name": "future", "required": true, "type": "unknown" }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{"id":"hash-int-34","type":"int","value":"34","hash":2017239379,"clause":"appendix-b/bucketing","note":"spec reference vector"}
+{"id":"hash-long-34","type":"long","value":"34","hash":2017239379,"clause":"appendix-b/bucketing","note":"spec reference vector; equals the int 34 hash so int->long promotion preserves bucketing"}
+{"id":"hash-decimal-14.20","type":"decimal(9, 2)","value":"14.20","hash":-500754589,"clause":"appendix-b/bucketing","note":"spec reference vector; unscaled 1420 as minimal two's-complement big-endian"}
+{"id":"hash-date-2017-11-16","type":"date","value":"2017-11-16","hash":-653330422,"clause":"appendix-b/bucketing","note":"spec reference vector"}
+{"id":"hash-time-22-31-08","type":"time","value":"22:31:08","hash":-662762989,"clause":"appendix-b/bucketing","note":"spec reference vector"}
+{"id":"hash-timestamp-no-frac","type":"timestamp","value":"2017-11-16T22:31:08","hash":-2047944441,"clause":"appendix-b/bucketing","note":"spec reference vector"}
+{"id":"hash-timestamp-micros","type":"timestamp","value":"2017-11-16T22:31:08.000001","hash":-1207196810,"clause":"appendix-b/bucketing","note":"spec reference vector; microsecond precision"}
+{"id":"hash-string-iceberg","type":"string","value":"iceberg","hash":1210000089,"clause":"appendix-b/bucketing","note":"spec reference vector; UTF-8 bytes"}
+{"id":"hash-uuid","type":"uuid","value":"f79c3e09-677c-4bbd-a479-3f349cb785e7","hash":1488055340,"clause":"appendix-b/bucketing","note":"spec reference vector; 16 bytes big-endian"}
+{"id":"hash-fixed-00010203","type":"fixed[4]","value":"00010203","hash":-188683207,"clause":"appendix-b/bucketing","note":"spec reference vector; value as hex"}
+{"id":"hash-binary-00010203","type":"binary","value":"00010203","hash":-188683207,"clause":"appendix-b/bucketing","note":"spec reference vector; value as hex"}
+{"id":"hash-decimal-neg-1.28","type":"decimal(9, 2)","value":"-1.28","hash":267099677,"clause":"appendix-b/bucketing","note":"boundary case, not in the spec examples: the unscaled value -128 has a one-byte minimal two's-complement (0x80), one byte shorter than a naive fixed width. Pins that the hash input uses the minimal encoding."}
+{"id":"hash-decimal-neg-327.68","type":"decimal(9, 2)","value":"-327.68","hash":1659329203,"clause":"appendix-b/bucketing","note":"boundary case (unscaled -32768, minimal bytes 0x8000); same minimal-bytes rule as -1.28"}
+{"id":"hash-string-non-bmp","type":"string","value":"💰","hash":-1486360756,"clause":"appendix-b/bucketing","note":"boundary case: a non-BMP character (U+1F4B0) encodes to four UTF-8 bytes. Pins that the hash input uses the full UTF-8 encoding"}
+{"id":"hash-decimal-neg-83886.08","type":"decimal(9, 2)","value":"-83886.08","hash":-640632435,"clause":"appendix-b/bucketing","note":"boundary case (unscaled -8388608, minimal bytes 0x800000, three bytes); same minimal-bytes rule as -1.28 at the next byte boundary"}

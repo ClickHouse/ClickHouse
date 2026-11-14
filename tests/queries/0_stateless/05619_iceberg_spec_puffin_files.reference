@@ -1,0 +1,13 @@
+--- iceberg/puffin-v1/empty-puffin-uncompressed.bin
+0
+--- iceberg/puffin-v1/sample-metric-data-uncompressed.bin
+2
+some-blob	2	1	[1]	4	9		{}
+some-other-blob	2	1	[2]	13	83		{}
+--- iceberg/puffin-v1/sample-metric-data-compressed-zstd.bin
+2
+some-blob	2	1	[1]	4	22	zstd	{}
+some-other-blob	2	1	[2]	26	77	zstd	{}
+--- iceberg-go/compressed-footer-lz4-cli.puffin
+0
+0
