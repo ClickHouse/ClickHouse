@@ -29,6 +29,9 @@ enum class StatisticsFileVersion : UInt16
             /// the version field; deserialization returns nullptr if the stored type differs from
             /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
             /// are never used.
+    V5 = 5, /// the min and max of `minmax` and `basic` statistics are written with the serialization of the
+            /// column type, like any other value of the column, instead of the self-describing `Field` encoding,
+            /// and `minmax` no longer repeats the column type name. See `StatisticsUtils::serializeBounds`.
 };
 
 class Field;
@@ -66,6 +69,17 @@ struct StatisticsUtils
     /// accumulator, and anything replaces a `NaN` accumulator. A `NULL` `value` is ignored.
     static void updateMin(Field & accumulator, const Field & value);
     static void updateMax(Field & accumulator, const Field & value);
+
+    /// Write the `min` and `max` bounds of a column with the binary serialization of its type `data_type`,
+    /// as a byte telling which bounds are known (a bound is unknown, a `NULL` `Field`, until a non-`NULL`
+    /// value is seen) followed by the known ones. The statistics of a part are always read with the type of
+    /// the column in that part, which is the type they were built for: when `ALTER` changes the type, the
+    /// mutation or merge that rewrites the column rewrites its statistics too.
+    /// The type is one of `canStatisticsTrackMinMax`, without `Nullable` and `LowCardinality`.
+    static void serializeBounds(const Field & min, const Field & max, const IDataType & data_type, WriteBuffer & buf);
+    static void deserializeBounds(Field & min, Field & max, const IDataType & data_type, ReadBuffer & buf);
+    /// The number of bytes written by `serializeBounds`: the values of these types have a fixed size.
+    static UInt64 getSerializedBoundsSize(const Field & min, const Field & max, const IDataType & data_type);
 };
 
 class IStatistics;

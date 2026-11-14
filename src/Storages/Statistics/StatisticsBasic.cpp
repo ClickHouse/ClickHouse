@@ -25,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_STATISTICS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -266,10 +267,7 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
-    {
-        writeFieldBinary(min, buf);
-        writeFieldBinary(max, buf);
-    }
+        StatisticsUtils::serializeBounds(min, max, *data_type, buf);
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
     if (has_default_count)
@@ -282,7 +280,7 @@ std::optional<UInt64> StatisticsBasic::getSerializedSize() const
 {
     UInt64 size = sizeof(row_count) + sizeof(UInt8);
     if (tracks_numeric)
-        size += getFieldBinarySize(min) + getFieldBinarySize(max);
+        size += StatisticsUtils::getSerializedBoundsSize(min, max, *data_type);
     if (tracks_string)
         size += sizeof(string_total_bytes);
     if (has_default_count)
@@ -292,7 +290,7 @@ std::optional<UInt64> StatisticsBasic::getSerializedSize() const
     return size;
 }
 
-void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
 {
     readIntBinary(row_count, buf);
 
@@ -301,8 +299,24 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
 
     if (mask & BasicFeatureMask::NumericMinMax)
     {
-        min = readFieldBinary(buf);
-        max = readFieldBinary(buf);
+        if (version < StatisticsFileVersion::V5)
+        {
+            min = readFieldBinary(buf);
+            max = readFieldBinary(buf);
+        }
+        else if (tracks_numeric)
+        {
+            StatisticsUtils::deserializeBounds(min, max, *data_type, buf);
+        }
+        else
+        {
+            /// Only the types that track the bounds write them, and they are read with the type.
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS,
+                "Basic statistics of type {} have bounds. The statistics file may be corrupted. "
+                "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.",
+                data_type->getName());
+        }
     }
 
     if (mask & BasicFeatureMask::StringLengthSum)

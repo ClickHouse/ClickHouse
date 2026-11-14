@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitorWriteBinary.h>
 #include <Common/FieldVisitorToString.h>
@@ -17,6 +16,7 @@ namespace DB
 StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , data_type(removeNullable(data_type_))
+    , value_type(removeLowCardinalityAndNullable(data_type))
 {
 }
 
@@ -52,18 +52,12 @@ void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
 void StatisticsMinMax::serialize(WriteBuffer & buf)
 {
     writeIntBinary(row_count, buf);
-    writeStringBinary(data_type->getName(), buf);
-    writeFieldBinary(min, buf);
-    writeFieldBinary(max, buf);
+    StatisticsUtils::serializeBounds(min, max, *value_type, buf);
 }
 
 std::optional<UInt64> StatisticsMinMax::getSerializedSize() const
 {
-    const String type_name = data_type->getName();
-    return sizeof(row_count)
-        + getLengthOfVarUInt(type_name.size()) + type_name.size()
-        + getFieldBinarySize(min)
-        + getFieldBinarySize(max);
+    return sizeof(row_count) + StatisticsUtils::getSerializedBoundsSize(min, max, *value_type);
 }
 
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
@@ -82,7 +76,13 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
         return;
     }
 
-    /// V2+ format: type name followed by Field-typed min and max
+    if (version >= StatisticsFileVersion::V5)
+    {
+        StatisticsUtils::deserializeBounds(min, max, *value_type, buf);
+        return;
+    }
+
+    /// V2 - V4 format: type name followed by min and max in the `Field` encoding
     String stored_type_name;
     readStringBinary(stored_type_name, buf);
     if (stored_type_name != data_type->getName())
