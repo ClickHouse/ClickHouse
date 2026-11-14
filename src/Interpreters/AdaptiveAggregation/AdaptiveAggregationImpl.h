@@ -412,6 +412,20 @@ struct AdaptiveStagedBytes
     size_t record_bytes = 0;
 };
 
+/// Whether `Method` keeps the NULL key in a slot of its own outside the cells of its table (see
+/// `AggregationDataWithNullKey`), as the methods of a single `Nullable` or `LowCardinality` key do.
+template <typename Method>
+constexpr bool keeps_null_key_slot = Method::low_cardinality_optimization || Method::one_key_nullable_optimization;
+
+/// How the frozen local table took the rows of a block: the hits, and the rows of the NULL key, which go to
+/// the key's slot without a lookup (see `AdaptiveAggregationProducer::FrozenState`). The other rows are
+/// misses.
+struct AdaptiveLocalProbes
+{
+    size_t hits = 0;
+    size_t null_rows = 0;
+};
+
 /// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
 /// phase-owned counters, its staged records, and the current block's misses.
 struct AdaptiveAggregationProducer
@@ -428,13 +442,17 @@ struct AdaptiveAggregationProducer
         size_t rows = 0;
     };
 
-    /// The adaptive phase proper: the local table only updates the keys it already holds
-    /// and misses are staged for the merge. Carries the post-freeze hit-rate
-    /// sampling: when the frozen table turns out to hold almost none of the stream's keys
-    /// (a uniform high-cardinality distribution), probing it is pure overhead on every row;
+    /// The adaptive phase proper: the local table only updates the keys it already holds and misses are
+    /// staged for the merge. The NULL key of a method that keeps it in a slot of its own (see
+    /// `keeps_null_key_slot`) is the exception: the table takes every row of that key into the slot, whether
+    /// it holds the key yet or not. A staged record keeps the nested value as its key, so such a row has no
+    /// record, and the slot never grows the table. The row takes no lookup, so it is neither a hit nor a miss.
+    ///
+    /// Carries the post-freeze hit-rate sampling: when the frozen table turns out to hold almost none of the
+    /// stream's keys (a uniform high-cardinality distribution), probing it is pure overhead on every row;
     /// after the sample window the kernel switches to staging ordinary blocks without the lookup.
-    /// Constant-key blocks still look up their one key, so they can keep growing the retained states
-    /// even after per-row probes are bypassed.
+    /// Constant-key blocks still look up their one key, so they can keep growing the retained states even
+    /// after per-row probes are bypassed.
     struct FrozenState
     {
         FrozenState(size_t used_arena_bytes_at_freeze_, size_t memory_usage_at_freeze_)

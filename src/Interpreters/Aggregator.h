@@ -1131,16 +1131,19 @@ private:
         bool all_keys_are_const,
         MemoryTracker * local_memory_tracker) const;
 
-    /// Collects the misses of a block whose records carry no aggregate arguments into the producer's batch: those of an
-    /// aggregation by a lone `count` (`with_count`) and those of one without aggregate functions. A row whose key the
-    /// local table holds is a hit, which with `with_count` adds one to the key's inline count. The other rows become
-    /// records, and the repeats of a missed key combine into its record, which with `with_count` counts the rows it
-    /// combines. A run of one key goes into one record, and while a trial shows that it pays, so do the later rows of
-    /// the key found through a per-partition cache. A batch whose kept key bytes reach their bound is staged by
-    /// `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the rest of the misses and
-    /// the probe results are left to the caller. Returns the number of local hits.
+    /// Collects the misses of a block whose records carry no aggregate arguments into the producer's batch:
+    /// those of an aggregation by a lone `count` (`with_count`) and those of one without aggregate functions.
+    /// A row whose key the local table holds is a hit, which with `with_count` adds one to the key's inline
+    /// count. A row of the NULL key that the method keeps in a slot of its own takes no lookup and is only
+    /// counted (see `AdaptiveAggregationProducer::FrozenState`). The other rows become records, and the
+    /// repeats of a missed key combine into its record, which with `with_count` counts the rows it combines.
+    /// A run of one key goes into one record, and while a trial shows that it pays, so do the later rows of
+    /// the key found through a per-partition cache. A batch whose kept key bytes reach their bound is staged
+    /// by `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the rest of
+    /// the misses, the rows of the NULL key and the recording of the probe results are left to the caller.
+    /// Returns the hits and the rows of the NULL key.
     template <bool with_count, typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
-    size_t collectCombinedMisses(
+    AdaptiveLocalProbes collectCombinedMisses(
         LocalMethod & local_method,
         State & find_state,
         size_t row_begin,
@@ -1223,6 +1226,13 @@ private:
     /// `task.places` and `task.source_slots` for `mergeSourceStates`.
     template <typename Method, typename Table, typename ForEachCell, typename Filter>
     void adoptSourceCells(Table & table, const ForEachCell & for_each_cell, const Filter & filter, AdaptiveMergeTask & task) const;
+
+    /// Takes the NULL keys of the sources of a merge unit into `table` as `adoptSourceCells` takes their
+    /// cells, for a method that keeps the key in a slot of its own (see `keeps_null_key_slot`).
+    /// `for_each_source_table(f)` calls `f(source_table)` for every source table whose slot holds the key.
+    /// The caller calls it after `adoptSourceCells`, which resets `task.places` and `task.source_slots`.
+    template <typename Method, typename Table, typename ForEachSourceTable>
+    void adoptSourceNullKeys(Table & table, const ForEachSourceTable & for_each_source_table, AdaptiveMergeTask & task) const;
 
     /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
     /// cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every partition

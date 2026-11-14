@@ -408,6 +408,16 @@ public:
         }
     }
 
+    /// Whether a row of the block may have the NULL key, which `isNullAt` tells row by row. False means that
+    /// no row has it, so a caller can skip the check of every row.
+    ALWAYS_INLINE bool mayHaveNullRows() const
+    {
+        if constexpr (nullable)
+            return !block_has_no_nulls;
+        else
+            return false;
+    }
+
 protected:
     Cache cache;
     /// Cached raw pointer to the null map bytes for the current block. Each element is 0/1.
