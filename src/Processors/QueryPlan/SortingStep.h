@@ -239,7 +239,8 @@ private:
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
 
-    /// See `isWindowSorting`. Like `is_partial_top_n`, it only tells the optimizer what the sort is for, so it is not serialized.
+    /// See `isWindowSorting`. It only tells the optimizer what the sort is for, but it is serialized: a worker
+    /// optimizes its deserialized fragment again and must restrict reading in order the same way.
     bool is_window_sorting = false;
 
     /// A distributed plan can split a top-N sort in two stages: each node keeps its local

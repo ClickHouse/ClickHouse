@@ -1432,8 +1432,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
     /// depending on `formatdatetime_parsedatetime_m_is_month_name`, so the stored key could be another calculation.
     /// A window sorting matches only the columns of the table: the description stops at the first column computed by the
-    /// query, and only columns of the table fixed by the filter are taken into account. A deserialized window sorting does
-    /// not carry `isWindowSorting`, but still carries its `PARTITION BY` columns.
+    /// query, and only columns of the table fixed by the filter are taken into account.
     if ((sorting.isWindowSorting() || sorting.hasPartitions()) && dag)
     {
         auto is_table_column = [](const ActionsDAG::Node * column_node)

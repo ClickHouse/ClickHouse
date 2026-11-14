@@ -827,8 +827,9 @@ void SortingStep::serialize(Serialization & ctx) const
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
     /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
-    /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
-    /// bit is set), so a plain full sort always writes a plain 0.
+    /// The bits 2 and 4 are meaningful only for `FinishSorting` (the reader applies them only when the finish
+    /// bit is set). The bit 8 marks a window sorting (`isWindowSorting`): the worker that optimizes the deserialized
+    /// fragment again must apply the same restrictions of reading in order. A reader that does not know it ignores it.
     UInt8 flags = 0;
     if (type == Type::FinishSorting)
     {
@@ -838,6 +839,8 @@ void SortingStep::serialize(Serialization & ctx) const
         if (apply_virtual_row_conversions)
             flags |= 4;
     }
+    if (is_window_sorting)
+        flags |= 8;
     writeIntBinary(flags, ctx.out);
 
     if (type == Type::FinishSorting)
@@ -879,6 +882,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     bool finish_sorting = flags & 1;
     bool use_buffering = flags & 2;
     bool apply_virtual_row_conversions = flags & 4;
+    bool is_window_sorting = flags & 8;
 
     SortDescription prefix_description;
     if (finish_sorting)
@@ -899,6 +903,9 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     if (finish_sorting)
         step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
+
+    if (is_window_sorting)
+        step->setWindowSorting();
 
     return step;
 }
