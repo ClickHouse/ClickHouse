@@ -1,0 +1,7 @@
+A step without a Substrait representation
+The query plan cannot be serialized to Substrait. Blocking steps:
+  LimitBy: the step has no Substrait representation
+Every blocked branch is reported, left branch first
+The query plan cannot be serialized to Substrait. Blocking steps:
+  Expression ((Project names + (Projection + Change column names to column identifiers))): function cityHash64 is not mapped to Substrait, in cityHash64(__table2.name)
+  Expression ((Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))): function sipHash64 is not mapped to Substrait, in sipHash64(__table4.name)

@@ -1,0 +1,7 @@
+#pragma once
+
+/// The spec version of the vendored Substrait protos, read from the newest entry of the submodule's changelog.
+
+#define SUBSTRAIT_VERSION_MAJOR @SUBSTRAIT_VERSION_MAJOR@
+#define SUBSTRAIT_VERSION_MINOR @SUBSTRAIT_VERSION_MINOR@
+#define SUBSTRAIT_VERSION_PATCH @SUBSTRAIT_VERSION_PATCH@

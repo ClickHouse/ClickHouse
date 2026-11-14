@@ -1,0 +1,9 @@
+Over empty input ClickHouse returns a default for a plain argument and NULL for a Nullable one
+0	\N	\N
+sum of a plain argument without GROUP BY is sum0, which returns 0
+["sum0:i32"]	[{"i64":{"nullability":"NULLABILITY_REQUIRED"}}]
+sum of a Nullable argument without GROUP BY is sum, which returns NULL
+["sum:i32"]	[{"i64":{"nullability":"NULLABILITY_NULLABLE"}}]
+min of a Nullable argument without GROUP BY is min, which returns NULL
+["min:i32"]	[{"i32":{"nullability":"NULLABILITY_NULLABLE"}}]
+min of a plain argument without GROUP BY blocks, Substrait has no min that returns 0

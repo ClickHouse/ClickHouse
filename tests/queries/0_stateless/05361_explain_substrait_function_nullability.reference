@@ -1,0 +1,10 @@
+A keyed sum is nullable in Substrait and not in ClickHouse
+[{"i64":{"nullability":"NULLABILITY_NULLABLE"}}]
+A function over it is nullable
+[{"i64":{"nullability":"NULLABILITY_NULLABLE"}}]
+The cast to a narrower ClickHouse result type and the function under it are nullable
+[{"i16":{"nullability":"NULLABILITY_NULLABLE"}}]	[{"i64":{"nullability":"NULLABILITY_NULLABLE"}}]
+A function over a required column is required
+[{"i64":{"nullability":"NULLABILITY_REQUIRED"}}]
+isNull over a nullable argument is required
+[{"bool":{"nullability":"NULLABILITY_REQUIRED"}}]

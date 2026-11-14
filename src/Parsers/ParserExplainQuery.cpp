@@ -29,6 +29,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_current_transaction(Keyword::CURRENT_TRANSACTION);
     ParserKeyword s_analyze(Keyword::ANALYZE);
     ParserKeyword s_whatif(Keyword::WHATIF);
+    ParserKeyword s_substrait(Keyword::SUBSTRAIT);
 
     if (s_explain.ignore(pos, expected))
     {
@@ -54,6 +55,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::Analyze;
         else if (s_whatif.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::WhatIf;
+        else if (s_substrait.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::Substrait;
     }
     else
         return false;
@@ -115,7 +118,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         explain_query->setTableFunction(table_function);
         explain_query->setTableOverride(table_override);
     }
-    else if (kind == ASTExplainQuery::ExplainKind::QueryTree)
+    else if (kind == ASTExplainQuery::ExplainKind::QueryTree || kind == ASTExplainQuery::ExplainKind::Substrait)
     {
         if (select_p.parse(pos, query, expected))
             explain_query->setExplainedQuery(std::move(query));
@@ -213,7 +216,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF | SUBSTRAIT] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -257,6 +260,7 @@ Union
 - `ANALYZE` — Executes the query and annotates the execution plan with measured runtime metrics.
 - `ESTIMATE` — Estimated number of rows, marks and parts to be read from the tables while processing the query.
 - `TABLE OVERRIDE` — Validated result of a table override on a table-function schema.
+- `SUBSTRAIT` — Query plan serialized to the [Substrait](https://substrait.io/) format.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -1718,9 +1722,66 @@ PARTITION BY toYYYYMM(assumeNotNull(created))
 <Note>
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 </Note>
+
+### EXPLAIN SUBSTRAIT {#explain-substrait}
+
+<Note>
+This is an experimental feature. To use it, set `enable_substrait = 1`.
+</Note>
+
+Serializes the optimized query plan of a `SELECT` query to a [Substrait](https://substrait.io/) plan and prints it as JSON. The JSON is the standard protobuf JSON form of the `substrait.Plan` message, so tools that read Substrait plans in JSON accept it as is.
+If a step of the plan has no Substrait representation, the statement fails with a `NOT_IMPLEMENTED` exception. The message names the blocking steps (the lowest unsupported step of each branch of the plan) with the reasons.
+
+**Example**
+
+```sql title="Query"
+CREATE TABLE t (id Int64, value Float64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t VALUES (1, 1.5), (2, 2.5);
+
+SET enable_substrait = 1;
+EXPLAIN SUBSTRAIT SELECT id FROM t WHERE value > 2 FORMAT TSVRaw;
+```
+
+```text title="Response"
+{
+ "extensions": [
+  {
+   "extensionFunction": {
+    "functionAnchor": 1,
+    "name": "gt:any_any",
+    "extensionUrnReference": 1
+   }
+  }
+ ],
+ "relations": [
+...
+}
+```
+
+For a compact text view of the plan, convert the JSON with [`substrait-explain`](https://github.com/DataDog/substrait-explain):
+
+```bash
+clickhouse-client --enable_substrait 1 --query "EXPLAIN SUBSTRAIT SELECT id FROM t WHERE value > 2 FORMAT TSVRaw" | substrait-explain convert -f json -t text
+```
+
+```text title="Response"
+=== Version 0.102.0
+  producer: ClickHouse
+=== Extensions
+URNs:
+  @  1: extension:io.substrait:functions_comparison
+Functions:
+  #  1 @  1: gt:any_any
+
+=== Plan
+Root[id]
+  Project[$0]
+    Filter[gt($1, 2):boolean => $0, $1]
+      Read[default.t => id:i64, value:fp64]
+```
 )DOCS_MD",
         .syntax = R"(
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF | SUBSTRAIT] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
