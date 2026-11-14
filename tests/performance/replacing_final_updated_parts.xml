@@ -3,9 +3,9 @@
         <max_threads>4</max_threads>
     </settings>
 
-    <!-- One large merged part and ten small parts of updates as INSERT writes them: most rows come from the large part,
+    <!-- One large merged part and ten small parts of updates as `INSERT` writes them: most rows come from the large part,
          between the keys of the updates. Background merges are disabled by the pool limits; the merge query needs merges
-         running, so SYSTEM STOP MERGES is not used. -->
+         running, so `SYSTEM STOP MERGES` is not used. -->
     <create_query>CREATE TABLE replacing_updated (id UInt64, ver UInt32, a Float64, b Int64) ENGINE = ReplacingMergeTree(ver) ORDER BY id SETTINGS auto_statistics_types = ''</create_query>
     <create_query>CREATE TABLE replacing_updated_key2 (k UInt8, id UInt64, ver UInt32, a Float64, b Int64) ENGINE = ReplacingMergeTree(ver) ORDER BY (k, id) SETTINGS auto_statistics_types = ''</create_query>
     <create_query>CREATE TABLE replacing_updated_merge (id UInt64, ver UInt32, a Float64, b Int64) ENGINE = ReplacingMergeTree(ver) ORDER BY id SETTINGS auto_statistics_types = '', old_parts_lifetime = 10, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1</create_query>
