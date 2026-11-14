@@ -1,0 +1,23 @@
+top-level field beside a tuple
+99
+1	99
+(7)	99
+99
+1	99
+(7)	99
+two nested paths
+5
+5
+6
+6
+top-level field beside a nested array
+[9]
+skipped nested array before the matching field
+[99]
+union branches with the same name
+1	1
+2	2
+3	0
+IcebergLocal
+99
+1	99
