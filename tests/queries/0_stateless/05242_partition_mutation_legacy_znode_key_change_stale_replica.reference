@@ -1,0 +1,5 @@
+legacy znodes:	1
+mutations known to the second replica:	0
+ABORTED
+ALTER_OF_COLUMN_IS_FORBIDDEN
+type:	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)

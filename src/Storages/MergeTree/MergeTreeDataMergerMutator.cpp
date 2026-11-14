@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
