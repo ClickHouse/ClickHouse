@@ -1,5 +1,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Set.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -22,6 +23,7 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Storages/ColumnSize.h>
 
 
 #if defined(MEMORY_SANITIZER)
@@ -50,14 +52,14 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag,
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
     bool reorder_arguments,
     std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments);
 
-static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
-    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes);
 
 ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
     : actions_dag(std::move(actions_dag_))
@@ -66,7 +68,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_map<const ActionsDAG::Node *, size_t> short_circuit_eager_arguments;
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
         actions_dag,
         settings.short_circuit_function_evaluation,
         settings.short_circuit_function_evaluation_reorder_arguments,
@@ -77,7 +79,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
-    std::unordered_set<const ActionsDAG::Node *> reorderable_short_circuit_arguments;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> reorderable_short_circuit_arguments;
     if (settings.short_circuit_function_evaluation_reorder_arguments && !lazy_executed_nodes.empty())
         reorderable_short_circuit_arguments = findReorderableShortCircuitArguments(actions_dag, lazy_executed_nodes);
 
@@ -93,7 +95,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 {
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
-    std::unordered_map<const Node *, const Node *> copy_map;
+    ActionsDAG::NodeMapping copy_map;
     copy->actions_dag = actions_dag.clone(copy_map);
     copy->actions = actions;
     for (auto & action : copy->actions)
@@ -269,7 +271,7 @@ static bool findLazyExecutedNodes(
     const ActionsDAG::NodeRawConstPtrs & children,
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos,
     bool force_enable_lazy_execution,
-    std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes_out)
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes_out)
 {
     bool has_lazy_node = false;
     for (const auto * child : children)
@@ -380,7 +382,7 @@ static size_t countConsumers(const ActionsDAG::Node * node, const ActionsDAGReve
     return res;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCircuitFunctions(
     const ActionsDAG & actions_dag,
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
     bool reorder_arguments,
@@ -450,7 +452,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     for (const auto & node : nodes)
         setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
 
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes;
     for (const auto & [node, settings] : short_circuit_nodes)
     {
         /// Recursively find nodes that should be lazy executed.
@@ -469,7 +471,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 /// and be deterministic in the scope of the query.
 static bool canBeExecutedOnMoreRows(
     const ActionsDAG::Node * node,
-    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
     std::unordered_map<const ActionsDAG::Node *, bool> & cache)
 {
     if (auto it = cache.find(node); it != cache.end())
@@ -511,10 +513,10 @@ static bool canBeExecutedOnMoreRows(
   * The function chooses the order of these arguments by the statistics collected during the execution,
   * see `ShortCircuitArgumentStatistics`.
   */
-static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
-    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
-    std::unordered_set<const ActionsDAG::Node *> res;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> res;
     std::unordered_map<const ActionsDAG::Node *, bool> cache;
 
     for (const auto & node : actions_dag.getNodes())
@@ -540,8 +542,8 @@ static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitA
 }
 
 void ExpressionActions::linearizeActions(
-    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
-    const std::unordered_set<const ActionsDAG::Node *> & reorderable_short_circuit_arguments,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & reorderable_short_circuit_arguments,
     const std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
@@ -1268,6 +1270,34 @@ NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & c
 
     if (!min_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No available columns");
+
+    return result;
+}
+
+NameAndTypePair ExpressionActions::getCheapestColumnToRead(
+    const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns)
+{
+    std::optional<std::tuple<size_t, size_t, size_t>> min_cost;
+    NameAndTypePair result;
+
+    for (const auto & column : columns)
+    {
+        auto it = column_sizes.find(column.name);
+        if (it == column_sizes.end())
+            continue;
+
+        size_t type_size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
+        std::tuple<size_t, size_t, size_t> cost{it->second.data_compressed, type_size, it->second.data_uncompressed};
+
+        if (!min_cost || cost < *min_cost)
+        {
+            min_cost = cost;
+            result = column;
+        }
+    }
+
+    if (!min_cost)
+        return getSmallestColumn(columns, skip_subcolumns);
 
     return result;
 }

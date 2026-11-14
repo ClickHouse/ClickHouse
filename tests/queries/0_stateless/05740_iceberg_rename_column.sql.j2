@@ -1,0 +1,36 @@
+-- Tags: no-fasttest, need-query-parameters
+-- Tag no-fasttest: Iceberg needs Avro.
+
+-- RENAME COLUMN on an Iceberg table: existing rows read under the new name and new inserts use it.
+-- Renaming a missing column or to a name already in use is rejected and leaves the schema unchanged.
+-- Both format versions, local and S3 storage.
+
+SET allow_insert_into_iceberg = 1;
+
+{% macro engine(storage, table) -%}
+{% if storage == 'local' -%}
+IcebergLocal({CLICKHOUSE_DATABASE:String} || '/{{ table }}/')
+{%- else -%}
+IcebergS3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/{{ table }}/')
+{%- endif %}
+{%- endmacro %}
+
+{% for storage in ['local', 's3'] -%}
+{% for fv in [1, 2] -%}
+{% set t = 't_' ~ storage ~ '_v' ~ fv -%}
+SELECT '--- {{ t }}';
+DROP TABLE IF EXISTS {{ t }};
+CREATE TABLE {{ t }} (id Int32, value Nullable(String)) ENGINE = {{ engine(storage, t) }} SETTINGS iceberg_format_version = {{ fv }};
+ALTER TABLE {{ t }} RENAME COLUMN nonexistent TO other; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+ALTER TABLE {{ t }} RENAME COLUMN value TO id; -- { serverError DUPLICATE_COLUMN }
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '{{ t }}' ORDER BY name;
+INSERT INTO {{ t }} VALUES (1, 'hello'), (2, 'world');
+SELECT id, value FROM {{ t }} ORDER BY id;
+ALTER TABLE {{ t }} RENAME COLUMN value TO label;
+SELECT id, label FROM {{ t }} ORDER BY id;
+INSERT INTO {{ t }} VALUES (3, 'foo');
+SELECT id, label FROM {{ t }} ORDER BY id;
+DROP TABLE {{ t }};
+
+{% endfor -%}
+{% endfor -%}
