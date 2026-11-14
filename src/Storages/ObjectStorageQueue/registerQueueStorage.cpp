@@ -550,6 +550,19 @@ In case of non-graceful server termination, it is possible that we can have not 
 
 Default value: `21600` (6 hours).
 
+### `persistent_processing_node_abandoned_reclaim_ttl_seconds` {#persistent-processing-node-abandoned-reclaim-ttl-seconds}
+
+Persistent processing nodes and bucket locks created by background materialized-view consumption are periodically refreshed while they are owned by an active server process. If the exact active-registry entry recorded in a claim is absent and the claim has not been refreshed for this TTL, the claim can be cleaned up before `persistent_processing_node_ttl_seconds` expires.
+
+The active-registry check and this TTL are both required. A transient Keeper session loss therefore does not make a claim immediately eligible for cleanup.
+
+A replica that stays inactive for longer than this TTL while holding claims — for example, one paused with `SYSTEM STOP`, one whose queue has no attached materialized views, or one disconnected from Keeper for that long — has its claims reclaimed so that other replicas can process the corresponding buckets and files. This is intended behavior, not an error: when the replica becomes active again, it detects the loss, releases the reclaimed work without finalizing it, and re-acquires what it needs on the next streaming cycle.
+
+Direct `SELECT` claims do not participate in the active registry and are cleaned up only by `persistent_processing_node_ttl_seconds`. This setting is fixed when the table is created and cannot be changed with `ALTER TABLE ... MODIFY SETTING`.
+
+Early cleanup requires ClickHouse Keeper with the `CheckStat` operation (the `CHECK_STAT` feature flag). A claim is removed only together with a check of the exact Keeper node it was found in, so a lock or a claim which was released and re-acquired by another server in the meantime is never removed by mistake. With an older Keeper or with ZooKeeper, claims are not tracked in the active registry and only `persistent_processing_node_ttl_seconds` applies.
+
+Default value: `600` (10 minutes).
 ### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
 
 A file whose `processing` node in keeper is held by another server is remembered as `Processing` in the in-memory file status cache, so that the following listing passes skip it without asking keeper again.

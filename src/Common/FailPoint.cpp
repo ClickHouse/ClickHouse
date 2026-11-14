@@ -124,6 +124,7 @@ static struct InitFiu
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(object_storage_queue_fail_tags_fetch) \
+    ONCE(object_storage_queue_fail_unregister_active) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_temp_drop_publication_response) \
     ONCE(distributed_cache_temp_fail_owner_handoff) \

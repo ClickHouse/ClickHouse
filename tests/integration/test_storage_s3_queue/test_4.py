@@ -422,6 +422,12 @@ def test_alter_settings(started_cluster):
             "select alterable from system.s3_queue_settings where name = 'mode'"
         )
     )
+    assert 0 == int(
+        node1.query(
+            "select alterable from system.s3_queue_settings "
+            "where name = 'persistent_processing_node_abandoned_reclaim_ttl_seconds'"
+        )
+    )
 
     def with_keeper(setting):
         return setting in {

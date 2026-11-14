@@ -138,6 +138,84 @@ def test_parallel_inserts_generated_parts(started_cluster, parallel_inserts):
     )
 
 
+def test_parallel_inserts_keep_active_registry_while_peer_is_processing(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_parallel_inserts_registry_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    rows = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 1,
+            "processing_threads_num": 2,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 10000,
+            "polling_backoff_ms": 10000,
+        },
+    )
+    generate_random_files(
+        started_cluster, files_path, count=1, start_ind=0, row_num=rows
+    )
+
+    node.query(
+        f"CREATE TABLE {dst_table_name} "
+        "(column1 UInt32, column2 UInt32, column3 UInt32) "
+        "ENGINE = MergeTree ORDER BY column1"
+    )
+    node.query(
+        f"CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS "
+        f"SELECT column1, column2, column3 FROM {table_name} "
+        "WHERE sleepEachRow(0.2) = 0"
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    processing_path = f"{keeper_path}/processing"
+    registry_path = f"{keeper_path}/registry"
+    saw_processing_node = False
+
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            processing_nodes = (
+                zk.get_children(processing_path) if zk.exists(processing_path) else []
+            )
+            if processing_nodes:
+                saw_processing_node = True
+                assert zk.get_children(registry_path), (
+                    "an idle parallel-insert task removed the active registry while "
+                    "another task still owned a processing node"
+                )
+
+            processed_rows = int(
+                node.query(f"SELECT count() FROM {dst_table_name}")
+            )
+            if processed_rows == rows:
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("the file was not processed before the timeout")
+
+        assert saw_processing_node, "the test did not observe an in-flight file claim"
+    finally:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name}_mv;
+            DROP TABLE IF EXISTS {dst_table_name};
+            DROP TABLE IF EXISTS {table_name};
+            """
+        )
+
+
 @pytest.mark.parametrize("mode", ["unordered", "exclusive"])
 @pytest.mark.parametrize("parallel_inserts", [0, 1])
 def test_parallel_inserts_with_failures(started_cluster, mode, parallel_inserts):
