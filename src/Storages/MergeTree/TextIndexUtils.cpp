@@ -278,20 +278,22 @@ struct MergeTextIndexesTask::PostingsMergeCursor
     size_t next_segment = 0;
     /// Decoded and remapped row ids of the current segment, or the embedded postings.
     PaddedPODArray<UInt32> row_ids;
-    /// Exact per-row weights of the current segment, parallel to the row ids.
-    /// Empty when the source stores none (every `weight == 1`) or the merge is not scoring.
+    /// Exact per-row weights of the current segment, parallel to the row ids, on the scoring path.
+    /// Filled with 1 if the source stores no weights. Empty if the merge is not scoring.
     PaddedPODArray<UInt32> weights;
 
     UInt32 current() const { return row_ids[pos]; }
     bool isValid() const { return pos < row_ids.size(); }
     std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
 
-    /// Weights parallel to remaining(), or an empty span when the source stores none.
-    std::span<const UInt32> remainingWeights() const
+    /// Weights of the next `count` row ids, or an empty span if the merge is not scoring.
+    std::span<const UInt32> nextWeights(size_t count) const
     {
         if (weights.empty())
             return {};
-        return {weights.data() + pos, weights.size() - pos};
+
+        chassert(pos + count <= weights.size());
+        return {weights.data() + pos, count};
     }
 };
 
@@ -316,13 +318,12 @@ public:
         : task(task_), with_weights(with_weights_), cursors(max_sources)
     {
         active_cursors.reserve(max_sources);
+        if (with_weights)
+            window_weights.resize(WINDOW_ROWS);
     }
 
     void push(const TokenSource & source);
     bool isValid() const { return !active_cursors.empty(); }
-
-    /// True if any pushed source of the current token stores weights; otherwise every merged weight is 1.
-    bool hasWeights() const { return has_weights; }
 
     /// Passes the row ids of the active cursors to the sink in the globally sorted order.
     /// Aligned runs of a single source are passed through without copying, the rest is buffered.
@@ -373,7 +374,6 @@ private:
     void flushBuffered(bool is_final, Sink && sink);
 
     /// Appends the row ids to the buffer and, on the scoring path, their weights to weights_buffer.
-    /// An empty `weights` means every weight of the chunk is 1.
     void appendToBuffer(std::span<const UInt32> row_ids, std::span<const UInt32> weights);
 
     /// Loads the next segment of the exhausted cursor or drops it.
@@ -382,16 +382,14 @@ private:
     MergeTextIndexesTask & task;
     /// Whether the chunks carry weights, i.e. the merge is scoring.
     const bool with_weights;
-    /// Whether any pushed source of the current token stores weights.
-    bool has_weights = false;
     /// Reusable cursors, one per source.
     std::vector<PostingsMergeCursor> cursors;
     /// Cursors of the current token that still have row ids to merge.
     std::vector<PostingsMergeCursor *> active_cursors;
     /// Bitset of the current window.
     std::array<UInt64, WINDOW_ROWS / 64> window_bits{};
-    /// Weights of the row ids of the current window, indexed by the bit. Used only on the scoring path.
-    std::array<UInt32, WINDOW_ROWS> window_weights{};
+    /// Weights of the row ids of the current window, indexed by the bit, allocated only on the scoring path.
+    std::vector<UInt32> window_weights;
     /// Source of each set bit, allocated and tracked only with positions.
     std::vector<UInt32> window_sources;
     PositionsMerge * positions = nullptr;
@@ -696,8 +694,13 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
     cursor.row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
     adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
 
-    if (params.hasScoring() && !info.embedded_weights.empty())
-        cursor.weights.assign(info.embedded_weights.begin(), info.embedded_weights.end());
+    if (params.hasScoring())
+    {
+        if (info.embedded_weights.empty())
+            cursor.weights.resize_fill(cursor.row_ids.size(), 1u);
+        else
+            cursor.weights.assign(info.embedded_weights.begin(), info.embedded_weights.end());
+    }
 
     cursor.next_segment = info.offsets.size();
 }
@@ -707,12 +710,7 @@ void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_
     const auto & info = source.info;
     auto * stream = input_streams[source.source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     stream->seekToMark({info.offsets[segment_idx], 0});
-
-    /// The exact weights are decoded only if the source stores them and the merge is scoring.
-    const bool has_weights = params.hasScoring() && (info.header & PostingsSerialization::Flags::HasWeights);
-
-    source_postings_serializations[source.source_num].deserializeToArray(
-        *stream->getDataBuffer(), info, segment_idx, row_ids, has_weights ? &weights : nullptr);
+    source_postings_serializations[source.source_num].deserializeToArray(*stream->getDataBuffer(), info, segment_idx, row_ids, params.hasScoring() ? &weights : nullptr);
 }
 
 bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
@@ -732,7 +730,7 @@ bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
     /// Deserialization rejects an empty segment and a segment outside its row range; the order inside is not verified.
     chassert(!cursor.row_ids.empty());
     chassert(std::is_sorted(cursor.row_ids.begin(), cursor.row_ids.end()));
-    chassert(cursor.weights.empty() || cursor.weights.size() == cursor.row_ids.size());
+    chassert(cursor.weights.size() == (params.hasScoring() ? cursor.row_ids.size() : 0));
     return true;
 }
 
@@ -801,16 +799,8 @@ std::pair<UInt64, UInt64> MergeTextIndexesTask::PostingsMergeQueue::consumeWindo
         /// The weight of every consumed row id is stored under its bit, to be gathered along with the row id.
         if (with_weights)
         {
-            if (cursor.weights.empty())
-            {
-                for (size_t j = cursor.pos; j < pos; ++j)
-                    window_weights[row_ids[j] - window.begin] = 1;
-            }
-            else
-            {
-                for (size_t j = cursor.pos; j < pos; ++j)
-                    window_weights[row_ids[j] - window.begin] = cursor.weights[j];
-            }
+            for (size_t j = cursor.pos; j < pos; ++j)
+                window_weights[row_ids[j] - window.begin] = cursor.weights[j];
         }
 
         num_consumed += pos - cursor.pos;
@@ -895,7 +885,6 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushRun(Window window, Sink && s
     chassert(window.hasOneSource());
     auto & cursor = *active_cursors[window.min_pos];
     auto remaining = cursor.remaining();
-    auto remaining_weights = cursor.remainingWeights();
 
     size_t run_length = remaining.back() < window.second_head
         ? remaining.size()
@@ -903,7 +892,7 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushRun(Window window, Sink && s
 
     if (positions)
         positions->append(cursor.source_idx, run_length);
-    flushDirect(remaining.first(run_length), remaining_weights.empty() ? remaining_weights : remaining_weights.first(run_length), sink);
+    flushDirect(remaining.first(run_length), cursor.nextWeights(run_length), sink);
     cursor.pos += run_length;
 
     if (!cursor.isValid())
@@ -973,20 +962,9 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushBuffered(bool is_final, Sink
 
 void MergeTextIndexesTask::PostingsMergeQueue::appendToBuffer(std::span<const UInt32> row_ids, std::span<const UInt32> weights)
 {
+    chassert(weights.size() == (with_weights ? row_ids.size() : 0));
     buffer.insert(row_ids.begin(), row_ids.end());
-
-    if (!with_weights)
-        return;
-
-    if (weights.empty())
-    {
-        weights_buffer.resize_fill(weights_buffer.size() + row_ids.size(), 1u);
-    }
-    else
-    {
-        chassert(weights.size() == row_ids.size());
-        weights_buffer.insert(weights.begin(), weights.end());
-    }
+    weights_buffer.insert(weights.begin(), weights.end());
 }
 
 void MergeTextIndexesTask::PostingsMergeQueue::refill(size_t pos)
@@ -1006,8 +984,6 @@ void MergeTextIndexesTask::PostingsMergeQueue::push(const TokenSource & source)
     chassert(active_cursors.size() < cursors.size());
     auto & cursor = cursors[active_cursors.size()];
     task.initPostingsCursor(cursor, source);
-    /// A source stores weights either for all of its segments or for none, so the first decoded one tells.
-    has_weights |= !cursor.weights.empty();
     active_cursors.push_back(&cursor);
 }
 
@@ -1026,9 +1002,10 @@ void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink, PositionsMerg
 
         do
         {
+            auto remaining = cursor.remaining();
             if (positions)
-                positions->append(cursor.source_idx, cursor.remaining().size());
-            flushDirect(cursor.remaining(), cursor.remainingWeights(), sink);
+                positions->append(cursor.source_idx, remaining.size());
+            flushDirect(remaining, cursor.nextWeights(remaining.size()), sink);
         }
         while (task.advancePostingsCursor(cursor));
 
@@ -1051,7 +1028,6 @@ void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink, PositionsMerg
     }
 
     flushBuffered(true, sink);
-    has_weights = false;
 }
 
 template <typename Sink>
@@ -1091,8 +1067,8 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
 
         token_info.cardinality = static_cast<UInt32>(row_ids.size());
 
-        /// The weights are written only if some source stores them, otherwise every weight is 1.
-        if (postings_queue->hasWeights())
+        /// Like on build, the weights are written only if some weight is not 1.
+        if (std::ranges::any_of(weights, [](UInt32 weight) { return weight != 1; }))
             token_info.header |= HasWeights;
         else
             weights = {};
