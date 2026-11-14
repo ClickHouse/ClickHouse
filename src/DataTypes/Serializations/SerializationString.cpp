@@ -215,7 +215,7 @@ try
 
         offset += size;
         if (unlikely(offset > data.size()))
-            data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
+            data.resize_exact(std::max(offset, data.size() * 2));
 
         if (size)
         {
@@ -269,7 +269,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
         if (matched)
         {
             if (unlikely(offset + size > data.size()))
-                data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + size, data.size() * 2)));
+                data.resize_exact(std::max(offset + size, data.size() * 2));
             memcpy(&data[offset], istr.position(), size);
             offset += size;
         }
@@ -279,7 +279,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
 
     /// The value crosses the buffer boundary: read it into the column and roll back if it does not match.
     if (unlikely(offset + size > data.size()))
-        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + size, data.size() * 2)));
+        data.resize_exact(std::max(offset + size, data.size() * 2));
     istr.readStrict(reinterpret_cast<char *>(&data[offset]), size);
 
     bool matched = filter.match(reinterpret_cast<const char *>(&data[offset]), size);
@@ -394,7 +394,7 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 if (matches)
                 {
                     if (unlikely(offset + value_size > data.size()))
-                        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + value_size, data.size() * 2)));
+                        data.resize_exact(std::max(offset + value_size, data.size() * 2));
                     memcpy(&data[offset], value_data, value_size);
                     offset += value_size;
                 }
