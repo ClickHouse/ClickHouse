@@ -59,7 +59,28 @@ SET formatdatetime_parsedatetime_m_is_month_name = 0;
 SELECT count(), (SELECT sum(cityHash64(dt, b, w)) FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M')) AS w FROM t_window_layers_function_settings) SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0) = (SELECT sum(cityHash64(dt, b, w)) FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M')) AS w FROM t_window_layers_function_settings))
 FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M')) AS w FROM t_window_layers_function_settings)
 SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
+-- The raw column `dt` in `PARTITION BY` passes the layer keys, but the order still comes from the stored month names.
+SELECT count(), (SELECT sum(cityHash64(dt, b, w)) FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), dt) AS w FROM t_window_layers_function_settings) SETTINGS optimize_read_in_order = 0) = (SELECT sum(cityHash64(dt, b, w)) FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), dt) AS w FROM t_window_layers_function_settings))
+FROM (SELECT dt, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), dt) AS w FROM t_window_layers_function_settings)
+SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
 DROP TABLE t_window_layers_function_settings;
+
+-- Windows without scatter keys: a floating-point `PARTITION BY` key, and a window with only `ORDER BY`.
+DROP TABLE IF EXISTS t_window_function_settings_no_scatter;
+SET formatdatetime_parsedatetime_m_is_month_name = 1;
+CREATE TABLE t_window_function_settings_no_scatter (dt DateTime('UTC'), f Float64, b UInt32) ENGINE = MergeTree
+ORDER BY (formatDateTime(dt, '%M'), f, b) SETTINGS index_granularity = 100;
+SYSTEM STOP MERGES t_window_function_settings_no_scatter;
+INSERT INTO t_window_function_settings_no_scatter SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number % 2, number FROM numbers(10000);
+INSERT INTO t_window_function_settings_no_scatter SELECT * FROM t_window_function_settings_no_scatter;
+SET formatdatetime_parsedatetime_m_is_month_name = 0;
+SELECT count(), (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), f) AS w FROM t_window_function_settings_no_scatter) SETTINGS optimize_read_in_order = 0) = (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), f) AS w FROM t_window_function_settings_no_scatter))
+FROM (SELECT dt, f, b, count() OVER (PARTITION BY formatDateTime(dt, '%M'), f) AS w FROM t_window_function_settings_no_scatter)
+SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
+SELECT count(), (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter) SETTINGS optimize_read_in_order = 0) = (SELECT sum(cityHash64(dt, f, b, w)) FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter))
+FROM (SELECT dt, f, b, row_number() OVER (ORDER BY formatDateTime(dt, '%M'), f, b) AS w FROM t_window_function_settings_no_scatter)
+SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_block_size = 1000;
+DROP TABLE t_window_function_settings_no_scatter;
 
 -- The sorting key column `payload` is not used by the query and must not be read.
 DROP TABLE IF EXISTS t_window_layers_unused_key_suffix;

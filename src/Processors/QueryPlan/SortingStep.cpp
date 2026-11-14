@@ -922,6 +922,7 @@ QueryPlanStepPtr SortingStep::clone() const
             input_headers.front(), result_description, partition_by_description, limit, sort_settings);
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
+    cloned->is_window_sorting = is_window_sorting;
     cloned->use_buffering = use_buffering;
     cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
     cloned->threshold_tracker = threshold_tracker;
