@@ -73,6 +73,7 @@ extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
 extern const SettingsBool make_distributed_plan;
+extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace
@@ -240,6 +241,16 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         {
             LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
             return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+        }
+
+        /// A correlated subquery makes `DisableParallelReplicasPass` turn parallel replicas off in the query tree of
+        /// this plan. When it turns them off everywhere, the planner reads nothing with them. Plan-based parallel
+        /// replicas choose the read while optimizing the plan instead, so leave that to the build.
+        if (!eligibility_context->getSettingsRef()[Setting::parallel_replicas_plan_based]
+            && disablesParallelReplicasInWholeTree(single_node_query_tree))
+        {
+            LOG_TRACE(logger, "A correlated subquery disables parallel replicas in the whole query. Skipping building query plan with parallel replicas.");
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
         }
 
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
