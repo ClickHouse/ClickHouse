@@ -1,6 +1,7 @@
 #include <Interpreters/convertColumnToType.h>
 #include <Formats/FormatSettings.h>
 
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
@@ -508,6 +509,23 @@ ColumnPtr convertColumnToTypeOrNull(
     /// An out-of-range timestamp would be stored truncated; see `dateTimeValueFitsStorage`.
     if (!dateTimeValueFitsStorage(converted, *to))
         return {};
+
+    /// Inserting a `Field` into `Dynamic` loses types without a `Field` tag (`Date` becomes `UInt16`), so cast a column instead.
+    if (to->hasDynamicStructure())
+    {
+        /// Built from the converted `Field` to keep a raw `Bool` byte normalized.
+        if (isDynamic(*to) && !source->hasDynamicStructure() && !isVariant(*source))
+        {
+            const DataTypePtr value_type = recursiveRemoveLowCardinality(source);
+            auto value_column = value_type->createColumn();
+            value_column->insert(converted);
+            return castColumn(ColumnWithTypeAndName(std::move(value_column), value_type, ""), to);
+        }
+
+        /// A string is parsed as text above, which `CAST` does not support for every type (e.g. `Map`).
+        if (!isStringOrFixedString(removeNullable(recursiveRemoveLowCardinality(source))))
+            return castColumn(ColumnWithTypeAndName(recursiveRemoveLowCardinality(full), recursiveRemoveLowCardinality(from), ""), to);
+    }
 
     auto column = to->createColumn();
     column->insert(converted);

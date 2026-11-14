@@ -1,5 +1,10 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <IO/ReadHelpers.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
@@ -468,6 +473,116 @@ namespace
             }
         }
     }
+
+    ColumnPtr tryToReplaceNullsInComplexTypesWithDefaultValues(const ColumnPtr & column, const DataTypePtr & column_type, const IDataType & data_type);
+
+    /// Returns `nullptr` if there was nothing to replace.
+    ColumnPtr tryToReplaceNullsInElementWithDefaultValues(const ColumnPtr & column, const DataTypePtr & column_type, const IDataType & element_type)
+    {
+        ColumnPtr result;
+
+        if (!element_type.isNullable() && (column_type->isNullable() || column_type->isLowCardinalityNullable()))
+        {
+            const Field default_value = removeNullable(removeLowCardinality(column_type))->getDefault();
+            auto new_column = column->cloneEmpty();
+            new_column->reserve(column->size());
+            bool has_null = false;
+            for (size_t i = 0; i < column->size(); ++i)
+            {
+                if (column->isNullAt(i))
+                {
+                    new_column->insert(default_value);
+                    has_null = true;
+                }
+                else
+                {
+                    new_column->insertFrom(*column, i);
+                }
+            }
+            if (has_null)
+                result = std::move(new_column);
+        }
+
+        if (auto replaced = tryToReplaceNullsInComplexTypesWithDefaultValues(result ? result : column, column_type, element_type))
+            return replaced;
+        return result;
+    }
+
+    /// Column version of `tryToReplaceNullFieldsInComplexTypesWithDefaultValues` that keeps value types for `Dynamic`.
+    /// Returns `nullptr` if there was nothing to replace.
+    ColumnPtr tryToReplaceNullsInComplexTypesWithDefaultValues(const ColumnPtr & column, const DataTypePtr & column_type, const IDataType & data_type)
+    {
+        checkStackSize();
+
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
+        {
+            const auto * nullable_type = typeid_cast<const DataTypeNullable *>(column_type.get());
+            if (!nullable_type)
+                return nullptr;
+            auto nested = tryToReplaceNullsInComplexTypesWithDefaultValues(nullable->getNestedColumnPtr(), nullable_type->getNestedType(), data_type);
+            if (!nested)
+                return nullptr;
+            return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+        }
+
+        WhichDataType type(data_type);
+
+        if (type.isTuple())
+        {
+            const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
+            const auto * column_tuple_type = typeid_cast<const DataTypeTuple *>(column_type.get());
+            const auto & type_tuple = assert_cast<const DataTypeTuple &>(data_type);
+            if (!column_tuple || !column_tuple_type || column_tuple->tupleSize() != type_tuple.getElements().size())
+                return nullptr;
+
+            Columns elements = column_tuple->getColumnsCopy();
+            bool replaced = false;
+            for (size_t i = 0; i < elements.size(); ++i)
+            {
+                if (auto element = tryToReplaceNullsInElementWithDefaultValues(elements[i], column_tuple_type->getElement(i), *type_tuple.getElement(i)))
+                {
+                    elements[i] = std::move(element);
+                    replaced = true;
+                }
+            }
+            if (!replaced)
+                return nullptr;
+            return ColumnTuple::create(elements);
+        }
+        if (type.isArray())
+        {
+            const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
+            const auto * column_array_type = typeid_cast<const DataTypeArray *>(column_type.get());
+            if (!column_array || !column_array_type)
+                return nullptr;
+
+            auto data = tryToReplaceNullsInElementWithDefaultValues(
+                column_array->getDataPtr(), column_array_type->getNestedType(), *assert_cast<const DataTypeArray &>(data_type).getNestedType());
+            if (!data)
+                return nullptr;
+            return ColumnArray::create(data, column_array->getOffsetsPtr());
+        }
+        if (type.isMap())
+        {
+            const auto * column_map = typeid_cast<const ColumnMap *>(column.get());
+            const auto * column_map_type = typeid_cast<const DataTypeMap *>(column_type.get());
+            if (!column_map || !column_map_type)
+                return nullptr;
+
+            const auto & type_map = assert_cast<const DataTypeMap &>(data_type);
+            const auto & entries = column_map->getNestedData();
+            auto keys = tryToReplaceNullsInElementWithDefaultValues(entries.getColumnPtr(0), column_map_type->getKeyType(), *type_map.getKeyType());
+            auto values = tryToReplaceNullsInElementWithDefaultValues(entries.getColumnPtr(1), column_map_type->getValueType(), *type_map.getValueType());
+            if (!keys && !values)
+                return nullptr;
+            return ColumnMap::create(
+                keys ? keys : entries.getColumnPtr(0),
+                values ? values : entries.getColumnPtr(1),
+                column_map->getNestedColumn().getOffsetsPtr());
+        }
+
+        return nullptr;
+    }
 }
 
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
@@ -667,7 +782,18 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+    /// Keep the column for `Dynamic`/`JSON`: a `Field` loses types like `Date`.
+    std::optional<EvaluateConstantExpressionColumnResult> value_column;
+    std::pair<Field, DataTypePtr> value_raw;
+    if (type.hasDynamicStructure())
+    {
+        value_column = evaluateConstantExpressionAsColumn(ast, context);
+        value_raw = {(*value_column->getColumn())[0], value_column->getType()};
+    }
+    else
+    {
+        value_raw = evaluateConstantExpression(ast, context);
+    }
 
     Field & expression_value = value_raw.first;
 
@@ -696,11 +822,16 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     /// Insert value into the column.
     /// For Dynamic type we cannot just insert Field as we lose information about the data type.
-    /// Instead try to create a column with single element and cast it to the destination type.
+    /// Instead cast the evaluated column to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        ColumnPtr evaluated_column = value_column->getColumn()->convertToFullColumnIfConst();
+        if (format_settings.null_as_default)
+        {
+            if (auto replaced = tryToReplaceNullsInComplexTypesWithDefaultValues(evaluated_column, value_raw.second, type))
+                evaluated_column = std::move(replaced);
+        }
+        auto casted_column = castColumn(ColumnWithTypeAndName(evaluated_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
     else
