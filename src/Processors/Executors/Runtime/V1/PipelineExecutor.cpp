@@ -467,7 +467,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 catch (...)
                 {
                     context.setException(std::current_exception());
-                    cancel(IProcessor::CancelReason::Exception);
+                    cancelWithException(std::current_exception());
                     break;
                 }
             }
