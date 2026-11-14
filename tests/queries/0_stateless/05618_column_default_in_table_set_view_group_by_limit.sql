@@ -1,6 +1,9 @@
 -- A `DEFAULT p IN view` of a column missing in a part builds its set by reading the view. The limits of the reading
 -- query, such as `max_rows_to_group_by` for an aggregating view, have to bound that reading as they bound `p IN view`.
 
+-- Aggregation in order does not check `max_rows_to_group_by`.
+SET optimize_aggregation_in_order = 0;
+
 DROP TABLE IF EXISTS t_default_set_group_by;
 DROP VIEW IF EXISTS grouped_keys_default_set;
 DROP TABLE IF EXISTS keys_default_set_group_by;
