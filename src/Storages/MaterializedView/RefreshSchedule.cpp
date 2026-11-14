@@ -56,7 +56,7 @@ std::chrono::sys_seconds RefreshSchedule::timeslotForCompletedRefresh(std::chron
     /// some timeslots.
     auto res = floorEvery(start_time, period, offset);
     if (out_of_schedule)
-        return res;
+        return std::max(res, last_completed_timeslot);
     /// Next timeslot after the last completed one. Useful in case we did a refresh a little early
     /// because of random spread.
     res = std::max(res, advanceEvery(last_completed_timeslot, period, offset));
