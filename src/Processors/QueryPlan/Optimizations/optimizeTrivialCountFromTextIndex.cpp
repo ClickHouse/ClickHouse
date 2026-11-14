@@ -337,6 +337,12 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     if (settings.make_distributed_plan || settings.enable_parallel_replicas)
         return false;
 
+    /// The plan for automatic parallel replicas has no index analysis of its reads, so analyzing here would run it
+    /// over the filter `processAndOptimizeTextIndexFunctions` already rewrote. There is nothing to gain either:
+    /// when the single-node plan made this replacement, automatic parallel replicas does not consider the query.
+    if (settings.find_single_node_read)
+        return false;
+
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
         return false;
