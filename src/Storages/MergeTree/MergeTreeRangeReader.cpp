@@ -735,7 +735,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
     /// Shrinking a tail ends the current delayed read and forces a fresh seek
     /// for the next granule, so it only pays off when enough rows are dropped
     /// to outweigh the extra seek and misaligned filesystem-cache segment.
-    if (2 * total_zero_rows_in_tails > filter.size())
+    /// A chain that cannot read incomplete granules (Compact parts) only has whole-granule tails,
+    /// and its reader seeks to each column of each granule anyway, so dropping one costs no seek.
+    if (2 * total_zero_rows_in_tails > filter.size() || (!can_read_incomplete_granules_ && total_zero_rows_in_tails > 0))
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
         const size_t total_rows_per_granule_previous = total_rows_per_granule;

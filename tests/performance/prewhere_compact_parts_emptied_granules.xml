@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <max_partitions_per_insert_block>1000</max_partitions_per_insert_block>
+    </settings>
+
+    <create_query>CREATE TABLE t_prewhere_compact (c1 DateTime, c2 LowCardinality(String), c3 LowCardinality(String), c4 LowCardinality(String), c5 UInt32, c6 UInt32, c7 UInt32, c8 UInt32, c9 Nullable(Float32), c10 Float32) ENGINE = MergeTree PARTITION BY toYYYYMMDD(c1) ORDER BY (c1, c2) SETTINGS index_granularity = 8192, min_bytes_for_wide_part = '1T', min_rows_for_wide_part = 1000000000000</create_query>
+
+    <fill_query>INSERT INTO t_prewhere_compact SELECT toDateTime('2025-01-01 00:00:00') + intDiv(number, 32000) * 3600, concat('r', toString(cityHash64(number, 1) % 30)), lower(concat(hex(cityHash64(cityHash64(number, 2) % 2000000)), hex(cityHash64(cityHash64(number, 2) % 2000000, 1)))), concat('m', toString(cityHash64(number, 3) % 6)), cityHash64(number, 4) % 2, 1, cityHash64(number, 5) % 2, cityHash64(number, 6) % 2, if(cityHash64(number, 7) % 10 = 0, NULL, toFloat32(cityHash64(number, 8) % 600)), toFloat32(cityHash64(number, 9) % 2) FROM numbers(64000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_prewhere_compact FINAL</fill_query>
+
+    <!-- Compact parts: granules emptied by an earlier PREWHERE step must not be read by the later steps -->
+    <query>SELECT toStartOfMonth(toDate(c1)) AS p901, c4, round((100 * sum(c5)) / sum(c6), 2) AS a1, round((100 * sum(c7)) / sum(c6), 2) AS a2, round((100 * sum(c8)) / sum(c6), 2) AS a3, round(sum(c9) / sum(c10), 2) AS a4 FROM t_prewhere_compact WHERE (c2 = 'r2') AND ((toDate(c1) &gt;= '2024-09-01') AND (toDate(c1) &lt;= '2026-10-11')) AND ((toMonth(toDate(c1)) != 10) OR (toDayOfMonth(toDate(c1)) &lt;= 11) OR (toYear(toDate(c1)) = 2024)) AND (c3 NOT IN ('a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8')) AND (c4 IN ('m1', 'm2', 'm3', 'm4')) GROUP BY p901, c4 ORDER BY c4 ASC, p901 ASC FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_prewhere_compact</drop_query>
+</test>
