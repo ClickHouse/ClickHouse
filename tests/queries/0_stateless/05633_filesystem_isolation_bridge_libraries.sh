@@ -148,6 +148,12 @@ else
     echo "libraries of the bridge: missing$MISSING"
 fi
 
+# The startup script can finish after the server is ready, as with a slow sanitizer.
+for _ in {1..600}; do
+    [ -s "$DIR/data/user_files/bridge_result.tsv" ] && break
+    grep -q 'test_filesystem_isolation_bridge' "$DIR/log/server.err.log" 2>/dev/null && break
+    sleep 0.1
+done
 echo "result of the bridge: $(cat "$DIR/data/user_files/bridge_result.tsv" 2>/dev/null || grep -m1 'test_filesystem_isolation_bridge' "$DIR/log/server.err.log")"
 
 # The directory of the logs of the bridge is outside of every other mount, so it is a writable mount of its own.

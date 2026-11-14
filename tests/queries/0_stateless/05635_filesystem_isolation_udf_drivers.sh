@@ -96,7 +96,14 @@ EOF
         cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
         exit 1
     fi
-    grep -q 'are not supported with the server setting `filesystem_isolation`' "$DIR/log/server.err.log" && REFUSED=$((REFUSED + 1))
+    # The error of the startup script can be logged after the server is ready, as with a slow sanitizer.
+    for _ in {1..600}; do
+        if grep -q 'are not supported with the server setting `filesystem_isolation`' "$DIR/log/server.err.log" 2>/dev/null; then
+            REFUSED=$((REFUSED + 1))
+            break
+        fi
+        sleep 0.1
+    done
 
     kill "$PID"
     wait "$PID"
