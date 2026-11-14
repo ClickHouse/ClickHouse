@@ -1,0 +1,22 @@
+MergeTree, ATTACH PART
+1	5
+2	0
+1	5
+2	0
+attached patch keeps its version	1
+ReplicatedMergeTree, ATTACH PARTITION
+1	5	1
+2	1	1
+3	1	1
+4	1	1
+5	1	1
+6	1	1
+attached patch keeps its version	1
+MOVE PART TO SHARD
+BAD_ARGUMENTS
+SUPPORT_IS_DISABLED
+replica without the patch	0
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+1	5
+0
