@@ -59,9 +59,15 @@ SELECT 'final', count() FROM (
     EXCEPT
     SELECT * FROM t FINAL);
 SELECT 'final', count() FROM (
-    SELECT * FROM t FINAL SETTINGS max_block_size = 1000
+    SELECT * FROM t FINAL
     EXCEPT
-    SELECT k, sumWithOverflow(a), sumWithOverflow(f), sumWithOverflow(f32), sumWithOverflow(dec), any(s), any(lc) FROM t GROUP BY k);
+    SELECT k, sumWithOverflow(a), sumWithOverflow(f), sumWithOverflow(f32), sumWithOverflow(dec), any(s), any(lc) FROM t GROUP BY k)
+SETTINGS max_block_size = 1000;
+SELECT 'final', count() FROM (
+    SELECT k, sumWithOverflow(a), sumWithOverflow(f), sumWithOverflow(f32), sumWithOverflow(dec), any(s), any(lc) FROM t GROUP BY k
+    EXCEPT
+    SELECT * FROM t FINAL)
+SETTINGS max_block_size = 1000;
 
 -- Merges remove the rows with only zero sums.
 CREATE TABLE merged_expected (k UInt64, a Int64, f Float64, f32 Float32, dec Decimal(18, 4), s String, lc LowCardinality(String)) ENGINE = Memory;

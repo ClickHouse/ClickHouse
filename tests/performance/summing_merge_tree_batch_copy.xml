@@ -1,7 +1,8 @@
-<test>
+<test iceberg="0">
     <!-- SummingMergeTree FINAL, merges and INSERT where most rows have no other row with the same key: one large part
          without duplicate keys and ten small parts with new rows for existing keys, and an INSERT of new keys.
-         Column statistics are off, so that the merges and the INSERT measure the summing itself. -->
+         Column statistics are off, so that the merges and the INSERT measure the summing itself.
+         Not on Iceberg tables: they do not support FINAL and named parts. -->
     <create_query>CREATE TABLE sum_k (k UInt64, v1 UInt64, v2 Float64) ENGINE = SummingMergeTree ORDER BY k SETTINGS auto_statistics_types = ''</create_query>
     <create_query>CREATE TABLE sum_sd (sid UInt32, d Date, page String, hits UInt64, cost Float64) ENGINE = SummingMergeTree ORDER BY (sid, d) SETTINGS auto_statistics_types = ''</create_query>
     <create_query>CREATE TABLE sum_ins (k UInt64, v1 UInt64, v2 Float64) ENGINE = SummingMergeTree ORDER BY k SETTINGS auto_statistics_types = ''</create_query>
