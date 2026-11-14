@@ -521,9 +521,34 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No schema id found for snapshot id `{}`", snapshot_id);
     Int32 schema_id = snapshot_object->getValue<Int32>(f_schema_id);
 
+    const Poco::JSON::Array::Ptr partition_specs
+        = metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr;
+    auto manifest_list_entries = getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log);
+
+    /// A manifest list entry names one of the table's partition specs;
+    /// format version 1 metadata without `partition-specs` has only the spec 0, its `partition-spec`.
+    std::unordered_set<Int32> spec_ids;
+    if (partition_specs)
+    {
+        for (UInt32 i = 0; i < partition_specs->size(); ++i)
+            if (const auto spec = partition_specs->getObject(i); spec && spec->has(f_spec_id))
+                spec_ids.insert(spec->getValue<Int32>(f_spec_id));
+    }
+    else if (metadata_object->getValue<Int32>(f_format_version) == 1 && metadata_object->getArray(f_partition_spec))
+        spec_ids.insert(0);
+
+    for (const auto & entry : manifest_list_entries)
+        if (!spec_ids.contains(entry.partition_spec_id))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest '{}' in the manifest list '{}' refers to the partition spec {}, which is not in '{}' of the table metadata",
+                entry.manifest_file_path,
+                manifest_list_file_path,
+                entry.partition_spec_id,
+                f_partition_specs);
 
     return std::make_shared<IcebergDataSnapshot>(
-        getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log),
+        std::move(manifest_list_entries),
         snapshot_id,
         schema_id,
         total_rows,
@@ -531,7 +556,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_position_deletes,
         total_equality_deletes,
         refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr,
+        partition_specs,
         metadata_object->getArray(f_statistics));
 }
 

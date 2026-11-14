@@ -1,0 +1,8 @@
+spec_-1 3	6
+evolved 3	6
+removed count rejected
+removed select rejected
+v1_without_partition_specs 2	3
+v1_without_any_partition_spec rejected
+v1_with_null_partition_spec rejected
+v2_without_partition_specs rejected
