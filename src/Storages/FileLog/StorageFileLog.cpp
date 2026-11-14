@@ -1,3 +1,4 @@
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -53,6 +54,11 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
+}
+
 namespace FileLogSetting
 {
     extern const FileLogSettingsStreamingHandleErrorMode handle_error_mode;
@@ -82,6 +88,12 @@ namespace ErrorCodes
 namespace
 {
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+
+    /// The server loads tables only to read them, so loading keeps the offset files as they are.
+    bool loadsPassively(const ContextPtr & context)
+    {
+        return context->getServerSettings()[ServerSetting::load_tables_readonly];
+    }
 
     ContextMutablePtr configureContext(ContextPtr context)
     {
@@ -389,6 +401,7 @@ void StorageFileLog::loadFiles()
     add_files(rotated_files, false);
 
     /// Update file meta or create file meta
+    const bool passive = loadsPassively(getContext());
     std::vector<String> renamed_files;
     for (const auto & [file, ctx] : file_infos.context_by_name)
     {
@@ -398,7 +411,7 @@ void StorageFileLog::loadFiles()
             if (it->second.file_name != file)
             {
                 /// Through a temporary name: the renames of a rotation chain are visited in any order.
-                if (disk->existsFile(getFullMetaPath(it->second.file_name)))
+                if (!passive && disk->existsFile(getFullMetaPath(it->second.file_name)))
                     disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file) + TMP_SUFFIX);
                 it->second.file_name = file;
                 renamed_files.push_back(file);
@@ -412,7 +425,7 @@ void StorageFileLog::loadFiles()
         }
     }
     for (const auto & file : renamed_files)
-        if (disk->existsFile(getFullMetaPath(file) + TMP_SUFFIX))
+        if (!passive && disk->existsFile(getFullMetaPath(file) + TMP_SUFFIX))
             disk->replaceFile(getFullMetaPath(file) + TMP_SUFFIX, getFullMetaPath(file));
 
     /// Clear unneeded meta file, because data files may be deleted
@@ -430,7 +443,7 @@ void StorageFileLog::loadFiles()
                 it != file_infos.context_by_name.end() && it->second.inode == inode)
                 valid_metas.emplace(inode, meta);
             /// Delete meta file from filesystem
-            else
+            else if (!passive)
                 disk->removeFileIfExists(getFullMetaPath(meta.file_name));
         }
         file_infos.meta_by_inode.swap(valid_metas);
@@ -501,8 +514,9 @@ void StorageFileLog::deserialize()
         file_infos.meta_by_inode.emplace(inode, metadata);
     }
 
-    for (const auto & file : files_to_remove)
-        disk->removeFile(file);
+    if (!loadsPassively(getContext()))
+        for (const auto & file : files_to_remove)
+            disk->removeFile(file);
 }
 
 UInt64 StorageFileLog::getInode(const String & file_name)
@@ -758,7 +772,8 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
 
     if (in->eof()) /// File is empty.
     {
-        disk->removeFile(full_path);
+        if (!loadsPassively(getContext()))
+            disk->removeFile(full_path);
         return {};
     }
 

@@ -699,7 +699,7 @@ void VersionMetadata::loadAndUpdateMetadata()
         }
         validateInfo(getObjectName(), current_info);
 
-        if (*update_result)
+        if (*update_result && !loadsPassively())
         {
             auto store_result = storeInfo(current_info);
             if (!store_result)

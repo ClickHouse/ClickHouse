@@ -9,6 +9,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -298,8 +299,14 @@ void FileCacheSettings::validate()
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size_ratio_to_total_space` must be in range (0, 1]");
 
-        fs::create_directories(settings[FileCacheSetting::path].value);
-        struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
+        /// A cache that works in the factory's scratch directory is sized from it, and its configured one is not created.
+        String space_path = FileCacheFactory::instance().getScratchPath();
+        if (space_path.empty())
+        {
+            space_path = settings[FileCacheSetting::path].value;
+            fs::create_directories(space_path);
+        }
+        struct statvfs stat = getStatVFS(space_path);
         const auto total_space = stat.f_blocks * stat.f_frsize;
         settings[FileCacheSetting::max_size] =
             static_cast<UInt64>(std::floor(settings[FileCacheSetting::max_size_ratio_to_total_space].value * static_cast<double>(total_space)));

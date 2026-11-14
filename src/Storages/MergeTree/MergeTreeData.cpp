@@ -428,6 +428,7 @@ namespace ServerSetting
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
     extern const ServerSettingsDouble statistics_cache_prewarm_ratio;
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace FailPoints
@@ -645,6 +646,11 @@ bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
 
 }
 
+bool MergeTreeData::loadsPassively() const
+{
+    return getContext()->getServerSettings()[ServerSetting::load_tables_readonly];
+}
+
 void MergeTreeData::acquireTableDiskRoots()
 {
     std::vector<TableDiskRoot> roots;
@@ -720,7 +726,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         if (disk->isBroken())
             continue;
 
-        if (need_create_directories && !disk->isReadOnly())
+        if (need_create_directories && !disk->isReadOnly() && !loadsPassively())
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
@@ -757,7 +763,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             /// since it does not support move, that is required for any
             /// operation over MergeTree, so avoid writing format_version.txt
             /// into it as well, to avoid leaving it after DROP.
-            if (!disk->isReadOnly() && !disk->isWriteOnce())
+            if (!disk->isReadOnly() && !disk->isWriteOnce() && !loadsPassively())
             {
                 auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
                 writeIntText(format_version.toUnderType(), *buf);
@@ -3687,7 +3693,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
             else if (res.part->is_duplicate)
             {
-                if (!is_static_storage)
+                if (!is_static_storage && !loadsPassively())
                 {
                     LOG_ERROR(log, "Removing duplicate part {}", res.part->getDataPartStorage().getFullPath());
                     res.part->remove();
@@ -3742,7 +3748,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
-    if (!is_static_storage)
+    if (!is_static_storage && !loadsPassively())
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 

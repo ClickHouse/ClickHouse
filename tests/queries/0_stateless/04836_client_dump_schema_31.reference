@@ -1,0 +1,6 @@
+SET allow_lossy_numeric_supertype = 1;
+mv_group_by: GROUP BY gate lines: 0
+mv_group_by: replay rc=0 
+SET allow_lossy_numeric_supertype = 0;
+mv_variant_key: GROUP BY gate lines: 2
+mv_variant_key: replay rc=0 

@@ -1,0 +1,16 @@
+probed: dump rc=0
+SET allow_lossy_numeric_supertype = 1;
+probed: unverified warnings: 0
+probed: profile warnings: 1
+probed: replay rc=0
+nested: dump rc=0
+nested: unverified warnings: 1
+default: dump rc=0
+SET allow_lossy_numeric_supertype = 1;
+default: table unverified warnings: 0
+default: constraint unverified warnings: 1
+default: replay rc=0
+view: dump rc=0
+SET allow_lossy_numeric_supertype = 1;
+view: constraint unverified warnings: 1
+view: replay rc=0

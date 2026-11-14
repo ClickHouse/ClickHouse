@@ -6,6 +6,7 @@
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/UUID.h>
@@ -27,6 +28,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -46,6 +48,9 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Poco/String.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/ThreadPool.h>
 
 
@@ -69,6 +74,11 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
@@ -89,6 +99,60 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+
+namespace
+{
+
+/// Whether an argument of the call, other than a dictionary name, reads a column, so the call is not folded.
+bool readsColumn(const ASTFunction & call)
+{
+    if (!call.arguments)
+        return false;
+    const auto & arguments = call.arguments->children;
+    std::vector<const IAST *> stack;
+    for (size_t i = Poco::toLower(call.name).starts_with("dict") ? 1 : 0; i < arguments.size(); ++i)
+        stack.push_back(arguments[i].get());
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (node->as<ASTIdentifier>())
+            return true;
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+    return false;
+}
+
+/// With `load_tables_readonly`, refuses an argument that loads a dictionary or runs a user-defined function when it is folded.
+void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!function || !function->arguments || !context->getServerSettings()[ServerSetting::load_tables_readonly])
+        return;
+    const auto & arguments = function->arguments->children;
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        /// The sharding key of `Distributed` runs per row, so only its calls on constants are folded at load.
+        const bool per_row = function->name == "Distributed" && i == 3;
+        std::vector<const IAST *> stack{arguments[i].get()};
+        while (!stack.empty())
+        {
+            const IAST * node = stack.back();
+            stack.pop_back();
+            if (const auto * call = node->as<ASTFunction>(); call
+                && (Poco::toLower(call->name).starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(call->name)
+                    || UserDefinedExecutableFunctionFactory::has(call->name, context))
+                && !(per_row && readsColumn(*call)))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
+                    backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
+            for (const auto & child : node->children)
+                stack.push_back(child.get());
+        }
+    }
+}
+
+}
 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
@@ -116,8 +180,12 @@ std::pair<String, StoragePtr> createTableFromAST(
     if (ast_create_query.select && ast_create_query.isView())
         ApplyWithSubqueryVisitor::visit(*ast_create_query.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
+    if (ast_create_query.storage)
+        checkArgumentsLoadPassively(ast_create_query.storage->engine, ast_create_query, context);
+
     if (ast_create_query.as_table_function)
     {
+        checkArgumentsLoadPassively(ast_create_query.as_table_function->as<ASTFunction>(), ast_create_query, context);
         const auto & factory = TableFunctionFactory::instance();
         auto table_function_ast = ast_create_query.as_table_function->ptr();
         auto table_function = factory.get(table_function_ast, context);
@@ -786,6 +854,8 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     /// Metadata files to load: name and flag for .tmp_drop files
     std::vector<std::pair<String, bool>> metadata_files;
+    /// `load_tables_readonly` removes, renames and restores no file here.
+    const bool load_readonly = getContext()->getServerSettings()[ServerSetting::load_tables_readonly];
 
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
@@ -806,16 +876,27 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         if (endsWith(file_name, ".sql.tmp_drop"))
         {
             /// There are files that we tried to delete previously
-            metadata_files.emplace_back(file_name, false);
+            if (!load_readonly)
+                metadata_files.emplace_back(file_name, false);
+            /// Loading restores such an object by renaming its file, or removes the file of one without data.
+            else if (const String object_name = file_name.substr(0, file_name.size() - strlen(".sql.tmp_drop"));
+                     db_disk->existsFileOrDirectory(fs::path(data_path) / object_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load database {} with `load_tables_readonly`: object {} was not dropped completely, and loading it "
+                    "restores its metadata file {}", backQuote(getDatabaseName()), backQuote(object_name), getMetadataPath() + file_name);
         }
         else if (endsWith(file_name, ".tmp_move_from") || endsWith(file_name, ".tmp_move_to"))
         {
+            if (load_readonly)
+                continue;
             /// There are temp files generated in MetadataStorageFromPlainObjectStorageMoveFileOperation
             LOG_INFO(log, "Removing file {}", sub_path.string());
             db_disk->removeFileIfExists(sub_path);
         }
         else if (endsWith(file_name, ".sql.tmp"))
         {
+            if (load_readonly)
+                continue;
             /// There are files .sql.tmp - delete
             LOG_INFO(log, "Removing file {}", sub_path.string());
             db_disk->removeFileIfExists(sub_path);
@@ -873,7 +954,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
                 continue;
 
             stale_files.insert(file_name);
-            if (db_disk->isReadOnly())
+            if (db_disk->isReadOnly() || load_readonly)
             {
                 LOG_WARNING(log, "Skipping {}: it is a copy of {}", path, *copy);
                 continue;

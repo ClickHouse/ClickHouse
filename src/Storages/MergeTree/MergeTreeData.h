@@ -1454,6 +1454,8 @@ public:
     DiskPtr getDiskForDetachedPart(const String & part_name) const;
 
     bool storesDataOnDisk() const override { return !isStaticStorage(); }
+    /// The server loads tables only to read them (`load_tables_readonly`), so loading writes nothing to their disks.
+    bool loadsPassively() const;
     Strings getDataPaths() const override;
 
     /// Reserves space at least 1MB.

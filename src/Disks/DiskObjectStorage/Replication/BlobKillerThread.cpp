@@ -378,7 +378,8 @@ void BlobKillerThread::shutdown()
 
     task->deactivate();
 
-    if (!metadata_storage->hasDeadBlobsQueue())
+    /// A killer that never started, as with `load_tables_readonly`, removes nothing.
+    if (!started || !metadata_storage->hasDeadBlobsQueue())
         return;
 
     /// We need to execute it here explicitly because some blobs may be in the metadata storage queue.

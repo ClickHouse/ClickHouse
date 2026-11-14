@@ -16,6 +16,7 @@ namespace ErrorCodes
 namespace FileCacheSetting
 {
     extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
 }
 
 FileCacheFactory::FileCacheData::FileCacheData(
@@ -85,7 +86,7 @@ FileCachePtr FileCacheFactory::getOrCreate(
 
     if (it == caches_by_name.end())
     {
-        auto cache = std::make_shared<FileCache>(cache_name, file_cache_settings);
+        auto cache = makeCache(cache_name, file_cache_settings);
 
         bool inserted = false;
         std::tie(it, inserted) = caches_by_name.emplace(
@@ -112,6 +113,20 @@ FileCachePtr FileCacheFactory::getOrCreate(
     return it->second->cache;
 }
 
+FileCachePtr FileCacheFactory::makeCache(const std::string & cache_name, const FileCacheSettings & file_cache_settings)
+{
+    if (scratch_path.empty())
+        return std::make_shared<FileCache>(cache_name, file_cache_settings);
+
+    /// The factory keeps the configured settings, so caches still match by their configured path.
+    FileCacheSettings scratch_settings = file_cache_settings;
+    scratch_settings[FileCacheSetting::path] = fs::path(scratch_path) / std::to_string(scratch_caches++);
+    /// `FileCache::initialize` refuses a `max_size` above the capacity of the filesystem that holds the cache.
+    scratch_settings[FileCacheSetting::max_size]
+        = std::min<UInt64>(scratch_settings[FileCacheSetting::max_size], fs::space(scratch_path).capacity);
+    return std::make_shared<FileCache>(cache_name, scratch_settings);
+}
+
 FileCachePtr FileCacheFactory::create(
     const std::string & cache_name,
     const FileCacheSettings & file_cache_settings,
@@ -131,7 +146,7 @@ FileCachePtr FileCacheFactory::create(
 
     if (it == caches_by_name.end())
     {
-        auto cache = std::make_shared<FileCache>(cache_name, file_cache_settings);
+        auto cache = makeCache(cache_name, file_cache_settings);
         it = caches_by_name.emplace(
             cache_name, std::make_unique<FileCacheData>(cache, file_cache_settings, config_path)).first;
     }
@@ -221,6 +236,19 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
 
         cache_info->setSettings(std::move(old_settings));
     }
+}
+
+void FileCacheFactory::setScratchPath(const std::string & path)
+{
+    fs::create_directories(path);
+    std::lock_guard lock(mutex);
+    scratch_path = path;
+}
+
+std::string FileCacheFactory::getScratchPath()
+{
+    std::lock_guard lock(mutex);
+    return scratch_path;
 }
 
 void FileCacheFactory::remove(FileCachePtr cache)

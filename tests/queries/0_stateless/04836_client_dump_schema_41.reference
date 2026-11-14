@@ -1,0 +1,28 @@
+--- a multiIf alias carries the lossy supertype gate ---
+alias: dump rc=0
+alias: replay rc=0
+1
+--- an eager dictionary comes after the table its source query reads through merge ---
+dictionary_source: dump rc=0
+dictionary_source: replay rc=0
+--- a table comes after the dictionary its TTL reads ---
+ttl: dump rc=0
+ttl: replay rc=0
+--- legacy aggregate states keep their version ---
+legacy_state: dump rc=0
+legacy_state: replay rc=0
+column types match
+10	10	10
+--- a stored table-function argument that loads a dictionary is refused ---
+dump rc=210
+Code: 48
+0
+--- a Distributed sharding key loads its dictionary only when the call is constant ---
+k: dump rc=0
+0
+toUInt64(1): dump rc=210
+Code: 48
+0
+--- a JOIN in a constraint subquery carries the Dynamic key gate ---
+1
+replay rc=0

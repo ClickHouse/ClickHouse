@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -45,6 +46,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace MaterializedPostgreSQLSetting
@@ -196,7 +202,10 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
         fmt::format("startup MaterializedPostgreSQL database {}", getDatabaseName()),
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
-            startup_task->activateAndSchedule();
+            /// The synchronization creates the publication and the replication slot on the PostgreSQL server if they
+            /// are missing, which `load_tables_readonly` must not do: the database is only loaded, it does not replicate.
+            if (!getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
+                startup_task->activateAndSchedule();
         });
     std::scoped_lock lock(mutex);
     return startup_postgresql_database_task = makeLoadTask(async_loader, {job});

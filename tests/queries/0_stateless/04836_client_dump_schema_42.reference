@@ -1,0 +1,19 @@
+--- a constraint subquery with a nested correlated subquery ---
+correlated: dump rc=0
+correlated: gate 1
+correlated: replay rc=0
+--- a constraint subquery that reads an eval JOIN on a Dynamic key ---
+eval_join: dump rc=0
+eval_join: gate 1
+eval_join: replay rc=0
+--- a sorting key that is a Variant without lossy numeric promotion ---
+lossy_key: dump rc=0
+lossy_key: replay rc=0
+1
+--- an eager dictionary comes after the view its source table WHERE reads through merge ---
+dictionary_where: dump rc=0
+dictionary_where: replay rc=0
+--- a column named like a virtual column ---
+reserved_name: dump rc=0
+reserved_name: replay rc=0
+1
