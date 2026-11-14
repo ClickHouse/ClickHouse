@@ -1,8 +1,8 @@
 ---
 title: 'Référence de la CLI'
 sidebarTitle: 'CLI'
-description: 'Référence des commandes clicklink clctl : init, preflight, sessions de support, approbation de la passerelle, audit, provisionnement des accès, services managés et approbation de la plateforme'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connecteur', 'CLI']
+description: 'Référence des commandes clicklink clctl : init, preflight, sessions de support, approbation de la passerelle, audit, provisionnement des accès, services managés, approbation de la plateforme, contextes et mises à niveau du connector'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
 
@@ -10,11 +10,11 @@ import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-Le connecteur est fourni sous la forme d’un unique binaire nommé `clicklink` ; les commandes à exécuter se trouvent sous `clicklink clctl`. Cette page présente les commandes utilisées lors de l’installation et des opérations quotidiennes. Exécutez n’importe quelle commande avec `--help` pour afficher son aide complète.
+Le connector est fourni sous la forme d’un unique binaire nommé `clicklink` ; les commandes à exécuter se trouvent sous `clicklink clctl`. Cette page présente les commandes utilisées lors de l’installation et des opérations quotidiennes. Exécutez n’importe quelle commande avec `--help` pour afficher son aide complète.
 
-Les flags des sous-arborescences `troubleshoot`, `scraper`, `preflight`, `executor`, `instances create` et `platform`, ainsi que les flags globaux `--endpoint` et `--cluster`, peuvent également provenir des variables d’environnement `CLCTL_*` (dont le nom est indiqué dans l’aide de chaque flag) ou du fichier `~/.clicklink/clctl.yaml`. Le flag global `-v` journalise les requêtes d’API admin effectuées par une commande ; `-vv` ajoute le corps des requêtes.
+Les indicateurs des sous-arborescences `troubleshoot`, `scraper`, `preflight`, `executor`, `instances create`, `platform` et `connector upgrade`, ainsi que les indicateurs globaux `--endpoint`, `--cluster` et `--infra-context`, peuvent également provenir des variables d’environnement `CLCTL_*` (dont le nom est indiqué dans l’aide de chaque indicateur) ou du fichier `~/.clicklink/clctl.yaml`. L’indicateur global `-v` journalise les requêtes d’API admin effectuées par une commande ; `-vv` ajoute le corps des requêtes.
 
-Les commandes `instances` et `commands`, ainsi que `executor teardown`, interrogent l’API locale de l’executor. Deux flags globaux permettent de la sélectionner : `--endpoint <url>` (par défaut `http://127.0.0.1:9999`, variable d’environnement `CLCTL_ENDPOINT`) et `--cluster <name>` (variable d’environnement `CLCTL_CLUSTER`), qui désigne le cluster managé lorsqu’une commande en requiert un. Sur Kubernetes, ouvrez d’abord un `kubectl port-forward` vers le Deployment de l’executor ; consultez [services managés](/fr/products/bring-your-own-cloud/connector/managed-services#status).
+Les commandes `instances` et `commands`, ainsi que `executor teardown`, interrogent l’API locale de l’executor. Deux indicateurs globaux permettent de la sélectionner : `--endpoint <url>` (par défaut `http://127.0.0.1:9999`, variable d’environnement `CLCTL_ENDPOINT`) et `--cluster <name>` (variable d’environnement `CLCTL_CLUSTER`), qui désigne le cluster managé lorsqu’une commande en requiert un. Sur Kubernetes, ouvrez d’abord un `kubectl port-forward` vers le Deployment de l’executor ; consultez [services managés](/fr/products/bring-your-own-cloud/connector/managed-services#status).
 
 ## clicklink clctl init {#init}
 
@@ -411,6 +411,34 @@ Pour les clusters de test sans services : désinstalle les releases de la platef
 | `--output-dir <path>`                             | Racine d&#39;access dont le bundle `_platform` est supprimé (par défaut `/etc/clicklink/access/executor`).                                                    |
 | `--secret-namespace <ns>`, `--secret-name <name>` | Installations Kubernetes : supprime à la place le Secret du bundle de plateforme dans le namespace du connector (nom par défaut `clicklink-platform-bundle`). |
 | `--dry-run`                                       | Vérifie la présence de services et affiche le plan de réinitialisation sans modifier le cluster.                                                              |
+
+## clicklink clctl context {#context}
+
+`clctl` localise un connector enregistré au moyen d&#39;un contexte nommé : sur Kubernetes, il s&#39;agit du contexte kubeconfig dans lequel il s&#39;exécute ; sur une VM, du fichier de configuration présent sur l&#39;hôte. `context add` enregistre un contexte (le premier enregistré devient le contexte courant), `context use <name>` permet de changer de contexte, `context list` et `context current` les affichent, et `context remove <name>` en supprime un. `--infra-context <name>` (variable d&#39;environnement `CLCTL_INFRA_CONTEXT`) remplace le contexte courant le temps d&#39;une seule exécution. Le contexte courant fournit les valeurs par défaut de `--context`, `--config` et `--cluster` pour les commandes qui les acceptent ; les indicateurs explicites et les variables `CLCTL_*` restent prioritaires. `connector upgrade` nécessite un contexte.
+
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context>
+```
+
+| Indicateur                   | Description                                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--kube-context <name>`      | Nom exact du contexte kubeconfig, tel qu&#39;indiqué par `kubectl config get-contexts`, validé localement. Pour les installations Kubernetes.                |
+| `--config <path>`            | Fichier de configuration du connector sur cet hôte. Pour les installations sur VM. L&#39;un des indicateurs `--kube-context` ou `--config` est obligatoire. |
+| `--connector-namespace <ns>` | Namespace du chart du connector, s&#39;il est différent de `clicklink`.                                                                                     |
+| `--use`                      | Définit ce contexte comme contexte courant, même si un autre contexte l&#39;est déjà.                                                                        |
+
+## clicklink clctl connector upgrade {#connector-upgrade}
+
+Met à niveau une installation Kubernetes à partir du dépôt public de charts, en utilisant le contexte kubeconfig enregistré par `context add`. La commande affiche le chart et l&#39;image actuels ainsi que ceux ciblés, puis demande une confirmation. Elle conserve les valeurs de la version (en supprimant un `image.tag` obsolète), exécute la mise à niveau avec son client Helm intégré, attend la fin du déploiement et vérifie que les groupes de conteneurs de chaque composant activé exécutent bien la nouvelle image. Elle rejette tout contexte Kubernetes dont le cluster, le compte ou la région ne correspond pas à la configuration du connector, ainsi que toute version dont le dépôt d&#39;images n&#39;est pas le dépôt public (par exemple un [mirror privé](/fr/products/bring-your-own-cloud/connector/configuration#private-mirrors)). Consultez la page [opérations](/fr/products/bring-your-own-cloud/connector/operations#upgrades-kubernetes).
+
+| Indicateur          | Description                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version <X.Y.Z>` | Version du chart à installer : l&#39;étiquette de la version sans le `v` initial. L&#39;une des options `--version` ou `--latest` est obligatoire. |
+| `--latest`          | Détermine et installe le chart publié le plus récent.                                                                                              |
+| `--set <key=value>` | Surcharge d&#39;une valeur Helm ; option répétable. Elle modifie uniquement la version ; `clicklink-values.yaml` n&#39;est pas mis à jour.         |
+| `--dry-run`         | S&#39;arrête après la simulation côté serveur effectuée par Helm ; aucune modification n&#39;est appliquée.                                        |
+| `--yes`, `-y`       | Ignore l&#39;invite de confirmation.                                                                                                               |
+| `--timeout <dur>`   | Durée maximale du déploiement et, séparément, de la vérification de l&#39;image (par défaut `15m`).                                                |
 
 ## Options du canal distant {#channel-flags}
 

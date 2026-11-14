@@ -1,0 +1,9 @@
+Avro	a	m	a	['a','b']	{'k':'a'}	('a')	('a')
+Avro null type	a
+Avro Nothing	Nothing	1
+Avro JSON	{"a":"x"}
+MsgPack	a	m	a	['a','b']	{'k':'a'}	('a')	('a')
+MsgPack JSON	{"a":"x"}
+MsgPack Nothing	Nothing	1
+MergeTree	a	m
+MergeTree with DEFAULT	a	o

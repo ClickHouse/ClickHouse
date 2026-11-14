@@ -20,9 +20,7 @@ Hive 引擎 允许对 HDFS Hive 表执行 `SELECT` 查询。目前支持以下�
 
 * Parquet：支持所有简单标量列类型；仅支持 `array` 等复杂类型
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -50,39 +48,11 @@ PARTITION BY expr
 
 * `table` — 远程表名称。
 
-<div id="usage-example">
-  ## 使用示例
-</div>
+## 使用示例 {#usage-example}
 
-<div id="how-to-use-local-cache-for-hdfs-filesystem">
-  ### 如何在 HDFS 文件系统中使用本地缓存
-</div>
+### 使用 ORC 输入格式查询 Hive 表 {#query-hive-table-with-orc-input-format}
 
-我们强烈建议为远程文件系统启用本地缓存。基准测试表明，启用缓存后速度几乎可提升 2 倍。
-
-使用缓存前，请先将其添加到 `config.xml`
-
-```xml
-<local_cache_for_remote_fs>
-    <enable>true</enable>
-    <root_dir>local_cache</root_dir>
-    <limit_size>559096952</limit_size>
-    <bytes_read_before_flush>1048576</bytes_read_before_flush>
-</local_cache_for_remote_fs>
-```
-
-* enable: 如果为 true，ClickHouse 会在启动后为远程文件系统 (HDFS) 维护本地缓存。
-* root&#95;dir: 必填。用于存储远程文件系统本地缓存文件的根目录。
-* limit&#95;size: 必填。本地缓存文件的最大大小 (以字节为单位) 。
-* bytes&#95;read&#95;before&#95;flush: 控制从远程文件系统下载文件时，在刷写到本地文件系统之前可读取的字节数。默认值为 1MB。
-
-<div id="query-hive-table-with-orc-input-format">
-  ### 使用 ORC 输入格式查询 Hive 表
-</div>
-
-<div id="create-table-in-hive">
-  #### 在 Hive 中创建表
-</div>
+#### 在 Hive 中创建表 {#create-table-in-hive}
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
@@ -130,9 +100,7 @@ OK
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### 在 ClickHouse 中创建表
-</div>
+#### 在 ClickHouse 中创建表 {#create-table-in-clickhouse}
 
 在 ClickHouse 中创建一个表，用于从上面创建的 Hive 表中检索数据：
 
@@ -204,13 +172,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-<div id="query-hive-table-with-parquet-input-format">
-  ### 使用 Parquet 输入格式查询 Hive 表
-</div>
+### 使用 Parquet 输入格式查询 Hive 表 {#query-hive-table-with-parquet-input-format}
 
-<div id="create-table-in-hive">
-  #### 在 Hive 中创建表
-</div>
+#### 在 Hive 中创建表 {#create-table-in-hive-1}
 
 ```text
 hive >
@@ -259,9 +223,7 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### 在 ClickHouse 中创建表
-</div>
+#### 在 ClickHouse 中创建表 {#create-table-in-clickhouse-1}
 
 在 ClickHouse 中创建一个表，用于从上文创建的 Hive 表中检索数据：
 
@@ -334,13 +296,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-<div id="query-hive-table-with-text-input-format">
-  ### 使用 Text 输入格式查询 Hive 表
-</div>
+### 使用 Text 输入格式查询 Hive 表 {#query-hive-table-with-text-input-format}
 
-<div id="create-table-in-hive">
-  #### 在 Hive 中创建表
-</div>
+#### 在 Hive 中创建表 {#create-table-in-hive-2}
 
 ```text
 hive >
@@ -388,9 +346,7 @@ OK
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### 在 ClickHouse 中创建表
-</div>
+#### 在 ClickHouse 中创建表 {#create-table-in-clickhouse-2}
 
 在 ClickHouse 中创建一个表，用于从上面创建的 Hive 表中检索数据：
 

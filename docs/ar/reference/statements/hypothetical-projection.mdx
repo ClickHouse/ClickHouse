@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 الإسقاطات الافتراضية (Hypothetical projections) هي إسقاطات وهمية يقتصر نطاقها على الجلسة، ويمكنك إرفاقها بجدول من عائلة `MergeTree` دون بنائها أو تخزينها فعليًا. وهي لا توجد إلا داخل الجلسة الحالية، ويتم إدراجها عبر [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif).
 
-يقدّر `EXPLAIN WHATIF` الإسقاطات الافتراضية العادية (المرتّبة): عدد العلامات والصفوف التي ستطالها قراءة الإسقاط عند تنفيذ استعلام، وما إذا كان مُحسِّن الاستعلامات سيختار الإسقاط بدلًا من الجدول الأساسي. ولا يقدّر جميع الإسقاطات؛ فالإسقاطات التجميعية والإسقاطات التي تتضمن عبارة `WHERE` مثالان على ذلك. ويعرض الإسقاطات المرشحة التي لم يقدّرها مع سبب ذلك. راجع [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif) للاطلاع على القائمة الكاملة. وتظهر الإسقاطات الافتراضية للجلسة أيضًا في [`system.hypothetical_projections`](/ar/reference/system-tables/hypothetical_projections).
+يقدّر `EXPLAIN WHATIF` الإسقاطات الافتراضية العادية (المرتّبة). فعند تنفيذ استعلام ما، يعرض عدد العلامات والصفوف التي ستطالها قراءة الإسقاط، كما يبيّن ما إذا كان مُحسِّن الاستعلامات سيختار الإسقاط بدلًا من الجدول الأساسي. ولا يقدّر الإسقاطات التجميعية وبعض الإسقاطات الأخرى، بل يعرض كل إسقاط مرشّح من هذا النوع مع سبب استبعاده. راجع [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif) للاطلاع على القائمة الكاملة. وتظهر الإسقاطات الافتراضية للجلسة أيضًا في [`system.hypothetical_projections`](/ar/reference/system-tables/hypothetical_projections).
 
 ## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 

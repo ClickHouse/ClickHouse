@@ -309,6 +309,13 @@ def test_optimize_mixed_format_position_delete_reference_bounds(
     )
 
 
+def get_latest_metadata(instance, table_path):
+    latest = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {table_path}/metadata/v*.metadata.json | tail -1"]
+    ).strip()
+    return json.loads(instance.exec_in_container(["cat", latest]))
+
+
 def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -369,6 +376,10 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     assert len({f[2] for f in files}) == 1, files
     assert parquet[0] < orc[0] < parquet[1], files
 
+    # OPTIMIZE must keep the partition keys; the default spec is not spec 0, which regenerated metadata gets.
+    metadata_before = get_latest_metadata(instance, table_path)
+    assert metadata_before["default-spec-id"] != 0, metadata_before["partition-specs"]
+
     expected_ids = "0\n3\n4\n"
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
 
@@ -381,3 +392,116 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     assert "POSITION_DELETE" not in instance.query(
         f"SELECT content FROM system.iceberg_files WHERE database = currentDatabase() AND table = '{TABLE_NAME}'"
     )
+
+    metadata_after = get_latest_metadata(instance, table_path)
+    changed = {
+        key: (metadata_before[key], metadata_after.get(key))
+        for key in ("partition-specs", "default-spec-id", "last-partition-id")
+        if metadata_after.get(key) != metadata_before[key]
+    }
+    assert not changed, changed
+
+
+def test_optimize_refuses_partition_tuple_of_another_arity(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_spec_arity_" + get_uuid_str()
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+
+    # OPTIMIZE rewrites every data file under the default partition spec, so a data file whose
+    # partition tuple has another number of values (here: written before DROP PARTITION FIELD)
+    # must be refused before anything is written.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
+        TBLPROPERTIES ('format-version' = '2', 'write.delete.mode' = 'merge-on-read')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'a'), (2, 'a'), (3, 'b')")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} DROP PARTITION FIELD region")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (4, 'c')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    # Arming condition: the default spec has no fields, while the old data files carry a one-value tuple.
+    metadata = get_latest_metadata(instance, table_path)
+    default_spec = [s for s in metadata["partition-specs"] if s["spec-id"] == metadata["default-spec-id"]]
+    assert len(default_spec) == 1 and default_spec[0]["fields"] == [], metadata["partition-specs"]
+    data_file_partitions = sorted(
+        instance.query(
+            f"""
+            SELECT partition FROM system.iceberg_files
+            WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA' FORMAT TSVRaw
+            """
+        )
+        .strip()
+        .splitlines()
+    )
+    assert data_file_partitions == ["{'a'}", "{'b'}", "{}"], data_file_partitions
+
+    list_files = ["bash", "-c", f"find {table_path} -type f | sort"]
+    files_before = instance.exec_in_container(list_files)
+
+    expected_ids = "1\n3\n4\n"
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+    assert "NOT_IMPLEMENTED" in error and "Logical error" not in error, error
+
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+    assert instance.exec_in_container(list_files) == files_before
+
+
+def test_optimize_keeps_field_ids_of_reordered_columns(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_reordered_columns_" + get_uuid_str()
+
+    # After `ALTER COLUMN region FIRST` the field ids are not 1..N in column order, and the partition spec refers to `region` by its id.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
+        TBLPROPERTIES ('format-version' = '2', 'write.delete.mode' = 'merge-on-read')
+        """
+    )
+    spark.sql(f"ALTER TABLE {TABLE_NAME} ALTER COLUMN region FIRST")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES ('a', 1), ('a', 2), ('b', 3)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    count_position_deletes = (
+        f"SELECT count() FROM system.iceberg_files "
+        f"WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'POSITION_DELETE'"
+    )
+    assert int(instance.query(count_position_deletes)) > 0
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction": 1})
+    assert int(instance.query(count_position_deletes)) == 0
+    write_settings = {"allow_insert_into_iceberg": 1, "mutations_sync": 1}
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('c', 4)", settings=write_settings)
+    instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 3", settings=write_settings)
+
+    assert instance.query(f"SELECT region, id FROM {TABLE_NAME} ORDER BY id") == "a\t1\nc\t4\n"
+    data_file_partitions = instance.query(
+        f"""
+        SELECT partition FROM system.iceberg_files
+        WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA' ORDER BY partition FORMAT TSVRaw
+        """
+    )
+    assert data_file_partitions == "{'a'}\n{'b'}\n{'c'}\n", data_file_partitions
