@@ -3844,9 +3844,8 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     /// together (see `mergeSourceStates`). Otherwise the partition walks the tables source by source. Such a partition
     /// is a large share of the keys, so its pairs of states merge as each source comes, and only the large ones wait for
     /// the pool: holding the pairs of the whole partition for the merge by destination would cost memory and the
-    /// locality of the pairs merged source by source. Only a table that iterates its cells is ever indexed.
+    /// locality of the pairs merged source by source.
     using Table = typename Method::Data;
-    chassert(!indexed || IterableCells<Table>);
     const bool collects_source_slots = indexed && !all_aggregates_has_trivial_destructor;
 
     /// The destination state of each pair, and either its source state, detached from the source table, or the slot of
@@ -3888,6 +3887,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
         }
     };
 
+    /// Merges a source cell that a walk of its table or its cell index handed out.
     auto merge_cell = [&](const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
     {
         typename Method::Data::LookupResult it;
@@ -3896,7 +3896,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
         if constexpr (is_void_mapped)
         {
             /// `src_data` is the cell's `VoidMapped` placeholder - the key union is the whole merge.
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_method.data.emplaceIteratedKey(key, it, inserted, hash_value);
         }
         else
         {
@@ -3904,7 +3904,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
             if (!src_data)
                 return;
 
-            dst_method.data.emplace(key, it, inserted, hash_value);
+            dst_method.data.emplaceIteratedKey(key, it, inserted, hash_value);
             adopt_or_collect(inserted, it->getMapped(), src_data);
         }
     };
@@ -3956,33 +3956,30 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     {
         const bool owns_null_slot = partition_index == 0;
 
-        if constexpr (IterableCells<Table>)
+        if (indexed)
         {
-            if (indexed)
-            {
-                if (owns_null_slot)
-                    for (auto * source : sources)
-                        merge_null_slot(getDataVariant<Method>(*source).data);
-
-                /// The tables of one aggregation are indexed with the same partitions, those of the merge.
+            if (owns_null_slot)
                 for (auto * source : sources)
-                {
-                    chassert(source->numCellIndexPartitions() == num_partitions);
-                    source->forEachIndexedCell<Method>(partition_index, partition_index + 1, merge_cell);
-                }
+                    merge_null_slot(getDataVariant<Method>(*source).data);
 
-                if (!collects_source_slots)
-                {
-                    flush_merges();
-                }
-                else if (!dst_places.empty())
-                {
-                    mergeSourceStates(dst_places, src_slots, parallel_merge, order, group, arena, is_cancelled);
-                    dst_places.clear();
-                    src_slots.clear();
-                }
-                return;
+            /// The tables of one aggregation are indexed with the same partitions, those of the merge.
+            for (auto * source : sources)
+            {
+                chassert(source->cellIndex().numPartitions() == num_partitions);
+                source->cellIndex().forEachCell<Table>(partition_index, partition_index + 1, merge_cell);
             }
+
+            if (!collects_source_slots)
+            {
+                flush_merges();
+            }
+            else if (!dst_places.empty())
+            {
+                mergeSourceStates(dst_places, src_slots, parallel_merge, order, group, arena, is_cancelled);
+                dst_places.clear();
+                src_slots.clear();
+            }
+            return;
         }
 
         try

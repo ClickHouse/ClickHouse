@@ -7,7 +7,6 @@ keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
-import { Image } from "/snippets/components/Image.jsx";
 
 This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [JOIN algorithms](/concepts/features/operations/select/join-algorithms).
 
@@ -54,7 +53,15 @@ If your key optimization metric is performance and you're looking to execute the
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="Join performance optimization decision tree"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Join performance optimization decision tree](/images/guides/joins-4.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -146,7 +153,15 @@ If you want to optimize a join for the lowest memory usage instead of the fastes
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Join memory optimization decision tree" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Join memory optimization decision tree](/images/guides/joins-5.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
