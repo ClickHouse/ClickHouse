@@ -126,6 +126,10 @@ void resetExpressionJITInstance();
 void resetAggregatorJITInstance();
 void resetSortDescriptionJITInstance();
 
+/// Registers the targets of LLVM that the server compiles for, the host's and, with the GPU engine, NVPTX, once: the
+/// registry of LLVM is not synchronized, so a target is registered by no other means, and is looked up after this.
+void initializeLLVMTargets();
+
 }
 
 #else

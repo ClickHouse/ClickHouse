@@ -6,8 +6,6 @@ keywords: ['إعداد ClickStack', 'إعدادات المراقبة', 'إعدا
 doc_type: 'مرجع'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 خيارات الإعداد التالية متاحة لكل مكوّن من مكوّنات ClickStack:
 
 <div id="modifying-settings">
@@ -117,7 +115,15 @@ ingress:
 
 يمكن إجراء هذا الإعداد من داخل التطبيق عبر `Team Settings -> Sources`، كما هو موضح أدناه للسجلات:
 
-<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="إعداد مصدر HyperDX" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![إعداد مصدر HyperDX](/images/use-cases/observability/hyperdx-25.webp)
+
+</Frame>
+
+</div>
 
 يتطلب كل مصدر من هذه المصادر تحديد جدول واحد على الأقل عند الإنشاء، بالإضافة إلى مجموعة من الأعمدة التي تتيح لـ HyperDX الاستعلام عن البيانات.
 
@@ -296,15 +302,39 @@ ingress:
 
 على سبيل المثال، تم إعداد مصدر التتبّع هذا بسمة Highlighted Attributes وسمة Highlighted Trace Attributes:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="تهيئة Highlighted Attributes" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![تهيئة Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
+
+</Frame>
+
+</div>
 
 تُعرض هذه السمات في اللوحة الجانبية بعد النقر على سجل أو `span`:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Highlighted Attributes" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
+
+</Frame>
+
+</div>
 
 يؤدي النقر على سمة إلى إتاحة خيارات لاستخدامها كقيمة بحث. وإذا تم توفير تعبير Lucene اختياري في تهيئة السمة، فسيُستخدم تعبير Lucene للبحث بدلًا من تعبير SQL.
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="بحث Highlighted Attributes" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![بحث Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
+
+</Frame>
+
+</div>
 
 <div id="correlated-sources">
   ### المصادر المرتبطة
@@ -321,7 +351,15 @@ ingress:
 
 على سبيل المثال، يوضّح الشكل أدناه مصدر السجلات بعد تهيئته بمصادر مرتبطة:
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="مصدر HyperDX المرتبط" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مصدر HyperDX المرتبط](/images/use-cases/observability/hyperdx-26.webp)
+
+</Frame>
+
+</div>
 
 <div id="application-configuration-settings">
   ### إعدادات تكوين التطبيق

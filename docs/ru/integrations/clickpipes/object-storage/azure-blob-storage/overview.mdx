@@ -6,8 +6,6 @@ title: 'Интеграция Azure Blob Storage с ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ABS ClickPipe предоставляет полностью управляемый и отказоустойчивый способ организовать приём данных из Azure Blob Storage в ClickHouse Cloud. Он поддерживает как **одноразовую** загрузку, так и **непрерывную ингестию** с семантикой «ровно один раз».
 
 ABS ClickPipes можно развёртывать и администрировать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
@@ -179,7 +177,15 @@ ClickPipes предлагает разумные настройки по умо�
 | `Parallel view processing`           | false                 | Включать ли отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true                  | Следует ли обрабатывать файлы параллельно на нескольких узлах.                                                                                                   |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Расширенные настройки ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</Frame>
+
+</div>
 
 <div id="scaling">
   ### Масштабирование
