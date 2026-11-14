@@ -5,7 +5,9 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <memory>
+#include <mutex>
 
+#include <base/defines.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
@@ -39,7 +41,8 @@ public:
         std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
         const String & container_for_logging_ = {},
         BlobStorageLogWriterPtr blob_log_ = {},
-        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
+        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
+        AzureBlobStorage::ContainerClientRefreshCallback credentials_refresh_callback_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
 
@@ -60,8 +63,14 @@ private:
     void setFakeBufferWhenPreFinalized();
 
     void finalizeImpl() override;
-    void execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
+    /// `func` must use the supplied client, which may change between attempts.
+    void execWithRetry(std::function<void(size_t, const AzureClientPtr &)> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
+
+    AzureClientPtr getClient() const;
+
+    /// `refreshed_in_request` bounds refreshes to one per `execWithRetry` call.
+    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e, const AzureClientPtr & used_client, bool & refreshed_in_request);
 
     /// Returns true if not a single byte was written to the buffer
     bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
@@ -82,7 +91,11 @@ private:
     /// Track that prefinalize() is called only once
     bool is_prefinalized = false;
 
-    AzureClientPtr blob_container_client;
+    mutable std::mutex client_mutex;
+    AzureClientPtr blob_container_client TSA_GUARDED_BY(client_mutex);
+
+    const AzureBlobStorage::ContainerClientRefreshCallback credentials_refresh_callback;
+
     std::vector<std::string> block_ids;
 
     using MemoryBufferPtr = std::unique_ptr<Memory<>>;

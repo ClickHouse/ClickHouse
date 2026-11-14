@@ -10,6 +10,8 @@ namespace DB
 
 bool isRetryableAzureException(const Azure::Core::RequestFailedException & e);
 
+bool isAzureAccessTokenExpiredError(const Azure::Core::RequestFailedException & e);
+
 /// `HttpStatusCode::None` (a transport error) is 0, which `system.blob_storage_log` reserves for success.
 Int32 getAzureErrorCodeForLog(const Azure::Core::RequestFailedException & e);
 

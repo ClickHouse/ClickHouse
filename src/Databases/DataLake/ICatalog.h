@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -347,7 +348,10 @@ public:
         return std::nullopt;
     }
 
-    virtual CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    virtual void setVendedCredentialsCacheTTL(std::chrono::seconds /*ttl*/) {}
+
+    virtual CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(
+        const DB::StorageID & /*storage_id*/, StorageType /*storage_type*/)
     {
         return std::nullopt;
     }
