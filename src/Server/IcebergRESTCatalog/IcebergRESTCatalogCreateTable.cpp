@@ -109,6 +109,8 @@ std::set<Int64> prepareInitialSchema(Poco::JSON::Object::Ptr schema)
     collectAndValidateNestedFields(Poco::Dynamic::Var(schema), ids);
     schema->set(f_type, f_struct);
     schema->set(f_schema_id, 0);
+    if (auto violation = IcebergSchemaProcessor::findSchemaViolation(*schema, /*is_table_schema=*/ true))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid 'schema': {}", *violation);
     return ids;
 }
 

@@ -1,7 +1,9 @@
+#include <span>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/CaseAwareBlockNameMap.h>
+#include <DataTypes/IDataType.h>
 #include <Formats/ColumnMapping.h>
 #include <Formats/FormatSettings.h>
 #include <optional>
@@ -21,7 +23,7 @@ void addColumnsInternal(
     std::vector<String> & names_of_columns,
     ColumnMapping::OptionalIndexes & column_indexes_for_input_fields,
     std::vector<size_t> & not_presented_columns,
-    const Names & column_names,
+    std::span<const String> column_names,
     const FormatSettings & settings,
     size_t size,
     TSearchFunc find)
@@ -77,7 +79,7 @@ void ColumnMapping::setupByHeader(const Block & header)
 }
 
 void ColumnMapping::addColumns(
-    const Names & column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings)
+    std::span<const String> column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings)
 {
     addColumnsInternal(
         names_of_columns,
@@ -97,7 +99,7 @@ void ColumnMapping::addColumns(
         });
 }
 
-void ColumnMapping::addColumns(const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings)
+void ColumnMapping::addColumns(std::span<const String> column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings)
 {
     addColumnsInternal(
         names_of_columns,
@@ -117,11 +119,11 @@ void ColumnMapping::addColumns(const Names & column_names, const BlockNameMap & 
         });
 }
 
-void ColumnMapping::insertDefaultsForNotSeenColumns(MutableColumns & columns, std::vector<UInt8> & read_columns)
+void ColumnMapping::insertDefaultsForNotSeenColumns(MutableColumns & columns, const DataTypes & data_types, std::span<UInt8> read_columns)
 {
     for (auto index : not_presented_columns)
     {
-        columns[index]->insertDefault();
+        data_types[index]->insertDefaultInto(*columns[index]);
         read_columns[index] = false;
     }
 }

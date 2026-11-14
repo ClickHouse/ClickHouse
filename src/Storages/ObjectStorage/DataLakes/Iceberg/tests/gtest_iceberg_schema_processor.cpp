@@ -395,8 +395,8 @@ TEST(IcebergSchemaProcessor, MapKeyValueDecimalWhitespaceIsInsensitive)
 /// different spacing must not be rejected.
 TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
 {
-    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C,A)"}]})json");
-    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84,spherical)"}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
@@ -408,8 +408,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
 /// instead of one skipping aliasing (staying "geography") and the other becoming "binary".
 TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
 {
-    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(C,A) "}]})json");
-    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(OGC:CRS84,spherical) "}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
@@ -421,8 +421,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
 /// unchanged and the DAG would still expose the old name.
 TEST(IcebergSchemaProcessor, RenameGeoFieldAcrossSchemaIdsWithWhitespaceIsRename)
 {
-    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(C,A)"}]})json");
-    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(C, A)"}]})json");
+    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(OGC:CRS84,spherical)"}]})json");
+    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(old_schema);
     processor.addIcebergTableSchema(new_schema);
@@ -562,4 +562,59 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalEmptyScaleThrows)
 TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
+}
+
+TEST(IcebergSchemaProcessor, GetSimpleTypeRejectsInvalidGeoParameters)
+{
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geography(OGC:CRS84, bogus)"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geography(, spherical)"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geometry()"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geometryfoo"), DB::Exception);
+    EXPECT_NO_THROW(IcebergSchemaProcessor::getSimpleType("geography(OGC:CRS84, Karney)"));
+}
+
+/// A manifest header copy is checked only for what reading data needs: AWS S3 Tables writes copies with only some
+/// of the columns, whose `identifier-field-ids` can then name a field that is not there. A metadata.json schema is not.
+TEST(IcebergSchemaProcessor, ManifestHeaderSchemaSkipsTableRules)
+{
+    Poco::JSON::Parser parser;
+    const std::string json = R"json({"schema-id":0,"identifier-field-ids":[2],"fields":[{"id":1,"name":"ts","required":true,"type":"timestamptz"}]})json";
+    IcebergSchemaProcessor from_manifest;
+    EXPECT_NO_THROW(from_manifest.addIcebergTableSchema(
+        parser.parse(json).extract<Poco::JSON::Object::Ptr>(), IcebergSchemaProcessor::SchemaSource::ManifestFile, true));
+    EXPECT_TRUE(from_manifest.hasClickHouseTableSchemaById(0));
+
+    auto metadata = parser
+        .parse(R"json({"format-version":2,"schemas":[{"type":"struct","schema-id":0,"identifier-field-ids":[2],"fields":[{"id":1,"name":"ts","required":true,"type":"timestamptz"}]}]})json")
+        .extract<Poco::JSON::Object::Ptr>();
+    try
+    {
+        IcebergSchemaProcessor::checkTableSchemas(*metadata);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+        EXPECT_NE(e.message().find("identifier field id 2 does not exist"), std::string::npos) << e.message();
+    }
+}
+
+/// A manifest header copy still gets the structural rules: a list without `element-id` is rejected.
+TEST(IcebergSchemaProcessor, ManifestHeaderSchemaStructuralRulesAreChecked)
+{
+    Poco::JSON::Parser parser;
+    const std::string json = R"json({"schema-id":1,"fields":[{"id":1,"name":"l","required":false,"type":{"type":"list","element-required":false,"element":"long"}}]})json";
+    IcebergSchemaProcessor from_manifest;
+    try
+    {
+        from_manifest.addIcebergTableSchema(
+            parser.parse(json).extract<Poco::JSON::Object::Ptr>(), IcebergSchemaProcessor::SchemaSource::ManifestFile, true);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+        EXPECT_NE(e.message().find("has no 'element-id'"), std::string::npos) << e.message();
+    }
+    EXPECT_FALSE(from_manifest.hasClickHouseTableSchemaById(1));
 }

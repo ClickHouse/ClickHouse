@@ -38,6 +38,7 @@
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <base/EnumReflection.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -50,7 +51,7 @@
 #include <Types.hh>
 #include <ValidSchema.hh>
 
-#include <unordered_set>
+#include <array>
 
 namespace DB
 {
@@ -209,7 +210,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
             decimal_type.getScale(),
             decimal_type.getPrecision());
 
-    return [tmp = std::vector<uint8_t>(), target_type, fixed_size](IColumn & column, avro::Decoder & decoder) mutable
+    return [tmp = std::vector<uint8_t>(), target_type, fixed_size](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
     {
         static constexpr size_t field_type_size = sizeof(typename DecimalType::FieldType);
         if (fixed_size)
@@ -228,11 +229,11 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
         {
             /// Extent value to required size by adding padding.
             /// Check if value is negative or positive.
-            std::vector<uint8_t> padding;
+            VectorWithMemoryTracking<uint8_t> padding;
             if (tmp[0] & 128)
-                padding = std::vector<uint8_t>(field_type_size - tmp.size(), 0xff);
+                padding = VectorWithMemoryTracking<uint8_t>(field_type_size - tmp.size(), 0xff);
             else
-                padding = std::vector<uint8_t>(field_type_size - tmp.size(), 0);
+                padding = VectorWithMemoryTracking<uint8_t>(field_type_size - tmp.size(), 0);
             tmp.insert(tmp.begin(), padding.begin(), padding.end());
         }
 
@@ -283,6 +284,31 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
         default:
             return false;
     }
+}
+
+AvroDeserializer::DeserializeFn AvroDeserializer::tryCreateVariantDeserializeFn(const avro::NodePtr & node, const DataTypePtr & target_type)
+{
+    /// Iceberg v3 stores a `variant` in Avro as a record of two `bytes` fields, `metadata` and `value`.
+    if (!isDynamic(target_type) && !isObject(removeNullable(target_type)))
+        return {};
+    if (node->type() != avro::AVRO_RECORD || node->leaves() != 2
+        || node->leafAt(0)->type() != avro::AVRO_BYTES || node->leafAt(1)->type() != avro::AVRO_BYTES)
+        return {};
+    size_t metadata_position = 0;
+    if (node->nameAt(0) == "value" && node->nameAt(1) == "metadata")
+        metadata_position = 1;
+    else if (node->nameAt(0) != "metadata" || node->nameAt(1) != "value")
+        return {};
+
+    return [variant_decoder = Parquet::VariantValueDecoder(target_type, current_column_name, settings),
+            metadata_position,
+            blobs = std::array<std::string, 2>()](IColumn & column, avro::Decoder & decoder) mutable
+    {
+        decoder.decodeString(blobs[0]);
+        decoder.decodeString(blobs[1]);
+        variant_decoder.decode(blobs[metadata_position], blobs[1 - metadata_position], column);
+        return true;
+    };
 }
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
@@ -556,7 +582,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
                     /// Avro record fields are encoded positionally, so build a deserializer for
                     /// each field in declared order together with the column it targets.
-                    std::vector<std::pair<DeserializeFn, bool>> field_deserializers;
+                    VectorWithMemoryTracking<std::pair<DeserializeFn, bool>> field_deserializers;
                     field_deserializers.reserve(2);
                     for (int i = 0; i != 2; ++i)
                     {
@@ -609,6 +635,20 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 && (root_node->leafAt(0)->type() == avro::AVRO_NULL || root_node->leafAt(1)->type() == avro::AVRO_NULL))
             {
                 int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
+                if (auto variant_deserialize = tryCreateVariantDeserializeFn(root_node->leafAt(non_null_union_index), target_type))
+                {
+                    return [non_null_union_index, variant_deserialize, target_type](IColumn & column, avro::Decoder & decoder)
+                    {
+                        if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
+                            return variant_deserialize(column, decoder);
+                        /// NULL, or an empty object for `JSON`, the same as a variant null.
+                        if (target_type->isDefaultInsertTrivial())
+                            column.insertDefault();
+                        else
+                            target_type->insertDefaultInto(column);
+                        return true;
+                    };
+                }
                 if (target.isNullable())
                 {
                     auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
@@ -630,14 +670,17 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 if (null_as_default)
                 {
                     auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
-                    return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
+                    return [non_null_union_index, nested_deserialize, target_type](IColumn & column, avro::Decoder & decoder)
                     {
                         if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
                         {
                             nested_deserialize(column, decoder);
                             return true;
                         }
-                        column.insertDefault();
+                        if (target_type->isDefaultInsertTrivial())
+                            column.insertDefault();
+                        else
+                            target_type->insertDefaultInto(column);
                         return false;
                     };
                 }
@@ -656,11 +699,11 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 const auto & nested_types = variant_type.getVariants();
 
                 using AvroUnionIndex = size_t;
-                std::map<AvroUnionIndex, ColumnVariant::Discriminator> union_index_to_global_discriminator;
-                std::vector<DeserializeFn> nested_deserializers;
+                MapWithMemoryTracking<AvroUnionIndex, ColumnVariant::Discriminator> union_index_to_global_discriminator;
+                VectorWithMemoryTracking<DeserializeFn> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
 
-                std::unordered_set<ColumnVariant::Discriminator> used_discriminators;
+                UnorderedSetWithMemoryTracking<ColumnVariant::Discriminator> used_discriminators;
 
                 bool union_has_null = false;
                 for (size_t i = 0; i != root_node->leaves(); ++i)
@@ -737,10 +780,13 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             }
             else if (null_as_default)
             {
-                return [](IColumn & column, avro::Decoder & decoder)
+                return [target_type](IColumn & column, avro::Decoder & decoder)
                 {
                     decoder.decodeNull();
-                    column.insertDefault();
+                    if (target_type->isDefaultInsertTrivial())
+                        column.insertDefault();
+                    else
+                        target_type->insertDefaultInto(column);
                     return false;
                 };
             }
@@ -754,7 +800,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         case avro::AVRO_ENUM:
             if (target.isString())
             {
-                std::vector<std::string> symbols;
+                VectorWithMemoryTracking<std::string> symbols;
                 symbols.reserve(root_node->names());
                 for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
                 {
@@ -797,7 +843,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             size_t fixed_size = root_node->fixedSize();
             if (canBeDeserializedFromFixed(target_type, fixed_size))
             {
-                return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
                 {
                     decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
                     column.insertData(reinterpret_cast<const char *>(tmp_fixed.data()), tmp_fixed.size());
@@ -806,7 +852,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             }
             if (target.isUUID())
             {
-                return [tmp = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
                 {
                     decoder.decodeFixed(fixed_size, tmp);
                     if (tmp.size() != 36)
@@ -845,7 +891,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 const DataTypeTuple & tuple_type = assert_cast<const DataTypeTuple &>(*target_type);
                 const auto & nested_types = tuple_type.getElements();
-                std::vector<std::pair<DeserializeFn, size_t>> nested_deserializers;
+                VectorWithMemoryTracking<std::pair<DeserializeFn, size_t>> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
                 if (root_node->leaves() != nested_types.size())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
@@ -871,6 +917,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
             }
+            if (auto variant_deserialize = tryCreateVariantDeserializeFn(root_node, target_type))
+                return variant_deserialize;
             break;
         }
         case avro::AVRO_MAP:
@@ -985,7 +1033,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
         }
         case avro::AVRO_UNION:
         {
-            std::vector<SkipFn> union_skip_fns;
+            VectorWithMemoryTracking<SkipFn> union_skip_fns;
             union_skip_fns.reserve(root_node->leaves());
             for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
@@ -1022,7 +1070,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
         }
         case avro::AVRO_RECORD:
         {
-            std::vector<SkipFn> field_skip_fns;
+            VectorWithMemoryTracking<SkipFn> field_skip_fns;
             field_skip_fns.reserve(root_node->leaves());
             for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
@@ -1058,9 +1106,9 @@ void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro:
     /// in avro we have single row Array(Record) and we can
     /// deserialize it once.
 
-    std::vector<ColumnArray::Offsets *> arrays_offsets;
+    VectorWithMemoryTracking<ColumnArray::Offsets *> arrays_offsets;
     arrays_offsets.reserve(nested_column_indexes.size());
-    std::vector<IColumn *> nested_columns;
+    VectorWithMemoryTracking<IColumn *> nested_columns;
     nested_columns.reserve(nested_column_indexes.size());
     for (size_t index : nested_column_indexes)
     {
@@ -1129,6 +1177,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         const auto & column = header.getByPosition(target_column_idx);
         try
         {
+            current_column_name = column.name;
             AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type));
             column_found[target_column_idx] = true;
             return action;
@@ -1141,7 +1190,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
     else if (node->type() == avro::AVRO_RECORD)
     {
-        std::vector<AvroDeserializer::Action> field_actions(node->leaves());
+        VectorWithMemoryTracking<AvroDeserializer::Action> field_actions(node->leaves());
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
             const auto & field_node = node->leafAt(i);
@@ -1152,7 +1201,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
     else if (node->type() == avro::AVRO_UNION)
     {
-        std::vector<AvroDeserializer::Action> branch_actions(node->leaves());
+        VectorWithMemoryTracking<AvroDeserializer::Action> branch_actions(node->leaves());
         for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
             const auto & branch_node = node->leafAt(i);
@@ -1171,7 +1220,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             return AvroDeserializer::Action(createSkipFn(node));
 
         /// Check that all nested columns are Arrays.
-        std::unordered_map<String, DataTypePtr> nested_types;
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_types;
         for (const auto & name : nested_names)
         {
             auto type = header.getByName(name).type;
@@ -1181,8 +1230,8 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         }
 
         /// Create nested deserializer for each nested column.
-        std::vector<DeserializeFn> nested_deserializers;
-        std::vector<size_t> nested_indexes;
+        VectorWithMemoryTracking<DeserializeFn> nested_deserializers;
+        VectorWithMemoryTracking<size_t> nested_indexes;
         for (int i = 0; i != static_cast<int>(nested_avro_node->leaves()); ++i)
         {
             const auto & name = nested_avro_node->nameAt(i);
@@ -1190,6 +1239,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
                 return AvroDeserializer::Action(createSkipFn(node));
             size_t nested_column_index = header.getPositionByName(Nested::concatenateName(current_path, name));
             column_found[nested_column_index] = true;
+            current_column_name = Nested::concatenateName(current_path, name);
             auto nested_deserializer = createDeserializeFn(nested_avro_node->leafAt(i), nested_types[name]);
             nested_deserializers.emplace_back(nested_deserializer);
             nested_indexes.push_back(nested_column_index);
@@ -1272,7 +1322,7 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 namespace
 {
 
-void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, std::unordered_set<Int64> & field_ids)
+void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, UnorderedSetWithMemoryTracking<Int64> & field_ids)
 {
     checkStackSize();
 
@@ -1299,7 +1349,7 @@ void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, std::unordered_se
 /// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
 /// field id is not in the file, if the file identifies all its top-level fields by id.
 NameSet getColumnsAbsentFromIcebergFile(
-    const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata)
+    const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::DataFileReaderBase::metadata` returns std::map
 {
     auto it = metadata.find("avro.schema");
     if (it == metadata.end())
@@ -1325,7 +1375,7 @@ NameSet getColumnsAbsentFromIcebergFile(
             return {};
     }
 
-    std::unordered_set<Int64> file_field_ids;
+    UnorderedSetWithMemoryTracking<Int64> file_field_ids;
     collectIcebergFieldIds(root, file_field_ids);
 
     NameSet result;
@@ -1513,11 +1563,11 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
-    std::unordered_set<std::string> seen_names;
+    UnorderedSetWithMemoryTracking<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
+DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, UnorderedSetWithMemoryTracking<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
     checkStackSize();
 
@@ -1670,7 +1720,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<AvroRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("Avro");
 
@@ -1681,7 +1731,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 
@@ -1728,6 +1778,8 @@ To find the correspondence between table columns and fields of Avro schema, Clic
 This comparison is case-sensitive and unused fields are skipped.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the corresponding column type.
+
+A record of exactly two `bytes` fields named `metadata` and `value`, which is how Iceberg v3 stores a `variant` in Avro, is read into a [`Dynamic`](/reference/data-types/dynamic) or [`JSON`](/reference/data-types/newjson) column with the [variant binary encoding](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md), the same way as a `VARIANT` column of the `Parquet` format.
 
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 

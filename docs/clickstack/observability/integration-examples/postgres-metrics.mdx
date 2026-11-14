@@ -1,0 +1,318 @@
+---
+slug: /clickstack/observability/integration-examples/postgres-metrics
+title: 'Monitoring PostgreSQL metrics with ClickHouse Observability'
+sidebarTitle: 'PostgreSQL metrics'
+description: 'Collect PostgreSQL metrics with the OpenTelemetry collector and send them to ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['PostgreSQL', 'Postgres', 'metrics', 'OTEL', 'ClickHouse Observability', 'database monitoring']
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Collect PostgreSQL metrics with the OpenTelemetry PostgreSQL receiver and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without installing PostgreSQL.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service
+- Docker and `curl`
+- For your own metrics, PostgreSQL 14 or newer reachable from the collector, and a monitoring user
+
+### Connection details {#connection-details}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
+
+For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
+
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/metrics` suffix; the exporter appends the signal path.
+
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+```
+
+</Tab>
+</Tabs>
+
+The endpoint must be reachable from the collector container. For a destination collector running on this computer, use `http://host.docker.internal:4318`. The Docker commands below include the host mapping.
+
+## Integration with existing PostgreSQL {#existing-postgres}
+
+<Steps>
+<Step title="Configure the monitoring user" id="monitoring-permissions">
+
+As a PostgreSQL administrator, create a monitoring user if you do not already have one, and grant access to statistics:
+
+```sql
+CREATE USER otel_monitor WITH PASSWORD 'REPLACE_WITH_A_STRONG_PASSWORD';
+GRANT pg_monitor TO otel_monitor;
+GRANT CONNECT ON DATABASE postgres TO otel_monitor;
+```
+
+Grant `CONNECT` on each database you want to monitor. Ensure PostgreSQL accepts connections from the collector through its network and `pg_hba.conf` settings.
+
+Set the database connection variables in the same terminal as your OTLP connection variables:
+
+```bash
+export POSTGRES_ENDPOINT='YOUR_POSTGRES_HOST:5432'
+export POSTGRES_USERNAME='otel_monitor'
+export POSTGRES_PASSWORD='YOUR_MONITORING_PASSWORD'
+```
+
+For PostgreSQL on the Docker host, use `host.docker.internal:5432`. For containers on a shared Docker network, use the database container hostname and add `--network YOUR_NETWORK` to the collector command.
+
+</Step>
+<Step title="Configure the collector" id="configure-collector">
+
+Save this as `postgres-metrics.yaml`. Replace the `databases` list with your database names:
+
+```yaml
+receivers:
+  postgresql:
+    endpoint: ${env:POSTGRES_ENDPOINT}
+    transport: tcp
+    username: ${env:POSTGRES_USERNAME}
+    password: ${env:POSTGRES_PASSWORD}
+    databases:
+      - postgres
+    collection_interval: 30s
+    tls:
+      insecure: false
+      insecure_skip_verify: false
+processors:
+  resource/postgres:
+    attributes:
+      - key: service.name
+        value: postgresql-service
+        action: upsert
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+service:
+  pipelines:
+    metrics/postgres:
+      receivers: [postgresql]
+      processors: [resource/postgres, batch]
+      exporters: [otlp_http/observability]
+```
+
+This configuration enables TLS and verifies the server certificate. For a private CA, set `tls.ca_file` and mount the CA file into the collector. For a local PostgreSQL server without TLS, set `tls.insecure: true`; this disables TLS for the database connection. See the [PostgreSQL receiver configuration](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/receiver/postgresqlreceiver#configuration).
+
+</Step>
+<Step title="Run the collector" id="run-collector">
+
+```bash
+docker run --rm --name postgres-metrics-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e POSTGRES_ENDPOINT \
+  -e POSTGRES_USERNAME \
+  -e POSTGRES_PASSWORD \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/postgres-metrics.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+Leave the terminal open and allow at least two collection intervals. Stop the collector with **Ctrl+C** when finished testing.
+
+</Step>
+<Step title="Verify metrics" id="verify-metrics">
+
+Open **Chart Explorer**, select your **Metrics** source, filter for `ServiceName:postgresql-service`, and select **Last 15 minutes**. Look for `postgresql.backends`, `postgresql.commits`, or `postgresql.db_size`.
+
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+The sample contains 8,928 gauge and sum points sampled every five minutes across 24 hours. It preserves the original dataset's connection spikes, cache activity, rollbacks, and deadlocks. The sample includes database-level metrics; live collection also provides table and index metrics.
+
+Set the [connection variables](#connection-details) before starting.
+
+<Steps>
+<Step title="Download the sample metrics" id="download-sample">
+
+[Download the sample bundle](/assets/postgres-metrics-demo.zip) (about 64 KB) and extract `postgres-metrics-demo.json` into your working directory.
+
+</Step>
+<Step title="Configure the demo collector" id="configure-demo-collector">
+
+Save this as `postgres-metrics-demo.yaml`:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  resource/demo:
+    attributes:
+      - key: service.name
+        value: postgresql-demo
+        action: upsert
+  transform/demo_timestamps:
+    error_mode: propagate
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+          - set(time, Now() - Duration("2m") - (Time("2025-11-11T05:55:00Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+          - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+exporters:
+  otlp_http/managed:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [resource/demo, transform/demo_timestamps, batch]
+      exporters: [otlp_http/managed]
+```
+
+<Note>
+The demo-only transform refreshes timestamps while preserving metric values and the interval between each point's start and end timestamps. Omit it for live PostgreSQL metrics. The batch limit keeps uploads small enough for the destination collector.
+</Note>
+
+</Step>
+<Step title="Run the demo collector" id="run-demo-collector">
+
+From the directory containing the configuration, run the collector and leave this terminal open:
+
+```bash
+docker run --rm --name postgres-metrics-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -p 127.0.0.1:14318:4318 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/postgres-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+</Step>
+<Step title="Send the sample" id="load-metrics">
+
+In another terminal, run this command from the download directory:
+
+```bash
+curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+  -H 'Content-Type: application/json' \
+  --data-binary @postgres-metrics-demo.json
+```
+
+A response such as `{}` or `{"partialSuccess":{}}` indicates the local collector accepted the request. Check the collector terminal for export errors and allow a few seconds for forwarding. Stop it with **Ctrl+C** after verifying the data. Sending the sample again can produce duplicate points.
+
+</Step>
+<Step title="Verify the metrics" id="verify-demo-metrics">
+
+Import the dashboard in the [next section](#dashboards), filter for `ServiceName:postgresql-demo`, and select **Last 2 days**. The sample includes both gauge and sum metrics; no direct database access is needed.
+
+</Step>
+</Steps>
+
+
+## Dashboards and visualization {#dashboards}
+
+<Steps>
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json" download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download-dashboard" />
+<Step title="Import the dashboard" id="import-dashboard">
+
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `postgres-metrics-dashboard.json`.
+3. Map the charts to your **Metrics** source and click **Finish Import**.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
+
+</Step>
+<Step title="View the dashboard" id="view-dashboard">
+
+For the sample, optionally filter for `ServiceName:postgresql-demo` and select **Last 2 days**. For your own metrics, use `ServiceName:postgresql-service` and **Last 15 minutes**.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![PostgreSQL metrics dashboard showing active connections, transactions, rollbacks, database size, row operations, and disk blocks read](/images/clickstack/observability-postgres-metrics-dashboard.png)
+
+</Frame>
+
+</div>
+
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### Collector fails to start {#collector-fails-to-start}
+
+Check the collector output for configuration errors. Confirm the configuration file is mounted and the connection variables are set in the terminal where Docker runs.
+
+### No metrics appearing {#no-metrics}
+
+Check the collector output for database connection or export errors. Confirm the database hostname is reachable from the container, the database names are correct, and PostgreSQL allows the monitoring user's connection. Check your **Metrics** source, service-name filter, and time range.
+
+### Authentication or TLS errors {#authentication-errors}
+
+Confirm the monitoring user has `pg_monitor` and `CONNECT` permissions. Test the database credentials with `psql` from a host that can reach PostgreSQL:
+
+```bash
+psql -h YOUR_POSTGRES_HOST -U otel_monitor -d postgres -W -c 'SELECT 1;'
+```
+
+Match the receiver's TLS settings to your server and mount any required CA certificate. For export errors, check the OTLP endpoint and authorization against your service's connection details.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/observability/features/alerts) for connection limits, rollback rates, or cache performance.
+- Collect [PostgreSQL logs](/clickstack/observability/integration-examples/postgres-logs) alongside your metrics.
+- See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for collector deployment guidance.

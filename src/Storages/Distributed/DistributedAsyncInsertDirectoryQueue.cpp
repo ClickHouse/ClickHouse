@@ -29,6 +29,7 @@
 #include <base/scope_guard.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <filesystem>
 
 

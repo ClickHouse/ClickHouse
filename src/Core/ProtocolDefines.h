@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/ParallelReplicasProtocolDefines.h>
+
 namespace DB
 {
 
@@ -61,14 +63,6 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PR
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
-static constexpr auto DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION = 3;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD = 4;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION = 5;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK = 6;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE = 8;
-static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST = 9;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 9;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
@@ -85,7 +79,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// the serializer fails closed instead when talking to a peer below version 4.
 /// Version 5 registers the `enable_packed_string_keys_in_aggregation` plan setting. A peer at this version
 /// receives it on every aggregation step whenever the legacy method is requested. An older peer rejects the
-/// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
+/// unknown name (the binary reader of the step settings of that time throws), so towards such a peer the name is
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
 /// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
@@ -148,6 +142,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 also adds the `hash_join_layout` plan setting, written only towards a peer at this version or above.
 /// A peer below it picks the layout of a hash join itself. That can change only the speed, the memory use and the
 /// order of rows.
+/// Version 21 also writes the step settings (`QueryPlanSerializationSettings`) by name with the values as strings,
+/// as `Settings` are sent in the native protocol, instead of the binary encoding of each value. A reader skips a
+/// name it does not know, unless the setting is declared `IMPORTANT`. The binary encoding is no longer supported
+/// at all, so a peer below this version can neither send nor receive a plan (see the constant below).
+/// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -161,6 +160,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///
 /// Last bumped for release 26.11.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+/// The oldest query-plan serialization version that can be written or read. Below it, the step settings were
+/// encoded in a binary form that is not supported anymore. A plan is not serialized for such a peer, and a plan
+/// from such a peer is not deserialized.
+static constexpr auto DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -185,7 +188,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOUR
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
 /// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
-/// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
+/// written, because the reader of an older peer throws on an unknown name; that peer then runs the
 /// aggregation with its own two-level decision.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
@@ -232,6 +235,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 2 of `Distinct` and `PreDistinct`, adding the limit hint.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_LIMIT_HINT = 21;
 /// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
 /// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
@@ -246,6 +251,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_B
 /// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
 /// `JoinSettings::updatePlanSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT = 21;
+/// First query-plan serialization version that knows `min_string_column_bytes_for_hash_join_row_store`. Below it, the
+/// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
+/// no effect there.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

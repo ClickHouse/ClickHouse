@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This is a guide on how to setup Neon Postgres, which you can use for replication in ClickPipes.
 Make sure you're signed in to your [Neon console](https://console.neon.tech/app/projects) for this setup.
 
@@ -63,11 +61,27 @@ Connect to your Neon instance as an admin user and execute the following command
 In Neon, you can enable logical replication through the UI. This is necessary for ClickPipes's CDC to replicate data.
 Head over to the **Settings** tab and then to the **Logical Replication** section.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="Enable logical replication" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Enable logical replication](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
+
+</Frame>
+
+</div>
 
 Click on **Enable** to be all set here. You should see the below success message once you enable it.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="Logical replication enabled" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Logical replication enabled](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
+
+</Frame>
+
+</div>
 
 Let's verify the below settings in your Neon Postgres instance:
 ```sql
@@ -80,14 +94,30 @@ SHOW max_replication_slots; -- should be 10
 If you have Neon Enterprise plan, you can whitelist the [ClickPipes IPs](/integrations/clickpipes/networking/static-ips) to allow replication from ClickPipes to your Neon Postgres instance.
 To do this you can click on the **Settings** tab and go to the **IP Allow** section.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="Allow IPs screen" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Allow IPs screen](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
+
+</Frame>
+
+</div>
 
 ## Copy connection details {#copy-connection-details}
 Now that we have the user, publication ready and replication enabled, we can copy the connection details to create a new ClickPipe.
 Head over to the **Dashboard** and at the text box where it shows the connection string,
 change the view to **Parameters Only**. We will need these parameters for our next step.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="Connection details" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Connection details](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
+
+</Frame>
+
+</div>
 
 ## What's next? {#whats-next}
 

@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
+import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -49,9 +50,23 @@ Solo tiene efecto si `use_skip_indexes_on_data_read = 1`.
 Solo se pueden descartar gránulos si la join key es una columna de la clave primaria del lado de sondeo o está cubierta por un índice de omisión `minmax`, `set` o `bloom_filter`.
 Si el filtro en tiempo de ejecución conserva los valores exactos de la clave, el predicado utilizado para descartar gránulos es un conjunto `IN` de esos valores; de lo contrario, se utiliza el rango entre el valor mínimo y el máximo de la clave (lo que permite descartar menos gránulos).
 
-Solo tiene efecto cuando el lado de sondeo del JOIN se lee localmente. Los descriptores que determinan qué gránulos se descartan se asocian al paso de lectura durante la optimización del plan de consulta, pero no se transfieren cuando ese paso se reconstruye para ejecutarlo de forma remota. Por tanto, no se descartan gránulos con réplicas paralelas (`enable_parallel_replicas = 1`) ni con un plan de consulta distribuido (`make_distributed_plan = 1`). En esos modos, la configuración no tiene efecto: la consulta devuelve el mismo resultado y el filtro en tiempo de ejecución de JOIN se comporta exactamente igual que si esta configuración estuviera deshabilitada; únicamente se pierde la posibilidad de descartar gránulos.
+Funciona con réplicas paralelas (`enable_parallel_replicas = 1`): cada réplica descarta los gránulos que lee mediante el filtro que ella misma ha construido. Ese filtro puede ser parcial (en un JOIN `RIGHT`, el lado de construcción es el que se reparte entre las réplicas, por lo que el filtro de cada réplica solo cubre su propia parte), pero el resultado sigue siendo correcto, ya que solo se reparte uno de los lados del JOIN, cada par de filas coincidentes se encuentra en una única réplica y cada réplica genera una parte disjunta del resultado.
+
+No se descartan gránulos con un plan de consulta distribuido (`make_distributed_plan = 1`). En ese caso, la configuración no tiene efecto: la consulta devuelve el mismo resultado y el filtro en tiempo de ejecución de JOIN se comporta exactamente igual que si esta configuración estuviera deshabilitada; únicamente se pierde la posibilidad de descartar gránulos.
 
 Tampoco se descartan gránulos cuando el lado de sondeo se lee con `FINAL` (esta operación no está implementada para las lecturas con `FINAL`, y `optimizeLazyFinal` reconstruye la lectura sin los descriptores), ni en tablas con datos pendientes, mutaciones `ALTER` o partes de parche. En estos casos, la configuración tampoco tiene efecto.
+
+## enable_join_seal_gated_reading {#enable_join_seal_gated_reading}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nuevo ajuste experimental para condicionar la lectura del lado de sondeo de un JOIN hash a la finalización del filtro en tiempo de ejecución del lado de construcción y descartar rangos de lectura a partir de él."}]}]} />
+
+Condiciona la lectura del lado de sondeo de un JOIN hash a la finalización del filtro en tiempo de ejecución del lado de construcción (consulte `enable_join_runtime_filters`): no se lee nada en el lado de sondeo hasta que el filtro está completo y, a continuación, el filtro se utiliza para descartar rangos de marcas completos mediante la clave primaria antes de crear las tareas de lectura, además del filtrado row-level ordinario. Esta condición se expresa como una arista del pipeline de ejecución de consultas. En una lectura condicionada, se omite por redundante el análisis de índices en tiempo de lectura del mismo filtro en tiempo de ejecución (consulte `enable_join_runtime_filters_index_analysis`).
+
+Experimental. Se condicionan las lecturas locales, incluidas la lectura single-threaded y la lectura en orden; las lecturas con FINAL, con réplicas paralelas o en un JOIN segmentado por rangos de clave primaria recurren a una lectura no condicionada con filtrado row-level.
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
