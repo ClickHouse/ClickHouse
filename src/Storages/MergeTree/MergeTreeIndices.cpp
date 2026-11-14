@@ -102,6 +102,31 @@ IsShadowingColumn IMergeTreeIndex::getMapSubcolumnShadowingCheck() const
     };
 }
 
+IsShadowingJSONSubcolumn IMergeTreeIndex::getJSONSubcolumnShadowingCheck() const
+{
+    /// A column or its regular subcolumn wins over a dynamic path, which belongs to the shortest `JSON` column.
+    return [metadata = metadata_snapshot](std::string_view name, std::string_view json_column)
+    {
+        const auto & columns = metadata->getColumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
+
+        if (auto column = columns.tryGetColumn(options, String(name)))
+        {
+            auto json = columns.tryGetColumn(options, String(json_column));
+            if (!json || column->getNameInStorage() != json->getNameInStorage())
+                return true;
+        }
+
+        for (size_t end = json_column.find('.'); end != std::string_view::npos; end = json_column.find('.', end + 1))
+        {
+            auto prefix = columns.tryGetColumn(options, String(json_column.substr(0, end)));
+            if (prefix && isObject(removeNullable(removeLowCardinality(prefix->type))))
+                return true;
+        }
+        return false;
+    };
+}
+
 /// Is a granule written with @from decoded identically when read back as @to?
 ///
 /// This deliberately duplicates part of AlterCommands' isMetadataOnlyConversion() instead of calling
@@ -308,6 +333,8 @@ const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part)
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPartStorage(); }
+const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes(const IMergeTreeDataPart & part) { return part.getSecondaryIndexColumnTypes(); }
+const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes(const IMergeTreeDataPartInfoForReader & part) { return part.getSecondaryIndexColumnTypes(); }
 
 template <typename Part>
 bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
@@ -318,6 +345,16 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
 
     for (const auto & [column, metadata_type] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
     {
+        /// When the granules were built against a type that differs from the part's own column (an
+        /// index materialized over a not-yet-materialized type hint), the part records that type. It
+        /// is authoritative for decodability: the granules are readable iff it equals the current type.
+        if (auto built_type = getSecondaryIndexColumnTypes(part).tryGetBuiltType(skip_index.index.name, column))
+        {
+            if (*built_type == metadata_type->getName())
+                continue;
+            return false;
+        }
+
         auto part_column = part.tryGetColumn(column);
 
         /// The column is in the metadata but not in this part's column list, so there is no
