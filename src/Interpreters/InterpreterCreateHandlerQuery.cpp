@@ -11,6 +11,11 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Core/QualifiedTableName.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
@@ -22,6 +27,8 @@
 #include <base/EnumReflection.h>
 #include <Core/Settings.h>
 #include <Poco/String.h>
+
+#include <unordered_set>
 
 
 namespace DB
@@ -133,6 +140,46 @@ String describeStatementKind(const IAST & statement)
     return Poco::toUpper(String(magic_enum::enum_name(statement.getQueryKind())));
 }
 
+void collectQueryAliases(const IAST & ast, std::unordered_set<String> & aliases)
+{
+    if (String alias = ast.tryGetAlias(); !alias.empty())
+        aliases.insert(std::move(alias));
+    for (const auto & child : ast.children)
+        if (child)
+            collectQueryAliases(*child, aliases);
+}
+
+/// `AddDefaultDatabaseVisitor` leaves the table name of `joinGet` alone, and `joinGet` resolves a bare name in the current
+/// database of the request. Qualify it, so the handler reads the table its query was checked against.
+void qualifyJoinGetTableNames(IAST & ast, const String & database, const std::unordered_set<String> & aliases)
+{
+    if (auto * function = ast.as<ASTFunction>(); function && function->arguments && functionIsJoinGet(function->name)
+        && !function->arguments->children.empty())
+    {
+        auto & table_argument = function->arguments->children[0];
+        if (const auto * identifier = table_argument->as<ASTIdentifier>())
+        {
+            /// A compound identifier is already qualified, a parameterized name is only known when the handler is invoked,
+            /// and an alias of an expression is not a table name.
+            if (!identifier->compound() && !identifier->isParam() && !aliases.contains(identifier->name()))
+                table_argument = make_intrusive<ASTIdentifier>(std::vector<String>{database, identifier->name()});
+        }
+        else if (auto * literal = table_argument->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        {
+            auto qualified_table_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
+            if (qualified_table_name && qualified_table_name->database.empty())
+            {
+                qualified_table_name->database = database;
+                literal->value = qualified_table_name->getFullName();
+            }
+        }
+    }
+
+    for (const auto & child : ast.children)
+        if (child)
+            qualifyJoinGetTableNames(*child, database, aliases);
+}
+
 /// Qualifies the names with the current database of the user storing the handler, as `CREATE VIEW` does.
 void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visitor, const String & database, const ContextPtr & context)
 {
@@ -142,7 +189,9 @@ void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visi
         /// The full traversal of the visitor expects the common table expressions to be expanded.
         ApplyWithSubqueryVisitor::visit(select, max_expanded_ast_elements);
         visitor.visit(select);
-        visitor.visitTableExpressions(*select);
+        std::unordered_set<String> aliases;
+        collectQueryAliases(*select, aliases);
+        qualifyJoinGetTableNames(*select, database, aliases);
     };
 
     if (auto * insert = statement->as<ASTInsertQuery>())
