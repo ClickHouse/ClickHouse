@@ -1,0 +1,20 @@
+<test>
+    <create_query>
+        CREATE TABLE vertical_final_limit (c1 String, c2 String, c3 UInt64)
+        ENGINE = ReplacingMergeTree(c3)
+        ORDER BY c1
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES vertical_final_limit</fill_query>
+    <!-- Each INSERT writes exactly one part. The last, small part holds the newest version of the only row that passes the filter. -->
+    <fill_query>INSERT INTO vertical_final_limit SELECT if(number = 0, '0000', toString(cityHash64(number))), if(number = 0, 'target', concat('item0 ', toString(number))), 1 FROM numbers(7000000) SETTINGS max_insert_block_size = 10000000, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0, max_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO vertical_final_limit SELECT if(number = 0, '0000', toString(cityHash64(number * 2))), if(number = 0, 'target', concat('item0 ', toString(number * 2))), 2 FROM numbers(3000000) SETTINGS max_insert_block_size = 10000000, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0, max_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO vertical_final_limit SELECT if(number = 0, '0000', toString(cityHash64(number * 2 + 1))), if(number = 0, 'target', concat('item0 ', toString(number * 2 + 1))), 3 FROM numbers(3000000) SETTINGS max_insert_block_size = 10000000, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0, max_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO vertical_final_limit SELECT if(number = 0, '0000', toString(cityHash64(number * 13))), if(number = 0, 'target', concat('item0 ', toString(number * 13))), 4 FROM numbers(3000)</fill_query>
+    <fill_query>SELECT throwIf(count() != 4, 'vertical_final_limit_small_part: expected 4 active parts') FROM system.parts WHERE database = currentDatabase() AND table = 'vertical_final_limit' AND active</fill_query>
+
+    <query>SELECT c1 FROM vertical_final_limit FINAL WHERE c2 = 'target' LIMIT 1 FORMAT Null</query>
+    <query>SELECT c1 FROM vertical_final_limit FINAL WHERE c2 = 'target' LIMIT 1 SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS vertical_final_limit</drop_query>
+</test>

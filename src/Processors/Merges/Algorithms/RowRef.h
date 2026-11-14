@@ -31,6 +31,8 @@ struct SharedChunk : Chunk
 
     /// Used in ReplacingSortedAlgorithm when using skipping final
     MutableColumnPtr replace_final_selection;
+    /// The number of rows the merge had selected when the first row of `replace_final_selection` was selected.
+    size_t replace_final_selection_start = 0;
 
     /// The chunk's row filter, resolved from its infos when the chunk is taken from the
     /// allocator, or nullptr when it carries none. Owned by the chunk's infos.
