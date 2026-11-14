@@ -26,12 +26,12 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsUInt64 vector_search_ivf_probes;
@@ -45,9 +45,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// vectorSearch(database, table, index_name, queries, k): the `k` nearest rows to each query. Every granule is searched
-/// once for all queries, and the results are merged. Computed at planning time and held in memory.
 class TableFunctionVectorSearch : public ITableFunction
 {
 public:
@@ -79,7 +76,7 @@ private:
     String index_name;
     size_t dimensions_of_queries = 0;
     size_t num_queries = 0;
-    std::vector<float> queries;
+    std::vector<float> queries; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t k = 0;
 };
 
@@ -144,23 +141,22 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
     auto vector_cache = context->getVectorSimilarityIndexCache();
     auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
 
-    /// Per query: (distance, part, offset) from all granules.
     struct Candidate
     {
         float distance;
         UInt32 part;
         UInt64 offset;
     };
-    std::vector<std::vector<Candidate>> candidates_per_query(num_queries);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Candidate>> candidates_per_query(num_queries);
 
     auto parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(parts, [](const auto & part) { return part->isEmpty(); });
 
     Stopwatch watch;
     size_t searched_granules = 0;
-    std::vector<float> normalized;
-    std::vector<UInt32> neighbours;
-    std::vector<float> distances;
+    std::vector<float> normalized; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<UInt32> neighbours; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<float> distances; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     for (UInt32 part_index = 0; part_index < parts.size(); ++part_index)
     {

@@ -1,7 +1,4 @@
-# librtcx's JIT-LTO fragment generator, on the GPU island. Redefined after including it:
-#   - add_jit_lto_kernel: wipes the target with gpu_island_target, builds for `JIT_LTO_TARGET_ARCHITECTURE` only;
-#   - process_jit_lto_matrix_entry: registers fragments via register_fatbin.cpp.in;
-#   - generate_jit_lto_kernels: takes bin2c from nvcc's toolkit instead of find_package(CUDAToolkit).
+# librtcx's JIT-LTO fragment generator, redefined for the GPU island.
 
 include ("${ClickHouse_SOURCE_DIR}/contrib/librtcx/cmake/modules/generate_jit_lto_kernels.cmake")
 
@@ -18,7 +15,6 @@ function (add_jit_lto_kernel kernel_target)
     gpu_island_target (${kernel_target})
 
     target_link_libraries (${kernel_target} PRIVATE ${_JIT_LTO_LINK_LIBRARIES})
-    # Flags upstream passes via jit_lto_kernel_usage_requirements.
     target_compile_options (${kernel_target} PRIVATE ${CUVS_CUDA_FLAGS} -Xfatbin=--compress-all --compress-mode=size ${_JIT_LTO_EXTRA_COMPILE_OPTIONS})
     set_target_properties (${kernel_target} PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON

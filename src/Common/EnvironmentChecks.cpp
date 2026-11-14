@@ -269,9 +269,7 @@ std::vector<uintptr_t> checkLoadedObjects()
 #endif
     };
 
-    /// In a build with GPU support, the CUDA driver is loaded with `dlopen`: by the CUDA runtime, and by a global
-    /// constructor of the static cuBLASLt before `main`. It is not a dependency of the binary, as it comes with the
-    /// driver of the machine rather than with the toolkit the binary is built with.
+    /// With GPU support the CUDA driver is loaded with `dlopen` by the CUDA runtime and cuBLASLt, it is not linked.
     auto is_cuda_driver = []([[maybe_unused]] const LoadedObject & object)
     {
 #if USE_GPU

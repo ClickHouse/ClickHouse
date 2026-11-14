@@ -102,9 +102,7 @@ if (ENABLE_GPU)
     gpu_cuda_library (GPU_NVJITLINK_LIBRARY      nvJitLink_static)
     gpu_cuda_library (GPU_NVPTXCOMPILER_LIBRARY  nvptxcompiler_static)
 
-    # These three register their static constructors in `.ctors`, which lld - unlike GNU ld - does not fold into
-    # `.init_array`: their globals were never constructed, and the first call of nvJitLink crashed on a null mutex.
-    # Copies with the constructors moved to `.init_array` are linked instead; see cmake/gpu_ctors_to_init_array.py.
+    # lld does not run the `.ctors` of these three: copies with them moved to `.init_array` are linked instead.
     find_package (Python3 REQUIRED COMPONENTS Interpreter)
     function (gpu_cuda_library_with_init_array var)
         get_filename_component (_name "${${var}}" NAME)

@@ -16,7 +16,6 @@ target_link_libraries (clickhouse_gpu_cudf PRIVATE
     ch_gpu::cudart
 )
 
-# The IVF index on the device, on cuVS, see CuvsIvf.cuh.
 add_library (clickhouse_gpu_cuvs STATIC
     CuvsIvf.cu
 )

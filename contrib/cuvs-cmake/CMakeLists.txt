@@ -1,7 +1,4 @@
-# cuVS for the `ivf` vector similarity index, on the GPU island like cuDF (see gpu_island_target in cmake/cuda.cmake).
-# Only what the index uses is built: the balanced k-means and `select_k`, with the clustering and the L2 distances they
-# call. The generated instantiations and JIT-LTO fragments come from evaluating upstream's cpp/CMakeLists.txt
-# (cuvs_evaluate_upstream), so they follow the submodule; the source list is ours.
+# cuVS on the GPU island, only the balanced k-means, `select_k` and the L2 distances they call.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using cuVS")
@@ -11,7 +8,6 @@ endif ()
 set (CUVS_CPP_DIR "${ClickHouse_SOURCE_DIR}/contrib/cuvs/cpp")
 set (CUVS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-# As upstream's ConfigureCUDA.cmake, without -Werror.
 set (CUVS_CUDA_FLAGS
     --expt-extended-lambda
     --expt-relaxed-constexpr
@@ -21,7 +17,6 @@ set (CUVS_CUDA_FLAGS
     -Xcompiler=-fopenmp)
 set (CUVS_CXX_FLAGS -Wno-deprecated-declarations -DRAFT_HIDE_DEPRECATION_WARNINGS -DCUDA_API_PER_THREAD_DEFAULT_STREAM)
 
-# Names that upstream's generator links the kernels with.
 add_library (rmm::rmm ALIAS _rmm)
 add_library (raft::raft ALIAS _raft)
 add_library (CCCL::CCCL ALIAS _cccl)
@@ -33,7 +28,6 @@ include ("${CMAKE_CURRENT_SOURCE_DIR}/island_jit_lto.cmake")
 
 set (BUILD_MG_ALGOS OFF)
 
-# Evaluates upstream's cpp/CMakeLists.txt from `BEGIN` up to `END`, with our source and binary directories.
 file (READ "${CUVS_CPP_DIR}/CMakeLists.txt" CUVS_UPSTREAM_CMAKELISTS)
 macro (cuvs_evaluate_upstream BEGIN END)
     string (FIND "${CUVS_UPSTREAM_CMAKELISTS}" "${BEGIN}" _cuvs_begin)
@@ -48,12 +42,10 @@ macro (cuvs_evaluate_upstream BEGIN END)
     cmake_language (EVAL CODE "${_cuvs_code}")
 endmacro ()
 
-# The JIT-LTO fragments, of which those of the L2 distances are built: the pairwise distances that k-means calls link them
-# at run time.
+# The JIT-LTO fragments of the L2 distances, which k-means links at run time.
 cuvs_evaluate_upstream (
     "  generate_inst_matrix(\n    cagra_search_inst_files"
     "  include(cmake/modules/generate_cutile_kernels.cmake)")
-# The instantiations, of which `select_k` and the pairwise distances are built.
 cuvs_evaluate_upstream (
     "  generate_inst_matrix(\n    pairwise_matrix_dispatch_inst_files"
     "  add_library(\n    cuvs_objs OBJECT")
@@ -63,8 +55,7 @@ set_target_properties (jit_lto_kernel_usage_requirements PROPERTIES INTERFACE_CO
 list (FILTER jit_lto_files INCLUDE REGEX "/generated_kernels/distance/pairwise_matrix/[a-z_]+/pairwise_matrix_[a-z_]*l2_expanded_")
 list (FILTER pairwise_matrix_dispatch_inst_files INCLUDE REGEX "_op_l2_expanded\\.cu$")
 
-# `cuvs::distance::distance` of upstream's src/distance/distance.cu for the L2 distances only, which k-means calls: the
-# rest of that file instantiates every metric, and `pairwise_distance` chooses among them at run time.
+# `cuvs::distance::distance` for the L2 distances only, instead of upstream's distance.cu of every metric.
 file (READ "${CUVS_CPP_DIR}/src/distance/distance.cu" CUVS_DISTANCE_SOURCE)
 string (FIND "${CUVS_DISTANCE_SOURCE}" "#define instantiate_cuvs_distance_distance(" _cuvs_begin)
 string (FIND "${CUVS_DISTANCE_SOURCE}" "#undef instantiate_cuvs_distance_distance_by_algo" _cuvs_end)
@@ -123,7 +114,6 @@ set_target_properties (_cuvs PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     CUDA_VISIBILITY_PRESET hidden)
 
-# CUDA math libraries and OpenMP statically, like the CUDA runtime.
 gpu_cuda_library (CUVS_CUBLAS_LIBRARY cublas_static)
 gpu_cuda_library (CUVS_CUBLASLT_LIBRARY cublasLt_static)
 gpu_cuda_library (CUVS_CUSOLVER_LIBRARY cusolver_static)

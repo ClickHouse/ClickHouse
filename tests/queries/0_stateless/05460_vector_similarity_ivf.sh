@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: needs usearch for the fallback to `hnsw`
 
 # Recall of the `ivf` vector similarity index and of `vectorSearch` against exact search: both distance functions, after
 # reload and merge, all lists probed. The vectors are clustered, as real data are. Without a usable GPU the searches by `ORDER BY ... LIMIT` run with `hnsw`, and the
