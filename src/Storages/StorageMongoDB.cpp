@@ -1080,10 +1080,11 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
             {
                 if (function_name == "empty")
                 {
-                    /// MongoDB also matches `[null]` against `null`, so the local filter must run before the limit.
-                    is_superset = true;
+                    /// A missing field and a `null` are read as `[]`. `$eq: null` alone would also match `[null]`, which is
+                    /// not empty.
                     return make_document(kvp("$or", make_array(
-                        make_document(kvp(column_name, bsoncxx::types::b_null{})),
+                        make_document(kvp(column_name, make_document(
+                            kvp("$eq", bsoncxx::types::b_null{}), kvp("$not", make_document(kvp("$type", "array")))))),
                         make_document(kvp(column_name, make_document(kvp("$size", 0)))))));
                 }
                 return make_document(kvp(column_name, make_document(
@@ -1253,10 +1254,11 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
                 if (const auto & column = sort_node->getExpression()->as<ColumnNode>())
                 {
-                    /// BSON numbers sort before bools, but the reader converts both to the declared numeric type.
-                    /// Keep all rows for the local sort instead of truncating by the BSON order.
-                    if (WhichDataType(removeNullable(column->getResultType())).isNumber())
-                        options.limit(0);
+                    /// MongoDB sorts by BSON type first, puts a `null` and a missing field first, and may use the collection's
+                    /// collation, while the reader converts every value to the declared type (a number or a bool to a number or
+                    /// to text, a `null` to `NULL` or the default). Keep all rows for the local sort instead of truncating by
+                    /// the BSON order.
+                    options.limit(0);
                     sort.append(kvp(column->getColumnName(), sort_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1));
                 }
                 else
