@@ -41,6 +41,8 @@ DOLOR_WATCHDOG_SEC = 4 * 3600
 FORCED_STOP_MESSAGE = "did not shut down gracefully and had to be force killed"
 START_FAILED_MESSAGE = "failed to start during a scheduled restart"
 DOLOR_FAILURES = (
+    # First: an S3 outage also makes the teardown force-kill the servers
+    ("S3 server does not serve", "S3 server restart"),
     (FORCED_STOP_MESSAGE, "Server shutdown"),
     ("failed to stop during a scheduled restart", "Server shutdown"),
     ("still running after a stop attempt", "Server shutdown"),

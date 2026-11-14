@@ -501,10 +501,10 @@ def stop_distributed_sends(server) -> None:
 
 
 S3_RESTART_PROBE = "dolor/restart_probe"
-S3_RESTART_WAIT_SECONDS = 60
+S3_RESTART_WAIT_SECONDS = 120
 
 
-def wait_s3_server_serving() -> None:
+def wait_s3_server_serving() -> bool:
     """Wait until the S3 server reads the object written before its restart and accepts a write."""
     start = time.monotonic()
     while True:
@@ -523,13 +523,13 @@ def wait_s3_server_serving() -> None:
             logger.info(
                 f"The S3 server serves again {time.monotonic() - start:.1f}s after its start"
             )
-            return
+            return True
         except Exception as ex:
             if time.monotonic() - start >= S3_RESTART_WAIT_SECONDS:
-                logger.warning(
+                logger.error(
                     f"The S3 server does not serve {S3_RESTART_WAIT_SECONDS}s after its start: {ex}"
                 )
-                return
+                return False
             time.sleep(1)
 
 
@@ -666,7 +666,11 @@ cluster = ClickHouseCluster(
     server_binaries=sorted_binaries,
     with_dolor=True,
     # Spark and the Iceberg REST, Glue and Hive catalog services are set up against MinIO (`minio1`)
-    s3_server="minio" if args.with_spark or args.with_rest or args.with_glue or args.with_hms else "seaweedfs",
+    s3_server=(
+        "minio"
+        if args.with_spark or args.with_rest or args.with_glue or args.with_hms
+        else "seaweedfs"
+    ),
 )
 
 # Set environment variables such as locales and timezones
@@ -778,6 +782,9 @@ for i, nservers in enumerate(node_distributed_cache_servers):
 # Uploaders for object storage
 if args.with_minio:
     prepare_s3_bucket(cluster)
+    cluster.minio_client.put_object(
+        cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
+    )
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
 if args.with_azurite:
     cluster.blob_service_client = cluster.blob_service_client
@@ -1018,20 +1025,15 @@ while all_running and (not reached_limit):
             f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {'kill' if kill_server else 'manual shutdown'}"
         )
 
-        if next_pick == "minio":
-            try:
-                cluster.minio_client.put_object(
-                    cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
-                )
-            except Exception as ex:
-                logger.warning(f"Could not write the S3 restart probe: {ex}")
         cluster.process_integration_nodes(
             next_pick, choosen_instances, "kill" if kill_server else "stop"
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
-        if next_pick == "minio":
-            wait_s3_server_serving()
+        if next_pick == "minio" and not wait_s3_server_serving():
+            logger.info("Ending the run after the failed restart of the S3 server")
+            good_exit = False
+            all_running = False
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 

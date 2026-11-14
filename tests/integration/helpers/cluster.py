@@ -2060,7 +2060,11 @@ class ClickHouseCluster:
 
         compose_file = p.join(
             docker_compose_yml_dir,
-            "docker_compose_seaweedfs.yml" if self.s3_server == "seaweedfs" else "docker_compose_minio.yml",
+            (
+                "docker_compose_seaweedfs.yml"
+                if self.s3_server == "seaweedfs"
+                else "docker_compose_minio.yml"
+            ),
         )
         self.base_cmd.extend(["--file", compose_file])
         self.base_minio_cmd = self.compose_cmd(
@@ -3700,7 +3704,9 @@ class ClickHouseCluster:
 
                 if self.s3_server == "seaweedfs":
                     # SeaweedFS fails writes until it has allocated its first volume
-                    minio_client.put_object(self.minio_bucket, "write_probe", io.BytesIO(b"ready"), 5)
+                    minio_client.put_object(
+                        self.minio_bucket, "write_probe", io.BytesIO(b"ready"), 5
+                    )
                     minio_client.remove_object(self.minio_bucket, "write_probe")
 
                 self.minio_client = minio_client
