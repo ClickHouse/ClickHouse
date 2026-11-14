@@ -44,6 +44,7 @@ EXCLUDE=(
     04514_geo_pruning_iceberg_geostats.parquet
     04515_geo_pruning_iceberg_malformed_bbox.parquet
     04691_geo_page_pruning_null_bbox.parquet
+    04886_geo_variant_column_pruning.parquet
     # Files with the `GEOMETRY` and `GEOGRAPHY` logical types, tested separately.
     05361_geospatial_crs_default.parquet
     05361_geospatial_crs_geography.parquet
