@@ -12,6 +12,9 @@ import time
 import signal
 import sys
 
+import urllib3
+from minio import Minio
+
 # The sibling modules below are imported by bare name, which relies on Python putting this
 # script's own directory on `sys.path`. Praktika's runner exports `PYTHONSAFEPATH=1`, which
 # disables exactly that, so put it back for this entry point.
@@ -509,7 +512,7 @@ def wait_s3_server_serving() -> bool:
     start = time.monotonic()
     while True:
         try:
-            response = cluster.minio_client.get_object(
+            response = s3_probe_client.get_object(
                 cluster.minio_bucket, S3_RESTART_PROBE
             )
             try:
@@ -517,7 +520,7 @@ def wait_s3_server_serving() -> bool:
             finally:
                 response.close()
                 response.release_conn()
-            cluster.minio_client.put_object(
+            s3_probe_client.put_object(
                 cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
             )
             logger.info(
@@ -782,7 +785,17 @@ for i, nservers in enumerate(node_distributed_cache_servers):
 # Uploaders for object storage
 if args.with_minio:
     prepare_s3_bucket(cluster)
-    cluster.minio_client.put_object(
+    # Bounded, so that a server that never answers cannot outlast S3_RESTART_WAIT_SECONDS
+    s3_probe_client = Minio(
+        f"{cluster.minio_ip}:{cluster.minio_port}",
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+        http_client=urllib3.PoolManager(
+            timeout=urllib3.Timeout(connect=5, read=10), retries=False
+        ),
+    )
+    s3_probe_client.put_object(
         cluster.minio_bucket, S3_RESTART_PROBE, io.BytesIO(b"ready"), 5
     )
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
