@@ -712,4 +712,304 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+std::map<String, Documentation> ParserBackupQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["BACKUP"] =
+    {
+        .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+Introduced in: v21.10.0
+
+Creates a backup of tables, views, dictionaries, databases or all databases, and writes it to a destination. [`RESTORE`](/reference/statements/restore) restores objects from such a backup. For backup strategies and walkthroughs per destination, see [Backup and restore](/concepts/features/backup-restore/overview).
+
+## Syntax {#syntax}
+
+```sql
+BACKUP element [, ...]
+    [ON CLUSTER cluster]
+    TO destination
+    [SETTINGS setting = value [, ...]]
+    [ASYNC | SYNC]
+```
+
+## Elements {#elements}
+
+| Element | Backs up |
+|---|---|
+| `TABLE [db.]name [AS [db.]name_in_backup] [PARTITION[S] partition_expr [, ...]]` | One table, view or dictionary. With `PARTITIONS`, only the listed partitions. `AS` stores it in the backup under another name. |
+| `VIEW ...`, `DICTIONARY ...` | Same as `TABLE`: the keyword does not restrict the kind of object. |
+| `TEMPORARY TABLE name [AS name_in_backup]` | A temporary table of the current session. |
+| `DATABASE name [AS name_in_backup] [EXCEPT TABLE[S] table [, ...]]` | A database and all its tables, views and dictionaries, except the listed ones, which must belong to it. |
+| `ALL [EXCEPT DATABASE[S] db [, ...]] [EXCEPT TABLE[S] db.table [, ...]]` | Every database, including `system`, and the temporary tables of the current session, except the listed ones. Introduced in v23.4.0. |
+
+Each element can end with `EXCEPT DATA FROM TABLE[S] [db.]table [, ...]` (introduced in v26.10.0): the listed tables are stored without their data and restore as empty tables. On a `TABLE`, `VIEW`, `DICTIONARY` or `TEMPORARY TABLE` element the clause can only name the element's own object. See [Backing up a table without its data](/concepts/features/backup-restore/overview#backup-without-data).
+
+## Destinations {#destinations}
+
+| Destination | Stores the backup | Introduced in |
+|---|---|---|
+| `File('path')` | In a local directory below the server setting [`backups.allowed_path`](/reference/settings/server-settings/settings/backups#backups). A relative path is relative to it. | v21.12.0 |
+| `Disk('disk', 'path')` | On a disk listed in the server setting [`backups.allowed_disk`](/reference/settings/server-settings/settings/backups#backups). | v21.12.0 |
+| `S3('url' [, 'access_key_id', 'secret_access_key'])`, `S3(named_collection [, 'path'])` | In S3 or S3-compatible storage. See [S3 endpoint](/concepts/features/backup-restore/s3-endpoint). | v22.10.0 |
+| `AzureBlobStorage('connection_string_or_url', 'container', 'path' [, 'account_name', 'account_key'])`, `AzureBlobStorage(named_collection [, 'path'])` | In Azure Blob Storage. See [AzureBlobStorage](/concepts/features/backup-restore/azure-blob-storage). | v24.2.0 |
+| `Memory('name')` | In the memory of the current session, until the session ends. | v25.1.0 |
+| `Null` | Nowhere: the backup is written and discarded, and cannot be restored. For testing. | v25.1.0 |
+
+A path ending with `.zip`, `.zipx`, `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzst`, `.tar.xz`, `.tar.bz2` or `.tar.lzma` stores the backup as one archive of that format instead of a directory. `S3` and `AzureBlobStorage` do not support ZIP archives.
+
+## ON CLUSTER {#on-cluster}
+
+Introduced in: v22.5.0
+
+Runs the backup on every host of `cluster`, coordinated through ClickHouse Keeper. See [Distributed DDL](/reference/statements/distributed-ddl). The settings `shard_num` and `replica_num` restrict it to one shard or one replica.
+
+## ASYNC and SYNC {#async}
+
+Introduced in: v22.5.0
+
+By default (`SYNC`) the statement returns when the backup is complete. With `ASYNC`, or `SETTINGS async = 1`, it returns at once and the backup continues in the background: follow it by its `id` in [`system.backups`](/reference/system-tables/backups) and [`system.backup_log`](/reference/system-tables/backup_log).
+
+## Result {#result}
+
+One row with the columns `id` (`String`: the `id` setting, or a generated UUID) and `status` (`Enum8`): `BACKUP_CREATED` when the backup is complete, `CREATING_BACKUP` with `ASYNC`. A synchronous backup that fails throws an exception, for example `BACKUP_ALREADY_EXISTS` when the destination exists.
+
+## Settings {#settings}
+
+| Setting | Default | Description |
+|---|---|---|
+| `id` | a generated UUID | ID of the operation in the result and in `system.backups`. It must differ from the ID of every operation `system.backups` lists. |
+| `base_backup` | unset | Destination of a base backup. The new backup is incremental: it stores only what the base backup does not contain. |
+| `compression_method` | `''` | Compression method of a ZIP archive, for example `'lzma'`; `''` is the default method. Not supported for TAR archives. |
+| `compression_level` | `-1` | Compression level of a ZIP archive; `-1` is the default level. |
+| `password` | `''` | Encrypts a ZIP archive with this password; a directory or TAR backup rejects it. |
+| `s3_storage_class` | `''` | Storage class of the files written to S3, for example `'STANDARD'`. Alias: `s3_storage_class_name`. |
+| `structure_only` | `0` | Stores only the definitions of the objects, without the data of tables. |
+| `async` | `0` | Same as `ASYNC`. |
+| `decrypt_files_from_encrypted_disks` | `0` | Decrypts the files of tables stored on encrypted disks. |
+| `deduplicate_files` | `1` | Stores identical files once within the backup. |
+| `fsync_backup_files` | `1` | Syncs the files of `File` and local `Disk` backups to storage before the backup is reported as created. |
+| `allow_s3_native_copy` | `1` | Allows server-side copies in S3. |
+| `allow_azure_native_copy` | `1` | Allows server-side copies in Azure Blob Storage. |
+| `use_same_s3_credentials_for_base_backup` | `0` | Opens an S3 base backup with the credentials of this backup's destination. |
+| `use_same_password_for_base_backup` | `0` | Opens the base backup archive with the `password` of this backup. |
+| `azure_attempt_to_create_container` | `1` | Creates the Azure container if it does not exist, which requires permissions at the storage account level. |
+| `read_from_filesystem_cache` | `1` | Uses the existing entries of the filesystem cache without adding new ones. |
+| `shard_num` | `0` | With `ON CLUSTER`, the 1-based index of the only shard to back up; `0` means all shards. |
+| `replica_num` | `0` | With `ON CLUSTER`, the 1-based index of the only replica to back up; `0` means all replicas. |
+| `check_parts` | `1` | Checks the checksums of data parts before writing them to the backup. |
+| `check_projection_parts` | `1` | Checks the checksums of projection parts before writing them to the backup. |
+| `allow_backup_broken_projections` | `0` | Allows backing up a table with broken projections. |
+| `write_access_entities_dependents` | `1` | Stores, with the access entities, what depends on them, for example the grant of a backed up role to a user that is not backed up. |
+| `allow_checksums_from_remote_paths` | `1` | Allows computing the checksums of backup entries from the paths of their blobs in object storage. |
+| `data_file_name_generator` | `''` | `''` keeps the original names of the data files, `'checksum'` names them by checksum. The server setting `backups.data_file_name_generator` changes the default. |
+| `data_file_name_prefix_length` | `3` | With `data_file_name_generator = 'checksum'`, the length of the checksum prefix used as a directory name. |
+| `backup_data_from_refreshable_materialized_view_targets` | `0` | Also stores the data of the target tables of refreshable materialized views without `APPEND`; the data of other targets is always stored. |
+| `backup_named_collections` | unset | Whether to store the named collections created with SQL. See [Named collections](/concepts/features/backup-restore/named-collections). |
+| `experimental_lightweight_snapshot` | `0` | Experimental, ClickHouse Cloud only: creates a snapshot backup. See [Snapshot backup](/concepts/features/backup-restore/snapshot). |
+
+Any other setting in the clause applies to the statement as a query-level setting, for example the [`backup_restore_*` settings](/reference/settings/session-settings/backup-restore); an unknown setting is an error. `setting = DEFAULT` resets a setting to its default value.
+
+## Privileges {#privileges}
+
+`BACKUP` requires the `BACKUP` privilege on every object it backs up (on `*.*` for `ALL`) and the `WRITE` [source privilege](/reference/statements/grant#sources) of the destination: `FILE`, `DISK`, `S3` or `AZURE`. `Memory` and `Null` require no source privilege.
+
+## BACKUP FROM SNAPSHOT {#backup-from-snapshot}
+
+Introduced in: v26.3.0
+
+<ExperimentalBadge/>
+<CloudOnlyBadge/>
+
+```sql
+BACKUP FROM SNAPSHOT snapshot_destination [ON CLUSTER cluster] TO destination [SETTINGS ...] [ASYNC | SYNC]
+```
+
+Creates a backup at `destination` from the snapshot backup at `snapshot_destination`, an `S3` or `AzureBlobStorage` backup created with the setting `experimental_lightweight_snapshot`. The experimental setting [`resumable_backup_from_snapshot`](/reference/settings/session-settings/other#resumable_backup_from_snapshot) makes a failed attempt resumable.
+
+## Examples {#examples}
+
+A full backup of a table to a ZIP archive:
+
+```sql title="Query"
+CREATE TABLE test.events (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO test.events SELECT number, toString(number) FROM numbers(1000);
+BACKUP TABLE test.events TO Disk('backups', 'events_full.zip') SETTINGS id = 'events_full';
+```
+
+```text title="Response"
+┌─id──────────┬─status─────────┐
+│ events_full │ BACKUP_CREATED │
+└─────────────┴────────────────┘
+```
+
+An incremental backup on top of it, which stores fewer entries:
+
+```sql title="Query"
+INSERT INTO test.events SELECT number, toString(number) FROM numbers(1000, 10);
+BACKUP TABLE test.events TO Disk('backups', 'events_incremental.zip')
+SETTINGS id = 'events_incremental', base_backup = Disk('backups', 'events_full.zip');
+SELECT id, base_backup_name, num_entries FROM system.backups WHERE id LIKE 'events_%' ORDER BY start_time;
+```
+
+```text title="Response"
+┌─id─────────────────┬─status─────────┐
+│ events_incremental │ BACKUP_CREATED │
+└────────────────────┴────────────────┘
+┌─id─────────────────┬─base_backup_name───────────────────┬─num_entries─┐
+│ events_full        │                                    │          12 │
+│ events_incremental │ Disk('backups', 'events_full.zip') │           7 │
+└────────────────────┴────────────────────────────────────┴─────────────┘
+```
+
+An asynchronous backup of a database, followed in `system.backups`:
+
+```sql title="Query"
+BACKUP DATABASE test TO File('test_db') SETTINGS id = 'test_db' ASYNC;
+```
+
+```text title="Response"
+┌─id──────┬─status──────────┐
+│ test_db │ CREATING_BACKUP │
+└─────────┴─────────────────┘
+```
+
+```sql title="Query"
+SELECT id, name, status, num_files FROM system.backups WHERE id = 'test_db';
+```
+
+```text title="Response"
+┌─id──────┬─name────────────┬─status─────────┬─num_files─┐
+│ test_db │ File('test_db') │ BACKUP_CREATED │        24 │
+└─────────┴─────────────────┴────────────────┴───────────┘
+```
+
+## Related content {#related-content}
+
+- [Backup and restore](/concepts/features/backup-restore/overview)
+- [`RESTORE`](/reference/statements/restore)
+- [`system.backups`](/reference/system-tables/backups)
+)DOCS_MD",
+        .syntax = R"(
+BACKUP element [, ...] [ON CLUSTER cluster] TO destination [SETTINGS setting = value [, ...]] [ASYNC | SYNC]
+BACKUP FROM SNAPSHOT snapshot_destination [ON CLUSTER cluster] TO destination [SETTINGS setting = value [, ...]] [ASYNC | SYNC]
+)",
+        .related = {"RESTORE", "ALTER TABLE ... UNLOCK SNAPSHOT", "SYSTEM", "GRANT"},
+    };
+
+    documentation["RESTORE"] =
+    {
+        .description = R"DOCS_MD(
+Introduced in: v21.10.0
+
+Restores tables, views, dictionaries, databases or all databases from a backup created by [`BACKUP`](/reference/statements/backup).
+
+## Syntax {#syntax}
+
+```sql
+RESTORE element [, ...]
+    [ON CLUSTER cluster]
+    FROM destination
+    [SETTINGS setting = value [, ...]]
+    [ASYNC | SYNC]
+```
+
+The elements are those of [`BACKUP`](/reference/statements/backup#elements). They name the objects as they are stored in the backup, and `AS` restores an object under another name. `PARTITIONS` restores only the listed partitions. `EXCEPT DATA FROM TABLE[S]` is rejected. The destinations are those of [`BACKUP`](/reference/statements/backup#destinations); a `Null` backup cannot be restored. An incremental backup reads its base backup by itself.
+
+`ON CLUSTER`, `ASYNC` and `SYNC` work as for [`BACKUP`](/reference/statements/backup#on-cluster). The result has the same columns, with the `status` `RESTORED`, or `RESTORING` with `ASYNC`.
+
+## Existing objects {#existing-objects}
+
+By default a missing table is created, and an existing table is restored into if it is empty and its definition matches the one in the backup. A different definition fails unless `allow_different_table_def = 1`, and a non-empty table fails unless `allow_non_empty_tables = 1`. Databases are handled the same way, with `create_database` and `allow_different_database_def`.
+
+`RESTORE` does not roll back on failure: see [Restore atomicity](/reference/system-tables/backups#restore-atomicity).
+
+## Settings {#settings}
+
+| Setting | Default | Description |
+|---|---|---|
+| `id` | a generated UUID | ID of the operation in the result and in `system.backups`. It must differ from the ID of every operation `system.backups` lists. |
+| `base_backup` | unset | Location of the base backup of an incremental backup, overriding the one the backup records. |
+| `password` | `''` | Password of a ZIP archive created with `password`. |
+| `structure_only` | `0` | Restores only the definitions of the objects, without data. It changes the default of the next three settings. |
+| `restore_table_data` | `NOT structure_only` | Restores the data of tables. |
+| `restore_access_entities` | `NOT structure_only` | Restores users, roles, settings profiles, row policies and quotas. |
+| `restore_functions` | `NOT structure_only` | Restores user-defined functions. |
+| `restore_named_collections` | `1` | Restores the named collections created with SQL, also with `structure_only`. See [Named collections](/concepts/features/backup-restore/named-collections). |
+| `create_table` | `'if-not-exists'` | `'create'` or `1`: fails if the table exists. `'must-exist'` or `0`: fails if the table does not exist. `'if-not-exists'`: creates the table only if it does not exist. |
+| `create_database` | `'if-not-exists'` | The same for databases. |
+| `allow_different_table_def` | `0` | Allows restoring into an existing table whose definition differs from the one in the backup. |
+| `allow_different_database_def` | `0` | Allows restoring into an existing database whose definition differs from the one in the backup. |
+| `allow_non_empty_tables` | `0` | Allows restoring into a non-empty table. This can duplicate data. |
+| `async` | `0` | Same as `ASYNC`. |
+| `shard_num` | `0` | With `ON CLUSTER`, the 1-based index of the only shard to restore to; `0` means all shards. |
+| `replica_num` | `0` | With `ON CLUSTER`, the 1-based index of the only replica to restore to; `0` means all replicas. |
+| `shard_num_in_backup` | `0` | 1-based index of the shard in the backup to read the data from. `0`: the only shard of the backup, otherwise the same shard as the restoring host. |
+| `replica_num_in_backup` | `0` | 1-based index of the replica in the backup to read the data from. `0`: the only replica of the shard in the backup, otherwise the same replica as the restoring host. |
+| `create_access` | `'if-not-exists'` | When a restored user, role, settings profile, row policy or quota exists: `'create'` or `1` fails, `'if-not-exists'` keeps the existing one, `'replace'` replaces it. |
+| `create_function` | `'if-not-exists'` | The same for user-defined functions. |
+| `create_named_collection` | `'if-not-exists'` | The same for named collections. |
+| `create_workloads_and_resources` | `'if-not-exists'` | The same for workloads and resources, which are restored together. |
+| `skip_unresolved_access_dependencies` | `0` | Restores an access entity without a dependency that cannot be resolved, for example a settings profile of a user that is neither restored nor exists, instead of failing. |
+| `restore_access_entities_with_current_grants` | `0` | Limits the grants of restored access entities to what the current user can grant, as `GRANT CURRENT GRANTS` does, instead of failing. |
+| `update_access_entities_dependents` | `1` | Updates existing access entities that depend on a restored one, for example grants a restored role to an existing user again. |
+| `allow_s3_native_copy` | `1` | Allows server-side copies in S3. |
+| `allow_azure_native_copy` | `1` | Allows server-side copies in Azure Blob Storage. |
+| `use_same_s3_credentials_for_base_backup` | `0` | Opens an S3 base backup with the credentials of this backup's destination. |
+| `use_same_password_for_base_backup` | `0` | Opens the base backup archive with the `password` of this backup. |
+| `restore_broken_parts_as_detached` | `0` | Restores broken parts as detached parts with names starting with `broken-from-backup` instead of failing. |
+| `storage_policy` | unset | Storage policy of the restored tables. |
+
+Any other setting in the clause applies to the statement as a query-level setting, as for [`BACKUP`](/reference/statements/backup#settings).
+
+## Privileges {#privileges}
+
+`RESTORE` requires the `READ` [source privilege](/reference/statements/grant#sources) of the destination and the privileges to create and fill what it restores, for example `CREATE TABLE` and `INSERT` on a restored table.
+
+## Examples {#examples}
+
+Restore a table under another name from the incremental backup of the [`BACKUP` examples](/reference/statements/backup#examples):
+
+```sql title="Query"
+RESTORE TABLE test.events AS test.events_restored FROM Disk('backups', 'events_incremental.zip') SETTINGS id = 'events_restored';
+SELECT count() FROM test.events_restored;
+```
+
+```text title="Response"
+┌─id──────────────┬─status───┐
+│ events_restored │ RESTORED │
+└─────────────────┴──────────┘
+┌─count()─┐
+│    1010 │
+└─────────┘
+```
+
+Restoring into the existing, non-empty table fails:
+
+```sql title="Query"
+RESTORE TABLE test.events FROM Disk('backups', 'events_full.zip');
+```
+
+```text title="Response"
+Code: 608. DB::Exception: Cannot restore the table test.events because it already contains some data. You can set structure_only=true, restore_table_data=false or allow_non_empty_tables=true to overcome that in the way you want: While restoring data of table test.events. (CANNOT_RESTORE_TABLE)
+```
+
+## Related content {#related-content}
+
+- [Backup and restore](/concepts/features/backup-restore/overview)
+- [Restore settings](/concepts/features/backup-restore/restore-settings)
+- [`BACKUP`](/reference/statements/backup)
+)DOCS_MD",
+        .syntax = R"(
+RESTORE element [, ...] [ON CLUSTER cluster] FROM destination [SETTINGS setting = value [, ...]] [ASYNC | SYNC]
+)",
+        .related = {"BACKUP", "SYSTEM", "GRANT"},
+    };
+
+    return documentation;
+}
+
 }

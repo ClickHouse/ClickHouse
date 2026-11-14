@@ -1339,6 +1339,7 @@ These `ALTER` statements modify entities related to role-based access control:
 | [ALTER DATABASE ... MODIFY SETTING](/reference/statements/alter/database-setting) | Changes settings of a database engine. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 | [ALTER HANDLER](/reference/statements/create/handler#alter-handler) | Modifies a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler). |
+| [ALTER TABLE ... UNLOCK SNAPSHOT](/reference/statements/alter/unlock-snapshot) | Removes the lock of one table from a snapshot backup (ClickHouse Cloud only). |
 
 ## Combining actions in one `ALTER` {#combining-actions}
 
@@ -3177,6 +3178,36 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},
+    };
+
+    documentation["ALTER TABLE ... UNLOCK SNAPSHOT"] =
+    {
+        .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+Introduced in: v25.3.0
+
+<ExperimentalBadge/>
+<CloudOnlyBadge/>
+
+Removes the lock that a snapshot backup holds on the parts of one table, while the rest of the snapshot keeps its locks. A snapshot backup is a lightweight backup created with the experimental [`BACKUP`](/reference/statements/backup#settings) setting `experimental_lightweight_snapshot`. `SYSTEM UNLOCK SNAPSHOT` removes all the locks of a snapshot. See [Unlock a snapshot](/concepts/features/backup-restore/snapshot#unlock-snapshot).
+
+## Syntax {#syntax}
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UNLOCK SNAPSHOT 'snapshot_id' [FROM destination]
+```
+
+`FROM` names the destination of the snapshot. It can be omitted when the destination was stored in ClickHouse Keeper when the snapshot was created.
+
+Requires the `ALTER UNLOCK SNAPSHOT` privilege on the table.
+)DOCS_MD",
+        .syntax = R"(
+ALTER TABLE [db.]table [ON CLUSTER cluster] UNLOCK SNAPSHOT 'snapshot_id' [FROM destination]
+)",
+        .parent = "ALTER",
+        .related = {"ALTER", "BACKUP", "SYSTEM"},
     };
 
     documentation["ALTER TABLE ... MODIFY COMMENT"] =
