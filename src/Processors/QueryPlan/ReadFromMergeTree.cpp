@@ -7081,7 +7081,7 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
         res.parts, getStorageMetadata(), query_info, mutations_snapshot, indexes->key_condition,
         min_marks_per_part_to_load_statistics, getContext(), log, unused_stats, &parts_with_deferred_statistics);
 
-    if (!selectivity_estimator_columns || !settings[Setting::use_statistics] || !getStorageMetadata()->hasStatistics())
+    if (!selectivity_estimator_columns || !settings[Setting::use_statistics] || !getStorageMetadata()->hasStatisticsForEstimation())
     {
         res.use_statistics = false;
         return res;
@@ -7157,7 +7157,7 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(
     const Names & required_columns, const RangesInDataParts & parts) const
 {
-    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
+    if (!getStorageMetadata()->hasStatisticsForEstimation() || !getContext()->getSettingsRef()[Setting::use_statistics])
         return nullptr;
     return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
@@ -7169,7 +7169,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
         return getConditionSelectivityEstimator(required_columns);
 
     const auto & settings = getContext()->getSettingsRef();
-    if (!getStorageMetadata()->hasStatistics() || !settings[Setting::use_statistics])
+    if (!getStorageMetadata()->hasStatisticsForEstimation() || !settings[Setting::use_statistics])
         return nullptr;
 
     /// Statistics-only plans have not built indexes yet. Analyze the scalar predicate
@@ -7202,7 +7202,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 {
     /// Just attempting to read statistics files on disk can increase query latencies
     /// First check the in-memory metadata if statistics are present at all
-    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
+    if (!getStorageMetadata()->hasStatisticsForEstimation() || !getContext()->getSettingsRef()[Setting::use_statistics])
         return nullptr;
 
     const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();

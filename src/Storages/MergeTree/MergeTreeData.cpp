@@ -404,6 +404,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool auto_statistics_assume_floats_distinct;
     extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -1210,6 +1211,11 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     /// The statistics of a part are released right after merging, so only the statistics of one batch of parts are held at once.
     std::vector<ColumnsStatistics> parts_statistics(parts.size());
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
+    estimator_builder.setCardinalityPolicy(metadata_snapshot);
+    /// The values of these columns are assumed to be distinct, and no part has statistics of them: the assumption
+    /// needs only the number of rows, which the parts know without loading anything.
+    const Names columns_without_statistics = estimator_builder.getAssumedDistinctColumnsWithoutStatistics(required_columns_set);
     loadStatisticsOfPartsInParallel(
         parts.size(),
         local_context->getSettingsRef()[Setting::max_threads],
@@ -1229,9 +1235,14 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         },
         [&](size_t part_index)
         {
-            estimator_builder.incrementRowCount(parts[part_index].data_part->rows_count);
+            const auto & part = parts[part_index].data_part;
+            estimator_builder.incrementRowCount(part->rows_count);
             for (const auto & [column_name, stat] : parts_statistics[part_index])
                 estimator_builder.addStatistics(column_name, stat);
+            /// A part written before the column was added stores none of its values.
+            for (const auto & column_name : columns_without_statistics)
+                if (!parts_statistics[part_index].contains(column_name) && part->getColumnPosition(column_name))
+                    estimator_builder.addRowsWithoutStatistics(column_name, part->rows_count);
             parts_statistics[part_index] = {};
         });
 
@@ -6597,8 +6608,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
-    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+    auto implicit_statistics = getNewImplicitStatisticsSettings(new_metadata, *settings_from_storage);
+    addImplicitStatistics(new_metadata.columns, implicit_statistics.types, implicit_statistics.assume_floats_distinct);
 
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Only the state after all commands can decide, because one command can
@@ -7821,22 +7832,36 @@ void MergeTreeData::changeSettings(
     }
 }
 
-std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
+MergeTreeData::ImplicitStatisticsSettings MergeTreeData::getNewImplicitStatisticsSettings(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
 {
     if (getStorageID().database_name == DatabaseCatalog::SYSTEM_DATABASE)
-        return {"", false};
+        return {};
+
+    ImplicitStatisticsSettings result;
+    const auto default_settings = getDefaultSettings();
 
     Field new_statistics_types = new_metadata.getSettingChange("auto_statistics_types");
-
     if (new_statistics_types.isNull())
     {
         /// Not set in the table definition, either never or since a reset: the engine default applies.
-        String default_types = (*getDefaultSettings())[MergeTreeSetting::auto_statistics_types];
-        String old_types = old_settings[MergeTreeSetting::auto_statistics_types];
-        return std::make_pair(default_types, default_types != old_types);
+        result.types = (*default_settings)[MergeTreeSetting::auto_statistics_types];
+        result.changed = result.types != old_settings[MergeTreeSetting::auto_statistics_types].value;
+    }
+    else
+    {
+        result.types = new_statistics_types.safeGet<String>();
+        result.changed = true;
     }
 
-    return std::make_pair(new_statistics_types.safeGet<String>(), true);
+    /// The same for the setting that leaves out implicit uniq statistics for Float columns.
+    Field new_assume_floats_distinct = new_metadata.getSettingChange("auto_statistics_assume_floats_distinct");
+    if (new_assume_floats_distinct.isNull())
+        result.assume_floats_distinct = (*default_settings)[MergeTreeSetting::auto_statistics_assume_floats_distinct];
+    else
+        result.assume_floats_distinct = SettingFieldBool{new_assume_floats_distinct}.value;
+    result.changed |= result.assume_floats_distinct != old_settings[MergeTreeSetting::auto_statistics_assume_floats_distinct];
+
+    return result;
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)

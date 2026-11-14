@@ -22,7 +22,7 @@ all_1_2_1	v3	String	['Uniq','Basic']	4	\N	\N
 3	4	4
 Basic auto-added to all suitable columns
 a	['TDigest','Uniq','Basic']
-b	['Uniq','Basic']
+b	['Basic']
 c	['Uniq','Basic']
 d	['Uniq','Basic']
 s	['Uniq','Basic']

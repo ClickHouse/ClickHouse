@@ -319,8 +319,10 @@ struct StorageInMemoryMetadata
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
 
-    /// If any of the columns has statistics.
-    bool hasStatistics() const;
+    /// If the optimizer can estimate anything from statistics: any of the columns has statistics, or its values are
+    /// assumed to be distinct (`ColumnStatisticsDescription::assume_all_distinct`), which needs no statistics files:
+    /// the estimator takes the number of rows from the parts then.
+    bool hasStatisticsForEstimation() const;
 
     /// Get version of metadata
     int32_t getMetadataVersion() const { return metadata_version; }

@@ -824,11 +824,11 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
     return select.select_query != nullptr;
 }
 
-bool StorageInMemoryMetadata::hasStatistics() const
+bool StorageInMemoryMetadata::hasStatisticsForEstimation() const
 {
     for (const auto & column : columns)
     {
-        if (!column.statistics.empty())
+        if (!column.statistics.empty() || column.statistics.assume_all_distinct)
             return true;
     }
     return false;
