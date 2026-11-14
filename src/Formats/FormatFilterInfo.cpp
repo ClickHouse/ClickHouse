@@ -12,10 +12,14 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
+#include <Common/assert_cast.h>
 
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
 {
@@ -24,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int INCORRECT_DATA;
 }
 
 namespace Setting
@@ -123,7 +128,7 @@ UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
     return hash.get64();
 }
 
-void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
+void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_)
 {
     chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
@@ -132,11 +137,11 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
-std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
-    const std::unordered_map<Int64, String> & format_encoding) const
+std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(
+    const FieldIdToColumnName & format_encoding) const
 {
-    std::unordered_map<String, String> clickhouse_to_parquet_names;
-    std::unordered_map<String, String> parquet_names_to_clickhouse;
+    ColumnNameMap clickhouse_to_parquet_names;
+    ColumnNameMap parquet_names_to_clickhouse;
     for (const auto & [column_name, field_id] : storage_encoding)
     {
         if (auto it = format_encoding.find(field_id); it != format_encoding.end())
@@ -151,6 +156,54 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
         }
     }
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
+}
+
+void validateIcebergFieldIds(
+    const DataTypePtr & type, const String & path, const ColumnNameToFieldId & field_ids)
+{
+    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id is on the inner type, under the same path.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            validateIcebergFieldIds(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, field_ids);
+            return;
+        case TypeIndex::LowCardinality:
+            validateIcebergFieldIds(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, field_ids);
+            return;
+        default:
+            break;
+    }
+
+    if (!field_ids.contains(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+            "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
+            path);
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            size_t num_elements = tuple.getElements().size();
+            for (size_t i = 0; i < num_elements; ++i)
+                validateIcebergFieldIds(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), field_ids);
+            break;
+        }
+        case TypeIndex::Array:
+            validateIcebergFieldIds(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", field_ids);
+            break;
+        case TypeIndex::Map:
+        {
+            const auto & map = assert_cast<const DataTypeMap &>(*type);
+            validateIcebergFieldIds(map.getKeyType(), path + ".key", field_ids);
+            validateIcebergFieldIds(map.getValueType(), path + ".value", field_ids);
+            break;
+        }
+        default:
+            break;
+    }
 }
 
 FormatFilterInfo::FormatFilterInfo(
@@ -290,6 +343,47 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 std::rethrow_exception(copyMutableException(init_exception));
             }
         });
+}
+
+std::optional<std::shared_ptr<const KeyCondition>> FormatFilterInfo::tryGetJoinRuntimeFilterKeyCondition(const Block & keys)
+{
+    std::lock_guard lock(join_runtime_filter_mutex);
+    if (join_runtime_filter_key_condition_built)
+        return join_runtime_filter_key_condition;
+    if (!join_runtime_filter_predicate)
+        return nullptr;
+
+    auto predicate = join_runtime_filter_predicate->tryGet();
+    if (!predicate)
+        return std::nullopt;
+
+    join_runtime_filter_key_condition_built = true;
+    auto ctx = context.lock();
+    if (!*predicate || !ctx)
+        return nullptr;
+
+    ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
+    for (const auto & column : additional_columns)
+        columns.push_back(column);
+
+    /// The predicate reads each key as the type of the read step's output; KeyCondition would compare the statistics of
+    /// a column of another type wrongly. Renamed, the column is unknown to the predicate, which then ignores that key.
+    for (const auto & descriptor : join_runtime_filter_predicate->getDescriptors())
+    {
+        auto it = std::ranges::find(columns, descriptor.key_column_name, &ColumnWithTypeAndName::name);
+        if (it != columns.end() && !it->type->equals(*descriptor.key_column_type))
+            it->name = "__join_runtime_filter_key_of_another_type_" + it->name;
+    }
+
+    Names names;
+    names.reserve(columns.size());
+    for (const auto & column : columns)
+        names.push_back(column.name);
+
+    ActionsDAGWithInversionPushDown inverted_dag((*predicate)->getOutputs().front(), ctx, /* boolean_context */ true);
+    join_runtime_filter_key_condition = std::make_shared<const KeyCondition>(
+        inverted_dag, ctx, names, std::make_shared<ExpressionActions>(ActionsDAG(columns)));
+    return join_runtime_filter_key_condition;
 }
 
 }

@@ -2,38 +2,39 @@
 title: النسخ الاحتياطية القابلة للتهيئة عبر سطر الأوامر
 ---
 
-تتناول هذه الصفحة قراءة جدول النسخ الاحتياطي لخدمة ClickHouse Cloud وتغييره من سطر الأوامر باستخدام [ClickHouse CLI](/ar/products/cloud/features/cli) (`clickhousectl`). الأوامر غير تفاعلية، ويُخرج `clickhousectl` نتائج بصيغة JSON عند استخدام `--json`.
+تتناول هذه الصفحة قراءة جدول النسخ الاحتياطي لخدمة ClickHouse Cloud وتغييره من سطر الأوامر باستخدام [واجهة سطر الأوامر لـ ClickHouse](/ar/concepts/features/interfaces/cli) (`clickhousectl`). الأوامر غير تفاعلية، باستثناء تسجيل الدخول الاختياري عبر `--interactive`. ويُخرج `clickhousectl` نتائج بصيغة JSON عند استخدام `--json`، كما يفعل ذلك تلقائيًا عندما يشغّله وكيل برمجة.
 
 تتوفر النسخ الاحتياطية القابلة للتهيئة في خطتَي Scale وEnterprise.
 
 ## المتطلبات المسبقة {#prerequisites}
 
-ثبّت ClickHouse CLI:
+ثبّت واجهة سطر الأوامر لـ ClickHouse:
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-تحتاج أيضًا إلى `jq`.
+يثبّت البرنامج النصي الأداة `~/.local/bin/clickhousectl` إلى جانب اسم بديل لها هو `chctl`. تأكّد من إدراج `~/.local/bin` ضمن متغير `PATH` لديك.
 
-يُعد تغيير تكوين النسخ الاحتياطي عملية كتابة ويتطلب [المصادقة باستخدام مفتاح واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/openapi)؛ أما تسجيل الدخول عبر OAuth فهو للقراءة فقط:
+ستحتاج أيضًا إلى `jq`.
+
+يُعدّ تغيير تكوين النسخ الاحتياطي عملية كتابة تتطلب [مفتاح API](/ar/products/cloud/features/admin-features/api/openapi)، أما تسجيل الدخول عبر المتصفح (`clickhousectl cloud auth login`) فيمنح صلاحية للقراءة فقط. لذا سجّل الدخول باستخدام المفتاح؛ إذ يطالبك الخيار `--interactive` بإدخال المفتاح والـ secret، فلا يُحفظ الـ secret في سجل الـ shell لديك:
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-بدلاً من ذلك، عيّن متغيّري البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`. تحقّق من ذلك باستخدام `clickhousectl cloud auth status`: تأكّد من أن بيانات الاعتماد **النشطة** هي التي تملك النطاق `read/write`. تتقدّم بيانات الاعتماد المحفوظة من عملية `auth login` سابقة على متغيّرات البيئة؛ وفي هذه الحالة قد يظل الصف `Env vars` يعرض النطاق `read/write` لكنه يُوسم بأنه غير نشط (`Configured (inactive, outranked by credentials file)`)، وتُنفَّذ أوامر الكتابة الواردة أدناه باستخدام بيانات الاعتماد المحفوظة عوضًا عنها. نفّذ `clickhousectl cloud auth logout` أولاً إذا كنت ترغب في استخدام متغيّرات البيئة.
+بدلاً من ذلك، مرِّر الخيارين `--api-key` و`--api-secret`، أو اضبط متغيرَي البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`؛ ويُفضَّل أن يستخدم وكيل البرمجة أو البرنامج النصي متغيرات البيئة. يتحقق تسجيل الدخول من المفتاح ويعرض الهوية المرتبطة به، ويمكنك التحقق من بيانات الاعتماد النشطة في أي وقت باستخدام `clickhousectl cloud auth whoami`. تحظى بيانات الاعتماد المحفوظة من تنفيذ سابق للأمر `auth login` بالأولوية على متغيرات البيئة: فإذا أظهر الأمر `clickhousectl cloud auth status` أن متغيرات البيئة لديك غير نشطة، فهذا يعني أن بيانات الاعتماد المحفوظة هي المستخدمة، لذا شغِّل `clickhousectl cloud auth logout --api-keys` لاستخدام المتغيرات بدلاً منها.
 
 ## العثور على معرّف الخدمة {#find-the-service-id}
 
 يُضبط تكوين النسخ الاحتياطي لكل خدمة على حدة. ابحث عن معرّف الخدمة باستخدام اسمها:
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="<service-name>") | .id')
+CH_ID=$(clickhousectl cloud service get --name "<service-name>" --json | jq -r .id)
 ```
 
-إذا كنت تنتمي إلى أكثر من organization، فلن يتمكن الأمر من اكتشاف الـ organization تلقائيًا وسيفشل مع ظهور الرسالة `Multiple organizations found. Specify --org-id to choose one.`. اعرض قائمة الـ organizations الخاصة بك باستخدام `clickhousectl cloud org list`، ثم مرّر `--org-id <org-id>` إلى هذا الأمر وإلى كل أمر `backup-config` وارد أدناه.
+إذا كنت تنتمي إلى أكثر من organization، فلن يتمكن الأمر من اكتشاف الـ organization تلقائيًا وسيفشل مع ظهور الرسالة ``Multiple organizations found. Specify --org-id or --org-name to choose one. Use `clickhousectl cloud org list` to see your organizations.``. اعرض قائمة الـ organizations الخاصة بك باستخدام `clickhousectl cloud org list`، ثم مرّر `--org-id <org-id>` (أو `--org-name <name>`) إلى هذا الأمر وإلى كل أمر `backup-config` وارد أدناه.
 
 ## قراءة تكوين النسخ الاحتياطي الحالي {#read-the-current-backup-configuration}
 
@@ -54,7 +55,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## تغيير مدة الاحتفاظ والتكرار {#change-retention-and-frequency}
 
-يقبل الأمر `backup-config update` الإعدادات نفسها الموجودة في نموذج الـ Console — مدة الاحتفاظ (`--backup-retention-period-hours`)، والتكرار (`--backup-period-hours`)، ووقت البدء (`--backup-start-time`) — ثم يطبع التهيئة الناتجة. أما الـ flags التي لا تحددها فتبقى بقيمها الحالية:
+يقبل الأمر `backup-config update` الإعدادات نفسها الموجودة في نموذج الـ Console — مدة الاحتفاظ (`--backup-retention-period-hours`)، والتكرار (`--backup-period-hours`)، ووقت البدء (`--backup-start-time`) — ثم يطبع التهيئة الناتجة. تقبل واجهة برمجة التطبيقات مدة احتفاظ تتراوح بين 24 و1080 ساعة بأيام كاملة (أي من مضاعفات العدد 24)، وتكرارًا كل 6 أو 8 أو 12 أو 16 أو 20 أو 24 أو 36 أو 48 ساعة. أما الـ flags التي لا تحددها فتبقى بقيمها الحالية:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -87,7 +88,7 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 
 ## تعيين وقت بدء النسخ الاحتياطي {#set-a-backup-start-time}
 
-يأخذ `--backup-start-time` وقت بدء يوميًا بتوقيت UTC، عند رأس الساعة (`HH:00`). ويقيّد وقت البدء التكرار: إذ يجب أن تكون فترة النسخ الاحتياطي `24` أو `48` ساعة، سواء مُرِّرت في الأمر نفسه أو كانت مخزَّنة مسبقًا على الخدمة. ومنذ `clickhousectl 0.4.2`، يجري التحقق من التنسيق ومن قاعدة الفترة كليهما على جانب العميل، قبل أي استدعاء لواجهة برمجة التطبيقات. أما الوقت الذي لا يقع عند رأس الساعة — أو غير المكمَّل بالأصفار، مثل `2:00` — فيرفضه مُحلِّل المعاملات مع رمز الخروج `2`:
+يأخذ `--backup-start-time` وقت بدء يوميًا بتوقيت UTC، عند رأس الساعة (`HH:00`). ويقيّد وقت البدء التكرار: إذ يجب أن تكون فترة النسخ الاحتياطي `24` أو `48` ساعة، سواء مُرِّرت في الأمر نفسه أو كانت مخزَّنة مسبقًا على الخدمة. ويتحقق clickhousectl من التنسيق ومن قاعدة الفترة كليهما قبل إرسال التحديث. أما الوقت الذي لا يقع عند رأس الساعة — أو غير المكمَّل بالأصفار، مثل `2:00` — فيرفضه مُحلِّل المعاملات مع رمز الخروج `2`:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
@@ -103,7 +104,7 @@ error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': inva
 Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
 ```
 
-يمكن حذف `--backup-period-hours`، وفي هذه الحالة تحتفظ الخدمة بالفترة المضبوطة لديها بالفعل — لكن يجب أن تكون تلك الفترة المخزَّنة نفسها `24` أو `48`. ففي خدمة لا تزال تستخدم الجدولة الافتراضية تكون الفترة `24`، ولذلك يكفي تحديد وقت البدء وحده. أما الخدمة أعلاه فقد ضُبطت على `12` في الخطوة السابقة، ولهذا يفشل حذف الفترة: إذ يقرأ `clickhousectl` الإعدادات المخزَّنة أولًا ثم يرفض العملية برمز خروج `1`، ومن دون استدعاء واجهة برمجة التطبيقات أيضًا:
+يمكن حذف `--backup-period-hours`، وفي هذه الحالة تحتفظ الخدمة بالفترة المضبوطة لديها بالفعل — لكن يجب أن تكون تلك الفترة المخزَّنة نفسها `24` أو `48`. ففي خدمة لا تزال تستخدم الجدول الزمني الافتراضي تكون الفترة `24`، ولذلك يكفي تحديد وقت البدء وحده. أما الخدمة أعلاه فقد ضُبطت على `12` في الخطوة السابقة، ولهذا يفشل حذف الفترة: إذ يقرأ `clickhousectl` الإعدادات المخزَّنة أولًا ثم يرفض العملية برمز خروج `1`، وذلك أيضًا قبل إرسال التحديث:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json

@@ -15,9 +15,7 @@ ClickHouse는 위치, 토지 등과 같은 지리 객체를 표현하기 위한 
 
 * [단순한 지리 객체 표현](https://en.wikipedia.org/wiki/GeoJSON).
 
-<div id="point">
-  ## Point
-</div>
+## Point {#point}
 
 `Point`는 X 좌표와 Y 좌표로 표현되며, [Tuple](/ko/reference/data-types/tuple)([Float64](/ko/reference/data-types/float), [Float64](/ko/reference/data-types/float))에 저장됩니다.
 
@@ -35,11 +33,10 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
-<div id="multipoint">
-  ## MultiPoint
-</div>
+## MultiPoint {#multipoint}
 
-`MultiPoint`는 Point 배열로 저장되는 Point 집합입니다: [배열](/ko/reference/data-types/array)([Point](#point)).
+`MultiPoint`는 점 배열로 저장되는 Point 집합입니다: [배열](/ko/reference/data-types/array)([Point](#point)).
+`Point`는 `MultiPoint`로 CAST할 수 있으며, 이때 결과에는 해당 Point가 유일한 원소로 포함됩니다.
 
 **예시**
 
@@ -55,9 +52,7 @@ SELECT mp, toTypeName(mp) FROM geo_multipoint;
 └───────────────────────────────┴────────────────┘
 ```
 
-<div id="ring">
-  ## Ring
-</div>
+## Ring {#ring}
 
 `Ring`은 점의 배열로 저장되는, 내부에 빈 영역이 없는 단순 다각형입니다: [배열](/ko/reference/data-types/array)([Point](#point)).
 
@@ -75,9 +70,7 @@ SELECT r, toTypeName(r) FROM geo_ring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="linestring">
-  ## LineString
-</div>
+## LineString {#linestring}
 
 `LineString`은 점 배열로 저장되는 선입니다: [배열](/ko/reference/data-types/array)([Point](#point)).
 
@@ -95,11 +88,10 @@ SELECT l, toTypeName(l) FROM geo_linestring;
 └───────────────────────────────┴───────────────┘
 ```
 
-<div id="multilinestring">
-  ## MultiLineString
-</div>
+## MultiLineString {#multilinestring}
 
 `MultiLineString`은 여러 개의 선을 `LineString`의 배열로 저장하는 타입입니다: [배열](/ko/reference/data-types/array)([LineString](#linestring)).
+`LineString`은 `MultiLineString`으로 CAST할 수 있으며, 이때 결과는 해당 선 하나만을 원소로 가집니다.
 
 **예시**
 
@@ -115,9 +107,7 @@ SELECT l, toTypeName(l) FROM geo_multilinestring;
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="polygon">
-  ## Polygon
-</div>
+## Polygon {#polygon}
 
 `Polygon`은 링의 배열로 저장되는, 내부에 구멍이 있는 다각형입니다: [배열](/ko/reference/data-types/array)([Ring](#ring)). 바깥 배열의 첫 번째 요소는 다각형의 외곽을 나타내고, 그 뒤의 요소들은 모두 구멍을 나타냅니다.
 
@@ -137,15 +127,14 @@ SELECT pg, toTypeName(pg) FROM geo_polygon;
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-<div id="multipolygon">
-  ## MultiPolygon
-</div>
+## MultiPolygon {#multipolygon}
 
-`MultiPolygon`은 여러 개의 Polygon으로 구성되며, Polygon의 배열로 저장됩니다: [배열](/ko/reference/data-types/array)([Polygon](#polygon)).
+`MultiPolygon`은 여러 개의 다각형으로 구성되며, 다각형의 배열로 저장됩니다: [배열](/ko/reference/data-types/array)([Polygon](#polygon)).
+`Polygon`은 `MultiPolygon`으로 변환(CAST)할 수 있으며, 이때 결과에는 해당 다각형이 유일한 원소로 포함됩니다.
 
 **예시**
 
-이 MultiPolygon은 서로 분리된 2개의 Polygon으로 구성됩니다 — 첫 번째는 hole이 없고, 두 번째는 hole이 1개 있습니다:
+이 MultiPolygon은 서로 분리된 2개의 다각형으로 구성됩니다 — 첫 번째는 내부 구멍이 없고, 두 번째는 내부 구멍이 1개 있습니다:
 
 ```sql title="Query"
 CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
@@ -159,9 +148,7 @@ SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 `Geometry`는 위에 나열된 모든 타입을 포괄하는 공통 타입입니다. 즉, 이러한 타입들의 Variant와 같습니다.
 
@@ -205,9 +192,7 @@ SELECT * FROM geo_dst;
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * [대규모 실제 데이터 세트 탐색: ClickHouse의 100년이 넘는 기상 기록](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
 

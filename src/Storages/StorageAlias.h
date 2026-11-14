@@ -16,7 +16,6 @@ public:
     {
         ContextPtr context;
         AccessType access_type;
-        Names column_names = {};
     };
 
     StorageAlias(
@@ -65,6 +64,17 @@ public:
     /// Returns the subset of `column_names` the current user has this access to on every table this
     /// alias resolves through. Resolves the chain once, whatever the grants look like.
     NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
+
+    /// Returns the subset of `column_names` the current user can read with `SELECT` through every table this alias
+    /// resolves through. Each name is decided separately at each table, as `read` decides it on each hop: a subcolumn is
+    /// checked against its column unless that table has a grant or revoke on the exact subcolumn name (see
+    /// `ColumnsDescription::getColumnNamesForSelectAccessCheck`). `columns` is the metadata of the chain's last table.
+    NameSet filterColumnsSelectableThroughChain(
+        ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const;
+
+    /// Returns the database and table names of every table this alias resolves through, in order, i.e. the whole
+    /// chain when the target is itself an Alias. The chain stops at a cycle or at a target that does not exist.
+    std::vector<std::pair<String, String>> getTargetChain() const;
 
     /// Read from target table
     void read(
@@ -309,14 +319,7 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{}; }
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override
-    {
-        auto target = tryGetTargetTable();
-        if (!target)
-            return std::nullopt;
-
-        return target->getColumnSizes();
-    }
+    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override;
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
 

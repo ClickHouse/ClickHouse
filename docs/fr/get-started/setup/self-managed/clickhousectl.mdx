@@ -15,78 +15,198 @@ doc_type: 'guide'
   le [Sous-système Windows pour Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about).
 </Info>
 
-La CLI de ClickHouse (`clickhousectl`) vous aide à installer et gérer des versions locales de ClickHouse,
-à lancer des serveurs et à exécuter des requêtes.
+La CLI de ClickHouse (`clickhousectl`, alias `chctl`) installe et gère des versions locales
+de ClickHouse, lance des serveurs ClickHouse et Postgres locaux, exécute des requêtes
+et gère ClickHouse Cloud. Cette page vous guide dans l’installation de la CLI,
+le démarrage d’un serveur ClickHouse local et la connexion à celui-ci.
+
+Si vous avez utilisé le script d’[installation rapide](/fr/get-started/setup/self-managed/quick-install),
+`clickhousectl` est déjà installé. Passez directement à
+[Installer ClickHouse](#cli-install-clickhouse).
 
 <Steps>
-  <Step title="Installer la CLI de ClickHouse" id="install-the-cli">
+  <Step title="Installez l’interface en ligne de commande de ClickHouse" id="install-the-cli">
+    Le script d&#39;installation prend en charge macOS et Linux sur les architectures x86&#95;64 et ARM64 :
+
     ```bash
-    curl https://clickhouse.com/cli | sh
+    curl -fsSL https://clickhouse.com/cli | sh
     ```
 
-    Un alias `chctl` est également créé automatiquement pour plus de simplicité.
+    Le script installe `clickhousectl` dans `~/.local/bin` et crée un alias `chctl`
+    au même emplacement. Si le script indique que `~/.local/bin` ne figure pas dans votre `PATH`, ajoutez-le,
+    puis ajoutez la même ligne au fichier de profil de votre interpréteur de commandes (`~/.bashrc`, `~/.zshrc`) pour les prochaines
+    sessions :
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    <Accordion title="Autres méthodes d'installation">
+      | Outil                                       | Commande                        |
+      | ------------------------------------------- | ------------------------------- |
+      | npm                                         | `npm install -g clickhousectl`  |
+      | uv                                          | `uv tool install clickhousectl` |
+      | pipx                                        | `pipx install clickhousectl`    |
+      | pip                                         | `pip install clickhousectl`     |
+      | cargo-binstall                              | `cargo binstall clickhousectl`  |
+      | Cargo, à partir du code source (Rust 1.94+) | `cargo install clickhousectl`   |
+
+      Seuls le script d&#39;installation et npm créent l&#39;alias `chctl`.
+    </Accordion>
+
+    Pour vérifier si une version plus récente de la CLI est disponible et l&#39;installer :
+
+    ```bash
+    clickhousectl update --check
+    clickhousectl update
+    ```
   </Step>
 
   <Step title="Installer ClickHouse" id="cli-install-clickhouse">
-    Installez la dernière version de ClickHouse et définissez-la comme version par défaut :
+    Installez la dernière version de ClickHouse et définissez-la comme version par défaut :
 
     ```bash
     clickhousectl local use latest
     ```
 
-    `local use` installe la version si elle n’est pas déjà présente, la définit comme
-    version par défaut et crée un lien symbolique `clickhouse` dans `~/.local/bin` (dans votre `PATH`)
-    afin que vous puissiez appeler directement le binaire `clickhouse`. Ainsi, toutes les étapes suivantes de cette documentation
-    qui utilisent une commande `clickhouse` fonctionnent telles quelles.
+    `local use` installe la version si elle n&#39;est pas déjà présente, la définit comme version
+    par défaut et crée un lien symbolique `clickhouse` dans `~/.local/bin`, ce qui vous permet d&#39;exécuter
+    directement le binaire `clickhouse`. Toutes les étapes suivantes de cette documentation qui exécutent une
+    commande `clickhouse` fonctionnent alors telles quelles, à condition que `~/.local/bin` figure dans votre `PATH`.
 
-    Vous pouvez également sélectionner une version précise :
+    Vous pouvez également sélectionner la dernière version LTS (support à long terme) ou une version
+    spécifique :
 
     ```bash
-    clickhousectl local use 26.5            # Dernière 26.5.x.x
-    clickhousectl local use 26.5.2.39       # Version exacte
+    clickhousectl local use lts             # Latest LTS release
+    clickhousectl local use 26.8            # Latest 26.8.x.x release
+    clickhousectl local use 26.8.1.1760     # Exact version
+    ```
+
+    Pour afficher les versions mineures disponibles au téléchargement ainsi que les versions que vous
+    avez installées :
+
+    ```bash
+    clickhousectl local list --remote
+    clickhousectl local list
     ```
 
     <Info>
-      **Utiliser ou installer**
+      **`use` ou `install`**
 
-      `clickhousectl local use <version>` installe une version *et* la définit comme version
-      par défaut, en mettant à jour le lien symbolique `clickhouse` dans votre `PATH`. Pour télécharger une version
-      sans changer votre version par défaut ni mettre à jour le lien symbolique, utilisez
-      plutôt `clickhousectl local install <version>`.
+      `clickhousectl local use <version>` installe une version *et* en fait votre
+      version par défaut, en mettant à jour le lien symbolique `clickhouse`. `clickhousectl local install <version>`
+      se contente de télécharger une version ; celle-ci ne devient votre version par défaut que si vous n&#39;en avez
+      pas encore, et la commande ne met pas à jour le lien symbolique. Pour définir la version par défaut sans créer ni
+      mettre à jour le lien symbolique, utilisez `clickhousectl local use <version> --no-global`.
     </Info>
   </Step>
 
   <Step title="Démarrer clickhouse-server" id="cli-start-clickhouse-server">
+    `clickhousectl` rattache les serveurs locaux au répertoire depuis lequel vous l&#39;exécutez. Créez un
+    répertoire de projet et démarrez-y un serveur :
+
     ```bash
+    mkdir my-project && cd my-project
     clickhousectl local server start
     ```
 
-    Le serveur s’exécute en arrière-plan. Pour vérifier qu’il est bien démarré :
+    ```response
+    Server 'default' started in background (PID: 14705)
+      HTTP port: 8123
+      TCP port:  9000
+      Version:   26.9.1.1312
+    ```
+
+    Le serveur s&#39;exécute en arrière-plan et porte le nom `default`. Ses données sont stockées dans
+    `./.clickhouse/` : exécutez donc les commandes `clickhousectl local` suivantes depuis ce même
+    répertoire, car `clickhousectl` ne recherche pas dans les répertoires parents. Le serveur écoute
+    sur le port HTTP `8123` et le port TCP `9000`, ou sur des ports libres si ceux-ci sont déjà occupés.
+    Pour choisir les ports, utilisez `--http-port` et `--tcp-port`. Pour exécuter plusieurs
+    serveurs, attribuez un nom à chacun, par exemple `clickhousectl local server start dev`.
+
+    Pour vérifier qu&#39;il est en cours d’exécution :
 
     ```bash
     clickhousectl local server list
     ```
+
+    ```response
+    | Name    | Status  | PID   | Version     | HTTP Port | TCP Port |
+    |---------|---------|-------|-------------|-----------|----------|
+    | default | running | 14705 | 26.9.1.1312 | 8123      | 9000     |
+
+    1 server, 1 running
+    ```
   </Step>
 
-  <Step title="Démarrer clickhouse-client" id="cli-start-clickhouse-client">
+  <Step title="Démarrez clickhouse-client" id="cli-start-clickhouse-client">
+    Depuis le même répertoire, connectez-vous au serveur avec `clickhouse-client` :
+
     ```bash
     clickhousectl local client
     ```
 
-    Vous verrez quelque chose comme ceci :
+    `local client` se connecte au serveur nommé `default` et utilise la même
+    version de ClickHouse que le serveur. Pour vous connecter à un autre serveur, indiquez son nom,
+    par exemple `clickhousectl local client dev`. Vous obtiendrez un résultat semblable à celui-ci :
 
     ```response
-    ClickHouse client version 24.5.1.117 (official build).
+    ClickHouse client version 26.9.1.1312 (official build).
     Connecting to localhost:9000 as user default.
-    Connected to ClickHouse server version 24.5.1.
+    Connected to ClickHouse server version 26.9.1.
 
     local-host :)
     ```
 
-    Vous êtes maintenant prêt à envoyer des commandes SQL à ClickHouse !
+    Vous pouvez maintenant envoyer des commandes SQL à ClickHouse ! Saisissez `exit` pour
+    quitter le client.
+
+    Pour exécuter une seule requête sans ouvrir de session interactive, utilisez l&#39;option `-q` :
+
+    ```bash
+    clickhousectl local client -q "SELECT version()"
+    ```
 
     <Tip>
-      Le [Quick Start](/fr/get-started/setup/install) vous guide dans les étapes de création de tables et d’insertion de données.
+      Le guide [Créer des tables dans ClickHouse](/fr/get-started/quickstarts/creating-tables) vous accompagne pas à pas dans la création de tables et l&#39;insertion de données.
     </Tip>
   </Step>
+
+  <Step title="Arrêtez le serveur" id="cli-stop-clickhouse-server">
+    Le serveur continue de tourner en arrière-plan jusqu’à ce que vous l’arrêtiez. Pour l’arrêter, exécutez la commande suivante depuis le
+    même répertoire :
+
+    ```bash
+    clickhousectl local server stop
+    ```
+
+    L&#39;arrêt du serveur conserve ses données jusqu&#39;au prochain `clickhousectl local server start`.
+
+    <Warning>
+      `clickhousectl local server remove` supprime définitivement les données d&#39;un serveur arrêté.
+    </Warning>
+  </Step>
 </Steps>
+
+## Étapes suivantes {#next-steps}
+
+* **Exécutez Postgres en local.** Une fois Docker lancé, démarrez un serveur Postgres local
+  et connectez-vous-y avec `psql` :
+
+  ```bash
+  clickhousectl local postgres start
+  clickhousectl local postgres client
+  ```
+
+* **Connectez-vous à ClickHouse Cloud.** Créez un compte ou connectez-vous à un compte
+  existant. La connexion via le navigateur est en lecture seule ; pour créer ou modifier des ressources Cloud, vous avez besoin d&#39;une
+  API key, que `clickhousectl cloud auth login --interactive` vous invite à saisir.
+
+  ```bash
+  clickhousectl cloud auth signup
+  clickhousectl cloud auth login
+  ```
+
+* **Découvrez le reste de la CLI.** Consultez la [référence de clickhousectl](/fr/concepts/features/interfaces/cli)
+  ou exécutez `clickhousectl --help`.
