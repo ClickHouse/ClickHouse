@@ -243,7 +243,9 @@ public:
         else if (container_type == details::ContainerType::MEDIUM)
         {
             toMedium();
-            getContainer<Medium>().read(in);
+            /// The writer never keeps more than `medium_set_size_max` elements in the medium set
+            /// (it converts to the large container instead), so reject larger sizes before allocating.
+            getContainer<Medium>().read(in, medium_set_size_max);
         }
         else if (container_type == details::ContainerType::LARGE)
         {
