@@ -220,7 +220,7 @@ When ClickHouse writes data in the `SQLite` format, it creates a SQLite table wi
 
 For `Float32` and `Float64` columns, non-`NaN` values are written using SQLite native storage classes, while `NaN` values are written using ClickHouse text serialization. `Bool` and ordinary integer values are also written using SQLite native storage classes. Wide integers and complex types are written using ClickHouse text serialization. `NULL` values are written as SQLite `NULL`.
 
-When ClickHouse infers a schema from SQLite input, it uses the same mapping as the [SQLite database engine](/engines/database-engines/sqlite#data_types-support):
+When ClickHouse infers a schema from SQLite input, it uses the same mapping as the [SQLite database engine](/reference/engines/database-engines/sqlite#data_types-support):
 
 | SQLite declared type | ClickHouse inferred type |
 |----------------------|--------------------------|

@@ -815,7 +815,7 @@ Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
 OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
-    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
+    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
         {"26.1", true, true, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
@@ -2742,7 +2742,7 @@ When enabled, merges and mutations choose a codec per block for columns that use
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
 The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
-Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/index) table function.
 )", BETA, \
         {"26.11", false, false, "Adaptive codec selection was moved to Beta."}, \
         {"26.8", false, false, "New setting."}) \

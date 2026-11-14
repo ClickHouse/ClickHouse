@@ -92,13 +92,13 @@ public:
 REGISTER_FUNCTION(ArrayFlattenedLength)
 {
     FunctionDocumentation::Description description = R"(
-Returns the total number of elements of a multidimensional array, as if it was flattened with the [`arrayFlatten`](/sql-reference/functions/array-functions#arrayFlatten) function.
+Returns the total number of elements of a multidimensional array, as if it was flattened with the [`arrayFlatten`](/reference/functions/regular-functions/array-functions#arrayFlatten) function.
 
 Function:
 
 - Applies to any depth of nested arrays.
-- Is equivalent to [`length`](/sql-reference/functions/array-functions#length) for arrays that are already flat.
-- Follows only `Array` nesting. The elements are counted at the first level that is not an array, so elements of a nested [`Map`](/sql-reference/data-types/map), [`Tuple`](/sql-reference/data-types/tuple), [`Dynamic`](/sql-reference/data-types/dynamic) or [`Variant`](/sql-reference/data-types/variant) are not counted individually, even when they hold arrays themselves.
+- Is equivalent to [`length`](/reference/functions/regular-functions/array-functions#length) for arrays that are already flat.
+- Follows only `Array` nesting. The elements are counted at the first level that is not an array, so elements of a nested [`Map`](/reference/data-types/map), [`Tuple`](/reference/data-types/tuple), [`Dynamic`](/reference/data-types/dynamic) or [`Variant`](/reference/data-types/variant) are not counted individually, even when they hold arrays themselves.
 
 This is the equivalent of `cardinality` in PostgreSQL, whereas in ClickHouse `cardinality` is an alias of `length` and counts only the elements of the outermost array.
 )";

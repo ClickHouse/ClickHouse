@@ -19,15 +19,6 @@ def load_module():
     return mod
 
 
-def load_migrate_module():
-    spec = importlib.util.spec_from_file_location(
-        "docs_migrate", HERE.parents[4] / "docs/_migration/migrate.py")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def load_lychee_module():
     path = HERE.parent / "lychee_check.py"
     spec = importlib.util.spec_from_file_location("lychee_check", path)
@@ -110,7 +101,6 @@ def setting_names(mod, content):
 
 def main():
     mod = load_module()
-    migrate = load_migrate_module()
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
     repo_root = HERE.parents[4]
@@ -137,72 +127,6 @@ def main():
         "session-settings",
         "beta-and-experimental",
     ]
-
-    fenced_links = (
-        'Outside <a href="/missing">link</a>.\n\n'
-        '```xml\n'
-        '<a href="/play">ClickHouse Web UI</a>\n'
-        '```\n'
-    )
-    rewritten_fenced_links = migrate.rewrite_links(
-        fenced_links, None, migrate.Lookups(), [],
-    )
-    unknown_slug_marker = "{/" + "* MIGRATE: unknown slug */}"
-    assert f'<a href="/missing"{unknown_slug_marker}>link</a>' in rewritten_fenced_links
-    assert '<a href="/play">ClickHouse Web UI</a>' in rewritten_fenced_links
-    assert 'href="/play"{/* MIGRATE:' not in rewritten_fenced_links
-
-    for badge in (
-        "CloudNotSupportedBadge",
-        "CloudSupportedBadge",
-        "VersionBadge",
-    ):
-        migrated, _ = migrate.transform_imports(
-            f"import {badge} from '@theme/badges/{badge}';\n\n"
-            f"<{badge} />\n\n"
-            "Content after the badge.\n",
-            migrate.Lookups(),
-            [],
-        )
-        assert migrated == (
-            f'import {{ {badge} }} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n"
-        )
-
-        migrated_snippet, _ = migrate.transform_imports(
-            f'import {badge} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n",
-            migrate.Lookups(),
-            [],
-        )
-        assert migrated_snippet == (
-            f'import {{ {badge} }} from '
-            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
-            f"<{badge} />\n\n"
-            "Content after the badge.\n"
-        )
-        remigrated_snippet, _ = migrate.transform_imports(
-            migrated_snippet,
-            migrate.Lookups(),
-            [],
-        )
-        assert remigrated_snippet == migrated_snippet
-
-    migrated_namespace, _ = migrate.transform_imports(
-        "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
-        "<BadgeNS.CloudNotSupportedBadge />\n",
-        migrate.Lookups(),
-        [],
-    )
-    assert migrated_namespace == (
-        "import * as BadgeNS from "
-        '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";\n\n'
-        "<BadgeNS.CloudNotSupportedBadge />\n"
-    )
 
     for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
         import_line = (
@@ -1354,9 +1278,8 @@ def main():
         observed_beta_rewrite = []
 
         def fake_generate_artifacts(
-                gen, binary, docs_dir, repo_root, migrate, lk, file_map,
-                generated_routes=None):
-            del binary, migrate, lk, file_map
+                gen, binary, docs_dir, repo_root, generated_routes=None):
+            del binary
             if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
                 family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
                 return [mod.GeneratedArtifact(
@@ -1384,14 +1307,12 @@ def main():
 
         mod.ALL_GENERATORS = mod.SETTINGS_GENERATORS
         mod.aggregate_generators = lambda docs_dir: []
-        mod.table_engine_generators = lambda docs_dir, file_map: []
-        mod.database_engine_generators = lambda docs_dir, file_map: []
-        mod.data_type_generators = lambda docs_dir, file_map: []
-        mod.format_generators = lambda docs_dir, file_map: []
-        mod.table_function_generators = lambda docs_dir, file_map: []
-        mod.window_function_generators = lambda docs_dir, file_map: []
-        mod.import_migrate = lambda docs_dir: object()
-        mod.build_file_map = lambda migrate, slug_map: (object(), {})
+        mod.table_engine_generators = lambda docs_dir: []
+        mod.database_engine_generators = lambda docs_dir: []
+        mod.data_type_generators = lambda docs_dir: []
+        mod.format_generators = lambda docs_dir: []
+        mod.table_function_generators = lambda docs_dir: []
+        mod.window_function_generators = lambda docs_dir: []
         mod.generate_artifacts = fake_generate_artifacts
         mod.stale_settings_page_paths = (
             lambda family_name, artifacts, docs_dir: []

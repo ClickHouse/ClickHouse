@@ -1225,9 +1225,9 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
         .description = R"DOCS_MD(
 The `Ordinary` database engine is the legacy database engine. It stores each table's metadata in a separate file and has been superseded by [`Atomic`](/reference/engines/database-engines/atomic).
 
-:::warning
+<Warning>
 `Ordinary` is deprecated. Do not use it for new databases.
-:::
+</Warning>
 
 ## Creating a database {#creating-a-database}
 

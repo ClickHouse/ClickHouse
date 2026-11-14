@@ -23,9 +23,9 @@ Samples with NaN values are ignored unless all samples within the window are NaN
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesMinToGrid = R"(
 timeSeriesMinToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
@@ -121,9 +121,9 @@ Samples with NaN values are ignored unless all samples within the window are NaN
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesTimestampOfMinToGrid = R"(
 timeSeriesTimestampOfMinToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)

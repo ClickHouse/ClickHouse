@@ -4157,7 +4157,7 @@ void registerStorageFile(StorageFactory & factory)
         storage_features,
         Documentation{
             .description = R"DOCS_MD(
-The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
+The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats/index#formats-overview) (`TabSeparated`, `Native`, etc.).
 
 Usage scenarios:
 
@@ -4178,7 +4178,7 @@ File(Format)
 The `Format` parameter specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/reference/formats#formats-overview) section.
+[Formats](/reference/formats/index#formats-overview) section.
 
 ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](/reference/settings/server-settings/settings/other#path) setting in server configuration.
 

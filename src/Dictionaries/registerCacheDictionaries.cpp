@@ -297,7 +297,7 @@ SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
 3
 ```
 
-So a cache dictionary is meant to be used through the dictionary functions. If you need a lookup of arbitrary keys to always reach the source, use `dictGet` with the [direct](/sql-reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every lookup and caches nothing. Note that a table read of a `direct` dictionary is not a keyed fetch either: `SELECT ... FROM <dictionary> WHERE key IN (...)` loads the whole source and filters afterwards, because ClickHouse does not push the key filter into the dictionary. To read a dictionary as a table, use a layout that holds all of it, such as [flat](/sql-reference/statements/create/dictionary/layouts/flat) or [hashed](/sql-reference/statements/create/dictionary/layouts/hashed).
+So a cache dictionary is meant to be used through the dictionary functions. If you need a lookup of arbitrary keys to always reach the source, use `dictGet` with the [direct](/reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every lookup and caches nothing. Note that a table read of a `direct` dictionary is not a keyed fetch either: `SELECT ... FROM <dictionary> WHERE key IN (...)` loads the whole source and filters afterwards, because ClickHouse does not push the key filter into the dictionary. To read a dictionary as a table, use a layout that holds all of it, such as [flat](/reference/statements/create/dictionary/layouts/flat) or [hashed](/reference/statements/create/dictionary/layouts/hashed).
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
@@ -401,7 +401,7 @@ Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionar
 
 Cache contents are local to each server and are lost when a server restarts or is replaced. Do not use `ssd_cache` or `complex_key_ssd_cache` for reliable insert-time enrichment: an empty cache makes inserts depend on lookups to the dictionary source. In ClickHouse Cloud, autoscaling and managed node replacement make this condition more likely. Use a layout that loads the complete dictionary on each server instead; see [Dictionary best practices](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
 
-Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held that hold a value: it cannot discover keys absent from the cache, and it skips the default cells that record keys which were looked up but not found at the source. Resident cells that have expired are still re-requested from the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
+Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held that hold a value: it cannot discover keys absent from the cache, and it skips the default cells that record keys which were looked up but not found at the source. Resident cells that have expired are still re-requested from the source. See [cache](/reference/statements/create/dictionary/layouts/cache).
 
 The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 

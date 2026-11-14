@@ -29,8 +29,6 @@ void registerTableFunctionFilesystem(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFilesystem>(
         {.description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 Recursively iterates a directory and returns a table with file metadata (paths, sizes, types, permissions, modification times) and, optionally, file contents.

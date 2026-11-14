@@ -148,7 +148,7 @@ REGISTER_FUNCTION(IsNotNull)
     FunctionDocumentation::Description description = R"(
 Checks if the argument is not `NULL`.
 
-Also see: operator [`IS NOT NULL`](/reference/operators#is_not_null).
+Also see: operator [`IS NOT NULL`](/reference/operators/index#is_not_null).
     )";
     FunctionDocumentation::Syntax syntax = "isNotNull(x)";
     FunctionDocumentation::Arguments arguments = {

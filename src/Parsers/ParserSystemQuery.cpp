@@ -1231,8 +1231,6 @@ std::map<String, Documentation> ParserSystemQuery::getDocumentation() const
     documentation["SYSTEM"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
 Reload all [Internal dictionaries](/reference/statements/create/dictionary).

@@ -82,8 +82,6 @@ std::map<String, Documentation> ParserExecuteAsQuery::getDocumentation() const
     documentation["EXECUTE AS"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge />
 
 Allows to execute queries on behalf of a different user.

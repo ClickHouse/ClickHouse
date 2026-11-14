@@ -72,20 +72,18 @@ title: ''Server Settings''
 doc_type: ''reference''
 ---
 
-import Tabs from ''@theme/Tabs'';
-import TabItem from ''@theme/TabItem'';
-import SystemLogParameters from ''@site/docs/operations/server-configuration-parameters/_snippets/_system-log-parameters.md'';
-import SettingsInfoBlock from ''@theme/SettingsInfoBlock/SettingsInfoBlock'';
+import SystemLogParameters from ''/snippets/_system-log-parameters.mdx'';
+import SettingsInfoBlock from "/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 
 # Server Settings
 
 This section contains descriptions of server settings. These are settings which
 cannot be changed at the session or query level.
 
-For more information on configuration files in ClickHouse see [""Configuration Files""](/operations/configuration-files).
+For more information on configuration files in ClickHouse see [""Configuration Files""](/concepts/features/configuration/server-config/configuration-files).
 
-Other settings are described in the ""[Settings](/operations/settings/overview)"" section.
-Before studying the settings, we recommend reading the [Configuration files](/operations/configuration-files)
+Other settings are described in the ""[Settings](/concepts/features/configuration/settings/overview)"" section.
+Before studying the settings, we recommend reading the [Configuration files](/concepts/features/configuration/server-config/configuration-files)
 section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ' AS prefix_content

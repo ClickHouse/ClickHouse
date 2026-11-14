@@ -401,7 +401,7 @@ bool isMdxAdmonitionComponent(std::string_view name)
 bool isMdxLayoutComponent(std::string_view name)
 {
     return name == "Tabs" || name == "Tab" || name == "TabItem" || name == "Card" || name == "CardGroup"
-        || name == "VerticalStepper" || name == "Image";
+        || name == "VerticalStepper" || name == "Image" || name == "Accordion" || name == "Frame";
 }
 
 std::optional<std::vector<String>> mdxStringArrayAttribute(std::string_view attrs, std::string_view name)

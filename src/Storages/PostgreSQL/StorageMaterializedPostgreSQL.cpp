@@ -810,9 +810,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MaterializedPostgreSQL table engine
 
 <ExperimentalBadge/>
@@ -852,7 +849,7 @@ PRIMARY KEY key;
 
 ## TLS/SSL {#tls-ssl}
 
-TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/concepts/features/configuration/server-config/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
 
 ```sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)

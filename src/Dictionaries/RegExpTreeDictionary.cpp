@@ -1022,8 +1022,6 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
 
     factory.registerLayout("regexp_tree", create_layout, true, true, Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # Regular expression tree dictionary layout
 
 ## Overview {#overview}
