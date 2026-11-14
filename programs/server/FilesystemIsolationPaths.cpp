@@ -331,12 +331,15 @@ private:
                     const fs::path real_location = fs::canonical(location, entry_error);
                     if (entry_error)
                         break;
-                    /// A location inside the scanned directory, as the link names it, is visible anyway. One outside, even
-                    /// if it leads back inside through other links, as `/opt/ca-link -> /srv/ca`, is kept, so that these
-                    /// links are recreated. A directory that is scanned already is not scanned again.
+                    /// A location that is inside the scanned directory both as the link names it and with the links
+                    /// resolved is visible anyway. Otherwise it is kept, so that the links on the way are recreated: one
+                    /// named outside that leads back inside, as `/opt/ca-link -> /srv/ca`, and one named inside that
+                    /// leads outside through a link and `..`, as `nested/via/..` with `nested/via -> /opt/trust/active`.
+                    /// A directory that is scanned already is not scanned again.
+                    const bool inside = (isSameOrInside(location, current_directory) || isSameOrInside(location, real_directory))
+                        && isSameOrInside(real_location, real_directory);
                     const fs::path relative = real_location.relative_path();
-                    if (!isSameOrInside(location, current_directory) && !isSameOrInside(location, real_directory)
-                        && !isSameOrInside(real_location, "/dev") && std::distance(relative.begin(), relative.end()) >= 2)
+                    if (!inside && !isSameOrInside(real_location, "/dev") && std::distance(relative.begin(), relative.end()) >= 2)
                     {
                         targets.insert(location);
                         if (is_directory)

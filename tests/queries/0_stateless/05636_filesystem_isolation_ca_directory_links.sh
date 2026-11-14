@@ -5,14 +5,15 @@
 # A server with `filesystem_isolation` and a directory of CA certificates in `openSSL.client.caConfig` whose hashed
 # links, as `c_rehash` makes them, point to certificates in another directory, outside every other mount, keeps that
 # directory visible, so that the links are not dangling inside, also for a chain of links through another directory, and
-# for a link through a directory that is a link back to the directory of the certificates.
+# for a link through a directory that is a link back to the directory of the certificates, and for a link named inside
+# the directory that leads outside of it through a link to a directory and `..`.
 # The client context of OpenSSL is created only when it is used, so a placeholder for the certificate is enough.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-EXPECTED="certificates read inside through the links: 3"
+EXPECTED="certificates read inside through the links: 4"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
 # `tests/config/install.sh`.
@@ -23,7 +24,7 @@ fi
 
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_ca_directory_links"
 rm -rf "$DIR"
-mkdir -p "$DIR/conf" "$DIR/data" "$DIR/log" "$DIR/ca" "$DIR/store/certificates" "$DIR/links" "$DIR/other_store" "$DIR/via_parent" "$DIR/out"
+mkdir -p "$DIR/conf" "$DIR/data" "$DIR/log" "$DIR/ca" "$DIR/store/certificates" "$DIR/links" "$DIR/other_store" "$DIR/via_parent" "$DIR/out" "$DIR/ca/nested" "$DIR/trust/active"
 DIR=$(cd "$DIR" && pwd -P)
 echo "placeholder" > "$DIR/store/certificates/private_ca.pem"
 ln -s ../store/certificates/private_ca.pem "$DIR/ca/0123abcd.0"
@@ -33,9 +34,12 @@ ln -s "$DIR/links/second_ca.pem" "$DIR/ca/89abcdef.0"
 echo "placeholder" > "$DIR/ca/inner_ca.pem"
 ln -s "$DIR/ca" "$DIR/via_parent/via"
 ln -s "$DIR/via_parent/via/inner_ca.pem" "$DIR/ca/fedcba98.0"
+echo "placeholder" > "$DIR/trust/trusted_ca.pem"
+ln -s "$DIR/trust/active" "$DIR/ca/nested/via"
+ln -s nested/via/../trusted_ca.pem "$DIR/ca/76543210.0"
 # The server reads the certificates with `file` from its `user_files_path`, through absolute links that are followed
 # inside its isolated filesystem.
-for name in 0123abcd.0 89abcdef.0 fedcba98.0; do
+for name in 0123abcd.0 89abcdef.0 fedcba98.0 76543210.0; do
     ln -s "$DIR/ca/$name" "$DIR/out/$name"
 done
 
@@ -51,7 +55,7 @@ cat > "$DIR/conf/config.xml" <<EOF
     <user_files_path>$DIR/out/</user_files_path>
     <startup_scripts>
         <scripts>
-            <query>INSERT INTO FUNCTION file('result.tsv', 'TSV', 'c UInt64') SELECT count() FROM file('{0123abcd.0,89abcdef.0,fedcba98.0}', 'LineAsString')</query>
+            <query>INSERT INTO FUNCTION file('result.tsv', 'TSV', 'c UInt64') SELECT count() FROM file('{0123abcd.0,89abcdef.0,fedcba98.0,76543210.0}', 'LineAsString')</query>
         </scripts>
     </startup_scripts>
     <!-- Any free port: nothing connects to this server. -->
