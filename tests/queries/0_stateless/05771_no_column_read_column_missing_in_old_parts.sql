@@ -87,3 +87,13 @@ ALTER TABLE t_independent DROP COLUMN n, ADD COLUMN n UInt8 DEFAULT toUInt8(`n.a
 SELECT count() FROM t_independent SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_independent SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_independent;
+
+DROP TABLE IF EXISTS t_renamed;
+CREATE TABLE t_renamed (s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_renamed;
+INSERT INTO t_renamed SELECT if(number = 500, 'n/a', toString(number % 100)) FROM numbers(1000);
+ALTER TABLE t_renamed RENAME COLUMN s TO t, ADD COLUMN n UInt8 DEFAULT toUInt8(t) SETTINGS alter_sync = 0;
+SELECT count() FROM t_renamed SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_renamed SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_renamed;

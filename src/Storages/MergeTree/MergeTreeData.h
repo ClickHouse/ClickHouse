@@ -1340,11 +1340,11 @@ public:
 
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
-    /// The columns of `columns` that every part of `parts` stores and that no pending mutation drops or renames away,
+    /// The columns of `columns` that every part of `parts` stores, resolving pending drops and renames as the reader does,
     /// preferring those no pending mutation updates. Elsewhere the read computes the column's default, which can read
     /// other columns and throw.
     static NamesAndTypesList getColumnsStoredInAllParts(
-        const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot);
+        const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot, const ContextPtr & query_context);
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {

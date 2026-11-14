@@ -9908,52 +9908,59 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
 }
 
 NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
-    const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot)
+    const NamesAndTypesList & columns, const RangesInDataParts & parts, const MutationsSnapshotPtr & mutations_snapshot, const ContextPtr & query_context)
 {
     /// Parts with the same columns share one interned set of column positions, so each set is checked once.
     std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
-    for (const auto & part : parts)
-        part_columns.insert(&part.data_part->getColumnPositions());
+    /// A part with a pending drop or rename is checked the way the reader resolves its columns.
+    std::vector<std::pair<const IMergeTreeDataPart::NameToNumber *, AlterConversionsPtr>> converted_parts;
 
-    /// A pending drop or rename leaves the old data under a name that a re-added column can reuse.
-    NameSet retired;
-    NameSet changed_on_fly;
-    if (mutations_snapshot)
+    const bool has_metadata_mutations = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+    for (const auto & part : parts)
     {
-        changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
-        if (mutations_snapshot->hasMetadataMutations())
+        MutationCommands metadata_commands;
+        if (has_metadata_mutations)
         {
-            for (const auto & part : parts)
-            {
-                for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
-                {
-                    if (command.type == MutationCommand::DROP_COLUMN)
-                    {
-                        retired.insert(command.column_name);
-                    }
-                    else if (command.type == MutationCommand::RENAME_COLUMN)
-                    {
-                        retired.insert(command.column_name);
-                        retired.insert(command.rename_to);
-                    }
-                }
-            }
+            for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
+                if (AlterConversions::isSupportedMetadataMutation(command.type))
+                    metadata_commands.push_back(command);
         }
+
+        if (metadata_commands.empty())
+            part_columns.insert(&part.data_part->getColumnPositions());
+        else
+            converted_parts.emplace_back(
+                &part.data_part->getColumnPositions(),
+                std::make_shared<AlterConversions>(metadata_commands, PatchPartsForReader{}, query_context));
     }
 
-    /// A pending drop of a `Nested` column drops its members too, see `AlterConversions::isColumnDropped`.
     const bool share_nested_offsets
-        = !retired.empty() && (*parts.front().data_part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+        = !converted_parts.empty() && (*parts.front().data_part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    /// The same resolution as `injectRequiredColumnsRecursively`.
+    auto is_stored = [&](const String & name_in_storage)
+    {
+        if (!std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
+            return false;
+
+        return std::ranges::all_of(converted_parts, [&](const auto & part)
+        {
+            const auto & [positions, conversions] = part;
+            const auto name_in_part = conversions->isColumnRenamed(name_in_storage) ? conversions->getColumnOldName(name_in_storage) : name_in_storage;
+            return positions->contains(name_in_part) && !conversions->isColumnDropped(name_in_part, share_nested_offsets);
+        });
+    };
+
+    NameSet changed_on_fly;
+    if (mutations_snapshot)
+        changed_on_fly = mutations_snapshot->getColumnsChangedOnFly();
 
     NamesAndTypesList result;
     NamesAndTypesList updated;
     for (const auto & column : columns)
     {
         const auto name_in_storage = column.getNameInStorage();
-        const auto dot = name_in_storage.find('.');
-        if (retired.contains(name_in_storage)
-            || (share_nested_offsets && dot != std::string::npos && retired.contains(name_in_storage.substr(0, dot)))
-            || !std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
+        if (!is_stored(name_in_storage))
             continue;
 
         /// A column that a pending mutation updates is still read from the parts, with the update applied.
