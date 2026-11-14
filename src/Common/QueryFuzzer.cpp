@@ -9218,7 +9218,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 Type::CLEAR_UNCOMPRESSED_CACHE,
                 Type::CLEAR_INDEX_MARK_CACHE,
                 Type::CLEAR_INDEX_UNCOMPRESSED_CACHE,
-                Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
                 Type::CLEAR_TEXT_INDEX_TOKENS_CACHE,
                 Type::CLEAR_TEXT_INDEX_HEADER_CACHE,
                 Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE,
@@ -9234,7 +9233,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 Type::CLEAR_PAIMON_METADATA_CACHE,
                 Type::CLEAR_PARQUET_METADATA_CACHE,
                 Type::CLEAR_POINT_IN_POLYGON_CACHE,
-                /// `CLEAR_{DISK_METADATA,DISTRIBUTED,FILESYSTEM,FORMAT_SCHEMA,QUERY,SCHEMA}_CACHE`
+                /// `CLEAR_{DISK_METADATA,DISTRIBUTED,FILESYSTEM,FORMAT_SCHEMA,QUERY,SCHEMA,VECTOR_SIMILARITY_INDEX}_CACHE`
                 /// are deliberately absent: they carry an operand this rotation would not preserve.
             };
             if (plain_cache_types.contains(system_query->type))

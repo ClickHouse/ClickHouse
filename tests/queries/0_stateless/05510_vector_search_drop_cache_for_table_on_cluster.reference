@@ -1,0 +1,7 @@
+-- Cache hits and misses (left is hits, right is misses)
+empty cache: current database	0	1
+empty cache: default	0	1
+after bare name: current database	0	1
+after bare name: default	1	0
+after default.tab_05510: current database	1	0
+after default.tab_05510: default	0	1

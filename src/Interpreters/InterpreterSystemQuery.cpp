@@ -602,8 +602,17 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearIndexUncompressedCache();
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            system_context->clearVectorSimilarityIndexCache();
+            if (table_id.empty())
+            {
+                /// Clearing the whole cache evicts the entries of every table, so it requires the privilege on all tables.
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+                system_context->clearVectorSimilarityIndexCache();
+            }
+            else
+            {
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, table_id);
+                getContext()->clearVectorSimilarityIndexCache(table_id);
+            }
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
@@ -3133,8 +3142,13 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
+        }
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
             break;
