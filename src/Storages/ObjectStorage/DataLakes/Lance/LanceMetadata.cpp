@@ -1468,7 +1468,7 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_
     /// a relative path is relative to the key prefix of the local object storage (`user_files_path` in the server),
     /// not to the current directory of the process. The path is made absolute and lexically normal (like the check),
     /// so that the `Lance` SDK opens exactly the directory that passed the check and cannot reinterpret it as a URI
-    /// (`file://`, `s3://`) or expand `~`. Symbolic links inside the dataset are checked by the Rust side.
+    /// (`file://`, `s3://`) or expand `~`. Symbolic links inside the dataset and at its root are checked by the Rust side.
     if (!object_storage || object_storage->getType() != ObjectStorageType::Local)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage for a local `Lance` dataset");
 
@@ -1484,7 +1484,10 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", dataset_path, user_files_path);
     }
 
-    options.uri = std::move(dataset_path);
+    /// `pathStartsWith` above compares the path with symbolic links resolved. Pass the dataset path with symbolic
+    /// links resolved as well, so that the Rust side opens exactly the checked directory and can reject the dataset
+    /// if its root has been replaced by a symbolic link after the check.
+    options.uri = fs::weakly_canonical(dataset_path).string();
     return options;
 }
 

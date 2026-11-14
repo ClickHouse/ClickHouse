@@ -20,6 +20,9 @@ ln -s "${outside_dir}/basic.lance/_versions" "${inside_dir}/escaping.lance/_vers
 ln -s "${outside_dir}/basic.lance/_transactions" "${inside_dir}/escaping.lance/_transactions"
 ln -s "${outside_dir}/basic.lance/data" "${inside_dir}/escaping.lance/data"
 
+# The dataset directory itself must not be a symbolic link to a dataset outside of `user_files_path`.
+ln -s "${outside_dir}/basic.lance" "${inside_dir}/root_link.lance"
+
 # A symbolic link inside of the dataset directory is allowed.
 cp -R "${CUR_DIR}/data_lance/basic.lance" "${inside_dir}/contained.lance"
 mv "${inside_dir}/contained.lance/data" "${inside_dir}/contained.lance/real_data"
@@ -27,4 +30,6 @@ ln -s "${inside_dir}/contained.lance/real_data" "${inside_dir}/contained.lance/d
 
 ${CLICKHOUSE_CLIENT} --enable_lance=1 --query "DESCRIBE lanceLocal('${inside_dir}/escaping.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 ${CLICKHOUSE_CLIENT} --enable_lance=1 --query "SELECT count() FROM lanceLocal('${inside_dir}/escaping.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --enable_lance=1 --query "DESCRIBE lanceLocal('${inside_dir}/root_link.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --enable_lance=1 --query "SELECT count() FROM lanceLocal('${inside_dir}/root_link.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 ${CLICKHOUSE_CLIENT} --enable_lance=1 --query "SELECT count() FROM lanceLocal('${inside_dir}/contained.lance')"

@@ -1239,8 +1239,10 @@ fn ensure_local_dataset_path(path: &str) -> FfiResult<()> {
 }
 
 // ClickHouse checks only that the dataset directory is inside `user_files_path`, while Lance reads the
-// files of a local dataset directly and follows symbolic links. Reject a dataset with a symbolic link
-// that resolves outside of the dataset directory, so that it cannot expose files outside of it.
+// files of a local dataset directly and follows symbolic links. ClickHouse passes the dataset path with
+// symbolic links resolved, so reject a dataset whose root resolves to another directory (for example, it
+// was replaced by a symbolic link after the check), and a dataset with a symbolic link that resolves
+// outside of the dataset directory, so that it cannot expose files outside of the checked directory.
 fn ensure_local_dataset_contained(path: &str) -> FfiResult<()> {
     let origin = ChLanceErrorOrigin::Local;
     let root = match std::fs::canonicalize(path) {
@@ -1255,6 +1257,17 @@ fn ensure_local_dataset_contained(path: &str) -> FfiResult<()> {
             ))
         }
     };
+    if root.as_path() != std::path::Path::new(path) {
+        return Err(FfiError::new(
+            ChLanceErrorKind::PermissionDenied,
+            origin,
+            format!(
+                "Lance dataset path {} resolves to {}, which is not the checked dataset directory",
+                path,
+                root.display()
+            ),
+        ));
+    }
 
     let mut pending = vec![root.clone()];
     while let Some(directory) = pending.pop() {
