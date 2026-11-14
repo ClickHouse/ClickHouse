@@ -776,56 +776,105 @@ def _amd_performance_skipped(info):
     return not full_suite_reason(info, "arm_release")
 
 
-# The kv data flag, set by `configure_amd_release_thinlto`, that makes `Build (amd_release)`
-# build without ThinLTO (see `ci/jobs/build_clickhouse.py`).
-AMD_RELEASE_WITHOUT_THINLTO_KV = "amd_release_without_thinlto"
-AMD_RELEASE_BUILD_JOB = f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE})"
+# The kv data entry, set by `configure_release_thinlto`: the list of release build types
+# that this run builds without ThinLTO (see `ci/jobs/build_clickhouse.py`).
+RELEASE_BUILDS_WITHOUT_THINLTO_KV = "release_builds_without_thinlto"
+RELEASE_BUILD_JOBS = {
+    build_type: f"{JobNames.BUILD} ({build_type})"
+    for build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE)
+}
 
-assert AMD_RELEASE_BUILD_JOB in {
+assert set(RELEASE_BUILD_JOBS.values()) <= {
     j.name for j in JobConfigs.release_build_jobs
-}, "AMD_RELEASE_BUILD_JOB names a job that does not exist"
+}, "RELEASE_BUILD_JOBS names a job that does not exist"
+
+PRIVATE_REPO = "ClickHouse/clickhouse-private"
+# The head branches of the PRs that the synchronizer opens in the private repository
+# for public PRs (`SYNC_BRANCH_PREFIX` in `ci/tools/synchronizer_utils.py`).
+SYNC_PR_BRANCH_PREFIX = "sync-upstream/"
+PERFORMANCE_JOBS = [
+    j.name
+    for j in JobConfigs.performance_comparison_pr_jobs
+    + JobConfigs.performance_comparison_iceberg_jobs
+]
 
 
-def configure_amd_release_thinlto():
-    """Build `amd_release` without ThinLTO in a pull request that skips the AMD performance
-    comparison, its only consumer that depends on how the binary is optimized.
+def _private_performance_requested(info, force_all):
+    """Whether a pull request in the private repository runs the performance comparison.
 
-    Over 2026-11-06 to 2026-11-13, 2569 of 2983 PR `amd_release` builds (86%) had no AMD
-    performance comparison, and their median `Build ClickHouse` step took 20 minutes
-    (the non-LTO `amd_binary`: 4 minutes). Without ThinLTO the compile commands of
-    `amd_release` are the same as those of `amd_binary`, which master builds on every commit,
-    so the build is served from the compiler cache and only links (the standalone
-    `clickhouse-keeper` objects are the exception). The other consumers - packages,
-    `Install packages`, `Compatibility check`, integration tests, `ClickBench` (which checks
-    correctness, not timings) - test the same code. `arm_release` keeps ThinLTO: the ARM
-    performance comparison runs in nearly every PR, so ThinLTO stays covered in PRs.
+    Performance work is done in the public repository, so a private PR runs it only when
+    asked for explicitly with a label. A sync PR - a copy of a public PR, which runs it
+    there - never does, even with a label."""
+    if info.git_branch.startswith(SYNC_PR_BRANCH_PREFIX):
+        return False
+    return force_all or any(
+        label in info.pr_labels for label in (Labels.PR_PERFORMANCE, Labels.CI_PERFORMANCE)
+    )
+
+
+def configure_release_thinlto():
+    """Skip the performance comparison in the private repository unless requested, and
+    build the release builds without ThinLTO in a pull request that does not run the
+    performance comparison on them, their only consumer that depends on how the binary
+    is optimized.
+
+    Public repository: `amd_release` only. Over 2026-11-06 to 2026-11-13, 2569 of 2983 PR
+    `amd_release` builds (86%) had no AMD performance comparison, and their median
+    `Build ClickHouse` step took 20 minutes (the non-LTO `amd_binary`: 4 minutes). Without
+    ThinLTO the compile commands of `amd_release` are the same as those of `amd_binary`,
+    which master builds on every commit, so the build is served from the compiler cache and
+    only links (the standalone `clickhouse-keeper` objects are the exception). The other
+    consumers - packages, `Install packages`, `Compatibility check`, integration tests,
+    `ClickBench` (which checks correctness, not timings) - test the same code. `arm_release`
+    keeps ThinLTO: the ARM performance comparison runs in nearly every public PR, so ThinLTO
+    stays covered in PRs.
+
+    Private repository: performance work is done in the public repository, so every
+    performance comparison job is skipped unless requested (see
+    `_private_performance_requested`), and then both `amd_release` and `arm_release` build
+    without ThinLTO. The binaries keep their debug info for deploying to staging.
 
     A pre-hook, not a filter hook: `ci-force-all` bypasses the filter hooks and then runs
-    every performance job, so that case must keep ThinLTO, and the decision must be recorded
-    before the cache lookup. The build is cached under a salted digest, so that a later run
-    with the same digest that does run the AMD comparison (e.g. after adding `pr-performance`)
-    does not reuse the non-LTO binary.
+    every performance job, so that case must be decided here, and the decision must be
+    recorded before the cache lookup. The builds are cached under a salted digest, so that
+    a later run with the same digest that does run the performance comparison (e.g. after
+    adding `pr-performance`) does not reuse a non-LTO binary.
     """
     from ci.praktika.cache import Cache
+    from ci.praktika.runtime import RunConfig
 
     info = Info()
+    if info.pr_number <= 0 or info.workflow_name != SMALL_PR_WORKFLOW:
+        return
     force_all = (
         Labels.CI_FORCE_ALL in info.pr_labels
         or info.get_kv_data("unresolved_review_threads_force_all") is True
     )
-    if (
-        info.pr_number <= 0
-        or info.workflow_name != SMALL_PR_WORKFLOW
-        # Private PR builds are deployed to staging (see `flavor_cmake_options`).
-        or info.repo_name != "ClickHouse/ClickHouse"
-        or force_all
-        or not _amd_performance_skipped(info)
-    ):
+    if info.repo_name == PRIVATE_REPO:
+        if _private_performance_requested(info, force_all):
+            return
+        config = RunConfig.from_fs(info.workflow_name)
+        for job_name in PERFORMANCE_JOBS:
+            # The other shard family is already filtered by `configure_performance_shards`.
+            if job_name in config.filtered_jobs:
+                continue
+            config.set_job_as_filtered(
+                job_name,
+                "Skipped, the private repository runs the performance comparison only "
+                f"with the '{Labels.PR_PERFORMANCE}' label, and never in sync PRs",
+            )
+        config.dump()
+        build_types = list(RELEASE_BUILD_JOBS)
+    elif force_all or not _amd_performance_skipped(info):
         return
-    print(f"NOTE: no AMD performance comparison - [{AMD_RELEASE_BUILD_JOB}] builds without ThinLTO")
-    info.store_kv_data(AMD_RELEASE_WITHOUT_THINLTO_KV, True)
+    else:
+        build_types = [BuildTypes.AMD_RELEASE]
+
+    print(f"NOTE: no performance comparison on {build_types} - they build without ThinLTO")
+    info.store_kv_data(RELEASE_BUILDS_WITHOUT_THINLTO_KV, build_types)
     salts = info.get_kv_data(Cache.DIGEST_SALTS_KV_KEY) or {}
-    salts[AMD_RELEASE_BUILD_JOB] = "without_thinlto"
+    for build_type in build_types:
+        salts[RELEASE_BUILD_JOBS[build_type]] = "without_thinlto"
     info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
 
 
