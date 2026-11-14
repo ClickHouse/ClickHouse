@@ -255,6 +255,16 @@ namespace
         DriverCreateResult result;
         if (!(query.is_attach && config_exists))
         {
+            /// The driver generates the program of the function in its working directory in
+            /// `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable
+            /// (`noexec`) in the isolated filesystem, so the function could be created but never run. This covers
+            /// `CREATE` and an `ATTACH` without the generated configuration; an `ATTACH` of the existing one is allowed.
+            if (const auto isolation = getFilesystemIsolationStatus(); isolation && isolation->isolated)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Drivers for executable user-defined functions are not supported with the server setting `filesystem_isolation`: "
+                    "the programs they generate in `dynamic_user_defined_executable_functions_path` cannot be executed in the "
+                    "isolated filesystem, where every writable path is mounted `noexec`");
+
             /// The previous working directory is only read so it can be cleaned up after a successful
             /// replace below. Reading it must be best-effort: a missing or invalid (corrupted) `.workdir`
             /// sidecar must not abort the create. This is exactly the corrupted-state case that startup
@@ -406,17 +416,6 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Drivers for executable user-defined functions are not supported with replicated user-defined function storage");
-
-    /// A driver generates the program of the function in its working directory in
-    /// `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable (`noexec`) in
-    /// the isolated filesystem, so the function could be created but never run. A function created before is still
-    /// attached, and fails when it runs.
-    if (!create_function_query->is_attach)
-        if (const auto isolation = getFilesystemIsolationStatus(); isolation && isolation->isolated)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Drivers for executable user-defined functions are not supported with the server setting `filesystem_isolation`: "
-                "the programs they generate in `dynamic_user_defined_executable_functions_path` cannot be executed in the isolated "
-                "filesystem, where every writable path is mounted `noexec`");
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);

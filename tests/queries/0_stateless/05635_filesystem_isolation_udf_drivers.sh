@@ -5,14 +5,15 @@
 # A server with `filesystem_isolation` refuses to create an executable user defined function with a driver, rather
 # than to create a function that cannot run: the program that the driver generates is in
 # `dynamic_user_defined_executable_functions_path`, which is writable and therefore not executable in the isolated
-# filesystem. The refusal comes before the driver runs. The query runs as a startup script of the server.
+# filesystem. The refusal comes before the driver runs, for `CREATE` and for an `ATTACH` without the configuration that
+# the driver would generate. The queries run as startup scripts of the server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 EXPECTED="started with an isolated filesystem
-driver refused: yes
+driver refused for CREATE and ATTACH: yes
 driver ran: no"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
@@ -44,7 +45,18 @@ cat > "$DIR/conf/test_driver.xml" <<EOF
 </clickhouse>
 EOF
 
-cat > "$DIR/conf/config.xml" <<EOF
+PID=
+function finish()
+{
+    [ -n "$PID" ] && kill "$PID" 2>/dev/null
+    wait
+}
+trap finish EXIT
+
+# One start of the server for each statement: a failed startup script skips the ones after it.
+REFUSED=0
+for statement in CREATE ATTACH; do
+    cat > "$DIR/conf/config.xml" <<EOF
 <clickhouse>
     <logger>
         <level>information</level>
@@ -57,7 +69,7 @@ cat > "$DIR/conf/config.xml" <<EOF
     <dynamic_user_defined_executable_functions_path>$DIR/dynamic/</dynamic_user_defined_executable_functions_path>
     <startup_scripts>
         <scripts>
-            <query>CREATE FUNCTION test_filesystem_isolation_driver ARGUMENTS (x UInt64) RETURNS UInt64 ENGINE = TestDriver() AS 'x'</query>
+            <query>$statement FUNCTION test_filesystem_isolation_driver ARGUMENTS (x UInt64) RETURNS UInt64 ENGINE = TestDriver() AS 'x'</query>
         </scripts>
     </startup_scripts>
     <!-- Any free port: nothing connects to this server. -->
@@ -69,29 +81,28 @@ cat > "$DIR/conf/config.xml" <<EOF
 </clickhouse>
 EOF
 
-PID=
-function finish()
-{
-    [ -n "$PID" ] && kill "$PID" 2>/dev/null
-    wait
-}
-trap finish EXIT
+    rm -f "$DIR/log/server.log" "$DIR/log/server.err.log"
+    $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
+    PID=$!
 
-$CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
-PID=$!
+    for _ in {1..600}; do
+        grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && break
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.1
+    done
 
-for _ in {1..600}; do
-    grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null && break
-    kill -0 "$PID" 2>/dev/null || break
-    sleep 0.1
+    if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep -q 'Isolated the filesystem' "$DIR/log/server.log"; then
+        echo "The server did not start with an isolated filesystem"
+        cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
+        exit 1
+    fi
+    grep -q 'are not supported with the server setting `filesystem_isolation`' "$DIR/log/server.err.log" && REFUSED=$((REFUSED + 1))
+
+    kill "$PID"
+    wait "$PID"
+    PID=
 done
-
-if ! grep -q 'Ready for connections' "$DIR/log/server.log" 2>/dev/null || ! grep -q 'Isolated the filesystem' "$DIR/log/server.log"; then
-    echo "The server did not start with an isolated filesystem"
-    cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
-    exit 1
-fi
 echo "started with an isolated filesystem"
 
-echo "driver refused: $(grep -q 'are not supported with the server setting `filesystem_isolation`' "$DIR/log/server.err.log" && echo yes || echo no)"
+echo "driver refused for CREATE and ATTACH: $([ "$REFUSED" = 2 ] && echo yes || echo no)"
 echo "driver ran: $([ -e "$DIR/dynamic/driver_ran" ] && echo yes || echo no)"
