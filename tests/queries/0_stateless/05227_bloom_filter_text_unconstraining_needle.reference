@@ -1,0 +1,24 @@
+a: an unconstraining needle keeps the results and keeps the index in use
+1	1
+1
+1
+b: a needle with a surviving token still prunes
+1
+c: hasAll keeps pruning on its constraining needles
+1
+1	1
+d: an unconstraining needle inside a disjunction of needles must not be dropped
+1	1
+e: match keeps pruning through both the required substring and the alternatives
+1
+1
+f: a needle shorter than the ngram length is unconstraining, a long enough one still prunes
+1	1
+1
+g: an IN set row that tokenizes to nothing keeps the results, a constraining set still prunes
+1	1
+1
+h: an unconstraining needle under NOT is may-be-true, not true
+1	1
+i: an index carrying only unconstraining atoms is still a used index
+3
