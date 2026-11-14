@@ -128,6 +128,7 @@ namespace Setting
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool prefer_outer_table_name_for_correlated_identifier;
 }
 
 
@@ -622,33 +623,48 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
 
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
 {
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-        return {};
-
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
+    std::optional<JoinTableSide> result;
+    std::vector<const IQueryTreeNode *> nodes_to_process{resolved_identifier.get()};
+    while (!nodes_to_process.empty())
     {
-        const auto & resolved_function = resolved_identifier->as<FunctionNode &>();
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
 
-        const auto & argument_nodes = resolved_function.getArguments().getNodes();
-
-        std::optional<JoinTableSide> result;
-        for (const auto & argument_node : argument_nodes)
+        if (const auto * column = current->as<ColumnNode>())
         {
-            auto table_side = getColumnSideFromJoinTree(argument_node, join_node);
-            if (table_side && result && *table_side != *result)
+            const auto * column_source = column->getColumnSource().get();
+            std::optional<JoinTableSide> column_side;
+            if (isFromJoinTree(column_source, join_node.getLeftTableExpressionNode().get()))
+                column_side = JoinTableSide::Left;
+            else if (isFromJoinTree(column_source, join_node.getRightTableExpressionNode().get()))
+                column_side = JoinTableSide::Right;
+
+            if (column_side && result && *column_side != *result)
                 return {};
-            result = table_side;
+            if (column_side)
+                result = column_side;
+            continue;
         }
-        return result;
+
+        /// A nested query resolves its own join nullability. A lambda's body,
+        /// however, can use columns from this join even when its argument nodes do not.
+        if (current->getNodeType() == QueryTreeNodeType::QUERY || current->getNodeType() == QueryTreeNodeType::UNION)
+            continue;
+        if (const auto * lambda = current->as<LambdaNode>())
+        {
+            nodes_to_process.push_back(lambda->getExpression().get());
+            continue;
+        }
+        if (current->asTableExpression())
+            continue;
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
     }
-
-    const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
-
-    if (isFromJoinTree(column_src, join_node.getLeftTableExpressionNode().get()))
-        return JoinTableSide::Left;
-    if (isFromJoinTree(column_src, join_node.getRightTableExpressionNode().get()))
-        return JoinTableSide::Right;
-    return {};
+    return result;
 }
 
 IdentifierResolveScope & QueryAnalyzer::createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope)
@@ -1462,6 +1478,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             identifier_resolve_context.allow_to_resolve_niladic_functions);
     }
 
+    const auto * previous_defer_matcher_alias_query_scope = defer_matcher_alias_query_scope;
+    if (identifier_resolve_context.defer_matcher_correlation)
+        defer_matcher_alias_query_scope = scope_to_resolve_alias_expression->getNearestQueryScope();
+    SCOPE_EXIT({ defer_matcher_alias_query_scope = previous_defer_matcher_alias_query_scope; });
+
     QueryTreeNodePtr alias_node = *it;
 
     if (!alias_node)
@@ -1748,16 +1769,23 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (identifier_lookup.isFunctionLookup())
         return resolve_result;
 
-    CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
-    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+    if (!identifier_resolve_context.defer_matcher_correlation)
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
-            " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
-            identifier_lookup.identifier.getFullName(),
-            resolved_identifier->formatASTForErrorMessage(),
-            fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
-            scope.scope_node->formatASTForErrorMessage());
+        CorrelatedColumnsCollector correlated_columns_collector{
+            resolved_identifier,
+            identifier_resolve_context.scope_to_resolve_alias_expression,
+            node_to_scope_map,
+            defer_matcher_alias_query_scope};
+        if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+        {
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
+                " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+                identifier_lookup.identifier.getFullName(),
+                resolved_identifier->formatASTForErrorMessage(),
+                fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
+                scope.scope_node->formatASTForErrorMessage());
+        }
     }
 
     return resolve_result;
@@ -1814,6 +1842,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
+    if (defer_matcher_alias_query_scope && defer_matcher_alias_query_scope == scope.getNearestQueryScope())
+        identifier_resolve_context.defer_matcher_correlation = true;
+
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
     bool already_in_resolve_process = false;
@@ -2139,6 +2170,27 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
     return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
+static bool isMatcherColumnDiscardedByTransformers(const MatcherNode & matcher_node, const std::string & column_name)
+{
+    for (const auto & transformer : matcher_node.getColumnTransformers().getNodes())
+    {
+        if (transformer->as<ApplyColumnTransformerNode>())
+            return false;
+        if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
+        {
+            if (except_transformer->isColumnMatching(column_name))
+                return true;
+        }
+        else if (auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+        {
+            if (replace_transformer->findReplacementExpression(column_name))
+                return true;
+        }
+    }
+
+    return false;
+}
+
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
     const TableExpressionNodePtr & table_expression_node,
     const NamesAndTypes & matched_columns,
@@ -2158,26 +2210,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
       * (an `APPLY` before them uses the column). Such a column does not need to be resolved,
       * so the expression of an ALIAS column is not analyzed for `SELECT * EXCEPT (alias_column)`.
       */
-    auto is_column_discarded_by_transformers = [&](const std::string & column_name)
-    {
-        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
-        {
-            if (transformer->as<ApplyColumnTransformerNode>())
-                return false;
-            if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
-            {
-                if (except_transformer->isColumnMatching(column_name))
-                    return true;
-            }
-            else if (auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
-            {
-                if (replace_transformer->findReplacementExpression(column_name))
-                    return true;
-            }
-        }
-        return false;
-    };
-
     QueryTreeNodes matched_column_nodes;
 
     for (const auto & column : matched_columns)
@@ -2186,7 +2218,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         if (!matcher_node_typed.isMatchingColumn(column_name))
             continue;
 
-        if (table_expression_data && !is_column_discarded_by_transformers(column_name))
+        if (table_expression_data && !isMatcherColumnDiscardedByTransformers(matcher_node_typed, column_name))
         {
             if (auto column_node = table_expression_data->tryGetColumnNode(column_name))
             {
@@ -2429,6 +2461,111 @@ static void checkSemiAntiJoinTableAccess(
     }
 }
 
+static bool scopeOwnsMatcherColumnSource(const IdentifierResolveScope & scope, const QueryTreeNodePtr & column_source)
+{
+    if (scope.table_expressions_in_resolve_process.contains(column_source.get()))
+        return true;
+
+    for (const auto & table_expression : scope.registered_table_expression_nodes)
+    {
+        if (table_expression == column_source || isFromJoinTree(column_source.get(), table_expression.get()))
+            return true;
+    }
+
+    return false;
+}
+
+static IdentifierResolveScope * findMatcherExpressionScope(const QueryTreeNodePtr & expression, IdentifierResolveScope & scope)
+{
+    IdentifierResolveScope * expression_scope = nullptr;
+    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * column = node->as<ColumnNode>())
+        {
+            if (auto column_source = column->getColumnSourceOrNull())
+            {
+                for (auto * candidate_scope = &scope; candidate_scope; candidate_scope = candidate_scope->parent_scope)
+                {
+                    if (!scopeOwnsMatcherColumnSource(*candidate_scope, column_source))
+                        continue;
+
+                    if (expression_scope && expression_scope != candidate_scope)
+                        return &scope;
+                    expression_scope = candidate_scope;
+                    break;
+                }
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    return expression_scope ? expression_scope : &scope;
+}
+
+static bool expressionUsesOtherScope(const QueryTreeNodePtr & expression, const IdentifierResolveScope & owner_scope)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * column = node->as<ColumnNode>())
+        {
+            if (auto column_source = column->getColumnSourceOrNull();
+                column_source && !scopeOwnsMatcherColumnSource(owner_scope, column_source))
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    return false;
+}
+
+static bool expressionUsesCorrelatedColumn(const QueryTreeNodePtr & expression, const IdentifierResolveScope & scope)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process{expression.get()};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * column = node->as<ColumnNode>())
+        {
+            if (auto column_source = column->getColumnSourceOrNull())
+            {
+                bool crossed_query_scope = false;
+                for (const auto * candidate_scope = &scope; candidate_scope; candidate_scope = candidate_scope->parent_scope)
+                {
+                    if (scopeOwnsMatcherColumnSource(*candidate_scope, column_source))
+                    {
+                        if (crossed_query_scope)
+                            return true;
+                        break;
+                    }
+                    crossed_query_scope |= isQueryOrUnionNode(candidate_scope->scope_node);
+                }
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    return false;
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
@@ -2436,15 +2573,21 @@ static void checkSemiAntiJoinTableAccess(
   * qualified identifier did not match any expression in the query tree, try to lookup qualified identifier in table context.
   * Only if neither a compound expression nor a table expression matches, throw an exception.
   */
-QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
+QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
+    QueryTreeNodePtr & matcher_node,
+    IdentifierResolveScope & scope,
+    IdentifierResolveScope *& matched_expression_scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
     expression_identifier_lookup.is_matcher_qualifier = true;
-    auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
+    IdentifierResolveContext matcher_resolve_context;
+    matcher_resolve_context.defer_matcher_correlation = true;
+    auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope, matcher_resolve_context);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
+    auto * expression_scope = expression_query_tree_node ? findMatcherExpressionScope(expression_query_tree_node, scope) : &scope;
 
     /// Try to resolve unqualified matcher for query expression.
 
@@ -2485,9 +2628,12 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 IdentifierResolveContext identifier_resolve_settings;
                 identifier_resolve_settings.allow_to_check_cte = false;
                 identifier_resolve_settings.allow_to_check_database_catalog = false;
+                identifier_resolve_settings.allow_to_check_parent_scopes = false;
 
                 auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings).resolved_identifier != nullptr;
+                auto * table_probe_scope = scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier]
+                    ? expression_scope : &scope;
+                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, *table_probe_scope, identifier_resolve_settings).resolved_identifier != nullptr;
             }
 
             if (!prefer_table_expression)
@@ -2515,6 +2661,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                     matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
                 }
 
+                matched_expression_scope = expression_scope;
                 return matched_expression_nodes_with_column_names;
             }
         }
@@ -2529,6 +2676,31 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
     auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
     auto table_expression_node = table_identifier_resolve_result.resolved_identifier;
+    auto * table_expression_scope = &scope;
+
+    /// A qualified matcher can refer to a table expression in a parent query scope, just like an
+    /// ordinary qualified column. General table-expression lookup intentionally excludes parent
+    /// join trees because table identifiers in `FROM` must not bind to an outer table. A matcher is
+    /// an expression, so after the current scope declines the qualifier, look through parent join
+    /// trees explicitly when standard correlation-name precedence is requested.
+    if (!table_expression_node
+        && scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier])
+    {
+        for (auto * parent_scope = scope.parent_scope; parent_scope; parent_scope = parent_scope->parent_scope)
+        {
+            auto parent_resolve_result
+                = tryResolveIdentifierFromAliases(table_identifier_lookup, *parent_scope, identifier_resolve_settings);
+            if (!parent_resolve_result.resolved_identifier)
+                parent_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(table_identifier_lookup, *parent_scope);
+            if (!parent_resolve_result.resolved_identifier)
+                continue;
+
+            table_identifier_resolve_result = std::move(parent_resolve_result);
+            table_expression_node = table_identifier_resolve_result.resolved_identifier;
+            table_expression_scope = parent_scope;
+            break;
+        }
+    }
 
     if (!table_expression_node)
     {
@@ -2592,7 +2764,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     }
 
     /// Check if the table is from the non-preserved side of a SEMI or ANTI JOIN
-    checkSemiAntiJoinTableAccess(table_expression_node, scope, matcher_node);
+    checkSemiAntiJoinTableAccess(table_expression_node, *table_expression_scope, matcher_node);
 
     NamesAndTypes matched_columns;
 
@@ -2625,10 +2797,50 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto result_matched_column_nodes_with_names = getMatchedColumnNodesWithNames(matcher_node,
         static_pointer_cast<ITableExpressionNode>(table_expression_node),
         matched_columns,
-        scope);
+        *table_expression_scope);
 
-    updateMatchedColumnsFromJoinUsing(
-        result_matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
+    if (table_expression_scope != &scope)
+    {
+        /// Resolve every generated parent column through the same expression path as an explicit
+        /// `qualifier.column` reference. This applies `ARRAY JOIN`, nullable grouping-key, and
+        /// `JOIN USING` transformations in the scope that owns the table before the column is
+        /// registered as correlated in the current scope.
+        for (auto & [matched_column_node, column_name] : result_matched_column_nodes_with_names)
+        {
+            if (isMatcherColumnDiscardedByTransformers(matcher_node_typed, column_name))
+                continue;
+
+            Identifier explicit_identifier = matcher_node_typed.getQualifiedIdentifier();
+            explicit_identifier.push_back(column_name);
+            auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, *table_expression_scope, identifier_resolve_settings);
+            if (!explicit_resolve_result.resolved_identifier)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Qualified matcher {} resolved table {}, but its column {} could not be resolved in the owning scope",
+                    matcher_node->formatASTForErrorMessage(),
+                    table_expression_node->formatASTForErrorMessage(),
+                    column_name);
+
+            matched_column_node = explicit_resolve_result.resolved_identifier;
+            resolveExpressionNode(
+                matched_column_node,
+                *table_expression_scope,
+                false /*allow_lambda_expression*/,
+                false /*allow_table_expression*/);
+            node_to_projection_name.emplace(matched_column_node, explicit_identifier.getFullName());
+        }
+    }
+    else
+    {
+        updateMatchedColumnsFromJoinUsing(
+            result_matched_column_nodes_with_names,
+            /*is_qualified_matcher=*/ true,
+            matcher_node_typed.getQualifiedIdentifier(),
+            *table_expression_scope);
+    }
+
+    matched_expression_scope = table_expression_scope;
 
     return result_matched_column_nodes_with_names;
 }
@@ -2980,13 +3192,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
 
     QueryTreeNodesWithNames matched_expression_nodes_with_names;
+    auto * matched_expression_scope = &scope;
 
     if (matcher_node_typed.isQualified())
-        matched_expression_nodes_with_names = resolveQualifiedMatcher(matcher_node, scope);
+        matched_expression_nodes_with_names = resolveQualifiedMatcher(matcher_node, scope, matched_expression_scope);
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    auto * join_tree_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::registered_table_expression_nodes);
+    auto * join_tree_scope = findNearestScopeWithNonEmpty(
+        *matched_expression_scope,
+        &IdentifierResolveScope::registered_table_expression_nodes);
 
     if (join_tree_scope && join_tree_scope->join_use_nulls)
     {
@@ -3086,12 +3301,17 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
+    auto * group_by_keys_scope = findNearestScopeWithNonEmpty(
+        *matched_expression_scope,
+        &IdentifierResolveScope::nullable_group_by_keys);
 
     if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
+            if (expressionUsesOtherScope(node, *group_by_keys_scope))
+                continue;
+
             auto it = group_by_keys_scope->nullable_group_by_keys.find(node);
             if (it != group_by_keys_scope->nullable_group_by_keys.end())
             {
@@ -3460,6 +3680,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             strict_transformer->formatASTForErrorMessage(),
             fmt::join(non_matched_column_names, ", "),
             scope.scope_node->formatASTForErrorMessage());
+    }
+
+    /// The qualifier lookup deferred correlation: only transformed output expressions may
+    /// register outer columns. This also covers a tuple assembled from several scopes.
+    if (!defer_matcher_alias_query_scope || defer_matcher_alias_query_scope != scope.getNearestQueryScope())
+    {
+        CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map, defer_matcher_alias_query_scope};
+        if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Qualified matcher {} resolved to correlated columns"
+                " (Enable `allow_correlated_subqueries` setting to allow correlated subqueries execution). In scope {}",
+                matcher_node_typed.formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
     }
 
     auto original_ast = matcher_node->getOriginalAST();
@@ -4417,7 +4650,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
                     || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
 
-            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
+            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty()
+                && (node->getNodeType() == QueryTreeNodeType::COLUMN || !expressionUsesCorrelatedColumn(node, *scope_ptr)))
             {
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())

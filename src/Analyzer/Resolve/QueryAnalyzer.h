@@ -244,7 +244,10 @@ private:
 
     void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, bool is_qualified_matcher, const Identifier & matched_qualified_identifier, IdentifierResolveScope & scope);
 
-    QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
+    QueryTreeNodesWithNames resolveQualifiedMatcher(
+        QueryTreeNodePtr & matcher_node,
+        IdentifierResolveScope & scope,
+        IdentifierResolveScope *& matched_expression_scope);
 
     QueryTreeNodesWithNames resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
@@ -373,6 +376,10 @@ private:
 
     /// Global resolve expression node to tree size
     std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
+
+    /// Alias-body correlation is deferred only in the query that owns the matcher qualifier.
+    /// Nested scalar subqueries still need to register their own correlated columns.
+    const IdentifierResolveScope * defer_matcher_alias_query_scope = nullptr;
 
     /// Global scalar subquery to scalar value map
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;

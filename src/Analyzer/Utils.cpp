@@ -338,7 +338,8 @@ bool containsCorrelatedSubquery(const QueryTreeNodePtr & node)
 
 bool checkCorrelatedColumn(
     const IdentifierResolveScope * scope_to_check,
-    const QueryTreeNodePtr & column
+    const QueryTreeNodePtr & column,
+    const IdentifierResolveScope * deferred_query_scope
 )
 {
     const auto * current_scope = scope_to_check;
@@ -370,6 +371,12 @@ bool checkCorrelatedColumn(
         /// In that case table expression is not registered yet and table expression data is being computed.
         if (scope_to_check->table_expressions_in_resolve_process.contains(column_source.get()))
             break;
+
+        /// A qualifier may be discarded by a matcher transformer. Keep any
+        /// correlation already recorded in its nested query, and wait for the
+        /// transformed matcher output before propagating it beyond this scope.
+        if (scope_to_check == deferred_query_scope)
+            return true;
 
         if (isQueryOrUnionNode(scope_to_check->scope_node))
         {

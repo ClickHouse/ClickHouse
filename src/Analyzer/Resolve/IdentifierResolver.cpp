@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool prefer_outer_table_name_for_correlated_identifier;
     extern const SettingsBool semi_join_include_columns_from_both_sides;
     extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
@@ -686,6 +687,84 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     return {};
 }
 
+/// ClickHouse normally accepts the original table name as a qualifier after the table is aliased.
+/// With `prefer_outer_table_name_for_correlated_identifier`, that extension is hidden when the same
+/// qualifier is visible in a parent scope. Keep this decision shared by leaf resolution and every
+/// JOIN-side binding predicate, otherwise a hidden local name can prune the side that actually owns
+/// a subcolumn or can be reported as denied access on a hidden SEMI/ANTI JOIN side before correlation.
+static bool isOriginalTableQualifierHiddenByParentScope(
+    const Identifier & identifier,
+    const TableExpressionNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope,
+    size_t qualifier_parts)
+{
+    if (!scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier]
+        || !table_expression_node->hasAlias())
+        return false;
+
+    const auto & qualifier = identifier.front();
+    if (qualifier_parts == 1 && table_expression_node->getAlias() == qualifier)
+        return false;
+
+    const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
+
+    String materialized_cte_name;
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        if (table_node->isMaterializedCTE())
+            materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
+
+    bool matches_original_qualifier = false;
+    if (qualifier_parts == 1)
+    {
+        matches_original_qualifier
+            = (!table_expression_data.table_name.empty() && qualifier == table_expression_data.table_name)
+            || (!materialized_cte_name.empty() && qualifier == materialized_cte_name);
+    }
+    else if (qualifier_parts == 2 && identifier.getPartsSize() > 1)
+    {
+        matches_original_qualifier
+            = !table_expression_data.database_name.empty()
+            && qualifier == table_expression_data.database_name
+            && identifier[1] == table_expression_data.table_name;
+    }
+
+    if (!matches_original_qualifier)
+        return false;
+
+    for (const IdentifierResolveScope * parent_scope = scope.parent_scope; parent_scope; parent_scope = parent_scope->parent_scope)
+    {
+        for (const auto & [parent_table_expression, parent_table_expression_data] : parent_scope->table_expression_node_to_data)
+        {
+            if (IdentifierResolver::isTableExpressionHiddenBySemiAntiJoin(parent_table_expression.get(), *parent_scope))
+                continue;
+
+            if (qualifier_parts == 2)
+            {
+                if (!parent_table_expression->hasAlias()
+                    && qualifier == parent_table_expression_data.database_name
+                    && identifier[1] == parent_table_expression_data.table_name)
+                    return true;
+
+                continue;
+            }
+
+            if ((parent_table_expression->hasAlias() && qualifier == parent_table_expression->getAlias())
+                || (!parent_table_expression->hasAlias() && qualifier == parent_table_expression_data.table_name))
+                return true;
+
+            if (!parent_table_expression->hasAlias())
+            {
+                if (const auto * parent_table_node = parent_table_expression->as<TableNode>())
+                    if (parent_table_node->isMaterializedCTE()
+                        && qualifier == parent_table_node->getMaterializedCTE()->cte_name)
+                        return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
@@ -729,11 +808,14 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && path_start == table_name)
+        if (parts_size == 1 && path_start == table_name
+            && !isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 1))
             return true;
-        if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name)
+        if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name
+            && !isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 1))
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name
+            && !isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 2))
             return true;
         return false;
     }
@@ -744,16 +826,20 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 1)
         return false;
 
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    if ((!table_name.empty() && path_start == table_name
+            && !isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 1))
+        || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
         return true;
 
-    if (!materialized_cte_name.empty() && path_start == materialized_cte_name)
+    if (!materialized_cte_name.empty() && path_start == materialized_cte_name
+        && !isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 1))
         return true;
 
     if (identifier.getPartsSize() == 2)
         return false;
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name
+        && !isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 2))
         return true;
 
     return false;
@@ -974,6 +1060,28 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
+    const auto & table_name = table_expression_data.table_name;
+    const auto & database_name = table_expression_data.database_name;
+    const bool prefix_matches_table_name = !table_name.empty() && path_start == table_name;
+    const bool prefix_matches_alias
+        = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+    const bool prefix_matches_database_and_table = identifier.getPartsSize() > 1
+        && !database_name.empty() && path_start == database_name && identifier[1] == table_name;
+
+    String materialized_cte_name;
+    if (table_expression_node_type == QueryTreeNodeType::TABLE)
+    {
+        const auto * table_node = table_expression_node->as<TableNode>();
+        if (table_node->isMaterializedCTE())
+            materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
+    }
+    const bool prefix_matches_cte_name = !materialized_cte_name.empty() && path_start == materialized_cte_name;
+
+    const bool single_part_qualifier_binds_in_parent_scope
+        = isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 1);
+    const bool database_qualified_name_binds_in_parent_scope
+        = isOriginalTableQualifierHiddenByParentScope(identifier, table_expression_node, scope, 2);
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -983,12 +1091,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        const auto & table_name = table_expression_data.table_name;
-        const auto & database_name = table_expression_data.database_name;
-
-        if (parts_size == 1 && path_start == table_name)
+        if (parts_size == 1 && path_start == table_name && !single_part_qualifier_binds_in_parent_scope)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name
+            && !database_qualified_name_binds_in_parent_scope)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
         /** A materialized CTE is stored under an internal temporary table name, but it has to be addressable
@@ -1000,7 +1106,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         if (parts_size == 1 && table_expression_node_type == QueryTreeNodeType::TABLE)
         {
             const auto * table_node = table_expression_node->as<TableNode>();
-            if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+            if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name
+                && !single_part_qualifier_binds_in_parent_scope)
                 return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         }
 
@@ -1016,24 +1123,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]
         && identifier.getPartsSize() > 1)
     {
-        const auto & table_name_compat = table_expression_data.table_name;
-        const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
-        const bool prefix_matches_alias
-            = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
         /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
           * matches the qualifier the user wrote. Its visible CTE name is a qualifier carrier just like a
           * table name or an alias, and it has to take part in this compatibility path as well, otherwise
           * `cte.id` prefers a same-named subcolumn of the CTE while the equivalent shape with a regular CTE
           * or a table alias prefers the qualified column.
           */
-        bool prefix_matches_cte_name = false;
-        if (table_expression_node_type == QueryTreeNodeType::TABLE)
-        {
-            const auto * table_node = table_expression_node->as<TableNode>();
-            prefix_matches_cte_name
-                = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
-        }
-        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
+        if (((prefix_matches_table_name || prefix_matches_cte_name) && !single_part_qualifier_binds_in_parent_scope)
+            || prefix_matches_alias)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
@@ -1068,9 +1165,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     if (identifier.getPartsSize() == 1)
         return {};
-
-    const auto & table_name = table_expression_data.table_name;
-    const auto & database_name = table_expression_data.database_name;
 
     /** The identifier first part can match a table name or an alias of one table expression and at the same
       * time be the database name of some table expression in the scope. Then the identifier as a whole can be
@@ -1116,7 +1210,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return false;
     };
 
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    if ((prefix_matches_table_name && !single_part_qualifier_binds_in_parent_scope)
+        || prefix_matches_alias)
     {
         auto lookup_result = tryResolveIdentifierFromStorage(
             identifier_lookup,
@@ -1142,7 +1237,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
     {
         auto * table_node = table_expression_node->as<TableNode>();
-        if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+        if (table_node->isMaterializedCTE() && prefix_matches_cte_name && !single_part_qualifier_binds_in_parent_scope)
         {
             auto lookup_result = tryResolveIdentifierFromStorage(
                 identifier_lookup,
@@ -1168,7 +1263,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (identifier.getPartsSize() == 2)
         return {};
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (prefix_matches_database_and_table && !database_qualified_name_binds_in_parent_scope)
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
@@ -1755,15 +1850,18 @@ static bool qualifierBindsToJoinSubtree(
         return false;
     if (database_qualified)
         return !it->second.database_name.empty() && it->second.database_name == qualifier
-            && it->second.table_name == identifier[1];
+            && it->second.table_name == identifier[1]
+            && !isOriginalTableQualifierHiddenByParentScope(identifier, join_tree_node, scope, 2);
 
-    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+    if (!it->second.table_name.empty() && it->second.table_name == qualifier
+        && !isOriginalTableQualifierHiddenByParentScope(identifier, join_tree_node, scope, 1))
         return true;
 
     /// A materialized CTE is registered under its internal temporary table name;
     /// the name visible to queries is the CTE name, and it qualifies like a table name.
     if (const auto * table_node = join_tree_node->as<TableNode>())
-        if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier)
+        if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier
+            && !isOriginalTableQualifierHiddenByParentScope(identifier, join_tree_node, scope, 1))
             return true;
 
     return false;

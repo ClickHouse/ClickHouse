@@ -86,7 +86,8 @@ bool containsCorrelatedSubquery(const QueryTreeNodePtr & node);
  */
 bool checkCorrelatedColumn(
     const IdentifierResolveScope * scope_to_check,
-    const QueryTreeNodePtr & column
+    const QueryTreeNodePtr & column,
+    const IdentifierResolveScope * deferred_query_scope
 );
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
