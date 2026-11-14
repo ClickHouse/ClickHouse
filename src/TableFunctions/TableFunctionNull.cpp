@@ -32,7 +32,10 @@ public:
 
     bool needStructureHint() const override { return structure == "auto"; }
 
-    bool hasStaticStructure() const override { return structure != "auto"; }
+    /// An explicit structure is known without creating the storage. The structure is not static, so that a table `AS` the
+    /// function parses it when it is first read, not when it is loaded, which would fail the loading if the structure needed
+    /// a setting of the query that created the table, such as `allow_suspicious_low_cardinality_types`.
+    bool hasStructureKnownWithoutReading() const override { return structure != "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
