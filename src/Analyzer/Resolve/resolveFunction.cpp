@@ -1381,11 +1381,15 @@ static bool isSmallNumericInOperand(const QueryTreeNodePtr & argument, size_t & 
 
     if (const auto * column = argument->as<ColumnNode>())
         return !column->hasExpression() || isSmallNumericInOperand(column->getExpression(), remaining_nodes);
-    if (argument->as<ConstantNode>())
-        return true;
+    if (const auto * constant = argument->as<ConstantNode>())
+        return constant->isDeterministic() && !constant->hasSourceExpression();
 
     const auto * function = argument->as<FunctionNode>();
-    if (!function)
+    if (!function || !function->isResolved())
+        return false;
+    const auto function_base = function->getFunction();
+    if (!function_base || !function_base->isDeterministic()
+        || !function_base->isDeterministicInScopeOfQuery() || function_base->isStateful())
         return false;
     for (const auto & child : function->getArguments().getNodes())
     {
