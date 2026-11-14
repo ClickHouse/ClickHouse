@@ -5,6 +5,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/FiberLocal.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -19,6 +20,21 @@
 #include <functional>
 #include <memory>
 #include <utility>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char silk_fiber_main_failure[];
+}
+
+}
 
 namespace Silk
 {
@@ -47,6 +63,12 @@ struct FiberContext
     {
         try
         {
+            /// Makes the fiber finish with `EIO` before the task runs. It throws before `ThreadStatus` is constructed,
+            /// so it does not cover a construction that fails after publishing `current_thread`.
+            fiu_do_on(DB::FailPoints::silk_fiber_main_failure,
+            {
+                throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected failure before running a fiber task");
+            });
             DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
             return self->task();
         }

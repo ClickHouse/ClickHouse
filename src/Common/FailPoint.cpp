@@ -466,6 +466,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
+    ONCE(silk_fiber_task_tracker_spawn_failure) \
+    ONCE(silk_fiber_main_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(transaction_pause_before_mutation_csn_store) \
