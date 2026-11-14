@@ -480,7 +480,10 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
             auto part = storage.getActiveContainingPart(entry.part_name);
             /// The pin blocks only merges and DROP PART, so the part can be removed, e.g. by TRUNCATE or DROP PARTITION.
-            if (!part)
+            /// A mutation can replace the pinned part with a part covering it, so a covering part with a different
+            /// name means the part we cloned is gone. Attaching it would attach the wrong checksum and then drop
+            /// the mutated part from the source, losing rows.
+            if (!part || part->name != entry.part_name)
                 throw Exception(
                     ErrorCodes::NO_SUCH_DATA_PART,
                     "Part {} is not active on replica {}, it cannot be attached on shard {}",
