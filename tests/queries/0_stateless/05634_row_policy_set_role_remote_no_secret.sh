@@ -17,10 +17,12 @@ $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS data;
 DROP TABLE IF EXISTS data_dist;
 DROP TABLE IF EXISTS data_dist_dist;
+DROP TABLE IF EXISTS data_dist_secret;
 CREATE TABLE data (id UInt32, key UInt32) ENGINE = MergeTree ORDER BY key;
 INSERT INTO data VALUES (1, 1), (2, 2), (3, 1), (4, 3), (5, 2), (6, 1), (7, 4), (8, 2);
 CREATE TABLE data_dist AS data ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, data);
 CREATE TABLE data_dist_dist AS data ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, data_dist);
+CREATE TABLE data_dist_secret AS data ENGINE = Distributed(test_cluster_interserver_secret, ${CLICKHOUSE_DATABASE}, data);
 
 DROP ROLE IF EXISTS ${ROLE_1}, ${ROLE_2}, ${ROLE_3};
 CREATE ROLE ${ROLE_1};
@@ -82,6 +84,14 @@ do
     query_with_role "${role}" "remote('127.0.0.{1,2}', ${CLICKHOUSE_DATABASE}, data_dist, '${USER}', '')"
 done
 
+# The same, and the remote nodes read both shards again over a connection with an interserver secret,
+# where the next node enables the forwarded roles.
+for role in "${ROLE_1}" "${ROLE_2}"
+do
+    echo "-- same user, two hops with a secret, $(role_name "${role}")"
+    query_with_role "${role}" "remote('127.0.0.{1,2}', ${CLICKHOUSE_DATABASE}, data_dist_secret, '${USER}', '')"
+done
+
 # The row policies of the roles change when another role is granted to a role.
 echo "-- role granted to a role"
 query_with_role "${ROLE_1}" data_dist
@@ -95,6 +105,7 @@ DROP ROW POLICY IF EXISTS p_1 ON ${CLICKHOUSE_DATABASE}.data;
 DROP ROW POLICY IF EXISTS p_2 ON ${CLICKHOUSE_DATABASE}.data;
 DROP ROW POLICY IF EXISTS p_3 ON ${CLICKHOUSE_DATABASE}.data;
 DROP TABLE IF EXISTS data_dist_dist;
+DROP TABLE IF EXISTS data_dist_secret;
 DROP TABLE IF EXISTS data_dist;
 DROP TABLE IF EXISTS data;
 DROP USER IF EXISTS ${USER};
