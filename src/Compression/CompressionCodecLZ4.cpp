@@ -172,7 +172,7 @@ UInt32 CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_
     if (!context)
         context = Context::getGlobalContextInstance();
 
-    if (!context || context->getSettingsRef()[Setting::use_lz4_library_decompression])
+    if (context && context->getSettingsRef()[Setting::use_lz4_library_decompression])
     {
         if (source_size > std::numeric_limits<int>::max() || uncompressed_size > std::numeric_limits<int>::max())
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "LZ4 block size exceeds the library decoder limit");

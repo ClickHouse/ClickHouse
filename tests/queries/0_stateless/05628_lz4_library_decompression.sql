@@ -1,4 +1,4 @@
-SET use_uncompressed_cache = 0, use_columns_cache = 0;
+SET use_lz4_library_decompression = 0, use_uncompressed_cache = 0, use_columns_cache = 0;
 
 SELECT value, default FROM system.settings WHERE name = 'use_lz4_library_decompression';
 
