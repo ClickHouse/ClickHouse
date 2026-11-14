@@ -110,7 +110,7 @@ void ServerApplication::waitForTerminationRequest()
 int ServerApplication::run(int argc, char** argv)
 {
 	bool runAsDaemon = isDaemon(argc, argv);
-	if (runAsDaemon)
+	if (runAsDaemon && shouldDetach())
 	{
 		beDaemon();
 	}
@@ -143,7 +143,7 @@ int ServerApplication::run(const std::vector<std::string>& args)
 			break;
 		}
 	}
-	if (runAsDaemon)
+	if (runAsDaemon && shouldDetach())
 	{
 		beDaemon();
 	}
@@ -162,6 +162,12 @@ int ServerApplication::run(const std::vector<std::string>& args)
 		return EXIT_CONFIG;
 	}
 	return run();
+}
+
+
+bool ServerApplication::shouldDetach() const
+{
+	return true;
 }
 
 

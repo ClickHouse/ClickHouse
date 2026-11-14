@@ -153,6 +153,8 @@ namespace Util
     protected:
         int run();
         virtual void waitForTerminationRequest();
+        virtual bool shouldDetach() const;
+        /// Whether --daemon detaches the process. The option sets application.runAsDaemon either way.
         void defineOptions(OptionSet & options);
 
     private:
