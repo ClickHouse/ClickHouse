@@ -792,7 +792,6 @@ private:
     static bool doNotMergePartsAcrossPartitionsFinal(
         const ContextPtr & query_context, const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
-    /// Which partition pruning a FINAL read may do.
     struct FinalPartitionPruning
     {
         bool skip_partition_pruning = false;
