@@ -468,6 +468,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::MATERIALIZE_COLUMN:
             require(column, "column");
             break;
+        case ASTAlterCommand::RECOMPRESS_COLUMN:
+            require(column, "column");
+            break;
         case ASTAlterCommand::COMMENT_COLUMN:
             require(column, "column");
             require(comment, "comment");
@@ -767,6 +770,16 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_COLUMN)
     {
         ostr << "MATERIALIZE COLUMN ";
+        column->format(ostr, settings, state, frame);
+        if (partition)
+        {
+            ostr << " IN PARTITION ";
+            partition->format(ostr, settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::RECOMPRESS_COLUMN)
+    {
+        ostr << "RECOMPRESS COLUMN ";
         column->format(ostr, settings, state, frame);
         if (partition)
         {
