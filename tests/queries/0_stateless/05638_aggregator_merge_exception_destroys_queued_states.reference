@@ -1,8 +1,11 @@
-partition: FAULT_INJECTED
-partition_string: FAULT_INJECTED
-serial: FAULT_INJECTED
-bucket: FAULT_INJECTED
-fixed_map: FAULT_INJECTED
-nullable_default: FAULT_INJECTED
-partition_batch: FAULT_INJECTED
-serial_batch: FAULT_INJECTED
+partition	1
+partition_string	2
+partition_nullable	3
+serial	4
+bucket	5
+fixed_map	6
+collect leaks: 0
+partition_batch	1
+serial_batch	2
+tuple_batch	3
+batch leaks: 0

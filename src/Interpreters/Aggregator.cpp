@@ -110,7 +110,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char aggregator_merge_collect_states_throw[];
-    extern const char aggregator_merge_batch_throw[];
 }
 
 }
@@ -3921,6 +3920,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     {
         if (dst_places.empty())
             return;
+        /// `mergeAndDestroyDetachedBatch` owns the batch from the call on, also when it throws, so the `catch` must not see it.
         SCOPE_EXIT({
             dst_places.clear();
             src_places.clear();
@@ -4099,6 +4099,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
         }
         catch (...)
         {
+            /// The queued states are detached from their source tables and not merged yet.
             destroyDetachedSources(src_places, /*first_function=*/ 0, /*skip_compiled=*/ false);
             destroyDeferredMergeSources(deferred);
             throw;
@@ -5258,6 +5259,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         throw;
     }
 
+    /// `mergeAndDestroyDetachedBatch` owns the batch from the call on, also when it throws, so the `catch` must not see it.
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
     {
@@ -5304,12 +5306,6 @@ void Aggregator::mergeAndDestroyDetachedBatch(
             else
                 aggregate_functions[i]->mergeAndDestroyBatch(
                     dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
-
-            if (!src_places.empty())
-                fiu_do_on(FailPoints::aggregator_merge_batch_throw,
-                {
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in the batch merge of the states of a merge");
-                });
         }
     }
     catch (...)
@@ -5324,7 +5320,7 @@ void Aggregator::mergeAndDestroyDetachedBatch(
 }
 
 void Aggregator::destroyDetachedSources(
-    const PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, [[maybe_unused]] bool skip_compiled) const noexcept
+    PaddedPODArray<AggregateDataPtr> & src_places, size_t first_function, [[maybe_unused]] bool skip_compiled) const noexcept
 {
     for (size_t k = first_function; k < params.aggregates_size; ++k)
     {
@@ -5332,8 +5328,7 @@ void Aggregator::destroyDetachedSources(
         if (skip_compiled && is_aggregate_function_compiled[k])
             continue;
 #endif
-        for (auto * src : src_places)
-            aggregate_functions[k]->destroy(src + offsets_of_aggregate_states[k]);
+        aggregate_functions[k]->destroyBatch(0, src_places.size(), src_places.data(), offsets_of_aggregate_states[k]);
     }
 }
 

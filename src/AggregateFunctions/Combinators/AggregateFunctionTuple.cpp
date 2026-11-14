@@ -629,8 +629,7 @@ void AggregateFunctionTuple::mergeAndDestroyBatch(
     {
         /// The function that threw has destroyed its own states of the batch, the following ones are untouched.
         for (size_t k = i + 1; k < nested_functions.size(); ++k)
-            for (size_t row = 0; row < size; ++row)
-                nested_functions[k]->destroy(rhs_places[row] + offset + state_offsets[k]);
+            nested_functions[k]->destroyBatch(0, size, rhs_places, offset + state_offsets[k]);
         throw;
     }
 }

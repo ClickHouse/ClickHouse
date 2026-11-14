@@ -679,6 +679,9 @@ protected:
     /// Distinct zero-size states can share an address: a zero-byte arena allocation does not advance the arena.
     bool isSelfMerge(ConstAggregateDataPtr place, ConstAggregateDataPtr rhs) const { return place == rhs && sizeOfData() != 0; }
 
+    /// Throws if the failpoint `aggregator_merge_batch_throw` is enabled.
+    static void injectMergeBatchFault();
+
     DataTypes argument_types;
     Array parameters;
     DataTypePtr result_type;
@@ -907,6 +910,9 @@ public:
         {
             for (; i < size; ++i)
             {
+                if (unlikely(i == 1))
+                    injectMergeBatchFault();
+
                 chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
                          "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
                 if constexpr (Derived::parallelizeMergeWithKey())
@@ -919,9 +925,8 @@ public:
         }
         catch (...)
         {
-            /// `destroy` does not throw, so the merge of row `i` threw and the sources from `i` on are not destroyed yet.
-            for (; i < size; ++i)
-                static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+            /// `destroy` does not throw, so the sources from `i` on are not destroyed yet.
+            destroyBatch(i, size, rhs_places, offset);
             throw;
         }
     }
