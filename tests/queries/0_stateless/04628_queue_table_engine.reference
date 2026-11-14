@@ -1,0 +1,25 @@
+experimental gate: passed
+argument validation: passed
+rows before refresh: 0
+rows after first batch: 2
+rows after second batch: 4
+[(1,'one'),(2,'two'),(3,'three'),(4,'four'),(5,'five')]
+rows after second refresh: 5
+rows in second group: 5
+1
+direct main rows: 5
+direct main rows again: 5
+direct group after one: 4
+direct group after all: 0
+main rows after direct commit: 5
+committing aggregation: rejected
+failed select pending rows: 5
+reset earliest rows: 5
+reset latest rows: 0
+latest group after insert: 1
+reset earliest after insert: 6
+rows after failed delivery: 0
+rows in healthy group: 3
+rows after retry: 3
+rmv rows after refresh: 3
+rmv rows after second refresh: 3
