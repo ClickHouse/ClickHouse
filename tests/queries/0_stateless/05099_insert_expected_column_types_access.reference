@@ -1,0 +1,14 @@
+hidden column: ACCESS_DENIED
+missing column: ACCESS_DENIED
+granted column, right type: OK
+granted column, wrong type: INCOMPATIBLE_SCHEMA
+distributed, hidden column: ACCESS_DENIED
+distributed, missing column: ACCESS_DENIED
+distributed background, wrong type: INCOMPATIBLE_SCHEMA
+distributed background, right type: OK
+narrow distributed, shard-only column: INCOMPATIBLE_SCHEMA
+narrow distributed, declared column: OK
+queued files	0
+table grant, wrong type: INCOMPATIBLE_SCHEMA
+table grant, right type: OK
+[2,5,8,10]

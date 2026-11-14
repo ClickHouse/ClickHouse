@@ -101,6 +101,8 @@ namespace Setting
     extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
     extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsString insert_deduplication_token;
+    extern const SettingsString insert_expected_table_engine;
+    extern const SettingsMap insert_expected_column_types;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
@@ -137,6 +139,8 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int INCOMPATIBLE_SCHEMA;
+    extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
 }
@@ -585,6 +589,15 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         /// Only callers that hand the destination lock over may ask for this route.
         chassert(destination_lock);
 
+        /// The queued settings keep the requirements consumed here, for the flush to check its own table.
+        ContextMutablePtr queue_context = context;
+        if (!consumed_insert_expectations.empty())
+        {
+            queue_context = Context::createCopy(context);
+            for (const auto & change : consumed_insert_expectations)
+                queue_context->setSetting(change.name, change.value);
+        }
+
         /// Only the main stream may divert a block and take the lock over; collapse to it first.
         if (pipeline.getNumStreams() != 1)
             pipeline.resize(1);
@@ -598,7 +611,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
                 return nullptr;
 
             return std::make_shared<AsyncInsertQueueTransform>(
-                in_header, context->tryGetAsynchronousInsertQueue(), context, query_ptr, insert_column_names,
+                in_header, context->tryGetAsynchronousInsertQueue(), context, queue_context, query_ptr, insert_column_names,
                 settings[Setting::async_insert_max_data_size],
                 saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count(),
                 settings[Setting::wait_for_async_insert],
@@ -1497,6 +1510,85 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 }
 
 
+namespace
+{
+
+/// What an INSERT may require of the table it names: an engine and column types, each refused when it differs.
+/// Returns the requirements it checked, empty when there were none.
+SettingsChanges checkInsertExpectations(const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
+{
+    const String expected_engine = settings[Setting::insert_expected_table_engine].value;
+    const auto & expected_types = settings[Setting::insert_expected_column_types].value;
+    if (expected_engine.empty() && expected_types.empty())
+        return {};
+
+    if (!expected_engine.empty() && table->getName() != expected_engine)
+        throw Exception(
+            ErrorCodes::UNEXPECTED_TABLE_ENGINE,
+            "Table {} has engine {} while the INSERT expects {} (insert_expected_table_engine)",
+            table->getStorageID().getNameForLogs(),
+            table->getName(),
+            expected_engine);
+
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & expected_type : expected_types)
+    {
+        const auto & name_and_type = expected_type.safeGet<Tuple>();
+        const auto & name = name_and_type.at(0).safeGet<String>();
+        const auto & type = name_and_type.at(1).safeGet<String>();
+        const auto * column = columns.tryGet(name);
+        if (!column)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares no column `{}`, which the INSERT expects as {} (insert_expected_column_types)",
+                table->getStorageID().getNameForLogs(),
+                name,
+                type);
+        if (column->type->getName() != type)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares column `{}` as {} while the INSERT expects {} (insert_expected_column_types)",
+                table->getStorageID().getNameForLogs(),
+                name,
+                column->type->getName(),
+                type);
+    }
+
+    return {{"insert_expected_table_engine", expected_engine}, {"insert_expected_column_types", Field{expected_types}}};
+}
+
+/// A Distributed table forwards the expectations, so a shard never checks a column the table does not declare.
+void checkExpectedColumnsAreDeclared(const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
+{
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & expected_type : settings[Setting::insert_expected_column_types].value)
+    {
+        const auto & name_and_type = expected_type.safeGet<Tuple>();
+        const auto & name = name_and_type.at(0).safeGet<String>();
+        if (!columns.has(name))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares no column `{}`, which the INSERT expects as {} (insert_expected_column_types)",
+                table->getStorageID().getNameForLogs(),
+                name,
+                name_and_type.at(1).safeGet<String>());
+    }
+}
+
+/// A column the user may not see is neither looked up nor named in an error, here or by a shard.
+void checkAccessToExpectedColumns(const ContextPtr & context, const StorageID & table_id)
+{
+    const auto & expected_types = context->getSettingsRef()[Setting::insert_expected_column_types].value;
+    if (expected_types.empty())
+        return;
+    Names expected_names;
+    for (const auto & expected_type : expected_types)
+        expected_names.push_back(expected_type.safeGet<Tuple>().at(0).safeGet<String>());
+    context->checkAccess(AccessType::SHOW_COLUMNS, table_id, expected_names);
+}
+
+}
+
 BlockIO InterpreterInsertQuery::execute()
 {
     auto context = getContext();
@@ -1577,6 +1669,25 @@ BlockIO InterpreterInsertQuery::execute()
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "RETURNING is not supported for INSERT into a table with the engine {}, which reads from other tables",
             table->getName());
+
+    if (!query.table_function && !skip_target_insert_access_check)
+        checkAccessToExpectedColumns(context, query.table_id);
+
+    /// The table named is checked and the requirements consumed: the writes it makes on its own, into inner tables
+    /// or views, are its own. Only a Distributed table on the first hop forwards them, for each shard to check its table.
+    if (table->getName() != "Distributed" || context->getClientInfo().distributed_depth > 0)
+        consumed_insert_expectations = checkInsertExpectations(table, metadata_snapshot, settings);
+    else
+        checkExpectedColumnsAreDeclared(table, metadata_snapshot, settings);
+    if (!consumed_insert_expectations.empty())
+    {
+        /// Consumed on a copy: a caller that queues this insert keeps them, for the flush to check its own table.
+        context_without_insert_expectations = Context::createCopy(context);
+        /// Reset rather than set to empty: a changed mandatory setting would still be sent to a shard that reads from it.
+        context_without_insert_expectations->resetSettingsToDefaultValue({"insert_expected_table_engine", "insert_expected_column_types"});
+        context = context_without_insert_expectations;
+        WithMutableContext::context = context;
+    }
 
     if (!allow_materialized)
     {
@@ -1668,6 +1779,13 @@ BlockIO InterpreterInsertQuery::execute()
         res.pipeline = buildInsertPipeline(query, table);
     }
 
+    /// An ALTER may have run while the pipeline was built, so check the table again after it took its metadata.
+    if (!consumed_insert_expectations.empty())
+    {
+        auto used_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        checkInsertExpectations(table, used_metadata_snapshot, settings);
+    }
+
     res.pipeline.addStorageHolder(table);
 
     /// Keep the share lock until the pipeline finishes (not just while it is being built), so that
@@ -1683,6 +1801,14 @@ BlockIO InterpreterInsertQuery::execute()
         QueryPlanResourceHolder insert_resources;
         insert_resources.table_locks.emplace_back(std::move(table_lock));
         res.pipeline.addResources(std::move(insert_resources));
+    }
+
+    /// Its sinks and views keep only a weak reference to it.
+    if (context_without_insert_expectations)
+    {
+        QueryPlanResourceHolder context_holder;
+        context_holder.interpreter_context.emplace_back(context_without_insert_expectations);
+        res.pipeline.addResources(std::move(context_holder));
     }
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))

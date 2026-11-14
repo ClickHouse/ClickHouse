@@ -197,6 +197,8 @@ namespace Setting
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsMap additional_table_filters;
+    extern const SettingsString insert_expected_table_engine;
+    extern const SettingsMap insert_expected_column_types;
 }
 
 namespace DistributedSetting
@@ -1289,6 +1291,9 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     /// `relative_data_path.empty()` rather than `owned_cluster` makes `distributed_foreground_insert`
     /// and the related queue settings effective for it.
     bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || relative_data_path.empty();
+    /// A queued batch that a shard refuses for an insert expectation would block the queue, so the client gets the refusal.
+    if (!settings[Setting::insert_expected_table_engine].value.empty() || !settings[Setting::insert_expected_column_types].value.empty())
+        insert_sync = true;
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;
@@ -1698,6 +1703,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    /// Below mode 2 a shard runs the insert into this wrapper, and would check the wrapper instead of its own table.
+    if (settings[Setting::parallel_distributed_insert_select] != PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
+        && (!settings[Setting::insert_expected_table_engine].value.empty()
+            || !settings[Setting::insert_expected_column_types].value.empty()))
+        return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
 
@@ -2159,6 +2170,23 @@ std::optional<UInt64> StorageDistributed::totalBytes(ContextPtr) const
 size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();
+}
+
+std::vector<bool> StorageDistributed::getShardsReceivingRows(const ClusterPtr & cluster, const Block & block) const
+{
+    std::vector<bool> receives_rows(cluster->getShardsInfo().size(), true);
+    /// A key that is not deterministic would send the rows elsewhere when the sink evaluates it again.
+    if (receives_rows.size() <= 1 || !sharding_key_expr || !sharding_key_is_deterministic)
+        return receives_rows;
+
+    checkShardingKeySetsAreBuilt();
+    Block block_with_sharding_key = block;
+    sharding_key_expr->execute(block_with_sharding_key);
+    const auto selector = createSelector(cluster, block_with_sharding_key.getByName(sharding_key_column_name));
+    receives_rows.assign(receives_rows.size(), false);
+    for (size_t shard_index : selector)
+        receives_rows[shard_index] = true;
+    return receives_rows;
 }
 
 ClusterPtr StorageDistributed::getCluster() const
