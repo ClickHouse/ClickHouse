@@ -8748,7 +8748,9 @@ Timeout for polling data from asynchronous insert queue
 )", 0, \
         {"24.2", 10, 10, "Timeout in milliseconds for polling data from asynchronous insert queue"}) \
     DECLARE(Bool, async_insert_use_adaptive_busy_timeout, true, R"(
-If it is set to true, use adaptive busy timeout for asynchronous inserts
+If it is set to true, use adaptive busy timeout for asynchronous inserts.
+
+With it, an insert with `wait_for_async_insert = 1` is flushed at once if the last batch with the same query and settings waited for its timeout with a single insert, and no earlier insert with them is still waiting or being flushed. A client that waits for each insert before sending the next one is never batched with itself, so it gets the latency of a synchronous insert.
 )", 0, \
         {"24.2", false, true, "Use adaptive asynchronous insert timeout"}) \
     DECLARE(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(

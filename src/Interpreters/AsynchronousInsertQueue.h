@@ -316,6 +316,15 @@ private:
 
         OptionalTimePoint last_insert_time TSA_GUARDED_BY(mutex);
         std::chrono::milliseconds busy_timeout_ms TSA_GUARDED_BY(mutex) {};
+
+        /// A key whose last batch was flushed by its deadline with a single entry, whose client waits for the flush:
+        /// waiting did not batch anything. The next insert with the key is flushed at once if every earlier one is flushed.
+        struct KeyWithoutBatching
+        {
+            std::chrono::steady_clock::time_point last_insert_time;
+            OptionalTimePoint last_flush_time;
+        };
+        std::unordered_map<UInt128, KeyWithoutBatching> keys_without_batching TSA_GUARDED_BY(mutex);
     };
 
     /// Times of the two most recent queue flushes.
@@ -382,7 +391,12 @@ private:
     static void discountFromQueueMetrics(const InsertData & data);
 
     void processData(
-        const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        const InsertQuery & key,
+        InsertDataPtr data,
+        ContextPtr global_context,
+        ThreadGroupPtr current_query_thread_group,
+        QueueShard & queue_shard,
+        QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(

@@ -47,6 +47,8 @@ Since version 24.2, ClickHouse uses adaptive flush timeouts by default ([`async_
 
 The timeout is tracked per queue shard (`async_insert_threads`, default 16), not per table. Steady, frequent inserts push it toward the maximum, so in default mode (`wait_for_async_insert=1`) each insert waits longer before it's acknowledged. When inserts slow down, it falls back toward the minimum. After a long quiet period, the next insert can skip the timeout and be flushed immediately.
 
+A client that waits for each insert before sending the next one never gets its inserts batched together, so waiting only delays them. If the last batch of an insert query waited for its timeout with a single insert of such a client, the next insert with the same query and settings is flushed at once, as long as no earlier one is still waiting or being flushed. Such a client then gets the latency of a synchronous insert. When several clients insert with the same query and settings at the same time, their inserts overlap, and they are batched again.
+
 ### Error handling {#error-handling}
 
 Schema validation and data parsing happen during buffer flush, not when the insert is received. If any row in an insert query has a parsing or type error, **none of the data from that query is flushed** — the entire query's payload is rejected. In default mode (`wait_for_async_insert=1`), the error is returned to the client. In fire-and-forget mode, errors are written to server logs and the [`system.asynchronous_insert_log`](/reference/system-tables/asynchronous_insert_log) table.
