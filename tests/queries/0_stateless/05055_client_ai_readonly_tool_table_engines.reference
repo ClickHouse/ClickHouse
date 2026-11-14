@@ -1,0 +1,13 @@
+unqualified_mergetree: OK
+qualified_mergetree: OK
+memory: OK
+unqualified_view: BLOCKED
+qualified_view: BLOCKED
+merge_engine: BLOCKED
+url_engine: BLOCKED
+view_behind_in: BLOCKED
+system_table: OK
+external_system_table: BLOCKED
+common_table_expression: OK
+temporary_over_url: BLOCKED
+temporary_memory: OK

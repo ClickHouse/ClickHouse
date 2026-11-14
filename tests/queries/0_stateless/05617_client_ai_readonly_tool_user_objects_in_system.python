@@ -1,0 +1,342 @@
+import json
+import os
+import pty
+import select
+import shlex
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+TIMEOUT_SECONDS = 120
+
+# `clickhouse-test` prints this file when the test fails, and it names it after the test case -
+# the `.sh` wrapper - not after this script. Writing anywhere else means the trace of a failure in
+# CI is collected and then never shown, which is the only record of what the client did.
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".sh.debuglog",
+)
+
+# Set when the pseudo-terminal reaches end of file: the client is gone. Every later read then
+# returns at once and every write is silently discarded, so without noticing it the test runs to
+# the end and reports every expectation as unmet, saying nothing about the client having died.
+client_gone = False
+
+FINAL_ANSWER = "MOCK-DONE"
+
+
+def succeeded(result):
+    """The tool reports a refusal as an error; an accepted query reports its outcome."""
+    return '"success":true' in result.replace(" ", "")
+
+
+# The tool calls the agent is made to make, in two turns, with a predicate over the tool result.
+TURNS = [
+    (
+        "first question",
+        [
+            ("warm_up", "run_readonly_query", {"query": "SELECT 1"}, lambda r: succeeded(r)),
+            # `SHOW CLUSTERS` and `SHOW CLUSTER` read `system.clusters`, which reaches Keeper for the
+            # `Replicated` databases, and is refused when read directly.
+            (
+                "show_clusters",
+                "run_readonly_query",
+                {"query": "SHOW CLUSTERS"},
+                lambda r: not succeeded(r) and "system.clusters" in r,
+            ),
+            (
+                "show_cluster",
+                "run_readonly_query",
+                {"query": "SHOW CLUSTER 'default'"},
+                lambda r: not succeeded(r) and "system.clusters" in r,
+            ),
+            # A view a user created in `system` is a stored query like any other.
+            (
+                "user_view_in_system",
+                "run_readonly_query",
+                {"query": "SELECT x FROM system.ai_view"},
+                lambda r: not succeeded(r) and "View" in r and "provider-secret" not in r,
+            ),
+            # An alias column of a user table in `system` is checked like that of any other table.
+            (
+                "user_alias_in_system",
+                "run_readonly_query",
+                {"query": "SELECT a FROM system.ai_alias"},
+                lambda r: not succeeded(r) and "column expression" in r,
+            ),
+            # The schema tool does not show the stored query of a user view in `system` either.
+            (
+                "show_create_user_view_in_system",
+                "show_create_table",
+                {"database": "system", "table": "ai_view"},
+                lambda r: "stored query" in r and "provider-secret" not in r,
+            ),
+            # A view of `information_schema` is not judged by its predefined name: a user can replace
+            # it under that name (`CREATE OR REPLACE VIEW`), and the replacement is not told apart.
+            (
+                "information_schema_view",
+                "run_readonly_query",
+                {"query": "SELECT count() FROM information_schema.schemata"},
+                lambda r: not succeeded(r) and "View" in r,
+            ),
+            (
+                "show_create_information_schema_view",
+                "show_create_table",
+                {"database": "information_schema", "table": "schemata"},
+                lambda r: "stored query" in r,
+            ),
+            # The predefined tables of `system` are still judged by name.
+            (
+                "predefined_system_table",
+                "run_readonly_query",
+                {"query": "SELECT count() FROM system.one"},
+                lambda r: succeeded(r),
+            ),
+        ],
+    ),
+    (
+        "second question",
+        [
+            # The session truncates every result to one row without an error. The safety probes
+            # must not take a truncated result for a complete one, and the view must still be found.
+            (
+                "truncated_probe",
+                "run_readonly_query",
+                {"query": "SELECT x FROM system.ai_view"},
+                lambda r: not succeeded(r) and "provider-secret" not in r,
+            ),
+        ],
+    ),
+]
+
+CALLS = [call for _, calls in TURNS for call in calls]
+
+SETUP = [
+    "CREATE VIEW system.ai_view AS SELECT 'provider-secret' AS x",
+    "CREATE TABLE system.ai_alias (x String, a String ALIAS file(x)) ENGINE = Memory",
+]
+
+# The results of the tool calls in the requests the mock provider received, by the id of the call.
+results = {}
+
+
+class Handler(BaseHTTPRequestHandler):
+    """A mock OpenAI-compatible provider. It answers with the tool calls of the turn of the
+    question, one per request, in order, and finishes the turn with a plain text message."""
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        request = json.loads(self.rfile.read(length))
+        for m in request["messages"]:
+            if m.get("role") == "tool":
+                results[m.get("tool_call_id")] = str(m.get("content"))
+
+        # The turn is told by the last question of the user, and the number of tool calls already
+        # made in it by the number of tool results after that question.
+        messages = request["messages"]
+        last_user = max(i for i, m in enumerate(messages) if m.get("role") == "user")
+        question = str(messages[last_user].get("content"))
+        done = sum(1 for m in messages[last_user:] if m.get("role") == "tool")
+        calls = next((calls for marker, calls in TURNS if marker in question), [])
+        if done < len(calls):
+            name, tool, arguments, _ = calls[done]
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"call_{name}",
+                        "type": "function",
+                        "function": {
+                            "name": tool,
+                            "arguments": json.dumps(arguments),
+                        },
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        else:
+            message = {"role": "assistant", "content": FINAL_ANSWER}
+            finish_reason = "stop"
+
+        body = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o",
+                "choices": [
+                    {"index": 0, "message": message, "finish_reason": finish_reason}
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+        ).encode()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def make_config(port):
+    """A client configuration that points the AI agent at the mock provider. The credentials come
+    from the configuration and not from the environment, so the agent does not ask for the
+    confirmation of using an API key found there. `max_steps` must cover every tool call."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).strip(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse><ai>"
+            "<provider>openai</provider>"
+            "<api_key>mock-key</api_key>"
+            f"<base_url>http://127.0.0.1:{port}/v1</base_url>"
+            "<model>gpt-4o</model>"
+            f"<max_steps>{len(CALLS) + 5}</max_steps>"
+            "</ai></clickhouse>"
+        )
+    return path
+
+
+def drain(master, debug_log_fd, idle):
+    global client_gone
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    global client_gone
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            client_gone = True
+            break
+        if not chunk:
+            client_gone = True
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def report_client_if_gone(child_pid):
+    """Print how the client ended if it is gone. The expected output has no such line, so it
+    shows up in the diff of the failure instead of leaving only unmet expectations behind."""
+    if not client_gone:
+        return
+    try:
+        _, status = os.waitpid(child_pid, os.WNOHANG)
+    except ChildProcessError:
+        print("client_gone: already reaped")
+        return
+    if os.WIFSIGNALED(status):
+        print(f"client_gone: killed by signal {os.WTERMSIG(status)}")
+    elif os.WIFEXITED(status):
+        print(f"client_gone: exited with code {os.WEXITSTATUS(status)}")
+    else:
+        print("client_gone: yes")
+
+
+def main():
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    base = shlex.split(os.environ["CLICKHOUSE_LOCAL"])
+    argv = base + [
+        "--config-file",
+        make_config(server.server_port),
+        "--history_file=/dev/null",
+        "--path",
+        os.path.join(os.environ["CLICKHOUSE_TMP"], "05617_local_db"),
+    ]
+
+    child_pid, master = pty.fork()
+    if child_pid == 0:
+        os.environ["TERM"] = "xterm"
+        # An API key in the environment would take precedence over the configured mock provider.
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.execv(base[0], argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        # The temporary tables must be created in the same session the agent runs in. Every
+        # statement waits for the timing line the interactive client prints when a query is done:
+        # `replxx` submits everything that is already buffered when it starts reading as a single
+        # statement, so typing ahead would merge the statements with the question that follows
+        # them and the `?` would never start the agent. Waiting for the prompt would not prevent
+        # it: `replxx` repaints the prompt while the line is being typed, so it is back in the
+        # output before the statement has been submitted, let alone run.
+        for statement in SETUP:
+            os.write(master, statement.encode() + b"\n")
+            read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
+
+        os.write(master, b"? " + TURNS[0][0].encode() + b"\n")
+        # The prompt after the answer is printed by the line editor once it has switched the
+        # terminal to raw mode; a backspace sent before that is erased by the terminal itself.
+        read_until(
+            master,
+            debug_log_fd,
+            lambda o: FINAL_ANSWER in o and ":?" in o.split(FINAL_ANSWER)[-1],
+            TIMEOUT_SECONDS,
+        )
+
+        # Leave the AI mode the conversation keeps the line editor in: a backspace on the empty
+        # line. Then make the session truncate every result, and ask the second question.
+        os.write(master, b"\x7f")
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+        os.write(master, b"SET max_result_rows = 1, result_overflow_mode = 'break'\n")
+        read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
+        os.write(master, b"? " + TURNS[1][0].encode() + b"\n")
+        read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+        report_client_if_gone(child_pid)
+
+        for name, _, _, check in CALLS:
+            answer = results.get(f"call_{name}")
+            if answer is None:
+                print(f"{name}: NO RESULT")
+                continue
+            print(f"{name}: {'OK' if check(answer) else 'UNEXPECTED ' + answer[:300]}")
+    finally:
+        os.write(master, b"exit\n")
+        drain(master, debug_log_fd, 1.0)
+        os.close(master)
+        debug_log_fd.close()
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()
