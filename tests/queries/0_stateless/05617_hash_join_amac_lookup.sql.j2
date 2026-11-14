@@ -1,0 +1,95 @@
+-- Tags: long
+-- long: a flaky check runs copies of the test at the same time, and with a sanitizer the joins below take more than 180 seconds.
+-- A hash join can look up the keys of a left block with the AMAC ring only when the block has at least 256 rows, the cells
+-- of the hash table take at least as many bytes as the L2 cache and `enable_software_prefetch_in_join` is on. Otherwise it
+-- looks them up in row order.
+-- Every join below runs with the setting on and off, with the `serial` and with the `parallel` layout of the hash table.
+-- The four runs must give the same result. The joins on 10 million keys run in the `parallel` layout only, so they have two runs.
+
+SET join_algorithm = 'hash', join_use_nulls = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0;
+SET enable_join_fixed_hash_table_conversion = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+SET enable_robin_hood_hash_for_joins = 1;
+
+-- 300 thousand keys: the even numbers, and the empty string for 0. Every tenth key has a second row.
+-- A hash table of these keys is larger than the L2 cache, and none of its buckets is in the Robin Hood mode.
+CREATE TABLE r (k UInt64, s String, f FixedString(40), k2 UInt32, t UInt32, v UInt64) ENGINE = Memory;
+INSERT INTO r SELECT number * 2 AS k, if(k = 0, '', toString(k)), toFixedString(toString(k), 40), k % 1000, 5, number FROM numbers(300000);
+INSERT INTO r SELECT number * 20 AS k, if(k = 0, '', toString(k)), toFixedString(toString(k), 40), k % 1000, 8, 300000 + number FROM numbers(30000);
+
+-- Keys in random order. Half of them are odd, so they are not in `r`. One row in 1000 has the key 0.
+CREATE TABLE l (k UInt64, s String, f FixedString(40), k2 UInt32, t UInt32, x UInt64) ENGINE = Memory;
+INSERT INTO l SELECT if(number % 1000 = 0, 0, intHash64(number) % 600000) AS k, if(k = 0, '', toString(k)), toFixedString(toString(k), 40), k % 1000, number % 10, number FROM numbers(400000);
+
+CREATE TABLE results (name String, prefetch UInt8, layout String, rows UInt64, checksum UInt64) ENGINE = Memory;
+
+-- A checksum must not depend on the order of the threads. A join that takes one right row of a key may take any row of the
+-- key, so its checksum reads only what the rows of a key share. A join that gives a right key to one left row may give it to
+-- any left row with the key, so its checksum reads only the key of the left row.
+-- `any_join_distinct_right_table_keys` selects the old `ANY` join. Without `enable_join_key_only_hash_tables` the cells of a
+-- `LEFT ANTI` join hold rows.
+-- Several key columns of fixed size are packed into one key: a whole block at once for `two key columns` (8 and 4 bytes),
+-- and row by row for a key wider than 16 bytes (three `UInt64` columns) or with a column of 3 bytes.
+{% set pairs = 'count(), sum(cityHash64(l.x, r.v))' -%}
+{% set left_row_and_key = 'count(), sum(cityHash64(l.x, r.k))' -%}
+{% set left_row_and_k2 = 'count(), sum(cityHash64(l.x, r.k2))' -%}
+{% set key_and_right_row = 'count(), sum(cityHash64(l.k, r.v))' -%}
+{% set right_key = 'count(), sum(cityHash64(r.k))' -%}
+{% set left_row = 'count(), sum(cityHash64(l.x))' -%}
+{% set cases = [
+    ('inner all', pairs, 'l INNER JOIN r ON l.k = r.k'),
+    ('left all', pairs, 'l LEFT JOIN r ON l.k = r.k'),
+    ('right all', pairs, 'l RIGHT JOIN r ON l.k = r.k'),
+    ('full all', pairs, 'l FULL JOIN r ON l.k = r.k'),
+    ('inner any', right_key, 'l ANY INNER JOIN r ON l.k = r.k'),
+    ('left any', left_row_and_key, 'l ANY LEFT JOIN r ON l.k = r.k'),
+    ('right any', key_and_right_row, 'l ANY RIGHT JOIN r ON l.k = r.k'),
+    ('old right any', left_row_and_key, 'l ANY RIGHT JOIN r ON l.k = r.k SETTINGS any_join_distinct_right_table_keys = 1'),
+    ('old full any', left_row_and_key, 'l ANY FULL JOIN r ON l.k = r.k SETTINGS any_join_distinct_right_table_keys = 1'),
+    ('left semi', left_row_and_k2, 'l LEFT SEMI JOIN r ON l.k = r.k'),
+    ('right semi', key_and_right_row, 'l RIGHT SEMI JOIN r ON l.k = r.k'),
+    ('left anti', left_row, 'l LEFT ANTI JOIN r ON l.k = r.k'),
+    ('left anti, cells with rows', left_row, 'l LEFT ANTI JOIN r ON l.k = r.k SETTINGS enable_join_key_only_hash_tables = 0'),
+    ('right anti', key_and_right_row, 'l RIGHT ANTI JOIN r ON l.k = r.k'),
+    ('asof', pairs, 'l ASOF JOIN r ON l.k = r.k AND l.t >= r.t'),
+    ('asof left', pairs, 'l ASOF LEFT JOIN r ON l.k = r.k AND l.t >= r.t'),
+    ('string key', pairs, 'l INNER JOIN r ON l.s = r.s'),
+    ('string key, left any', left_row_and_key, 'l ANY LEFT JOIN r ON l.s = r.s'),
+    ('fixed string key', pairs, 'l INNER JOIN r ON l.f = r.f'),
+    ('two key columns', pairs, 'l LEFT JOIN r ON l.k = r.k AND l.k2 = r.k2'),
+    ('three key columns', pairs, 'l LEFT JOIN r ON l.k = r.k AND l.k + 1 = r.k + 1 AND l.k + 2 = r.k + 2'),
+    ('key columns of 3 bytes and 1 byte', pairs, 'l INNER JOIN r ON toFixedString(reinterpretAsString(l.k), 3) = toFixedString(reinterpretAsString(r.k), 3) AND toUInt8(l.k2) = toUInt8(r.k2)'),
+    ('nullable key', pairs, '(SELECT if(x % 11 = 0, NULL, k) AS k, x FROM l) AS l LEFT JOIN r ON l.k = r.k'),
+    ('condition on the left table', pairs, 'l LEFT JOIN r ON l.k = r.k AND l.t != 3'),
+    ('or', pairs, 'l INNER JOIN r ON l.k = r.k OR l.x = r.v'),
+    ('or, left any', left_row_and_key, 'l ANY LEFT JOIN r ON l.k = r.k OR l.x = r.v'),
+    ('or, left anti', left_row, 'l LEFT ANTI JOIN r ON l.k = r.k OR l.x = r.v'),
+    ('mixed condition', pairs, 'l LEFT JOIN r ON l.k = r.k AND l.x > r.v'),
+    ('or with mixed conditions', pairs, 'l LEFT JOIN r ON (l.k = r.k AND l.x > r.v) OR (l.x = r.v AND l.t < r.t)'),
+    ('small joined block', pairs, 'l INNER JOIN r ON l.k = r.k SETTINGS max_joined_block_size_rows = 1000'),
+    ('small joined block, full', pairs, 'l FULL JOIN r ON l.k = r.k SETTINGS max_joined_block_size_rows = 1000'),
+    ('no right columns', left_row, 'l INNER JOIN r ON l.k = r.k'),
+    ('no right columns, left', left_row, 'l LEFT JOIN r ON l.k = r.k'),
+    ('no right columns, full', left_row, 'l FULL JOIN r ON l.k = r.k'),
+    ('no right columns, left semi', left_row, 'l LEFT SEMI JOIN r ON l.k = r.k'),
+] -%}
+
+-- 10 million keys, about 39 thousand in each of the 256 buckets of the `parallel` layout. With
+-- `enable_robin_hood_hash_for_joins`, every bucket is in the Robin Hood mode. Half of the left keys are not in the table, so
+-- their search stops by the Robin Hood rule.
+{% set big_l = '(SELECT intHash64(number) % 20000000 AS k, number AS x FROM numbers(1000000)) AS l' -%}
+{% set big_r = '(SELECT number * 2 AS k, number AS v FROM numbers(10000000)) AS r' -%}
+{% set big_cases = [
+    ('10 million keys, inner', pairs, big_l ~ ' INNER JOIN ' ~ big_r ~ ' ON l.k = r.k'),
+    ('10 million keys, left', pairs, big_l ~ ' LEFT JOIN ' ~ big_r ~ ' ON l.k = r.k'),
+] -%}
+
+{% for prefetch in [1, 0] -%}
+{% for layout in ['serial', 'parallel'] -%}
+SET enable_software_prefetch_in_join = {{ prefetch }}, hash_join_layout = '{{ layout }}';
+{% for name, columns, join in cases + (big_cases if layout == 'parallel' else []) -%}
+INSERT INTO results SELECT '{{ name }}', {{ prefetch }}, '{{ layout }}', {{ columns }} FROM {{ join }};
+{% endfor -%}
+{% endfor -%}
+{% endfor %}
+-- The name of the join, its runs, their distinct results, and the result.
+SELECT name, count(), uniqExact((rows, checksum)), any(rows), any(checksum) FROM results GROUP BY name ORDER BY name;

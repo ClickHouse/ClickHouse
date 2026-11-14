@@ -8,6 +8,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -808,11 +809,10 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
-template <Fn<size_t(size_t)> Sharder>
+template <typename Id, Fn<size_t(size_t)> Sharder>
 static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
 {
     size_t num_rows = block.rows();
-    size_t num_cols = block.columns();
 
     PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & key_name : key_columns_names)
@@ -820,47 +820,34 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
         ColumnPtr key_col = materializeColumn(block, key_name);
         key_col->computeHashInto(0, num_rows, hash.data(), false);
     }
-    auto selector = hashToSelector(hash, sharder);
+    auto selector = hashToSelector<Id>(hash, sharder);
 
-    Blocks result;
-    result.reserve(num_shards);
-    for (size_t i = 0; i < num_shards; ++i)
-    {
-        result.emplace_back(block.cloneEmpty());
-    }
-
-    for (size_t i = 0; i < num_cols; ++i)
-    {
-        auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
-        chassert(result.size() == dispatched_columns.size());
-        for (size_t block_index = 0; block_index < num_shards; ++block_index)
-        {
-            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
-        }
-    }
-    return result;
+    return scatterBlock(block, num_shards, selector);
 }
 
+template <typename Id>
 static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
     size_t mask = num_shards - 1;
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
+    return scatterBlockByHashImpl<Id>(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
 }
 
+template <typename Id>
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
     /// Use the "fastrange" method from Daniel Lemire:
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
+    return scatterBlockByHashImpl<Id>(key_columns_names, block, num_shards,
         [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
 }
 
+template <typename Id>
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
     if (num_shards == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
     if (likely(isPowerOf2(num_shards)))
-        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
-    return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
+        return scatterBlockByHashPow2<Id>(key_columns_names, block, num_shards);
+    return scatterBlockByHashGeneric<Id>(key_columns_names, block, num_shards);
 }
 
 template<typename T>
@@ -871,7 +858,7 @@ static Blocks scatterBlockByHashForList(const Strings & key_columns_names, const
     {
         if (block.rows() == 0)
             continue;
-        auto scattered = scatterBlockByHash(key_columns_names, block, num_shards);
+        auto scattered = scatterBlockByHash<UInt64>(key_columns_names, block, num_shards);
         for (size_t i = 0; i < num_shards; ++i)
             scattered_blocks[i].emplace_back(std::move(scattered[i]));
     }
@@ -894,6 +881,9 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & 
 {
     return scatterBlockByHashForList(key_columns_names, blocks, num_shards);
 }
+
+template Blocks scatterBlockByHash<UInt16>(const Strings &, const Block &, size_t);
+template Blocks scatterBlockByHash<UInt64>(const Strings &, const Block &, size_t);
 
 bool hasNonJoinedBlocks(const TableJoin & table_join)
 {

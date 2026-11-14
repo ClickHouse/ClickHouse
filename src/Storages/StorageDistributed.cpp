@@ -2205,7 +2205,8 @@ void StorageDistributed::checkShardingKeySetsAreBuilt() const
             "Sharding expression cannot contain IN with a subquery or a non-Set table, because its set is never built");
 }
 
-IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
+template <typename Id>
+PaddedPODArray<Id> StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
     const IColumn * column = result.column.get();
@@ -2214,10 +2215,10 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
     if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
-        return createBlockSelector<TYPE>(*column, slot_to_shard);                                            \
+        return createBlockSelector<TYPE, Id>(*column, slot_to_shard);                                        \
     else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
         if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
-            return createBlockSelector<TYPE>(*column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+            return createBlockSelector<TYPE, Id>(*column->convertToFullColumnIfLowCardinality(), slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -2233,6 +2234,9 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding key expression does not evaluate to an integer type");
 }
 /// NOLINTEND(readability-else-after-return)
+
+template IColumn::Selector StorageDistributed::createSelector<UInt64>(ClusterPtr cluster, const ColumnWithTypeAndName & result);
+template IColumn::SmallSelector StorageDistributed::createSelector<UInt16>(ClusterPtr cluster, const ColumnWithTypeAndName & result);
 
 ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     ClusterPtr cluster,

@@ -196,7 +196,9 @@ private:
     /// Used by StorageSystemDistributionQueue
     std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
-    static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
+    /// With `Id` = `UInt16`, the cluster must have at most 65536 shards.
+    template <typename Id = UInt64>
+    static PaddedPODArray<Id> createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards

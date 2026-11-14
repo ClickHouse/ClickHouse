@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Common/Arena.h>
 #include <Common/CacheLine.h>
 #include <Common/HashTable/BucketPartitionedTable.h>
 
 #include <absl/functional/function_ref.h>
 
 #include <algorithm>
-#include <memory>
 #include <mutex>
 #include <span>
 #include <thread>
@@ -17,8 +15,8 @@
 namespace DB
 {
 
-/// The slots that the build threads of a hash join insert through. Slot `s` holds bucket `b` of every
-/// map of the join when `b % size() == s`. Its lock guards those buckets and the slot's arena, so
+/// The slots that the build threads of a hash join insert through. Slot `s` holds bucket `b` of the
+/// map when `b % size() == s`. Its lock guards those buckets, so
 /// threads that insert into different slots do not wait for each other. `StorageJoin` clones share
 /// the slots of the join they read, but never insert.
 class BuildSlots
@@ -26,19 +24,18 @@ class BuildSlots
 public:
     explicit BuildSlots(size_t num_slots)
         : slots(num_slots)
+        , reserved(num_slots, 0)
     {
     }
 
     size_t size() const { return slots.size(); }
 
-    Arena & arena(size_t slot) { return *slots[slot].arena; }
-
-    /// The bytes of the arena of `slot` and of its buckets of `map`. Only this slot's buffers: the others are
+    /// The bytes of the buckets of `map` in `slot`. Only this slot's buffers: the others are
     /// growing under their own locks.
     template <typename Map>
     size_t slotBytes(const Map & map, size_t slot) const
     {
-        size_t res = slots[slot].arena->allocatedBytes();
+        size_t res = 0;
         /// A `PartitionedFixedHashTable` has one buffer, allocated when the table is created. Slot 0 counts it.
         if constexpr (is_partitioned_fixed_table<Map>)
             res += slot == 0 ? map.getBufferSizeInBytes() : 0;
@@ -48,49 +45,29 @@ public:
         return res;
     }
 
-    size_t arenaBytes() const
-    {
-        size_t res = 0;
-        for (const auto & slot : slots)
-            if (slot.arena)
-                res += slot.arena->allocatedBytes();
-        return res;
-    }
-
-    /// Moves out the arenas that hold memory. They are freed when the caller drops the result.
-    std::vector<std::unique_ptr<Arena>> releaseArenas()
-    {
-        std::vector<std::unique_ptr<Arena>> arenas;
-        for (auto & slot : slots)
-            if (arenaHoldsMemory(slot))
-                arenas.push_back(std::move(slot.arena));
-        return arenas;
-    }
-
     /// Reserving every bucket up front would be serial work before the build. So each slot reserves its
-    /// share of `reserve_keys_` keys in a map at its first insert into that map, under its own lock.
-    void setReserve(size_t num_maps, size_t reserve_keys_)
-    {
-        reserve_keys = reserve_keys_;
-        reserved.assign(num_maps, std::vector<char>(slots.size(), 0));
-    }
+    /// share of `reserve_keys_` keys at its first insert, under its own lock.
+    void setReserve(size_t reserve_keys_) { reserve_keys = reserve_keys_; }
 
-    /// Call under the lock of `slot`; `map` is map `map_idx`. On the first insert of `slot` into it, reserves the
+    /// Whether `reserveOnFirstInsert` can reserve anything for `slot`. Call under the lock of `slot`.
+    bool mayReserve(size_t slot) const { return reserve_keys && !reserved[slot]; }
+
+    /// Call under the lock of `slot`. On the first insert of `slot` into `map`, reserves the
     /// slot's share of `reserve_keys` over the slot's buckets. Returns that share, or 0 when nothing was reserved.
     /// The caller uses the returned share only for `HashJoinPreallocatedElementsInHashTables`.
     template <typename Map>
-    size_t reserveOnFirstInsert(Map & map, size_t map_idx, size_t slot)
+    size_t reserveOnFirstInsert(Map & map, size_t slot)
     {
         /// A `PartitionedFixedHashTable` has all its cells from the start.
         if constexpr (is_partitioned_fixed_table<Map>)
             return 0;
         else
         {
-            if (!reserve_keys || reserved[map_idx][slot])
+            if (!reserve_keys || reserved[slot])
                 return 0;
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
                 map.impls[bucket].reserve(reserve_keys / Map::NUM_BUCKETS);
-            reserved[map_idx][slot] = 1;
+            reserved[slot] = 1;
             return reserve_keys / slots.size();
         }
     }
@@ -134,20 +111,13 @@ private:
     struct alignas(CH_CACHE_LINE_SIZE) Slot
     {
         std::mutex mutex;
-        /// Strings for string keys, and continuation nodes of single-linked lists of row refs. One arena
-        /// per slot, because `Arena` is unsynchronized. Splitting is sound because neither allocation
-        /// kind needs contiguity or rollback. Behind a pointer, so it can be moved out and freed alone.
-        std::unique_ptr<Arena> arena = std::make_unique<Arena>();
     };
-
-    /// An arena allocates its first chunk on its first use, so the arena of a slot that never inserted holds nothing.
-    static bool arenaHoldsMemory(const Slot & slot) { return slot.arena && slot.arena->allocatedBytes() != 0; }
 
     std::vector<Slot> slots;
 
     size_t reserve_keys = 0;
-    /// Per map, per slot. A slot's flags are used only under its lock.
-    std::vector<std::vector<char>> reserved;
+    /// Per slot. A slot's flag is used only under its lock.
+    std::vector<char> reserved;
 };
 
 }

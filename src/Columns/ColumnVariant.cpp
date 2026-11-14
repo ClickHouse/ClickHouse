@@ -1351,14 +1351,16 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     return ColumnVariant::create(new_local_discriminators, new_variants, local_to_global_discriminators);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::scatter(size_t num_columns, const Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
+    const size_t num_columns = counts.size();
     const size_t num_variants = variants.size();
 
     /// If we have only NULLs, we need to scatter only local_discriminators.
     if (hasOnlyNulls())
     {
-        auto scattered_local_discriminators = local_discriminators->scatter(num_columns, selector);
+        auto scattered_local_discriminators = local_discriminators->scatterWithCounts(selector, counts);
         VectorWithMemoryTracking<MutableColumnPtr> result;
         result.reserve(num_columns);
         for (size_t i = 0; i != num_columns; ++i)
@@ -1378,8 +1380,8 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::scatter(size_t num_col
     /// In this case we can just scatter local_discriminators and this non empty variant.
     if (auto non_empty_local_discr = getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
     {
-        auto scattered_local_discriminators = local_discriminators->scatter(num_columns, selector);
-        auto scattered_non_empty_variant = variants[*non_empty_local_discr]->scatter(num_columns, selector);
+        auto scattered_local_discriminators = local_discriminators->scatterWithCounts(selector, counts);
+        auto scattered_non_empty_variant = variants[*non_empty_local_discr]->scatterWithCounts(selector, counts);
         VectorWithMemoryTracking<MutableColumnPtr> result;
         result.reserve(num_columns);
         for (size_t i = 0; i != num_columns; ++i)
@@ -1400,7 +1402,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::scatter(size_t num_col
     }
 
     /// Create selector for each variant according to local_discriminators.
-    VectorWithMemoryTracking<Selector> nested_selectors(num_variants);
+    VectorWithMemoryTracking<SelectorType> nested_selectors(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
         nested_selectors[i].reserve_exact(variants[i]->size());
 
@@ -1412,7 +1414,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::scatter(size_t num_col
             nested_selectors[discr].push_back(selector[i]);
     }
 
-    auto scattered_local_discriminators = local_discriminators->scatter(num_columns, selector);
+    auto scattered_local_discriminators = local_discriminators->scatterWithCounts(selector, counts);
     VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> nested_scattered_variants;
     nested_scattered_variants.reserve(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
@@ -1430,6 +1432,16 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::scatter(size_t num_col
     }
 
     return result;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnVariant::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 bool ColumnVariant::hasEqualValues() const

@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
@@ -131,8 +132,15 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
     PODArray<size_t> partition_num_to_first_row;
-    IColumn::Selector selector;
-    buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
+    MergeTreeDataWriter::PartitionSelector selector;
+    /// With 16-bit ids, more than 65536 partitions leave the selector empty.
+    /// That is more than `max_partitions_count`, so the check below throws.
+    if (max_partitions_count <= 65536)
+        selector.emplace<IColumn::SmallSelector>();
+    std::visit([&](auto & typed_selector)
+    {
+        buildScatterSelector(raw_columns, partition_num_to_first_row, typed_selector, 0, Context::getGlobalContextInstance());
+    }, selector);
 
     size_t partitions_count = partition_num_to_first_row.size();
     if (partitions_count > max_partitions_count)
@@ -142,9 +150,10 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             partitions_count,
             max_partitions_count);
     chassert(partitions_count > 0);
-    std::vector<std::pair<ChunkPartitioner::PartitionKey, MutableColumns>> result_columns;
-    result_columns.reserve(partitions_count);
+    result.reserve(partitions_count);
 
+    std::vector<ChunkPartitioner::PartitionKey> partition_keys;
+    partition_keys.reserve(partitions_count);
     for (size_t i = 0; i < partitions_count; ++i)
     {
         auto partition_key = get_partition(partition_num_to_first_row[i]);
@@ -160,29 +169,23 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
                     "Cannot write a partition value that is not valid UTF-8 into Iceberg partition column '{}'",
                     columns_to_apply[transform_ind]);
         }
-        result_columns.push_back({std::move(partition_key), chunk.cloneEmptyColumns()});
+        partition_keys.push_back(std::move(partition_key));
     }
 
-    for (size_t col = 0; col < chunk.getNumColumns(); ++col)
+    if (partitions_count == 1)
     {
-        if (partitions_count > 1)
-        {
-            auto scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
-            for (size_t i = 0; i < partitions_count; ++i)
-                result_columns[i].second[col] = std::move(scattered[i]);
-        }
-        else
-        {
-            result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
-        }
+        MutableColumns columns;
+        columns.reserve(chunk.getNumColumns());
+        for (const auto & column : chunk.getColumns())
+            columns.push_back(column->cloneFinalized());
+        result.push_back({std::move(partition_keys[0]), Chunk(std::move(columns), chunk.getNumRows())});
+        return result;
     }
 
-    result.reserve(result_columns.size());
-    for (auto && [key, partition_columns] : result_columns)
-    {
-        size_t column_size = partition_columns[0]->size();
-        result.push_back({key, Chunk(std::move(partition_columns), column_size)});
-    }
+    auto scattered = std::visit(
+        [&](const auto & typed_selector) { return scatterColumns(chunk.getColumns(), partitions_count, typed_selector); }, selector);
+    for (size_t i = 0; i < partitions_count; ++i)
+        result.push_back({std::move(partition_keys[i]), Chunk(std::move(scattered.pieces[i]), scattered.rows[i])});
     return result;
 }
 

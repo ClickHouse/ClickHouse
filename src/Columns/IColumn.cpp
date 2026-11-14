@@ -21,6 +21,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsScatter.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
@@ -350,8 +351,67 @@ bool isColumnConst(const IColumn & column)
     return checkColumn<ColumnConst>(column);
 }
 
+namespace
+{
+
+template <typename SelectorType>
+void checkScatterCounts(const SelectorType & selector, std::span<const size_t> counts)
+{
+    size_t total = 0;
+    for (size_t count : counts)
+        total += count;
+
+    if (total != selector.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Scatter counts sum to {}, but the selector has {} rows", total, selector.size());
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    const auto recount = countColumnsSizeInSelector(counts.size(), selector);
+    if (!std::ranges::equal(recount, counts))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Scatter counts do not match the selector");
+#endif
+}
+
+}
+
+VectorWithMemoryTracking<IColumn::MutablePtr> IColumn::scatter(size_t num_columns, const Selector & selector) const
+{
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    return doScatter(selector, counts);
+}
+
+VectorWithMemoryTracking<IColumn::MutablePtr> IColumn::scatter(size_t num_columns, const SmallSelector & selector) const
+{
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    return doScatter(selector, counts);
+}
+
+VectorWithMemoryTracking<IColumn::MutablePtr> IColumn::scatterWithCounts(const Selector & selector, std::span<const size_t> counts) const
+{
+    checkScatterCounts(selector, counts);
+    return doScatter(selector, counts);
+}
+
+VectorWithMemoryTracking<IColumn::MutablePtr> IColumn::scatterWithCounts(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    checkScatterCounts(selector, counts);
+    return doScatter(selector, counts);
+}
+
 template <typename Derived, typename Parent>
-VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const IColumn::Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::doScatter(const IColumn::Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+template <typename Derived, typename Parent>
+VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::doScatter(const IColumn::SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+template <typename Derived, typename Parent>
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();
@@ -359,11 +419,14 @@ VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::scatt
     if (num_rows != selector.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of selector: {} doesn't match size of column: {}", selector.size(), num_rows);
 
+    if (ColumnsScatter::hasKernel(self))
+        return ColumnsScatter::scatter(self, selector, counts);
+
+    const size_t num_columns = counts.size();
     VectorWithMemoryTracking<MutableColumnPtr> columns(num_columns);
     for (auto & column : columns)
         column = self.cloneEmpty();
 
-    const auto counts = countColumnsSizeInSelector(num_columns, selector);
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (counts[i] > 1)

@@ -12,6 +12,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -348,13 +349,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
     /// Create selector using global discriminators as indexes.
     /// Populate variants array only for discriminators that appear in the data.
-    IColumn::Selector selector;
+    static_assert(ColumnVariant::MAX_NESTED_COLUMNS + 1 <= 65536);
+    IColumn::SmallSelector selector;
     selector.reserve(variant_column.size());
     for (char8_t local_discr : local_discriminators)
     {
         if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
         {
-            selector.push_back(num_variants);
+            selector.push_back(static_cast<UInt16>(num_variants));
         }
         else
         {
@@ -375,6 +377,9 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// Create set of arguments for each variant using selector.
     VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
+    VectorWithMemoryTracking<size_t> counts;
+    if (arguments.size() > 1)
+        counts = countColumnsSizeInSelector(variants.size(), selector);
     for (size_t i = 0; i != arguments.size(); ++i)
     {
         if (i == variant_argument_index)
@@ -388,7 +393,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         else
         {
-            auto columns = arguments[i].column->scatter(variants.size(), selector);
+            auto columns = arguments[i].column->scatterWithCounts(selector, counts);
             for (size_t j = 0; j != variants_arguments.size(); ++j)
                 variants_arguments[j].emplace_back(std::move(columns[j]), arguments[i].type, arguments[i].name);
         }

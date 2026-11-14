@@ -38,12 +38,35 @@ public:
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
     /// Index is the offset in FindResult
-    /// While the probe runs, accessed only through `offsetFlag` (`std::atomic_ref`).
+    /// While the probe runs, accessed only through `std::atomic_ref`: `offsetFlag`, `setUsedAt` and `setUsedOnceAt`.
     std::vector<UInt8> per_offset_flags;
 
     std::atomic_ref<UInt8> offsetFlag(size_t offset) const
     {
         return std::atomic_ref<UInt8>(const_cast<UInt8 &>(per_offset_flags[offset]));
+    }
+
+    /// For a loop that sets the used flags of many keys: `setUsedAt` and `setUsedOnceAt` on this pointer skip the bounds check
+    /// of `per_offset_flags`.
+    UInt8 * offsetFlags() { return per_offset_flags.data(); }
+
+    /// Could be set simultaneously from different threads.
+    static void setUsedAt(UInt8 * flags, size_t offset)
+    {
+        std::atomic_ref<UInt8> flag(flags[offset]);
+        if (!flag.load(std::memory_order_relaxed))
+            flag.store(1, std::memory_order_relaxed);
+    }
+
+    /// Returns whether this call set the flag.
+    static bool setUsedOnceAt(UInt8 * flags, size_t offset)
+    {
+        std::atomic_ref<UInt8> flag(flags[offset]);
+        /// fast check to prevent heavy CAS with seq_cst order
+        if (flag.load(std::memory_order_relaxed))
+            return false;
+        UInt8 expected = 0;
+        return flag.compare_exchange_strong(expected, 1);
     }
 
     bool need_flags{};
@@ -130,40 +153,6 @@ public:
         return !need_flags;
     }
 
-    template <bool use_flags, bool flag_per_row, typename FindResult>
-    void setUsed(const FindResult & f)
-    {
-        if constexpr (!use_flags)
-            return;
-
-        /// Could be set simultaneously from different threads.
-        if constexpr (flag_per_row)
-        {
-            auto & mapped = f.getMapped();
-            if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
-            {
-                for (const UInt64 ref_word : refsOf(mapped.word))
-                {
-                    auto & flag = per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
-                    if (!flag.load(std::memory_order_relaxed))
-                        flag.store(true, std::memory_order_relaxed);
-                }
-            }
-            else
-            {
-                auto & flag = headRowFlag(mapped);
-                if (!flag.load(std::memory_order_relaxed))
-                    flag.store(true, std::memory_order_relaxed);
-            }
-        }
-        else
-        {
-            auto flag = offsetFlag(f.getOffset());
-            if (!flag.load(std::memory_order_relaxed))
-                flag.store(1, std::memory_order_relaxed);
-        }
-    }
-
     template <bool use_flags, bool flag_per_row>
     void setUsed(UInt32 block_no, size_t row_num, size_t offset)
     {
@@ -178,70 +167,7 @@ public:
                 flag.store(true, std::memory_order_relaxed);
         }
         else
-        {
-            auto flag = offsetFlag(offset);
-            if (!flag.load(std::memory_order_relaxed))
-                flag.store(1, std::memory_order_relaxed);
-        }
-    }
-
-    /// The flag of the key's FIRST row: for RowRefList this preserves the semantics of the
-    /// old RowRefList, whose head row fields were used through the RowRef base class.
-    template <typename Mapped>
-    std::atomic_bool & headRowFlag(const Mapped & mapped)
-    {
-        /// firstRefWord dispatches on Mapped exactly as needed: RowRefList -> firstWord (the head
-        /// row of the key), RowRef -> encode. refWordBlockNo/refWordRowNo of that word equal
-        /// blockNo()/rowNo() for a RowRef (same 8-byte layout), so this is one uniform decode.
-        const UInt64 ref_word = firstRefWord(mapped);
-        return per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
-    }
-
-    template <bool use_flags, bool flag_per_row, typename FindResult>
-    bool getUsed(const FindResult & f)
-    {
-        if constexpr (!use_flags)
-            return true;
-
-        if constexpr (flag_per_row)
-        {
-            return headRowFlag(f.getMapped()).load();
-        }
-        else
-        {
-            return offsetFlag(f.getOffset()).load() != 0;
-        }
-    }
-
-    template <bool use_flags, bool flag_per_row, typename FindResult>
-    bool setUsedOnce(const FindResult & f)
-    {
-        if constexpr (!use_flags)
-            return true;
-
-        if constexpr (flag_per_row)
-        {
-            auto & flag = headRowFlag(f.getMapped());
-
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
-                return false;
-
-            bool expected = false;
-            return flag.compare_exchange_strong(expected, true);
-        }
-        else
-        {
-            auto flag = offsetFlag(f.getOffset());
-
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
-                return false;
-
-            UInt8 expected = 0;
-            return flag.compare_exchange_strong(expected, 1);
-        }
-
+            setUsedAt(per_offset_flags.data(), offset);
     }
 
     template <bool use_flags, bool flag_per_row>
@@ -262,16 +188,7 @@ public:
             return flag.compare_exchange_strong(expected, true);
         }
         else
-        {
-            auto flag = offsetFlag(offset);
-
-            /// fast check to prevent heavy CAS with seq_cst order
-            if (flag.load(std::memory_order_relaxed))
-                return false;
-
-            UInt8 expected = 0;
-            return flag.compare_exchange_strong(expected, 1);
-        }
+            return setUsedOnceAt(per_offset_flags.data(), offset);
     }
 };
 

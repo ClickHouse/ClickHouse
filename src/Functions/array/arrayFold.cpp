@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -234,8 +235,11 @@ public:
         VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
         vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
+        {
+            const auto counts = countColumnsSizeInSelector(max_array_size, selector);
             for (size_t i = 0; i < num_array_cols; ++i)
-                vertical_slices[i] = arrays_data_with_type_and_name[i].column->scatter(max_array_size, selector);
+                vertical_slices[i] = arrays_data_with_type_and_name[i].column->scatterWithCounts(selector, counts);
+        }
 
         ColumnPtr accumulator_col = arguments.back().column->convertToFullColumnIfConst();
         MutableColumnPtr result_col = accumulator_col->cloneEmpty();
@@ -258,7 +262,7 @@ public:
             /// per-iteration check is negligible.
             checkQueryTimeLimit(process_list_element);
 
-            IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
+            IColumn::SmallSelector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
             size_t prev_index = 0;
             for (ssize_t row = 0; row < num_rows; ++row)
             {
