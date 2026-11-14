@@ -129,7 +129,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
@@ -1043,41 +1042,21 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     const ContextPtr & query_context)
 {
-    /// A synthetic data source is not a table of the catalog, and it may borrow the name of one,
-    /// so the filters keyed by that name must not be applied to it.
-    if (storage->isSyntheticDataSource())
+    auto filter = getAdditionalTableFilter(*storage, table_expression_alias, query_context);
+    if (!filter)
         return;
 
     const auto & settings = query_context->getSettingsRef();
 
-    auto const & additional_filters = settings[Setting::additional_table_filters].value;
-    if (additional_filters.empty())
-        return;
-
-    auto const & storage_id = storage->getStorageID();
-
-    for (const auto & additional_filter : additional_filters)
-    {
-        const auto & tuple = additional_filter.safeGet<Tuple>();
-        auto const & table = tuple.at(0).safeGet<String>();
-        auto const & filter = tuple.at(1).safeGet<String>();
-
-        if (table == table_expression_alias ||
-            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
-            (table == storage_id.getFullNameNotQuoted()))
-        {
-            ParserExpression parser;
-            table_expression_query_info.additional_filter_ast = parseQuery(
-                parser,
-                filter.data(),
-                filter.data() + filter.size(),
-                "additional filter",
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
-            return;
-        }
-    }
+    ParserExpression parser;
+    table_expression_query_info.additional_filter_ast = parseQuery(
+        parser,
+        filter->data(),
+        filter->data() + filter->size(),
+        "additional filter",
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 }
 
 /// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the

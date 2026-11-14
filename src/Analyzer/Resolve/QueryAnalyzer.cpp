@@ -69,6 +69,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Planner/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
@@ -6867,6 +6868,10 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
     /// Do not inline views with FINAL/SAMPLE modifiers for now.
     if (table_node->hasTableExpressionModifiers())
+        return;
+
+    /// The planner applies `additional_table_filters` only to the view's table expression, which inlining would replace.
+    if (getAdditionalTableFilter(*storage, table_node->getOriginalAlias(), scope.context))
         return;
 
     /// Get the view's inner query AST.
