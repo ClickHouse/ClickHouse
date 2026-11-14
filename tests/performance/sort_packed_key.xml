@@ -37,6 +37,8 @@
     <query>INSERT INTO packed_sort_small SELECT sid_small, ts, value FROM packed_sort_src</query>
     <query>SELECT sid_small, ts, value FROM packed_sort_src ORDER BY sid_small, ts FORMAT Null</query>
     <query>INSERT INTO packed_sort_mix SELECT sid, ts, value FROM packed_sort_mix_src</query>
+    <!-- The last column in the reverse order is left to the column sort. -->
+    <query>SELECT toUInt8(number % 1000) AS k, number AS v FROM numbers_mt(10000000) ORDER BY k, v DESC LIMIT 10 BY k FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS packed_sort_src</drop_query>
     <drop_query>DROP TABLE IF EXISTS packed_sort_uuid</drop_query>

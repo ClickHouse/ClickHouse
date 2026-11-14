@@ -761,12 +761,19 @@ size_t trySortByPackedKey(
 
         const bool descending = column.description.direction == -1;
 
-        /// A last column already in order stays in order under a stable sort by the columns before it.
-        if (i == last_non_const && i != first_non_const && !need_equal_ranges && inSortOrder(*column.column, rows, descending))
+        if (i == last_non_const && i != first_non_const)
         {
-            last_column_in_order = true;
-            sorted_entries = columns.size();
-            break;
+            /// A last column already in order stays in order under a stable sort by the columns before it.
+            if (!need_equal_ranges && inSortOrder(*column.column, rows, descending))
+            {
+                last_column_in_order = true;
+                sorted_entries = columns.size();
+                break;
+            }
+
+            /// A last column in the reverse order is not packed: the column sort sorts reversed ranges in linear time.
+            if (inSortOrder(*column.column, rows, !descending))
+                break;
         }
 
         const size_t bits_left = 64 - total_bits;
@@ -774,6 +781,10 @@ size_t trySortByPackedKey(
         bool ranked = false;
         if (!tryPackColumn(*column.column, type, rows, descending, i == last_non_const, bits_left, ranks, packed, ranked))
             break;
+
+        /// The column sort compares the values of a column in a stable descending sort.
+        if (stable && descending)
+            packed.column_sort_work = 0;
 
         /// After columns that nearly tell the rows apart, a column is not worth more radix passes or wider elements.
         if (packedSortWork(total_bits + packed.bits, index_bits) > packedSortWork(total_bits, index_bits) && nearly_unique())
@@ -818,8 +829,8 @@ size_t trySortByPackedKey(
         return sorted_entries;
     }
 
-    /// A single column is worth packing only if its key is much narrower than its values. Every packed column is
-    /// therefore narrower than 64 bits, so that appending it never shifts the key by 64.
+    /// A single column is worth packing only if its key is much narrower than its values, or of up to 32 bits before an
+    /// ordered last column: every packed column is narrower than 64 bits, so appending it never shifts the key by 64.
     if (packed_columns.size() == 1 && packed_columns[0].bits > packed_columns[0].value_bits / 2 && !sort_before_ordered_column)
         return 0;
 

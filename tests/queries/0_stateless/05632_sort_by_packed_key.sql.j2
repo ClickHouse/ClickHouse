@@ -26,6 +26,8 @@ CREATE TABLE src ENGINE = Memory AS SELECT
     sipHash64(sipHash64(n) % 1000) AS rep,
     n DIV 7 AS inc,
     toInt64(20000) - toInt64(n) AS rev,
+    if(n = 64, 0, n + 1) AS late1,
+    if(n = 19999, 0, n + 1) AS late2,
     materialize(toUInt8(5)) AS c5
 FROM numbers(20000) SETTINGS max_block_size = 20000, max_insert_block_size = 20000, min_insert_block_size_rows = 20000, max_insert_threads = 1;
 
@@ -37,14 +39,14 @@ SELECT '{{ k }}', arrayPopBack((SELECT groupArray(n) FROM (SELECT n FROM src ORD
     = (SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }}, toString(n) LIMIT 19999));
 {% endfor -%}
 
--- The last column is already in order (`n` increases, `rev` decreases) or not.
-{% for k in ['cat, n', 'uid, n', 'spread, n', 'small, rev DESC', 'c5, n', 'cat, rev'] -%}
+-- The last column is already in order (`n` increases, `rev` decreases), in the reverse order, or out of order in one row.
+{% for k in ['cat, n', 'uid, n', 'spread, n', 'small, rev DESC', 'c5, n', 'cat, rev', 'cat, n DESC', 'cat, late1', 'cat, late2'] -%}
 SELECT '{{ k }}', arrayPopBack((SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }})))
     = (SELECT groupArray(n) FROM (SELECT n FROM src ORDER BY {{ k }} LIMIT 19999));
 {% endfor -%}
 
 -- INSERT: the rows come in the order of `n`, so the stable order is (sorting key, n), and every row is written once.
-{% set insert_keys = ['uid, ts', 'uid, cat', 'uh, ts', 'ih DESC, neg', 'cat, uh', 'cat, uh, ts', 'i8, dc DESC', 'spread, cat', 'spread DESC, dc', 'inc, ts', 'rev, ts', 'small, identity(1), d', 'mix, ts', 'rep, ts', 'b, inc', 'uid, inc', 'spread, inc', 'small, rev DESC', 'cat, rev'] -%}
+{% set insert_keys = ['uid, ts', 'uid, cat', 'uh, ts', 'ih DESC, neg', 'cat, uh', 'cat, uh, ts', 'i8, dc DESC', 'spread, cat', 'spread DESC, dc', 'inc, ts', 'rev, ts', 'small, identity(1), d', 'mix, ts', 'rep, ts', 'b, inc', 'uid, inc', 'spread, inc', 'small, rev DESC', 'cat, rev', 'cat DESC, rev', 'cat, late1', 'cat, late2'] -%}
 DROP TABLE IF EXISTS {% for k in insert_keys %}t{{ loop.index }}{{ ', ' if not loop.last }}{% endfor %};
 {% for k in insert_keys -%}
 {% set columns = k | replace(' DESC', '') | replace('identity(1), ', '') -%}
