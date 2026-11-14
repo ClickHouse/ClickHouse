@@ -38,7 +38,7 @@ SELECT val FROM tab WHERE nowInBlock(tz) != toDateTime('2000-01-01 00:00:00') OR
 SELECT val FROM tab WHERE nowInBlock(tz) != toDateTime('2000-01-01 00:00:00') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
 
 SELECT val FROM tab WHERE toTimeZone(toDateTime(val), tz) != toDateTime('2023-06-11 14:14:14') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
-SELECT val FROM tab WHERE toTimeZone(toDateTime(val), tz) != toDateTime('2023-06-11 14:14:14') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
+SELECT val FROM tab WHERE toTimeZone(toDateTime(val), tz) != toDateTime('2023-06-11 14:14:14') ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1; -- { serverError ILLEGAL_COLUMN }
 
 SELECT val FROM tab WHERE fromUnixTimestamp64Milli(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 0; -- { serverError ILLEGAL_COLUMN }
 SELECT val FROM tab WHERE fromUnixTimestamp64Milli(val, tz) != toDateTime64('2023-06-11 14:14:14', 6) ORDER BY val SETTINGS allow_nonconst_timezone_arguments = 1;
