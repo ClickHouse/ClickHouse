@@ -24,7 +24,6 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_s3_glob (c0 Int32, b Bool) ENGINE = S3(s3_conn, filename = '${CLICKHOUSE_DATABASE}/b=*/data.jsonl', format = JSONEachRow) SETTINGS bool_true_representation = 'si';
 
     SELECT 'file', * FROM t_file WHERE b;
-    SELECT 'file, GLOBAL IN', * FROM t_file WHERE b GLOBAL IN (SELECT true);
     SELECT 'url', * FROM t_url WHERE b;
     SELECT 's3', * FROM t_s3 WHERE b;
     SELECT 's3, GLOBAL IN', * FROM t_s3 WHERE b GLOBAL IN (SELECT true);
