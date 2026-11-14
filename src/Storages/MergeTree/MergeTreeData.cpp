@@ -45,13 +45,16 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
@@ -180,6 +183,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
@@ -5912,6 +5916,221 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
+/// A JSON path is the same path whether it is typed, typed in the shared data or dynamic.
+bool isSameSubstreamStep(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
+{
+    auto kind = [](ISerialization::Substream::Type type)
+    {
+        if (type == ISerialization::Substream::ObjectTypedSharedDataPath || type == ISerialization::Substream::ObjectDynamicPath)
+            return ISerialization::Substream::ObjectTypedPath;
+        return type;
+    };
+    return kind(lhs.type) == kind(rhs.type) && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name && lhs.object_path_name == rhs.object_path_name
+        && lhs.bucket == rhs.bucket;
+}
+
+/// `Nullable` and `LowCardinality` steps only wrap a value; they do not choose which value is read.
+ISerialization::SubstreamPath valueSelectingSteps(const ISerialization::SubstreamPath & path)
+{
+    ISerialization::SubstreamPath steps;
+    for (const auto & step : path)
+        if (step.type != ISerialization::Substream::NullableElements && step.type != ISerialization::Substream::DictionaryKeys)
+            steps.push_back(step);
+    return steps;
+}
+
+/// The JSON parser tests the root and every prefix of a path against `SKIP`, and matches a `SKIP REGEXP` partially.
+bool skipsJSONPath(const DataTypeObject & type, std::string_view path)
+{
+    std::vector<String> prefixes{""};
+    for (size_t dot = path.find('.'); dot != std::string_view::npos; dot = path.find('.', dot + 1))
+        prefixes.emplace_back(path.substr(0, dot));
+    prefixes.emplace_back(path);
+
+    for (const auto & prefix : prefixes)
+        if (type.getPathsToSkip().contains(prefix))
+            return true;
+
+    for (const auto & regexp : type.getPathRegexpsToSkip())
+    {
+        re2::RE2 compiled(regexp);
+        for (const auto & prefix : prefixes)
+            if (re2::RE2::PartialMatch(prefix, compiled))
+                return true;
+    }
+    return false;
+}
+
+using CheckedSubcolumns = std::unordered_map<String, bool>;
+
+bool conversionKeepsSubcolumnValues(
+    const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn, CheckedSubcolumns & checked);
+
+/// The subcolumn type alone does not tell: below a Nullable level a subcolumn is Nullable either way, so
+/// `JSON(a Nullable(Int64))` -> `Nullable(JSON(a Int64))` keeps `a` a `Nullable(Int64)` but turns its NULLs into 0.
+bool conversionKeepsSubcolumnValuesImpl(
+    const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn, CheckedSubcolumns & checked)
+{
+    auto from_subcolumn = from->tryGetSubcolumnType(subcolumn);
+    auto to_subcolumn = to->tryGetSubcolumnType(subcolumn);
+    if (!from_subcolumn || !to_subcolumn || !isSafeForKeyConversion(from_subcolumn.get(), to_subcolumn.get()))
+        return false;
+
+    /// Subcolumn names are flat: `j.a` can be a `Tuple` element or the path `a` of a `JSON` element `j`.
+    auto from_info = from->tryGetSubcolumnInfo(subcolumn);
+    auto to_info = to->tryGetSubcolumnInfo(subcolumn);
+    if (!from_info || !to_info)
+        return false;
+
+    /// `Variant` -> `Dynamic` keeps every variant as it is.
+    auto keeps_step = [](const ISerialization::Substream & from_step, const ISerialization::Substream & to_step)
+    {
+        return isSameSubstreamStep(from_step, to_step)
+            || (from_step.type == ISerialization::Substream::VariantElements && to_step.type == ISerialization::Substream::DynamicData);
+    };
+    if (!std::ranges::equal(valueSelectingSteps(from_info->substreams_path), valueSelectingSteps(to_info->substreams_path), keeps_step))
+        return false;
+
+    bool from_nullable = isNullableOrLowCardinalityNullable(from);
+    bool to_nullable = isNullableOrLowCardinalityNullable(to);
+    if (from_nullable || to_nullable)
+    {
+        /// Only a Nullable level keeps a NULL; one that `to` adds holds no NULL yet.
+        if (!to_nullable)
+            return false;
+
+        /// A subcolumn that neither nested type has is the wrapper's own (`null`).
+        auto from_below = from_nullable ? removeLowCardinalityAndNullable(from) : from;
+        auto to_below = removeLowCardinalityAndNullable(to);
+        bool from_has = from_below->hasSubcolumn(subcolumn);
+        if (from_has != to_below->hasSubcolumn(subcolumn))
+            return false;
+        return !from_has || conversionKeepsSubcolumnValues(from_below, to_below, subcolumn, checked);
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array || to_array)
+    {
+        if (!from_array || !to_array)
+            return false;
+
+        /// Converting an array keeps its sizes, but a geometry becomes a collection of one: `LineString` -> `MultiLineString`
+        /// adds an array level.
+        auto steps = valueSelectingSteps(from_info->substreams_path);
+        if (steps.size() == 1 && steps.front().type == ISerialization::Substream::ArraySizes)
+            return !(from_array->getCustomName() || to_array->getCustomName())
+                || from_array->getNumberOfDimensions() == to_array->getNumberOfDimensions();
+        if (steps.empty() || steps.front().type != ISerialization::Substream::ArrayElements)
+            return false;
+
+        /// `sizeN` counts the array levels from the root, so the nested type names the same sizes `size<N-1>`, and a nested
+        /// `JSON` or `Tuple` can have a subcolumn named `sizeN`.
+        String nested_subcolumn(subcolumn);
+        if (steps.back().type == ISerialization::Substream::ArraySizes)
+        {
+            size_t dot = subcolumn.rfind('.');
+            nested_subcolumn = fmt::format(
+                "{}size{}", dot == std::string_view::npos ? "" : subcolumn.substr(0, dot + 1), ISerialization::getArrayLevel(steps) - 1);
+        }
+        auto nested_info = from_array->getNestedType()->tryGetSubcolumnInfo(nested_subcolumn);
+        if (!nested_info
+            || !std::ranges::equal(valueSelectingSteps(nested_info->substreams_path), steps | std::views::drop(1), isSameSubstreamStep))
+            return false;
+        return conversionKeepsSubcolumnValues(from_array->getNestedType(), to_array->getNestedType(), nested_subcolumn, checked);
+    }
+
+    /// `key_<k>` of a `Map` finds its value by parsing `<k>` as the key type.
+    if (!from_info->substreams_path.empty() && from_info->substreams_path.front().type == ISerialization::Substream::MapKeyValue)
+    {
+        const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        if (!from_map || !to_map || !from_map->getKeyType()->equals(*to_map->getKeyType()))
+            return false;
+    }
+
+    /// A `JSON` -> `JSON` conversion writes the data as text and parses it again: the `SKIP` rules of `to` drop paths,
+    /// and a typed path can take the object below it.
+    if (const auto * to_object = typeid_cast<const DataTypeObject *>(to.get()); to_object && !from->equals(*to))
+    {
+        auto is_typed_path = [](const ISerialization::SubstreamPath & path)
+        {
+            return !path.empty()
+                && (path.front().type == ISerialization::Substream::ObjectTypedPath
+                    || path.front().type == ISerialization::Substream::ObjectTypedSharedDataPath);
+        };
+        const auto * from_object = typeid_cast<const DataTypeObject *>(from.get());
+        if (!from_object || !is_typed_path(from_info->substreams_path) || !is_typed_path(to_info->substreams_path))
+            return false;
+
+        /// The text is parsed with the type of `to`, so an integer type reads an `Enum` name as a number. Only these types read
+        /// every value back unchanged: `DateTime` text is local time, a `Date32` value out of range is clamped, RapidJSON
+        /// parses an integer wider than 64 bits as `Float64`, and a custom serialization (`Bool`) can write a value as another one.
+        auto changes_on_reparse = [](const IDataType & type)
+        {
+            return type.getCustomSerialization() != nullptr
+                || !(isNativeInteger(type) || isStringOrFixedString(type) || isEnum(type) || isUUID(type) || isIPv4(type) || isIPv6(type)
+                     || isDate(type) || isArray(type) || type.isNullable() || type.lowCardinality());
+        };
+
+        const String & path = to_info->substreams_path.front().object_path_name;
+        auto from_typed_path = from_object->getTypedPaths().find(path);
+        auto to_typed_path = to_object->getTypedPaths().find(path);
+        if (from_typed_path == from_object->getTypedPaths().end() || to_typed_path == to_object->getTypedPaths().end()
+            || !recursiveRemoveLowCardinality(from_typed_path->second)->equals(*recursiveRemoveLowCardinality(to_typed_path->second))
+            || anyInTypeTree(*to_typed_path->second, changes_on_reparse) || skipsJSONPath(*to_object, path))
+            return false;
+
+        for (size_t dot = path.find('.'); dot != String::npos; dot = path.find('.', dot + 1))
+        {
+            const String prefix = path.substr(0, dot);
+            if (to_object->getTypedPaths().contains(prefix) || from_object->getTypedPaths().contains(prefix))
+                return false;
+        }
+    }
+
+    auto goes_through = [](const DataTypePtr & type, std::string_view name, const ISerialization::SubstreamPath & path)
+    {
+        auto prefix_info = type->tryGetSubcolumnInfo(name);
+        return prefix_info && prefix_info->substreams_path.size() < path.size()
+            && std::equal(prefix_info->substreams_path.begin(), prefix_info->substreams_path.end(), path.begin(), isSameSubstreamStep);
+    };
+
+    for (size_t dot = subcolumn.find('.'); dot != std::string_view::npos; dot = subcolumn.find('.', dot + 1))
+    {
+        auto prefix = subcolumn.substr(0, dot);
+        auto rest = subcolumn.substr(dot + 1);
+        auto from_prefix = from->tryGetSubcolumnType(prefix);
+        auto to_prefix = to->tryGetSubcolumnType(prefix);
+        bool from_through = from_prefix && from_prefix->hasSubcolumn(rest) && goes_through(from, prefix, from_info->substreams_path);
+        bool to_through = to_prefix && to_prefix->hasSubcolumn(rest) && goes_through(to, prefix, to_info->substreams_path);
+        if (from_through != to_through)
+            return false;
+        if (from_through && !conversionKeepsSubcolumnValues(from_prefix, to_prefix, rest, checked))
+            return false;
+    }
+    return true;
+}
+
+/// Every dotted prefix of a subcolumn reaches the levels below it again, so each level is checked once.
+bool conversionKeepsSubcolumnValues(
+    const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn, CheckedSubcolumns & checked)
+{
+    String key = fmt::format("{}\n{}\n{}", from->getName(), to->getName(), subcolumn);
+    if (auto it = checked.find(key); it != checked.end())
+        return it->second;
+    bool keeps = conversionKeepsSubcolumnValuesImpl(from, to, subcolumn, checked);
+    checked.emplace(std::move(key), keeps);
+    return keeps;
+}
+
+bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn)
+{
+    CheckedSubcolumns checked;
+    return conversionKeepsSubcolumnValues(from, to, subcolumn, checked);
+}
+
 /// Comma-separated list of backquoted identifiers, for exception messages.
 String backQuotedList(const std::vector<String> & identifiers)
 {
@@ -6944,6 +7163,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             backQuoteIfNeed(subcolumn),
                             old_subcolumn->type->getName(),
                             new_subcolumn ? new_subcolumn->type->getName() : "(removed)");
+
+                    auto old_column = old_columns.tryGetPhysical(command.column_name);
+                    auto new_column = new_columns.tryGetPhysical(command.column_name);
+                    if (old_column && new_column && !isSecondaryDDLReplay(local_context)
+                        && !conversionKeepsSubcolumnValues(old_column->type, new_column->type, old_subcolumn->getSubcolumnName()))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} from type {} to type {} is forbidden because it can change the values of its "
+                            "subcolumn {}, which is part of a key expression",
+                            backQuoteIfNeed(command.column_name),
+                            old_column->type->getName(),
+                            new_column->type->getName(),
+                            backQuoteIfNeed(subcolumn));
                 }
             }
 
@@ -7012,6 +7244,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             /// key/index/projection.
             const auto & old_columns_desc = old_metadata.getColumns();
             const auto & new_columns_desc = new_metadata.getColumns();
+            const DataTypePtr old_type = old_columns_desc.getPhysical(command.column_name).type;
+            const DataTypePtr new_type = new_columns_desc.getPhysical(command.column_name).type;
+            const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
             auto names_use_changed_subcolumn = [&](const Names & required_columns) -> bool
             {
@@ -7025,6 +7260,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     /// Removed or retyped after the ALTER: its on-disk bytes no longer match.
                     auto new_column = new_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
                     if (!new_column || new_column->type->getName() != old_column->type->getName())
+                        return true;
+
+                    if (old_column->isSubcolumn() && !is_secondary_replay
+                        && !conversionKeepsSubcolumnValues(old_type, new_type, old_column->getSubcolumnName()))
                         return true;
                 }
                 return false;
