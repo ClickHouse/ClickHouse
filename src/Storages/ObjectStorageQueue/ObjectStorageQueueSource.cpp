@@ -1287,6 +1287,28 @@ void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStrea
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
+#if USE_AWS_S3
+    /// Claims the current S3 version of the file with a `HEAD`; returns an error if it was rewritten or removed.
+    auto claim_current_version = [&](const String & path) -> std::optional<String>
+    {
+        const auto * s3_storage_ptr = dynamic_cast<const S3ObjectStorage *>(object_storage.get());
+        if (!s3_storage_ptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object storage of type S3 is not an `S3ObjectStorage`");
+        const auto & s3_storage = *s3_storage_ptr;
+        /// A version selected by the URL is immutable and is the one consumed. Its `ETag` differs from the listed
+        /// one, which describes the latest version.
+        const auto selected_version_id = s3_storage.getURI().version_id;
+        const auto current = s3_storage.tryGetObjectVersionMetadata(path, selected_version_id, /*with_tags=*/false);
+        if (!current || (selected_version_id.empty() && current->etag != processed_files.back().etag))
+            return fmt::format(
+                "The object {} was rewritten or removed after it was listed (listed `ETag`: {}, current `ETag`: {})",
+                path, processed_files.back().etag, current ? current->etag : "none");
+        processed_files.back().etag = current->etag;
+        processed_files.back().version_id = current->version_id;
+        return std::nullopt;
+    };
+#endif
+
     while (true)
     {
         if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
@@ -1518,30 +1540,16 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
 #if USE_AWS_S3
-            /// A format that does not read the object (`One`) never learns the S3 version it consumed, so post-processing
-            /// would act on the whole key: a delete would hide, and a move would take, a same-byte upload that came later.
-            /// Claim the current version with a `HEAD` instead, as a zero-byte pinned read would.
+            /// `One` does not read the object, so claim its version before the row is emitted and reset the file on a change.
             if (object_storage->getType() == ObjectStorageType::S3
                 && afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
                 && dynamic_cast<const EmptyReadBuffer *>(reader.readBuffer()))
             {
-                const auto * s3_storage_ptr = dynamic_cast<const S3ObjectStorage *>(object_storage.get());
-                if (!s3_storage_ptr)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Object storage of type S3 is not an `S3ObjectStorage`");
-                const auto & s3_storage = *s3_storage_ptr;
-                /// A version selected by the URL is immutable and is the one consumed. Its `ETag` differs from the listed
-                /// one, which describes the latest version.
-                const auto selected_version_id = s3_storage.getURI().version_id;
-                const auto current = s3_storage.tryGetObjectVersionMetadata(file_metadata->getPath(), selected_version_id, /*with_tags=*/false);
-                if (!current || (selected_version_id.empty() && current->etag != processed_files.back().etag))
+                if (auto message = claim_current_version(file_metadata->getPath()))
                 {
-                    const auto message = fmt::format(
-                        "The object {} was rewritten or removed after it was listed (listed `ETag`: {}, current `ETag`: {})",
-                        file_metadata->getPath(), processed_files.back().etag, current ? current->etag : "none");
-                    LOG_DEBUG(log, "{}. Will reset the file", message);
-
+                    LOG_DEBUG(log, "{}. Will reset the file", *message);
                     processed_files.back().state = FileState::ErrorOnRead;
-                    processed_files.back().exception_during_read = message;
+                    processed_files.back().exception_during_read = *message;
                     processed_files.back().exception_during_read_code = ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
 
                     if (mode == ObjectStorageQueueMode::ORDERED)
@@ -1551,8 +1559,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     progress->processed_files -= 1;
                     continue;
                 }
-                processed_files.back().etag = current->etag;
-                processed_files.back().version_id = current->version_id;
             }
 #endif
 
@@ -1740,9 +1746,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                  "Processed file {}. Total processed files: {}, processed rows: {}, processed bytes: {}",
                  path, progress->processed_files.load(), progress->processed_rows.load(), progress->processed_bytes.load());
 
-        processed_files.back().state = FileState::Processed;
-        file_status->setProcessingEndTime();
-        file_status = nullptr;
+        bool read_got_response = false;
         if (auto * read_buf = reader.readBuffer())
         {
             if (const auto * provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buf))
@@ -1756,9 +1760,45 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// An unpinned read is not validated against the listed `ETag`, so without this post-processing would compare
                 /// the selected version with the listed `ETag` and never succeed.
                 if (auto val = provider->getMetadata("etag"); val.has_value())
+                {
                     processed_files.back().etag = val->safeGet<String>();
+                    read_got_response = true;
+                }
             }
         }
+
+#if USE_AWS_S3
+        /// A read that got no response (an empty object) never learns the S3 version it consumed; `One` was claimed above.
+        /// Claim the current version with a `HEAD`, or post-processing would act on the whole key.
+        if (object_storage->getType() == ObjectStorageType::S3
+            && afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
+            && !read_got_response && processed_files.back().version_id.empty()
+            && !dynamic_cast<const EmptyReadBuffer *>(reader.readBuffer()))
+        {
+            if (auto message = claim_current_version(path))
+            {
+                processed_files.back().state = FileState::ErrorOnRead;
+                processed_files.back().exception_during_read = *message;
+                processed_files.back().exception_during_read_code = ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+
+                /// The rows of the file are already in the insert, so fail the whole insert.
+                if (file_status->processed_rows > 0)
+                    throw Exception(ErrorCodes::S3_OBJECT_CHANGED_DURING_READ, "{}", *message);
+
+                LOG_DEBUG(log, "{}. Will reset the file", *message);
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    return {};
+
+                reader = {};
+                progress->processed_files -= 1;
+                continue;
+            }
+        }
+#endif
+
+        processed_files.back().state = FileState::Processed;
+        file_status->setProcessingEndTime();
+        file_status = nullptr;
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit

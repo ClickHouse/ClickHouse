@@ -2266,6 +2266,72 @@ def test_delete_takes_the_version_the_one_format_consumed(started_cluster):
     assert int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1
 
 
+@pytest.mark.parametrize("after_processing", ["delete", "move"])
+def test_post_processing_takes_the_version_of_an_empty_object(started_cluster, after_processing):
+    """A prefetched read of a zero-byte object sends no `GET`, so it never learns the S3 version. Post-processing must
+    still take only the version that was consumed, so an empty re-upload after the consumption stays the object."""
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"empty_object_{after_processing}_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    ingested = client.put_object(Bucket=bucket, Key=source_key, Body=b"")["VersionId"]
+
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing=after_processing,
+        move_to_prefix=processed_prefix if after_processing == "move" else None,
+        bucket=bucket,
+        additional_settings={"commit_on_select": 1},
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        select = pool.submit(
+            node.query,
+            f"SELECT * FROM {table_name} SETTINGS s3_skip_empty_files = 0",
+        )
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # The empty object is consumed; an empty object is uploaded again before the post-processing.
+        reuploaded = client.put_object(Bucket=bucket, Key=source_key, Body=b"")["VersionId"]
+        assert reuploaded != ingested
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    assert select.result(timeout=60) == ""
+    pool.shutdown()
+
+    # Only the consumed version is taken; the re-upload is neither hidden by a delete marker nor moved.
+    wait_until(lambda: source_versions() == {reuploaded})
+    assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
+    if after_processing == "move":
+        head = client.head_object(Bucket=bucket, Key=f"{processed_prefix}/part.csv")
+        assert head["Metadata"]["clickhouse_move_source_version_id"] == ingested
+
+
 @pytest.mark.parametrize(
     "read_settings",
     [
