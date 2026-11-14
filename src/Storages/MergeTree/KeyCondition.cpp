@@ -5267,12 +5267,107 @@ bool hasNaNInside(const Field & field)
     return anyFieldBelowTuplesSatisfies(field, isNaNField);
 }
 
+/// `ifNull(x, ...)` or `coalesce(x, ...)` that returns `x` as is: `x` cannot be NULL and has the result type.
+bool isRedundantIfNullOrCoalesce(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || node.children.empty())
+        return false;
+
+    const auto & name = node.function_base->getName();
+    if (name != "ifNull" && name != "coalesce")
+        return false;
+
+    const auto & first_argument = *node.children.front();
+    return !canContainNull(*first_argument.result_type) && node.result_type->equals(*first_argument.result_type);
+}
+
+bool hasRedundantIfNullOrCoalesceBelow(const ActionsDAG::Node & node)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack(node.children.begin(), node.children.end());
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+        if (!visited.insert(current).second)
+            continue;
+
+        if (isRedundantIfNullOrCoalesce(*current))
+            return true;
+
+        stack.insert(stack.end(), current->children.begin(), current->children.end());
+    }
+    return false;
+}
+
+using CopiedNodes = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
+
+/// Copies `node` to `dag`, replacing every function below it that `isRedundantIfNullOrCoalesce` accepts with its first argument.
+const ActionsDAG::Node & copyWithoutRedundantIfNullOrCoalesce(
+    const ActionsDAG::Node & node, ActionsDAG & dag, CopiedNodes & copies, bool keep_node = false)
+{
+    if (!keep_node)
+    {
+        if (auto it = copies.find(&node); it != copies.end())
+            return *it->second;
+
+        if (isRedundantIfNullOrCoalesce(node))
+        {
+            const auto & copy = copyWithoutRedundantIfNullOrCoalesce(*node.children.front(), dag, copies);
+            copies.emplace(&node, &copy);
+            return copy;
+        }
+    }
+
+    ActionsDAG::NodeRawConstPtrs children;
+    children.reserve(node.children.size());
+    for (const auto * child : node.children)
+        children.push_back(&copyWithoutRedundantIfNullOrCoalesce(*child, dag, copies));
+
+    const ActionsDAG::Node * copy = nullptr;
+    switch (node.type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+            copy = &dag.addInput({node.column, node.result_type, node.result_name});
+            break;
+        case ActionsDAG::ActionType::COLUMN:
+            copy = &dag.addColumn(node.column, node.result_type, node.result_name);
+            break;
+        case ActionsDAG::ActionType::ALIAS:
+            copy = &dag.addAlias(*children.front(), node.result_name);
+            break;
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            copy = &dag.addArrayJoin(*children.front(), {});
+            break;
+        case ActionsDAG::ActionType::FUNCTION:
+            copy = &dag.addFunction(node.function_base, std::move(children), {});
+            break;
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            copy = &dag.addPlaceholder(node.result_name, node.result_type);
+            break;
+    }
+
+    copies.emplace(&node, copy);
+    return *copy;
+}
+
 }
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     AtomGroup group;
     extractAtomsFromTree(node, info, group);
+
+    /// A leaf that does not match the key as it is can match it without `ifNull` and `coalesce` that return their first
+    /// argument as is, e.g. `sipHash64(ifNull(p, 0)) = c` and the key `sipHash64(p)`.
+    if (group.atoms.empty() && node.getContext()->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
+        && hasRedundantIfNullOrCoalesceBelow(*node.getDAGNode()))
+    {
+        ActionsDAG dag;
+        CopiedNodes copies;
+        const auto & leaf = copyWithoutRedundantIfNullOrCoalesce(*node.getDAGNode(), dag, copies, /* keep_node */ true);
+        extractAtomsFromTree(RPNBuilderTreeNode(&leaf, node.getContext()), info, group);
+    }
 
     if (group.atoms.empty())
         return false;
