@@ -578,7 +578,11 @@ void VectorQuantizer::encode(Encoder & encoder, const float * vec, char * dst)
             {
                 UInt32 u = 0;
                 std::memcpy(&u, &vec[i], sizeof(float));
-                const UInt16 b = static_cast<UInt16>((u + 0x7FFFu + ((u >> 16) & 1u)) >> 16);
+                /// A NaN is kept as a quiet NaN of the same sign: rounding its payload could turn it into an infinity, and
+                /// overflows 32 bits for a negative NaN. Rounding any other value stays within 32 bits.
+                const UInt16 b = (u & 0x7FFFFFFFu) > 0x7F800000u
+                    ? static_cast<UInt16>((u >> 16) | 0x0040u)
+                    : static_cast<UInt16>((u + 0x7FFFu + ((u >> 16) & 1u)) >> 16);
                 std::memcpy(dst + i * 2, &b, sizeof(UInt16));
             }
             return;

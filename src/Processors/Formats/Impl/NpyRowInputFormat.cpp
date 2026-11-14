@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -344,10 +345,9 @@ void NpyRowInputFormat::readPrefix()
             if (total_offsets_per_row > std::numeric_limits<size_t>::max() - cumulative_product)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset count overflows");
             total_offsets_per_row += cumulative_product;
-            /// cumulative_product * header.shape[i] can't overflow: it's a subset of the
-            /// already-validated total_elements product.
-            if (i + 1 < header.shape.size())
-                cumulative_product *= header.shape[i];
+            /// The validated `total_elements` product does not bound this one when a dimension is zero.
+            if (i + 1 < header.shape.size() && common::mulOverflow(cumulative_product, size_t(header.shape[i]), cumulative_product))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset count overflows");
         }
         if (total_offsets_per_row > std::numeric_limits<size_t>::max() / sizeof(UInt64))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset byte count overflows");

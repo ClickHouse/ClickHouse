@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
@@ -187,6 +188,10 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     /// Next unique identifier for events
     /// Used to distinguish events with the same timestamp that matches several conditions.
     UInt64 next_unique_id = 1;
+
+    /// The identifiers count the rows, so only a malformed state can come close to this bound. Keeping the identifiers
+    /// of the deserialized and merged states below it leaves `advanceId` room to never wrap around.
+    static constexpr UInt64 max_unique_id = UInt64(1) << 62;
     bool sorted = true;
 
     size_t size() const
@@ -220,8 +225,12 @@ struct AggregateFunctionWindowFunnelStrictOnceData
         for (auto other_event : other.events_list)
         {
             /// Assign unique IDs to the new events to prevent conflicts
-            other_event.unique_id += next_unique_id;
-            new_next_unique_id = std::max(new_next_unique_id, other_event.unique_id + 1);
+            UInt64 next_after_event = 0;
+            if (common::addOverflow(other_event.unique_id, next_unique_id, other_event.unique_id)
+                || common::addOverflow(other_event.unique_id, UInt64(1), next_after_event)
+                || next_after_event > max_unique_id)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too large event identifier in the state of windowFunnel");
+            new_next_unique_id = std::max(new_next_unique_id, next_after_event);
             events_list.push_back(other_event);
         }
         next_unique_id = new_next_unique_id;
@@ -276,6 +285,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
             readBinary(timestamp, buf);
             readBinary(event_type, buf);
             readBinary(unique_id, buf);
+            if (unique_id >= max_unique_id)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too large event identifier in the state of windowFunnel");
             next_unique_id = std::max(next_unique_id, unique_id + 1);
             events_list.emplace_back(timestamp, event_type, unique_id);
         }

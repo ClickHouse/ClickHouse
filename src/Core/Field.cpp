@@ -766,7 +766,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
     else
-        scale = -exponent;
+        scale = static_cast<UInt32>(std::min<Int64>(-static_cast<Int64>(exponent), std::numeric_limits<UInt32>::max()));
     /// The scale comes from the text: an exponent-form value such as `Decimal64_'1e-1000'` (e.g. in a
     /// `CUSTOM`-flagged setting parsed by `SettingFieldCustom::parseFromString`) builds a scale that
     /// bypasses the binary reader's check. An out-of-range scale later overruns a fixed-size buffer in
