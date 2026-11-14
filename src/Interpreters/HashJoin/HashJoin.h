@@ -7,9 +7,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
+#include <base/defines.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowDataStore.h>
@@ -173,6 +176,10 @@ struct BuildResult
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
+/// A decompressed view of a stored (compressed) `StoredBlock`, produced by `getDecompressedColumns`
+/// for the probe phase when `enable_join_in_memory_compression` compressed the stored blocks.
+using DecompressedColumnsPtr = std::shared_ptr<const StoredBlock>;
+
 class HashJoin : public IJoin
 {
 public:
@@ -608,6 +615,12 @@ public:
         StoredBlocksList columns;
         NullmapList nullmaps;
         bool shrink_done = false;
+        /// The blocks of this build stream are compressed by `enable_join_in_memory_compression`, and the blocks
+        /// it adds later are compressed on insertion.
+        bool compression_done = false;
+        /// Held by the build stream's own thread while it stores a block, and by another thread that catches
+        /// this build stream up with the compression of the whole join (see `compressPendingBuildStreams`).
+        std::mutex mutex;
     };
 
     struct RightTableData
@@ -718,9 +731,52 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks(bool restructure = false);
-    BlocksList releaseBuildStreamBlocks(size_t stream);
+
+    /// Streams the stored right-side blocks out of the join, one block per `next` call.
+    /// Each call decompresses (when `enable_join_in_memory_compression` compressed the stored
+    /// columns) and materializes a single block, destroying its stored source before returning,
+    /// so the peak memory overhead on top of the remaining stored data is one block instead of
+    /// the whole uncompressed right-hand side. This matters because the consumers (spilling to
+    /// `GraceHashJoin`, grace bucket rehashing, `JoinSwitcher`) run exactly when memory pressure
+    /// has already fired.
+    class ReleasedJoinedBlocks
+    {
+    public:
+        bool empty() const { return columns_list.empty(); }
+        size_t size() const { return columns_list.size(); }
+
+        /// Produces the next block. Must not be called when `empty`.
+        Block next();
+
+    private:
+        friend class HashJoin;
+
+        StoredBlocksList columns_list;
+        Block sample_block;
+        bool have_compressed = false;
+
+        /// The join's `column_access_indexes`: how the compact stored columns and the row store map
+        /// back onto `sample_block`'s column positions. Empty when the join had no row store.
+        ColumnAccessIndexes column_access_indexes;
+
+        /// Set when `restructure` was requested: mapping of `right_sample_block` columns
+        /// into `sample_block` positions, with nullability to restore.
+        bool restructure = false;
+        std::vector<size_t> positions;
+        std::vector<bool> is_nullable;
+    };
+
+    ReleasedJoinedBlocks releaseJoinedBlocks(bool restructure = false);
+    /// Streams out the stored blocks of one build stream, see `ReleasedJoinedBlocks`. `data` stays alive.
+    ReleasedJoinedBlocks releaseBuildStreamBlocks(size_t stream);
     void releaseJoinMaps();
+
+    /// Once `enable_join_in_memory_compression` decided to compress, compresses the stored blocks of every
+    /// build stream that has not caught up yet, so that `getTotalByteCount` sees the compressed size of the
+    /// whole join. A build stream catches up on its own only on its next insert, which may never come, so call
+    /// this before enforcing a size limit or deciding to spill. Must not be called by a thread that holds the
+    /// mutex of a build stream.
+    void compressPendingBuildStreams();
 
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
@@ -745,6 +801,31 @@ public:
 
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
+
+    /// True if some stored right-side blocks were compressed in memory (by `enable_join_in_memory_compression`),
+    /// so they must be decompressed before reading at probe time.
+    bool haveCompressed() const { return have_compressed.load(std::memory_order_relaxed); }
+
+    /// The data size of the stored columns that went through `enable_join_in_memory_compression` and their stored
+    /// footprint after it, compressed or not. Their ratio converts the compressed `allocated_size` back to the
+    /// size of the data, which the output block size estimates (`max_joined_block_size_bytes`) are about.
+    /// Updated by all build streams, and `compressed_any` is set when some column was kept compressed.
+    struct InMemoryCompressionStats
+    {
+        std::atomic<size_t> source_bytes = 0;
+        std::atomic<size_t> stored_bytes = 0;
+    };
+
+    /// The average size of the data of a stored right-side row, as it is after decompression.
+    size_t getAvgJoinedBytesPerRow() const;
+
+    /// Returns a decompressed view of the given stored (compressed) `StoredBlock`. Every call
+    /// decompresses anew: keeping decompressed data resident would defeat the purpose of
+    /// `enable_join_in_memory_compression` (saving memory), so there is deliberately no cross-batch
+    /// cache. The caller (`DecompressResolver`) deduplicates within one output batch, holds the
+    /// result only while that batch is materialized, and releases it early when the working set
+    /// grows past its budget. Must only be called when `haveCompressed()` is true.
+    static DecompressedColumnsPtr getDecompressedColumns(const StoredBlock * compressed);
 
     void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
 
@@ -791,6 +872,17 @@ private:
 
     std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
+    /// True when some stored right-side columns are kept in compressed form
+    /// (by `enable_join_in_memory_compression`); see `haveCompressed`. Set by any build stream.
+    std::atomic<bool> have_compressed = false;
+    InMemoryCompressionStats in_memory_compression_stats;
+
+    /// The stored size of the whole join after which `enable_join_in_memory_compression` starts compressing
+    /// the stored blocks. Unset when the setting is off.
+    std::optional<size_t> in_memory_compression_min_bytes;
+    /// Whether the stored blocks are compressed. The CAS decides once for the whole join; each build stream then
+    /// compresses its own list (see `BuildStreamData::compression_done`) and the blocks it adds later.
+    std::atomic<bool> compress_stored_blocks = false;
 
     std::vector<Sizes> key_sizes;
 
@@ -930,5 +1022,81 @@ private:
     bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
+
+    /// Replaces every stored column of a build stream with a compacted copy: compressed (when `compress`
+    /// and worthwhile) or shrunk to fit.
+    void compactBuildStreamBlocks(BuildStreamData & build_stream, bool compress);
+    /// Compresses the blocks of a build stream stored so far and makes the blocks it adds later compressed
+    /// on insertion.
+    void compressBuildStreamBlocks(BuildStreamData & build_stream);
+};
+
+/// Translates a stored (possibly compressed) `StoredBlock` pointer to one that can be read directly.
+/// When the join compressed its right-side blocks, a block is decompressed on first use (at most once
+/// per distinct block since the last `release`) and kept alive in `held` until the caller has copied
+/// the values it needs out of it. To keep the probe-side working set bounded when one output batch
+/// references many distinct stored blocks (e.g. a build side made of many tiny blocks, where a batch
+/// could otherwise pin one decompressed block per matched row), the callers check `needReleaseBefore`
+/// as they consume resolved blocks and call `release` to drop the ones already copied from; a block
+/// referenced again later is decompressed anew, trading repeated decompression for a bounded working
+/// set. When compression is off, it is a transparent pass-through with no overhead.
+struct DecompressResolver
+{
+    /// Upper bound on the decompressed data held at once (plus at most one block, since the bound is
+    /// only enforced before decompressing the next one). Large enough that ordinary stored blocks
+    /// (a few MiB each) never trigger early releases, small enough that a compressed multi-GiB build
+    /// side cannot reappear uncompressed during the probe.
+    static constexpr size_t held_bytes_budget = 64 * 1024 * 1024;
+
+    const bool active;
+    std::vector<DecompressedColumnsPtr> held;
+    std::unordered_map<const StoredBlock *, const StoredBlock *> resolved;
+    size_t held_bytes = 0;
+
+    /// Blocks dropped by a budget-forced `release` since the last batch boundary (a batch-boundary
+    /// release clears it: everything is copied out there, so a later reference is a legitimate new
+    /// batch, not thrash). Decompressing one of these again means the consumer copies in an order
+    /// that alternates between blocks that do not fit the budget together (e.g. a build side of a
+    /// few blocks larger than the budget each, probed in row order by keys that jump between them):
+    /// enforcing the budget would then release and re-decompress tens of megabytes on every block
+    /// switch, degrading the probe to O(rows * block size) - observed as a stress-test "hung" query.
+    /// The bulk lazy output paths avoid this by grouping their copies by stored block, but the
+    /// row-at-a-time paths (`joinGet`, the non-lazy output, the byte-accounted limit/offset path)
+    /// copy in row order, so when thrash is detected the budget stops being enforced for the rest
+    /// of this batch: memory is then bounded by the distinct blocks the batch references instead of
+    /// the time being unbounded.
+    std::unordered_set<const StoredBlock *> released_over_budget;
+    bool budget_disabled = false;
+
+    explicit DecompressResolver(const HashJoin & join) : active(join.haveCompressed()) { }
+
+    /// Called for every copied row, so the pass-through check is forced inline: the hot probe loops
+    /// (e.g. `buildAdditionalFilter`) must not pay for a function call when compression is off.
+    ALWAYS_INLINE const StoredBlock * operator()(const StoredBlock * block)
+    {
+        if (!active || block == nullptr)
+            return block;
+        return resolveCompressed(block);
+    }
+
+    /// True when resolving `block` would decompress a new block while the working set is already over
+    /// budget: the caller must flush what it copied so far and `release(true)` before resolving it.
+    /// Checked at that moment - not after every consumed row - so that a working set which is over
+    /// budget but still referenced (e.g. a single stored block larger than the whole budget) is kept
+    /// rather than re-decompressed for every row.
+    bool needReleaseBefore(const StoredBlock * block) const
+    {
+        return active && !budget_disabled && block != nullptr && held_bytes > held_bytes_budget && !resolved.contains(block);
+    }
+
+    /// Drops the decompressed working set (all resolved pointers become dangling). Counts the release
+    /// in a profile event when it was forced by the budget rather than by reaching the end of a batch.
+    /// Callers reacting to `needReleaseBefore` pass `forced_by_budget = true` so re-decompression of a
+    /// dropped block can be told apart from the legitimate once-per-batch decompression.
+    void release(bool forced_by_budget = false);
+
+private:
+    const StoredBlock * resolveCompressed(const StoredBlock * block);
+    void disableBudget();
 };
 }

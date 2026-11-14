@@ -42,7 +42,15 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, JoinBuil
     size_t bytes = join->getTotalByteCount();
 
     if (!limits.softCheck(rows, bytes))
-        return switchJoin(context);
+    {
+        /// Another build stream may still hold blocks stored uncompressed before `enable_join_in_memory_compression`
+        /// decided to compress; count them compressed before deciding to switch.
+        assert_cast<HashJoin *>(join.get())->compressPendingBuildStreams();
+        rows = join->getTotalRowCount();
+        bytes = join->getTotalByteCount();
+        if (!limits.softCheck(rows, bytes))
+            return switchJoin(context);
+    }
 
     return true;
 }
@@ -62,14 +70,19 @@ void JoinSwitcher::onBuildPhaseFinish()
 bool JoinSwitcher::switchJoin(JoinBuildContext context)
 {
     HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
+    auto right_blocks = hash_join->releaseJoinedBlocks(true);
 
     /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
 
+    /// Consume the released blocks one by one: each is decompressed (if the hash join compressed
+    /// its stored data with `enable_join_in_memory_compression`) and freed right after insertion.
     bool success = true;
-    for (const Block & saved_block : right_blocks)
-        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), context);
+    while (success && !right_blocks.empty())
+    {
+        Block saved_block = right_blocks.next();
+        success = join->addBlockToJoin(saved_block, saved_block.rows(), context);
+    }
 
     switched = true;
 

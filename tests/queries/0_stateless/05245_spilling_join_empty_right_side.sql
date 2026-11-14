@@ -14,6 +14,8 @@ SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in
 SET read_in_order_use_virtual_row = 1;
 SET query_plan_join_swap_table = 0;
 SET max_bytes_before_external_join = 1, max_bytes_ratio_before_external_join = 0;
+-- In-memory compression would shrink the compressible right side below the spill thresholds.
+SET enable_join_in_memory_compression = 0;
 
 DROP TABLE IF EXISTS er_events;
 DROP TABLE IF EXISTS er_payloads;

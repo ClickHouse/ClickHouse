@@ -24,6 +24,7 @@ INSERT INTO right_long SELECT number + 7, repeat('z', 30), repeat('w', 30) FROM 
 INSERT INTO right_sparse SELECT number + 7, if(number % 10 = 0, 'abcd', NULL), if(number % 10 = 0, 'efgh', NULL) FROM numbers(10);
 
 SET join_algorithm = 'hash';
+SET enable_join_in_memory_compression = 0; -- it disables the row store
 
 -- Pin planner settings
 SET enable_analyzer = 1;
