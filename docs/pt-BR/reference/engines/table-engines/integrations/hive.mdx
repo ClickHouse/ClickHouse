@@ -21,7 +21,9 @@ O motor Hive permite executar consultas `SELECT` em tabelas Hive no HDFS. Atualm
 
 * Parquet: oferece suporte a todos os tipos de coluna escalares simples; oferece suporte apenas a tipos complexos como `array`
 
-## Criando uma tabela {#creating-a-table}
+<div id="creating-a-table">
+  ## Criando uma tabela
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -49,11 +51,39 @@ A estrutura da tabela pode ser diferente da estrutura da tabela Hive original:
 
 * `table` — nome da tabela remota.
 
-## Exemplo de uso {#usage-example}
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
 
-### Consultar tabela do Hive com formato de entrada ORC {#query-hive-table-with-orc-input-format}
+<div id="how-to-use-local-cache-for-hdfs-filesystem">
+  ### Como usar cache local para o sistema de arquivos HDFS
+</div>
 
-#### Criar tabela no Hive {#create-table-in-hive}
+Recomendamos fortemente que você habilite o cache local para sistemas de arquivos remotos. O benchmark mostra que, com cache, ele é quase 2x mais rápido.
+
+Antes de usar o cache, adicione-o ao `config.xml`
+
+```xml
+<local_cache_for_remote_fs>
+    <enable>true</enable>
+    <root_dir>local_cache</root_dir>
+    <limit_size>559096952</limit_size>
+    <bytes_read_before_flush>1048576</bytes_read_before_flush>
+</local_cache_for_remote_fs>
+```
+
+* enable: O ClickHouse manterá um cache local para o sistema de arquivos remoto (HDFS) após a inicialização se true.
+* root&#95;dir: Obrigatório. O diretório raiz para armazenar os arquivos de cache local do sistema de arquivos remoto.
+* limit&#95;size: Obrigatório. O tamanho máximo (em bytes) dos arquivos de cache local.
+* bytes&#95;read&#95;before&#95;flush: Controla a quantidade de bytes antes do flush para o sistema de arquivos local ao baixar um arquivo do sistema de arquivos remoto. O valor padrão é 1 MB.
+
+<div id="query-hive-table-with-orc-input-format">
+  ### Consultar tabela do Hive com formato de entrada ORC
+</div>
+
+<div id="create-table-in-hive">
+  #### Criar tabela no Hive
+</div>
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
@@ -101,7 +131,9 @@ OK
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-#### Criar tabela no ClickHouse {#create-table-in-clickhouse}
+<div id="create-table-in-clickhouse">
+  #### Criar tabela no ClickHouse
+</div>
 
 Tabela no ClickHouse que recupera dados da tabela do Hive criada acima:
 
@@ -173,9 +205,13 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-### Consultar uma tabela do Hive usando o formato de entrada Parquet {#query-hive-table-with-parquet-input-format}
+<div id="query-hive-table-with-parquet-input-format">
+  ### Consultar uma tabela do Hive usando o formato de entrada Parquet
+</div>
 
-#### Criar tabela no Hive {#create-table-in-hive-1}
+<div id="create-table-in-hive">
+  #### Criar tabela no Hive
+</div>
 
 ```text
 hive >
@@ -224,7 +260,9 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-#### Criar tabela no ClickHouse {#create-table-in-clickhouse-1}
+<div id="create-table-in-clickhouse">
+  #### Criar tabela no ClickHouse
+</div>
 
 Tabela no ClickHouse que recupera dados da tabela do Hive criada acima:
 
@@ -297,9 +335,13 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-### Consultar tabela do Hive usando o formato de entrada Text {#query-hive-table-with-text-input-format}
+<div id="query-hive-table-with-text-input-format">
+  ### Consultar tabela do Hive usando o formato de entrada Text
+</div>
 
-#### Criar tabela no Hive {#create-table-in-hive-2}
+<div id="create-table-in-hive">
+  #### Criar tabela no Hive
+</div>
 
 ```text
 hive >
@@ -347,7 +389,9 @@ OK
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-#### Criar tabela no ClickHouse {#create-table-in-clickhouse-2}
+<div id="create-table-in-clickhouse">
+  #### Criar tabela no ClickHouse
+</div>
 
 Tabela no ClickHouse que recupera dados da tabela do Hive criada acima:
 

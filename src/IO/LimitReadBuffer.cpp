@@ -41,8 +41,7 @@ bool LimitReadBuffer::nextImpl()
         return false;
     }
 
-    setWorkingBuffer(
-        in->buffer().subrange(in->position(), in->position() + std::min(in->available(), getEffectiveBufferSize() - bytes)), 0);
+    BufferBase::set(in->position(), std::min(in->available(), getEffectiveBufferSize() - bytes), 0);
 
     return true;
 }
@@ -56,7 +55,7 @@ LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, Settings settings_)
     chassert(in);
     chassert(settings.read_no_less <= settings.read_no_more);
 
-    setWorkingBuffer(in->buffer().subrange(in->position(), in->position() + std::min(in->available(), getEffectiveBufferSize())), 0);
+    BufferBase::set(in->position(), std::min(in->available(), getEffectiveBufferSize()), 0);
 }
 
 

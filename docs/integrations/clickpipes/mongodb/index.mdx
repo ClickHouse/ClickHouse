@@ -10,8 +10,16 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
+
+<BetaBadge/>
+
+<Info>
+Ingesting data from MongoDB to ClickHouse Cloud via ClickPipes is in public beta.
+</Info>
 
 <Note>
 In the ClickHouse Cloud console and documentation, "table" and "collection" are used interchangeably for MongoDB.
@@ -35,7 +43,7 @@ Once your source MongoDB database is set up, you can continue creating your Clic
 
 ## Create your ClickPipe {#create-your-clickpipe}
 
-Make sure you're logged in to your ClickHouse Cloud account. If you don't have an account yet, you can sign up [here](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb).
+Make sure you're logged in to your ClickHouse Cloud account. If you don't have an account yet, you can sign up [here](https://cloud.clickhouse.com/).
 
 1. In the ClickHouse Cloud console, navigate to your ClickHouse Cloud Service.
 
@@ -97,67 +105,6 @@ You can configure the advanced settings if needed. A brief description of each s
    <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="Select destination database" size="lg" border/>
 
 6. You can select the tables you want to replicate from the source MongoDB database. While selecting the tables, you can also choose to rename the tables in the destination ClickHouse database.
-
-Collections can be replicated in two modes:
-
-- **Default ingestion**: Documents are ingested as-is into ClickHouse as JSON type. In this case, the destination table will have a dedicated column for `id` and another `doc` containing the full document.
-- **Structured ingestion**: Documents are ingested as rows in a table following a common schema for the collection. This schema is inferred from a sample at pipe creation time. This mode is enabled by toggling **Map document to columns** for the collection.
-
-When structured ingestion is enabled, the **Column settings** section lists the fields found in the sample with their inferred ClickHouse types. You can select which fields to replicate as columns with the `_id` document key always included with type `String`.
-
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-structured-ingestion.webp" alt="Structured ingestion settings for a collection" size="md" border/>
-
-The fact that MongoDB collections are polymorphic (i.e., documents within the same collection can have different schema) means that structured ingestion needs to handle outlier records:
-
-- **Missing fields:** All structured columns are ingested as `Nullable`, so if a document is missing a field, the corresponding column will have a `NULL` value.
-- **Extra fields:** Fields that are not part of the inferred schema are stored as JSON in the `_peerdb_malformed_data` column, with one key per field. Each key contains `"unexpected_field": true` and the original value under `value`:
-
-  ```json
-  {
-    "rating": {
-      "unexpected_field": true,
-      "value": 4.5
-    }
-  }
-  ```
-
-  This data can be easily queried and analyzed. For example, to list the unexpected fields found in a table:
-
-  ```sql
-  SELECT DISTINCT arrayJoin(JSONAllPaths(_peerdb_malformed_data)) AS malformed
-  FROM movies
-  WHERE malformed LIKE '%.unexpected_field';
-  ```
-
-  📝 Note: If you don't want extra field values to be present in the `_peerdb_malformed_data` column, you can enable the **Hide unexpected values** option for the collection.
-
-- **Field type mismatch:** Values whose type doesn't match the column type are also stored in the `_peerdb_malformed_data` column, with one key per field. Each key contains `"type_mismatch": true` and the original value under `value`. The corresponding column is set to `NULL`:
-
-  ```json
-  {
-    "year": {
-      "type_mismatch": true,
-      "value": "two thousand nineteen"
-    }
-  }
-  ```
-
-  To read a field whether or not its value matched the expected type, combine the column with its fallback value:
-
-  ```sql
-  SELECT name, coalesce(year, _peerdb_malformed_data.year.value)
-  FROM movies;
-  ```
-
-
-📝 Note: You can regard fields included in `_peerdb_malformed_data` as outliers falling back to JSON column ingestion.
-
-Given that structured ingestion infers the schema ahead of table creation, enabling it allows for custom partition-by expressions and custom sorting keys to be defined based on the structured columns.
-All structured columns are ingested as `Nullable`. Take this into account when writing a partitioning key expression or using them in a sorting key. In these cases, the destination table is created with the `allow_nullable_key` setting.
-
-📝 In both ingestion modes, you can toggle the **Persist deleted documents** option if you want delete events to capture the deleted values at destination ClickHouse. Note that this requires the source collection to have `changeStreamPreAndPostImage` enabled. 
-
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-persist-deleted-documents.webp" alt="Persist deleted documents option" size="lg" border/>
 
 ### Review permissions and start the ClickPipe {#review-permissions-and-start-the-clickpipe}
 

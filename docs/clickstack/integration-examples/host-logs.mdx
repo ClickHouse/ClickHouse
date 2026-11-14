@@ -184,7 +184,7 @@ All configurations:
 - Read syslog files from their standard locations
 - Parse the syslog format to extract structured fields (timestamp, hostname, unit/service, PID, message)
 - Preserve original log timestamps
-- Add `source: host-logs` attribute for filtering in ClickStack UI
+- Add `source: host-logs` attribute for filtering in HyperDX
 - Route logs to the ClickHouse exporter via a dedicated pipeline
 
 <Note>
@@ -234,9 +234,9 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the syslog files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step title="Verifying Logs in ClickStack UI" id="verifying-logs">
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
-Once configured, log into ClickStack UI and verify logs are flowing:
+Once configured, log into HyperDX and verify logs are flowing:
 
 1. Navigate to the search view
 2. Set source to Logs
@@ -330,11 +330,11 @@ docker run --name clickstack-demo \
 
 </Note>
 </Step>
-<Step title="Verify logs in ClickStack UI" id="verify-demo-logs">
+<Step title="Verify logs in HyperDX" id="verify-demo-logs">
 
 Once ClickStack is running:
 
-1. Open [ClickStack UI](http://localhost:8080/) and log in to your account (you may need to create an account first)
+1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
 2. Navigate to the Search view and set the source to `Logs`
 3. Set the time range to **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
 
@@ -344,7 +344,7 @@ Once ClickStack is running:
 <Info>
 **Timezone Display**
 
-ClickStack UI displays timestamps in your browser's local timezone. The demo data spans **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
+HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 </Step>
 </Steps>
@@ -360,7 +360,7 @@ To help you get started monitoring host logs with ClickStack, we provide essenti
 </Step>
 <Step title="Import the pre-built dashboard" id="import-dashboard">
 
-1. Open ClickStack UI and navigate to the Dashboards section
+1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
 <Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
@@ -403,7 +403,7 @@ Check the custom config file is mounted and readable:
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### No logs appearing in ClickStack UI {#no-logs}
+### No logs appearing in HyperDX {#no-logs}
 
 **Verify syslog files exist and are being written:**
 ```bash

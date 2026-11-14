@@ -8,7 +8,6 @@
 
 namespace DB
 {
-class ASTUserNameWithHost;
 class ASTUserNamesWithHost;
 class ASTRolesOrUsersSet;
 class ASTDatabaseOrNone;
@@ -53,7 +52,7 @@ public:
     bool replace_authentication_methods = false;
 
     boost::intrusive_ptr<ASTUserNamesWithHost> names;
-    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
+    std::optional<String> new_name;
     String storage_name;
 
     std::vector<boost::intrusive_ptr<ASTAuthenticationData>> authentication_methods;

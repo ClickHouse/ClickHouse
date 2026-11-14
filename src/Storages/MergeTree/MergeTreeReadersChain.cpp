@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
@@ -14,24 +13,12 @@
 #include <algorithm>
 #include <unordered_set>
 
-namespace ProfileEvents
-{
-    extern const Event GranulesReadByPrewhereReaders;
-    extern const Event GranulesSkippedByPrewhereReaders;
-}
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-LoggerPtr getMergeTreeReadersChainLogger()
-{
-    static LoggerPtr log = getLogger("MergeTreeReadersChain");
-    return log;
 }
 
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
@@ -43,39 +30,6 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
     , is_initialized(true)
 {
-    for (const auto & range_reader : range_readers)
-    {
-        if (!range_reader.getReader()->producesFilterOnly())
-            columns_cache_readers.push_back(range_reader.getReader());
-    }
-    previous_steps_columns.resize(range_readers.size());
-    for (size_t i = 1; i < range_readers.size(); ++i)
-        for (const auto & column : range_readers[i - 1].getSampleBlock())
-            previous_steps_columns[i].insert(column.name);
-
-    for (size_t i = range_readers.size(); i > 1; --i)
-    {
-        if (range_readers[i - 1].getReader()->mayEvaluateMissingDefaults())
-        {
-            last_reader_evaluating_defaults = i - 1;
-            break;
-        }
-    }
-
-    /// The PREWHERE granule ProfileEvents are only meaningful when the chain evaluates the query's PREWHERE
-    /// predicate. A `Filter` step may instead be a row-level-security filter, a lightweight-delete mask, or
-    /// an on-fly mutation filter, none of which is PREWHERE; `is_query_prewhere` marks the real one. A chain
-    /// without such a step (e.g. a query with no PREWHERE, only an on-fly DELETE) counts nothing.
-    for (size_t i = 0; i < range_readers.size(); ++i)
-    {
-        const auto * step = range_readers[i].getPrewhereInfo();
-        if (step && step->type == PrewhereExprStep::Filter && step->is_query_prewhere)
-        {
-            prewhere_granule_stats_enabled = true;
-            first_query_prewhere_reader_index = i;
-            break;
-        }
-    }
 }
 
 size_t MergeTreeReadersChain::numReadRowsInCurrentGranule() const
@@ -330,8 +284,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
-    size_t max_block_size_rows)
+    const DataflowCacheUpdateCallback & dataflow_cache_update_cb)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -343,15 +296,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     auto & first_reader = range_readers.front();
 
-    size_t num_attributed_readers = 0;
-    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
-        for (size_t i = 0; i < range_readers.size(); ++i)
-            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
-                num_attributed_readers = i + 1;
-
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
+        read_result = first_reader.startReadingChain(max_rows, ranges);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
@@ -374,25 +321,14 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
-        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
+        executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
-        executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1, last_reader_evaluating_defaults > 0);
+        executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
-
-        if (num_attributed_readers != 0)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
-
-    /// Survivors per granule at the first query-PREWHERE reader's input, captured only when an earlier reader
-    /// (on-fly mutation, row-level policy) filtered rows before PREWHERE. When PREWHERE is the first reader it
-    /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
-    std::optional<std::vector<size_t>> rows_entering_prewhere;
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
-        if (prewhere_granule_stats_enabled && i == first_query_prewhere_reader_index)
-            rows_entering_prewhere = read_result.survivingRowsPerGranule();
-
         const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
@@ -424,77 +360,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                     should_continue_sampling);
             }
 
-            executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, previous_steps_columns[i], num_read_rows);
+            executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
         }
 
-        executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
-
-        if (i < num_attributed_readers)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
+        executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size());
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
-
-    /// Account the granules this block read and dropped by PREWHERE. `survivingRowsPerGranule` holds the
-    /// final survivor count of each granule, and `entering` the rows that reached PREWHERE (survivors at its
-    /// input, or the raw rows read when PREWHERE is the first reader). A granule is read by PREWHERE only when
-    /// `entering > 0`, so marks pruned before PREWHERE and granules emptied by an earlier mutation/row-policy
-    /// filter are excluded. Feed them in mark order; a granule split across blocks is reassembled by
-    /// `feedPrewhereGranuleMark`.
-    if (prewhere_granule_stats_enabled)
-    {
-        const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
-        const auto surviving_rows_per_granule = read_result.survivingRowsPerGranule();
-        read_result.forEachGranuleMark(entering, surviving_rows_per_granule, [this](size_t mark, size_t surviving_rows)
-        {
-            feedPrewhereGranuleMark(mark, surviving_rows > 0);
-        });
-
-        /// Finalize the pending granule once the first reader's cursor has advanced past its mark, which
-        /// proves it was read in full. Comparing the mark (not `numReadRowsInCurrentGranule() == 0`) is needed
-        /// because the cursor may stop partway through a *later* granule that an earlier filter emptied, so it
-        /// was not fed here; the pending, earlier granule is still complete. It stays pending only while the
-        /// cursor is still inside it: a genuine split across blocks, or a granule cut short by early
-        /// termination. This also finalizes it on early termination (LIMIT), which the task-end path would miss.
-        if (prewhere_pending_mark && range_readers.front().currentMark() > *prewhere_pending_mark)
-            finalizeCompletedPrewhereGranule();
-    }
-
     return read_result;
-}
-
-void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool survived)
-{
-    /// Marks arrive in non-decreasing order across the whole part read. The only repeat is the trailing
-    /// granule of one block continuing as the leading granule of the next, so an equal mark means the same
-    /// granule split across blocks: combine the survivor flags instead of counting it twice.
-    if (prewhere_pending_mark && *prewhere_pending_mark == mark)
-    {
-        prewhere_pending_mark_survived |= survived;
-        return;
-    }
-
-    /// A higher mark means the pending granule was read in full.
-    if (prewhere_pending_mark)
-        finalizeCompletedPrewhereGranule();
-
-    prewhere_pending_mark = mark;
-    prewhere_pending_mark_survived = survived;
-
-    /// Count the granule as read as soon as PREWHERE touches it, so an early-terminating query still
-    /// reports the granules it read; whether it is also dropped is decided once the granule is complete.
-    ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
-}
-
-void MergeTreeReadersChain::finalizeCompletedPrewhereGranule()
-{
-    /// The pending granule has been read in full. If no row survived, PREWHERE dropped it entirely.
-    if (!prewhere_pending_mark_survived)
-        ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders);
-
-    prewhere_pending_mark.reset();
-    prewhere_pending_mark_survived = false;
 }
 
 void MergeTreeReadersChain::executeActionsBeforePrewhere(
@@ -502,7 +376,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     Columns & read_columns,
     MergeTreeRangeReader & range_reader,
     const Block & previous_header,
-    const NameSet & previous_step_columns,
     size_t num_read_rows) const
 {
     auto * merge_tree_reader = range_reader.getReader();
@@ -515,6 +388,9 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// fillMissingColumns() fixes this.
     /// Names of columns produced by earlier chain steps (advertised in `previous_header`), so a
     /// subcolumn whose parent is among them is deferred to evaluateMissingDefaults, not default-filled.
+    NameSet previous_step_columns;
+    for (const auto & col : previous_header)
+        previous_step_columns.insert(col.name);
     bool should_evaluate_missing_defaults = false;
     merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
 
@@ -645,8 +521,6 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     const Block & previous_header,
     Columns & columns) const
 {
-    chassert(range_reader.getReader()->mayEvaluateMissingDefaults());
-
     Block additional_columns;
     if (!previous_header.empty())
         additional_columns = previous_header.cloneWithColumns(result.columns);
@@ -658,10 +532,9 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
 }
 
-void MergeTreeReadersChain::executePrewhereActions(
-    MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader, bool keep_additional_columns)
+void MergeTreeReadersChain::executePrewhereActions(MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader)
 {
-    reader.executePrewhereActionsAndFilterColumns(result, previous_header, keep_additional_columns);
+    reader.executePrewhereActionsAndFilterColumns(result, previous_header, is_last_reader);
     result.checkInternalConsistency();
 
     if (!result.can_return_prewhere_column_without_filtering && is_last_reader)
@@ -841,9 +714,6 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
 ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & header, const Columns & columns) const
 {
     ColumnsForPatches res;
-    if (patch_readers.empty())
-        return res;
-
     auto block = header.cloneWithColumns(columns);
     using enum ColumnForPatch::Order;
 

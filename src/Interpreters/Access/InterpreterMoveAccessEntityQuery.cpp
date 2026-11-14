@@ -23,11 +23,10 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
-    /// Must be done before replication: a DDL worker resolves a bare table name in its own current database.
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
-
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
+
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)

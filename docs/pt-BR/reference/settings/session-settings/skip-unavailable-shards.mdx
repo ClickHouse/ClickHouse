@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## skip_unavailable_shards {#skip_unavailable_shards}
+<div id="skip_unavailable_shards">
+  ## skip_unavailable_shards
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,13 +27,15 @@ Valores possíveis:
 
 * 1 — ignorar ativado.
 
-  Se um shard estiver indisponível, o ClickHouse retorna um resultado com base em dados parciais e não relata problemas de disponibilidade do nó. Em uma leitura, se *todos* os shards forem ignorados antes que qualquer dado seja retornado, não haverá dados parciais a retornar; por isso, a consulta lança `ALL_CONNECTION_TRIES_FAILED` em vez de retornar um resultado vazio. Essa verificação se aplica apenas a leituras; o `INSERT` tem seu próprio tratamento para quando o cluster de destino está totalmente indisponível.
+  Se um shard estiver indisponível, o ClickHouse retorna um resultado com base em dados parciais e não relata problemas de disponibilidade do nó.
 
 * 0 — ignorar desativado.
 
   Se um shard estiver indisponível, o ClickHouse lança uma exceção.
 
-## skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
+<div id="skip_unavailable_shards_mode">
+  ## skip_unavailable_shards_mode
+</div>
 
 <SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
 

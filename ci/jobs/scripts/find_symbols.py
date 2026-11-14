@@ -116,9 +116,7 @@ class DiffToSymbols:
         print(f"[find_symbols] DWARF query: {n_lines} changed lines, binary={self.clickhouse_path}")
         t0 = time.monotonic()
         proc = subprocess.run(
-            # --tmp: a pure query tool must not share (and lock) the default designated
-            # data directory in the home directory.
-            [self.clickhouse_path, "local", "--tmp", "--query", query],
+            [self.clickhouse_path, "local", "--query", query],
             input=csv_payload,
             text=True,
             capture_output=True,

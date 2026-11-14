@@ -9,6 +9,8 @@
 -- `LEFT JOIN` returned default (empty) values instead of the real ones,
 -- and could also scramble other columns (e.g. `id` was returned as `0`).
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS tbl;
 DROP TABLE IF EXISTS distributed_table;
 DROP TABLE IF EXISTS mergetable_dist;

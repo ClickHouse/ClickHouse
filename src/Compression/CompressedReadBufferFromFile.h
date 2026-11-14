@@ -18,7 +18,7 @@ class CompressedReadBufferFromFile final : public CompressedReadBufferBase, publ
 {
 private:
       /** At any time, one of two things is true:
-      * a) size_compressed = 0 and working_buffer is empty
+      * a) size_compressed = 0
       * b)
       *  - `working_buffer` contains the entire block.
       *  - `file_in` points to the end of this block.
@@ -67,8 +67,6 @@ public:
     void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
 
     void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
-
-    void setRequestMap(ByteRangeSet ranges) override { file_in.setRequestMap(std::move(ranges)); }
 };
 
 }

@@ -9,7 +9,9 @@ keywords: ['clickpipes', 'terraform', 'infraestrutura como código', 'iac', 'pro
 
 Todos os tipos de ClickPipe podem ser criados e gerenciados com o recurso `clickhouse_clickpipe` no [provedor Terraform do ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe). Esta página apresenta a configuração do provedor e exemplos de configuração para cada tipo de ClickPipe compatível.
 
-## Configuração do provedor {#provider-setup}
+<div id="provider-setup">
+  ## Configuração do provedor
+</div>
 
 <Note>
   O suporte ao ClickPipes está em disponibilidade geral a partir da versão **v3.14.0** do provedor.
@@ -39,7 +41,9 @@ provider "clickhouse" {
 
 Consulte [Gerenciando chaves de API](/pt-BR/products/cloud/features/admin-features/api/openapi) para ver instruções sobre como criar uma chave de API para usar com o provedor.
 
-## Visão geral do recurso {#resource-overview}
+<div id="resource-overview">
+  ## Visão geral do recurso
+</div>
 
 O recurso `clickhouse_clickpipe` tem os seguintes argumentos de nível superior:
 
@@ -56,11 +60,9 @@ O recurso `clickhouse_clickpipe` tem os seguintes argumentos de nível superior:
 
 Os atributos `id` e `state` são somente leitura e são preenchidos pelo ClickHouse Cloud após a criação.
 
-## Workload Identity do GCP (Beta) {#gcp-workload-identity}
-
-Siga o [guia de Workload Identity do GCP](/pt-BR/integrations/clickpipes/security/gcp-workload-identity#terraform) para obter a service account gerenciada pelo ClickPipes e conceder a ela acesso à sua fonte de dados antes de usar os exemplos de Workload Identity abaixo.
-
-## Destino {#destination}
+<div id="destination">
+  ## Destino
+</div>
 
 O bloco `destination` é comum a todos os tipos de origem:
 
@@ -92,11 +94,15 @@ destination {
 
 Para fontes CDC (Postgres, MySQL, MongoDB, BigQuery), as tabelas de destino são criadas automaticamente com base no schema de origem — normalmente, só `database` é necessário.
 
-## Exemplos por tipo de ClickPipe {#examples}
+<div id="examples">
+  ## Exemplos por tipo de ClickPipe
+</div>
 
-### Kafka {#kafka}
+<div id="kafka">
+  ### Kafka
+</div>
 
-Valores aceitos para `type`: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream` e `gcmk` (em prévia privada).
+Valores aceitos para `type`: `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_clickpipe" {
@@ -157,59 +163,9 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
 }
 ```
 
-#### Google Managed Kafka com Workload Identity do GCP {#gcmk-workload-identity}
-
-Conceda à service account do ClickPipes a função `roles/managedkafka.client` antes de criar o ClickPipe. O Google Managed Kafka exige TLS. As ACLs do Kafka devem conceder à service account (`User:<service-account-email>`) acesso `READ` e `DESCRIBE` aos tópicos e grupos de consumidores selecionados.
-
-```hcl
-resource "google_project_iam_member" "gcmk_client" {
-  project = var.gcp_project_id
-  role    = "roles/managedkafka.client"
-  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
-}
-
-resource "clickhouse_clickpipe" "gcmk_clickpipe" {
-  name       = "My Google Managed Kafka ClickPipe"
-  service_id = var.service_id
-
-  source = {
-    kafka = {
-      type           = "gcmk"
-      format         = "JSONEachRow"
-      brokers        = "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092"
-      topics         = "events"
-      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-    }
-  }
-
-  destination = {
-    table         = "events"
-    managed_table = true
-    table_definition = {
-      engine = {
-        type = "MergeTree"
-      }
-    }
-    columns = [
-      {
-        name = "id"
-        type = "String"
-      }
-    ]
-  }
-
-  field_mappings = [
-    {
-      source_field      = "id"
-      destination_field = "id"
-    }
-  ]
-
-  depends_on = [google_project_iam_member.gcmk_client]
-}
-```
-
-#### Kafka com schema registry {#kafka-schema-registry}
+<div id="kafka-schema-registry">
+  #### Kafka com schema registry
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
@@ -263,7 +219,9 @@ resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
 }
 ```
 
-### Amazon Kinesis {#kinesis}
+<div id="kinesis">
+  ### Amazon Kinesis
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "kinesis_clickpipe" {
@@ -272,17 +230,11 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "AvroConfluent"
+      format         = "JSONEachRow"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
-
-      schema_registry {
-        type               = "glue"
-        glue_region        = "us-east-1"
-        glue_registry_name = "my-registry"
-      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -314,50 +266,9 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 }
 ```
 
-#### Kinesis com um schema Protobuf enviado {#kinesis-protobuf-schema}
-
-Defina `format` como `Protobuf` e use `protobuf_schema` para fornecer um arquivo `.proto` codificado em Base64 ou um `FileDescriptorSet` serializado. Não configure `schema_registry` ao enviar um schema.
-
-```hcl
-resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
-  name       = "My Kinesis Protobuf ClickPipe"
-  service_id = var.service_id
-
-  source {
-    kinesis {
-      format          = "Protobuf"
-      stream_name     = "my-stream"
-      region          = "us-east-1"
-      iterator_type   = "TRIM_HORIZON"
-      authentication  = "IAM_USER"
-      protobuf_schema = filebase64("${path.module}/event.proto")
-
-      access_key {
-        access_key_id = var.aws_access_key_id
-        secret_key    = var.aws_secret_key
-      }
-    }
-  }
-
-  destination {
-    table         = "my_table"
-    managed_table = true
-
-    table_definition {
-      engine {
-        type = "MergeTree"
-      }
-    }
-
-    columns {
-      name = "id"
-      type = "UInt64"
-    }
-  }
-}
-```
-
-#### Kinesis com IAM role {#kinesis-iam-role}
+<div id="kinesis-iam-role">
+  #### Kinesis com IAM role
+</div>
 
 A autenticação com IAM role exige um serviço ClickHouse em execução na AWS.
 
@@ -400,7 +311,9 @@ resource "clickhouse_clickpipe" "kinesis_iam_role_clickpipe" {
 }
 ```
 
-### Amazon S3 {#s3}
+<div id="s3">
+  ### Amazon S3
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "s3_clickpipe" {
@@ -444,7 +357,9 @@ resource "clickhouse_clickpipe" "s3_clickpipe" {
 }
 ```
 
-#### Ingestão contínua do S3 com SQS {#s3-continuous}
+<div id="s3-continuous">
+  #### Ingestão contínua do S3 com SQS
+</div>
 
 Para fazer a ingestão contínua usando uma fila SQS (modo não ordenado), consulte [Configuração do modo não ordenado](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) para obter instruções de configuração.
 
@@ -492,7 +407,9 @@ resource "clickhouse_clickpipe" "s3_continuous_clickpipe" {
 }
 ```
 
-### Google Cloud Storage {#gcs}
+<div id="gcs">
+  ### Google Cloud Storage
+</div>
 
 `service_account_key` deve ser o conteúdo codificado em base64 de um arquivo JSON de chave de conta de serviço do GCP.
 
@@ -534,76 +451,9 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
-#### GCS com Workload Identity do GCP {#gcs-workload-identity}
-
-Depois de conceder à service account do ClickPipes as [permissões do GCS necessárias](/pt-BR/integrations/clickpipes/object-storage/gcs/overview#permissions), substitua o bloco `source` acima por:
-
-```hcl
-source = {
-  object_storage = {
-    type           = "gcs"
-    url            = "gs://my-bucket/data/*.json"
-    format         = "JSONEachRow"
-    authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-  }
-}
-```
-
-Para ingestão no modo unordered, defina também `is_continuous = true` e use um `queue_url` totalmente qualificado no formato `projects/<project-id>/subscriptions/<subscription-id>`.
-
-### Google Cloud Pub/Sub {#pubsub}
-
-O exemplo a seguir usa Workload Identity. Antes de criar o ClickPipe, conceda à service account do ClickPipes as [permissões necessárias do Pub/Sub](/pt-BR/integrations/clickpipes/pubsub/auth#required-permissions).
-
-```hcl
-resource "google_project_iam_member" "pubsub_access" {
-  project = var.gcp_project_id
-  role    = "roles/pubsub.editor"
-  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
-}
-
-resource "clickhouse_clickpipe" "pubsub_clickpipe" {
-  name       = "My Pub/Sub ClickPipe"
-  service_id = var.service_id
-
-  source = {
-    pubsub = {
-      format         = "JSONEachRow"
-      project_id     = var.gcp_project_id
-      topic          = "events"
-      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-      seek_type      = "latest"
-    }
-  }
-
-  destination = {
-    table         = "events"
-    managed_table = true
-    table_definition = {
-      engine = {
-        type = "MergeTree"
-      }
-    }
-    columns = [
-      {
-        name = "id"
-        type = "String"
-      }
-    ]
-  }
-
-  field_mappings = [
-    {
-      source_field      = "id"
-      destination_field = "id"
-    }
-  ]
-
-  depends_on = [google_project_iam_member.pubsub_access]
-}
-```
-
-### Armazenamento de Blobs do Azure {#abs}
+<div id="abs">
+  ### Armazenamento de Blobs do Azure
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "abs_clickpipe" {
@@ -644,7 +494,9 @@ resource "clickhouse_clickpipe" "abs_clickpipe" {
 }
 ```
 
-### Postgres CDC {#postgres}
+<div id="postgres">
+  ### Postgres CDC
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
@@ -700,7 +552,9 @@ resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
 }
 ```
 
-#### Postgres com IAM role {#postgres-iam-role}
+<div id="postgres-iam-role">
+  #### Postgres com IAM role
+</div>
 
 A autenticação com IAM role exige um serviço ClickHouse em execução na AWS.
 
@@ -740,7 +594,9 @@ resource "clickhouse_clickpipe" "postgres_iam_role_clickpipe" {
 }
 ```
 
-### MySQL CDC {#mysql}
+<div id="mysql">
+  ### MySQL CDC
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
@@ -796,7 +652,9 @@ resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
 }
 ```
 
-### CDC do MongoDB {#mongodb}
+<div id="mongodb">
+  ### CDC do MongoDB
+</div>
 
 ```hcl
 resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
@@ -844,7 +702,9 @@ resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
 }
 ```
 
-### BigQuery {#bigquery}
+<div id="bigquery">
+  ### BigQuery
+</div>
 
 `service_account_file` deve ser o conteúdo codificado em base64 do arquivo de chave JSON de uma conta de serviço do GCP.
 
@@ -895,31 +755,9 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 }
 ```
 
-#### BigQuery com Workload Identity do GCP {#bigquery-workload-identity}
-
-Depois de conceder à service account do ClickPipes as [permissões necessárias do BigQuery e do GCS](/pt-BR/integrations/clickpipes/bigquery/overview#permissions), substitua o bloco `source` acima por:
-
-```hcl
-source = {
-  bigquery = {
-    authentication        = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
-    project_id            = var.gcp_project_id
-    snapshot_staging_path = "gs://my-staging-bucket/staging/"
-
-    settings = {
-      replication_mode = "snapshot"
-    }
-
-    table_mappings = [{
-      source_dataset_name = "my_dataset"
-      source_table        = "my_table"
-      target_table        = "my_bigquery_table"
-    }]
-  }
-}
-```
-
-## Escalonamento {#scaling}
+<div id="scaling">
+  ## Escalonamento
+</div>
 
 Todos os tipos de ClickPipe oferecem suporte ao bloco `scaling` para configurar o número de réplicas e a alocação de recursos:
 
@@ -931,7 +769,9 @@ scaling {
 }
 ```
 
-## Importando ClickPipes existentes {#import}
+<div id="import">
+  ## Importando ClickPipes existentes
+</div>
 
 ClickPipes existentes podem ser importados para o estado do Terraform usando o ID do serviço e o ID do ClickPipe:
 

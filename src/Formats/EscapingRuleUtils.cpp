@@ -1,4 +1,3 @@
-#include <span>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -13,8 +12,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
-
-#include <type_traits>
 
 
 namespace DB
@@ -67,15 +64,9 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
-/// `NullOutput` discards everything and holds no state, so one shared instance is enough and is safe
-/// to share. A local one escapes into the readers, which puts a `-fstack-protector-strong` canary on
-/// this per-field function.
-static_assert(std::is_empty_v<NullOutput>);
-static NullOutput shared_null_output;
-
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
-    NullOutput & out = shared_null_output;
+    NullOutput out;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
     switch (escaping_rule)
@@ -403,9 +394,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);
 
-            /// A leading zero carries information in these formats (zip codes, phone numbers), so a field
-            /// that starts with one and infers an integer stays a `String`. `allow_number_leading_zeros`
-            /// (hive) opts out.
+            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
+            /// ReadHelpers.h) reads the leading '0' as the whole value.
+            /// allow_number_leading_zeros (hive partitioning) opts out.
             if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
                 && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
@@ -420,7 +411,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
     }
 }
 
-DataTypes tryInferDataTypesByEscapingRule(std::span<const String> fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+DataTypes tryInferDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
 {
     DataTypes data_types;
     data_types.reserve(fields.size());

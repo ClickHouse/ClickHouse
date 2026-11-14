@@ -14,7 +14,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## merge_selector_algorithm {#merge_selector_algorithm}
+<div id="merge_selector_algorithm">
+  ## merge_selector_algorithm
+</div>
 
 <ExperimentalBadge />
 
@@ -22,7 +24,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الخوارزمية المستخدمة لاختيار الأجزاء لإسناد عمليات الدمج
 
-## merge_selector_base {#merge_selector_base}
+<div id="merge_selector_base">
+  ## merge_selector_base
+</div>
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
@@ -30,14 +34,18 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 المُخصَّصة (إعداد مخصّص لمستوى الخبراء، لا تغيّره إذا لم تكن تفهم
 ما الذي يفعله). يعمل مع محددات الدمج Simple وStochasticSimple
 
-## merge_selector_blurry_base_scale_factor {#merge_selector_blurry_base_scale_factor}
+<div id="merge_selector_blurry_base_scale_factor">
+  ## merge_selector_blurry_base_scale_factor
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 يتحكم في توقيت بدء عمل هذه الآلية بالنسبة إلى عدد الأجزاء في
 التقسيم. وكلما زادت قيمة المعامل، تأخرت الاستجابة أكثر.
 
-## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once {#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once}
+<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
+  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -47,7 +55,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 وبذلك سيزداد عدد عمليات الدمج المتزامنة، مما قد يساعد في معالجة أخطاء TOO&#95;MANY&#95;PARTS،
 ولكن في الوقت نفسه سيؤدي ذلك إلى زيادة تضخيم الكتابة.
 
-## merge_selector_enable_heuristic_to_remove_small_parts_at_right {#merge_selector_enable_heuristic_to_remove_small_parts_at_right}
+<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
+  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,7 +65,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 الجانب الأيمن من النطاق إذا كان حجمها أقل من النسبة المحددة (0.01) من sum&#95;size.
 ينطبق ذلك على محددَي الدمج Simple وStochasticSimple
 
-## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent {#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent}
+<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
+  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
+</div>
 
 <ExperimentalBadge />
 
@@ -65,68 +77,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يتحكم في قيمة الأس المستخدمة في الصيغ التي تُنشئ منحنى الخفض. ويؤدي تقليل قيمة الأس إلى تقليل اتساع عمليات الدمج، مما يزيد من تضخيم الكتابة. والعكس صحيح.
 
-## merge_selector_min_age_to_disable_right_tail_heuristic {#merge_selector_min_age_to_disable_right_tail_heuristic}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
-
-إذا كانت القيمة أكبر من الصفر وكان الإعداد `merge_selector_enable_heuristic_to_remove_small_parts_at_right` مفعّلًا،
-فإنها تعطّل تلك الآلية الاستدلالية في النطاقات التي لا يقل فيها عمر كل جزء بيانات عن هذا العدد من الثواني. القيمة `0` تعطّل هذا الفحص.
-يعمل هذا الإعداد مع محدِّدَي الدمج Simple وStochasticSimple.
-
-## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
-
-<SettingsInfoBlock type="UInt64" default_value="600" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "الحد الأقصى للعمر في قيد دمج أجزاء البيانات الصغيرة"}]}]} />
-
-الحد الأقصى للعمر بالثواني في قيد أجزاء البيانات الصغيرة: بمجرد أن يتجاوز عمر أي جزء بيانات في النطاق
-هذا الحد، يُرفع القيد الذي يفرضه `merge_selector_small_parts_min_count`،
-مما يتيح دمج أجزاء البيانات الصغيرة المتقادمة المتراكمة حتى لو كان النطاق أقصر من
-`merge_selector_small_parts_min_count`. يعمل هذا الإعداد مع مُحدِّدَي الدمج Simple وStochasticSimple،
-ويقتصر على اختيار الأجزاء للدمج في الخلفية، إذ يتجاهل الاختيار الصارم (`OPTIMIZE` بدون `FINAL`)
-إعدادات `small_parts_*`.
-
-## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "الحد الأدنى لعدد أجزاء البيانات اللازم للسماح بدمج أجزاء البيانات الصغيرة الحديثة (0 = معطّل)"}]}]} />
-
-عندما تكون جميع أجزاء البيانات ضمن نطاق الدمج صغيرة (أقل من `merge_selector_small_parts_threshold`)
-وحديثة (أقل من `merge_selector_small_parts_max_age`)، يُشترط ألا يقل عدد أجزاء البيانات عن هذه القيمة
-للسماح بالدمج. يحدّ ذلك من عدد عمليات الدمج عند إدراج أجزاء بيانات صغيرة بوتيرة سريعة.
-القيمة 0 تعني أن الإعداد معطّل. يعمل مع مُحدِّدات الدمج Simple وStochasticSimple.
-
-ينطبق هذا الشرط على اختيار الأجزاء للدمج في الخلفية فقط. أما الاختيار الصارم - أي `OPTIMIZE`
-بدون `FINAL` - فهو طلب صريح من المستخدم لا يراعي حداثة أجزاء البيانات، ولذا يتجاهل هذا
-الإعداد ويدمج أجزاء البيانات الصغيرة الحديثة بغض النظر عن عددها.
-
-لا يأخذ المحدِّد في الحسبان أبدًا المرشّحين للدمج الذين يتجاوز عرضهم `max_parts_to_merge_at_once`، ولا
-المرشّحين الذين يمتدون إلى أبعد من `merge_selector_window_size` من أجزاء البيانات، لذا فإن ضبط
-أيٍّ منهما على قيمة أقل من هذا الحد الأدنى يُعدّ تهيئة متناقضة: إذ لن تُدمج أجزاء البيانات الصغيرة الحديثة حينئذٍ
-إلا بعد انقضاء `merge_selector_small_parts_max_age` (أو قبل ذلك، بمجرد تطبيق الدمج القسري وفقًا لـ
-`min_age_to_force_merge_seconds` أو `min_partition_age_to_force_merge_seconds`). احرص على إبقاء كليهما
-مساويًا لهذا الحد الأدنى أو أعلى منه.
-(إذا خفّضت آلية الامتلاء الاستدلالية المدمجة الحدَّ الأعلى الفعلي مؤقتًا إلى ما دون هذا الحد الأدنى،
-فسيظل المحدِّد يأخذ في الحسبان أول مرشّح بهذا العرض تكون جميع أجزائه صغيرة وحديثة. أما المرشّحون المتقادمون أو
-الكبار، والمرشّحون المؤهلون أصلًا للدمج القسري وفقًا لـ
-`min_age_to_force_merge_seconds` أو `min_partition_age_to_force_merge_seconds`، فيبقى
-الحد الأعلى المخفَّض ساريًا عليهم.)
-
-## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
-
-<SettingsInfoBlock type="UInt64" default_value="10485760" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "عتبة الحجم للآلية الاستدلالية الخاصة بتجميع أجزاء البيانات الصغيرة في دفعات ضمن مُحدِّد الدمج"}]}]} />
-
-عتبة الحجم بالبايتات: يُعدّ نطاق الدمج &quot;مكوّنًا بالكامل من أجزاء بيانات صغيرة&quot; إذا كان حجم كل جزء بيانات فيه
-أقل من هذه القيمة. يُستخدم هذا الإعداد مع `merge_selector_small_parts_min_count`.
-يعمل مع مُحدِّدَي الدمج Simple وStochasticSimple، ويقتصر على اختيار الدمج في الخلفية
-فقط، إذ يتجاهل الاختيار الصارم (`OPTIMIZE` بدون `FINAL`) إعدادات `small_parts_*`.
-
-## merge_selector_window_size {#merge_selector_window_size}
+<div id="merge_selector_window_size">
+  ## merge_selector_window_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

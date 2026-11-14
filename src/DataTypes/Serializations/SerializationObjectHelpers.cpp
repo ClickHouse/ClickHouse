@@ -5,7 +5,6 @@
 #include <Columns/ColumnObject.h>
 #include <Common/SipHash.h>
 #include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
 
 
 namespace DB
@@ -16,91 +15,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::vector<std::pair<std::string_view, ColumnPtr>> flattenSharedDataPathsForBucket(
-    const IColumn & shared_data_column, size_t start, size_t end,
-    const DataTypePtr & dynamic_type, size_t target_bucket, size_t num_buckets)
-{
-    /// First, iterate over shared data and collect values of
-    /// all paths that are stored there into separate columns.
-    /// Each column is densified to have a value for every row (a default where the path is absent).
-    /// Gaps in a path column are backfilled with a single bulk insertManyDefaults right before storing
-    /// a real value (and once at the end), which removes the per-row scan over every accumulated path
-    /// column. The number of defaults materialized is unchanged; only the scan is removed.
-    /// Use string_view keys referencing data in shared_data_paths column to avoid copying path strings.
-    std::unordered_map<std::string_view, MutableColumnPtr> flattened_shared_data_paths;
-    const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
-    for (size_t i = start; i != end; ++i)
-    {
-        size_t offset_start = (*shared_data_offsets)[ssize_t(i) - 1];
-        size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
-        size_t row = i - start;
-        for (size_t j = offset_start; j != offset_end; ++j)
-        {
-            std::string_view path = shared_data_paths->getDataAt(j);
-            /// Skip paths not belonging to target bucket.
-            if (getSharedDataPathBucket(path, num_buckets) != target_bucket)
-                continue;
-
-            auto it = flattened_shared_data_paths.find(path);
-            /// If we see this path for the first time, add it to the list and create a column for it.
-            if (it == flattened_shared_data_paths.end())
-                it = flattened_shared_data_paths.emplace(path, dynamic_type->createColumn()).first;
-
-            /// Backfill defaults for the rows where this path was absent, up to the current row.
-            if (it->second->size() < row)
-                it->second->insertManyDefaults(row - it->second->size());
-
-            ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *it->second);
-        }
-    }
-
-    /// Backfill defaults for the trailing rows where each path was absent.
-    size_t num_rows = end - start;
-    for (const auto & [_, column] : flattened_shared_data_paths)
-    {
-        if (column->size() < num_rows)
-            column->insertManyDefaults(num_rows - column->size());
-    }
-
-    /// Collect into a sorted vector.
-    std::vector<std::pair<std::string_view, ColumnPtr>> result;
-    result.reserve(flattened_shared_data_paths.size());
-    for (auto & [path, column] : flattened_shared_data_paths)
-        result.emplace_back(path, column->getPtr());
-
-    std::sort(result.begin(), result.end());
-    return result;
-}
-
-std::vector<std::string_view> scanPathNamesForBucket(
-    const IColumn & shared_data_column, size_t start, size_t end,
-    size_t target_bucket, size_t num_buckets)
-{
-    /// Collect unique path names belonging to target_bucket without materializing ColumnDynamic columns.
-    /// Use string_view referencing data in shared_data_paths column to avoid copying path strings.
-    std::unordered_set<std::string_view> path_names;
-    const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
-    for (size_t i = start; i != end; ++i)
-    {
-        size_t offset_start = (*shared_data_offsets)[ssize_t(i) - 1];
-        size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
-        for (size_t j = offset_start; j != offset_end; ++j)
-        {
-            std::string_view path = shared_data_paths->getDataAt(j);
-            if (getSharedDataPathBucket(path, num_buckets) != target_bucket)
-                continue;
-            path_names.insert(path);
-        }
-    }
-
-    std::vector<std::string_view> result(path_names.begin(), path_names.end());
-    std::sort(result.begin(), result.end());
-    return result;
-}
-
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObject & object_column)
 {
-    auto all_paths = flattenSharedDataPathsForBucket(*object_column.getSharedDataPtr(), 0, object_column.size(), object_column.getDynamicType(), 0, 1);
+    SharedDataBucketsSplitter splitter(*object_column.getSharedDataPtr(), 0, object_column.size(), 1);
+    auto all_paths = splitter.flattenBucket(0, object_column.getDynamicType());
     for (const auto & [path, column] : object_column.getDynamicPaths())
         all_paths.emplace_back(path, column);
     std::sort(all_paths.begin(), all_paths.end());
@@ -430,49 +348,6 @@ void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column type of paths indexes: {}", indexes_type->getName());
     }
-}
-
-void writeMarkDelta(const MarkInCompressedFile & mark, size_t previous_compressed_offset, WriteBuffer & buf)
-{
-    if (mark.offset_in_compressed_file < previous_compressed_offset)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Compressed offset of a mark {} is less than the previous one {}",
-            mark.offset_in_compressed_file,
-            previous_compressed_offset);
-
-    writeVarUInt(mark.offset_in_compressed_file - previous_compressed_offset, buf);
-    writeVarUInt(mark.offset_in_decompressed_block, buf);
-}
-
-MarkInCompressedFile readMarkDelta(size_t previous_compressed_offset, ReadBuffer & buf)
-{
-    MarkInCompressedFile mark{};
-    size_t delta = 0;
-    readVarUInt(delta, buf);
-    mark.offset_in_compressed_file = previous_compressed_offset + delta;
-    readVarUInt(mark.offset_in_decompressed_block, buf);
-    return mark;
-}
-
-
-ISerialization::SerializeBinaryBulkSettings getObjectPathDataSerializationSettings(
-    const ISerialization::SerializeBinaryBulkSettings & settings, MergeTreeObjectSharedDataSerializationVersion nested_shared_data_version)
-{
-    ISerialization::SerializeBinaryBulkSettings path_settings;
-    path_settings.data_part_type = MergeTreeDataPartType::Compact;
-    path_settings.position_independent_encoding = true;
-    path_settings.low_cardinality_max_dictionary_size = 0;
-    path_settings.use_specialized_prefixes_and_suffixes_substreams = true;
-    path_settings.use_compact_variant_discriminators_serialization = true;
-    path_settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V3;
-    path_settings.object_serialization_version = MergeTreeObjectSerializationVersion::V3;
-    path_settings.object_shared_data_serialization_version = nested_shared_data_version;
-    path_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
-    path_settings.object_typed_shared_data_serialization_version = settings.object_typed_shared_data_serialization_version;
-    path_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::NONE;
-    path_settings.min_compress_block_size = settings.min_compress_block_size;
-    return path_settings;
 }
 
 }

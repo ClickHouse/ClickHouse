@@ -91,7 +91,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsUInt64 max_compress_block_size;
 }
 
 namespace FailPoints
@@ -1082,37 +1082,19 @@ bool StorageKeeperMap::dropTableData(
     {
         throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
     });
-    bool remove_data_recursively = zookeeper->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
-    if (!remove_data_recursively)
-        zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
+    zookeeper->removeChildrenRecursive(zk_data_path_);
 
     bool completely_removed = false;
     Coordination::Requests ops;
-    Coordination::Responses responses;
-    auto remove_metadata = [&]
-    {
-        ops.clear();
-        responses.clear();
-        ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
-        if (remove_data_recursively)
-            ops.emplace_back(zkutil::makeRemoveRecursiveRequest(*zookeeper, zk_data_path_, /*remove_nodes_limit=*/ 1000));
-        else
-            ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
-        return zookeeper->tryMulti(ops, responses);
-    };
+    ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
 
-    auto code = remove_metadata();
-    /// RemoveRecursive returns ZNOTEMPTY above its node limit.
-    if (code == Coordination::Error::ZNOTEMPTY && remove_data_recursively)
-    {
-        remove_data_recursively = false;
-        zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
-        code = remove_metadata();
-    }
+    Coordination::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
     using enum Coordination::Error;
     switch (code)
     {
@@ -1330,7 +1312,8 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         }
 
         TemporaryDataOnDiskSettings tmp_data_settings;
-        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
+        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
 
         auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
 
@@ -1974,7 +1957,6 @@ void registerStorageKeeperMap(StorageFactory & factory)
     factory.registerStorage(
         "KeeperMap",
         create,
-        SecretArgumentsSpec{},
         {
             .supports_sort_order = true,
             .supports_parallel_insert = true,

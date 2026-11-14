@@ -11,39 +11,43 @@ integration:
 ---
 
 <Note>
-  Vous pouvez vous inscrire sur la liste d&#39;attente de l&#39;aperçu privé [ici](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
+  Vous pouvez vous inscrire sur la liste d&#39;attente de la Private Preview [ici](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
 </Note>
 
-Cet article décrit les autorisations IAM GCP dont ClickPipes a besoin pour s&#39;authentifier auprès de Google Cloud Pub/Sub, consommer les données de vos topics et accorder l&#39;accès au compte de service utilisé par ClickPipes.
+Cet article décrit les autorisations IAM GCP requises par ClickPipes pour s&#39;authentifier auprès de Google Cloud Pub/Sub et consommer les données de vos topics, ainsi que la manière de configurer un compte de service conférant exactement ces autorisations.
 
-## Prérequis {#prerequisite}
+<div id="prerequisite">
+  ## Prérequis
+</div>
 
-Pour suivre ce guide, vous aurez besoin de :
+Pour suivre ce guide, vous aurez besoin de :
 
 * D’un service ClickHouse Cloud actif
 * D’un projet GCP contenant le topic Pub/Sub depuis lequel vous souhaitez ingérer des données
-* Des autorisations IAM dans ce projet pour attribuer des rôles
-* Pour l’authentification par clé de compte de service, des autorisations IAM permettant de créer des comptes de service et des clés
+* Des autorisations IAM dans ce projet pour créer des comptes de service et attribuer des rôles
 
-## Modèle d’authentification {#authentication-model}
+<div id="authentication-model">
+  ## Modèle d’authentification
+</div>
 
-ClickPipes for Pub/Sub prend en charge deux méthodes d’authentification :
-
-* **Clé de compte de service :** vous créez un compte de service Google et téléversez sa [clé JSON](https://cloud.google.com/iam/docs/keys-create-delete) dans l’interface utilisateur de ClickPipes ou la fournissez via l’API. ClickPipes chiffre la clé au repos.
-* **Workload Identity de GCP (bêta) :** ClickPipes utilise des identifiants de courte durée pour un compte de service Google géré par ClickPipes. Aucune clé de compte de service client n’est stockée. Consultez le [guide Workload Identity de GCP](/fr/integrations/clickpipes/security/gcp-workload-identity) pour connaître les prérequis.
-
-Quelle que soit la méthode, le compte de service est utilisé pour :
+ClickPipes for Pub/Sub s’authentifie auprès de GCP à l’aide d’une [clé JSON de compte de service](https://cloud.google.com/iam/docs/keys-create-delete). Lorsque vous créez un pipe, vous téléversez le fichier de clé ; ClickPipes le chiffre au repos et l’utilise à l’exécution pour :
 
 * répertorier et lire les topics de votre projet,
 * créer et supprimer l’[abonnement géré](/fr/integrations/clickpipes/pubsub/overview#managed-subscriptions) que ClickPipes utilise pour consommer les messages,
 * consommer les messages de cet abonnement,
 * et, éventuellement, lire les schémas Pub/Sub natifs depuis le registre de schémas.
 
-## Permissions requises {#required-permissions}
+Il n’existe actuellement ni option Workload Identity ni option de collage intégré des identifiants : la clé JSON de compte de service est aujourd’hui la seule méthode d’authentification prise en charge.
+
+<div id="required-permissions">
+  ## Permissions requises
+</div>
 
 ClickPipes requiert les permissions IAM suivantes sur le projet GCP propriétaire du topic. Elles couvrent l&#39;ensemble du cycle de vie du pipe : découverte (recensement des topics, validation, échantillonnage), gestion des abonnements, ingestion continue et nettoyage.
 
-### Accès aux topics (découverte et validation) {#topic-access}
+<div id="topic-access">
+  ### Accès aux topics (découverte et validation)
+</div>
 
 | Permission                         | Objectif                                                                       |
 | ---------------------------------- | ------------------------------------------------------------------------------ |
@@ -51,7 +55,9 @@ ClickPipes requiert les permissions IAM suivantes sur le projet GCP propriétair
 | `pubsub.topics.get`                | Valider l&#39;existence du topic et récupérer les paramètres du schéma         |
 | `pubsub.topics.attachSubscription` | Requise sur le **topic** lors de la création d&#39;un abonnement pour celui-ci |
 
-### Cycle de vie de l’abonnement (découverte et ingestion) {#subscription-lifecycle}
+<div id="subscription-lifecycle">
+  ### Cycle de vie de l’abonnement (découverte et ingestion)
+</div>
 
 | Permission                     | Objectif                                                                                                       |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
@@ -60,13 +66,17 @@ ClickPipes requiert les permissions IAM suivantes sur le projet GCP propriétair
 | `pubsub.subscriptions.delete`  | Nettoyer les abonnements de découverte éphémères et supprimer l’abonnement géré lors de la suppression du pipe |
 | `pubsub.subscriptions.consume` | Opérations `Receive()`, `Ack()`, `Nack()` et seek par timestamp                                                |
 
-### Accès au schéma (optionnel — uniquement pour les topics Avro/Protobuf natifs) {#schema-access}
+<div id="schema-access">
+  ### Accès au schéma (optionnel — uniquement pour les topics Avro/Protobuf natifs)
+</div>
 
 | Autorisation         | Objectif                                                                            |
 | -------------------- | ----------------------------------------------------------------------------------- |
 | `pubsub.schemas.get` | Récupérer les définitions de schéma natives à partir du registre de schémas Pub/Sub |
 
-## Rôles prédéfinis {#predefined-roles}
+<div id="predefined-roles">
+  ## Rôles prédéfinis
+</div>
 
 | Rôle                                                                                                 | Suffisant ? | Remarques                                                                                                                       |
 | ---------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -75,9 +85,13 @@ ClickPipes requiert les permissions IAM suivantes sur le projet GCP propriétair
 | [`roles/pubsub.viewer`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.viewer)         | **Non**     | Lecture seule — aucune gestion des abonnements ni consommation des messages.                                                    |
 | Rôle personnalisé *(recommandé)*                                                                     | Oui         | Utilisez les sept permissions de base ci-dessus (plus `schemas.get` en option) pour respecter le principe du moindre privilège. |
 
-## Configuration {#setup}
+<div id="setup">
+  ## Configuration
+</div>
 
-### Créer un rôle personnalisé (recommandé) {#create-custom-role}
+<div id="create-custom-role">
+  ### Créer un rôle personnalisé (recommandé)
+</div>
 
 Pour appliquer le principe du moindre privilège, créez un rôle personnalisé avec exactement les permissions dont ClickPipes a besoin.
 
@@ -102,23 +116,11 @@ Ou, dans la Console GCP, accédez à **IAM &amp; Admin → Roles → Create role
 
 Si vous préférez ne pas créer de rôle personnalisé, vous pouvez à la place attribuer `roles/pubsub.editor`.
 
-### Utiliser Workload Identity de GCP (bêta) {#use-workload-identity}
+<div id="create-service-account">
+  ### Créer un compte de service
+</div>
 
-Récupérez le compte de service géré par ClickPipes dans le contexte du service en suivant le [guide Workload Identity de GCP](/fr/integrations/clickpipes/security/gcp-workload-identity).
-
-Associez à ce compte de service le rôle personnalisé que vous avez créé, ou `roles/pubsub.editor` :
-
-```bash
-gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-  --member="serviceAccount:CLICKPIPES_SERVICE_ACCOUNT" \
-  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
-```
-
-Créez le ClickPipe via [OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi#create-pubsub) ou [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform#pubsub), en définissant `authentication` sur `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Avec cette méthode d’authentification, ne fournissez pas de clé de compte de service.
-
-### Créer un compte de service {#create-service-account}
-
-Pour l’authentification par clé de compte de service, créez un compte de service dédié pour le ClickPipe :
+Créez un compte de service dédié pour le ClickPipe :
 
 ```bash
 gcloud iam service-accounts create clickpipes-pubsub \
@@ -126,7 +128,9 @@ gcloud iam service-accounts create clickpipes-pubsub \
   --display-name="ClickPipes Pub/Sub Ingestion"
 ```
 
-### Attribuez le rôle au compte de service {#grant-role}
+<div id="grant-role">
+  ### Attribuez le rôle au compte de service
+</div>
 
 Associez le rôle que vous avez créé (ou `roles/pubsub.editor`) au compte de service au niveau du projet :
 
@@ -136,7 +140,9 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
   --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
 ```
 
-### Créer et télécharger une clé d’un compte de service {#create-key}
+<div id="create-key">
+  ### Créer et télécharger une clé d’un compte de service
+</div>
 
 Créez une clé JSON pour le compte de service et téléchargez-la sur votre machine :
 
@@ -153,7 +159,9 @@ Vous importerez ce fichier `clickpipes-pubsub-key.json` dans ClickPipes UI lors 
   Les clés de compte de service donnent accès à votre projet GCP. Conservez ce fichier en lieu sûr, ne l’ajoutez pas au contrôle de version et renouvelez la clé régulièrement. ClickPipes chiffre la clé au repos après son import.
 </Info>
 
-## Remarques {#notes}
+<div id="notes">
+  ## Remarques
+</div>
 
 * `pubsub.topics.attachSubscription` est requis sur la **ressource topic**, et non sur l’abonnement. Ce point est souvent oublié lorsque seules des permissions au niveau de l’abonnement sont accordées.
 * Si votre topic n&#39;utilise pas de schéma Pub/Sub natif (Avro ou Protobuf), la permission `pubsub.schemas.get` n&#39;est pas nécessaire.

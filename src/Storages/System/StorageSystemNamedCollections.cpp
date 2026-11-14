@@ -13,8 +13,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
-#include <Common/HiddenSecret.h>
-#include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -67,7 +65,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
             if (access_secrets)
                 value_column.insert(collection->get<String>(key));
             else
-                value_column.insert(String(HIDDEN_SECRET));
+                value_column.insert("[HIDDEN]");
             size++;
         }
 
@@ -76,21 +74,6 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         res_columns[2]->insert(magic_enum::enum_name(collection->getSourceId()));
         res_columns[3]->insert(collection->getCreateStatement(access_secrets));
     }
-}
-
-void StorageSystemNamedCollections::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    backupNamedCollections(backup_entries_collector, data_path_in_backup);
-}
-
-void StorageSystemNamedCollections::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    /// Normally RESTORE does not come here: the named collections are restored before any database
-    /// or table is created (see RestorerFromBackup::restoreNamedCollections), because database and
-    /// table engines resolve them inside CREATE.
-    restoreNamedCollections(restorer, data_path_in_backup);
 }
 
 }

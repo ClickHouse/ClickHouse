@@ -72,8 +72,6 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
                     with_length_delimiter);
             });
         factory.markOutputFormatNotTTYFriendly(name);
-        if (!with_length_delimiter)
-            factory.markFormatHasNoAppendSupport(name);
         factory.setContentType(name, "application/octet-stream");
     }
 }

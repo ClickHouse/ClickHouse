@@ -1,7 +1,6 @@
 #pragma once
 
 #include "config.h"
-#include <Common/StackWithMemoryTracking.h>
 
 #if USE_MSGPACK
 
@@ -58,7 +57,7 @@ public:
 
 private:
     /// Stack is needed to process arrays and maps
-    StackWithMemoryTracking<Info> info_stack;
+    std::stack<Info> info_stack;
     bool null_as_default;
 };
 

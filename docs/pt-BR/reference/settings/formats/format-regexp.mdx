@@ -13,19 +13,25 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Estas configurações são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-## format_regexp {#format_regexp}
+<div id="format_regexp">
+  ## format_regexp
+</div>
 
 Expressão regular (para o formato Regexp)
 
-## format_regexp_escaping_rule {#format_regexp_escaping_rule}
+<div id="format_regexp_escaping_rule">
+  ## format_regexp_escaping_rule
+</div>
 
 <SettingsInfoBlock type="EscapingRule" default_value="Raw" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "Use Raw como regra de escape padrão para o formato Regexp, para tornar o comportamento mais alinhado ao que os usuários esperam"}]}]} />
 
-Especifica como cada grupo de captura produzido por `format_regexp` é interpretado no tipo da coluna de destino. Use `Raw` (padrão) para texto sem escape, `Escaped` para escape no estilo TSV, `Quoted` para campos entre aspas no estilo Values, `CSV` para campos CSV ou `JSON` para valores JSON. Esta configuração é aplicada depois que a expressão regular corresponde a uma linha; ela não altera a expressão regular em si.
+Regra de escape de campo (para o formato Regexp)
 
-## format_regexp_skip_unmatched {#format_regexp_skip_unmatched}
+<div id="format_regexp_skip_unmatched">
+  ## format_regexp_skip_unmatched
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
