@@ -4,6 +4,7 @@
 DROP TABLE IF EXISTS t_final_minmax_replacing;
 DROP TABLE IF EXISTS t_final_minmax_collapsing;
 DROP TABLE IF EXISTS t_final_minmax_dnm;
+DROP TABLE IF EXISTS t_final_float_partition;
 
 CREATE TABLE t_final_minmax_replacing (k UInt64, d Date, ver UInt64)
 ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY (toYYYYMM(d), k);
@@ -38,6 +39,17 @@ SELECT * FROM t_final_minmax_dnm FINAL WHERE d = '2026-01-02' SETTINGS do_not_me
 -- Pruning by partition value still skips the other month.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT * FROM t_final_minmax_dnm FINAL WHERE d = '2026-01-01' SETTINGS do_not_merge_across_partitions_select_final = 1) WHERE explain LIKE '%Parts: 2/3%';
 
+-- Nor by partition value when the partition expression is a float sorting key column: 0.0 and -0.0 are one key in two partitions.
+CREATE TABLE t_final_float_partition (k UInt64, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY [reinterpretAsFloat64(k)] ORDER BY [reinterpretAsFloat64(k)];
+INSERT INTO t_final_float_partition VALUES (0, 1);
+INSERT INTO t_final_float_partition VALUES (9223372036854775808, 2);
+
+SELECT 'float sorting key expression';
+SELECT * FROM t_final_float_partition FINAL WHERE toString([reinterpretAsFloat64(k)]) = '[0]';
+SELECT * FROM t_final_float_partition FINAL WHERE toString([reinterpretAsFloat64(k)]) = '[-0]';
+
 DROP TABLE t_final_minmax_replacing;
 DROP TABLE t_final_minmax_collapsing;
 DROP TABLE t_final_minmax_dnm;
+DROP TABLE t_final_float_partition;

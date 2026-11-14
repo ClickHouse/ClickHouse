@@ -3620,8 +3620,7 @@ ReadFromMergeTree::FinalPartitionPruning ReadFromMergeTree::getFinalPartitionPru
         return result;
 
     const auto & partition_key = metadata_snapshot->getPartitionKey();
-    const auto & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+    const NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(metadata_snapshot->getSortingKey());
 
     const auto & partition_expr_names = partition_key.column_names;
     bool exprs_match = std::all_of(
