@@ -20,6 +20,48 @@ deterministic PREWHERE, run 1 (expect 5001):
 5001
 deterministic PREWHERE, run 2 (expect 5001):
 5001
+a condition derived from ON reaches the subquery's PREWHERE (expect 1):
+1
+join with the derived condition (expect 0):
+0
+plain read of the subquery's WHERE and v > 5, cache on (expect 44):
+44
+plain read of the subquery's WHERE and v > 5, cache off (expect 44):
+44
+PREWHERE with IN reaches the file read (expect 1):
+1
+PREWHERE with IN, run 1 (expect 12002):
+12002
+PREWHERE with IN, run 2 (expect 12002):
+12002
+PREWHERE with a nested function reaches the file read (expect 1):
+1
+PREWHERE with a nested function, run 1 (expect 5001):
+5001
+PREWHERE with a nested function, run 2 (expect 5001):
+5001
+PREWHERE with a constant lambda reaches the file read (expect 1):
+1
+PREWHERE with a constant lambda, run 1 (expect 5001):
+5001
+PREWHERE with a constant lambda, run 2 (expect 5001):
+5001
+formatRowNoNewline from ON reaches the subquery's PREWHERE (expect 1):
+1
+join with formatRowNoNewline in ON (expect 0):
+0
+plain read of the subquery's WHERE with formatRowNoNewline and v > 5, cache on (expect 44):
+44
+plain read of the subquery's WHERE with formatRowNoNewline and v > 5, cache off (expect 44):
+44
+PREWHERE with a lambda reaches the file read (expect 1):
+1
+lambda x = val (expect 12002):
+12002
+lambda x != val after it, cache on (expect 49995000):
+49995000
+lambda x != val, cache off (expect 49995000):
+49995000
 first plain read was a cache miss (expect 1):
 1
 second plain read was a cache hit (expect 1):
@@ -39,4 +81,18 @@ without runtime filters the same counter is absent (expect 0):
 deterministic PREWHERE run 1 was a cache miss (expect 1):
 1
 deterministic PREWHERE run 2 was a cache hit (expect 1):
+1
+plain read after the join with the derived condition was a cache miss (expect 1):
+1
+PREWHERE with IN run 1 was a cache miss (expect 1):
+1
+PREWHERE with IN run 2 was a cache hit (expect 1):
+1
+PREWHERE with a nested function run 1 was a cache miss (expect 1):
+1
+PREWHERE with a nested function run 2 was a cache hit (expect 1):
+1
+PREWHERE with a constant lambda run 1 was a cache miss (expect 1):
+1
+PREWHERE with a constant lambda run 2 was a cache hit (expect 1):
 1

@@ -88,6 +88,12 @@ bool isDeterministic(const ActionsDAG::Node * node);
 /// otherwise their keys diverge.
 bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);
 
+/// Whether every conjunct of `condition` is a conjunct of the single output of `filter`.
+/// With `allow_non_deterministic_constants`, a constant folded from a non-deterministic function (e.g. `today()`)
+/// is compared by its value; this is only sound if both DAGs come from the same query.
+bool isCoveredByFilter(
+    const ActionsDAG::Node & condition, const ActionsDAG & filter, bool allow_top_k_filter, bool allow_non_deterministic_constants = false);
+
 /// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
