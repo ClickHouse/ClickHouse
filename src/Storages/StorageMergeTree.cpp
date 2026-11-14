@@ -2889,7 +2889,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             });
         }
 
-        bool scheduled = assignee.scheduleMergeMutateTask(task);
+        bool scheduled = assignee.scheduleMergeMutateTask(std::move(task));
         /// Selecting the TTL merge postponed the next TTL merge of its partition; a merge that never
         /// starts gives that back, so the next selection can pick it up again (see `selectPartsToMerge`).
         /// Its TTL merge slot is given back by `merge_entry` itself.
@@ -2916,7 +2916,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
         const auto new_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
         auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, new_metadata_snapshot, mutate_entry, shared_lock, common_assignee_trigger);
-        return assignee.scheduleMergeMutateTask(task);
+        return assignee.scheduleMergeMutateTask(std::move(task));
     }
     if (has_mutations)
     {

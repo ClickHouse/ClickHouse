@@ -193,7 +193,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
     LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
 
-    if (shutdown)
+    if (shutdown || scheduling_pause_count != 0)
         return false;
 
     auto & value = CurrentMetrics::values[metric];
@@ -207,6 +207,40 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 }
 
 template <class Queue>
+typename MergeTreeBackgroundExecutor<Queue>::SchedulingPause MergeTreeBackgroundExecutor<Queue>::pauseScheduling()
+{
+    LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+    ++scheduling_pause_count;
+    return SchedulingPause(*this);
+}
+
+template <class Queue>
+MergeTreeBackgroundExecutor<Queue>::SchedulingPause::~SchedulingPause()
+{
+    if (executor)
+        executor->resumeScheduling();
+}
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::resumeScheduling() noexcept
+{
+    std::lock_guard lock(mutex);
+    chassert(scheduling_pause_count != 0);
+    --scheduling_pause_count;
+    if (scheduling_pause_count == 0)
+        task_slots_available.notify_all();
+}
+
+template <class Queue>
+bool MergeTreeBackgroundExecutor<Queue>::SchedulingPause::waitForIdle(std::chrono::steady_clock::time_point deadline)
+    TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    std::unique_lock executor_lock(executor->mutex);
+    return executor->task_slots_available.wait_until(
+        executor_lock, deadline, [this] { return CurrentMetrics::values[executor->metric].load() == 0; });
+}
+
+template <class Queue>
 size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
 {
     if (desired == 0)
@@ -217,7 +251,7 @@ size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
     /// as a logical error).
     LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
 
-    if (shutdown)
+    if (shutdown || scheduling_pause_count != 0)
         return 0;
 
     auto & value = CurrentMetrics::values[metric];
@@ -263,7 +297,7 @@ size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired) TSA_
     /// reservations only, while the shared task metric is checked against `max_tasks_count`.
     const auto saturated = [&] TSA_REQUIRES(mutex)
     {
-        return reserved_task_slots.load() >= get_fg_limit()
+        return scheduling_pause_count != 0 || reserved_task_slots.load() >= get_fg_limit()
             || value.load() >= static_cast<Int64>(max_tasks_count.load());
     };
 
@@ -382,6 +416,8 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         item->wait();
         item.reset();
     }
+    if (!tasks_to_wait.empty())
+        task_slots_available.notify_all();
 }
 
 template <class Queue>
