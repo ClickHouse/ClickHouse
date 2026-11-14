@@ -12,6 +12,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 
@@ -195,6 +196,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name).creator_fn;
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::DatabaseEngines, engine_name);
 
     return creator_fn(arguments);
 }

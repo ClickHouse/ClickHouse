@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 
@@ -564,6 +565,8 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                 );
     }
 
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::SkipIndexes, index.type);
+
     return it->second(std::move(metadata_snapshot), index, settings);
 }
 
@@ -616,6 +619,8 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                     })
             );
     }
+
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::SkipIndexes, index.type);
 
     it->second(index, attach, settings);
 }

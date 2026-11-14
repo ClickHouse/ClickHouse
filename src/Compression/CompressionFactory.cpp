@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/StringUtils.h>
 #include <Poco/String.h>
 #include <Common/typeid_cast.h>
@@ -170,6 +171,8 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     if (family_code_and_creator == family_code_with_codec.end())
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family code: {}", toString(byte_code));
 
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::CompressionCodecs, family_code_to_name.at(byte_code));
+
     return family_code_and_creator->second({}, nullptr);
 }
 
@@ -275,6 +278,8 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
     if (!canonical_family_name)
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
 
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::CompressionCodecs, family_name, *canonical_family_name);
+
     const auto family_and_creator = family_name_with_codec.find(*canonical_family_name);
 
     return family_and_creator->second(arguments, column_type);
@@ -321,10 +326,13 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
     family_name_with_properties.emplace(family_name, properties);
 
     if (byte_code)
+    {
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "CompressionCodecFactory: the codec family code '{}' is not unique",
                             std::to_string(*byte_code));
+        family_code_to_name.emplace(*byte_code, family_name);
+    }
 }
 
 void CompressionCodecFactory::registerCompressionCodec(

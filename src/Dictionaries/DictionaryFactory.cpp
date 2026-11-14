@@ -5,6 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/logger_useful.h>
 
 
@@ -70,6 +71,7 @@ DictionaryPtr DictionaryFactory::create(
         const auto found = registered_layouts.find(layout_type);
         if (found != registered_layouts.end())
         {
+            FactoryRestrictions::instance().check(FactoryRestrictions::Kind::DictionaryLayouts, layout_type);
             const auto & layout_creator = found->second.layout_create_function;
             return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
         }

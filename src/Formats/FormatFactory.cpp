@@ -20,6 +20,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/MemoryTracker.h>
 #include <Common/SipHash.h>
 #include <Common/KnownObjectNames.h>
@@ -567,6 +568,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     const std::optional<UInt64> & min_block_size_rows,
     const std::optional<UInt64> & min_block_size_bytes) const
 {
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Formats, name);
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator && !creators.random_access_input_creator_with_metadata)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
@@ -857,6 +859,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const std::optional<FormatSettings> & _format_settings,
     FormatFilterInfoPtr format_filter_info) const
 {
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Formats, name);
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
@@ -894,6 +897,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const std::optional<FormatSettings> & _format_settings,
     FormatFilterInfoPtr format_filter_info) const
 {
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Formats, name);
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
@@ -935,6 +939,7 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
     const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Formats, name);
     const auto & schema_reader_creator = getCreators(name).schema_reader_creator;
     if (!schema_reader_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
@@ -951,6 +956,7 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Formats, name);
     const auto & external_schema_reader_creator = getCreators(name).external_schema_reader_creator;
     if (!external_schema_reader_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);

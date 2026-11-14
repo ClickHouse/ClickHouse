@@ -13,6 +13,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/SettingsChanges.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -313,6 +314,8 @@ StoragePtr StorageFactory::get(
             }
         }
     }
+
+    FactoryRestrictions::instance().check(FactoryRestrictions::Kind::TableEngines, name);
 
     if (query.comment)
         comment = query.comment->as<ASTLiteral &>().value.safeGet<String>();

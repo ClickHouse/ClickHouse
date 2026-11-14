@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -311,6 +312,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     if (found)
     {
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::AggregateFunctions, name_param, name);
+
         if (const auto * associated = getAssociatedFunctionByNullsAction(is_case_insensitive ? case_insensitive_name : name, action))
             found = associated;
 
@@ -360,6 +363,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                 "Aggregate function combinator '{}' is only for internal usage",
                 combinator_name);
+
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::AggregateFunctionCombinators, combinator_name);
 
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);

@@ -23,6 +23,7 @@
 #include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 
@@ -933,6 +934,8 @@ void MergeTreeStatisticsFactory::validate(
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
 
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Statistics, statisticsTypeToString(type));
+
         if (!it->second(desc, data_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
@@ -995,6 +998,8 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
                 ErrorCodes::INCORRECT_QUERY,
                 "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
+
+        FactoryRestrictions::instance().check(FactoryRestrictions::Kind::Statistics, statisticsTypeToString(type));
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);

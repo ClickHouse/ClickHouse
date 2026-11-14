@@ -67,6 +67,7 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <Common/FactoryRestrictions.h>
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
@@ -2722,7 +2723,12 @@ try
                     reload_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
             }
 
+            /// Parse before `config().replace` so that an invalid section rejects the reload.
+            auto factory_restrictions = FactoryRestrictions::parse(*reload_config);
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
+
+            FactoryRestrictions::instance().set(std::move(factory_restrictions));
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
