@@ -49,14 +49,13 @@ public:
 
     bool hasInformationAboutMonotonicity() const override { return true; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         /// assumeNotNull() is identity for non-Nullable values, so it preserves ordering and thus monotonic.
         /// For Nullable, treat it as monotonic only when the analyzed range is guaranteed to not contain
-        /// NULLs. NULLs always represented as POSITIVE_INFINITY and they will always be at the end of ordering.
-        /// So, we do not need to check left.isNull().
+        /// NULLs. A key range may represent NULL as an infinity on either side, so neither bound may be infinite.
         bool can_contain_null = canContainNull(type);
-        if (can_contain_null && right.isNull())
+        if (can_contain_null && (left.isNull() || right.isNull()))
             return {};
 
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };

@@ -440,6 +440,7 @@ private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
+    std::vector<UInt8> set_column_has_null;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
