@@ -47,6 +47,7 @@ public:
 	void activate();
 	void release();
 	void run();
+	void waitTargetStarted();
 
 private:
 	volatile bool        _idle;
@@ -55,6 +56,7 @@ private:
 	std::string          _name;
 	Thread               _thread;
 	Event                _targetReady;
+	Event                _targetStarted;
 	Event                _targetCompleted;
 	Event                _started;
 	FastMutex            _mutex;
@@ -73,6 +75,7 @@ PooledThread::PooledThread(
 	_pTarget(0),
 	_name(name),
 	_thread(name),
+	_targetStarted(false),
 	_targetCompleted(false),
 	_globalProfilerRealTimePeriodNs(globalProfilerRealTimePeriodNs_),
 	_globalProfilerCPUTimePeriodNs(globalProfilerCPUTimePeriodNs_)
@@ -163,6 +166,7 @@ void PooledThread::activate()
 
 	poco_assert (_idle);
 	_idle = false;
+	_targetStarted.reset();
 	_targetCompleted.reset();
 }
 
@@ -187,6 +191,12 @@ void PooledThread::release()
 }
 
 
+void PooledThread::waitTargetStarted()
+{
+	_targetStarted.wait();
+}
+
+
 void PooledThread::run()
 {
     DB::ThreadStatus thread_status;
@@ -202,6 +212,7 @@ void PooledThread::run()
 		{
 			Runnable* pTarget = _pTarget;
 			_mutex.unlock();
+			_targetStarted.set();
 			try
 			{
 				pTarget->run();
@@ -234,6 +245,26 @@ void PooledThread::run()
 		}
 	}
 }
+
+
+struct ThreadReaper: public Runnable
+{
+	explicit ThreadReaper(size_t capacity)
+	{
+		threads.reserve(capacity);
+	}
+
+	void run()
+	{
+		for (std::vector<PooledThread*>::iterator it = threads.begin(); it != threads.end(); ++it)
+		{
+			(*it)->release();
+		}
+		delete this;
+	}
+
+	std::vector<PooledThread*> threads;
+};
 
 
 ThreadPool::ThreadPool(int minCapacity,
@@ -399,6 +430,10 @@ void ThreadPool::joinAll()
 		(*it)->join();
 	}
 	housekeep();
+	for (ThreadVec::iterator it = _threads.begin(); it != _threads.end(); ++it)
+	{
+		(*it)->join();
+	}
 }
 
 
@@ -436,15 +471,26 @@ void ThreadPool::housekeep()
 	int limit = (int) idleThreads.size() + n;
 	if (limit < _minCapacity) limit = _minCapacity;
 	idleThreads.insert(idleThreads.end(), expiredThreads.begin(), expiredThreads.end());
+	ThreadReaper* pReaper = new ThreadReaper(expiredThreads.size());
 	_threads.clear();
 	for (ThreadVec::iterator it = idleThreads.begin(); it != idleThreads.end(); ++it)
 	{
-		if (n < limit)
+		if (n <= limit)
 		{
 			_threads.push_back(*it);
 			++n;
 		}
-		else (*it)->release();
+		else pReaper->threads.push_back(*it);
+	}
+	if (!pReaper->threads.empty())
+	{
+		_threads.back()->activate();
+		_threads.back()->start(Thread::PRIO_NORMAL, *pReaper);
+		_threads.back()->waitTargetStarted();
+	}
+	else
+	{
+		delete pReaper;
 	}
 	_threads.insert(_threads.end(), activeThreads.begin(), activeThreads.end());
 }
