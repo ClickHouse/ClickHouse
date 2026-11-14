@@ -11,6 +11,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
+#include <IO/IReadBufferMetadataProvider.h>
+#include <IO/EmptyReadBuffer.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -28,6 +30,9 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -76,7 +81,9 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
+    extern const char object_storage_queue_pause_after_listing[];
     extern const char object_storage_queue_fail_tags_fetch[];
+    extern const char object_storage_queue_fail_selected_version_lookup[];
 }
 
 namespace ErrorCodes
@@ -89,14 +96,84 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
+    extern const int INCORRECT_DATA;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int FILE_CHANGED_DURING_READ;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+}
+
+bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing)
+{
+    switch (storage_type)
+    {
+        /// The copy of a `MOVE` (`If-Match` on the copy source) and the `DELETE` (`If-Match` on the
+        /// delete) are both pinned to the ingested generation, on Azure and on S3 alike.
+        case ObjectStorageType::Azure:
+        case ObjectStorageType::S3:
+            return after_processing == ObjectStorageQueueAction::MOVE || after_processing == ObjectStorageQueueAction::DELETE;
+        default:
+            return false;
+    }
+}
+
+bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info)
+{
+    /// Use only the generation from the listing: a later `HEAD` could name a replacement generation and the queued one would be skipped.
+    /// Without a listed generation the caller fails the file closed.
+    if (!object_info.metadata || object_info.metadata->etag.empty())
+        return false;
+
+    /// The read must serve the listed generation regardless of `s3_validate_etag_on_read`, because `MOVE` or `DELETE` then acts on it.
+    object_info.require_read_pinned_to_generation = true;
+    return true;
+}
+
+/// A pinned read fails with one of these codes when the object is rewritten: a race, not a bad file.
+static bool isGenerationChangedCode(int code)
+{
+    return code == ErrorCodes::FILE_CHANGED_DURING_READ
+        || code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
+        || code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+}
+
+namespace
+{
+
+/// `createReader` claims a file from the iterator before it builds the reader, and building the reader can already read
+/// the object (e.g. the prefix check of parallel JSON parsing). Remembers the claimed file, which is otherwise lost
+/// when the construction throws.
+class ClaimTrackingIterator : public IObjectIterator
+{
+public:
+    ClaimTrackingIterator(std::shared_ptr<IObjectIterator> iterator_, ObjectInfoPtr & claimed_)
+        : iterator(std::move(iterator_)), claimed(claimed_) {}
+
+    ObjectInfoPtr next(size_t processor) override
+    {
+        claimed = iterator->next(processor);
+        return claimed;
+    }
+
+    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+
+private:
+    std::shared_ptr<IObjectIterator> iterator;
+    ObjectInfoPtr & claimed;
+};
+
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
+    /// Copies the whole carrier, so that everything the iterator learned about the object - its
+    /// generation and the requirement to pin the read to it - reaches `createReadBuffer`.
+    : ObjectInfo(object_info.relative_path_with_metadata)
     , file_metadata(file_metadata_)
 {
+    /// The path the queue tracks the file by is the rendered one (an archive renders it out of the
+    /// carrier's own `relative_path`), as it was before the whole carrier was copied.
+    relative_path_with_metadata.relative_path = object_info.getPath();
 }
 
 ObjectStorageQueueSource::FileIterator::FileIterator(
@@ -262,6 +339,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
             /// Filter out files which we know we would not need to process.
             filterProcessableFiles(new_batch);
+
+            if (!new_batch.empty())
+                FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_listing);
 
             LOG_TEST(log, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
 
@@ -568,6 +648,9 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         else
         {
             std::lock_guard lock(mutex);
+            if (iterator_invalidated)
+                return {};
+
             if (objects_to_retry.empty())
             {
                 std::tie(object_info, file_metadata) = next();
@@ -645,6 +728,60 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             continue;
         }
 
+#if USE_AWS_S3
+        /// The listing describes the latest version, so a version selected by the URL takes its size and `ETag` from a `HEAD`.
+        if (object_storage->getType() == ObjectStorageType::S3)
+        {
+            const auto & s3_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
+            const auto & selected_version_id = s3_storage.getURI().version_id;
+            if (!selected_version_id.empty())
+            {
+                std::optional<ObjectMetadata> selected;
+                try
+                {
+                    fiu_do_on(FailPoints::object_storage_queue_fail_selected_version_lookup, {
+                        throw Exception(
+                            ErrorCodes::UNKNOWN_EXCEPTION,
+                            "Failpoint-triggered failure of the lookup of the selected version of {}", object_info->getPath());
+                    });
+                    selected = s3_storage.tryGetObjectVersionMetadata(object_info->getPath(), selected_version_id, /*with_tags=*/false);
+                }
+                catch (...)
+                {
+                    /// The file is claimed, but not returned yet, so no source can account the failure of the lookup.
+                    /// Release the claim, so that the file is taken again later with its retry budget intact.
+                    tryLogCurrentException(log, fmt::format(
+                        "Failed to get the metadata of the version {} of {}, will release the file",
+                        selected_version_id, object_info->getPath()));
+                    try
+                    {
+                        /// The exclusive mode keeps its claim only in memory and has no keeper nodes to remove.
+                        if (mode == ObjectStorageQueueMode::EXCLUSIVE)
+                        {
+                            Coordination::Requests requests;
+                            file_metadata->prepareResetProcessingRequests(requests);
+                            file_metadata->finalizeResetProcessing();
+                        }
+                        else
+                            file_metadata->resetProcessing();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to release the processing of {}", object_info->getPath()));
+                    }
+                    throw;
+                }
+                if (selected)
+                    object_info->relative_path_with_metadata.metadata = std::move(selected);
+            }
+        }
+#endif
+
+        /// `MOVE` and `DELETE` act on the ingested generation, so the read is pinned to the listed one before it is opened.
+        /// A file without a listed generation, or not pinned for its batch's action, is still returned and failed by the source.
+        if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), metadata->getTableMetadata().after_processing.load()))
+            useIngestedGenerationOfTheListedObject(object_info->relative_path_with_metadata);
+
         return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
     }
     return {};
@@ -707,11 +844,14 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(const std::vector<size_t> & processors)
 {
     std::lock_guard lock(mutex);
     for (auto & [processor, holders] : bucket_holders)
     {
+        if (std::find(processors.begin(), processors.end(), processor) == processors.end())
+            continue;
+
         std::string buckets_str;
         size_t released_holders = 0;
         for (auto it = holders->begin(); it != holders->end();)
@@ -1059,6 +1199,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     const CommitSettings & commit_settings_,
     const AfterProcessingSettings & after_processing_settings_,
+    ObjectStorageQueueAction after_processing_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -1085,6 +1226,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , parser_shared_resources(std::move(parser_shared_resources_))
     , commit_settings(commit_settings_)
     , after_processing_settings(after_processing_settings_)
+    , after_processing(after_processing_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , mode(files_metadata->getTableMetadata().getMode())
@@ -1239,22 +1381,50 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             const auto context = getContext();
-            reader = StorageObjectStorageSource::createReader(
-                processor_id,
-                storage_id,
-                /* query_condition_cache_table_id */ UUIDHelpers::Nil,
-                file_iterator,
-                configuration,
-                object_storage,
-                read_from_format_info,
-                format_settings,
-                context,
-                nullptr,
-                log,
-                max_block_size,
-                parser_shared_resources,
-                nullptr,
-                /* need_only_count */ false);
+            ObjectInfoPtr claimed_object;
+            try
+            {
+                reader = StorageObjectStorageSource::createReader(
+                    processor_id,
+                    storage_id,
+                    /* query_condition_cache_table_id */ UUIDHelpers::Nil,
+                    std::make_shared<ClaimTrackingIterator>(file_iterator, claimed_object),
+                    configuration,
+                    object_storage,
+                    read_from_format_info,
+                    format_settings,
+                    context,
+                    nullptr,
+                    log,
+                    max_block_size,
+                    parser_shared_resources,
+                    nullptr,
+                    /* need_only_count */ false);
+            }
+            catch (...)
+            {
+                const auto * claimed_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(claimed_object.get());
+                const auto code = getCurrentExceptionCode();
+                if (!claimed_info || !isGenerationChangedCode(code))
+                    throw;
+
+                /// The object was rewritten before the first read finished. Register the claimed file like a failed read,
+                /// so that it is reset and read again, and never counted as processed.
+                const auto message = getCurrentExceptionMessage(true);
+                LOG_DEBUG(log, "The generation of {} changed while its reader was created: {}. Will reset the file",
+                    claimed_info->file_metadata->getPath(), message);
+
+                processed_files.emplace_back(claimed_info->file_metadata);
+                processed_files.back().state = FileState::ErrorOnRead;
+                processed_files.back().exception_during_read = message;
+                processed_files.back().exception_during_read_code = code;
+
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    return {};
+
+                reader = {};
+                continue;
+            }
 
             if (!reader)
             {
@@ -1285,11 +1455,106 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             processed_files.emplace_back(file_metadata);
 
-            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
-                object_metadata && object_metadata->is_last_modified_known)
+            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata(); object_metadata)
             {
-                processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+                if (object_metadata->is_last_modified_known)
+                    processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+
+                /// Remember which generation of the object is being read, for the post-processing.
+                processed_files.back().bytes_size = object_metadata->size_bytes;
+                processed_files.back().etag = object_metadata->etag;
+                processed_files.back().version_id = object_metadata->version_id;
             }
+
+            /// A read the iterator did not pin, because `after_processing` was altered meanwhile, is reset for a later batch.
+            if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
+                && !processed_files.back().etag.empty()
+                && !reader.getObjectInfo()->relative_path_with_metadata.require_read_pinned_to_generation)
+            {
+                const auto message = fmt::format(
+                    "The read of {} was not pinned to its generation, as `after_processing` was altered while the batch was running",
+                    file_metadata->getPath());
+                LOG_DEBUG(log, "{}. Will reset the file", message);
+
+                processed_files.back().state = FileState::ErrorOnRead;
+                processed_files.back().exception_during_read = message;
+                processed_files.back().exception_during_read_code = ErrorCodes::FILE_CHANGED_DURING_READ;
+
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    return {};
+
+                reader = {};
+                progress->processed_files -= 1;
+                continue;
+            }
+
+            /// Fail closed: if `after_processing` needs the ingested generation but the listing carried no `ETag`,
+            /// fail the file like a failed read so it is never committed as processed.
+            if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
+                && processed_files.back().etag.empty())
+            {
+                const auto message = fmt::format(
+                    "The generation (`ETag`) of the object {} is not reported by the listing of the endpoint, "
+                    "while `after_processing = '{}'` has to act on exactly the generation that was ingested. "
+                    "The file is not read",
+                    file_metadata->getPath(), ObjectStorageQueueTableMetadata::actionToString(after_processing));
+                LOG_ERROR(log, "{}. Will set the file as failed", message);
+
+                processed_files.back().state = FileState::ErrorOnRead;
+                processed_files.back().exception_during_read = message;
+                processed_files.back().exception_during_read_code = ErrorCodes::INCORRECT_DATA;
+
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                {
+                    /// Stop processing and commit what is already processed,
+                    /// because we must preserve order.
+                    return {};
+                }
+
+                /// Continue processing. This failed file will be committed along with processed files.
+                reader = {};
+                progress->processed_files -= 1;
+                continue;
+            }
+
+#if USE_AWS_S3
+            /// A format that does not read the object (`One`) never learns the S3 version it consumed, so post-processing
+            /// would act on the whole key: a delete would hide, and a move would take, a same-byte upload that came later.
+            /// Claim the current version with a `HEAD` instead, as a zero-byte pinned read would.
+            if (object_storage->getType() == ObjectStorageType::S3
+                && afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
+                && dynamic_cast<const EmptyReadBuffer *>(reader.readBuffer()))
+            {
+                const auto * s3_storage_ptr = dynamic_cast<const S3ObjectStorage *>(object_storage.get());
+                if (!s3_storage_ptr)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Object storage of type S3 is not an `S3ObjectStorage`");
+                const auto & s3_storage = *s3_storage_ptr;
+                /// A version selected by the URL is immutable and is the one consumed. Its `ETag` differs from the listed
+                /// one, which describes the latest version.
+                const auto selected_version_id = s3_storage.getURI().version_id;
+                const auto current = s3_storage.tryGetObjectVersionMetadata(file_metadata->getPath(), selected_version_id, /*with_tags=*/false);
+                if (!current || (selected_version_id.empty() && current->etag != processed_files.back().etag))
+                {
+                    const auto message = fmt::format(
+                        "The object {} was rewritten or removed after it was listed (listed `ETag`: {}, current `ETag`: {})",
+                        file_metadata->getPath(), processed_files.back().etag, current ? current->etag : "none");
+                    LOG_DEBUG(log, "{}. Will reset the file", message);
+
+                    processed_files.back().state = FileState::ErrorOnRead;
+                    processed_files.back().exception_during_read = message;
+                    processed_files.back().exception_during_read_code = ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+
+                    if (mode == ObjectStorageQueueMode::ORDERED)
+                        return {};
+
+                    reader = {};
+                    progress->processed_files -= 1;
+                    continue;
+                }
+                processed_files.back().etag = current->etag;
+                processed_files.back().version_id = current->version_id;
+            }
+#endif
 
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
             /// them on demand here, once per file, only when _tags is requested. Must run after
@@ -1478,6 +1743,22 @@ Chunk ObjectStorageQueueSource::generateImpl()
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
         file_status = nullptr;
+        if (auto * read_buf = reader.readBuffer())
+        {
+            if (const auto * provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buf))
+            {
+                /// The read is pinned by ETag, not by version: this may be a same-byte re-upload of the listed version.
+                /// Post-processing then acts on it and leaves the listed version at the key.
+                if (auto val = provider->getMetadata("version_id"); val.has_value())
+                    processed_files.back().version_id = val->safeGet<String>();
+                /// The `ETag` must describe the same version. It differs from the listed one when the URL selects an older
+                /// version with an explicit `versionId`: the listing describes the latest version, the read the selected one.
+                /// An unpinned read is not validated against the listed `ETag`, so without this post-processing would compare
+                /// the selected version with the listed `ETag` and never succeed.
+                if (auto val = provider->getMetadata("etag"); val.has_value())
+                    processed_files.back().etag = val->safeGet<String>();
+            }
+        }
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit
@@ -1528,7 +1809,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     PartitionLastProcessedFileInfoMap & file_map,
     LastProcessedFileInfoMapPtr created_nodes,
     const std::string & exception_message,
-    int error_code)
+    int error_code,
+    const std::map<size_t, String> & reread_paths_per_bucket)
 {
     if (processed_files.empty())
         return;
@@ -1543,6 +1825,13 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
     const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
+    /// A key above a file that is read again must not move the pointer past it, so it is committed like a non-last key.
+    auto is_above_reread_path = [&](const FileMetadataPtr & file_metadata)
+    {
+        const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
+        const auto it = reread_paths_per_bucket.find(bucket);
+        return it != reread_paths_per_bucket.end() && file_metadata->getPath() > it->second;
+    };
 
     /// For Ordered mode collect a map: bucket_id -> max_processed_path.
     /// If no buckets are used, we still do this for Ordered mode,
@@ -1555,7 +1844,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             const auto & file_path = file_metadata->getPath();
             const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
 
-            if (processed_files[i].state != FileState::Processed)
+            if (processed_files[i].state != FileState::Processed || is_above_reread_path(file_metadata))
                 continue;
 
             auto [it, inserted] = last_processed_file_idx_per_bucket.emplace(bucket, i);
@@ -1585,14 +1874,14 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     size_t processed_count = 0;
     if (!insert_succeeded && reduce_retry_count)
     {
-        for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_, last_modified_] : processed_files)
-            if (file_state == FileState::Processed)
+        for (const auto & processed_file : processed_files)
+            if (processed_file.state == FileState::Processed)
                 ++processed_count;
     }
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
-        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_] = processed_files[i];
+        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_, bytes_size, etag, version_id] = processed_files[i];
         switch (file_state)
         {
             case FileState::Processed:
@@ -1606,7 +1895,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         /// only one max_processed_file per each bucket,
                         /// for all other files we only remove Processing nodes.
                         const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
-                        if (last_processed_file_idx_per_bucket[bucket] == i)
+                        const auto last_it = last_processed_file_idx_per_bucket.find(bucket);
+                        if (last_it != last_processed_file_idx_per_bucket.end() && last_it->second == i)
                         {
                             file_metadata->prepareProcessedRequests(requests, created_nodes);
                         }
@@ -1614,14 +1904,19 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         {
                             file_metadata->prepareResetProcessingRequests(requests);
                         }
-                        if (has_partitioning)
+                        if (has_partitioning && !is_above_reread_path(file_metadata))
                             file_metadata->preparePartitionProcessedMap(file_map);
                     }
                     else
                     {
                         file_metadata->prepareProcessedRequests(requests);
                     }
-                    successful_files.push_back(StoredObject(file_metadata->getPath()));
+                    /// The post-processing acts on the generation that was ingested, not on
+                    /// whatever the path holds by then.
+                    StoredObject ingested_generation(file_metadata->getPath(), /* local_path */ "", bytes_size);
+                    ingested_generation.etag = etag;
+                    ingested_generation.version_id = version_id;
+                    successful_files.push_back(std::move(ingested_generation));
                 }
                 else
                 {
@@ -1673,13 +1968,41 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "read", String(ErrorCodes::getName(exception_during_read_code))});
 
                 chassert(!exception_during_read.empty());
-                file_metadata->prepareFailedRequests(
-                    requests,
-                    exception_during_read,
-                    /* reduce_retry_count */true);
+                const bool reread = isRereadAfterRewrite(processed_files[i]);
+                /// Ordered mode must read the new generation before later keys move the pointer past it.
+                if (is_ordered_mode && reread)
+                    file_iterator->invalidate();
+                file_metadata->prepareFailedRequests(requests, exception_during_read, /* reduce_retry_count */ !reread);
                 break;
             }
         }
+    }
+}
+
+bool ObjectStorageQueueSource::isRereadAfterRewrite(const ProcessedFile & file)
+{
+    if (file.state != FileState::ErrorOnRead)
+        return false;
+    /// A pinned read fails with `*_OBJECT_CHANGED_DURING_READ` when the object is rewritten: a race, not a bad file,
+    /// so reset the processing without charging the retry budget (else the path becomes `failed`).
+    const bool the_generation_was_rewritten = isGenerationChangedCode(file.exception_during_read_code);
+    /// Resetting replays the path from offset 0 and duplicates rows already emitted (`deduplication_v2` tokens name the new
+    /// generation), so a file that emitted rows keeps the ordinary failure handling.
+    const bool a_replay_would_duplicate_rows = file.metadata->getFileStatus()->processed_rows > 0;
+    return the_generation_was_rewritten && !a_replay_would_duplicate_rows;
+}
+
+void ObjectStorageQueueSource::collectRereadPaths(std::map<size_t, String> & reread_paths_per_bucket) const
+{
+    const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
+    for (const auto & file : processed_files)
+    {
+        if (!isRereadAfterRewrite(file))
+            continue;
+        const auto bucket = use_buckets_for_processing ? file.metadata->getBucket() : 0;
+        auto [it, inserted] = reread_paths_per_bucket.emplace(bucket, file.metadata->getPath());
+        if (!inserted && file.metadata->getPath() < it->second)
+            it->second = file.metadata->getPath();
     }
 }
 
@@ -1708,6 +2031,30 @@ void ObjectStorageQueueSource::setUncertainCommit()
         file.metadata->setUncertainCommit();
 }
 
+void ObjectStorageQueueSource::releaseAfterChangedGeneration(const std::string & exception_message)
+{
+    /// Other modes release the batch by removing its processing nodes; here only the local claims exist.
+    Coordination::Requests requests;
+    for (auto & file : processed_files)
+    {
+        if (file.state == FileState::Processed)
+        {
+            /// The inserted files go back to the queue without using a retry, as in the other modes.
+            file.metadata->prepareFailedRequests(requests, exception_message, /* reduce_retry_count */ false);
+            file.metadata->finalizeResetProcessing();
+        }
+        else if (file.state == FileState::ErrorOnRead)
+        {
+            /// Their failure was already prepared by `prepareCommitRequests`.
+            if (file.metadata->wasProcessingResetWithoutFailure())
+                file.metadata->finalizeResetProcessing();
+            else
+                file.metadata->finalizeFailed(file.exception_during_read);
+        }
+    }
+    chassert(requests.empty());
+}
+
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
@@ -1722,7 +2069,7 @@ void ObjectStorageQueueSource::finalizeCommit(
     bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
 
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified, bytes_size_, etag_, version_id_] : processed_files)
     {
         try
         {
@@ -1796,7 +2143,11 @@ void ObjectStorageQueueSource::finalizeCommit(
                 case FileState::ErrorOnRead:
                 {
                     chassert(!exception_during_read.empty());
-                    file_metadata->finalizeFailed(exception_during_read);
+                    /// A rewritten generation only released the processing node (see `prepareCommitRequests`); the new one is read later.
+                    if (file_metadata->wasProcessingResetWithoutFailure())
+                        file_metadata->finalizeResetProcessing();
+                    else
+                        file_metadata->finalizeFailed(exception_during_read);
 
                     if (file_metadata->wasPermanentlyFailed())
                         DimensionalMetrics::add(
@@ -1812,7 +2163,8 @@ void ObjectStorageQueueSource::finalizeCommit(
             /// the next iteration. Skip the log entry so they do not show up as Failed
             /// in `system.s3queue_log`. They will be logged on their next attempt with
             /// the actual outcome (Processed, or genuinely Failed).
-            if (!insert_succeeded && file_metadata->wasProcessingResetWithoutFailure())
+            /// A read whose pinned generation was rewritten is also reset for retry, regardless of the insert state.
+            if (file_metadata->wasProcessingResetWithoutFailure())
                 continue;
 
             appendLogElement(
@@ -1841,6 +2193,11 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     Coordination::Requests requests;
     StoredObjects successful_objects;
     PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
+    /// In ordered mode a file of this source that is read again bounds which key may move the pointer.
+    /// No other source of the query shares its bucket, see `ReadFromObjectStorageQueue::initializePipeline`.
+    std::map<size_t, String> reread_paths_per_bucket;
+    if (mode == ObjectStorageQueueMode::ORDERED)
+        collectRereadPaths(reread_paths_per_bucket);
     // `created_nodes` is nullptr here, because it is required only in mutithread case,
     // when `requests` is filled with several `prepareCommitRequests` calls.
     prepareCommitRequests(
@@ -1850,14 +2207,14 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         last_processed_file_per_partition,
         /* created_nodes */ nullptr,
         exception_message,
-        error_code);
+        error_code,
+        reread_paths_per_bucket);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
-
-    const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
 
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
 
+    /// As in `StorageObjectStorageQueue::commit`: `FILE_CHANGED_DURING_READ` from post-processing means neither processed nor failed.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty())
@@ -1868,10 +2225,22 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 getContext(),
                 configuration->getType(),
                 object_storage,
-                getName(),
-                files_metadata->getTableMetadata(),
-                after_processing_settings);
-            postProcessor.process(successful_objects, post_processing_failed_paths);
+                after_processing,
+                after_processing_settings,
+                files_metadata->getKeeperIdentity());
+            try
+            {
+                postProcessor.process(successful_objects, post_processing_failed_paths);
+            }
+            catch (...)
+            {
+                if (mode == ObjectStorageQueueMode::EXCLUSIVE && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+                    releaseAfterChangedGeneration(getCurrentExceptionMessage(false));
+                /// Ordered mode must read the new generation before later keys move the pointer past it.
+                if (mode == ObjectStorageQueueMode::ORDERED && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+                    file_iterator->invalidate();
+                throw;
+            }
 
             if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
             {

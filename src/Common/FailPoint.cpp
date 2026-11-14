@@ -124,6 +124,7 @@ static struct InitFiu
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(object_storage_queue_fail_tags_fetch) \
+    ONCE(object_storage_queue_fail_selected_version_lookup) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_temp_drop_publication_response) \
     ONCE(distributed_cache_temp_fail_owner_handoff) \
@@ -165,6 +166,7 @@ static struct InitFiu
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
     REGULAR(object_storage_queue_fail_delete) \
+    ONCE(object_storage_queue_fail_after_move_copy) \
     REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
@@ -191,6 +193,10 @@ static struct InitFiu
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_after_move_copy) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_after_move_source_lookup) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_before_post_process) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_after_listing) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
     ONCE(replicated_merge_tree_restore_attach_retry) \

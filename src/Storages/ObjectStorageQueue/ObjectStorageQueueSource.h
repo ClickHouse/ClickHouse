@@ -11,6 +11,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <map>
+
 
 namespace Poco { class Logger; }
 
@@ -19,6 +21,14 @@ namespace DB
 
 class IStreamingStorage;
 struct ObjectMetadata;
+
+/// Whether `after_processing` acts on the exact ingested generation (`ETag`) of every file, so the read is pinned to it
+/// independently of `s3_validate_etag_on_read`; otherwise a newer generation would be moved or deleted by path unread.
+bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing);
+
+/// Pins the read of `object_info` to the generation (`etag`) reported by the listing, not a later `HEAD`, so the read and the
+/// post-processing see the same generation. Returns `false` if the listing has no `ETag`; the file must then be refused.
+bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info);
 
 class ObjectStorageQueueSource final : public ISource, WithContext
 {
@@ -75,7 +85,9 @@ public:
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        void releaseFinishedBuckets();
+        /// Only the holders of the given processors are released: the other processors may belong to inserts
+        /// that have not committed yet, and their buckets must stay held until they do.
+        void releaseFinishedBuckets(const std::vector<size_t> & processors);
 
         /// Refresh bucket locks which were not refreshed for more than a quarter of
         /// the TTL, after which the cleanup removes them as abandoned (the TTL is
@@ -83,6 +95,9 @@ public:
         void refreshExpiringBucketLocks();
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
+
+        /// Finish the iterator, so the next batch lists the files again.
+        void invalidate() { iterator_invalidated = true; }
 
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
@@ -188,6 +203,7 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         const CommitSettings & commit_settings_,
         const AfterProcessingSettings & after_processing_settings_,
+        ObjectStorageQueueAction after_processing_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -219,7 +235,11 @@ public:
         PartitionLastProcessedFileInfoMap & file_map,
         LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
-        int error_code = 0);
+        int error_code = 0,
+        const std::map<size_t, String> & reread_paths_per_bucket = {});
+
+    /// Ordered mode: the lowest path per bucket of this source's files that are read again because their generation was rewritten.
+    void collectRereadPaths(std::map<size_t, String> & reread_paths_per_bucket) const;
 
     static void preparePartitionProcessedRequests(
         Coordination::Requests & requests,
@@ -230,6 +250,19 @@ public:
     /// Called when a commit may have succeeded in ZK but the connection was lost before
     /// we received the response ("failed after operation").
     void setUncertainCommit();
+
+    /// Exclusive mode only: releases the files of a batch whose post-processing found a changed generation.
+    void releaseAfterChangedGeneration(const std::string & exception_message);
+
+    /// Whether this source claimed at least one file, including files that failed or were reset.
+    bool hasClaimedFiles() const { return !processed_files.empty(); }
+
+    /// `after_processing` as it was when the batch started, used for every file of the batch.
+    ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }
+    /// The settings the action of this batch was captured with.
+    const AfterProcessingSettings & getAfterProcessingSettings() const { return after_processing_settings; }
+
+    void invalidateFileIterator() { file_iterator->invalidate(); }
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
@@ -265,6 +298,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     const CommitSettings commit_settings;
     const AfterProcessingSettings after_processing_settings;
+    const ObjectStorageQueueAction after_processing;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
     const ObjectStorageQueueMode mode;
@@ -303,9 +337,17 @@ private:
         /// The object's own last-modified time, if object storage reported one.
         /// Used to update the "newest object committed" pipeline-lag watermark.
         time_t last_modified = 0;
+        /// The generation (size and `ETag`) the reader was opened on; `after_processing` is pinned to exactly it.
+        uint64_t bytes_size = StoredObject::UnknownSize;
+        String etag;
+        /// S3 object version ID if known from read/listing.
+        String version_id;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
+
+    /// The file is reset without charging a retry, so its new generation is read again from the start.
+    static bool isRereadAfterRewrite(const ProcessedFile & file);
 };
 
 }
