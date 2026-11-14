@@ -279,12 +279,15 @@ static bool usesIndirectValues(const ASTs & args)
 struct CredentialsMarkersChange
 {
     std::set<std::string> drop;
+    bool add_s3 = false;
     bool add_azure = false;
 };
 
 static void applyCredentialsMarkersChange(ASTs & args, const CredentialsMarkersChange & change)
 {
     args.erase(std::remove_if(args.begin(), args.end(), [&](const ASTPtr & arg) { return change.drop.contains(getCredentialsMarker(arg)); }), args.end());
+    if (change.add_s3)
+        args.push_back(makeCredentialsMarker(S3_SERVER_CREDENTIALS_MARKER));
     if (change.add_azure)
         args.push_back(makeCredentialsMarker(AZURE_SERVER_CREDENTIALS_MARKER));
 }
@@ -336,6 +339,16 @@ static std::vector<FlattenedDisk> flattenDiskConfiguration(ASTPtr & flat, const 
         if (!hasCredentialsMarker(args, AZURE_SERVER_CREDENTIALS_MARKER) && usesIndirectValues(args))
             changes.push_back({.drop = {}, .add_azure = true});
 
+        /// 26.7 to 26.11 added `_server_credentials_allowed` to any definition with `include`, `from_env` or `from_zk`
+        /// when the session had the opt-in, and 26.11 the Azure marker after it. Now it is added only when the resolved
+        /// definition relies on server credentials, so the same definition of another backend has no markers.
+        if (!hasCredentialsMarker(args, S3_SERVER_CREDENTIALS_MARKER) && !hasCredentialsMarker(args, AZURE_SERVER_CREDENTIALS_MARKER)
+            && usesIndirectValues(args))
+        {
+            changes.push_back({.drop = {}, .add_s3 = true, .add_azure = false});
+            changes.push_back({.drop = {}, .add_s3 = true, .add_azure = true});
+        }
+
         /// 26.7 to 26.10 had no Azure marker, and older versions no marker at all.
         for (std::set<std::string> drop : {std::set<std::string>{AZURE_SERVER_CREDENTIALS_MARKER},
                                            std::set<std::string>{AZURE_SERVER_CREDENTIALS_MARKER, S3_SERVER_CREDENTIALS_MARKER}})
@@ -380,8 +393,8 @@ static std::vector<FlattenedDisk> flattenDiskConfiguration(ASTPtr & flat, const 
             applyCredentialsMarkersChange(getDiskFunctionArguments(candidate), change);
             serializations.push_back(candidate->formatWithSecretsOneLine());
 
-            DiskAlternative form{.name = {}, .edits = {}, .adds_marker = change.add_azure};
-            if (!change.drop.empty() || change.add_azure)
+            DiskAlternative form{.name = {}, .edits = {}, .adds_marker = change.add_s3 || change.add_azure};
+            if (!change.drop.empty() || change.add_s3 || change.add_azure)
                 form.edits.emplace_back(original, change);
             for (size_t i = 0; i < below.size(); ++i)
             {
