@@ -143,6 +143,7 @@
 #include <base/range.h>
 
 #include <memory>
+#include <set>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -685,7 +686,10 @@ namespace
 {
 
 /// `shardNum` and `shardCount` return zero on the initiator, so evaluate them through the legacy path.
-bool queryTreeContainsShardDependentFunctions(const QueryTreeNodePtr & root)
+/// The `arrayJoin` function puts an `ArrayJoinStep` between the read and the sorting, which the plan-level
+/// read cannot push to the shards: every source array would be sent to the initiator to be expanded and
+/// sorted there, while the legacy path sorts and limits the expanded rows on each shard.
+bool queryTreeContainsFunctionsForLegacyPath(const QueryTreeNodePtr & root)
 {
     if (!root)
         return false;
@@ -699,7 +703,7 @@ bool queryTreeContainsShardDependentFunctions(const QueryTreeNodePtr & root)
         if (const auto * function_node = node->as<FunctionNode>())
         {
             const auto & name = function_node->getFunctionName();
-            if (name == "shardNum" || name == "shardCount")
+            if (name == "shardNum" || name == "shardCount" || name == "arrayJoin")
                 return true;
         }
 
@@ -789,26 +793,47 @@ bool StorageDistributed::sourceTableAllowsDistributedPlan(const ContextPtr & loc
     if (!local_context->getSettingsRef()[Setting::additional_table_filters].value.empty())
         return false;
 
-    /// The table is resolved in the default database of each shard.
-    if (remote_database.empty())
-        return true;
-
-    auto source = DatabaseCatalog::instance().tryGetTable(StorageID{remote_database, remote_table}, local_context);
-    if (!source)
-        return true;
-
-    if (!source->isMergeTree())
-        return false;
-
-    auto row_policy_filter = local_context->getRowPolicyFilter(remote_database, remote_table, RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-        return false;
-
-    const auto source_metadata = source->getInMemoryMetadataPtr(local_context, false);
     const auto metadata = getInMemoryMetadataPtr(local_context, false);
-    for (const auto & column : metadata->getColumns().getAllPhysical())
+
+    auto source_allows = [&](const String & database)
     {
-        if (!source_metadata->getColumns().hasPhysical(column.name))
+        auto source = DatabaseCatalog::instance().tryGetTable(StorageID{database, remote_table}, local_context);
+        if (!source)
+            return true;
+
+        if (!source->isMergeTree())
+            return false;
+
+        auto row_policy_filter = local_context->getRowPolicyFilter(database, remote_table, RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            return false;
+
+        const auto source_metadata = source->getInMemoryMetadataPtr(local_context, false);
+        for (const auto & column : metadata->getColumns().getAllPhysical())
+        {
+            if (!source_metadata->getColumns().hasPhysical(column.name))
+                return false;
+        }
+
+        return true;
+    };
+
+    if (!remote_database.empty())
+        return source_allows(remote_database);
+
+    /// Without a database argument, the table is resolved in the default database of each replica, as the
+    /// legacy path does (`createLocalPlan` selects it before analyzing the source table). Check every
+    /// configured default database, and the current one for the replicas that do not configure it.
+    std::set<String> databases;
+    for (const auto & shard_addresses : getCluster()->getShardsAddresses())
+    {
+        for (const auto & address : shard_addresses)
+            databases.insert(address.default_database.empty() ? local_context->getCurrentDatabase() : address.default_database);
+    }
+
+    for (const auto & database : databases)
+    {
+        if (!source_allows(database))
             return false;
     }
 
@@ -837,7 +862,7 @@ bool StorageDistributed::useDistributedPlanForReading(const ContextPtr & local_c
         && !(settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_skip_unused_shards_rewrite_in] && has_sharding_key)
         && queryTreeIsPlainRead(query_info.query_tree)
         && queryTreeSortingCanBePushedDown(query_info.query_tree, settings)
-        && !queryTreeContainsShardDependentFunctions(query_info.query_tree)
+        && !queryTreeContainsFunctionsForLegacyPath(query_info.query_tree)
         && sourceTableAllowsDistributedPlan(local_context);
 }
 

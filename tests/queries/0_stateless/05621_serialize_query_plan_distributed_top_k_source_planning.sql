@@ -33,6 +33,18 @@ SELECT '-- ORDER BY without LIMIT keeps the classic path';
 SELECT count() FROM (EXPLAIN distributed = 1 SELECT payload FROM dlm_src_dist ORDER BY x) WHERE explain LIKE '%Merge sorted streams%';
 SELECT groupArray(payload) FROM (SELECT payload FROM dlm_src_dist ORDER BY x);
 
+SELECT '-- arrayJoin function keeps the classic path, which sorts and limits the expanded rows on each shard';
+DROP TABLE IF EXISTS dlm_arr_dist;
+DROP TABLE IF EXISTS dlm_arr;
+CREATE TABLE dlm_arr (k UInt64, arr Array(UInt64), payload String) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE dlm_arr_dist AS dlm_arr ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), dlm_arr);
+INSERT INTO dlm_arr SELECT number, [number, number + 10], toString(number) FROM numbers(5);
+SELECT count() FROM (EXPLAIN actions = 1, distributed = 1 SELECT arrayJoin(arr) AS v, payload FROM dlm_arr_dist ORDER BY v LIMIT 3) WHERE explain LIKE '%Distributed TopK candidate limit%';
+SELECT count() > 0 FROM (EXPLAIN distributed = 1 SELECT arrayJoin(arr) AS v, payload FROM dlm_arr_dist ORDER BY v LIMIT 3) WHERE explain LIKE '%Merge sorted streams%';
+SELECT arrayJoin(arr) AS v, payload FROM dlm_arr_dist ORDER BY v, payload LIMIT 3;
+DROP TABLE dlm_arr_dist;
+DROP TABLE dlm_arr;
+
 SELECT '-- additional_table_filters keyed by the source table';
 SELECT payload FROM dlm_src_dist ORDER BY x LIMIT 4 SETTINGS additional_table_filters = {'dlm_src': 'x > 5'};
 

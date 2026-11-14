@@ -1,0 +1,11 @@
+-- Row policy on a Memory source in the default database of each shard
+0
+0
+0
+2
+2
+-- ALIAS column of a source in the default database of each shard
+0
+1
+1
+2
