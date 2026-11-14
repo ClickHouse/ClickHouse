@@ -9,6 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -748,6 +749,25 @@ UseProjectionsResult optimizeUseNormalProjections(
             || (candidate.sum_marks == parent_reading_marks && (parent_reading_marks == 0 || projection_sort_order_useful(candidate.projection)));
     };
 
+    auto limit_stops_reading = [&]
+    {
+        if (!outer_sorting_step || outer_sorting_step->getLimit() == 0)
+            return false;
+        for (auto it = std::next(iter); it != stack.rend(); ++it)
+        {
+            const auto * step = it->node->step.get();
+            if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
+                return !limit_step->alwaysReadTillEnd();
+            const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
+            if (!expression_step || expression_step->getExpression().hasArrayJoin())
+                return false;
+        }
+        return false;
+    };
+
+    /// A read in the projection's order stops at the `LIMIT`, so its total marks overstate its cost.
+    const bool best_serves_order_by_with_limit = projection_sort_order_useful(best_candidate->projection) && limit_stops_reading();
+
     /// The pass is driven only by the base table's deferred skip indexes and the ratio: a projection
     /// can win against the primary-key-only estimate because of its sort order or its granularity
     /// even when its own primary key does not help with the filter.
@@ -764,6 +784,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// the parent analysis has already applied the skip indexes. Check the flag the analysis recorded,
     /// so that such reads do not run the skip indexes a second time.
     if (!relax_projection_checks
+        && !best_serves_order_by_with_limit
         && beats_parent(*best_candidate)
         && static_cast<double>(best_candidate->sum_marks) > static_cast<double>(parent_reading_marks) * ratio
         && query.filter_node != nullptr)

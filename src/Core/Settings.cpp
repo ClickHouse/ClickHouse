@@ -6980,7 +6980,7 @@ Enables using projections to filter part ranges even when projections are not se
 )", 0, \
         {"25.6", false, true, "New setting"}) \
     DECLARE(Float, optimize_projection_skip_index_ratio, 0.5, R"(
-When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. `0` always applies them, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
+When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. This is not done when the candidate's sort order serves the query's `ORDER BY ... LIMIT`, because reading it in order stops at the limit. `0` applies them whenever possible, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
 
 Possible values:
 
