@@ -755,7 +755,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                         selected_version_id, object_info->getPath()));
                     try
                     {
-                        file_metadata->resetProcessing();
+                        /// The exclusive mode keeps its claim only in memory and has no keeper nodes to remove.
+                        if (mode == ObjectStorageQueueMode::EXCLUSIVE)
+                        {
+                            Coordination::Requests requests;
+                            file_metadata->prepareResetProcessingRequests(requests);
+                            file_metadata->finalizeResetProcessing();
+                        }
+                        else
+                            file_metadata->resetProcessing();
                     }
                     catch (...)
                     {
