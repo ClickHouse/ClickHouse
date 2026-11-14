@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1042,6 +1043,27 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     if (query.dag)
     {
+        /// The expression passes through the read columns that are not its inputs, after its outputs. Consume the ones
+        /// the replaced steps did not pass through (e.g. a column read only to count rows), so that their header is kept.
+        const auto & replaced_header = *iter->node->children[iter->next_child - 1]->step->getOutputHeader();
+        const auto & read_header = *projection_reading_node.step->getOutputHeader();
+        const auto read_by = mapHeaderColumnsToInputs(query.dag->getInputs(), read_header);
+        std::unordered_map<std::string_view, Int64> to_consume;
+        for (size_t i = 0; i < read_header.columns(); ++i)
+            if (read_by.passesThrough(i))
+                ++to_consume[read_header.getByPosition(i).name];
+        for (size_t i = query.dag->getOutputs().size(); i < replaced_header.columns(); ++i)
+            --to_consume[replaced_header.getByPosition(i).name];
+        for (size_t i = 0; i < read_header.columns(); ++i)
+        {
+            const auto & column = read_header.getByPosition(i);
+            if (read_by.passesThrough(i) && to_consume[column.name] > 0)
+            {
+                query.dag->addInput(column.name, column.type);
+                --to_consume[column.name];
+            }
+        }
+
         auto & expr_or_filter_node = nodes.emplace_back();
         expr_or_filter_node.step = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
         expr_or_filter_node.children.push_back(&projection_reading_node);
