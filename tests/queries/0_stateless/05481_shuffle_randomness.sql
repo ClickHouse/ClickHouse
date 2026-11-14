@@ -10,7 +10,8 @@ SELECT groupArray(number) != range(1000) FROM (SELECT number FROM numbers(1000) 
 
 -- The position of a row is not correlated with its value (the standard deviation of the correlation is 0.001).
 SELECT abs(corr(toFloat64(number), toFloat64(pos))) < 0.02
-FROM (SELECT number, rowNumberInAllBlocks() AS pos FROM (SELECT number FROM numbers_mt(1000000) SHUFFLE));
+FROM (SELECT number, rowNumberInAllBlocks() AS pos FROM (SELECT number FROM numbers_mt(1000000) SHUFFLE))
+SETTINGS max_block_size = 10000;
 
 -- Every value is equally likely to be in any part of the result (the standard deviation of every count is about 95).
 SELECT count() = 100, min(c) > 9000, max(c) < 11000
@@ -19,7 +20,8 @@ FROM
     SELECT intDiv(pos, 100000) * 10 + intDiv(number, 100000) AS cell, count() AS c
     FROM (SELECT number, rowNumberInAllBlocks() AS pos FROM (SELECT number FROM numbers_mt(1000000) SHUFFLE))
     GROUP BY cell
-);
+)
+SETTINGS max_block_size = 10000;
 
 -- A sample with LIMIT is uniform: every value has the same probability to be selected (the standard deviation of every count is about 95).
 SELECT count() = 10, min(c) > 9000, max(c) < 11000
