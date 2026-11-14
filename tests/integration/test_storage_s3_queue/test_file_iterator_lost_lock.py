@@ -366,3 +366,134 @@ def test_lost_bucket_lock_detected_during_release(started_cluster):
         f"WHERE table = '{table_name}' AND status = 'Processed' "
         f"GROUP BY file_name HAVING count() > 1"
     )
+
+
+def test_cleanup_reaps_bucket_lock_after_lost_ownership(started_cluster):
+    """
+    A bucket lock path is registered in `ObjectStorageQueueLocalActiveNodes` while
+    it is owned by a live local holder, which fences the TTL cleanup away from it.
+    The lost-ownership branch of `BucketHolder::refresh` marks the holder released
+    and throws, so `release` returns early afterwards: the registration must be
+    dropped there as well, otherwise the path stays registered forever, the cleanup
+    keeps skipping it as owned by a live local execution, and the stale lock blocks
+    the bucket indefinitely.
+
+    Steals a bucket lock to provoke the ownership loss, and - unlike the tests
+    above - does not return the lock, leaving it to the TTL cleanup to reap.
+    """
+    node = started_cluster.instances["instance"]
+
+    if node.is_debug_build() or node.is_built_with_sanitizer():
+        pytest.skip(
+            "Debug and sanitizer builds abort on the deliberately provoked "
+            "logical error about lost bucket lock ownership"
+        )
+
+    table_name = f"test_lost_lock_cleanup_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 30
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "buckets": 3,
+            "processing_threads_num": 3,
+            "persistent_processing_node_ttl_seconds": 2,
+            # Unlike the tests above, the TTL cleanup is the point of this test:
+            # it must be able to reap the stale lock left by the ownership loss.
+            "cleanup_interval_min_ms": 200,
+            "cleanup_interval_max_ms": 500,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+            "s3queue_loading_retries": 10,
+        },
+    )
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _path String)
+        ENGINE = MergeTree ORDER BY column1
+        """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _path
+        FROM {table_name}
+        WHERE ignore(sleepEachRow(0.2)) = 0
+        """
+    )
+
+    # Steal one bucket lock, as if it was removed by the TTL cleanup and the
+    # bucket was acquired by another server, so that the refresh detects the
+    # ownership loss and marks the holder released without releasing the lock.
+    zk = started_cluster.get_kazoo_client("zoo1")
+    stolen_lock_path = None
+    for _ in range(100):
+        for bucket in zk.get_children(f"{keeper_path}/buckets"):
+            lock_path = f"{keeper_path}/buckets/{bucket}/lock"
+            try:
+                stat = zk.exists(lock_path)
+                # Steal a lock acquired at least a second ago, so that the
+                # debug ownership check in the BucketHolder constructor
+                # is certainly over.
+                if stat is None or time.time() - stat.created < 1:
+                    continue
+                zk.set(lock_path, b"another_server")
+                stolen_lock_path = lock_path
+                break
+            except NoNodeError:
+                continue
+        if stolen_lock_path:
+            break
+        time.sleep(0.2)
+    assert stolen_lock_path
+
+    for _ in range(150):
+        if node.contains_in_log("Lost ownership of bucket lock"):
+            break
+        time.sleep(1)
+    assert node.contains_in_log("Lost ownership of bucket lock")
+
+    # Nothing refreshes the stolen lock anymore, so it ages past the TTL and the
+    # cleanup must reap it: the node either disappears or is recreated by the
+    # server which re-acquires the bucket. It stays owned by `another_server`
+    # forever while the lock path is still registered as locally owned.
+    def stolen_lock_reaped():
+        try:
+            data, _ = zk.get(stolen_lock_path)
+        except NoNodeError:
+            return True
+        return data != b"another_server"
+
+    for _ in range(120):
+        if stolen_lock_reaped():
+            break
+        time.sleep(1)
+    assert stolen_lock_reaped(), (
+        f"The TTL cleanup did not reap the stale bucket lock {stolen_lock_path} "
+        f"left by the lost ownership: its path is still fenced as owned by a "
+        f"live local execution."
+    )
+
+    # With the bucket unblocked, streaming must process all the files.
+    def get_processed_count():
+        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+    for _ in range(300):
+        if get_processed_count() == files_to_generate:
+            break
+        time.sleep(1)
+    assert get_processed_count() == files_to_generate
