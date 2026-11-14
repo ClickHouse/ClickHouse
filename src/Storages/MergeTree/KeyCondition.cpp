@@ -53,6 +53,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
@@ -605,6 +606,38 @@ static std::string_view reverseComparisonOperator(std::string_view op)
     return {};
 }
 
+
+static std::optional<KeyCondition::RPNElement::DirectComparison::Operator> directComparisonOperator(
+    std::string_view comparison)
+{
+    using Operator = KeyCondition::RPNElement::DirectComparison::Operator;
+    if (comparison == "equals" || comparison == "isNotDistinctFrom") return Operator::Equals;
+    if (comparison == "notEquals") return Operator::NotEquals;
+    if (comparison == "less") return Operator::Less;
+    if (comparison == "lessOrEquals") return Operator::LessOrEquals;
+    if (comparison == "greater") return Operator::Greater;
+    if (comparison == "greaterOrEquals") return Operator::GreaterOrEquals;
+    return std::nullopt;
+}
+
+static void setDirectComparison(
+    KeyCondition::RPNElement & element,
+    std::string_view comparison,
+    const Field & value,
+    const DataTypePtr & type)
+{
+    const auto op = directComparisonOperator(comparison);
+    if (!op || !type)
+        return;
+
+    /// `tryBuildComparisonAtom` does not build an atom from a NULL constant, so the constant needs
+    /// neither Nullable nor LowCardinality wrappers.
+    chassert(!value.isNull());
+    element.direct_comparison = KeyCondition::RPNElement::DirectComparison{
+        *op,
+        std::make_shared<ConstantValue>(value, removeLowCardinalityAndNullable(type)),
+    };
+}
 
 static bool isLogicalOperator(const String & func_name)
 {
@@ -1711,9 +1744,11 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool require_ready_sets_)
+    bool require_ready_sets_,
+    bool preserve_direct_comparisons_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
+    , preserve_direct_comparisons(preserve_direct_comparisons_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
     , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
@@ -1967,6 +2002,89 @@ KeyCondition KeyCondition::createWithUnknownAtomsAssumedTrue() const
 bool KeyCondition::hasOnlyConjunctions() const
 {
     return std::ranges::none_of(rpn, [](const RPNElement & element) { return element.function == RPNElement::FUNCTION_OR; });
+}
+
+namespace
+{
+
+/// Whether the scalar evaluator may report `false` for this leaf into the partial-disjunction bitset.
+/// `FUNCTION_UNKNOWN` is reported as unknown and `ALWAYS_TRUE` reports the default, so neither is owned.
+/// `ALWAYS_FALSE` is owned: an atom of the filter folded to a constant for this index (e.g. `a = 0.5`
+/// with `a UInt8`) is still `FUNCTION_UNKNOWN` in the template RPN, so its reported `false` is what lets
+/// the final merge prune the disjunction.
+bool isOwnedLeaf(const KeyCondition::RPNElement & element)
+{
+    switch (element.function)
+    {
+        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
+        case KeyCondition::RPNElement::ALWAYS_TRUE:
+        case KeyCondition::RPNElement::FUNCTION_NOT:
+        case KeyCondition::RPNElement::FUNCTION_AND:
+        case KeyCondition::RPNElement::FUNCTION_OR:
+            return false;
+        default:
+            /// An atom leaf (`FUNCTION_IN_RANGE`, `FUNCTION_IN_SET`, polygon, etc.) or `ALWAYS_FALSE`.
+            return true;
+    }
+}
+
+}
+
+bool KeyCondition::everyOwnedLeafIsUnderConjunctionsOnly() const
+{
+    /// Walk the postfix RPN keeping, per pending subexpression, whether it contains a leaf owned by this condition.
+    std::vector<bool> owns_leaf;
+    owns_leaf.reserve(rpn.size());
+
+    for (const auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_NOT:
+                /// `mergePartialResultsForDisjunctions` evaluates every `NOT` to `true`, so a `false` reported
+                /// for a leaf below it could not exclude the mark.
+                if (owns_leaf.empty() || owns_leaf.back())
+                    return false;
+                break;
+
+            case RPNElement::FUNCTION_AND:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                owns_leaf.back() = a || b;
+                break;
+            }
+
+            case RPNElement::FUNCTION_OR:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                if (a || b)
+                    return false; /// A disjunction crosses an owned leaf.
+                owns_leaf.back() = false;
+                break;
+            }
+
+            default:
+                owns_leaf.push_back(isOwnedLeaf(element));
+                break;
+        }
+    }
+
+    return owns_leaf.size() == 1;
+}
+
+void KeyCondition::reportOwnedLeavesAsFalse(const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+{
+    for (const auto & element : rpn)
+        if (element.position_in_filter_rpn && isOwnedLeaf(element))
+            update_partial_disjunction_result_fn(*element.position_in_filter_rpn, false, false);
 }
 
 
@@ -6082,11 +6200,16 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
         = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
         && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
+    /// The constant for the direct comparison, which must match `const_type`. The rewrite below changes
+    /// only the `Range` bound, so the SQL comparison of the bulk minmax filtering keeps the original constant.
+    Field direct_comparison_value;
+
     /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
     /// a scale-0 decimal compares the same and is not stepped.
     if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
         && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
     {
+        direct_comparison_value = const_value;
         if (const_value.getType() == Field::Types::Int64)
             const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<Int64>()), 0);
         else if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Bool)
@@ -6167,6 +6290,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 const_value = tryConvertFieldToType(const_value, *key_expr_type_not_null);
                 if (const_value.isNull())
                     return std::nullopt;
+                const_type = key_expr_type_not_null;
                 /// This exact conversion preserves the candidate's relaxation state.
             }
         }
@@ -6206,6 +6330,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                         return std::nullopt;
 
                     const_value = converted;
+                    const_type = common_type;
 
                     /// Only an exact conversion preserves the candidate's precision.
                     if (!key_expr_type_not_null->equals(*common_type))
@@ -6269,6 +6394,10 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
 
     if (!atom_it->second(element, const_value))
         return std::nullopt;
+
+    if (preserve_direct_comparisons)
+        setDirectComparison(
+            element, func_name, direct_comparison_value.isNull() ? const_value : direct_comparison_value, const_type);
 
     return element;
 }

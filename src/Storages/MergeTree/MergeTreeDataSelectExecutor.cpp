@@ -52,6 +52,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Common/SipHash.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -98,6 +99,7 @@ extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event TextIndexGenericExclusionSearchAlgorithm;
 extern const Event TextIndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event IndexBulkFilteringEvaluatedGranules;
 extern const Event QueryConditionCacheHits;
 extern const Event QueryConditionCacheMisses;
 }
@@ -3282,7 +3284,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
+    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering
+        && index_helper->supportsBulkFiltering()
+        && condition->supportsBulkFiltering()
+        && (!use_skip_indexes_for_disjunctions || condition->bulkFilteringPreservesPartialDisjunctions());
 
     auto skip_index_granularity = index_helper->index.granularity;
     const auto & index_granularity = part_info->getIndexGranularity();
@@ -3433,53 +3438,67 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
     else if (bulk_filtering)
     {
-        MergeTreeIndexBulkGranulesPtr granules;
-        size_t current_granule_num = 0;
+        /// Process granules in chunks of `max_block_size` to avoid part-sized intermediate storage.
+        const size_t chunk_size_index_granules = reader_settings.bulk_filtering_chunk_size;
 
+        /// Bulk evaluation does not write the per-atom bits for partial-disjunction merging. Report a rejected
+        /// granule instead: a later index may restore its marks by merging the ranges across a seek gap, and
+        /// the final merge must still exclude them.
+        const bool report_rejected_granules = use_skip_indexes_for_disjunctions && key_condition_rpn_template;
+
+        /// `getPossibleGranules` returns index marks in ascending order.
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
-
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            size_t chunk_begin = index_range.begin;
+            while (chunk_begin < index_range.end)
             {
-                reader.read(index_mark, current_granule_num, granules);
-                ++current_granule_num;
-            }
-        }
+                const size_t chunk_end = std::min(chunk_begin + chunk_size_index_granules, index_range.end);
 
-        IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
-        if (filtered_granules.empty())
-            return {res, read_hints};
+                /// Fresh container per chunk so its columns' growth stays bounded by the
+                /// chunk size and the memory is released before the next chunk starts.
+                MergeTreeIndexBulkGranulesPtr chunk_granules = index_helper->createIndexBulkGranules();
+                reader.readRange(chunk_begin, chunk_end, *chunk_granules);
 
-        auto it = filtered_granules.begin();
-        current_granule_num = 0;
-        for (size_t i = 0; i < ranges_size; ++i)
-        {
-            const MarkRange & index_range = index_ranges[i];
+                /// Observable signal that the vectorized bulk path was actually taken for this
+                /// part (as opposed to silently falling back to the per-granule scalar path).
+                ProfileEvents::increment(ProfileEvents::IndexBulkFilteringEvaluatedGranules, chunk_end - chunk_begin);
 
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
-            {
-                if (current_granule_num == *it)
+                auto data_range_of = [&](size_t index_mark)
                 {
-                    MarkRange data_range(
+                    return MarkRange(
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+                };
 
+                auto report_rejected = [&](size_t index_mark_begin, size_t index_mark_end)
+                {
+                    if (!report_rejected_granules)
+                        return;
+                    for (size_t index_mark = index_mark_begin; index_mark < index_mark_end; ++index_mark)
+                    {
+                        const MarkRange data_range = data_range_of(index_mark);
+                        for (size_t mark = data_range.begin; mark < data_range.end; ++mark)
+                            condition->reportBulkRejectedGranule(create_update_partial_disjunction_result_fn(mark));
+                    }
+                };
+
+                size_t next_index_mark = chunk_begin;
+                for (size_t index_mark : condition->getPossibleGranules(chunk_granules))
+                {
+                    report_rejected(next_index_mark, index_mark);
+                    next_index_mark = index_mark + 1;
+
+                    const MarkRange data_range = data_range_of(index_mark);
                     if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
-
-                    ++it;
-                    if (it == filtered_granules.end())
-                        break;
                 }
+                report_rejected(next_index_mark, chunk_end);
 
-                ++current_granule_num;
+                chunk_begin = chunk_end;
             }
-
-            if (it == filtered_granules.end())
-                break;
         }
     }
     else
