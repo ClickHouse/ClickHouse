@@ -1,0 +1,13 @@
+-- hasPhrase uses the positions of the scoring index
+[1,5]
+[2]
+[]
+-- the same after a merge of multiple parts
+[1,5,6]
+-- the weights and the positions of the merged part
+0	1	[0]
+1	1	[1]
+2	1	[0]
+4	2	[0,4]
+5	1	[0]
+6	1	[1]

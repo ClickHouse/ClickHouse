@@ -1613,6 +1613,9 @@ void MergeTreeData::checkProperties(
                 new_virtuals_sample_block.dumpStructure(), old_virtuals_sample_block.dumpStructure());
     }
 
+    /// The settings the table has after this operation, see the checks of the projections below.
+    const MergeTreeSettings & effective_settings = alter_effective_settings ? *alter_effective_settings : *getSettings();
+
     if (!new_metadata.secondary_indices.empty())
     {
         std::unordered_set<String> indices_names;
@@ -1647,6 +1650,7 @@ void MergeTreeData::checkProperties(
                                 old_index = &candidate;
 
                     bloomFilterIndexTextCheckTotalSize(index, old_index);
+                    textIndexCheckScoringAllowed(index, old_index, effective_settings);
                 }
 
                 /// An index the server generates from a setting is not the user's declaration, so it
@@ -1770,7 +1774,6 @@ void MergeTreeData::checkProperties(
     /// to the default). `getDefaultSettings()` is virtual, so it must NOT be called here: this
     /// runs from `setProperties` during the base `MergeTreeData` constructor, before the derived
     /// vtable exists.
-    const MergeTreeSettings & effective_settings = alter_effective_settings ? *alter_effective_settings : *getSettings();
     /// The settings the table has BEFORE this operation. On CREATE / ATTACH this equals
     /// `effective_settings` (no pending change). On the `checkAlterIsPossible` path it is the OLD
     /// (pre-`ALTER`) value, while `effective_settings` is the post-`ALTER` value; the difference

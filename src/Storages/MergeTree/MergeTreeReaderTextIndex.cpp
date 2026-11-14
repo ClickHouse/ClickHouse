@@ -142,7 +142,7 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
         && granule->getSerializationVersion() >= MergeTreeTextIndexSerializationVersion::V1_WithCodec
         && !condition_text->hasSearchPatterns();
 
-    postings_serialization = PostingsSerialization(std::move(postings_codec), granule->getSerializationVersion());
+    postings_serialization = PostingsSerialization(std::move(postings_codec), granule->getSerializationVersion(), granule->getScoringKind());
 }
 
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)
@@ -426,6 +426,7 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
     return std::make_shared<PostingListCursor>(
         getPostingsStream(token, token_info),
         token_info,
+        granule->getScoringKind(),
         condition_text->postingsCache().get(),
         granule->getIndexIdForCaches());
 }
@@ -435,15 +436,13 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
     const auto & data_part = getDataPart();
 
     auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
-    if (index_format.version != 2)
-        return;
 
     const auto positions_substream = std::ranges::find_if(
         index_format.substreams,
         [](const auto & substream) { return substream.type == MergeTreeIndexSubstream::Type::TextIndexPositions; });
 
     if (positions_substream == index_format.substreams.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index_read_task.index.index->index.name);
+        return;
 
     /// use_page_cache_lookahead: positions are read in token order, not in file order.
     positions_stream = makeTextIndexInputStream(
@@ -1191,14 +1190,14 @@ std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(co
                     stream = (local_stream = makePostingsStream(token_info)).get();
 
                 stream->seekToMark({token_info.offsets[0], 0});
-                postings_serialization->deserializeToArray(*stream->getDataBuffer(), token_info, 0, *docs);
+                postings_serialization->deserializeToArray(*stream->getDataBuffer(), token_info, 0, *docs, /*weights=*/ nullptr);
             }
             cursors.push_back(std::make_shared<PostingListCursor>(std::move(docs)));
         }
         else
         {
             cursors.push_back(std::make_shared<PostingListCursor>(
-                getPostingsStream(token, token_info), token_info, condition_text->postingsCache().get(), granule->getIndexIdForCaches()));
+                getPostingsStream(token, token_info), token_info, granule->getScoringKind(), condition_text->postingsCache().get(), granule->getIndexIdForCaches()));
         }
     }
     return cursors;
