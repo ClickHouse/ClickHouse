@@ -10,6 +10,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/Context.h>
 
@@ -44,6 +45,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
 }
@@ -178,6 +181,12 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
+    /// Resolved cluster key names, populated below for the plain `GROUP BY` branch.
+    /// `WITH CLUSTER` is not supported in `GROUPING SETS` / `ROLLUP` / `CUBE`.
+    std::vector<std::string> cluster_key_names_resolved;
+    /// Result names of the ordinary (exact-match) keys of a `WITH CLUSTER` query, used to reject
+    /// a cluster key expression that also appears as an ordinary key.
+    std::unordered_set<std::string> ordinary_key_names_with_cluster;
 
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
@@ -252,6 +261,14 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
         else
         {
+            /// Resolve cluster key names by following the visit, not by indexing
+            /// `aggregation_keys` post-hoc — constant elimination below would shift
+            /// the analyzer-side `cluster_idx`.
+            const int cluster_idx_orig = query_node.hasGroupByWithCluster()
+                ? query_node.getGroupByClusterKeyIndex() : -1;
+            const size_t cluster_dims = query_node.getGroupByClusterDimensions();
+            int orig_pos = 0;
+
             /// ROLLUP and CUBE derive their grouping sets from the number of aggregation keys, and
             /// `GROUPING` is resolved against the full key list, so dropping a constant key here would
             /// lose grouping levels: `GROUP BY CUBE(1, number)` would produce the sets of a single key.
@@ -259,12 +276,26 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
+                const bool is_cluster_key_position =
+                    cluster_idx_orig >= 0
+                    && orig_pos >= cluster_idx_orig
+                    && orig_pos < cluster_idx_orig + static_cast<int>(cluster_dims);
+
                 const auto * constant_key = group_by_key_node->as<ConstantNode>();
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
                 if (constant_key && !keep_constant_keys && !aggregates_descriptions.empty()
                     && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
-                    continue;
+                {
+                    /// Keep constants that sit in the cluster key range (e.g. the `0`
+                    /// in `GROUP BY (x, 0) WITH CLUSTER d`); otherwise the cluster
+                    /// step would see a key tuple of the wrong arity.
+                    if (!is_cluster_key_position)
+                    {
+                        ++orig_pos;
+                        continue;
+                    }
+                }
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
                 correlated_subtrees.assertEmpty("in aggregation keys");
@@ -283,6 +314,28 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
                 }
+
+                /// `visit` may return several DAG nodes (input, intermediates, result);
+                /// the last one is the top-level expression and the right cluster key.
+                if (is_cluster_key_position && !expression_dag_nodes.empty())
+                    cluster_key_names_resolved.push_back(expression_dag_nodes.back()->result_name);
+
+                if (cluster_idx_orig >= 0 && !is_cluster_key_position)
+                {
+                    for (const auto * expression_dag_node : expression_dag_nodes)
+                    {
+                        /// `ClusterMergingTransform` compares and sorts the ordinary keys with
+                        /// `IColumn::compareAt`, which is not an equality test for non-comparable
+                        /// types (for example, it treats all aggregate function states as equal).
+                        if (!expression_dag_node->result_type->isComparable())
+                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "GROUP BY ... WITH CLUSTER does not support the non-comparable type {} of the key {}",
+                                expression_dag_node->result_type->getName(), expression_dag_node->result_name);
+                        ordinary_key_names_with_cluster.insert(expression_dag_node->result_name);
+                    }
+                }
+
+                ++orig_pos;
             }
         }
     }
@@ -328,6 +381,29 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     aggregation_analysis_result.aggregate_descriptions = std::move(aggregates_descriptions);
     aggregation_analysis_result.grouping_sets_parameters_list = std::move(grouping_sets_parameters_list);
     aggregation_analysis_result.group_by_with_constant_keys = group_by_with_constant_keys;
+
+    if (query_node.hasGroupByWithCluster())
+    {
+        const size_t cluster_dims = query_node.getGroupByClusterDimensions();
+        if (cluster_key_names_resolved.size() != cluster_dims)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Failed to resolve GROUP BY ... WITH CLUSTER key names: expected {}, got {}",
+                cluster_dims, cluster_key_names_resolved.size());
+
+        /// Identical key expressions share one column after aggregation, so a key that is both
+        /// an exact-match key and a cluster key cannot keep both roles.
+        for (const auto & cluster_key_name : cluster_key_names_resolved)
+            if (ordinary_key_names_with_cluster.contains(cluster_key_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The expression {} cannot be both an ordinary GROUP BY key and a part of the WITH CLUSTER key",
+                    cluster_key_name);
+
+        ClusterKeyInfo info;
+        info.distance = query_node.getGroupByClusterDistance();
+        info.dimensions = cluster_dims;
+        info.key_names = std::move(cluster_key_names_resolved);
+        aggregation_analysis_result.cluster_key_info = std::move(info);
+    }
 
     return aggregation_analysis_result;
 }
