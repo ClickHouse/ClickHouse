@@ -36,7 +36,8 @@
 0
 2
 2
-0
+1
+UInt8
 has([1, 2, 3], number)	UInt8					
 h	UInt8					
 arr	elem	has(arr, elem)
