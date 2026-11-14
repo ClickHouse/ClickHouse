@@ -3105,6 +3105,13 @@ def test_read_object_version(started_cluster):
     assert f"100000\t99999\t{old_size}\n" == instance.query(
         f"SELECT count(), max(id), any(_size) FROM {s3('size.parquet', 'Parquet', 'id UInt64', old)}"
     )
+    # With `s3_ignore_file_doesnt_exist` the metadata comes from `tryGetObjectMetadata`: the old version is read with
+    # its own size, and a version that does not exist is skipped like a missing key.
+    for version_id, expected in [(old, "100000\t99999\n"), (str(uuid.uuid4()), "0\t0\n")]:
+        assert expected == instance.query(
+            f"SELECT count(), max(id) FROM {s3('size.parquet', 'Parquet', 'id UInt64', version_id)} "
+            "SETTINGS s3_ignore_file_doesnt_exist = 1"
+        )
 
     # Versions of equal size (page checksums would make them differ): the footer of the latest version,
     # cached by the first query, does not describe the old one.
