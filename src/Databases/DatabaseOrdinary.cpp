@@ -184,12 +184,20 @@ TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & c
     return znode_info;
 }
 
+String DatabaseOrdinary::getConvertedMergeTreeEngineName(const String & engine_name, bool replicated)
+{
+    if (replicated)
+        return "Replicated" + engine_name;
+    chassert(engine_name.starts_with("Replicated"));
+    return engine_name.substr(strlen("Replicated"));
+}
+
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated, const TableZnodeInfo * ordinary_znode_info)
 {
     auto * storage = create_query.storage;
     auto args = make_intrusive<ASTExpressionList>();
     auto engine = make_intrusive<ASTFunction>();
-    String engine_name;
+    const String engine_name = getConvertedMergeTreeEngineName(storage->engine->name, replicated);
 
     if (replicated)
     {
@@ -214,8 +222,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = "Replicated" + storage->engine->name;
     }
     else
     {
@@ -225,8 +231,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
             for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
                 args->children.push_back(storage->engine->arguments->children[i]->clone());
         }
-
-        engine_name = storage->engine->name.substr(strlen("Replicated"));
     }
 
     /// Set new engine for the old query
@@ -1174,7 +1178,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
     writeMetadataFile(
         db_disk,
@@ -1227,7 +1231,8 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.isLoadingFromExistingMetadata());
+        database_metadata_disk_settings.loadFromQuery(
+            *engine_define, args.context, args.isLoadingFromExistingMetadata(), /* stored_definition */ args.create_query.attach_short_syntax);
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };

@@ -25,7 +25,8 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// argument could only be honored by the read-write fallback and would be silently ignored whenever
 /// the native copy is enabled. Callers that need a range read the source themselves and use
 /// `copyDataToAzureBlobStorageFile()`.
-void copyAzureBlobStorageFile(
+/// Returns false when native copy cannot finish and `allow_copy_through_buffers` is false.
+bool copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
@@ -37,7 +38,8 @@ void copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    BlobStorageLogWriterPtr blob_storage_log = {});
+    BlobStorageLogWriterPtr blob_storage_log = {},
+    bool allow_copy_through_buffers = true);
 
 
 /// Copies data from any seekable source to AzureBlobStorage.
