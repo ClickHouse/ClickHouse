@@ -250,3 +250,18 @@ def test_error_message_includes_auth_hint(started_cluster):
     )
     assert "Please check your AWS credentials and permissions" not in error_message
     assert "No response body.." not in error_message
+
+
+def test_error_message_keeps_auth_hint_for_named_error(started_cluster):
+    """S3 names the error in the body of a refused GetObjectTagging, so the credentials hint stays."""
+    instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
+
+    error_message = instance.query_and_get_error(
+        "SELECT _tags FROM s3('http://resolver:8080/tagging-denied/test.csv', 'CSV', 'a String')"
+    )
+
+    assert (
+        "Access Denied. HTTP response code: 403, error type: ACCESS_DENIED. "
+        "Please check your AWS credentials and permissions" in error_message
+    )
+    assert "S3 did not say why" not in error_message
