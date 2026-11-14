@@ -1,0 +1,14 @@
+descending: files,sorted=5,5 tagged=5
+small: files,sorted=1,1 tagged=1
+partitioned: files,sorted=6,6 tagged=6
+two_columns: files,sorted=5,5 tagged=5
+desc: files,sorted=5,5 tagged=5
+compressible: files,sorted=1,1 tagged=1
+incompressible: files,sorted=2,2 tagged=2
+nullable: files,sorted=5,5 tagged=5
+nullable_desc: files,sorted=5,5 tagged=5
+sort_buffer_limit: files,sorted=7,7 tagged=7
+float: files,sorted=5,5 tagged=0
+uuid: files,sorted=5,5 tagged=0
+truncated_binary: files,sorted=1,0 tagged=0
+void_transform: files,sorted=1,0 tagged=0

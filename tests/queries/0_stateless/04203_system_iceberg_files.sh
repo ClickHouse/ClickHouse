@@ -69,7 +69,6 @@ ${CLICKHOUSE_CLIENT} --query "
         partition,
         schema_id,
         sequence_number,
-        // TODO: sort_order_id is empty in the results because ClickHouse's Iceberg writer doesn't record it in the manifest.
         sort_order_id,
         null_value_counts,
         -- value_counts is empty: ClickHouse's Iceberg writer (IcebergWrites.cpp) does not emit f_value_counts today.

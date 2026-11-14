@@ -1371,6 +1371,24 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
     return result;
 }
 
+std::unordered_map<Int64, String> IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(Poco::JSON::Array::Ptr schema)
+{
+    std::unordered_map<Int64, String> result;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var & type)
+                {
+                    if (type.isString())
+                        result.emplace(field_id, canonicalizeTypeName(type.extract<String>()));
+                });
+    }
+    return result;
+}
+
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);

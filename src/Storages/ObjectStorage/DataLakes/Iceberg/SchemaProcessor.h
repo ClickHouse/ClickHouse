@@ -146,6 +146,9 @@ public:
     /// Field ids (including nested ones) whose Iceberg type is `time`.
     static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
 
+    /// Canonical Iceberg type names of the primitive fields (including nested ones), by field id.
+    static std::unordered_map<Int64, String> collectIcebergPrimitiveTypesById(Poco::JSON::Array::Ptr schema);
+
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
