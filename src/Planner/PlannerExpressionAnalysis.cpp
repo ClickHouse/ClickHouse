@@ -16,6 +16,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <WindowFunctions/WindowFunctionFactory.h>
+
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
@@ -415,7 +417,9 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         {
             bool types_changed = false;
             DataTypes actual_argument_types;
+            ColumnsWithTypeAndName actual_argument_columns;
             actual_argument_types.reserve(window_function.argument_names.size());
+            actual_argument_columns.reserve(window_function.argument_names.size());
 
             for (size_t i = 0; i < window_function.argument_names.size(); ++i)
             {
@@ -429,20 +433,33 @@ std::optional<WindowAnalysisResult> analyzeWindow(
                 {
                     actual_argument_types.push_back(window_function.argument_types[i]);
                 }
+
+                actual_argument_columns.emplace_back(dag_node ? dag_node->column : nullptr, actual_argument_types.back(), window_function.argument_names[i]);
             }
 
-            if (types_changed)
+            if (!types_changed)
+                continue;
+
+            if (window_function.general_function)
+            {
+                window_function.general_function = WindowFunctionFactory::instance().get(
+                    window_function.getFunctionName(),
+                    actual_argument_columns,
+                    window_function.function_parameters,
+                    planner_context->getQueryContext()->getSettingsRef());
+            }
+            else
             {
                 AggregateFunctionProperties properties;
-                auto new_function = AggregateFunctionFactory::instance().get(
+                window_function.aggregate_function = AggregateFunctionFactory::instance().get(
                     window_function.getFunctionName(),
                     NullsAction::EMPTY,
                     actual_argument_types,
                     window_function.function_parameters,
                     properties);
-                window_function.aggregate_function = std::move(new_function);
-                window_function.argument_types = std::move(actual_argument_types);
             }
+
+            window_function.argument_types = std::move(actual_argument_types);
         }
     }
 
