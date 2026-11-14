@@ -867,7 +867,8 @@ struct DynamicEntries
     /// `DT_NEEDED`.
     std::vector<std::string> needed;
     /// `DT_RPATH` and `DT_RUNPATH`, the directories separated by `:`, with `$ORIGIN` expanded to the directory of the
-    /// file. A directory with another substitution, as `$LIB` or `$PLATFORM`, is skipped.
+    /// file. A directory with another substitution, as `$LIB` or `$PLATFORM`, is skipped. `DT_RPATH` is empty if the
+    /// file has `DT_RUNPATH`, which the dynamic loader uses instead.
     std::vector<std::string> rpath;
     std::vector<std::string> runpath;
 };
@@ -919,6 +920,8 @@ DynamicEntries getDynamicEntries(const std::string & path)
         else
             split_paths(string, entries.runpath);
     }
+    if (!entries.runpath.empty())
+        entries.rpath.clear();
     return entries;
 }
 
@@ -978,11 +981,12 @@ std::vector<std::string> getLibraryDirectories(const std::vector<std::string> & 
     return directories;
 }
 
-/// The shared libraries with the names `names`, and the libraries they need, as the dynamic loader finds them: in the
-/// `DT_RPATH` of the object that needs a library and of the objects that needed that one, if the object has no
-/// `DT_RUNPATH`, then in its `DT_RUNPATH`, which applies only to the libraries it needs directly, then in
-/// `directories`. `rpath` and `runpath` are the ones of the object that needs `names`. A library that is not found is
-/// unavailable to the dynamic loader as well.
+/// The shared libraries with the names `names`, and the libraries they need, as the dynamic loader finds them. For a
+/// library needed by an object without `DT_RUNPATH`: in the `DT_RPATH` of that object and of every object up the
+/// chain of the objects that loaded it, to the executable, whether they have `DT_RUNPATH` or not. For a library needed
+/// by an object with `DT_RUNPATH`: only in that, which applies to its direct dependencies. Then in `directories`.
+/// `rpath` is the chain of `DT_RPATH` of the object that needs `names` and its loaders, `runpath` its `DT_RUNPATH`. A
+/// library that is not found is unavailable to the dynamic loader as well.
 std::vector<std::string> findLibraries(
     const std::vector<std::string> & names,
     const std::vector<std::string> & directories,
@@ -992,7 +996,9 @@ std::vector<std::string> findLibraries(
     struct Pending
     {
         std::string name;
-        std::vector<std::string> rpath;
+        /// The `DT_RPATH` of the object that needs the library, then of the object that loaded that one, and so on.
+        std::vector<std::string> rpath_chain;
+        /// The `DT_RUNPATH` of the object that needs the library.
         std::vector<std::string> runpath;
     };
     std::deque<Pending> pending;
@@ -1013,7 +1019,7 @@ std::vector<std::string> findLibraries(
         else
         {
             if (library.runpath.empty())
-                for (const auto & directory : library.rpath)
+                for (const auto & directory : library.rpath_chain)
                     candidates.push_back(directory + "/" + library.name);
             for (const auto & directory : library.runpath)
                 candidates.push_back(directory + "/" + library.name);
@@ -1030,12 +1036,12 @@ std::vector<std::string> findLibraries(
                 break;
             libraries.push_back(path);
             DynamicEntries entries = getDynamicEntries(path);
-            /// `DT_RPATH` is inherited by the libraries that this one needs, unless it has `DT_RUNPATH`.
-            std::vector<std::string> inherited_rpath = entries.rpath;
-            if (entries.runpath.empty())
-                inherited_rpath.insert(inherited_rpath.end(), library.rpath.begin(), library.rpath.end());
+            /// The chain for the libraries that this one needs: its own `DT_RPATH`, then the chain of its loaders, which
+            /// is kept also when this one has `DT_RUNPATH` (and then no `DT_RPATH`), for the libraries further down.
+            std::vector<std::string> rpath_chain = entries.rpath;
+            rpath_chain.insert(rpath_chain.end(), library.rpath_chain.begin(), library.rpath_chain.end());
             for (auto & needed : entries.needed)
-                pending.push_back({std::move(needed), inherited_rpath, entries.runpath});
+                pending.push_back({std::move(needed), rpath_chain, entries.runpath});
             break;
         }
     }
