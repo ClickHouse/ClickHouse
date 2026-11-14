@@ -341,7 +341,8 @@ static void insertFunctionsAndSubqueries(const QueryTreeNodePtr & node, std::uno
     }
 }
 
-/// The same for the nodes that `compareGroupByKeys` matches. Column sources and subqueries are not hashed.
+/// Hashes what `compareGroupByKeys` compares, except column sources and subqueries.
+/// A constant is hashed by its text, which is the same for every NaN.
 static UInt64 getGroupByKeyHash(const IQueryTreeNode & node)
 {
     SipHash hash;
@@ -361,7 +362,7 @@ static UInt64 getGroupByKeyHash(const IQueryTreeNode & node)
         else if (const auto * column_node = current->as<ColumnNode>())
             hash.update(column_node->getColumnName());
         else if (const auto * constant_node = current->as<ConstantNode>())
-            constant_node->getColumn()->updateHashFast(hash);
+            hash.update(constant_node->getColumn()->getValueName(0, {}));
 
         for (const auto & child : current->getChildren())
             if (child)
