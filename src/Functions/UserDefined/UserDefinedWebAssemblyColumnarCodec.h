@@ -48,8 +48,9 @@ ColumnPtr compactLowCardinalityDictionaries(const ColumnPtr & col, const DataTyp
 ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type);
 
 /// Rows `[start, start + length)` of `col` of type `type`. `cut` of a column with nested
-/// LowCardinality reinserts its entries by value (`-0.0` becomes `+0.0`); `IColumn::index`
-/// keeps the dictionaries, so it is used when `type` contains LowCardinality.
+/// LowCardinality reinserts its entries by value (`-0.0` becomes `+0.0`); here the wrappers are
+/// sliced part by part down to the LowCardinality, whose `cut` keeps the dictionary. Work and
+/// scratch are bounded by the selected rows, not by the whole block.
 ColumnPtr cutColumnar(const ColumnPtr & col, const DataTypePtr & type, size_t start, size_t length);
 
 /// `col` with a `Const` expanded to full rows, keeping nested LowCardinality entries byte for byte

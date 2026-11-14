@@ -1186,6 +1186,34 @@ TEST(ColumnarWire, ConstAndCutArrayLowCardinalityKeepNegativeZero)
     EXPECT_TRUE(std::signbit(assert_cast<const ColumnArray &>(*cut).getData().getFloat64(0)));
 }
 
+/// A one-row slice of a large `Array(LowCardinality(Float64))` block carries only that row's elements,
+/// shares the source dictionary rather than reinserting into a new one, and keeps `-0.0`.
+TEST(ColumnarWire, CutArrayLowCardinalityTouchesOnlySelectedRows)
+{
+    DataTypePtr type = std::make_shared<DataTypeArray>(
+        std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeFloat64>()));
+    constexpr size_t rows = 1000;
+    constexpr size_t elements_per_row = 100;
+    ColumnPtr element = makeNegativeZeroLowCardinality(false);
+    const auto & element_lc = assert_cast<const ColumnLowCardinality &>(*element);
+    auto indexes = ColumnUInt8::create(rows * elements_per_row, static_cast<UInt8>(element_lc.getIndexes().getUInt(0)));
+    ColumnPtr data = ColumnLowCardinality::create(element_lc.getDictionaryPtr(), std::move(indexes), /*is_shared=*/false);
+    auto offsets = ColumnArray::ColumnOffsets::create(rows);
+    for (size_t i = 0; i < rows; ++i)
+        offsets->getData()[i] = (i + 1) * elements_per_row;
+    ColumnPtr array = ColumnArray::create(data, std::move(offsets));
+
+    ColumnPtr cut = cutColumnar(array, type, 500, 1);
+    ASSERT_EQ(cut->size(), 1u);
+    const auto & cut_array = assert_cast<const ColumnArray &>(*cut);
+    EXPECT_EQ(cut_array.getOffsets()[0], elements_per_row);
+    const auto & cut_data = assert_cast<const ColumnLowCardinality &>(cut_array.getData());
+    ASSERT_EQ(cut_data.size(), elements_per_row);
+    EXPECT_EQ(cut_data.getDictionaryPtr().get(), element_lc.getDictionaryPtr().get());
+    for (size_t i = 0; i < elements_per_row; ++i)
+        EXPECT_TRUE(std::signbit(cut_data.getFloat64(i))) << "element " << i;
+}
+
 /// `LowCardinality(UInt64)` with the given dictionary keys (slot 0 is the default) and indexes.
 /// `ColumnUnique` does not deduplicate keys passed this way, as a guest-built dictionary would not be.
 static ColumnPtr makeUInt64LowCardinality(const std::vector<UInt64> & keys, const std::vector<UInt8> & indexes)

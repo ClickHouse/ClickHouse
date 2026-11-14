@@ -528,8 +528,47 @@ ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type)
 
 ColumnPtr cutColumnar(const ColumnPtr & col, const DataTypePtr & type, size_t start, size_t length)
 {
-    if (!containsLowCardinality(type))
+    /// `LowCardinality::cut` keeps the dictionary; the wrappers below would reinsert nested entries by
+    /// value, so they are sliced part by part, touching only the selected rows.
+    if (!containsLowCardinality(type) || isColumnConst(*col) || typeid_cast<const DataTypeLowCardinality *>(type.get()))
         return col->cut(start, length);
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*col);
+        return ColumnNullable::create(
+            cutColumnar(nullable.getNestedColumnPtr(), nullable_type->getNestedType(), start, length),
+            nullable.getNullMapColumnPtr()->cut(start, length));
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto & array = assert_cast<const ColumnArray &>(*col);
+        const auto & src_offsets = array.getOffsets();
+        const UInt64 first = src_offsets[static_cast<ssize_t>(start) - 1];
+        const UInt64 last = src_offsets[static_cast<ssize_t>(start + length) - 1];
+        auto offsets = ColumnArray::ColumnOffsets::create(length);
+        auto & offsets_data = offsets->getData();
+        for (size_t i = 0; i < length; ++i)
+            offsets_data[i] = src_offsets[start + i] - first;
+        return ColumnArray::create(cutColumnar(array.getDataPtr(), array_type->getNestedType(), first, last - first), std::move(offsets));
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return ColumnMap::create(cutColumnar(
+            assert_cast<const ColumnMap &>(*col).getNestedColumnPtr(), map_type->getNestedType(), start, length));
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & tuple = assert_cast<const ColumnTuple &>(*col);
+        const auto & element_types = tuple_type->getElements();
+        Columns elements;
+        for (size_t i = 0; i < element_types.size(); ++i)
+            elements.push_back(cutColumnar(tuple.getColumnPtr(i), element_types[i], start, length));
+        return ColumnTuple::create(elements);
+    }
+
+    /// `Variant`: `index` keeps the dictionaries, and its scratch is bounded by the selected rows.
     auto rows = ColumnUInt64::create(length);
     std::iota(rows->getData().begin(), rows->getData().end(), start);
     return col->index(*rows, 0);
