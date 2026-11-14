@@ -104,6 +104,19 @@ bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query, bool for_
 }
 
 
+bool isTimeSeriesExemplarsTargetEnabled(const ASTCreateQuery & query)
+{
+    if (const auto * value = tryGetSettingValue(query, "store_exemplars"))
+        return fieldToNumberSettingValue<bool>(*value);
+
+    /// The stored definition of an existing table declares the target by its EXEMPLARS clauses.
+    if (hasTimeSeriesTargetDefinition(query, ViewTarget::Exemplars))
+        return true;
+
+    return detail::TIME_SERIES_STORE_EXEMPLARS_DEFAULT;
+}
+
+
 bool hasTimeSeriesTargetDefinition(const ASTCreateQuery & query, ViewTarget::Kind kind)
 {
     return (query.getTargetInnerColumns(kind) != nullptr) || (query.getTargetInnerEngine(kind) != nullptr) || query.hasTargetTableID(kind);
@@ -120,6 +133,8 @@ size_t countTimeSeriesInnerTables(const ASTCreateQuery & query, bool for_restore
         result += count_inner_table(ViewTarget::RecentSamples);
     if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
         result += count_inner_table(ViewTarget::TimeRanges);
+    if (isTimeSeriesExemplarsTargetEnabled(query))
+        result += count_inner_table(ViewTarget::Exemplars);
     return result;
 }
 

@@ -121,6 +121,9 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
                 if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
                     generate_target_uuid(ViewTarget::TimeRanges);
+
+                if (isTimeSeriesExemplarsTargetEnabled(query))
+                    generate_target_uuid(ViewTarget::Exemplars);
             }
         }
     }

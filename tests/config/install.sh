@@ -431,6 +431,7 @@ ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 # keep the previous-release server of the upgrade check bootable.
 if check_clickhouse_version 26.8; then
     ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/prometheus_api_v1.xml $DEST_SERVER_PATH/config.d/
     # The path-as-URL features are enabled by default since 26.10. An older server - the
     # previous-release one of the upgrade check - still needs them turned on explicitly,
     # because that release's tests expect the feature to work. On 26.10 and newer the tests

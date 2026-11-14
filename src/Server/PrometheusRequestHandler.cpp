@@ -471,8 +471,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API (/api/v1/query, /api/v1/query_range,
+/// /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/query_exemplars).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -625,6 +625,16 @@ public:
                 UInt64 limit = getLimitParam();
 
                 protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
+            }
+            else if (uri_path.ends_with("/query_exemplars"))
+            {
+                /// Like Prometheus, an expression without selectors gets 204 No Content.
+                if (!protocol.queryExemplars(getOutputStream(response), params->get("query", ""), params->get("start", ""),
+                                             params->get("end", ""), query_finish_callback))
+                {
+                    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+                    response.setChunkedTransferEncoding(false);
+                }
             }
             else if (uri_path.ends_with("/metadata"))
             {

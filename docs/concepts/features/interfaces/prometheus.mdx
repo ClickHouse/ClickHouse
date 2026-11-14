@@ -66,6 +66,7 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/label/<name>/values` | Label values |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
 | `/prometheus/api/v1/federate` | Federation of the latest samples |
+| `/prometheus/api/v1/query_exemplars` | Exemplars of the matched series |
 
 The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
 
@@ -197,7 +198,7 @@ Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and ad
 With `httpMethod: POST`, Grafana sends the query parameters in the request body. ClickHouse reads the request body and the URL query string, so `customQueryParameters` still applies. Use `POST` for long PromQL expressions, because a URL has a length limit.
 
 <Note>
-Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query`, the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata`, and the [federation](#federation) endpoint `/api/v1/federate` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
+Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, `/api/v1/format_query`, and `/api/v1/query_exemplars` (see [Query exemplars](#query-exemplars)), the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata`, and the [federation](#federation) endpoint `/api/v1/federate` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
 </Note>
 
 ### SQL entry points {#sql-entry-points}
@@ -261,6 +262,35 @@ scrape_configs:
     static_configs:
       - targets: ['clickhouse.example.com:8443']
 ```
+
+## Query exemplars {#query-exemplars}
+
+A `TimeSeries` table stores [exemplars](https://prometheus.io/docs/prometheus/latest/feature_flags/#exemplars-storage) if it is created with the
+[`store_exemplars`](/reference/engines/table-engines/integrations/time-series#settings) setting:
+
+```sql
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries SETTINGS store_exemplars = 1
+```
+
+Remote write then stores the exemplars of each series the way Prometheus with `--enable-feature=exemplar-storage` accepts them
+(see the [exemplars table](/reference/engines/table-engines/integrations/time-series#exemplars-table)), and the endpoint
+`/prometheus/api/v1/query_exemplars` returns them like Prometheus does. It takes the `query`, `start` and `end` parameters, and returns the exemplars
+with timestamps in [`start`, `end`] of the series matched by any selector of the PromQL expression `query`, grouped by series and sorted by the series labels:
+
+```bash
+curl "https://clickhouse.example.com:8443/prometheus/api/v1/query_exemplars" \
+  --data-urlencode 'query=http_request_duration_seconds_bucket{job="api"}' \
+  --data-urlencode "start=1724112000" \
+  --data-urlencode "end=1724115600" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+```json
+{"status":"success","data":[{"seriesLabels":{"__name__":"http_request_duration_seconds_bucket","job":"api","le":"0.5"},"exemplars":[{"labels":{"trace_id":"5f1d2b"},"value":"0.27","timestamp":1724112001.123}]}]}
+```
+
+An expression without selectors gets an empty `204 No Content` response, and a table without exemplars returns an empty list.
 
 ## Read metrics with remote read {#remote-read}
 

@@ -60,6 +60,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsUInt64 samples_index_granularity;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity_bytes;
     extern const TimeSeriesSettingsASTFunction samples_partition_by;
+    extern const TimeSeriesSettingsBool store_exemplars;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsBool store_time_ranges;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
@@ -85,11 +86,12 @@ namespace ErrorCodes
 namespace
 {
     /// All target kinds of a TimeSeries table.
-    /// The RecentSamples and TimeRanges targets are optional: they're enabled by the `recent_samples_ttl_seconds`
-    /// and `store_time_ranges` settings (see `isOptionalTarget` in StorageTimeSeries.cpp).
-    constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
+    /// The RecentSamples, TimeRanges and Exemplars targets are optional: they're enabled by the `recent_samples_ttl_seconds`,
+    /// `store_time_ranges` and `store_exemplars` settings (see `isOptionalTarget` in StorageTimeSeries.cpp).
+    constexpr std::array<ViewTarget::Kind, 6> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies,
+                ViewTarget::Exemplars};
     }
 
     /// If `type` is `Array(Tuple(timestamp_type, value_type))`, optionally wrapped in `SimpleAggregateFunction`, returns
@@ -228,7 +230,7 @@ namespace
         }
     }
 
-    /// Reads the INNER COLUMNS declarations of the "tags" or "time ranges" target and extracts type `id_type`.
+    /// Reads the INNER COLUMNS declarations of the "tags", "time ranges" or "exemplars" target and extracts type `id_type`.
     void readIdTypeFromInnerColumns(
         const ASTCreateQuery & query,
         ViewTarget::Kind kind, std::string_view table_kind_name,
@@ -449,6 +451,9 @@ namespace
         readIdTypeFromInnerColumns(create_query, ViewTarget::TimeRanges, "time ranges",
             types.id_type, id_src, table_id);
 
+        readIdTypeFromInnerColumns(create_query, ViewTarget::Exemplars, "exemplars",
+            types.id_type, id_src, table_id);
+
         readIdTypeFromSettings(create_query,
             types.id_type, id_src, table_id);
 
@@ -601,6 +606,9 @@ namespace
 
             case ViewTarget::MetricFamilies:
                 return "ReplacingMergeTree";
+
+            case ViewTarget::Exemplars:
+                return "MergeTree";
 
             default:
                 UNREACHABLE();
@@ -776,6 +784,10 @@ namespace
         if (new_version < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
             old_settings.removeSettings({"samples_bucket_step_seconds", "samples_partition_by", "samples_index_granularity_bytes",
                                          "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes"});
+
+        /// The `store_exemplars` setting exists from version MIN_WITH_EXEMPLARS_TARGET (see TimeSeriesVersion.h).
+        if (new_version < TimeSeriesVersion::MIN_WITH_EXEMPLARS_TARGET)
+            old_settings.removeSetting("store_exemplars");
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
@@ -1112,6 +1124,24 @@ namespace
                 return false;
             }
 
+            case ViewTarget::Exemplars:
+            {
+                if (has_default || codec)
+                    return false;
+
+                /// Any type counts because the type is also resolved from the old table (see `resolveTimeSeriesTypes`).
+                if (name == TimeSeriesColumnNames::ID)
+                    return true;
+                if (name == TimeSeriesColumnNames::Timestamp)
+                    return is_timestamp_type(*type);
+                if (name == TimeSeriesColumnNames::Value)
+                    return is_value_type(*type);
+                if (name == TimeSeriesColumnNames::Labels)
+                    return type_name == "Map(LowCardinality(String), String)";
+
+                return false;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -1369,6 +1399,13 @@ namespace
                 break;
             }
 
+            case ViewTarget::Exemplars:
+            {
+                if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
+                    inner_engine.reset(inner_engine.order_by);
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -1566,6 +1603,17 @@ namespace
                 break;
             }
 
+            case ViewTarget::Exemplars:
+            {
+                /// Column "id" - no DEFAULT in the exemplars table, the identifier is computed in the "tags" inner table.
+                add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
+                add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
+                add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.value_type));
+                add_column_if_missing(TimeSeriesColumnNames::Labels,
+                    makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -1668,9 +1716,10 @@ namespace
 
         for (auto inner_table_kind : getTargetKinds())
         {
-            /// Prealpha tables predate the optional targets (the recent samples and the time ranges tables), so there is
+            /// Prealpha tables predate the optional targets (the recent samples, the time ranges and the exemplars tables), so there is
             /// nothing to convert for them, and no such target should be added to an old table's definition.
-            if ((inner_table_kind == ViewTarget::RecentSamples) || (inner_table_kind == ViewTarget::TimeRanges))
+            if ((inner_table_kind == ViewTarget::RecentSamples) || (inner_table_kind == ViewTarget::TimeRanges)
+                || (inner_table_kind == ViewTarget::Exemplars))
                 continue;
             if (hasTargetTableID(create_query, inner_table_kind))
                 continue;
@@ -2048,6 +2097,13 @@ namespace
                 break;
             }
 
+            case ViewTarget::Exemplars:
+            {
+                if (needs_sorting_key())
+                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)});
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -2327,6 +2383,15 @@ namespace
                 break;
             }
 
+            case ViewTarget::Exemplars:
+            {
+                check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
+                check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
+                check_column_type(TimeSeriesColumnNames::Value, resolved_types.value_type);
+                check_column_is_string_map(TimeSeriesColumnNames::Labels);
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -2470,6 +2535,8 @@ namespace
                 continue;
             if ((kind == ViewTarget::TimeRanges) && !new_settings.isTimeRangesTargetEnabled())
                 continue;
+            if ((kind == ViewTarget::Exemplars) && !new_settings.isExemplarsTargetEnabled())
+                continue;
 
             if (!hasTargetTableID(create_query, kind) && !hasInnerColumns(create_query, kind))
             {
@@ -2502,8 +2569,9 @@ namespace
     }
 
     /// Generates the canonical outer columns from the resolved types.
-    /// The name of the column with samples depends on the version of the table (see TimeSeriesVersion.h).
-    ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & value_type, UInt64 version)
+    /// The name of the column with samples depends on the version of the table (see TimeSeriesVersion.h),
+    /// the column `exemplars` exists if the table has the "exemplars" target.
+    ColumnsDescription generateOuterColumns(const DataTypePtr & timestamp_type, const DataTypePtr & value_type, UInt64 version, bool has_exemplars)
     {
         ColumnsDescription result;
 
@@ -2524,6 +2592,13 @@ namespace
         add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Unit, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Help, std::make_shared<DataTypeString>());
+
+        if (has_exemplars)
+        {
+            auto labels_type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+            add_column(TimeSeriesColumnNames::Exemplars,
+                std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type, labels_type})));
+        }
 
         return result;
     }
@@ -2573,6 +2648,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     /// so the flags don't count a target copied from the `AS <other_table>` clause.
     bool has_recent_samples_definition = hasTimeSeriesTargetDefinition(create_query, ViewTarget::RecentSamples);
     bool has_time_ranges_definition = hasTimeSeriesTargetDefinition(create_query, ViewTarget::TimeRanges);
+    bool has_exemplars_definition = hasTimeSeriesTargetDefinition(create_query, ViewTarget::Exemplars);
 
     /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
     /// The clause is used only for a new table: the stored definition of an existing table has no such clause.
@@ -2701,12 +2777,41 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 create_query.targets->removeTarget(ViewTarget::TimeRanges);
         }
 
+        /// The exemplars target is off by default and enabled by `store_exemplars = 1` or by an EXEMPLARS clause.
+        bool exemplars_enabled = settings.isExemplarsTargetEnabled();
+        if (has_exemplars_definition && !exemplars_enabled)
+        {
+            if (settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_EXEMPLARS_TARGET)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "The EXEMPLARS target requires `version` to be at least {}, but the table has version {}",
+                    TimeSeriesVersion::MIN_WITH_EXEMPLARS_TARGET, settings[TimeSeriesSetting::version].value);
+            if (settings[TimeSeriesSetting::store_exemplars].isChanged())
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "The EXEMPLARS target requires the setting `store_exemplars` to be enabled");
+            exemplars_enabled = true;
+        }
+
+        if (exemplars_enabled)
+        {
+            /// Pin `store_exemplars`, so that the definition enables the target by its setting too.
+            if (!settings[TimeSeriesSetting::store_exemplars].isChanged() && create_query.storage)
+                setEngineSettings(*create_query.storage, "store_exemplars", Field(true));
+            settings[TimeSeriesSetting::store_exemplars] = true;
+        }
+        else if (create_query.targets)
+        {
+            /// An EXEMPLARS definition inherited from the `AS <other_table>` clause is just removed when it's disabled.
+            create_query.targets->removeTarget(ViewTarget::Exemplars);
+        }
+
         for (auto kind : getTargetKinds())
         {
             /// The recent samples target is on by default and disabled by an explicit `recent_samples_ttl_seconds = 0`.
             if ((kind == ViewTarget::RecentSamples) && !recent_samples_enabled)
                 continue;
             if ((kind == ViewTarget::TimeRanges) && !time_ranges_enabled)
+                continue;
+            if ((kind == ViewTarget::Exemplars) && !exemplars_enabled)
                 continue;
 
             if (hasTargetTableID(create_query, kind))
@@ -2765,7 +2870,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         auto new_columns_ast = make_intrusive<ASTColumns>();
         new_columns_ast->set(new_columns_ast->columns,
             InterpreterCreateQuery::formatColumns(generateOuterColumns(
-                resolved_types.timestamp_type, resolved_types.value_type, getTimeSeriesVersion(create_query))));
+                resolved_types.timestamp_type, resolved_types.value_type, getTimeSeriesVersion(create_query),
+                isTimeSeriesExemplarsTargetEnabled(create_query))));
         const auto * old_columns = create_query.columns_list;
         if (!old_columns
             || !old_columns->columns

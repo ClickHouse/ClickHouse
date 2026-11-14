@@ -46,10 +46,18 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Core/Types.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <Storages/TimeSeries/getPrometheusLabelsHash.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 #include <fmt/format.h>
+
+#include <map>
+#include <utility>
 
 
 namespace DB
@@ -1110,6 +1118,240 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
 
     /// Release the query slot early, flush the response and record QueryFinish.
     finishExecutedQuery(io, query_finish_callback);
+}
+
+namespace
+{
+
+/// Collects the matchers of every instant selector of a PromQL expression, like `parser.ExtractSelectors` of Prometheus.
+void collectSelectors(const PrometheusQueryTree::Node & node, std::vector<PrometheusQueryTree::MatcherList> & selectors)
+{
+    if (node.node_type == PrometheusQueryTree::NodeType::InstantSelector)
+        selectors.push_back(typeid_cast<const PrometheusQueryTree::InstantSelector &>(node).matchers);
+    for (const auto * child : node.children)
+        collectSelectors(*child, selectors);
+}
+
+using Labels = std::vector<std::pair<String, String>>;
+
+/// Reads the labels of a row from an `Array(Tuple(String, String))` or a `Map(String, String)` column, sorted by name.
+Labels readLabels(const IColumn & column, size_t row)
+{
+    const ColumnArray * array_column = typeid_cast<const ColumnArray *>(&column);
+    if (const auto * map_column = typeid_cast<const ColumnMap *>(&column))
+        array_column = &map_column->getNestedColumn();
+    const auto & offsets = array_column->getOffsets();
+    const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column->getData());
+
+    Labels labels;
+    for (size_t j = (row == 0) ? 0 : offsets[row - 1]; j != offsets[row]; ++j)
+        labels.emplace_back(tuple_column.getColumn(0).getDataAt(j), tuple_column.getColumn(1).getDataAt(j));
+    std::sort(labels.begin(), labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    return labels;
+}
+
+struct ExemplarRow
+{
+    DateTime64 timestamp;
+    Float64 value;
+    Labels labels;
+    UInt64 labels_hash;
+};
+
+}
+
+bool PrometheusHTTPProtocolAPI::queryExemplars(
+    WriteBuffer & response,
+    const String & query_param,
+    const String & start_param,
+    const String & end_param,
+    QueryFinishCallback query_finish_callback)
+{
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
+    auto table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
+    const UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
+
+    /// Like Prometheus, the time range is checked before the expression is parsed.
+    std::optional<DateTime64> min_time;
+    std::optional<DateTime64> max_time;
+    if (!start_param.empty())
+        min_time = parseTimeSeriesTimestamp(start_param, time_scale);
+    if (!end_param.empty())
+        max_time = parseTimeSeriesTimestamp(end_param, time_scale);
+    if (min_time && max_time && (*max_time < *min_time))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "end timestamp must not be before start timestamp");
+
+    PrometheusQueryTree promql_query;
+    promql_query.parse(query_param, time_scale);
+    std::vector<PrometheusQueryTree::MatcherList> selectors;
+    collectSelectors(*promql_query.getRoot(), selectors);
+    if (selectors.empty())
+        return false;
+
+    /// A table without the exemplars table is like a Prometheus whose exemplar storage is empty.
+    if (!time_series_storage->hasTarget(ViewTarget::Exemplars))
+    {
+        writeString(R"({"status":"success","data":[]})", response);
+        return true;
+    }
+
+    /// The series matched by any selector, whatever the time ranges of their samples are: Prometheus filters only the exemplars by time.
+    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
+    auto tags_table_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
+    auto table_id_type = tags_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
+    auto time_series_settings = time_series_storage->getStorageSettings();
+    auto series_ids_query = make_intrusive<ASTSelectWithUnionQuery>();
+    series_ids_query->union_mode = SelectUnionMode::UNION_ALL;
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    for (const auto & matchers : selectors)
+    {
+        auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
+            *time_series_storage, tags_table->getStorageID(), *time_series_settings, table_timestamp_type, table_id_type, matchers,
+            /* min_time = */ std::nullopt, /* max_time = */ std::nullopt, time_scale, getContext());
+        list_of_selects->children.push_back(typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query).list_of_selects->children.at(0));
+    }
+    series_ids_query->children.push_back(std::move(list_of_selects));
+    series_ids_query->list_of_selects = series_ids_query->children.back();
+
+    /// SELECT timeSeriesIdToTags(id) AS tags, toDateTime64(timestamp, <scale>) AS exemplar_timestamp, value, labels
+    /// FROM <exemplars> WHERE id IN (SELECT series_id FROM (<series_ids_query>)) AND <exemplar_timestamp in [start, end]>
+    auto result_timestamp_type = getPromQLResultTimestampType(time_scale, getPromQLResultTimeZone(table_timestamp_type));
+    auto timestamp_expression = timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), result_timestamp_type);
+
+    ASTs conditions;
+    auto ids_subquery = makeSelectFromSubquery({make_intrusive<ASTIdentifier>("series_id")}, std::move(series_ids_query), /* distinct = */ false, {});
+    conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTSubquery>(std::move(ids_subquery))));
+    if (min_time)
+        conditions.push_back(makeASTFunction("greaterOrEquals", timestamp_expression->clone(), timeSeriesTimestampToAST(*min_time, result_timestamp_type)));
+    if (max_time)
+        conditions.push_back(makeASTFunction("lessOrEquals", timestamp_expression->clone(), timeSeriesTimestampToAST(*max_time, result_timestamp_type)));
+
+    auto tags_expression = makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+    tags_expression->setAlias(TimeSeriesColumnNames::Tags);
+    timestamp_expression->setAlias("exemplar_timestamp");
+    auto select_list = make_intrusive<ASTExpressionList>();
+    select_list->children = {std::move(tags_expression), std::move(timestamp_expression),
+                             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Labels)};
+
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>(time_series_storage->getTargetTableID(ViewTarget::Exemplars, getContext()));
+    table_expression->children.push_back(table_expression->database_and_table_name);
+    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    table_element->table_expression = table_expression;
+    table_element->children.push_back(std::move(table_expression));
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(table_element));
+
+    auto select_query = make_intrusive<ASTSelectQuery>();
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(conditions)));
+    auto sql_query = make_intrusive<ASTSelectWithUnionQuery>();
+    sql_query->list_of_selects = make_intrusive<ASTExpressionList>();
+    sql_query->list_of_selects->children.push_back(std::move(select_query));
+    sql_query->children.push_back(sql_query->list_of_selects);
+
+    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    auto query_context = Context::createCopy(getContext());
+    StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
+
+    /// Like `Select` of tsdb/exemplar.go, the series are sorted by their labels.
+    std::map<Labels, std::vector<ExemplarRow>> exemplars_by_series;
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+        Block block;
+        while (executor.pull(block))
+        {
+            /// The executor can return an empty block without columns while the query is still running.
+            if (block.rows() == 0)
+                continue;
+            const auto & tags_column = *block.getByName(TimeSeriesColumnNames::Tags).column;
+            const auto & timestamp_column = typeid_cast<const ColumnDecimal<DateTime64> &>(*block.getByName("exemplar_timestamp").column);
+            const auto & value_column = *block.getByName(TimeSeriesColumnNames::Value).column;
+            const auto & labels_column = *block.getByName(TimeSeriesColumnNames::Labels).column;
+            for (size_t row = 0; row < block.rows(); ++row)
+            {
+                ExemplarRow exemplar{timestamp_column.getElement(row), value_column.getFloat64(row), readLabels(labels_column, row), 0};
+                std::vector<std::pair<std::string_view, std::string_view>> label_views(exemplar.labels.begin(), exemplar.labels.end());
+                exemplar.labels_hash = getPrometheusLabelsHash(label_views);
+                exemplars_by_series[readLabels(tags_column, row)].push_back(std::move(exemplar));
+            }
+        }
+        io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Prometheus keeps the exemplars of a series in the order they were accepted, which is the order of (timestamp, value, labels hash).
+    /// A NaN value goes after the others, and the same exemplar written twice is returned once.
+    auto value_less = [](Float64 lhs, Float64 rhs) { return std::isnan(rhs) ? !std::isnan(lhs) : (lhs < rhs); };
+    auto same_value = [](Float64 lhs, Float64 rhs) { return (lhs == rhs) || (std::isnan(lhs) && std::isnan(rhs)); };
+
+    writeString(R"({"status":"success","data":[)", response);
+    bool need_comma = false;
+    for (auto & [series_labels, exemplars] : exemplars_by_series)
+    {
+        std::sort(exemplars.begin(), exemplars.end(), [&](const ExemplarRow & lhs, const ExemplarRow & rhs)
+        {
+            if (lhs.timestamp != rhs.timestamp)
+                return lhs.timestamp < rhs.timestamp;
+            if (!same_value(lhs.value, rhs.value))
+                return value_less(lhs.value, rhs.value);
+            if (lhs.labels_hash != rhs.labels_hash)
+                return lhs.labels_hash < rhs.labels_hash;
+            return lhs.labels < rhs.labels;
+        });
+        auto duplicates = std::unique(exemplars.begin(), exemplars.end(), [&](const ExemplarRow & lhs, const ExemplarRow & rhs)
+        {
+            return (lhs.timestamp == rhs.timestamp) && same_value(lhs.value, rhs.value) && (lhs.labels == rhs.labels);
+        });
+        exemplars.erase(duplicates, exemplars.end());
+
+        if (std::exchange(need_comma, true))
+            writeChar(',', response);
+        writeString(R"({"seriesLabels":)", response);
+        writeLabels(response, series_labels);
+        writeString(R"(,"exemplars":[)", response);
+        for (size_t i = 0; i != exemplars.size(); ++i)
+        {
+            if (i)
+                writeChar(',', response);
+            writeString(R"({"labels":)", response);
+            writeLabels(response, exemplars[i].labels);
+            writeString(R"(,"value":")", response);
+            writeScalar(response, exemplars[i].value);
+            writeString(R"(","timestamp":)", response);
+            writeTimestamp(response, exemplars[i].timestamp, time_scale);
+            writeChar('}', response);
+        }
+        writeString("]}", response);
+    }
+    writeString("]}", response);
+
+    /// Release the query slot early, flush the response and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
+    return true;
+}
+
+void PrometheusHTTPProtocolAPI::writeLabels(WriteBuffer & response, const std::vector<std::pair<String, String>> & labels)
+{
+    writeChar('{', response);
+    for (size_t i = 0; i != labels.size(); ++i)
+    {
+        if (i)
+            writeChar(',', response);
+        writeJSONString(labels[i].first, response, format_settings);
+        writeChar(':', response);
+        writeJSONString(labels[i].second, response, format_settings);
+    }
+    writeChar('}', response);
 }
 
 void PrometheusHTTPProtocolAPI::writeTags(WriteBuffer & response, const Block & result_block, size_t row_index)

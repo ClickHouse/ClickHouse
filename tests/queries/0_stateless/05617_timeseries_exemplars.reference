@@ -1,0 +1,52 @@
+-- the exemplars table and the outer column exist only with store_exemplars
+exemplars	Array(Tuple(DateTime64(3), Float64, Map(String, String)))
+0
+1
+id	Tuple(UInt64, LowCardinality(UUID))
+timestamp	DateTime64(3)
+value	Float64
+labels	Map(LowCardinality(String), String)
+1
+-- an EXEMPLARS clause enables the table and pins the setting
+store_exemplars = true
+2
+-- the exemplars table requires version 12 and can't be disabled with a clause
+INVALID_SETTING_VALUE
+INCORRECT_QUERY
+INCORRECT_QUERY
+NOT_IMPLEMENTED
+write ts 204
+write ts 204
+write ts_plain 204
+200 {"status":"success","data":[{"seriesLabels":{"__name__":"test_exemplars","instance":"1","job":"a"},"exemplars":[{"labels":{"trace_id":"t1"},"value":"1","timestamp":1724112000.001},{"labels":{"trace_id":"t2"},"value":"2","timestamp":1724112000.002},{"labels":{"trace_id":"t7"},"value":"3","timestamp":1724112000.003},{"labels":{"trace_id":"tie_a"},"value":"3","timestamp":1724112000.003},{"labels":{"trace_id":"tie_b"},"value":"3","timestamp":1724112000.003},{"labels":{"trace_id":"tie_2"},"value":"3","timestamp":1724112000.003},{"labels":{},"value":"4","timestamp":1724112000.004},{"labels":{"trace_id":"r2"},"value":"6","timestamp":1724112000.007}]},{"seriesLabels":{"__name__":"test_exemplars","job":"b"},"exemplars":[{"labels":{"trace_id":"b1"},"value":"10","timestamp":1724112005}]}]}
+200 {"status":"success","data":[{"seriesLabels":{"__name__":"test_exemplars","instance":"1","job":"a"},"exemplars":[{"labels":{"trace_id":"t2"},"value":"2","timestamp":1724112000.002},{"labels":{"trace_id":"t7"},"value":"3","timestamp":1724112000.003},{"labels":{"trace_id":"tie_a"},"value":"3","timestamp":1724112000.003},{"labels":{"trace_id":"tie_b"},"value":"3","timestamp":1724112000.003},{"labels":{"trace_id":"tie_2"},"value":"3","timestamp":1724112000.003}]}]}
+200 {"status":"success","data":[{"seriesLabels":{"__name__":"other_metric","job":"a"},"exemplars":[{"labels":{"span_id":"s1","trace_id":"c1"},"value":"7.25","timestamp":1724112006}]},{"seriesLabels":{"__name__":"test_exemplars","job":"b"},"exemplars":[{"labels":{"trace_id":"b1"},"value":"10","timestamp":1724112005}]}]}
+200 {"status":"success","data":[{"seriesLabels":{"__name__":"test_exemplars","instance":"1","job":"a"},"exemplars":[{"labels":{},"value":"4","timestamp":1724112000.004},{"labels":{"trace_id":"r2"},"value":"6","timestamp":1724112000.007}]}]}
+200 {"status":"success","data":[]}
+204 
+400 bad_data
+400 bad_data
+200 {"status":"success","data":[{"seriesLabels":{"__name__":"test_exemplars","instance":"1","job":"a"},"exemplars":[{"labels":{"trace_id":"t1"},"value":"1","timestamp":1724112000.001}]}]}
+-- a table without the exemplars table
+200 {"status":"success","data":[]}
+-- out-of-order exemplars counted: 3
+-- the inner exemplars table keeps the duplicate written by the second request, the reads return it once
+2024-08-20 00:00:00.001	1	{'trace_id':'t1'}
+2024-08-20 00:00:00.002	2	{'trace_id':'t2'}
+2024-08-20 00:00:00.003	3	{'trace_id':'t7'}
+2024-08-20 00:00:00.003	3	{'trace_id':'tie_2'}
+2024-08-20 00:00:00.003	3	{'trace_id':'tie_a'}
+2024-08-20 00:00:00.003	3	{'trace_id':'tie_b'}
+2024-08-20 00:00:00.004	4	{}
+2024-08-20 00:00:00.004	4	{}
+2024-08-20 00:00:00.007	6	{'trace_id':'r2'}
+2024-08-20 00:00:05.000	10	{'trace_id':'b1'}
+2024-08-20 00:00:06.000	7.25	{'span_id':'s1','trace_id':'c1'}
+-- the outer column
+other_metric	{'__name__':'other_metric','job':'a'}	[('2024-08-20 00:00:06.000',7.25,{'span_id':'s1','trace_id':'c1'})]
+test_exemplars	{'__name__':'test_exemplars','instance':'1','job':'a'}	[('2024-08-20 00:00:00.001',1,{'trace_id':'t1'}),('2024-08-20 00:00:00.002',2,{'trace_id':'t2'}),('2024-08-20 00:00:00.003',3,{'trace_id':'t7'}),('2024-08-20 00:00:00.003',3,{'trace_id':'tie_2'}),('2024-08-20 00:00:00.003',3,{'trace_id':'tie_a'}),('2024-08-20 00:00:00.003',3,{'trace_id':'tie_b'}),('2024-08-20 00:00:00.004',4,{}),('2024-08-20 00:00:00.007',6,{'trace_id':'r2'})]
+test_exemplars	{'__name__':'test_exemplars','job':'b'}	[('2024-08-20 00:00:05.000',10,{'trace_id':'b1'})]
+no_exemplars	2	0
+other_metric	2	1
+test_exemplars	3	8
+test_exemplars	2	1

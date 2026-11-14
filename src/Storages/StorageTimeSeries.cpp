@@ -111,10 +111,10 @@ namespace
     }
 
     /// Whether a target of the given kind is optional: the RecentSamples target is enabled by the `recent_samples_ttl_seconds`
-    /// setting, and the TimeRanges target is enabled by the `store_time_ranges` setting.
+    /// setting, the TimeRanges target by the `store_time_ranges` setting, and the Exemplars target by the `store_exemplars` setting.
     constexpr bool isOptionalTarget(ViewTarget::Kind target_kind)
     {
-        return (target_kind == ViewTarget::RecentSamples) || (target_kind == ViewTarget::TimeRanges);
+        return (target_kind == ViewTarget::RecentSamples) || (target_kind == ViewTarget::TimeRanges) || (target_kind == ViewTarget::Exemplars);
     }
 }
 
@@ -998,6 +998,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]
 [TIME RANGES INNER COLUMNS (...)] [TIME RANGES INNER ENGINE engine(arguments)]
 [METRIC FAMILIES INNER COLUMNS (...)] [METRIC FAMILIES INNER ENGINE engine(arguments)]
+[EXEMPLARS INNER COLUMNS (...)] [EXEMPLARS INNER ENGINE engine(arguments)]
 ```
 
 <Note>
@@ -1035,6 +1036,7 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
 | `help` | `String` | The description of the metric |
+| `exemplars` | `Array(Tuple(DateTime64(3), Float64, Map(String, String)))` by default | Array of (timestamp, value, labels) exemplars of a time series. The column exists only if the table stores exemplars (see the [exemplars](#exemplars-table) table). A `SELECT` returns the distinct exemplars of a time series sorted by timestamp in every row of that time series |
 
 Example:
 
@@ -1086,6 +1088,7 @@ with the difference that a materialized view has one target table
 whereas a `TimeSeries` table has three mandatory target tables named [samples](#samples-table), [tags](#tags-table), and [metric families](#metric-families-table),
 and two optional target tables which are enabled by default: [recent samples](#recent-samples-table)
 (see the [recent_samples_ttl_seconds](#settings) setting) and [time ranges](#time-ranges-table) (see the [store_time_ranges](#settings) setting).
+The optional [exemplars](#exemplars-table) table is disabled by default (see the [store_exemplars](#settings) setting).
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
@@ -1202,6 +1205,28 @@ The _metric families_ table must have columns:
 | `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
 
+### Exemplars table {#exemplars-table}
+
+The _exemplars_ table is optional and disabled by default: it is enabled by the [store_exemplars](#settings) setting or by an `EXEMPLARS` clause,
+and requires [version](#schema-versioning) 12 or later. It contains the [exemplars](https://prometheus.io/docs/prometheus/latest/feature_flags/#exemplars-storage)
+of the time series, one row per exemplar, which are returned by the [/api/v1/query_exemplars](/concepts/features/interfaces/prometheus#query-exemplars) endpoint.
+A table with the _exemplars_ table also has the outer column [exemplars](#outer-columns).
+
+The _exemplars_ table must have columns:
+
+| Name | Mandatory? | Default type | Possible types | Description |
+|---|---|---|---|---|
+| `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table) | Identifies a combination of a metric name and tags |
+| `timestamp` | [x] | `DateTime64(3)` | must match the type of the timestamps in the [samples](#samples-table) table | Timestamp of the exemplar |
+| `value` | [x] | `Float64` | must match the type of the values in the [samples](#samples-table) table | Value of the exemplar |
+| `labels` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or with `LowCardinality(String)` keys or values | Labels of the exemplar, e.g. `trace_id` |
+
+The inner _exemplars_ table uses the [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) engine ordered by `(id, timestamp)`.
+The Prometheus remote-write protocol stores the exemplars Prometheus accepts: the empty labels are removed, an exemplar is dropped if it is
+more than 10 minutes in the future, if its labels are longer than 128 characters, or if it repeats or is older than the previous exemplar
+of its time series in the same request (out-of-order exemplars are counted in the `PrometheusRemoteWriteOutOfOrderExemplars` profile event).
+A table without the _exemplars_ table ignores exemplars.
+
 ## Creation {#creation}
 
 There are multiple ways to create a table with the `TimeSeries` table engine.
@@ -1225,7 +1250,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 11, recent_samples_ttl_seconds = 345600, samples_bucket_step_seconds = 3600, recent_samples_bucket_step_seconds = 900
+SETTINGS version = 12, recent_samples_ttl_seconds = 345600, samples_bucket_step_seconds = 3600, recent_samples_bucket_step_seconds = 900
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1551,9 +1576,10 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `version` | UInt64 | 11 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 12 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `store_time_ranges` | Bool | true | If set to true then the table stores the time range of each time series in the [time ranges](#time-ranges-table) table and uses it to filter time series by time. Set to false to disable the time ranges table. Not applicable to tables of [version](#schema-versioning) 7 or earlier, they use `store_min_time_and_max_time` instead |
+| `store_exemplars` | Bool | false | If set to true then the table stores the exemplars of the time series in the [exemplars](#exemplars-table) table and has the outer column `exemplars`. Disabled by default. Requires [version](#schema-versioning) 12 or later |
 | `samples_bucket_step_seconds` | UInt64 | 3600 | The length in seconds of the time buckets of the [samples](#samples-table) table: a row of the table contains the samples of one time series with timestamps in one bucket, and the `bucket` column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time |
 | `samples_partition_by` | Expression | `toYYYYMM(toDateTime(bucket, 'UTC'))` | Partition key of the inner [samples](#samples-table) table, for example `toStartOfWeek(toDateTime(bucket, 'UTC'))`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per month is used |
 | `metric_families_deduplication_cache_size_bytes` | UInt64 | 10485760 | Maximum size in bytes of the deduplication cache of the [metric families](#metric-families-table) table. The cache remembers the descriptions of the metric families written recently, so they aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). Set to 0 to disable the cache, see also `metric_families_deduplication_cache_expiration_seconds` |
@@ -1587,7 +1613,7 @@ The following settings apply to tables of earlier [versions](#schema-versioning)
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 11) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 12) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1620,6 +1646,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
 | 11 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store buckets of samples: a row keeps the samples of one time series within one time bucket (the columns `samples`, `bucket`, `min_time`, `max_time`) in an `AggregatingMergeTree` ordered by `(id, bucket)`. The settings [`samples_bucket_step_seconds`](#settings), [`samples_partition_by`](#settings), [`samples_index_granularity_bytes`](#settings), [`recent_samples_bucket_step_seconds`](#settings) and [`recent_samples_index_granularity_bytes`](#settings) were introduced, and the defaults of [`samples_index_granularity`](#settings) and [`recent_samples_index_granularity`](#settings) changed. Tables of earlier versions store one sample per row in the columns `timestamp` and `value`: they can still be read, written into and queried with PromQL, and the [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) table function reads them without a conversion when its argument `return_columns` is `'timestamp_and_value'` |
+| 12 | The optional [exemplars](#exemplars-table) table was introduced (the inner table `.inner_id.exemplars.<uuid>`, the keyword `EXEMPLARS`), which is disabled by default and enabled by the [`store_exemplars`](#settings) setting; a table with it has the outer column `exemplars`. Tables of earlier versions store no exemplars |
 
 # Functions {#functions}
 
