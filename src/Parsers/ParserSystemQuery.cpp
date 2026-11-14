@@ -1425,7 +1425,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 Introduced in: v21.6.0
 
-Reloads the metadata of the disk `disk_name`. For a `MergeTree` table whose disks are all read-only, it also reloads the list of the table's data parts, so that the parts written to the same storage by another writer become visible without re-attaching the table. The MergeTree setting [`refresh_parts_interval`](/reference/settings/merge-tree-settings/refresh#refresh_parts_interval) does the same periodically.
+Reloads the metadata of the disk `disk_name`. For a `MergeTree` table whose disks are all read-only, it also scans the table's data directory again and loads the data parts that appeared there since the last scan, so that the parts written to the same storage by another writer become visible without re-attaching the table. Parts removed from the storage are not detected. The MergeTree setting [`refresh_parts_interval`](/reference/settings/merge-tree-settings/refresh#refresh_parts_interval) does the same periodically.
 
 ```sql
 SYSTEM RESTART DISK [ON CLUSTER cluster_name] disk_name
@@ -1913,7 +1913,7 @@ Introduced in: v26.5.0
 
 <ExperimentalBadge/>
 
-Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order, and within the size limits of the other background merges, such as [`max_bytes_to_merge_at_max_space_in_pool`](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool). While a scheduled merge does not meet these conditions, neither it nor the merges scheduled after it are performed. The scheduled merges are kept only in the server's memory and are lost when the server restarts.
+Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order, and within the size limits of the other background merges, such as [`max_bytes_to_merge_at_max_space_in_pool`](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool). While a scheduled merge does not meet these conditions, neither it nor the merges scheduled after it are performed. The scheduled merges are kept only in the server's memory and are lost when the server restarts or the table or its database is renamed.
 
 <Note>
 This is an experimental feature. `SYSTEM SCHEDULE MERGE` and `SYSTEM SYNC MERGES` work only for a table of the MergeTree family whose experimental MergeTree setting [`merge_selector_algorithm`](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) is `'Manual'`, and fail with `BAD_ARGUMENTS` for other tables. The regular background merges of such a table merge only the scheduled parts; TTL merges still run on their own, and `OPTIMIZE TABLE ... FINAL` still merges all parts.
@@ -2082,7 +2082,7 @@ Removes from ClickHouse Keeper all the locks of the snapshot `snapshot_id`, a li
 SYSTEM UNLOCK SNAPSHOT 'snapshot_id' [FROM backup_destination]
 ```
 
-Requires the `SYSTEM UNLOCK SNAPSHOT` privilege. A destination named in `FROM` is also checked against the [`SOURCES`](/reference/statements/grant#sources) grants, as for `RESTORE`: `READ` on `S3` or `AZURE`.
+Requires the `SYSTEM UNLOCK SNAPSHOT` privilege. As for `RESTORE`, a destination named in `FROM` also needs the [`SOURCES`](/reference/statements/grant#sources) grant `READ` on `S3` or `AZURE` and, when it is a named collection, the `NAMED COLLECTION` privilege on it.
 
 ### SYSTEM WAIT LOADING PARTS {#wait-loading-parts}
 
