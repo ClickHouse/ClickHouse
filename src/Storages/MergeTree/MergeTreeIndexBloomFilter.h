@@ -77,7 +77,9 @@ public:
         ContextPtr context_,
         const Block & header_,
         size_t hash_functions_,
-        NameSet columns_shadowing_map_subcolumns_);
+        NameSet columns_shadowing_map_subcolumns_,
+        IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
+        ActionsDAG::NodeRawConstPtrs index_nodes_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -95,6 +97,11 @@ private:
     const Block & header;
     const size_t hash_functions;
     const NameSet columns_shadowing_map_subcolumns;
+    const IsShadowingJSONSubcolumn is_shadowing_json_subcolumn;
+    /// By position in `header`.
+    const ActionsDAG::NodeRawConstPtrs index_nodes;
+    /// Names of `header`, with all but `JSONAllPaths` of a table column left empty.
+    const Names json_index_columns;
     const bool validate_enum_literals_in_operators;
     std::vector<RPNElement> rpn;
 
