@@ -26,10 +26,16 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int CANNOT_FSYNC;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 namespace FailPoints
 {
+    extern const char merge_tree_leader_election_stale_lease_dedup_log_write[];
+    extern const char merge_tree_leader_election_stale_lease_dedup_log_mid_batch[];
+    extern const char merge_tree_leader_election_stale_lease_dedup_log_before_rotate[];
+    extern const char merge_tree_deduplication_log_throw_on_load[];
     extern const char deduplication_log_fail_durable_drop_sync[];
 }
 
@@ -95,9 +101,11 @@ size_t getLogNumber(const std::string & path_str)
 }
 
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
-    const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_)
+    const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_,
+    std::function<bool()> may_write_shared_state_)
     : logs_dir(logs_dir_)
     , deduplication_window(deduplication_window_)
+    , may_write_shared_state(std::move(may_write_shared_state_))
     , rotate_interval(deduplication_window_ * 2) /// actually it doesn't matter
     , format_version(format_version_)
     , deduplication_map(deduplication_window)
@@ -108,7 +116,7 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
         disk->createDirectories(logs_dir);
 }
 
-void MergeTreeDeduplicationLog::load()
+void MergeTreeDeduplicationLog::load(bool throw_on_broken_log)
 {
     /// Table state: not charged to the query that happens to touch it, and kept in the arena for state
     /// that outlives queries rather than fragmenting the ones serving them.
@@ -143,13 +151,35 @@ void MergeTreeDeduplicationLog::load()
         {
             try
             {
+                /// Simulates a transient read error of a log during a `leader_election` takeover.
+                if (throw_on_broken_log)
+                    fiu_do_on(FailPoints::merge_tree_deduplication_log_throw_on_load,
+                        { throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected read error of deduplication log {}", desc.path); });
                 desc.entries_count = loadSingleLog(desc.path);
+            }
+            catch (Exception & e)
+            {
+                if (throw_on_broken_log)
+                {
+                    e.addMessage("while loading MergeTree deduplication log on path {}", desc.path);
+                    throw;
+                }
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
             }
             catch (...)
             {
+                if (throw_on_broken_log)
+                    throw;
                 tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
             }
         }
+
+        /// Re-check that this node may still rewrite the shared log state immediately before the
+        /// rotation/drop below. Reading the history above can take long; under `leader_election`
+        /// the post-failover reload runs on the heartbeat task, which cannot renew the lease
+        /// meanwhile, so the lease can expire mid-load and rotating/dropping shared logs then
+        /// would race the next leader's own deduplication log.
+        assertMayWriteSharedState();
 
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
@@ -312,6 +342,55 @@ void MergeTreeDeduplicationLog::prepareToWrite()
     chassert(current_writer != nullptr);
 }
 
+void MergeTreeDeduplicationLog::assertMayWriteSharedState(WriteStage stage) const
+{
+    if (!may_write_shared_state)
+        return;
+
+    bool lease_went_stale = !may_write_shared_state();
+
+    /// Test hook: deterministically simulate a heartbeat that stalled after the caller's
+    /// entry-point lease check but before the log mutation. Fires only for shared logs
+    /// (`may_write_shared_state` set), i.e. under `leader_election`.
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_dedup_log_write, { lease_went_stale = true; });
+
+    /// Test hook: simulate the lease going stale in the middle of a multi-record batch, after
+    /// at least one record of this `dropPart` call has already been written — the
+    /// per-record re-check must stop the batch instead of letting the stale leader keep
+    /// rotating and rewriting shared log files.
+    if (stage != WriteStage::FirstRecordOfBatch)
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_dedup_log_mid_batch, { lease_went_stale = true; });
+
+    /// Test hook: simulate the lease going stale in the narrower window between a written record
+    /// and the rotation that follows it, which finalizes the current shared log file and creates
+    /// the next one. Only the fence in front of the rotation itself can close this window.
+    if (stage == WriteStage::RotationAfterRecord)
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_dedup_log_before_rotate, { lease_went_stale = true; });
+
+    if (lease_went_stale)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Refusing to write the deduplication log: the leader lease is no longer fresh (leader_election)");
+}
+
+std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::getDuplicates(const std::vector<std::string> & block_ids)
+{
+    std::lock_guard lock(state_mutex);
+
+    if (deduplication_window == 0)
+        return {};
+
+    std::vector<MergeTreeDeduplicationLog::AddPartResult> result;
+    for (const auto & block_id : block_ids)
+    {
+        if (deduplication_map.contains(block_id))
+        {
+            auto info = deduplication_map.get(block_id);
+            result.emplace_back(info, block_id);
+        }
+    }
+    return result;
+}
+
 bool MergeTreeDeduplicationLog::containsAny(const std::vector<std::string> & block_ids)
 {
     std::lock_guard lock(state_mutex);
@@ -359,6 +438,16 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
+    /// Under `leader_election`, check the lease immediately before the first mutation of the shared
+    /// log (`prepareToWrite` can rotate), but not between the records of the batch: one part can
+    /// carry several block ids, and the next leader cannot rebuild missing `ADD` records from the
+    /// part set, so a batch stopped in the middle would leave a prefix of the part's block ids, and
+    /// a retry of the insert would be partially deduplicated. The records are buffered in the
+    /// writer, and on object storage without append support they become durable together, when
+    /// the rotation below finalizes the log file, which has a fence of its own. When the lease is
+    /// lost before that, `discard` cancels the writer, and none of the records becomes durable.
+    assertMayWriteSharedState();
+
     prepareToWrite();
 
     for (const auto & block_id : block_ids)
@@ -375,7 +464,11 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         /// Add to deduplication map
         deduplication_map.insert(record.block_id, part_info);
     }
-
+    /// The rotation below also finalizes and rewrites shared log files.
+    assertMayWriteSharedState(block_ids.empty() ? WriteStage::FirstRecordOfBatch : WriteStage::RotationAfterRecord);
+    /// Rotate and drop old logs if needed. The fence above rejects a stale leader before the
+    /// rotation touches the shared files, while a rotation that fails on its own is housekeeping
+    /// and must not fail the records already written (see `rotateAndDropIfNeededAfterWrite`).
     rotateAndDropIfNeededAfterWrite();
 
     return {};
@@ -399,6 +492,14 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
+    /// See the matching check in `addPart`: the lease is re-checked before every record, not
+    /// only once per call, because on the `S3` path `rotateAndDropIfNeeded` rotates/finalizes a
+    /// whole log file after every record (append is unsupported), so dropping a large covering
+    /// part can realistically run past `leader_election_session_timeout`. Stopping mid-batch is
+    /// safe: the records written so far match the in-memory map, the caller can retry the whole
+    /// drop later, and the next leader reconciles the log against the part set after `load`.
+    size_t records_written_in_batch = 0;
+
     /// A previous durable removal failed after removing its records from memory, so this call would not write them again,
     /// and a later successful sync of the log does not make the earlier records durable.
     if (sync_to_disk && durable_drop_failed)
@@ -417,6 +518,10 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         /// deduplication history
         if (drop_part_info.contains(part_info))
         {
+            /// The fence comes first because `prepareToWrite` can rotate, which finalizes and
+            /// rewrites shared log files — a mutation a stale leader must not reach either.
+            assertMayWriteSharedState(records_written_in_batch > 0 ? WriteStage::NextRecordOfBatch : WriteStage::FirstRecordOfBatch);
+
             prepareToWrite();
 
             /// Create drop record
@@ -426,6 +531,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             record.block_id = itr->key;
             /// Write it to disk
             writeRecord(record, *current_writer);
+            ++records_written_in_batch;
             /// We have one more record on disk
             existing_logs[current_log_number].entries_count++;
 
@@ -434,6 +540,12 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Remove block_id from in-memory table
             deduplication_map.erase(record.block_id);
 
+            /// The rotation is a shared-state mutation of its own — on the `S3` path it finalizes
+            /// this numbered log file and opens the next one with `WriteMode::Rewrite` — so it
+            /// needs its own fence: the lease can expire in the gap between the record above and
+            /// the rotation, and a stale writer must not create or rewrite log files of a
+            /// sequence the next leader already owns.
+            assertMayWriteSharedState(WriteStage::RotationAfterRecord);
             /// A rotation syncs the log it finalizes, and a failure to sync it sets `records_may_be_lost`, which is checked below.
             rotateAndDropIfNeededAfterWrite();
         }
@@ -453,6 +565,15 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::CANNOT_FSYNC,
             "Cannot durably remove part {} from the deduplication log, because some records of the log may be lost",
             drop_part_info.getPartNameForLogs());
+
+    /// A disk that cannot append makes a record durable only by finalizing its log, which the rotation after every record
+    /// does. If that rotation failed to open the next log, the records stay in an unfinalized log, and syncing it does not
+    /// complete the upload, so they are not durable yet.
+    if (!disk_supports_writing_with_append && current_writer && !current_writer->isFinalized()
+        && existing_logs[current_log_number].entries_count > 0)
+        throw Exception(ErrorCodes::CANNOT_FSYNC,
+            "Cannot durably remove part {} from the deduplication log, because its log on a disk without append support "
+            "is not finalized yet", drop_part_info.getPartNameForLogs());
 
     fiu_do_on(FailPoints::deduplication_log_fail_durable_drop_sync,
     {
@@ -486,6 +607,10 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
         disk->createDirectories(logs_dir);
 
     deduplication_map.setMaxSize(deduplication_window);
+
+    /// Defense in depth: `ALTER ... MODIFY SETTING` is rejected under `leader_election`, so a
+    /// shared log should never get here, but the rotation below rewrites shared state.
+    assertMayWriteSharedState();
     rotateAndDropIfNeeded();
 
     /// If the current log is unfinished, an appending writer for it is opened lazily on the first
@@ -504,6 +629,17 @@ void MergeTreeDeduplicationLog::shutdown()
     stopped = true;
     if (current_writer)
     {
+        /// Fail-closed for shared logs: finalizing rewrites a whole shared log file on object
+        /// storage without append support, so if the lease is no longer fresh — the leadership-loss
+        /// callback may not have fired yet — cancel the writer instead of letting the finalize
+        /// clobber a log file the next leader may already own.
+        if (may_write_shared_state && !may_write_shared_state())
+        {
+            current_writer->cancel();
+            current_writer.reset();
+            return;
+        }
+
         /// If an error has occurred during finalize, we'd like to have the exception set for reset.
         /// Otherwise, we'll be in a situation when a finalization didn't happen, and we didn't get
         /// any error, causing logical error (see ~MemoryBuffer()).
@@ -523,6 +659,20 @@ void MergeTreeDeduplicationLog::shutdown()
             current_writer->cancel();
             current_writer.reset();
         }
+    }
+}
+
+void MergeTreeDeduplicationLog::discard()
+{
+    std::lock_guard lock(state_mutex);
+    if (stopped)
+        return;
+
+    stopped = true;
+    if (current_writer)
+    {
+        current_writer->cancel();
+        current_writer.reset();
     }
 }
 

@@ -337,6 +337,11 @@ bool DataPartStorageOnDiskBase::supportZeroCopyReplication() const
     return volume->getDisk()->supportZeroCopyReplication();
 }
 
+bool DataPartStorageOnDiskBase::supportsHardLinks() const
+{
+    return volume->getDisk()->supportsHardLinks();
+}
+
 bool DataPartStorageOnDiskBase::supportParallelWrite() const
 {
     return volume->getDisk()->supportParallelWrite();
@@ -594,7 +599,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, *disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
     else
     {
@@ -672,7 +677,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, *dst_disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
     else
     {
@@ -703,7 +708,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     LoggerPtr log,
-    const std::function<void()> & cancellation_hook) const
+    const std::function<void()> & cancellation_hook,
+    const std::function<bool()> & may_remove_after_failure) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
     auto src_disk = volume->getDisk();
@@ -722,6 +728,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     }
     catch (...)
     {
+        if (may_remove_after_failure && !may_remove_after_failure())
+        {
+            LOG_WARNING(log, "Keeping directory {} after failed attempt to move a data part: it may no longer be ours to remove", path_to_clone);
+            throw;
+        }
+
         /// It's safe to remove it recursively (even with zero-copy-replication)
         /// because we've just did full copy through copyDirectoryContent
         LOG_WARNING(log, "Removing directory {} after failed attempt to move a data part", path_to_clone);

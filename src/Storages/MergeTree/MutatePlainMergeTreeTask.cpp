@@ -45,6 +45,12 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
+    /// Use the leadership epoch sampled before the source part was selected. It is re-checked
+    /// before publishing the result part, so a mutation that survives a leadership loss+reacquire
+    /// (even one prepared only after the reacquire) is rejected rather than publishing a part whose
+    /// source part and block range belong to the previous epoch. Same pattern as `MergePlainMergeTreeTask`.
+    admission_epoch = merge_mutate_entry->leadership_epoch;
+
     task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -148,6 +154,20 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// the PreActive part to Active, "resurrecting" old data.
                 {
                     auto lock = storage.lockParts();
+                    /// Under `leader_election`, enforce the writable-leader check at the epoch
+                    /// captured in `prepare` BEFORE the rename publishes the mutation result on
+                    /// shared storage. `transaction.commit` re-checks leadership, but by then the
+                    /// rename has already happened, and it cannot detect a lease that was lost
+                    /// and reacquired while the mutation was executing.
+                    storage.assertWritableLeaderAtEpoch(admission_epoch);
+
+                    /// Also arm the publish fence: `transaction.commit` then re-checks the same
+                    /// epoch and renames the published part back if the check fails, so a failed
+                    /// commit does not leave the mutation result on shared storage for the next
+                    /// leader to activate.
+                    if (storage.hasLeaderElection())
+                        transaction.setPublishFenceEpoch(admission_epoch);
+
                     storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
                     transaction.commit(lock);
                 }

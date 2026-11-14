@@ -4516,6 +4516,19 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
             backQuoteIfNeed(create.getTable()));
 
+    /// The same for `leader_election`: `StorageReplicatedMergeTree` refuses to attach with it, so
+    /// converting would leave a persisted definition that cannot be attached any more.
+    if (to_replicated && DatabaseOrdinary::hasLeaderElectionAsReplicated(create, getContext()))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot attach table {} as replicated: it would have `leader_election = 1` (from its definition or the server's "
+            "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for ReplicatedMergeTree.",
+            backQuoteIfNeed(create.getTable()));
+
+    /// The other direction: keep the source's effective `leader_election = 0`, see the comment of the function.
+    if (!to_replicated)
+        DatabaseOrdinary::keepLeaderElectionDisabledAsNotReplicated(create, getContext());
+
     const bool ordinary_database = database->getEngineName() == "Ordinary";
     const bool temporary_uuid = to_replicated && ordinary_database;
     if (temporary_uuid)

@@ -11,11 +11,11 @@ namespace DB
 BlockAllocation::BlockAllocation(
     LoggerPtr log,
     std::unique_ptr<PlainCommittingBlockHolder> block_holder_,
-    MergeTreeDeduplicationLog * deduplication_log_,
+    std::shared_ptr<MergeTreeDeduplicationLog> deduplication_log_,
     IMergeTreeDataPart & part,
     const std::vector<DeduplicationHash> & deduplication_hashes)
     : block_holder(std::move(block_holder_))
-    , deduplication_log(deduplication_log_)
+    , deduplication_log(std::move(deduplication_log_))
 {
     part.info.min_block = block_holder->block.number;
     part.info.max_block = block_holder->block.number;
