@@ -1,0 +1,21 @@
+<test>
+    <create_query>CREATE TABLE join_limit_probe (k UInt64, k2 UInt64, v String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE join_limit_build (k UInt64, s String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE join_limit_dense (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <!-- one probe row in 10000 matches the build side -->
+    <fill_query>INSERT INTO join_limit_probe SELECT number % 10000, number % 10000, toString(number) FROM numbers_mt(100000000)</fill_query>
+    <fill_query>INSERT INTO join_limit_build SELECT 7, '7'</fill_query>
+    <fill_query>INSERT INTO join_limit_dense SELECT number FROM numbers(10000)</fill_query>
+
+    <query>SELECT v FROM join_limit_probe AS p INNER JOIN join_limit_build AS b ON p.k = b.k LIMIT 1000 FORMAT Null</query>
+    <query>SELECT v FROM join_limit_probe AS p INNER JOIN join_limit_build AS b ON p.k = b.k LIMIT 1000 FORMAT Null SETTINGS hash_join_layout = 'parallel', enable_join_runtime_filters = 0, query_plan_min_columns_for_join_lazy_indexing = 0</query>
+    <query>SELECT v FROM join_limit_probe AS p LEFT JOIN join_limit_build AS b ON p.k &lt; b.k WHERE p.k = 7 LIMIT 1000 FORMAT Null</query>
+    <query>SELECT v FROM join_limit_probe AS p INNER JOIN join_limit_build AS b ON p.k = b.k WHERE p.v != b.s LIMIT 1000 FORMAT Null SETTINGS hash_join_layout = 'parallel', enable_join_runtime_filters = 0, query_plan_min_columns_for_join_lazy_indexing = 0</query>
+    <query>SELECT v FROM join_limit_probe AS p INNER JOIN join_limit_build AS b ON p.k = b.k INNER JOIN join_limit_dense AS d ON p.k2 = d.k LIMIT 1000 FORMAT Null SETTINGS hash_join_layout = 'parallel', enable_join_runtime_filters = 0, query_plan_min_columns_for_join_lazy_indexing = 0, query_plan_optimize_join_order_limit = 0</query>
+    <query>SELECT v FROM join_limit_probe AS p INNER JOIN join_limit_build AS b ON p.k = b.k LIMIT 100000000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS join_limit_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_limit_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_limit_dense</drop_query>
+</test>

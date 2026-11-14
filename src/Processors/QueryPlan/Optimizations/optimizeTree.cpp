@@ -709,6 +709,9 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.push_limit_by_into_sort)
                 pushLimitByIntoSort(frame_node);
+
+            if (optimization_settings.push_down_limit)
+                pushLimitIntoJoin(frame_node);
         });
 
     /// After PREWHERE promotion, projection replacement and the read-in-order decision: each changes the
