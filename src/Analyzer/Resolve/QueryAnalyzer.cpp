@@ -6602,8 +6602,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 /// Added column should not conflict with existing column names
                 /// Virtual columns are resolvable names for this source too, so the new name must avoid them as well
                 NameSet existing_columns;
-                /// `initializeTableExpressionData` registers `EPHEMERAL` names as column
-                /// identifiers, so a synthesized name can collide with one.
                 if (!getColumnsFromTableExpression(
                         left_table_expression, existing_columns, GetColumnsOptions::All, VirtualsKind::All))
                     return nullptr;
