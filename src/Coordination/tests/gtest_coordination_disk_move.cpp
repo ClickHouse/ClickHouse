@@ -73,7 +73,7 @@ TEST(KeeperDiskMove, MoveIsNotRefusedByTheMemoryTracker)
             SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(previous_hard_limit));
             total_memory_tracker.setHardLimit(1);
 
-            DB::moveFileBetweenDisks(disk_from, "changelog.bin", disk_to, "changelog.bin", {}, log, keeper_context);
+            ASSERT_TRUE(DB::moveFileBetweenDisks(disk_from, "changelog.bin", disk_to, "changelog.bin", {}, log, keeper_context));
         });
     mover.join();
 
