@@ -90,6 +90,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/moveNonAggregateHavingConjunctsToWhere.h>
 #include <Analyzer/traverseQueryTree.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
@@ -3083,6 +3084,19 @@ void Planner::buildPlanForQueryNode()
 
         query_node.getHaving() = {};
     }
+
+    /// When the query is processed only up to `WithMergeableState` (for example, on a shard of a `Distributed` table),
+    /// `HAVING` is not executed here: it is applied by the initiator after merging the aggregation states.
+    /// Conjuncts that depend only on the aggregation keys can be applied before aggregation instead,
+    /// so they can be used for partition pruning and the primary key analysis.
+    /// A conjunct moved here is evaluated on this server instead of the initiator, so the ones whose result may differ
+    /// between servers (like `shardNum()` or a subquery reading a table) stay in `HAVING`.
+    /// Without `GROUP BY` there are no aggregation keys, so there is nothing to prune, and an empty input still produces a row.
+    if (select_query_info.need_aggregate && query_node.hasGroupBy()
+        && select_query_options.to_stage == QueryProcessingStage::WithMergeableState)
+        moveNonAggregateHavingConjunctsToWhere(
+            query_node, query_context, /*keep_server_dependent_conjuncts=*/ true, /*keep_index_hint_conjuncts=*/ true,
+            /*keep_pre_aggregation_expressions=*/ true);
 
     /// Before collecting sets and materialized CTEs, whose subqueries are planned separately.
     checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
