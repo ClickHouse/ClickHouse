@@ -95,6 +95,9 @@ namespace ErrorCodes
 DECLARE_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST, S3REQUEST_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST, S3RequestSettings, S3RequestSetting)
 
+/// The settings are serialized with `writeChangedBinary` (see `serialize`), including by code outside of this repository.
+REQUEST_SETTINGS_LIST(ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION, ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION)
+
 namespace S3
 {
 

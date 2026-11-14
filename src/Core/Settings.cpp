@@ -12779,14 +12779,14 @@ NameToNameMap readQueryParameters(ReadBuffer & in)
     return parameters;
 }
 
-void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
+void Settings::write(WriteBuffer & out) const
 {
-    impl->write(out, format);
+    impl->write(out);
 }
 
-void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
+void Settings::read(ReadBuffer & in)
 {
-    impl->read(in, format);
+    impl->read(in);
 }
 
 void Settings::writeEmpty(WriteBuffer & out)
