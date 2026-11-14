@@ -739,6 +739,7 @@ StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot,
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
         std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
         getFormatName(),
         max_rows,
