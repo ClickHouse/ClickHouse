@@ -59,6 +59,15 @@ public:
     /// checks (in zookeeper) if the picked replica finished the merge
     bool isMergeFinishedByReplica(const String & replica, const ReplicatedMergeTreeLogEntryData & entry);
 
+    /// Returns true if we should wait for TTL recompression to complete on source replica.
+    /// Note: Entry-level backoff is now handled by ReplicatedMergeTreeQueue::getWaitBackoffTimeMsForEntry.
+    /// This function checks if the wait window (try_fetch_recompressed_part_timeout) is still active.
+    bool shouldWaitForTTLRecompression(const ReplicatedMergeTreeLogEntryData & entry) const;
+
+    /// Checks if source replica has finished TTL recompression merge.
+    /// Throttles ZooKeeper checks to avoid excessive load.
+    bool isTTLRecompressFinishedByReplica(const String & source_replica, const ReplicatedMergeTreeLogEntryData & entry);
+
 private:
     StorageReplicatedMergeTree & storage;
 
