@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # Tag no-fasttest: uses several test clusters
-# Random settings limits: automatic_parallel_replicas_mode=(0, 0)
+
+# The final arm asserts that a plan IS built with parallel replicas, so it needs the forced mode:
+# under `automatic_parallel_replicas_mode` 1 the decision is the cost model's, and it declines a
+# 100-row table. Pinned per query below rather than declared as a random settings limit, because a
+# limit only constrains the settings randomizer and so cannot outvote a server profile that sets the
+# mode - which is what the AutoParallelReplicas job's profile does.
 
 # Each arm runs in its own client invocation and is followed by a liveness probe in a further
 # invocation: the abort this test guards against happens on a follower connection, so the client that
@@ -15,7 +20,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -u
 
 PR_SETTINGS="allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3,
-             parallel_replicas_for_non_replicated_merge_tree = 1"
+             parallel_replicas_for_non_replicated_merge_tree = 1,
+             automatic_parallel_replicas_mode = 0"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE IF EXISTS t_pr_nested;
