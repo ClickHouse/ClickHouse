@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -75,6 +76,7 @@ namespace Setting
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -774,6 +776,8 @@ void StorageView::readImpl(
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    options.build_logical_plan = query_info.build_logical_plan;
+    options.cacheable_logical_plan = query_info.cacheable_logical_plan;
 
     const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
     auto view_context = getViewContext(context, storage_snapshot, this);
@@ -782,6 +786,21 @@ void StorageView::readImpl(
         /// but for a sealed view it would skip data by the values of the rows the view hides.
         InterpreterSelectQueryAnalyzer interpreter(
             current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
+
+        /// A cacheable logical plan embeds the analyzed view body, but the eligibility check of the
+        /// query plan cache sees only the caller's query tree, where the view is a single table.
+        /// Check the body here: it may fold a non-deterministic function (also one spelled without
+        /// parentheses, like `now`, or coming from an `ALIAS` column), which must not be replayed
+        /// by a cache hit. Nested views are expanded through this same path and checked as well.
+        if (options.cacheable_logical_plan)
+        {
+            if (auto identities = context->getPlanCacheStorageIdentities();
+                identities
+                && !queryTreeIsEligibleForPlanCache(
+                    interpreter.getQueryTree(), view_context, context->getSettingsRef()[Setting::query_plan_cache_allow_scalar_subqueries]))
+                identities->markIneligible();
+        }
+
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }

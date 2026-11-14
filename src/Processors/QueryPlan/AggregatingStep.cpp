@@ -85,6 +85,8 @@ namespace Setting
 {
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 min_bytes_before_external_group_by;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ErrorCodes
@@ -1639,6 +1641,16 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    /// Spill into the temporary-data scope of the query that executes the plan, as the planner does
+    /// (`Planner.cpp`), so the per-query and per-user temporary-disk limits installed by `ProcessList`
+    /// apply. The global scope would bypass them. `Context::getTempDataOnDisk` falls back to the global
+    /// scope itself when the context has no query scope.
+    const auto & context_settings = ctx.context->getSettingsRef();
+    auto tmp_data_scope = ctx.context->getTempDataOnDisk();
+    if (tmp_data_scope)
+        tmp_data_scope = tmp_data_scope->childScope(
+            /* metrics */ {}, context_settings[Setting::temporary_files_buffer_size], context_settings[Setting::temporary_files_codec]);
+
     Aggregator::Params params{
         keys,
         aggregates,
@@ -1652,7 +1664,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             ? size_t(ctx.settings[QueryPlanSerializationSetting::min_bytes_before_external_group_by])
             : size_t(ctx.context->getSettingsRef()[Setting::min_bytes_before_external_group_by]),
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
-        Context::getGlobalContextInstance()->getTempDataOnDisk(),
+        tmp_data_scope,
         0, //settings[QueryPlanSerializationSetting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data],
         ctx.settings[QueryPlanSerializationSetting::compile_aggregate_expressions],

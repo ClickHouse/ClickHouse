@@ -79,6 +79,10 @@ public:
     const Aggregator::Params & getParams() const { return params; }
     bool isFinal() const { return final; }
 
+    /// The threshold derived from `max_bytes_ratio_before_external_group_by` depends on the memory available
+    /// when the plan is built; a plan reused from the query plan cache recomputes it for the current query.
+    void setMaxBytesBeforeExternalGroupBy(size_t value) { params.max_bytes_before_external_group_by = value; }
+
     /// See `Aggregator::Params::threshold_top_k`; called by the plan optimization.
     void enableThresholdTopK(Aggregator::Params::ThresholdTopKParams threshold_top_k)
     {

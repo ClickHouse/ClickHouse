@@ -1,0 +1,21 @@
+2
+2
+-- warm: 1
+-- an ignored setting in the top-level SETTINGS clause shares the cached plan
+2
+-- hits: 1
+-- an ignored setting in the SETTINGS clause of a subquery does not
+2
+2
+-- hits: 0
+-- nor in the SETTINGS clause of a non-last SELECT of a UNION
+2
+2
+2
+2
+-- warm: 1
+2
+2
+2
+2
+-- hits: 0

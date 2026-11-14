@@ -1,0 +1,18 @@
+-- 1. INVOKER view query is cached: one entry
+1	10
+2	20
+-- entries: 1
+-- 2. MODIFY SQL SECURITY NONE: the next run fails validation and evicts the entry
+1	10
+2	20
+-- entries: 0
+-- bytes are zero: 1
+-- 3. repeated runs stay uncached
+1	10
+2	20
+-- entries: 0
+-- 4. schema change on a plain table: the stale entry is replaced, not leaked
+2
+-- entries: 1
+2
+-- entries: 1

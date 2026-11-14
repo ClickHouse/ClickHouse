@@ -1,0 +1,10 @@
+-- 1. the plan cannot be serialized: the query runs through the ordinary interpreter
+-- result: 1 1
+2 2
+3 3
+-- hits and read_rows (must be 0 3 - not cached, and the direct lookup is used): 0 3
+-- hits and read_rows of a second run (must be 0 3 - still not cached): 0 3
+-- 2. the same query with the plan cache disabled behaves identically
+-- hits and read_rows: 0 3
+-- 3. once the plan can be serialized again, the same query is cached
+-- hits and read_rows of the second run (must be 1 100003, cached and executed from the plan): 1 100003

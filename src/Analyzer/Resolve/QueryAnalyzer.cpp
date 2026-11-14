@@ -66,6 +66,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -7046,6 +7047,14 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
         result_node = std::move(wrapper_query);
     }
+
+    /// The view is inlined: its `TableNode` disappears, so the planner never records the view while a
+    /// cacheable logical plan is being built. The plan bakes in the view body and its row policy,
+    /// so record the view's identity here, from the very snapshot and row-policy filter used to
+    /// inline it. This keeps the view among the dependencies of the cache entry, so a hit revalidates
+    /// its definition, its row policy and the `SELECT` grant on it.
+    if (auto identities = scope.context->getPlanCacheStorageIdentities())
+        identities->add(storage_id, computeQueryPlanCacheSemanticsFingerprint(storage_snapshot->metadata, row_policy_filter, scope.context));
 
     /// Preserve the user-provided alias, if any: the outer query references columns via it.
     result_node->setAlias(table_node->getAlias());

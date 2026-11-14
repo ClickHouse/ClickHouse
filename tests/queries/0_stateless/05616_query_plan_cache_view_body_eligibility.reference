@@ -1,0 +1,28 @@
+-- 1. non-deterministic view bodies are not cached
+1
+1
+v_now hits: 0
+1
+1
+v_current_timestamp hits: 0
+1
+1
+v_alias hits: 0
+9
+9
+v_deterministic hits: 1
+-- 2. dependencies of inlined views
+9
+9
+warm hits: 1
+after redefinition:
+12
+12
+after row policy:
+9
+9
+after tightened row policy:
+5
+5
+after revoke:
+ACCESS_DENIED

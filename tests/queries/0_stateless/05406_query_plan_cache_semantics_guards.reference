@@ -1,0 +1,35 @@
+-- a row policy is applied before an explicit PREWHERE
+1
+1
+-- output_format settings read by SQL functions are part of the cache key
+42
+42
+"42"
+-- the SETTINGS clause of a view body is not lost
+1
+1
+1
+1
+-- hits: 0
+-- the SETTINGS clause of a subquery is not lost
+1
+1
+1
+1
+-- hits: 0
+-- a temporary table shadows a permanent table of the same name
+1
+1
+-- hits (warm): 1
+2
+-- a join that requires the direct join algorithm
+1	a
+2	
+1	a
+2	
+-- an ALTER of an ALIAS column whose expressions differ only in masked text invalidates the plan
+TOPSECRET1TOPSECRET
+TOPSECRET1TOPSECRET
+-- hits (warm): 1
+TOPSECRET2TOPSECRET
+-- hits after ALTER (must be 0): 0
