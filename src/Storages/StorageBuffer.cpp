@@ -20,6 +20,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/PlannerContext.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -59,6 +60,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -632,10 +634,13 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.view_source_in_subqueries
+            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
 
+        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
+                storage_snapshot->metadata->getColumns(),
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
@@ -745,7 +750,7 @@ void StorageBuffer::read(
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
-    std::vector<std::unique_ptr<QueryPlan>> plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
@@ -1775,10 +1780,6 @@ If the set of columns in the Buffer table does not match the set of columns in a
 
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
-
-<Note>
-Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-</Note>
 
 If the server is restarted abnormally, the data in the buffer is lost.
 
