@@ -1250,6 +1250,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `vprintf' function. */
 #define HAVE_VPRINTF 1
 
+/* Define to 1 if you have the 'waitpid' function. */
+#define HAVE_WAITPID 1
+
 /* Define to 1 if you have the <wchar.h> header file. */
 #define HAVE_WCHAR_H 1
 
