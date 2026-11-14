@@ -34,7 +34,7 @@ function wait_for_optimize_to_wait()
         [[ $($CLICKHOUSE_CLIENT -q "
             SYSTEM FLUSH LOGS text_log;
             SELECT count() FROM system.text_log
-            WHERE event_date >= yesterday() AND query_id = '$query_id'
+            WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'
                 AND message LIKE 'Waiting for currently running merges % to perform OPTIMIZE FINAL'
         ") -gt 0 ]] && return 0
         kill -0 "$client_pid" 2>/dev/null || return 0
