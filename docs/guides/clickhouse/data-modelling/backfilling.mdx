@@ -6,8 +6,6 @@ keywords: ['materialized views', 'backfilling', 'inserting data', 'resilient dat
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Whether new to ClickHouse or responsible for an existing deployment, you will invariably need to backfill tables with historical data. In some cases, this is relatively simple but can become more complex when materialized views need to be populated. This guide documents some processes for this task that you can apply to your use case.
 
 <Note>
@@ -463,7 +461,15 @@ The [Null table engine](/reference/engines/table-engines/special/null) provides 
 
 Importantly, any materialized views attached to the table engine still execute over blocks of data as its inserted - sending their results to a target table. These blocks are of a configurable size. While larger blocks can potentially be more efficient (and faster to process), they consume more resources (principally memory). Use of this table engine means we can build our materialized view incrementally i.e. a block at a time, avoiding the need to hold the entire aggregation in memory.
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="Denormalization in ClickHouse"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Denormalization in ClickHouse](/images/data-modeling/null_table_mv.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
