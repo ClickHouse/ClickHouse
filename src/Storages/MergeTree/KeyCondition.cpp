@@ -2850,6 +2850,24 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
 }
 
 
+/// Where `CAST` has no conversion (`Int128` into a `Decimal`, an `Enum` or `IPv4`), `accurateOrNull` writes NULL for
+/// every value instead of throwing; an accurate cast of no rows throws only then.
+static bool castConversionExists(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    try
+    {
+        castColumnAccurate({from_type->createColumn(), from_type, ""}, to_type);
+        return true;
+    }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return false;
+    }
+}
+
+
 /// Whether two `Field`s stand for the same value. `Field::operator==` answers only for values carried
 /// the same way, which is what the round trip below needs everywhere except inside a `Dynamic`: a
 /// `Dynamic` keeps the type each value was inserted with, so a value that went to the key column's
@@ -3748,6 +3766,14 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
 
         const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
         size_t set_size = cast_failure_null_map.size();
+
+        /// `Set::execute` casts the key into the set's type, so an element the cast above leaves NULL matches no key
+        /// only if a conversion between the two types exists: without one, every element is NULL.
+        bool cast_failed = false;
+        for (size_t i = 0; i < set_size && !cast_failed; ++i)
+            cast_failed = cast_failure_null_map[i] && !(source_null_map && (*source_null_map)[i]);
+        if (cast_failed && !source_is_nothing && !castConversionExists(set_element_type, key_column_type))
+            return false;
 
         const bool key_is_nullable = key_column_type->isNullable();
 
