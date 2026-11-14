@@ -397,6 +397,7 @@ const char * auto_contributors[] {
     "Constantine Peresypkin",
     "CoolT2",
     "Cory Levy",
+    "Craig Ringer",
     "CuiShuoGuo",
     "Cursor Agent",
     "CurtizJ",
