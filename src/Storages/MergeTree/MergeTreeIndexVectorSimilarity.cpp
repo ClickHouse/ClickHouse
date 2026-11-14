@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -27,6 +28,7 @@
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
+#include <exception>
 #include <mutex>
 #include <ranges>
 #include <string_view>
@@ -45,6 +47,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char vector_similarity_index_before_read[];
+}
 
 namespace Setting
 {
@@ -156,7 +163,9 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
 
 void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
 {
-    auto callback = [&istr](void * from, size_t n)
+    FailPointInjection::pauseFailPoint(FailPoints::vector_similarity_index_before_read);
+    std::exception_ptr read_exception;
+    auto callback = [&istr, &read_exception](void * from, size_t n)
     {
         /// USearch may call callback from noexcept function
         try
@@ -166,12 +175,19 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         }
         catch (...)
         {
-            tryLogCurrentException("VectorSimilarityIndex", "An error while deserializing USearch index");
+            read_exception = std::current_exception();
             return false;
         }
     };
 
-    if (auto result = Base::load_from_stream(callback); !result)
+    auto result = Base::load_from_stream(callback);
+    if (read_exception)
+    {
+        /// Consume the library error before propagating the original read failure.
+        result.error.release();
+        std::rethrow_exception(read_exception);
+    }
+    if (!result)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", result.error.release());
 

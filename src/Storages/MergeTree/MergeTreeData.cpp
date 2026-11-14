@@ -432,6 +432,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+    extern const char load_data_part_before_metadata_read[];
     extern const char merge_tree_drop_all_data_pause_before_removing_parts[];
     extern const char claim_inject_stale_part_dir[];
     /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
@@ -512,9 +513,11 @@ namespace FailPoints
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
+    extern const char merge_tree_outdated_parts_loading_cancelled[];
     /// Throws a `CANNOT_WRITE_TO_FILE_DESCRIPTOR` error with `ENOSPC` while loading a part restored from a backup,
     /// after its files have been read. Used to test that a failure of the destination is not reported as a damaged backup.
     extern const char restore_part_inject_no_space_error[];
+    extern const char restore_part_before_metadata_read[];
     /// Throws an I/O error (EIO) once while loading the metadata of a part.
     extern const char merge_tree_load_part_io_error[];
 }
@@ -3176,6 +3179,9 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
     }
     catch (...)
     {
+        if (CurrentThread::isQueryCancellationException(std::current_exception()))
+            throw;
+
         LOG_DEBUG(log, "Failed to load unexpected data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
         if (!state.part)
         {
@@ -3251,7 +3257,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     /// A persistent I/O error cannot be told from a damaged disk, so only the last attempt marks the part broken on it.
     auto should_rethrow = [&](std::exception_ptr exception_ptr)
     {
-        return isRetryableException(exception_ptr) || (!is_last_attempt && isIOErrorException(exception_ptr));
+        return CurrentThread::isQueryCancellationException(exception_ptr)
+            || isRetryableException(exception_ptr)
+            || (!is_last_attempt && isIOErrorException(exception_ptr));
     };
 
     try
@@ -3275,6 +3283,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     try
     {
+        FailPointInjection::pauseFailPoint(FailPoints::load_data_part_before_metadata_read);
         fiu_do_on(FailPoints::merge_tree_load_part_io_error,
         {
             ErrnoException::throwWithErrno(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, EIO, "Injected I/O error while loading part {}", part_name);
@@ -3800,11 +3809,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
         catch (...)
         {
-            /// UNIQUE_KEY_DENSE_INDEX_UNREADABLE marks the cases where the part
-            /// must not be touched: a transient validation failure (file may be
+            /// Cancellation is not evidence of corruption. `UNIQUE_KEY_DENSE_INDEX_UNREADABLE`
+            /// marks other cases where the part must not be touched: a transient validation failure (file may be
             /// healthy) or readonly storage (removal/rebuild/detach are writes).
-            /// Propagate it so the load fails and a retry/restart can recover.
-            if (getCurrentExceptionCode() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE)
+            /// Propagate these errors so the load fails and a retry/restart can recover.
+            if (CurrentThread::isQueryCancellationException(std::current_exception())
+                || getCurrentExceptionCode() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE)
                 throw;
             /// Otherwise the part genuinely has no usable dense index (corrupt SST
             /// that could not be rebuilt, missing UK column, unreadable rows) — the
@@ -4190,6 +4200,12 @@ catch (...)
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
 try
 {
+    /// A foreground `DROP TABLE` must finish loading the parts needed for zero-copy cleanup,
+    /// even after its query is cancelled.
+    std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+    if (!is_async)
+        cancellation_blocker.emplace();
+
     /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
     /// Loading detaches broken parts, removes duplicates, and prepares parts for removal, so it waits
     /// for the commit. A rolled-back commit restores `table_readonly` and the task then stays idle
@@ -4531,6 +4547,7 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
             outdated_data_parts_loading_canceled = true;
         }
 
+        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_outdated_parts_loading_cancelled);
         outdated_data_parts_loading_task->deactivate();
         outdated_data_parts_cv.notify_all();
     }
@@ -10939,6 +10956,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
         in_local_step = false;
+        FailPointInjection::pauseFailPoint(FailPoints::restore_part_before_metadata_read);
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
         fiu_do_on(FailPoints::restore_part_inject_no_space_error,
         {
@@ -10999,7 +11017,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         catch (...)
         {
             error = std::current_exception();
-            retryable = isRetryableException(std::current_exception());
+            if (CurrentThread::isQueryCancellationException(error))
+                throw;
+            retryable = isRetryableException(error);
         }
 
         if (!error)
@@ -12945,13 +12965,13 @@ MergeTreeData::Transaction::~Transaction()
 
 void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
 {
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     if (!isEmpty())
     {
         /// The rollback of a cancelled merge or mutation must not be interrupted by its own cancellation:
         /// otherwise reading the version metadata in `setAndStoreCreationCSN` may throw, and the rolled back part
         /// stays without `RolledBackCSN`, which prevents merges of the neighbouring parts until the part is removed.
-        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
-
         for (const auto & part : precommitted_parts)
             part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
 
