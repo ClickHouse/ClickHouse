@@ -51,11 +51,6 @@ namespace Setting
     extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
-}
-
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
 ///
@@ -73,7 +68,9 @@ public:
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
-        bool allow_remote_fs_prefetch);
+        bool allow_remote_fs_prefetch,
+        bool force_read_through_cache,
+        ContextPtr context);
 
     ~MergeTreeSequentialSource() override;
 
@@ -124,7 +121,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
-    bool allow_remote_fs_prefetch)
+    bool allow_remote_fs_prefetch,
+    bool force_read_through_cache,
+    ContextPtr context)
     : ISource(std::move(result_header))
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
@@ -165,10 +164,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         patch_join_cache->init(ranges_in_patch_parts);
     }
 
-    const auto & context = storage.getContext();
+    /// The read settings come from the context the merge or mutation runs under, not from the global
+    /// context of the storage: a merge is executed under a frozen copy of the background context (see
+    /// makeQueryContextForMerge), and its memory reservation is estimated against the same copy, so the
+    /// read buffers it allocates must be sized from it as well. For the same reason the table-level
+    /// force_read_through_cache_for_merges comes from the caller (a merge passes its frozen settings
+    /// snapshot) instead of the live storage settings: it decides whether the filesystem cache promotes
+    /// the read buffer size, which the reservation already priced.
     ReadSettings read_settings = context->getReadSettings();
-    const bool read_if_exists_otherwise_bypass
-        = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
+    const bool read_if_exists_otherwise_bypass = !force_read_through_cache;
     read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
 #if ENABLE_DISTRIBUTED_CACHE
     read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
@@ -373,7 +377,9 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool allow_remote_fs_prefetch)
+    bool allow_remote_fs_prefetch,
+    bool force_read_through_cache,
+    ContextPtr context)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
     info->alter_conversions = std::move(alter_conversions);
@@ -433,7 +439,9 @@ Pipe createMergeTreeSequentialSource(
         std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
-        allow_remote_fs_prefetch);
+        allow_remote_fs_prefetch,
+        force_read_through_cache,
+        std::move(context));
 
     Pipe pipe(std::move(column_part_source));
 
@@ -471,6 +479,7 @@ public:
         std::optional<ActionsDAG> filter_,
         bool read_with_direct_io_,
         bool allow_remote_fs_prefetch_,
+        bool force_read_through_cache_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
@@ -486,6 +495,7 @@ public:
         , filter(std::move(filter_))
         , read_with_direct_io(read_with_direct_io_)
         , allow_remote_fs_prefetch(allow_remote_fs_prefetch_)
+        , force_read_through_cache(force_read_through_cache_)
         , context(std::move(context_))
         , log(log_)
     {
@@ -535,7 +545,9 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            allow_remote_fs_prefetch);
+            allow_remote_fs_prefetch,
+            force_read_through_cache,
+            context);
 
         pipeline.init(Pipe(std::move(source)));
     }
@@ -555,6 +567,7 @@ public:
             filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
             read_with_direct_io,
             allow_remote_fs_prefetch,
+            force_read_through_cache,
             context,
             log);
     }
@@ -572,6 +585,7 @@ private:
     const std::optional<ActionsDAG> filter;
     const bool read_with_direct_io;
     const bool allow_remote_fs_prefetch;
+    const bool force_read_through_cache;
     const ContextPtr context;
     const LoggerPtr log;
 };
@@ -590,6 +604,7 @@ void createReadFromPartStep(
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
     bool allow_remote_fs_prefetch,
+    bool force_read_through_cache,
     ContextPtr context,
     LoggerPtr log)
 {
@@ -606,6 +621,7 @@ void createReadFromPartStep(
         std::move(filter),
         read_with_direct_io,
         allow_remote_fs_prefetch,
+        force_read_through_cache,
         std::move(context),
         log);
 
@@ -620,7 +636,6 @@ void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline)
 }
 
 bool canPrefetchInMergeOrMutation(
-    const MergeTreeData & storage,
     const MergeTreeData::DataPartsVector & parts,
     const Names & columns_to_read,
     const ContextPtr & task_context)
@@ -631,7 +646,9 @@ bool canPrefetchInMergeOrMutation(
     if (prefetches_limit && parts.size() * columns_to_read.size() > prefetches_limit)
         return false;
 
-    const size_t buffer_size = storage.getContext()->getReadSettings().remote_fs_settings.buffer_size;
+    /// The readers take their buffer sizes from the task context (see `MergeTreeSequentialSource`),
+    /// so the admission must price the same buffers.
+    const size_t buffer_size = task_context->getReadSettings().remote_fs_settings.buffer_size;
     size_t estimated_memory = 0;
     for (const auto & part : parts)
     {

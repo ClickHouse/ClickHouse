@@ -318,9 +318,22 @@ public:
     WriteBufferFromFileWithLogging(
         const String & file_path_,
         size_t buf_size,
+        const WriteSettings & write_settings,
         const String & bucket_,
         BlobStorageLogWriterPtr blob_log_)
-        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_path_, buf_size))
+        /// The adaptive buffer sizing is honored like on a local disk (DiskLocal::writeFile): a merge writes
+        /// one such buffer per column stream of a wide part and reserves memory for them up front at the
+        /// adaptive initial size.
+        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(
+            file_path_,
+            buf_size,
+            /*flags=*/ -1,
+            /*throttler_=*/ ThrottlerPtr{},
+            /*mode=*/ 0666,
+            /*existing_memory=*/ nullptr,
+            /*alignment=*/ 0,
+            write_settings.use_adaptive_write_buffer,
+            write_settings.adaptive_write_buffer_initial_size))
         , file_path(file_path_)
         , bucket(bucket_)
         , blob_log(std::move(blob_log_))
@@ -678,6 +691,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromFileWithLogging>(
         resolved_path,
         buf_size,
+        write_settings,
         settings.key_prefix,
         std::move(blob_storage_log));
 }

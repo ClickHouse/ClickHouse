@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/WhatIf/WhatIfSampling.h>
 
 #include <Columns/ColumnSparse.h>
@@ -29,6 +30,11 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsOverflowMode read_overflow_mode;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
 }
 
 namespace ErrorCodes
@@ -275,7 +281,9 @@ bool tryEstimateEmpirical(
                 std::make_shared<std::atomic<size_t>>(0),
                 false,
                 false,
-                /*allow_remote_fs_prefetch=*/ true);
+                /*allow_remote_fs_prefetch=*/ true,
+                (*data.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges],
+                data.getContext());
 
             /// Apply the query's execution-speed limits here too (size is the explicit check below)
             if (auto query_limits = read_step->getQueryInfo().storage_limits)

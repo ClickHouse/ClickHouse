@@ -99,6 +99,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
     extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
@@ -2482,7 +2483,8 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
+            /*allow_remote_fs_prefetch=*/ canPrefetchInMergeOrMutation({part}, required_columns, context_),
+            (*data->getSettings())[MergeTreeSetting::force_read_through_cache_for_merges],
             context_,
             getLogger("MutationsInterpreter"));
     }

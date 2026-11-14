@@ -373,8 +373,18 @@ public:
     /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat
-    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
+    /// `base_settings`, when set, is used instead of the live table settings (a projection's own
+    /// `WITH SETTINGS` are still applied on top of it). A merge freezes the settings it runs with at
+    /// selection time, so every part format it decides - including the formats of the temporary and
+    /// read-back projection parts - must be decided from that same snapshot: a concurrent
+    /// `ALTER ... MODIFY SETTING` of the wide-part thresholds would otherwise make the merge write a
+    /// format whose per-stream buffers its memory reservation did not price.
+    MergeTreeDataPartFormat choosePartFormat(
+        size_t bytes_uncompressed,
+        size_t rows_count,
+        UInt32 part_level,
+        ProjectionDescriptionRawPtr projection,
+        const MergeTreeSettingsPtr & base_settings = {}) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -1437,6 +1447,13 @@ public:
     /// When `settings_changes` is provided, apply the overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
+    /// The same overrides `getSettings` applies, but on top of an already captured settings snapshot
+    /// instead of the live table settings. Used by operations that must observe one snapshot from start to
+    /// finish - a merge prices its memory reservation against the settings it will later run with, so it
+    /// freezes them at selection time and applies a projection's `WITH SETTINGS` to that frozen copy.
+    MergeTreeSettingsPtr applySettingsChanges(
+        const MergeTreeSettingsPtr & base_settings, const SettingsChanges * settings_changes) const;
+
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
@@ -1616,11 +1633,14 @@ public:
 
     /// Get compression codec for part according to `RECOMPRESS` TTL rules from `metadata_snapshot`,
     /// the `default_compression_codec` setting, or the <compression> section from config.xml, in that order.
+    /// `settings`, when set, replaces the live table settings as the source of `default_compression_codec`:
+    /// a merge resolves its codec from the settings snapshot it froze at selection time.
     PartCompressionCodec getCompressionCodecForPart(
         const StorageMetadataPtr & metadata_snapshot,
         size_t part_size_compressed,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t current_time) const;
+        time_t current_time,
+        const MergeTreeSettings * settings = nullptr) const;
 
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 

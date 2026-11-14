@@ -77,6 +77,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
@@ -325,7 +326,9 @@ Pipe makePartPipe(
         std::make_shared<std::atomic<size_t>>(0),
         false,
         false,
-        /*allow_remote_fs_prefetch=*/ true);
+        /*allow_remote_fs_prefetch=*/ true,
+        (*data.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges],
+        data.getContext());
 
     /// keep speed limits, the caller checks sizes
     if (auto query_limits = read_step->getQueryInfo().storage_limits)

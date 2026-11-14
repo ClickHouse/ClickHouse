@@ -131,6 +131,8 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    MultipartUploadMemory getWriteBufferMemory(const WriteSettings & write_settings) const override;
+
     /// A block blob becomes visible only on the commit of its block list. The `ADLS Gen2` (OneLake) path creates
     /// the destination file first and then appends to it, which is not atomic.
     bool supportsAtomicWrite() const override;
