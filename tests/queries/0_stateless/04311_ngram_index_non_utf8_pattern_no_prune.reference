@@ -1,0 +1,84 @@
+ngrambf_v1
+[1]
+[1]
+[2]
+[2]
+[2]
+[2]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
+ngrambf_v1 on map keys and values
+[1]
+[1]
+[1]
+[1]
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
+sparse_grams
+[1]
+[1]
+[2]
+[2]
+[1]
+[1]
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
+text index with ngrams
+[1]
+[1]
+[2]
+[2]
+Granules: 3/3
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
+text index with ngrams on map keys and values
+[1]
+[1]
+[1]
+[1]
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
+text index with sparseGrams
+[1]
+[1]
+[2]
+[2]
+Granules: 3/3
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
+text index with asciiCJK
+[1]
+[1]
+[2]
+[2]
+Granules: 3/3
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
+text index with ngrams and a toValidUTF8 preprocessor
+[1]
+[1]
+[2]
+[2]
+Granules: 3/3
+Granules: 3/3
+Granules: 3/3
+Granules: 1/3
