@@ -473,7 +473,7 @@ void MergeTreeTemporaryPart::finalize()
     /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
     const auto metadata_snapshot = part->getMetadataSnapshot();
     const auto data_settings = part->storage.getSettings();
-    for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings))
+    for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings))
         if (metadata_snapshot->isVirtualColumn(minmax_column))
             part->setMinMaxIndex(nullptr);
 }
@@ -835,7 +835,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
-    const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+    const auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, minmax_columns);
 
