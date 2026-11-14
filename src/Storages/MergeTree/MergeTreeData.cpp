@@ -13181,10 +13181,12 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
             data.updateSerializationHints(precommitted_parts, total_covered_parts, acquired_parts_lock);
 
-            /// The covered parts may outweigh the added ones, so the differences are signed.
-            ssize_t diff_bytes = static_cast<ssize_t>(add_bytes) - static_cast<ssize_t>(reduce_bytes);
-            ssize_t diff_rows = static_cast<ssize_t>(add_rows) - static_cast<ssize_t>(reduce_rows);
-            ssize_t diff_parts = static_cast<ssize_t>(add_parts) - static_cast<ssize_t>(reduce_parts);
+            /// The covered parts may outweigh the added ones, so the differences are negative then. They are computed
+            /// modulo 2^64 and converted to signed afterwards: the counters of a part are read from its files, so a cast
+            /// before the subtraction could overflow signed arithmetic. The totals are updated modulo 2^64 as well.
+            ssize_t diff_bytes = static_cast<ssize_t>(common::subIgnoreOverflow(add_bytes, reduce_bytes));
+            ssize_t diff_rows = static_cast<ssize_t>(common::subIgnoreOverflow(add_rows, reduce_rows));
+            ssize_t diff_parts = static_cast<ssize_t>(common::subIgnoreOverflow(add_parts, reduce_parts));
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
     }
@@ -15076,7 +15078,11 @@ void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(-static_cast<ssize_t>(part->getBytesOnDisk()), -static_cast<ssize_t>(part->rows_count), -1);
+    /// Negated modulo 2^64 and converted afterwards: negating a converted counter read from the part could overflow.
+    increaseDataVolume(
+        static_cast<ssize_t>(common::negateIgnoreOverflow(static_cast<UInt64>(part->getBytesOnDisk()))),
+        static_cast<ssize_t>(common::negateIgnoreOverflow(static_cast<UInt64>(part->rows_count))),
+        -1);
 }
 
 void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)

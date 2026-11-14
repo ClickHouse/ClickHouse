@@ -324,7 +324,11 @@ TruthValue evaluateBoolPredicate(PredicateLeaf::Operator op, const VectorWithMem
         return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
 
     UInt64 true_count = stats.bucket_statistics->count[0];
-    UInt64 false_count = stats.number_of_values.value_or(0) - true_count;
+    /// Without the total, or with one below the true count (malformed), nothing is known about the false values: do
+    /// not prune by these statistics.
+    if (!stats.number_of_values || true_count > *stats.number_of_values)
+        return has_null ? TruthValue::YES_NO_NULL : TruthValue::YES_NO;
+    UInt64 false_count = *stats.number_of_values - true_count;
     switch (op)
     {
         case PredicateLeaf::Operator::IS_NULL:

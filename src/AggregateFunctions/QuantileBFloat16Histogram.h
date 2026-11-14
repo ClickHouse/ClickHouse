@@ -6,11 +6,17 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Common/Exception.h>
 #include <base/sanitizer_defs.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 /** `bfloat16` is a 16-bit floating point data type that is the same as the corresponding most significant 16 bits of the `float`.
   * https://en.wikipedia.org/wiki/Bfloat16_floating-point_format
@@ -81,6 +87,10 @@ struct QuantileBFloat16Histogram
     void deserialize(ReadBuffer & buf)
     {
         data.read(buf);
+        /// `add` skips NaNs, and the finalization relies on that (a NaN does not convert to an integer result).
+        for (const auto & pair : data)
+            if ((pair.getKey() & 0x7FFF) > 0x7F80)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "NaN in the state of quantileBFloat16");
     }
 
     Value get(Float64 level) const
