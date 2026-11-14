@@ -1,0 +1,14 @@
+Variant(Int32, Int64)	\N	1
+Dynamic	\N	1
+Nullable(Int32)	1
+0	0	0	[]
+0	0	0	[]
+0
+0
+2	2
+2	2
+[0]
+[]	[]
+AggregateFunction(countIf, Dynamic, Nullable(UInt8))
+3
+3

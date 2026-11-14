@@ -43,6 +43,22 @@ public:
 
     String getSignatureString() const override { return "(T, Any) -> Nullable(T)"; }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() == 2 && canContainNull(*arguments[0]))
+            return arguments[0];
+
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() == 2 && canContainNull(*arguments[0].type))
+            return arguments[0].type;
+
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
@@ -59,6 +75,9 @@ public:
 
         auto func_if = if_resolver->build(if_columns);
         auto if_res = func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
+
+        if (canContainNull(*result_type))
+            return if_res;
 
         return makeNullable(if_res);
     }
@@ -80,7 +99,10 @@ Returns `NULL` if both arguments are equal.
         {"x", "The first value.", {"Any"}},
         {"y", "The second value.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `NULL` if both arguments are equal, otherwise returns the first argument.", {"NULL", "Nullable(x)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `NULL` if both arguments are equal, otherwise returns the first argument. "
+        "For `Variant` and `Dynamic`, which store `NULL` internally, the result keeps the input type.",
+        {"NULL", "Nullable(x)", "Variant", "Dynamic"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example",
          R"(
