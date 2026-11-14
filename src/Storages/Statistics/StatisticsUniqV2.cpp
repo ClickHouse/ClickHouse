@@ -55,7 +55,7 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
         raw_column_ptr = column.get();
     }
 
-    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
+    StatisticsUtils::addNonNullValues(*collector, data, *raw_column_ptr);
 }
 
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
@@ -126,11 +126,12 @@ UInt64 StatisticsUniqV2::estimateCardinality() const
     return cardinality;
 }
 
-bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool uniqV2StatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type)
+        || (isDynamic(inner_data_type) && !description.is_implicit);
 }
 
 StatisticsPtr uniqV2StatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

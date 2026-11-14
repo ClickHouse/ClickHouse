@@ -117,7 +117,7 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     if (!metadata)
         return true;
 
-    const auto * column = metadata->getColumns().tryGet(column_name);
+    const auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
     if (!column)
         return false;
 
@@ -268,22 +268,6 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, getContext()));
 }
 
-/// `<col>.null` names the stored NULL map of a Nullable `<col>`. Returns `<col>` when the name has
-/// that shape and the parent column is Nullable in storage.
-static std::optional<String> tryGetNullMapParentColumn(const String & column_name, const StorageInMemoryMetadata & metadata)
-{
-    auto dot_pos = column_name.rfind('.');
-    if (dot_pos == std::string::npos || column_name.compare(dot_pos + 1, std::string::npos, "null") != 0)
-        return {};
-
-    String parent_name = column_name.substr(0, dot_pos);
-    const ColumnDescription * parent_col = metadata.getColumns().tryGet(parent_name);
-    if (!parent_col || !isNullableOrLowCardinalityNullable(parent_col->type))
-        return {};
-
-    return parent_name;
-}
-
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals"
@@ -376,7 +360,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         {
             /// `isNull(col)` / `isNotNull(col)` — populate the corresponding null-check set.
             column_name = func.getArgumentAt(0).getColumnName();
-            if (metadata && !metadata->getColumns().tryGet(column_name))
+            if (metadata && !tryGetColumnType(metadata, column_name))
                 return false;
             atom_it->second(out, column_name, Field{});
             return true;
@@ -440,7 +424,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// branch further down. Use that same default here, so that crossing the limit cannot
                     /// change the estimate for such an atom - and skip the size-based path, which would
                     /// otherwise read `set_size / <no cardinality>` as "matches everything".
-                    if (metadata && !metadata->getColumns().tryGet(lhs_name))
+                    if (metadata && !tryGetColumnType(metadata, lhs_name))
                     {
                         const Float64 equal_factor = getEqualFactor(set_type, columns[0]->size());
                         out.selectivity.true_sel = negative ? 1.0 - equal_factor : equal_factor;
@@ -500,7 +484,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             if (metadata && const_is_zero && (func_name == "equals" || func_name == "notEquals"))
             {
-                if (auto parent_name = tryGetNullMapParentColumn(column_name, *metadata))
+                if (auto parent_name = tryGetNullMapParentColumn(metadata, column_name))
                 {
                     if (func_name == "notEquals")
                     {
@@ -518,10 +502,28 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             if (metadata)
             {
-                const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
-                if (column_desc)
-                    column_type = removeLowCardinalityAndNullable(column_desc->type);
-                else
+                auto type = tryGetColumnType(metadata, column_name);
+                if (type)
+                    column_type = removeLowCardinalityAndNullable(type);
+
+                /// The values of a `Dynamic` column have several types, and so may the literals compared with it, so the
+                /// ranges of two atoms on it may not compare: an equality is estimated alone, any other atom like one on an expression.
+                if (column_type && isDynamic(column_type))
+                {
+                    if (!set_for_ranges && (func_name == "equals" || func_name == "notEquals"))
+                    {
+                        Selectivity selectivity{getEqualFactor(const_type), 0};
+                        if (auto it = column_estimators.find(column_name);
+                            it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
+                            selectivity = it->second.estimateRanges(PlainRanges(Range(const_value)));
+                        out.selectivity = func_name == "equals" ? selectivity : selectivity.applyNot();
+                        out.finalized = true;
+                        return false;
+                    }
+                    type = nullptr;
+                }
+
+                if (!type)
                 {
                     /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
                     /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
@@ -654,7 +656,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// Bare `<col>.null` UInt8 subcolumn reference, e.g. `SELECT … WHERE x.null`. Treat it as `IS NULL`.
     if (!node.isFunction() && !node.isConstant() && metadata)
     {
-        if (auto parent_name = tryGetNullMapParentColumn(node.getColumnName(), *metadata))
+        if (auto parent_name = tryGetNullMapParentColumn(metadata, node.getColumnName()))
         {
             out.function = RPNElement::FUNCTION_IS_NULL;
             out.null_check_columns.insert(*parent_name);
@@ -707,7 +709,43 @@ void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    if (!has_data)
+        return nullptr;
+
+    /// The statistics of the paths of a `JSON` column estimate the conditions on its path subcolumns.
+    std::vector<std::pair<String, ColumnStatisticsPtr>> path_estimators;
+    for (const auto & [column_name, column_estimator] : estimator->column_estimators)
+        for (const auto & [path, path_stats] : column_estimator.stats->getPathStatistics())
+            path_estimators.emplace_back(column_name + "." + path, path_stats);
+    for (auto & [name, stats] : path_estimators)
+        estimator->column_estimators.emplace(std::move(name), ConditionSelectivityEstimator::ColumnEstimator{std::move(stats)});
+
+    return estimator;
+}
+
+DataTypePtr ConditionSelectivityEstimator::tryGetColumnType(const StorageMetadataPtr & metadata, const String & name) const
+{
+    const auto & columns = metadata->getColumns();
+    if (const auto * column = columns.tryGet(name))
+        return column->type;
+    if (column_estimators.contains(name))
+        if (auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
+            return subcolumn->type;
+    return nullptr;
+}
+
+std::optional<String> ConditionSelectivityEstimator::tryGetNullMapParentColumn(const StorageMetadataPtr & metadata, const String & column_name) const
+{
+    auto dot_pos = column_name.rfind('.');
+    if (dot_pos == std::string::npos || column_name.compare(dot_pos + 1, std::string::npos, "null") != 0)
+        return {};
+
+    String parent_name = column_name.substr(0, dot_pos);
+    auto parent_type = tryGetColumnType(metadata, parent_name);
+    if (!parent_type || !isNullableOrLowCardinalityNullable(parent_type))
+        return {};
+
+    return parent_name;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const

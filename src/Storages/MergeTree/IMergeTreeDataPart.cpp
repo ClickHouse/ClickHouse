@@ -1388,6 +1388,40 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     return all_columns.tryGet(column_name);
 }
 
+/// The paths of `JSON` columns that are among `required_columns` as subcolumns, by column.
+/// The statistics of a path are kept in the statistics of its column.
+static std::unordered_map<String, NameSet> getRequiredJSONPaths(const NameSet & required_columns, const ColumnsDescription & all_columns)
+{
+    std::unordered_map<String, NameSet> result;
+    auto add = [&](const String & name)
+    {
+        auto column = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (column && column->isSubcolumn() && isObject(column->getTypeInStorage()))
+            result[column->getNameInStorage()].insert(column->getSubcolumnName());
+    };
+    for (const auto & name : required_columns)
+    {
+        add(name);
+        /// `<path>.null` may stand for a `Nullable` path, like `<col>.null` in `getStatisticsFilesToLoad`.
+        if (name.ends_with(".null"))
+            add(name.substr(0, name.size() - std::string_view(".null").size()));
+    }
+    return result;
+}
+
+/// The statistics with only the statistics of the required paths. The statistics of all paths stay in the cache.
+static ColumnStatisticsPtr keepRequiredPaths(
+    const ColumnStatisticsPtr & stats,
+    const String & column_name,
+    const NameSet & required_columns,
+    const std::unordered_map<String, NameSet> & required_paths)
+{
+    if (required_columns.empty() || !stats->hasPathStatistics())
+        return stats;
+    auto it = required_paths.find(column_name);
+    return stats->cloneWithPaths(it == required_paths.end() ? NameSet{} : it->second);
+}
+
 std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
     const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const
 {
@@ -1471,6 +1505,8 @@ std::vector<std::pair<String, const ColumnDescription *>> IMergeTreeDataPart::ge
             if (required_column.ends_with(".null"))
                 probe(required_column.substr(0, required_column.size() - std::string_view(".null").size()));
         }
+        for (const auto & [column_name, _] : getRequiredJSONPaths(required_columns, all_columns))
+            probe(column_name);
     }
     else
     {
@@ -1505,6 +1541,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
     /// archive, which is read once per part, or the checksums of a part that stores every file separately.
     const PackedFilesReader * packed_reader = getStatisticsPackedReader();
     const auto files_to_load = getStatisticsFilesToLoad(required_columns, packed_reader);
+    const auto required_paths = getRequiredJSONPaths(required_columns, getColumnsDescription());
 
     /// `clearCaches` is one-shot: once it has run, nothing evicts the entries of this part again,
     /// so a part whose caches are cleared must not fill the cache any more.
@@ -1542,7 +1579,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
             cell = load();
 
         if (cell->stats)
-            result.emplace(column_desc->name, cell->stats);
+            result.emplace(column_desc->name, keepRequiredPaths(cell->stats, column_desc->name, required_columns, required_paths));
     }
 
     return result;
@@ -1689,6 +1726,9 @@ bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, c
             && !is_cached(column_name.substr(0, column_name.size() - std::string_view(".null").size())))
             return false;
     }
+    for (const auto & [column_name, _] : getRequiredJSONPaths(required_columns, all_columns))
+        if (!is_cached(column_name))
+            return false;
 
     return true;
 }
@@ -1709,6 +1749,7 @@ std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(
     }
 
     const String part_path = getPathForCacheKey();
+    const auto required_paths = getRequiredJSONPaths(required_columns, getColumnsDescription());
     ColumnsStatistics result;
     for (const auto & [filename, column_desc] : getStatisticsFilesToLoad(required_columns, packed_reader))
     {
@@ -1716,7 +1757,7 @@ std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(
         if (!cell)
             return std::nullopt;
         if (cell->stats)
-            result.emplace(column_desc->name, cell->stats);
+            result.emplace(column_desc->name, keepRequiredPaths(cell->stats, column_desc->name, required_columns, required_paths));
     }
     return result;
 }

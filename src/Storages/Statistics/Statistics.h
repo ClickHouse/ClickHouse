@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/Range.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -33,7 +34,7 @@ enum class StatisticsFileVersion : UInt16
 
 class Field;
 class Block;
-class IAggregateFunction;
+class ColumnObject;
 
 struct StatisticsUtils
 {
@@ -54,6 +55,10 @@ struct StatisticsUtils
     /// merged: a column type change (e.g. numeric → String) may preserve the state size while
     /// switching to a different hash function, producing wrong estimates if the states are mixed.
     static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
+
+    /// Adds the rows of `column` to the state of `collector`, except NULL rows of a `Dynamic` column: `Dynamic` is not
+    /// `Nullable`, so the aggregate function would count NULL as a value.
+    static void addNonNullValues(const IAggregateFunction & collector, AggregateDataPtr place, const IColumn & column);
 
     /// Fold `value` into the running minimum (`updateMin`) or maximum (`updateMax`) accumulator.
     ///
@@ -204,13 +209,33 @@ public:
     bool structureEquals(const ColumnStatistics & other) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
+    /// The statistics of each path of a `JSON` column built or merged in memory (statistics read from disk keep them
+    /// serialized, see `cloneWithPaths`). Each describes all rows of the column, a row without the path counting as NULL.
+    using PathStatistics = std::map<String, ColumnStatisticsPtr>;
+    const PathStatistics & getPathStatistics() const { return path_statistics; }
+    bool hasPathStatistics() const { return !path_types.empty(); }
+    /// A copy with the statistics of `paths` only, deserialized. It shares the statistics objects built in memory with
+    /// this one.
+    std::shared_ptr<ColumnStatistics> cloneWithPaths(const NameSet & paths) const;
+
 private:
     friend class MergeTreeStatisticsFactory;
+
+    void buildPaths(const ColumnObject & column);
+    void addNullRows(UInt64 count);
+    ColumnStatisticsPtr createPathStatistics(const DataTypePtr & path_type) const;
+    ColumnStatisticsPtr deserializePathStatistics(const String & path, const String & data) const;
+
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
     /// A number of distinct values set by `setCardinality`.
     std::optional<UInt64> external_cardinality;
+    /// The statistics built for every path of a `JSON` column; empty if none are.
+    ColumnStatisticsDescription::StatisticsTypeDescMap path_types;
+    PathStatistics path_statistics;
+    /// The statistics of the paths read from disk, serialized: a path is deserialized when it is used.
+    std::map<String, String> serialized_path_statistics;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
@@ -256,6 +281,7 @@ public:
     /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
     /// types one at a time (and to silently skip types the current build doesn't know about).
     StatisticsPtr tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const;
+    bool isKnownType(StatisticsType type) const { return validators.contains(type); }
 
     void registerValidator(StatisticsType type, Validator validator);
     void registerCreator(StatisticsType type, Creator creator);

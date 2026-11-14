@@ -40,6 +40,8 @@ public:
     void build(const ColumnPtr & column) override;
     /// A NULL bound leaves min/max unknown; `null_count` counts only for a column whose default is NULL.
     void build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
+    /// Counts `count` more NULL rows of a column whose default is NULL.
+    void addNullRows(UInt64 count);
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;

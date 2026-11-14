@@ -206,6 +206,13 @@ void StatisticsBasic::build(const ColumnPtr & column)
     row_count += column_size;
 }
 
+void StatisticsBasic::addNullRows(UInt64 count)
+{
+    chassert(is_nullable);
+    default_count += count;
+    row_count += count;
+}
+
 void StatisticsBasic::merge(const StatisticsPtr & other_stats)
 {
     const auto * other = typeid_cast<const StatisticsBasic *>(other_stats.get());

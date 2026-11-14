@@ -2668,7 +2668,9 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 | uniq     | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
 | uniq_v2  | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
 
-All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count. `uniq` and `uniq_v2` may also be declared on `Dynamic`, where `NULL` is not counted as a value.
+
+Statistics declared on a `JSON` column are built for every path of the column: typed paths, dynamic paths and paths stored in shared data. Each path gets the declared types that support its type, and `basic`: a typed path the types of a column of that type, any other path the types that support `Dynamic` (`basic`, `uniq`, `uniq_v2`). A typed path of type `JSON` gets none. Statistics added by `auto_statistics_types` are not built for paths. Building them reads every path of every inserted block.
 
 ### Supported operations {#supported-operations}
 
