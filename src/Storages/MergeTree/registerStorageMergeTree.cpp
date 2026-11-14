@@ -1321,6 +1321,9 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_temporary = true,
     };
 
+    auto ordered_insert_features = features;
+    ordered_insert_features.supports_parallel_insert = false;
+
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -2733,7 +2736,7 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
         .syntax = "ENGINE = MergeTree() ORDER BY expr [PARTITION BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [TTL expr] [SETTINGS ...]",
         .related = {"ReplicatedMergeTree"}});
 
-    factory.registerStorage("CollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("CollapsingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = R"DOCS_MD(
 ## Description {#description}
 
@@ -3096,7 +3099,7 @@ SELECT * FROM UAct
         .syntax = "ENGINE = CollapsingMergeTree(sign) ORDER BY expr",
         .related = {"MergeTree", "VersionedCollapsingMergeTree", "ReplicatedCollapsingMergeTree"}});
 
-    factory.registerStorage("ReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("ReplacingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = R"DOCS_MD(
 The engine differs from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
@@ -3317,7 +3320,7 @@ For further details on `FINAL`, including how to optimize `FINAL` performance, w
         .syntax = "ENGINE = ReplacingMergeTree([ver [, is_deleted]]) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedReplacingMergeTree"}});
 
-    factory.registerStorage("CoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("CoalescingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = R"DOCS_MD(
 <Note title="Available from version 25.6">
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
@@ -3945,7 +3948,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
         .syntax = "ENGINE = SummingMergeTree([columns]) ORDER BY expr",
         .related = {"MergeTree", "AggregatingMergeTree", "ReplicatedSummingMergeTree"}});
 
-    factory.registerStorage("GraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("GraphiteMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = R"DOCS_MD(
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
@@ -4449,6 +4452,9 @@ This is a very inefficient way to select data. Don't use it for large tables.
     /// A replicated/shared MergeTree is not a lightweight session object and must not be a temporary table.
     features.supports_temporary = false;
 
+    ordered_insert_features = features;
+    ordered_insert_features.supports_parallel_insert = false;
+
     factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 <Note>
@@ -4790,12 +4796,12 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .syntax = "ENGINE = ReplicatedMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"MergeTree"}});
 
-    factory.registerStorage("ReplicatedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("ReplicatedCollapsingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = "Replicated version of the CollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCollapsingMergeTree('zoo_path', 'replica_name', sign) ORDER BY expr",
         .related = {"CollapsingMergeTree"}});
 
-    factory.registerStorage("ReplicatedReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("ReplicatedReplacingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = "Replicated version of the ReplacingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedReplacingMergeTree('zoo_path', 'replica_name'[, ver [, is_deleted]]) ORDER BY expr",
         .related = {"ReplacingMergeTree"}});
@@ -4810,12 +4816,12 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .syntax = "ENGINE = ReplicatedSummingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"SummingMergeTree"}});
 
-    factory.registerStorage("ReplicatedCoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("ReplicatedCoalescingMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = "Replicated version of the CoalescingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCoalescingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"CoalescingMergeTree"}});
 
-    factory.registerStorage("ReplicatedGraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
+    factory.registerStorage("ReplicatedGraphiteMergeTree", create, SecretArgumentsSpec{}, ordered_insert_features, Documentation{
         .description = "Replicated version of the GraphiteMergeTree engine.",
         .syntax = "ENGINE = ReplicatedGraphiteMergeTree('zoo_path', 'replica_name', config_section) ORDER BY expr",
         .related = {"GraphiteMergeTree"}});

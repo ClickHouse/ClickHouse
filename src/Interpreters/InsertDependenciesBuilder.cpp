@@ -1012,6 +1012,66 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     return false;
 }
 
+bool InsertDependenciesBuilder::forwardedInsertHidesSerialDestination(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// Only the nested `INSERT` of an `AliasSink` expands its target's dependent-view graph, so the outer
+    /// builder never sees a destination inside it.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || insertReachesSerialDestination(target, context, depth + 1);
+    }
+
+    /// `MaterializedView` and proxies pass the write through within this pipeline: look through them.
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || forwardedInsertHidesSerialDestination(target, context, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return forwardedInsertHidesSerialDestination(proxy->getNested(), context, depth + 1);
+
+    return false;
+}
+
+bool InsertDependenciesBuilder::insertReachesSerialDestination(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    if (!storage->supportsParallelInsert())
+        return true;
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        const auto * materialized_view = view ? dynamic_cast<const StorageMaterializedView *>(view.get()) : nullptr;
+        if (!materialized_view)
+            return true;
+        auto target = materialized_view->tryGetTargetTable();
+        if (!target || insertReachesSerialDestination(target, context, depth + 1))
+            return true;
+    }
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || insertReachesSerialDestination(target, context, depth + 1);
+    }
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || insertReachesSerialDestination(target, context, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return insertReachesSerialDestination(proxy->getNested(), context, depth + 1);
+
+    return false;
+}
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
@@ -1043,8 +1103,13 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     collectAllDependencies();
 
+    /// An `Alias` reports only its target's `supportsParallelInsert`, but each of its sinks runs a separate
+    /// nested `INSERT` that also writes the target's dependent views, so check the destinations hidden there.
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
-        { return isView(storage.first) || storage.second->supportsParallelInsert();});
+    {
+        return isView(storage.first)
+            || (storage.second->supportsParallelInsert() && !forwardedInsertHidesSerialDestination(storage.second, init_context));
+    });
 
     /// Fanning out the writing side to `max_insert_threads` sink chains also fans out the dependent
     /// materialized-view chains when `parallel_view_processing` is enabled. Each branch then gets its own

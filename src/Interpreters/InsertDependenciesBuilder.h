@@ -214,6 +214,20 @@ public:
     static bool dependentViewForwardsInsertToSeparateContext(
         const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
+    /// Whether inserting into `storage` can reach - through a dependent-view graph *hidden* behind an
+    /// `Alias` hop - a destination that does not support parallel inserts. Each `AliasSink` of a write
+    /// fan-out runs its own nested `INSERT` into the target, and keeping every nested `INSERT`
+    /// single-stream does not order the concurrent nested inserts against one another, so the outer
+    /// insert must stay single-stream itself. It fails closed (returns true) when a hop of the chain,
+    /// a dependent view or its target cannot be resolved, or the chain is too deep.
+    static bool forwardedInsertHidesSerialDestination(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
+    /// Whether a nested `INSERT` into `storage` can reach a destination that does not support parallel
+    /// inserts: `storage` itself, the targets of its dependent materialized views at any depth, and the
+    /// tables reached through `Alias`, `MaterializedView` and proxy hops. Helper for
+    /// `forwardedInsertHidesSerialDestination`; fails closed like it.
+    static bool insertReachesSerialDestination(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
     size_t getViewProcessingNumThreads() const;
 
 
