@@ -295,12 +295,10 @@ private:
              !error && it != fs::recursive_directory_iterator() && entries < max_entries;
              it.increment(error), ++entries)
         {
+            if (!FS::isSymlinkNoThrow(it->path()))
+                continue;
             std::error_code entry_error;
-            if (!it->is_symlink(entry_error))
-                continue;
-            fs::path target = fs::read_symlink(it->path(), entry_error);
-            if (entry_error)
-                continue;
+            fs::path target = FS::readSymlink(it->path());
             if (target.is_relative())
                 target = fs::canonical(it->path().parent_path(), entry_error) / target;
             if (entry_error)
