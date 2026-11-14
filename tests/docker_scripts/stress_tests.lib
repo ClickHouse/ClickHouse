@@ -201,6 +201,8 @@ EOL
     # window views, and `clickhouse-test --upgrade-check` passes `--fake-drop`, so they stay in the
     # metadata for the new binary to fail on. Keep it readonly, rather than set to `false`, until
     # that suite stops creating them: assigning an obsolete setting makes the new binary warn.
+    # allow_reserved_column_names is readonly too: a column that hides a MergeTree virtual column
+    # can crash merges.
     cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
@@ -236,6 +238,10 @@ EOL
                 <allow_experimental_window_view>
                     <readonly/>
                 </allow_experimental_window_view>
+
+                <allow_reserved_column_names>
+                    <readonly/>
+                </allow_reserved_column_names>
 
             </constraints>
         </default>
