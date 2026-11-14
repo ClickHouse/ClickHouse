@@ -72,6 +72,7 @@
 #include <Common/ThreadPool.h>
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -1316,7 +1317,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 }
             }
 
-            auto index_order = std::make_shared<std::vector<size_t>>(skip_indexes.useful_indices.size());
+            auto index_order = std::make_shared<VectorWithMemoryTracking<size_t>>(skip_indexes.useful_indices.size());
             std::iota(index_order->begin(), index_order->end(), 0);
 
             index_sizes.clear();

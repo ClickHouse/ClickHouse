@@ -140,6 +140,8 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
     return false;
 }
 
+}
+
 /// `last-column-id` written by some writers does not count nested field ids, so the ids of all schemas are taken into account too.
 Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
 {
@@ -148,8 +150,6 @@ Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
     for (UInt32 i = 0; i < schemas->size(); ++i)
         result = std::max(result, Iceberg::IcebergSchemaProcessor::getMaxFieldId(schemas->getObject(i)->getArray(Iceberg::f_fields)));
     return static_cast<Int32>(result);
-}
-
 }
 
 MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)

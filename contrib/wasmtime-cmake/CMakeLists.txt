@@ -46,8 +46,7 @@ target_include_directories(_ch_wasmtime SYSTEM INTERFACE ${WASMTIME_HEADER_DST})
 configure_file("${WASMTIME_HEADER_SRC}/wasmtime/conf.h.in" "${WASMTIME_HEADER_DST}/wasmtime/conf.h" NEWLINE_STYLE CRLF)
 file(COPY "${WASMTIME_HEADER_SRC}/" DESTINATION "${WASMTIME_HEADER_DST}" FILES_MATCHING REGEX "\\.hh?$")
 
-clickhouse_import_crate(MANIFEST_PATH "${RUST_CONTRIB_WORKSPACE_MANIFEST}" CRATES _ch_rust_wasmtime)
-clickhouse_config_crate_flags(_ch_rust_wasmtime)
+clickhouse_add_rust_member(_ch_rust_wasmtime FEATURE wasmtime)
 
 target_link_libraries(_ch_wasmtime INTERFACE _ch_rust_wasmtime)
 

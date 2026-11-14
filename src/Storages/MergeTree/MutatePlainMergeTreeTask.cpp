@@ -126,7 +126,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (mutate_task->execute())
                     return true;
 
-                new_part = mutate_task->getFuture().get();
+                new_part = mutate_task->takeResultPart();
                 auto & data_part_storage = new_part->getDataPartStorage();
 #if CLICKHOUSE_CLOUD
                 data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());

@@ -11,6 +11,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char mt_merge_task_pause_before_transaction_commit[];
+}
 
 namespace ErrorCodes
 {
@@ -160,7 +166,7 @@ void MergePlainMergeTreeTask::prepare()
 
 void MergePlainMergeTreeTask::finish()
 {
-    new_part = merge_task->getFuture().get();
+    new_part = merge_task->takeResultPart();
     new_part->getDataPartStorage().commitTransaction();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
@@ -218,6 +224,7 @@ void MergePlainMergeTreeTask::finish()
     if (auto txn_ = txn_holder.getTransaction())
     {
         /// Explicitly commit the transaction if we own it (it's a background merge, not OPTIMIZE)
+        FailPointInjection::pauseFailPoint(FailPoints::mt_merge_task_pause_before_transaction_commit);
         TransactionManager::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();

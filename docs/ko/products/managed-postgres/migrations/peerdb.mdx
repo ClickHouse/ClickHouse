@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 가이드는 PeerDB를 사용하여 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres로 마이그레이션하는 방법을 단계별로 안내합니다.
 
@@ -44,7 +43,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 호스트, 포트, 데이터베이스 이름, 사용자 이름, 비밀번호 등의 연결 정보를 입력하여 원본 PostgreSQL 데이터베이스용 피어를 생성합니다. 정보를 모두 입력했으면 `Create peer` 버튼을 클릭하여 피어를 저장하세요.
 
-<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="원본 피어 생성" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![원본 피어 생성](/images/managed-postgres/peerdb/source-peer.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-peerdb-target-peer">
   ### 대상 피어 생성
@@ -52,11 +59,27 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 마찬가지로, 필요한 연결 정보를 입력하여 ClickHouse Managed Postgres 인스턴스용 피어를 생성합니다. 인스턴스의 [연결 정보](/ko/products/managed-postgres/connection)는 ClickHouse Cloud 콘솔에서 확인할 수 있습니다. 정보를 모두 입력한 후 `Create peer` 버튼을 클릭하여 대상 피어를 저장합니다.
 
-<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="대상 피어 생성" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![대상 피어 생성](/images/managed-postgres/peerdb/target-peer.webp)
+
+</Frame>
+
+</div>
 
 이제 &quot;Peers&quot; 섹션에 소스 피어와 대상 피어가 모두 표시되는 것을 확인할 수 있습니다.
 
-<Image img="/images/managed-postgres/peerdb/peers.webp" alt="피어 목록" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![피어 목록](/images/managed-postgres/peerdb/peers.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-peerdb-source-schema-dump">
   ### 원본 스키마 덤프 확보하기
@@ -144,7 +167,15 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 다음으로, 원본 피어와 대상 피어 간의 데이터 마이그레이션 프로세스를 정의할 미러를 생성해야 합니다. PeerDB UI에서 사이드바의 &quot;Mirrors&quot;를 클릭해 &quot;Mirrors&quot; 섹션으로 이동하십시오. 새 미러를 생성하려면 `+ New mirror` 버튼을 클릭하십시오.
 
-<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="미러 생성" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![미러 생성](/images/managed-postgres/peerdb/create-mirror.webp)
+
+</Frame>
+
+</div>
 
 1. 마이그레이션 내용을 설명하는 이름을 미러에 지정하십시오.
 2. 드롭다운 메뉴에서 앞서 생성한 원본 피어와 대상 피어를 선택하십시오.
@@ -153,11 +184,27 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 * 소프트 삭제가 OFF로 설정되어 있어야 합니다.
 * `Advanced settings`를 펼치십시오. **Postgres type system is enabled**는 활성화되어 있고 **PeerDB columns are disabled**는 비활성화되어 있는지 확인하십시오.
 
-<Image img="/images/managed-postgres/peerdb/settings.webp" alt="미러 설정" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![미러 설정](/images/managed-postgres/peerdb/settings.webp)
+
+</Frame>
+
+</div>
 
 4. 마이그레이션할 테이블을 선택하십시오. 특정 테이블만 선택하거나 원본 DB의 모든 테이블을 선택할 수 있습니다.
 
-<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="테이블 선택기" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![테이블 선택기](/images/managed-postgres/peerdb/table-picker.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **테이블 선택**
@@ -169,7 +216,15 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 &quot;Mirrors&quot; 섹션에서 새로 생성한 미러를 확인할 수 있습니다.
 
-<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="미러 목록" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![미러 목록](/images/managed-postgres/peerdb/mirrors.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-peerdb-initial-load">
   ## 초기 적재가 완료될 때까지 기다리기
@@ -177,7 +232,15 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 미러를 생성하면 PeerDB가 소스 데이터베이스에서 대상 데이터베이스로 초기 데이터 적재를 시작합니다. 미러를 클릭한 다음 **초기 적재** 탭을 클릭하면 초기 데이터 마이그레이션의 진행 상황을 모니터링할 수 있습니다.
 
-<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="초기 적재 진행 상황" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![초기 적재 진행 상황](/images/managed-postgres/peerdb/initial-load.webp)
+
+</Frame>
+
+</div>
 
 초기 적재가 완료되면 마이그레이션이 완료되었음을 나타내는 상태가 표시됩니다.
 

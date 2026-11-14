@@ -1376,8 +1376,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_
 
     /// The periodic refresh is best-effort. Waiting for the transactions in flight would make every new transaction
     /// wait behind this one, which is exactly the disk-wide stall during a long operation that the path locks avoid;
-    /// so skip this round instead if anything is in flight. An explicit request (SYSTEM RESTART DISK passes zero
-    /// to bypass the throttle) waits.
+    /// so skip this round instead if anything is in flight. An explicit request (zero) waits for a reload in flight
+    /// and then reloads itself.
     const auto tx_lock = explicit_request ? std::optional(path_locks.lockAll()) : path_locks.tryLockAll();
     if (!tx_lock)
         return;

@@ -138,6 +138,7 @@ namespace FailPoints
     extern const char mutate_task_random_sleep_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
+    extern const char merge_mutate_task_pause_after_part_handoff[];
 }
 
 namespace ErrorCodes
@@ -3046,6 +3047,8 @@ public:
 
     void cancel() noexcept
     {
+        if (temporary_text_index_storage)
+            tryUndoTransaction(*temporary_text_index_storage);
         tryCleanupTemporaryFiles();
     }
 
@@ -3256,6 +3259,8 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
+    chassert(!ctx->new_data_part->hasLightweightDelete() || block.has(RowExistsColumn::name));
+
     const auto & projection = *ctx->projections_to_build[projection_idx];
 
     /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
@@ -4694,11 +4699,17 @@ bool MutateTask::execute()
             //
             // Fetching a byte-identical part (in case of checksum mismatches) will fail with
             // `Part ... should be deleted after previous attempt before fetch`.
-            promise.set_value(std::exchange(ctx->new_data_part, nullptr));
+            setResultPart(std::exchange(ctx->new_data_part, nullptr));
             return false;
         }
     }
     return false;
+}
+
+void MutateTask::setResultPart(MergeTreeData::MutableDataPartPtr part)
+{
+    result_part = std::move(part);
+    FailPointInjection::pauseFailPoint(FailPoints::merge_mutate_task_pause_after_part_handoff);
 }
 
 void MutateTask::cancel() noexcept
@@ -4708,8 +4719,13 @@ void MutateTask::cancel() noexcept
     if (task)
         task->cancel();
 
-    if (ctx->new_data_part)
-        ctx->new_data_part->removeIfNeeded();
+    if (auto part = ctx->new_data_part ? ctx->new_data_part : result_part)
+    {
+        LOG_DEBUG(ctx->log, "Rolling back uncommitted part {} of a cancelled mutation", part->getDataPartStorage().getPartDirectory());
+        /// The transaction is uncommitted, and on object storage its blobs are staged only there.
+        tryUndoTransaction(part->getDataPartStorage());
+        part->removeIfNeeded();
+    }
 }
 
 void MutateTask::updateProfileEvents() const
@@ -5253,7 +5269,7 @@ bool MutateTask::prepare()
         }
 
         ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
-        promise.set_value(std::move(part));
+        setResultPart(std::move(part));
         return false;
     }
 
@@ -5284,7 +5300,7 @@ bool MutateTask::prepare()
             ctx->temporary_directory_lock = std::move(tmp_dir_holder);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
-            promise.set_value(std::move(empty_part));
+            setResultPart(std::move(empty_part));
             return false;
         }
     }
