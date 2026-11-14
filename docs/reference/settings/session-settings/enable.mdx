@@ -22,7 +22,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to enable adaptive `GROUP BY` aggregation that freezes each thread's local hash table once it reaches `adaptive_aggregator_freeze_threshold` keys, so frequent keys keep aggregating in the small local tables while rare keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge; this stores and processes rare keys once instead of once per thread."}]}]}/>
 
-Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or `adaptive_aggregator_freeze_threshold_bytes` of memory, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or its hash-table buffer reaches `adaptive_aggregator_freeze_threshold_bytes`, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 
 The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold a thread writes its staged records to disk and frees them, and the merge reads them back bucket by bucket. A table that has not frozen yet is written to disk as in the ordinary external aggregation once it holds enough memory, and a frozen one once its aggregate states, such as those of `uniqExact` or `groupArray`, grow enough; the thread then starts filling a new table.
 
@@ -548,17 +548,13 @@ All servers participating in a distributed query must agree on this value: with 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to store the single `String` key of `hash`, `parallel_hash` and `grace_hash` joins in 16 bytes: inline up to 15 bytes, as a 127-bit `SipHash` for longer keys."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to make hash joins on a single `String` key faster and use less memory."}]}]}/>
 
-In `hash`, `parallel_hash` and `grace_hash` joins on a single `String` key, store each key in the hash table as a 16-byte value. This includes a join with `OR` whose every condition has a single `String` key. It also includes a `hash` or `parallel_hash` join after it is converted to `grace_hash` to spill to disk.
+Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nullable(String)` key faster and lowers their memory use. A join with `OR` qualifies when each of its conditions has a single such key.
 
-A key of up to 15 bytes is stored inline and compared exactly. A key of 16 bytes or more is stored as its 128-bit `SipHash`. One bit of the hash marks the key as hashed, so two such keys are compared by their other 127 bits. In both cases the hash table keeps no separate copy of the string.
+Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-Two different keys of 16 bytes or more whose hashes have the same 127 bits are matched as equal. For N distinct keys the probability of that is about N^2/2^128. Disable the setting to compare the keys exactly.
-
-The hash tables are smaller, so a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
-
-The setting does not apply to `FixedString` keys or to `LowCardinality(Nullable(String))` keys. A join on a non-nullable `LowCardinality(String)` key can use a hash table of the key's dictionary instead. This needs a join that has one condition, is not `ASOF` and builds its hash table as one part: a `grace_hash` join, or a `hash` join with the serial layout (see `parallel_hash_join_threshold` and `hash_join_layout`). Tables with the `Join` engine and `joinGet` keep exact keys. So does a join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join`.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join` is not affected either.
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 
