@@ -679,6 +679,7 @@ void StorageMergeTree::alter(
 
             if (statistics_changed)
             {
+                syncEscapeIndexFilenamesWithSettings(new_metadata);
                 /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
                 ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                 setInMemoryMetadata(new_metadata);
@@ -859,6 +860,7 @@ void StorageMergeTree::alter(
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+                syncEscapeIndexFilenamesWithSettings(new_metadata);
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
