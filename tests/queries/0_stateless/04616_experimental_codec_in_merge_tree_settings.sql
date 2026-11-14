@@ -1,4 +1,4 @@
--- An experimental codec (ZXC) must require `enable_zxc_codec` also when it is specified`)
+-- A gated codec (ZXC) must require `enable_zxc_codec` also when it is specified`)
 -- through the codec-valued MergeTree settings, not only in a column `CODEC(...)` clause.
 
 DROP TABLE IF EXISTS t_zxc_mt_settings;

@@ -1,4 +1,4 @@
-"""An experimental codec (`ZXC`) set as a `<merge_tree>` config default must not enter tables
+"""A gated codec (`ZXC`) set as a `<merge_tree>` config default must not enter tables
 of sessions that did not set `enable_zxc_codec`, neither on CREATE, nor on load
 (short `ATTACH`), nor via `ALTER TABLE ... RESET SETTING` falling back to the config default.
 
@@ -37,7 +37,7 @@ def test_create_inheriting_config_default_is_gated(started_cluster):
         "CREATE TABLE t_create (x UInt64) ENGINE = MergeTree ORDER BY x",
         settings=DISABLED,
     )
-    assert "experimental" in error
+    assert "is in beta" in error
 
     node.query(
         "CREATE TABLE t_create (x UInt64) ENGINE = MergeTree ORDER BY x",
@@ -63,7 +63,7 @@ def test_reset_setting_to_config_default_is_gated(started_cluster):
         "ALTER TABLE t_reset RESET SETTING default_compression_codec",
         settings=DISABLED,
     )
-    assert "experimental" in error
+    assert "is in beta" in error
 
     node.query(
         "ALTER TABLE t_reset RESET SETTING default_compression_codec",
@@ -82,7 +82,7 @@ def test_attach_inheriting_config_default_is_gated(started_cluster):
     node.query("DETACH TABLE t_attach")
 
     error = node.query_and_get_error("ATTACH TABLE t_attach", settings=DISABLED)
-    assert "experimental" in error
+    assert "is in beta" in error
 
     node.query("ATTACH TABLE t_attach", settings=ENABLED)
     node.query("DROP TABLE t_attach SYNC")
