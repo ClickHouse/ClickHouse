@@ -1,0 +1,19 @@
+DROP with a hardware Keeper error
+active node	1
+1
+database exists	0
+keeper path exists	0
+DETACH with a hardware Keeper error
+active node	1
+error reported
+database exists	1
+active node	0
+DROP with a non-hardware Keeper error
+active node	1
+error reported
+database exists	1
+RESTORE DATABASE REPLICA after a failed shutdown
+active node	1
+error reported
+0
+1
