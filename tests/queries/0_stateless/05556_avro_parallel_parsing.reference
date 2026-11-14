@@ -1,0 +1,11 @@
+mixed: OK
+codec null: OK
+codec deflate: OK
+codec zstd: OK
+codec snappy: OK
+tiny: OK
+schema-evolution: OK
+wide-random-bytes: OK
+large-blocks-small-buffer: OK
+byte-limit split: 1
+row-limit split: 1

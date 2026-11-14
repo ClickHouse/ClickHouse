@@ -673,6 +673,9 @@ InputFormatPtr FormatFactory::getInputImpl(
             context->getApplicationType() == Context::ApplicationType::SERVER};
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
+        /// Forwarded to every per-segment parser.
+        if (format_filter_info && format_filter_info->column_mapper)
+            format->setColumnMapper(format_filter_info->column_mapper);
     }
     // 2. Prefer to use metadata-aware creator if we have object metadata
     else if (creators.random_access_input_creator_with_metadata

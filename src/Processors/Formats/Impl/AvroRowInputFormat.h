@@ -178,6 +178,8 @@ public:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
+    /// The `Avro` segmentation engine prepends the OCF header to every segment.
+    bool everySegmentHasPrefix() const override { return true; }
 
     bool supportsCountRows() const override;
     size_t countRows(size_t max_block_size) override;
