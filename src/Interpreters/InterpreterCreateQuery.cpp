@@ -949,6 +949,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (columns_list.codec_declarations)
         applyCodecDeclarations(*columns_list.codec_declarations, res, context_, mode, is_restore_from_backup);
 
+    if (mode <= LoadingStrictnessLevel::CREATE)
+        res.checkAliasColumnsAreNotCyclic();
+
     return res;
 }
 
@@ -1386,6 +1389,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
+        properties.columns.checkAliasColumnsAreNotCyclic();
 
         for (const auto & index : properties.indices)
             checkTextIndexPreAndPostProcessorPermissions(index, getContext());
