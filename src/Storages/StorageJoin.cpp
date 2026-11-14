@@ -657,7 +657,7 @@ Main use-cases for `Join`-engine tables are following:
 
 ### Deleting data {#deleting-data}
 
-`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/reference/statements/alter#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
+`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/reference/statements/alter/index#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
 
 ### Limitations and settings {#join-limitations-and-settings}
 

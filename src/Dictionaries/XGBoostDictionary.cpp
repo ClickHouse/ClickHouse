@@ -228,7 +228,7 @@ The `xgboost` (`XGBOOST`) dictionary trains an [XGBoost](https://xgboost.readthe
 
 It is suited to tabular regression and binary classification where the features are numeric — for example forecasting a value from several measurements, or scoring rows against a learned target. Multiclass objectives are not supported (see [Layout parameters](#layout-parameters)).
 
-:::note
+<Note>
 The XGBoost integration is experimental. Enable it with the `enable_xgboost` setting before creating an `XGBOOST` dictionary or calling `predictXGBoost`:
 
 ```sql
@@ -236,7 +236,7 @@ SET enable_xgboost = 1;
 ```
 
 Only `CREATE DICTIONARY` is supported: an `XGBOOST` dictionary defined in a server configuration file fails to load.
-:::
+</Note>
 
 [`predictXGBoost`](/reference/functions/regular-functions/machine-learning-functions) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error.
 
@@ -287,9 +287,9 @@ The ground truth is `2*1 + 3*2 = 8`, so the model's prediction is close to `8`.
 
 **Training (at load time).** Each source row is a `(features..., target)` observation. When the dictionary loads, the source is read block by block and the model is then trained once over the whole set. Feature and target values are read as floats, so the key columns must be numeric and the target attribute floating-point (see [Dictionary structure](#dictionary-structure)).
 
-:::warning
+<Warning>
 **Training holds the entire training set in memory.** Reading the source in blocks is not out-of-core training: each block is accumulated rather than consumed, so the whole training set is memory resident before the first boosting round and stays memory resident until the last one.
-:::
+</Warning>
 
 **Predicting (at query time).** To predict, the model takes the feature vector — in the same order as the key columns were declared — and runs it through the trained booster, returning a `Float64`. A `NULL` feature is passed to the model as a missing value, which XGBoost handles the way it learned to during training, so the prediction is never `NULL`. When every feature is a constant, the model is evaluated once per block instead of once per row.
 

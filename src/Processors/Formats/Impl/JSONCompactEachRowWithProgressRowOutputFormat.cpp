@@ -198,9 +198,9 @@ FORMAT JSONCompactEachRowWithProgress
 
 ## Description {#description}
 
-Similar to [`JSONCompactEachRowWithProgress`](/interfaces/formats/JSONCompactEachRowWithProgress), but all values are converted to strings. Uses the same top-level object kinds (`meta`, `row`, `progress`, `totals`, `min`/`max`, `rows_before_limit_at_least`, `rows_before_aggregation`, and a top-level `exception`); `row` / `totals` / `min` / `max` payloads remain **arrays** in column order, with each element serialized as a string.
+Similar to [`JSONCompactEachRowWithProgress`](/reference/formats/JSON/JSONCompactEachRowWithProgress), but all values are converted to strings. Uses the same top-level object kinds (`meta`, `row`, `progress`, `totals`, `min`/`max`, `rows_before_limit_at_least`, `rows_before_aggregation`, and a top-level `exception`); `row` / `totals` / `min` / `max` payloads remain **arrays** in column order, with each element serialized as a string.
 
-See [`JSONCompactEachRowWithProgress`](/interfaces/formats/JSONCompactEachRowWithProgress) for the full stream-object contract (`progress` may arrive before `meta`; `rows_before_limit_at_least` is a lower estimate when the query contains `LIMIT`, not proof rows were dropped; `exception` is only written on the HTTP path with `http_write_exception_in_output_format=1`).
+See [`JSONCompactEachRowWithProgress`](/reference/formats/JSON/JSONCompactEachRowWithProgress) for the full stream-object contract (`progress` may arrive before `meta`; `rows_before_limit_at_least` is a lower estimate when the query contains `LIMIT`, not proof rows were dropped; `exception` is only written on the HTTP path with `http_write_exception_in_output_format=1`).
 
 ## Example usage {#example-usage}
 

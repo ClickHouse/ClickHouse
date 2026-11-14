@@ -1701,9 +1701,7 @@ The number of rows in one NATS message depends on whether the format is row-base
 ## Using JetStream {#using-jetstream}
 
 Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [NATS CLI](https://github.com/nats-io/natscli) package:
-<details>
-<summary>creating stream</summary>
-
+<Accordion title="creating stream">
 ```bash
 $ nats stream add
 ? Stream Name stream_name
@@ -1758,11 +1756,9 @@ State:
            Last Sequence: 0
         Active Consumers: 0
 ```
-</details>
+</Accordion>
 
-<details>
-<summary>creating durable pull consumer</summary>
-
+<Accordion title="creating durable pull consumer">
 ```bash
 $ nats consumer add
 ? Select a Stream stream_name
@@ -1798,7 +1794,7 @@ Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
     Unprocessed Messages: 0
            Waiting Pulls: 0 of maximum 512
 ```
-</details>
+</Accordion>
 
 After creating stream and durable pull consumer, we can create a table with NATS engine. To do this, you need to initialize: nats_stream, nats_consumer_name, and nats_subjects:
 

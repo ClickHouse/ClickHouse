@@ -33,6 +33,9 @@ echo "$PAGE" | grep -oF "(?:title|label)=" | head -n1
 # content is kept ...
 echo "$PAGE" | grep -oF "'Note', 'Warning', 'Tip', 'Info', 'Check', 'Danger', 'Caution'," | head -n1
 
+# ... an `<Accordion title="...">` becomes the allowlisted `<details>`/`<summary>` disclosure widget ...
+echo "$PAGE" | grep -oF "return '<details>\n<summary>' + escapeHTML(" | head -n1
+
 # ... and any remaining self-closing PascalCase component (an unimported website snippet) is
 # stripped, so it cannot swallow the rest of the document as its subtree.
 echo "$PAGE" | grep -oF "replace(/<[A-Z][A-Za-z0-9]*(?:\s[^>]*)?\/>/g" | head -n1
@@ -57,3 +60,8 @@ $CLICKHOUSE_CLIENT --query "
     FROM system.documentation
     WHERE type = 'Table Engine' AND name = 'Redis'
       AND description LIKE '%<Note title=\"Serialization\">%'"
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0
+    FROM system.documentation
+    WHERE type = 'Aggregate Function' AND name = 'uniq'
+      AND description LIKE '%<Accordion title=%'"
