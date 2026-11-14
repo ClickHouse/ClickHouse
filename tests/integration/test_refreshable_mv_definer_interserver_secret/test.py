@@ -39,12 +39,15 @@ def test_scheduled_refresh_of_definer_view_carries_definer_to_remote_shard(
         INSERT INTO lab.secrets VALUES (1, 'a'), (2, 'b'), (3, 'c');
         """
     )
+    # With `table_engines_require_grant = false`, `TABLE ENGINE ON Distributed` is revoked unless the
+    # user also has `READ` and `WRITE` on the `REMOTE` source.
     node1.query(
         """
         CREATE DATABASE tenant_db;
         CREATE USER tenant IDENTIFIED WITH plaintext_password BY 'tpass';
         GRANT CREATE TABLE, SELECT, INSERT ON tenant_db.* TO tenant;
         GRANT TABLE ENGINE ON Distributed TO tenant;
+        GRANT READ, WRITE ON REMOTE TO tenant;
         """
     )
 

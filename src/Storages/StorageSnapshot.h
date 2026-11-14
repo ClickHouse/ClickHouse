@@ -1,13 +1,11 @@
 #pragma once
-#include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
 
+class IStorage;
 class ICompressionCodec;
-struct StorageID;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
@@ -20,6 +18,7 @@ struct StorageSnapshot
 {
     const IStorage & storage;
     const StorageMetadataPtr metadata;
+    const VirtualsDescriptionPtr virtual_columns;
 
     /// Additional data, on which set of columns may depend.
     /// E.g. data parts in MergeTree, list of blocks in Memory, etc.
@@ -27,8 +26,9 @@ struct StorageSnapshot
     {
         virtual ~Data() = default;
     };
-    using DataPtr = std::shared_ptr<const Data>;
-    const DataPtr data;
+
+    using DataPtr = std::unique_ptr<Data>;
+    DataPtr data;
 
     StorageSnapshot(
         const IStorage & storage_,
@@ -37,15 +37,20 @@ struct StorageSnapshot
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
+        VirtualsDescriptionPtr virtual_columns_);
+
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        DataPtr data_);
+
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        VirtualsDescriptionPtr virtual_columns_,
         DataPtr data_);
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
-    std::shared_ptr<StorageSnapshot> clone(StorageMetadataPtr metadata_, DataPtr data_) const;
-
-    /// Returns an equivalent snapshot that additionally owns `holder`, whose referent must be `storage`.
-    /// Ownership is what keeps that storage alive: DatabaseCatalog::getTablesToDrop treats a dropped
-    /// table as unused as soon as its only remaining shared_ptr is the catalog's own.
-    std::shared_ptr<StorageSnapshot> withStorageHolder(ConstStoragePtr holder) const;
 
     /// Get columns description
     ColumnsDescription getAllColumnsDescription() const;
@@ -60,9 +65,6 @@ struct StorageSnapshot
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
-    /// See `ColumnsDescription::getColumnNamesForSelectAccessCheck`.
-    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
-
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
 
@@ -75,11 +77,6 @@ struct StorageSnapshot
     /// Get default expression for a column.
     /// Takes into account physical and virtual columns.
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
-
-private:
-    /// Empty on almost every snapshot: one that is consumed inside the scope of an owning
-    /// StoragePtr must not delay the drop of its table.
-    ConstStoragePtr storage_holder;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

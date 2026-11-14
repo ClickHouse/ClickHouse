@@ -1,6 +1,6 @@
-#include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
 #include <Storages/IndicesDescription.h>
@@ -50,16 +50,6 @@ void forEachTransformArgument(const ASTPtr & arguments, F && fn)
         if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
             fn(func->arguments->children[1]);
     }
-}
-
-void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
-{
-    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-    forEachTransformArgument(arguments, [&](ASTPtr & expression)
-    {
-        ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
-        ReplaceAliasToExprVisitor{data}.visit(expression);
-    });
 }
 
 /// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only: building the
@@ -240,9 +230,6 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_type->parameters && !index_type->parameters->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
-    if (index_definition->granularity == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
-
     IndexDescription result;
     result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
@@ -267,12 +254,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
-    {
         result.arguments = index_type->arguments->clone();
-
-        if (result.type == TEXT_INDEX_NAME)
-            expandTextIndexTransformAliases(result.arguments, columns);
-    }
 
     return result;
 }
@@ -292,7 +274,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    ReplaceAliasToExprVisitor::Data data{columns, {}};
+    ReplaceAliasToExprVisitor::Data data{columns};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
 
     expression_list_ast = expr_list->clone();
@@ -372,7 +354,7 @@ String IndicesDescription::explicitToString() const
             list.children.push_back(index.definition_ast);
     }
 
-    return list.formatIgnoringRedundantParentheses();
+    return list.formatWithSecretsOneLine();
 }
 
 String IndicesDescription::allToString() const
@@ -384,7 +366,7 @@ String IndicesDescription::allToString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return list.formatIgnoringRedundantParentheses();
+    return list.formatWithSecretsOneLine();
 }
 
 
@@ -417,9 +399,9 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
-VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
+Names IndicesDescription::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> result;
+    Names result;
     for (const auto & index : *this)
     {
         result.emplace_back(index.name);

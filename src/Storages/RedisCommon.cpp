@@ -1,5 +1,4 @@
 #include <Storages/RedisCommon.h>
-#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -32,6 +31,8 @@ String storageTypeToKeyType(RedisStorageType type)
             return "string";
         case RedisStorageType::HASH_MAP:
             return "hash";
+        default:
+            return "none";
     }
 
     UNREACHABLE();
@@ -45,6 +46,8 @@ String serializeStorageType(RedisStorageType storage_type)
             return "simple";
         case RedisStorageType::HASH_MAP:
             return "hash_map";
+        default:
+            return "none";
     }
 }
 
@@ -74,8 +77,7 @@ RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguratio
     {
         try
         {
-            /// Resolve the host through the DNS cache instead of letting Poco resolve it on connect.
-            client->connect(DNSResolver::instance().resolveAddress(configuration.host, static_cast<UInt16>(configuration.port)));
+            client->connect(configuration.host, configuration.port);
 
             if (!configuration.password.empty())
             {

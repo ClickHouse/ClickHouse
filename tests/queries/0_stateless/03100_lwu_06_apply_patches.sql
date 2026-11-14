@@ -13,9 +13,8 @@ SETTINGS
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     apply_patches_on_merge = 0,
-    -- The test asserts the patch part with data version 2 in every parts listing, but once
-    -- `APPLY PATCHES` raises the regular parts to version 3 the cleanup thread is free to drop it.
-    remove_unused_patch_parts = 0;
+    cleanup_delay_period = 1000,
+    max_cleanup_delay_period = 1000;
 
 INSERT INTO t_shared SELECT number, number FROM numbers(20);
 INSERT INTO t_shared SELECT number, number FROM numbers(20, 10);
@@ -32,14 +31,14 @@ SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 1;
 SELECT '*** without patches ***';
 SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 0;
 
-SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 1;
-SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 OPTIMIZE TABLE t_shared PARTITION ID 'all' FINAL;
 
 SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 1;
-SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 DROP TABLE t_shared SYNC;

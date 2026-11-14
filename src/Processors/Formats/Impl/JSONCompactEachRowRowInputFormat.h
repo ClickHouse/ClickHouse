@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -55,7 +54,7 @@ public:
         return *pos != ',' && *pos != ']' && *pos != ' ' && *pos != '\t';
     }
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
 
     void skipField(size_t /*column_index*/) override { skipField(); }
     void skipField();
@@ -71,9 +70,9 @@ public:
 
     bool checkForSuffix() override;
 
-    VectorWithMemoryTracking<String> readHeaderRow();
-    VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
-    VectorWithMemoryTracking<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow();
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
 
     bool checkForEndOfRow() override;
 
@@ -82,7 +81,7 @@ private:
     bool yield_strings;
 };
 
-class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSchemaReader
+class JSONCompactEachRowRowSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);

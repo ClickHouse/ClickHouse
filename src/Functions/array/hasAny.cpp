@@ -1,6 +1,5 @@
 #include <Functions/array/hasAllAny.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 
 
@@ -38,18 +37,14 @@ Raises a `NO_COMMON_TYPE` exception if any of the elements of the two arrays do 
         {"One array is empty", "SELECT hasAny([1], [])", "0"},
         {"Arrays containing NULL values", "SELECT hasAny([Null], [Null, 1])", "1"},
         {"Arrays containing values of a different type", "SELECT hasAny([-128, 1., 512], [1])", "1"},
-        {"Arrays without a common type", "SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])",
-         R"(
-Received exception:
-Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not. (NO_COMMON_TYPE)
-        )"},
+        {"Arrays without a common type", "SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])", "Raises a `NO_COMMON_TYPE` exception"},
         {"Array of arrays", "SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])", "1"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayHasAny>>(documentation);
+    factory.registerFunction<FunctionArrayHasAny>(documentation);
 }
 
 }

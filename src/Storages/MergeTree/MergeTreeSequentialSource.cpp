@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
@@ -23,32 +22,20 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Common/FailPoint.h>
 #include <Common/ThrottlerArray.h>
-#include <Common/typeid_cast.h>
-#include <base/sleep.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char merge_tree_sequential_source_sleep_before_read[];
-    extern const char merge_tree_sequential_source_throw_in_constructor[];
 }
 
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
-    extern const SettingsNonZeroUInt64 filesystem_prefetch_max_memory_usage;
-    extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
 namespace MergeTreeSetting
@@ -62,7 +49,7 @@ namespace MergeTreeSetting
 /// NOTE:
 ///  It doesn't filter out rows that are deleted with lightweight deletes.
 ///  Use createMergeTreeSequentialSource filter out those rows.
-class MergeTreeSequentialSource final : public ISource
+class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
@@ -73,15 +60,13 @@ public:
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
-        bool allow_remote_fs_prefetch);
+        bool prefetch);
 
     ~MergeTreeSequentialSource() override;
 
     String getName() const override { return "MergeTreeSequentialSource"; }
 
     size_t getCurrentMark() const { return current_mark; }
-
-    void prefetchBeginOfRange();
 
 protected:
     Chunk generate() override;
@@ -124,20 +109,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
-    bool allow_remote_fs_prefetch)
+    bool prefetch)
     : ISource(std::move(result_header))
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
     , read_task_info(std::move(read_task_info_))
-    , mark_ranges(std::move(mark_ranges_).value_or(MarkRanges{MarkRange(0, read_task_info->data_part_info->getMarksCount())}))
+    , mark_ranges(std::move(mark_ranges_).value_or(MarkRanges{MarkRange(0, read_task_info->data_part->getMarksCount())}))
     , mark_cache(storage.getContext()->getMarkCache())
     , read_with_direct_io(read_with_direct_io_)
 {
-    const auto data_part = read_task_info->data_part_info->getDataPart();
-    /// This source is only used for background merges/mutations, never the stateless-worker read
-    /// path, so the concrete part is always present. Assert it so a future misuse that routes a
-    /// borrowed part here fails loudly instead of dereferencing nullptr below.
-    chassert(data_part);
+    const auto & data_part = read_task_info->data_part;
     const auto & columns_to_read = read_task_info->task_columns.columns;
 
     /// Print column name but don't pollute logs in case of many columns.
@@ -167,21 +148,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    const bool read_if_exists_otherwise_bypass
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
-    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
-#if ENABLE_DISTRIBUTED_CACHE
-    read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
-#endif
-
-    if (!allow_remote_fs_prefetch)
-        read_settings.remote_fs_settings.prefetch = false;
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
-        read_settings.local_fs_settings.direct_io_threshold = 1;
+        read_settings.direct_io_threshold = 1;
 
     /// Configure throttling
     switch (type)
@@ -196,16 +171,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
-    /// One set of readers reads all ranges of this source.
-    MarkRangesPtr read_request_map;
-    std::vector<MarkRangesPtr> patch_read_request_maps;
-    if (read_settings.reader_executor.enabled)
-    {
-        read_request_map = std::make_shared<const MarkRanges>(mark_ranges);
-        for (const auto & ranges : patch_ranges)
-            patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
-    }
-
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
@@ -214,47 +179,34 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .storage_snapshot = storage_snapshot,
     };
 
-    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges, patch_ranges, read_request_map, patch_read_request_maps);
+    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges, patch_ranges);
 
     if (!readers.prewhere.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sequential source doesn't support PREWHERE");
+
+    if (prefetch && !data_part->isEmpty())
+        readers.main->prefetchBeginOfRange(Priority{});
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
 
     MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
-    /// Reading may start at a non-zero mark, so track the actual first mark
-    if (!mark_ranges.empty())
-        current_mark = mark_ranges.front().begin;
-    updateRowsToRead(current_mark);
-
-    /// Used in tests to fail building a pipeline that reads several parts after its first source was created.
-    fiu_do_on(FailPoints::merge_tree_sequential_source_throw_in_constructor,
-    {
-        if (read_task_info->part_index_in_query > 0)
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in the constructor of the source of part {}", data_part->name);
-    });
-}
-
-void MergeTreeSequentialSource::prefetchBeginOfRange()
-{
-    if (!read_task_info->data_part_info->getDataPart()->isEmpty())
-        readers.main->prefetchBeginOfRange(Priority{});
+    updateRowsToRead(0);
 }
 
 void MergeTreeSequentialSource::updateRowsToRead(size_t mark_number)
 {
-    const auto & index_granularity = read_task_info->data_part_info->getIndexGranularity();
-    if (mark_number < index_granularity.getMarksCountWithoutFinal())
-        current_rows_to_read = index_granularity.getMarkRows(mark_number);
+    const auto & index_granularity = read_task_info->data_part->index_granularity;
+    if (mark_number < index_granularity->getMarksCountWithoutFinal())
+        current_rows_to_read = index_granularity->getMarkRows(mark_number);
 }
 
 Chunk MergeTreeSequentialSource::generate()
 try
 {
-    const auto & index_granularity = read_task_info->data_part_info->getIndexGranularity();
-    if (current_mark >= index_granularity.getMarksCountWithoutFinal())
+    const auto & index_granularity = read_task_info->data_part->index_granularity;
+    if (current_mark >= index_granularity->getMarksCountWithoutFinal())
     {
         finish();
         return {};
@@ -262,17 +214,6 @@ try
 
     if (isCancelled())
         return {};
-
-    /// Used in tests to emulate a merge whose single reading step is very slow
-    /// (e.g. applying huge patch parts), to check that shutdown does not wait for it.
-    fiu_do_on(FailPoints::merge_tree_sequential_source_sleep_before_read, { sleepForSeconds(10); });
-
-    /// past a gap between ranges the reader resumes at the next range, not at the next mark
-    if (readers_chain.isCurrentRangeFinished() && !mark_ranges.empty() && current_mark < mark_ranges.front().begin)
-    {
-        current_mark = mark_ranges.front().begin;
-        updateRowsToRead(current_mark);
-    }
 
     auto read_result = readers_chain.read(current_rows_to_read, mark_ranges, patch_ranges);
     if (!read_result.num_rows)
@@ -303,14 +244,13 @@ try
 
         /// When read_task_info->merged_part_offsets we need to adjust parent part offset in projection because it will
         /// be different when parent has order by column and merge will change order of rows.
-        if (read_task_info->merged_part_offsets && read_task_info->data_part_info->isProjectionPart() && name == "_parent_part_offset")
+        if (read_task_info->merged_part_offsets && read_task_info->data_part->isProjectionPart() && name == "_parent_part_offset")
         {
             chassert(read_task_info->merged_part_offsets->isFinalized());
 
-            /// Use `IColumn::mutate` instead of `assumeMutableRef` so the column is cloned
-            /// when it is shared. Mutating a shared column in place is a copy-on-write violation.
-            auto mutable_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
-            auto & offset_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
+            result_column = result_column->convertToFullColumnIfSparse();
+            auto & column = result_column->assumeMutableRef();
+            auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
             if (read_task_info->merged_part_offsets->isMappingEnabled())
             {
                 for (auto & offset : offset_data)
@@ -321,14 +261,8 @@ try
                 for (auto & offset : offset_data)
                     offset += read_task_info->part_starting_offset_in_query;
             }
-            result_column = std::move(mutable_column);
         }
-
-        /// `shrinkToFit` reallocates the column's data. Go through `IColumn::mutate` so a shared
-        /// column is cloned first: mutating a column still referenced elsewhere is a use-after-free hazard.
-        auto mutable_column = IColumn::mutate(std::move(result_column));
-        mutable_column->shrinkToFit();
-        result_column = std::move(mutable_column);
+        result_column->assumeMutableRef().shrinkToFit();
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
@@ -336,15 +270,15 @@ try
     bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     if (add_part_level)
-        result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(read_task_info->data_part_info->getPartInfo().level));
+        result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(read_task_info->data_part->info.level));
 
     return result;
 }
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
-        read_task_info->data_part_info->reportBroken();
+    if (!isRetryableException(std::current_exception()))
+        storage.reportBrokenPart(read_task_info->data_part);
     throw;
 }
 
@@ -373,26 +307,20 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool allow_remote_fs_prefetch)
+    bool prefetch)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
+    info->data_part = std::move(data_part.data_part);
     info->alter_conversions = std::move(alter_conversions);
-    info->data_part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(data_part.data_part), info->alter_conversions);
     info->merged_part_offsets = std::move(merged_part_offsets);
     info->part_index_in_query = data_part.part_index_in_query;
     info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
     info->const_virtual_fields.emplace("_part_index", info->part_index_in_query);
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
-    /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value
-    /// `ReadFromMergeTree` publishes for a query without `SAMPLE`.
-    info->const_virtual_fields.emplace("_sample_factor", 1.0);
-    /// `_table` and `_database` are constant per table, the same way `ReadFromMergeTree` publishes them.
-    info->const_virtual_fields.emplace("_table", storage.getStorageID().getTableName());
-    info->const_virtual_fields.emplace("_database", storage.getStorageID().getDatabaseName());
 
     /// The part might have some rows masked by lightweight deletes
-    bool has_lightweight_delete = info->data_part_info->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
-    const bool need_to_filter_deleted_rows = apply_deleted_mask && has_lightweight_delete && !info->data_part_info->getPartInfo().isPatch();
+    bool has_lightweight_delete = info->data_part->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
+    const bool need_to_filter_deleted_rows = apply_deleted_mask && has_lightweight_delete && !info->data_part->info.isPatch();
     const bool has_filter_column = std::ranges::find(columns_to_read, RowExistsColumn::name) != columns_to_read.end();
 
     if (need_to_filter_deleted_rows)
@@ -404,14 +332,14 @@ Pipe createMergeTreeSequentialSource(
     }
 
     auto result_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_to_read));
-    const auto & info_for_reader = *info->data_part_info;
+    LoadedMergeTreeDataPartInfoForReader info_for_reader(info->data_part, info->alter_conversions);
 
     info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, info->mutation_steps);
     info->task_columns.moveAllColumnsFromPrewhere();
 
     if (info->alter_conversions->hasPatches())
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader).withSubcolumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns();
         auto all_read_columns = info->task_columns.getAllColumnNames();
         auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
         info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);
@@ -433,7 +361,7 @@ Pipe createMergeTreeSequentialSource(
         std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
-        allow_remote_fs_prefetch);
+        prefetch);
 
     Pipe pipe(std::move(column_part_source));
 
@@ -470,7 +398,7 @@ public:
         bool apply_deleted_mask_,
         std::optional<ActionsDAG> filter_,
         bool read_with_direct_io_,
-        bool allow_remote_fs_prefetch_,
+        bool prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
@@ -485,7 +413,7 @@ public:
         , apply_deleted_mask(apply_deleted_mask_)
         , filter(std::move(filter_))
         , read_with_direct_io(read_with_direct_io_)
-        , allow_remote_fs_prefetch(allow_remote_fs_prefetch_)
+        , prefetch(prefetch_)
         , context(std::move(context_))
         , log(log_)
     {
@@ -501,8 +429,9 @@ public:
         if (filter && metadata_snapshot->hasPrimaryKey())
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-            ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
-            KeyCondition key_condition(filter_dag, context, primary_key);
+            const Names & primary_key_column_names = primary_key.column_names;
+            ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context);
+            KeyCondition key_condition(filter_dag, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
@@ -510,10 +439,9 @@ public:
                     data_part,
                     metadata_snapshot,
                     key_condition,
-                    /*part_offset_condition=*/nullptr,
-                    /*total_offset_condition=*/nullptr,
+                    /*part_offset_condition=*/{},
+                    /*total_offset_condition=*/{},
                     /*exact_ranges=*/nullptr,
-                    /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
                     log);
 
@@ -535,28 +463,9 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            allow_remote_fs_prefetch);
+            prefetch);
 
         pipeline.init(Pipe(std::move(source)));
-    }
-
-    QueryPlanStepPtr clone() const override
-    {
-        return std::make_unique<ReadFromPart>(
-            type,
-            storage,
-            storage_snapshot,
-            data_part,
-            alter_conversions,
-            merged_part_offsets,
-            columns_to_read,
-            filtered_rows_count,
-            apply_deleted_mask,
-            filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
-            read_with_direct_io,
-            allow_remote_fs_prefetch,
-            context,
-            log);
     }
 
 private:
@@ -571,7 +480,7 @@ private:
     const bool apply_deleted_mask;
     const std::optional<ActionsDAG> filter;
     const bool read_with_direct_io;
-    const bool allow_remote_fs_prefetch;
+    const bool prefetch;
     const ContextPtr context;
     const LoggerPtr log;
 };
@@ -589,7 +498,7 @@ void createReadFromPartStep(
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
-    bool allow_remote_fs_prefetch,
+    bool prefetch,
     ContextPtr context,
     LoggerPtr log)
 {
@@ -605,45 +514,11 @@ void createReadFromPartStep(
         apply_deleted_mask,
         std::move(filter),
         read_with_direct_io,
-        allow_remote_fs_prefetch,
+        prefetch,
         std::move(context),
         log);
 
     plan.addStep(std::move(reading));
-}
-
-void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline)
-{
-    for (const auto & processor : pipeline.getProcessors())
-        if (auto * source = typeid_cast<MergeTreeSequentialSource *>(processor.get()))
-            source->prefetchBeginOfRange();
-}
-
-bool canPrefetchInMergeOrMutation(
-    const MergeTreeData & storage,
-    const MergeTreeData::DataPartsVector & parts,
-    const Names & columns_to_read,
-    const ContextPtr & task_context)
-{
-    const auto & settings = task_context->getSettingsRef();
-
-    const size_t prefetches_limit = settings[Setting::filesystem_prefetches_limit];
-    if (prefetches_limit && parts.size() * columns_to_read.size() > prefetches_limit)
-        return false;
-
-    const size_t buffer_size = storage.getContext()->getReadSettings().remote_fs_settings.buffer_size;
-    size_t estimated_memory = 0;
-    for (const auto & part : parts)
-    {
-        for (const auto & column : columns_to_read)
-        {
-            /// 0 if unknown, e.g. in a Compact part.
-            const size_t column_size = part->getColumnSize(column).data_compressed;
-            estimated_memory += 2 * (column_size ? std::min<size_t>(column_size, buffer_size) : buffer_size);
-        }
-    }
-
-    return estimated_memory <= settings[Setting::filesystem_prefetch_max_memory_usage];
 }
 
 }

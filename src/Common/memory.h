@@ -1,18 +1,15 @@
 #pragma once
 
-#include <cstdlib>
 #include <new>
 #include <base/defines.h>
 
 #include <Common/AllocationInterceptors.h>
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/ProfileEvents.h>
 
-/// Emscripten's libc++ defines `_GNU_SOURCE`, and its musl-derived libc does declare
-/// `malloc_usable_size` in `<malloc.h>` - it just does not get pulled in by anything else,
-/// so it has to be included explicitly for the unsized-delete accounting path below.
-#if defined(OS_LINUX) || defined(OS_WASM)
+#if defined(OS_LINUX)
 #    include <malloc.h>
 #elif defined(OS_DARWIN)
 #    include <malloc/malloc.h>
@@ -41,19 +38,6 @@ inline ALWAYS_INLINE size_t alignUp(size_t size, size_t align) noexcept
     return (size + align - 1) / align * align;
 }
 
-#if USE_JEMALLOC
-/// `flags` argument of the jemalloc `*allocx` functions for an optional `operator new` alignment.
-template <std::same_as<std::align_val_t>... TAlign>
-requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE int jemallocFlags(TAlign... align [[maybe_unused]]) noexcept
-{
-    if constexpr (sizeof...(TAlign) == 1)
-        return MALLOCX_ALIGN(alignToSizeT(align...));
-    else
-        return 0;
-}
-#endif
-
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 {
     return __real_malloc(size);
@@ -61,19 +45,7 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
 {
-#if USE_JEMALLOC
-    /// Allocate with the same size and flags that `getActualAllocationSize` (`je_nallocx`) and `deleteSized`
-    /// (`je_sdallocx`) use, so that the charged, credited and freed size classes are the same.
-    /// Rounding `size` up to the alignment would give a larger size class for alignments above the page size.
-    return je_mallocx(size ? size : 1, jemallocFlags(align));
-#else
-    size_t alignment = static_cast<size_t>(align);
-    /// POSIX `aligned_alloc` requires alignment >= `sizeof(void *)` (strictly enforced on macOS).
-    /// Mirror libc++'s `operator_new_aligned_impl` in `contrib/llvm-project/libcxx/src/new.cpp`.
-    if (alignment < sizeof(void *))
-        alignment = sizeof(void *);
-    return __real_aligned_alloc(alignment, alignUp(size, alignment));
-#endif
+    return __real_aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
@@ -90,7 +62,10 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... al
     if (ptr == nullptr) [[unlikely]]
         return;
 
-    je_sdallocx(ptr, size, jemallocFlags(align...));
+    if constexpr (sizeof...(TAlign) == 1)
+        je_sdallocx(ptr, size, MALLOCX_ALIGN(alignToSizeT(align...)));
+    else
+        je_sdallocx(ptr, size, 0);
 }
 
 #else
@@ -117,30 +92,22 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
     if (size_for_nallocx == 0) [[unlikely]]
         size_for_nallocx = 1;
 
-    actual_size = je_nallocx(size_for_nallocx, jemallocFlags(align...));
+    if constexpr (sizeof...(TAlign) == 1)
+    {
+        actual_size = je_nallocx(size_for_nallocx, MALLOCX_ALIGN(alignToSizeT(align...)));
+    }
+    else
+    {
+        actual_size = je_nallocx(size_for_nallocx, 0);
+    }
 #endif
 
     return actual_size;
 }
 
-/// Throwing variant — used by the throwing `operator new` overloads. The
-/// tracker may raise `MEMORY_LIMIT_EXCEEDED` when the allocation size is at
-/// least `min_allocation_size_to_throw_on_memory_limit`.
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, TAlign... align)
-{
-    std::size_t actual_size = getActualAllocationSize(size, align...);
-    trace = CurrentMemoryTracker::allocThrow(actual_size);
-    return actual_size;
-}
-
-/// Nothrow variant — call sites spell it out via `std::nothrow`, matching the
-/// standard `operator new(..., std::nothrow_t)` convention. The tracker never
-/// raises through this path.
-template <std::same_as<std::align_val_t>... TAlign>
-requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, std::nothrow_t, TAlign... align)
 {
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
@@ -152,7 +119,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, TAlign... align)
 {
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
     return actual_size;
@@ -168,20 +135,13 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
     {
 #if USE_JEMALLOC
 
+        /// @note It's also possible to use je_malloc_usable_size() here.
         if (ptr != nullptr) [[likely]]
         {
-            if (size)
-            {
-                /// Sized delete: derive the size class from `size` with `je_nallocx` (a pure computation),
-                /// exactly as `trackMemory` charged it, instead of the rtree lookup in `je_sallocx`.
-                actual_size = getActualAllocationSize(size, align...);
-                chassert(actual_size == je_sallocx(ptr, jemallocFlags(align...)));
-            }
+            if constexpr (sizeof...(TAlign) == 1)
+                actual_size = je_sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...)));
             else
-            {
-                /// @note It's also possible to use je_malloc_usable_size() here.
-                actual_size = je_sallocx(ptr, jemallocFlags(align...));
-            }
+                actual_size = je_sallocx(ptr, 0);
         }
 #else
         if (size)

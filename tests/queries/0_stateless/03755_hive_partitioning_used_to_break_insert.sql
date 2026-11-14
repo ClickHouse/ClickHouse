@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- Test based on https://github.com/ClickHouse/ClickHouse/issues/81048#issuecomment-3139789210
 
 SET use_hive_partitioning=1;

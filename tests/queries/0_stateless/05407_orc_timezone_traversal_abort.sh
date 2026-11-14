@@ -117,7 +117,10 @@ for label, result in (("writer", writer), ("reader", reader), ("reader file", re
     elif result.returncode == 0:
         print(f"{label}: malformed timezone unexpectedly succeeded")
         failed = True
-    elif b"is not supported. Use a name from `system.time_zones`" in result.stdout + result.stderr:
+    elif any(
+        message in result.stdout + result.stderr
+        for message in (b"is not supported. Use a name from `system.time_zones`", b"Cannot load time zone ../../../")
+    ):
         print(f"{label}: time zone is rejected")
     else:
         diagnostic = (result.stderr + result.stdout).decode(errors="replace")

@@ -24,6 +24,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -32,7 +33,7 @@ namespace
 
 /// Implements the function h3ToGeo which takes a single argument (h3Index)
 /// and returns the longitude and latitude that correspond to the provided h3 index
-class FunctionH3ToGeo final : public IFunction
+class FunctionH3ToGeo : public IFunction
 {
     const bool h3togeo_lon_lat_result_order;
     H3Validator validator;
@@ -51,18 +52,30 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return h3togeo_lon_lat_result_order
-            ? "(UInt64) -> Tuple(longitude Float64, latitude Float64)"
-            : "(UInt64) -> Tuple(latitude Float64, longitude Float64)";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
+
+        if (h3togeo_lon_lat_result_order)
+        {
+            return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"longitude", "latitude"});
+        }
+        else
+        {
+            return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"latitude", "longitude"});
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -98,12 +111,9 @@ public:
 
             if (validator.validateCell(h3index))
             {
-                H3Error err = cellToLatLng(h3index, &coord);
-                if (!err)
-                {
-                    lon_data[row] = radsToDegs(coord.lng);
-                    lat_data[row] = radsToDegs(coord.lat);
-                }
+                cellToLatLng(h3index, &coord);
+                lon_data[row] = radsToDegs(coord.lng);
+                lat_data[row] = radsToDegs(coord.lat);
             }
         }
 
@@ -129,10 +139,10 @@ REGISTER_FUNCTION(H3ToGeo)
     FunctionDocumentation::Description description = R"(
 Returns the centroid latitude and longitude corresponding to the provided [H3](https://h3geo.org/docs/core-library/h3Indexing/) index.
 
-<Note>
+:::note
 In ClickHouse v24.12 or older, `h3ToGeo()` accepts arguments in the order `(lon, lat)`. As per ClickHouse v25.1, the returned values are ordered `(lat, lon)`.
 The previous behavior can be restored using setting `h3togeo_lon_lat_result_order = true`.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "h3ToGeo(h3Index)";
     FunctionDocumentation::Arguments arguments = {
@@ -147,10 +157,9 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
             "Get coordinates from H3 index",
             "SELECT h3ToGeo(644325524701193974) AS coordinates",
             R"(
-┌─coordinates────────────────────────────┐
-├──────────latitude─┬──────────longitude─┤
-│ 55.71290243145667 │ 37.795066168302505 │
-└───────────────────┴────────────────────┘
+┌─coordinates───────────────────────────┐
+│ (55.71290243145668,37.79506616830252) │
+└───────────────────────────────────────┘
             )"
         }
     };

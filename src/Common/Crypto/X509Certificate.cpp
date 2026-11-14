@@ -2,8 +2,6 @@
 
 #include <base/scope_guard.h>
 
-#include <ctime>
-
 
 #if USE_SSL
 
@@ -61,53 +59,37 @@ X509Certificate::X509Certificate(const std::string & path)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }
 
-static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
+X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
 {
     X509Certificate::List certs;
 
     while (true)
     {
-        /// Reading past the last certificate is expected to fail with `PEM_R_NO_START_LINE`.
-        /// Mark the error queue so that only the errors raised by this read are dropped
-        /// when that failure is expected, and unrelated queued errors are left alone.
-        /// The return values of the mark functions are ignored: they are 0 when the queue is empty,
-        /// in which case everything queued after this point is ours anyway.
-        ERR_set_mark();
         X509 * cert = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
 
-        if (cert)
+        if (!cert)
         {
-            ERR_pop_to_mark();
-            certs.emplace_back(cert);
-            continue;
+            auto err = ERR_peek_last_error();
+            if (err == 0)
+                break;
+
+            /// We read at least one cert, and can't find
+            /// the beginning of a next one.
+            /// This most likely means we reached the end of the file.
+            if (!certs.empty()
+                /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
+                /// https://github.com/openssl/openssl/issues/16776
+                ///
+                /// To be fixed in OpenSSL 3.4+
+                && ((err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == PEM_R_NO_START_LINE))
+                /// Means we reached the end of the file.
+                break;
+
+            throw Exception(
+                ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), source_description, getOpenSSLErrors());
         }
 
-        auto err = ERR_peek_last_error();
-        if (err == 0)
-        {
-            ERR_pop_to_mark();
-            break;
-        }
-
-        /// We read at least one cert, and can't find
-        /// the beginning of a next one.
-        /// This most likely means we reached the end of the file.
-        if (!certs.empty()
-            /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
-            /// https://github.com/openssl/openssl/issues/16776
-            ///
-            /// To be fixed in OpenSSL 3.4+
-            && ((err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == PEM_R_NO_START_LINE))
-        {
-            /// Means we reached the end of the file.
-            ERR_pop_to_mark();
-            break;
-        }
-
-        /// A real failure: keep its errors in the queue for the message below.
-        ERR_clear_last_mark();
-        throw Exception(
-            ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), source_description, getOpenSSLErrors());
+        certs.emplace_back(cert);
     }
 
     if (certs.empty())
@@ -152,14 +134,10 @@ std::string X509Certificate::serialNumber() const
 {
     ASN1_INTEGER * serial = X509_get_serialNumber(certificate);
     BIGNUM * bn = ASN1_INTEGER_to_BN(serial, nullptr);
-    if (!bn)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_INTEGER_to_BN failed: {}", getOpenSSLErrors());
 
     SCOPE_EXIT({ BN_free(bn); });
 
     char * hex = BN_bn2hex(bn);
-    if (!hex)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "BN_bn2hex failed: {}", getOpenSSLErrors());
     std::string result(hex);
 
     SCOPE_EXIT({ OPENSSL_free(hex); });
@@ -264,29 +242,6 @@ std::string X509Certificate::expiresOn() const
     return reinterpret_cast<char *>(not_before->data);
 }
 
-static time_t asn1TimeToTimeT(const ASN1_TIME * time)
-{
-    if (!time)
-        return 0;
-
-    struct tm tm_time{};
-    if (ASN1_TIME_to_tm(time, &tm_time) != 1)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_TIME_to_tm failed: {}", getOpenSSLErrors());
-
-    /// ASN1_TIME_to_tm yields a broken-down time in UTC, so convert it back with timegm (not mktime).
-    return timegm(&tm_time);
-}
-
-time_t X509Certificate::notBefore() const
-{
-    return asn1TimeToTimeT(X509_get0_notBefore(certificate));
-}
-
-time_t X509Certificate::notAfter() const
-{
-    return asn1TimeToTimeT(X509_get0_notAfter(certificate));
-}
-
 const X509Certificate::Subjects::container & X509Certificate::Subjects::at(Type type_) const
 {
     return subjects[static_cast<size_t>(type_)];
@@ -344,7 +299,7 @@ bool X509Certificate::Subjects::operator==(const X509Certificate::Subjects & rhs
     return true;
 }
 
-X509Certificate::Subjects X509Certificate::extractAllSubjects() const
+X509Certificate::Subjects X509Certificate::extractAllSubjects()
 {
     Subjects subjects;
 

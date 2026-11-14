@@ -1,12 +1,8 @@
 #include <Common/AlignedBuffer.h>
 
-#include <Common/CacheLine.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
-#include <Common/memory.h>
-
-#include <algorithm>
 
 
 namespace DB
@@ -20,11 +16,8 @@ namespace ErrorCodes
 
 void AlignedBuffer::alloc(size_t size, size_t alignment)
 {
-    alignment = std::max(alignment, CH_CACHE_LINE_SIZE);
-    size = ::Memory::alignUp(size, CH_CACHE_LINE_SIZE);
-
-    void * new_buf = nullptr;
-    int res = ::posix_memalign(&new_buf, alignment, size);
+    void * new_buf;
+    int res = ::posix_memalign(&new_buf, std::max(alignment, sizeof(void*)), size);
     if (0 != res)
         throw ErrnoException(
             ErrorCodes::CANNOT_ALLOCATE_MEMORY,
