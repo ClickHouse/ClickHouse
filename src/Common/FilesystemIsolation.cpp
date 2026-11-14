@@ -74,11 +74,14 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <base/defines.h>
 #include <base/scope_guard.h>
 
+#include <Poco/Glob.h>
+
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -858,8 +861,18 @@ std::vector<std::string> getNameServices()
     return services;
 }
 
-/// The names of the shared libraries an ELF file needs: the entries `DT_NEEDED` of its dynamic section.
-std::vector<std::string> getNeededLibraries(const std::string & path)
+/// The entries of the dynamic section of an ELF file that tell which shared libraries it needs and where they are.
+struct DynamicEntries
+{
+    /// `DT_NEEDED`.
+    std::vector<std::string> needed;
+    /// `DT_RPATH` and `DT_RUNPATH`, the directories separated by `:`, with `$ORIGIN` expanded to the directory of the
+    /// file. A directory with another substitution, as `$LIB` or `$PLATFORM`, is skipped.
+    std::vector<std::string> rpath;
+    std::vector<std::string> runpath;
+};
+
+DynamicEntries getDynamicEntries(const std::string & path)
 {
     const Elf elf(path);
     const auto dynamic = elf.findSectionByName(".dynamic");
@@ -867,65 +880,162 @@ std::vector<std::string> getNeededLibraries(const std::string & path)
     if (!dynamic || !strings)
         return {};
 
-    std::vector<std::string> libraries;
+    const std::string origin = fs::path(path).parent_path().string();
+    auto split_paths = [&](std::string_view value, std::vector<std::string> & directories)
+    {
+        size_t begin = 0;
+        while (begin <= value.size())
+        {
+            size_t end = value.find(':', begin);
+            if (end == std::string_view::npos)
+                end = value.size();
+            std::string directory(value.substr(begin, end - begin));
+            begin = end + 1;
+            for (const std::string_view variable : {"${ORIGIN}", "$ORIGIN"})
+                for (size_t pos = directory.find(variable); pos != std::string::npos; pos = directory.find(variable, pos + origin.size()))
+                    directory.replace(pos, variable.size(), origin);
+            if (!directory.empty() && directory.front() == '/' && !directory.contains('$'))
+                directories.push_back(std::move(directory));
+        }
+    };
+
+    DynamicEntries entries;
     for (const char * entry_pos = dynamic->begin(); entry_pos + sizeof(ElfDyn) <= dynamic->end(); entry_pos += sizeof(ElfDyn))
     {
         ElfDyn entry{};
         memcpy(&entry, entry_pos, sizeof(entry));
         if (entry.tag == DynamicTableTag::Null)
             break;
-        if (entry.tag != DynamicTableTag::NEEDED)
+        if (entry.tag != DynamicTableTag::NEEDED && entry.tag != DynamicTableTag::RPATH && entry.tag != DynamicTableTag::RUNPATH)
             continue;
         if (entry.val >= strings->size())
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "The name of a needed library in {} is outside of its string table", path);
-        const char * name = strings->begin() + entry.val;
-        libraries.emplace_back(name, strnlen(name, strings->end() - name));
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "A string of the dynamic section of {} is outside of its string table", path);
+        const char * value = strings->begin() + entry.val;
+        const std::string_view string(value, strnlen(value, strings->end() - value));
+        if (entry.tag == DynamicTableTag::NEEDED)
+            entries.needed.emplace_back(string);
+        else if (entry.tag == DynamicTableTag::RPATH)
+            split_paths(string, entries.rpath);
+        else
+            split_paths(string, entries.runpath);
     }
-    return libraries;
+    return entries;
 }
 
 /// The directories where the dynamic loader finds the shared libraries: the directories of the mapped libraries,
-/// such as the one of the C library, and the default directories.
+/// such as the one of the C library, the directories of `/etc/ld.so.conf`, from which `ldconfig` builds
+/// `/etc/ld.so.cache`, and the default directories.
 std::vector<std::string> getLibraryDirectories(const std::vector<std::string> & mapped_files)
 {
     std::vector<std::string> directories;
-    for (const auto & file : mapped_files)
+    auto add = [&](std::string directory)
     {
-        if (!fs::path(file).filename().string().contains(".so"))
-            continue;
-        std::string directory = fs::path(file).parent_path().string();
         if (std::find(directories.begin(), directories.end(), directory) == directories.end())
             directories.push_back(std::move(directory));
+    };
+    for (const auto & file : mapped_files)
+        if (fs::path(file).filename().string().contains(".so"))
+            add(fs::path(file).parent_path().string());
+
+    /// With the files of its `include` directives.
+    std::deque<std::string> configs = {"/etc/ld.so.conf"};
+    std::set<std::string> seen_configs;
+    while (!configs.empty())
+    {
+        const std::string config = std::move(configs.front());
+        configs.pop_front();
+        std::error_code error;
+        if (!seen_configs.insert(config).second || !fs::is_regular_file(config, error))
+            continue;
+        std::ifstream in(config);
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (const size_t comment = line.find('#'); comment != std::string::npos)
+                line.resize(comment);
+            const size_t begin = line.find_first_not_of(" \t");
+            if (begin == std::string::npos)
+                continue;
+            const size_t end = line.find_last_not_of(" \t\r");
+            std::string value = line.substr(begin, end + 1 - begin);
+            constexpr std::string_view include = "include";
+            if (value.starts_with(include) && value.size() > include.size() && std::isspace(static_cast<unsigned char>(value[include.size()])))
+            {
+                std::string pattern = value.substr(value.find_first_not_of(" \t", include.size()));
+                if (!pattern.starts_with('/'))
+                    pattern = (fs::path(config).parent_path() / pattern).string();
+                std::set<std::string> files;
+                Poco::Glob::glob(pattern, files, 0);
+                configs.insert(configs.end(), files.begin(), files.end());
+            }
+            else if (value.starts_with('/'))
+                add(std::move(value));
+        }
     }
+
     for (const auto * directory : {"/lib64", "/usr/lib64", "/lib", "/usr/lib"})
-        if (std::find(directories.begin(), directories.end(), directory) == directories.end())
-            directories.emplace_back(directory);
+        add(directory);
     return directories;
 }
 
-/// The shared libraries with the names `names`, and the libraries they need, as the dynamic loader finds them in
-/// `directories`. A library that is not found is unavailable to the dynamic loader as well.
-std::vector<std::string> findLibraries(std::deque<std::string> names, const std::vector<std::string> & directories)
+/// The shared libraries with the names `names`, and the libraries they need, as the dynamic loader finds them: in the
+/// `DT_RPATH` of the object that needs a library and of the objects that needed that one, if the object has no
+/// `DT_RUNPATH`, then in its `DT_RUNPATH`, which applies only to the libraries it needs directly, then in
+/// `directories`. `rpath` and `runpath` are the ones of the object that needs `names`. A library that is not found is
+/// unavailable to the dynamic loader as well.
+std::vector<std::string> findLibraries(
+    const std::vector<std::string> & names,
+    const std::vector<std::string> & directories,
+    const std::vector<std::string> & rpath = {},
+    const std::vector<std::string> & runpath = {})
 {
-    std::vector<std::string> seen;
-    std::vector<std::string> libraries;
-    while (!names.empty())
+    struct Pending
     {
-        const std::string name = std::move(names.front());
-        names.pop_front();
-        if (std::find(seen.begin(), seen.end(), name) != seen.end())
-            continue;
-        seen.push_back(name);
+        std::string name;
+        std::vector<std::string> rpath;
+        std::vector<std::string> runpath;
+    };
+    std::deque<Pending> pending;
+    for (const auto & name : names)
+        pending.push_back({name, rpath, runpath});
 
-        for (const auto & directory : directories)
+    std::set<std::string> seen;
+    std::vector<std::string> libraries;
+    while (!pending.empty())
+    {
+        Pending library = std::move(pending.front());
+        pending.pop_front();
+
+        std::vector<std::string> candidates;
+        /// A name with a slash is a path, as the dynamic loader takes it.
+        if (library.name.contains('/'))
+            candidates.push_back(library.name);
+        else
         {
-            const std::string path = directory + "/" + name;
+            if (library.runpath.empty())
+                for (const auto & directory : library.rpath)
+                    candidates.push_back(directory + "/" + library.name);
+            for (const auto & directory : library.runpath)
+                candidates.push_back(directory + "/" + library.name);
+            for (const auto & directory : directories)
+                candidates.push_back(directory + "/" + library.name);
+        }
+
+        for (const auto & path : candidates)
+        {
             std::error_code error;
             if (!fs::exists(path, error))
                 continue;
+            if (!seen.insert(path).second)
+                break;
             libraries.push_back(path);
-            for (auto & library : getNeededLibraries(path))
-                names.push_back(std::move(library));
+            DynamicEntries entries = getDynamicEntries(path);
+            /// `DT_RPATH` is inherited by the libraries that this one needs, unless it has `DT_RUNPATH`.
+            std::vector<std::string> inherited_rpath = entries.rpath;
+            if (entries.runpath.empty())
+                inherited_rpath.insert(inherited_rpath.end(), library.rpath.begin(), library.rpath.end());
+            for (auto & needed : entries.needed)
+                pending.push_back({std::move(needed), inherited_rpath, entries.runpath});
             break;
         }
     }
@@ -938,10 +1048,10 @@ std::vector<std::string> findLibraries(std::deque<std::string> names, const std:
 /// module, such as one built into the C library, or one that is not installed, is unavailable to the C library as well.
 std::vector<std::string> getNameServiceModules(const std::vector<std::string> & mapped_files)
 {
-    std::deque<std::string> names;
+    std::vector<std::string> names;
     for (const auto & service : getNameServices())
         names.push_back(fmt::format("libnss_{}.so.2", service));
-    return findLibraries(std::move(names), getLibraryDirectories(mapped_files));
+    return findLibraries(names, getLibraryDirectories(mapped_files));
 }
 
 /// The dynamic loader and the shared libraries of an executable that the server starts after the isolation, such as
@@ -964,10 +1074,9 @@ std::vector<std::string> getExecutableDependencies(const std::string & path, con
     if (const auto interpreter = elf.findSectionByName(".interp"))
         dependencies.emplace_back(interpreter->begin(), strnlen(interpreter->begin(), interpreter->size()));
 
-    std::deque<std::string> names;
-    for (auto & library : getNeededLibraries(path))
-        names.push_back(std::move(library));
-    for (auto & library : findLibraries(std::move(names), getLibraryDirectories(mapped_files)))
+    /// With the search paths of the executable, as for a library.
+    const DynamicEntries entries = getDynamicEntries(path);
+    for (auto & library : findLibraries(entries.needed, getLibraryDirectories(mapped_files), entries.rpath, entries.runpath))
         dependencies.push_back(std::move(library));
     return dependencies;
 }
