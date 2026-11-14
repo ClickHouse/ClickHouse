@@ -9,6 +9,7 @@
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
@@ -17,9 +18,15 @@
 #include <array>
 #include <barrier>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
+
+namespace ProfileEvents
+{
+extern const Event RuntimeFilterDenseBitsetsBuilt;
+}
 
 namespace DB
 {
@@ -193,6 +200,62 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
     expectMask(destination.find(makeUInt64ColumnWithType({2, 4}, type)), {1, 1});
     EXPECT_EQ(destination.getStats().rows_checked.load(), 0);
     EXPECT_EQ(destination.getStats().rows_skipped.load(), 2);
+}
+
+template <typename T>
+void checkDenseBitsetFindsExactlyTheKeys()
+{
+    const auto type = std::make_shared<DataTypeNumber<T>>();
+    auto make_filter = [&](size_t filters_to_merge)
+    {
+        return std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    };
+    auto make_keys = [](std::initializer_list<T> keys)
+    {
+        auto column = ColumnVector<T>::create();
+        for (const T key : keys)
+            column->insertValue(key);
+        return column;
+    };
+    const Int64 min = std::numeric_limits<T>::min();
+    const Int64 max = std::numeric_limits<T>::max();
+    const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+
+    /// The sources overflow their exact sets, and the first one receives one more block as a bitset. The destination
+    /// overflows its exact set when the first source is merged into it, and merges the second source into its bitset.
+    auto first_source = make_filter(0);
+    first_source->insert(make_keys({static_cast<T>(min), static_cast<T>(max), 1}));
+    first_source->insert(make_keys({3}));
+    first_source->finishInsert();
+    auto second_source = make_filter(0);
+    second_source->insert(make_keys({static_cast<T>(min + 1), 5, 9}));
+    second_source->finishInsert();
+    auto destination = make_filter(2);
+    destination->insert(make_keys({7}));
+    destination->merge(*first_source);
+    destination->merge(*second_source);
+    destination->finishInsert();
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 3);
+
+    auto probe = ColumnVector<T>::create();
+    for (Int64 key = min; key <= max; ++key)
+        probe->insertValue(static_cast<T>(key));
+    const auto mask = destination->find(ColumnWithTypeAndName(std::move(probe), type, "k"));
+    ASSERT_EQ(mask->size(), static_cast<size_t>(max - min + 1));
+    for (Int64 key = min; key <= max; ++key)
+        EXPECT_EQ(mask->getBool(static_cast<size_t>(key - min)), key == min || key == min + 1 || key == max || key == 1 || key == 3 || key == 5 || key == 7 || key == 9) << key;
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetFindsExactlyTheKeys)
+{
+    tryRegisterFunctions();
+    checkDenseBitsetFindsExactlyTheKeys<UInt8>();
+    checkDenseBitsetFindsExactlyTheKeys<Int8>();
+    checkDenseBitsetFindsExactlyTheKeys<UInt16>();
+    checkDenseBitsetFindsExactlyTheKeys<Int16>();
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)

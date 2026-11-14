@@ -236,7 +236,29 @@ private:
     BloomFilter bloom_filter;
 };
 
-/// Starts with an exact set and switches to an approximate set once the exact set becomes too large.
+/// Exact runtime filter for (U)Int8 and (U)Int16 keys: one bit per value of the key type.
+class DenseBitsetRuntimeFilter
+{
+public:
+    static bool isDataTypeSupported(const DataTypePtr & data_type);
+
+    explicit DenseBitsetRuntimeFilter(const DataTypePtr & filter_column_target_type_);
+
+    void insert(const ColumnPtr & values);
+    void mergeFrom(const DenseBitsetRuntimeFilter & source);
+    /// Sets `rows_passed`.
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
+    ColumnPtr getValuesColumn() const;
+
+private:
+    const DataTypePtr filter_column_target_type;
+    /// At most 8 KiB, so a plain vector: it is counted, but not refused at the memory limit, and the switch from the
+    /// exact set cannot throw halfway.
+    std::vector<UInt64> words;
+};
+
+/// Starts with an exact set. Once the exact set becomes too large, switches to a dense bitset for (U)Int8 and
+/// (U)Int16 keys, and to an approximate set otherwise.
 class AdaptiveSetRuntimeFilter
 {
 public:
@@ -263,7 +285,8 @@ public:
     /// analysis, and a bloom filter cannot give the range back.
     void enableKeyRangeTracking() { key_range.enable(); }
 
-    /// Makes a transported partial bound its exact set by the bytes of the stored keys. Transport raises
+    /// Makes a transported partial bound its exact set by the bytes of the stored keys, and switch to an
+    /// approximate set instead of a dense bitset, which the serialized state cannot carry. Transport raises
     /// `exact_bytes_limit` to the estimated keys times the key width, and the hash table buffer would
     /// reach that bound long before the keys do. A local filter keeps the buffer bound. Call before inserts.
     void boundExactSetByKeyBytes();
@@ -285,10 +308,12 @@ private:
     struct KeySetDropped
     {
     };
-    using Filter = std::variant<ExactFilter, ApproximateSetRuntimeFilter, KeySetDropped>;
+    using Filter = std::variant<ExactFilter, DenseBitsetRuntimeFilter, ApproximateSetRuntimeFilter, KeySetDropped>;
 
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter);
+    void switchFromExactFilter(Filter & filter);
+    void switchToDenseBitset(Filter & filter);
     ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
@@ -311,6 +336,7 @@ private:
     /// Guards against inserts after `serialize` already captured the state: they would be silently
     /// missing from the transported partial.
     bool state_serialized = false;
+    bool dense_bitset_allowed = true;
 };
 
 /// Runtime filter that delegates probe to a function captured at publication time.
