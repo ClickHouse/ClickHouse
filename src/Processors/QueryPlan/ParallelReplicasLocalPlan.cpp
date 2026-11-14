@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 
@@ -74,7 +75,7 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
 ///
 /// `right_branch_selected` (optional out-param) is set to true if the descent to any returned
 /// reading step went through the right child of a `RIGHT JOIN`.
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected)
+VectorWithMemoryTracking<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected)
 {
     auto * node = root;
     while (node)
@@ -92,7 +93,7 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
         {
             /// Found a UnionStep from a view — recursively collect ReadFromMergeTree from each
             /// child branch. This handles nested views whose inner queries also contain UNION ALL.
-            std::vector<QueryPlan::Node *> result;
+            VectorWithMemoryTracking<QueryPlan::Node *> result;
             for (auto * child : node->children)
             {
                 auto child_results = findReadingSteps(child, allow_view_over_mergetree, right_branch_selected);
@@ -141,7 +142,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     /// nested subqueries would re-enter parallel-replicas execution. Mirrors `createLocalPlanForParallelReplicas`.
     auto remote_query_tree = query_tree->clone();
     {
-        std::vector<IQueryTreeNode *> nodes_to_visit;
+        VectorWithMemoryTracking<IQueryTreeNode *> nodes_to_visit;
         nodes_to_visit.push_back(remote_query_tree.get());
         while (!nodes_to_visit.empty())
         {
@@ -177,8 +178,17 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
 
     // TODO: fix view with UNION case for enabled serialize_query_plan separately (use findReadingSteps() instead)
     auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
-    if (node)
-        typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
+    if (!node)
+    {
+        /// Nothing in the shipped plan would be marked as the coordinated read, so every replica would read
+        /// the whole table and the initiator would union the duplicates. Ship no plan instead: the caller then
+        /// sends the query text, which the replicas plan themselves. This is the case for a read through a
+        /// table function, whose reading step is a `ReadFromTableFunctionStep` and which cannot carry the flag
+        /// without a query-plan serialization version that older replicas would have to be excluded for.
+        return nullptr;
+    }
+
+    typeid_cast<ReadFromTableStep *>(node->step.get())->useParallelReplicas() = true;
 
     return query_plan;
 }
@@ -217,7 +227,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// additional `ParallelReplicasReadingCoordinator` instances.
     auto local_query_tree = query_tree->clone();
     {
-        std::vector<IQueryTreeNode *> nodes_to_visit;
+        VectorWithMemoryTracking<IQueryTreeNode *> nodes_to_visit;
         nodes_to_visit.push_back(local_query_tree.get());
         while (!nodes_to_visit.empty())
         {
@@ -316,7 +326,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
 /// branches must all be coordinated. This matches how the remote fragment marks its reads
 /// (ConvertToDistributedVisitor::buildPlanFragment); otherwise a non-aggregating `SELECT * FROM view`
 /// leaves later union branches as plain local reads whose rows are also returned by the remote fragment.
-static void collectReadFromMergeTreeSteps(QueryPlan::Node * node, std::vector<QueryPlan::Node *> & result)
+static void collectReadFromMergeTreeSteps(QueryPlan::Node * node, VectorWithMemoryTracking<QueryPlan::Node *> & result)
 {
     if (!node)
         return;
@@ -355,7 +365,7 @@ QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     if (auto leaf_limits = buildStorageLimits(*context, SelectQueryOptions(QueryProcessingStage::FetchColumns)).leaf_limits; leaf_limits.hasLimits())
         addLeafLimits(plan_fragment->getRootNode(), leaf_limits);
 
-    std::vector<QueryPlan::Node *> reading_nodes;
+    VectorWithMemoryTracking<QueryPlan::Node *> reading_nodes;
     collectReadFromMergeTreeSteps(plan_fragment->getRootNode(), reading_nodes);
     if (reading_nodes.empty())
     {
@@ -398,7 +408,7 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     QueryPlanPtr plan_fragment,
     ParallelReplicasReadingCoordinatorPtr coordinator,
     const ClusterPtr & cluster,
-    const std::vector<ConnectionPoolPtr> & connection_pools,
+    const VectorWithMemoryTracking<ConnectionPoolPtr> & connection_pools,
     std::optional<size_t> exclude_pool_index)
 {
     /// The replica runs this fragment from the plan alone, so nothing there repeats the decision

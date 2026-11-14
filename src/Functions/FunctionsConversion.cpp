@@ -1265,7 +1265,17 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
             else
             {
-                converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                const auto & to_element_type = to_element_types[i];
+                if (to_element_type->isDefaultInsertTrivial())
+                {
+                    converted_columns[i] = to_element_type->createColumn()->cloneResized(input_rows_count);
+                }
+                else
+                {
+                    auto column = to_element_type->createColumn();
+                    to_element_type->insertManyDefaultsInto(*column, input_rows_count);
+                    converted_columns[i] = std::move(column);
+                }
             }
         }
 
@@ -2082,6 +2092,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             FormatSettings format_settings = settings.format_settings;
             auto serialization = arguments[0].type->getDefaultSerialization();
             format_settings.json.quote_64bit_integers = false;
+            /// JSON has no number for inf and nan, unquoted they would be written as null.
+            format_settings.json.quote_denormals = true;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
@@ -2970,6 +2982,24 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
             const auto & enum_data = enum_col->getData();
 
             auto res = res_type->createColumn();
+
+            if (auto * res_string = typeid_cast<ColumnString *>(res.get()))
+            {
+                const auto * null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
+                auto & chars = res_string->getChars();
+                auto & offsets = res_string->getOffsets();
+                offsets.resize(size);
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (!null_map || !(*null_map)[i])
+                    {
+                        auto name = enum_type->getNameForValue(enum_data[i]);
+                        chars.insert(name.data(), name.data() + name.size());
+                    }
+                    offsets[i] = chars.size();
+                }
+                return res;
+            }
 
             if (nullable_col)
             {

@@ -1,0 +1,402 @@
+---
+slug: /clickstack/observability/integration-examples/host-logs
+title: 'Monitoring host logs with ClickHouse Observability'
+sidebarTitle: 'Generic host logs'
+description: 'Collect host syslog files with an OpenTelemetry collector and send them to ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['host logs', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability', 'system monitoring', 'server logs']
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Collect host syslog files with an OpenTelemetry collector and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without collecting logs from your own host.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service
+- Docker to run the collector examples, or an existing OpenTelemetry Collector Contrib deployment
+- For your own logs, syslog files and permission for the collector to read them
+- For the demo, `curl` to download the sample
+
+### Connection details {#connection-details}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
+
+For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
+
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/logs` suffix; the exporter appends the signal path.
+
+</Tab>
+<Tab title="Self-managed" id="self-managed">
+
+Use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+```
+
+</Tab>
+</Tabs>
+
+The endpoint must be reachable from the collector container. For a destination collector running on this computer, use `http://host.docker.internal:4318`. The Docker commands below include the host mapping.
+
+## Integration with existing hosts {#existing-hosts}
+
+<Steps>
+<Step title="Locate your syslog file" id="locate-syslog">
+
+Common locations are `/var/log/syslog` on Ubuntu/Debian, `/var/log/messages` on RHEL-based systems, and `/var/log/system.log` for macOS text logs. Inspect the file that exists on your host:
+
+```bash
+tail -20 /var/log/syslog
+```
+
+Replace the path as needed. If your Linux host writes only to the systemd journal, use the [Systemd/Journald guide](/clickstack/observability/integration-examples/systemd). This guide reads text files; it does not collect the macOS unified log store.
+
+</Step>
+<Step title="Configure the collector" id="configure-collector">
+
+Save the matching configuration as `host-logs.yaml`. Choose by the timestamps in your file. Change `include` to `/var/log/host/messages` or `/var/log/host/system.log` if needed. Add other files only if they use the same format.
+
+<Tabs>
+<Tab title="ISO timestamps">
+
+For lines beginning with a timestamp such as `2026-10-15T12:34:56.123456+00:00`:
+
+```yaml
+receivers:
+  filelog/host:
+    include: [/var/log/host/syslog]
+    start_at: end
+    operators:
+      - type: regex_parser
+        regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          layout: '2006-01-02T15:04:05.999999999Z07:00'
+          location: UTC
+      - type: add
+        field: attributes.source
+        value: host-logs
+      - type: add
+        field: resource["service.name"]
+        value: host-service
+      - type: copy
+        from: attributes.hostname
+        to: resource["host.name"]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+service:
+  pipelines:
+    logs/host:
+      receivers: [filelog/host]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/observability]
+```
+
+</Tab>
+<Tab title="Traditional syslog">
+
+For lines beginning with a timestamp such as `Oct 15 12:34:56`:
+
+```yaml
+receivers:
+  filelog/host:
+    include: [/var/log/host/syslog]
+    start_at: end
+    operators:
+      - type: regex_parser
+        regex: '^(?P<timestamp>\w+\s+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          layout: 'Jan _2 15:04:05'
+          location: UTC
+      - type: add
+        field: attributes.source
+        value: host-logs
+      - type: add
+        field: resource["service.name"]
+        value: host-service
+      - type: copy
+        from: attributes.hostname
+        to: resource["host.name"]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+service:
+  pipelines:
+    logs/host:
+      receivers: [filelog/host]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/observability]
+```
+
+Traditional timestamps omit the year and time zone. The parser infers the year; set `location` to your host's IANA time zone, such as `America/Chicago`, if it does not log in UTC.
+
+</Tab>
+</Tabs>
+
+The receiver extracts `hostname`, `unit`, `pid` (when present), and `message`, while retaining the original line in `Body`. It sets `service.name` to `host-service` and copies the hostname to `host.name`. These text formats do not include a severity field, so this configuration does not infer severity from message text.
+
+</Step>
+<Step title="Run the collector" id="run-collector">
+
+Set the [connection variables](#connection-details). From the directory containing `host-logs.yaml`, run:
+
+```bash
+docker run --rm --name host-logs-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/host-logs.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  -v /var/log:/var/log/host:ro \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+On macOS, use `-v /private/var/log:/var/log/host:ro` and allow Docker Desktop access to that directory. Ensure the selected log file is readable by the collector.
+
+Keep this terminal open. With `start_at: end`, the receiver collects new lines written after startup. Generate normal activity that writes to the selected log file.
+
+</Step>
+<Step title="Verify logs" id="verify-logs">
+
+Open **Search**, select your **Logs** source, filter for `ServiceName:host-service`, and select **Last 15 minutes**. Expand a log to inspect the parsed hostname, unit, PID, and message.
+
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+The sample contains 11,658 syslog lines covering 24 hours, including boot messages, SSH activity, firewall blocks, scheduled jobs, and service restarts.
+
+<Steps>
+<Step title="Download the sample" id="download-sample">
+
+```bash
+mkdir -p host-demo
+cd host-demo
+curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+```
+
+</Step>
+<Step title="Configure the demo collector" id="configure-demo-collector">
+
+Save this as `host-logs-demo.yaml` in the download directory:
+
+```yaml
+receivers:
+  filelog/host:
+    include: [/var/log/host/journal.log]
+    start_at: beginning
+    operators:
+      - type: regex_parser
+        regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%dT%H:%M:%S%z'
+          location: UTC
+      - type: add
+        field: attributes.source
+        value: host-demo
+      - type: add
+        field: resource["service.name"]
+        value: host-demo
+      - type: copy
+        from: attributes.hostname
+        to: resource["host.name"]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/demo_timestamps:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(time, Now() - Duration("2m") - (Time("2025-11-11T23:59:01Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+
+exporters:
+  otlp_http/observability:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+service:
+  pipelines:
+    logs/host:
+      receivers: [filelog/host]
+      processors: [memory_limiter, transform/demo_timestamps, batch]
+      exporters: [otlp_http/observability]
+```
+
+<Note>
+The demo-only timestamp transform shifts the sample into roughly the past 24 hours, ending two minutes before ingestion. Use the [existing-host configuration](#existing-hosts) for your own logs to preserve their original timestamps.
+</Note>
+
+</Step>
+<Step title="Run the demo collector" id="run-demo-collector">
+
+Set the [connection variables](#connection-details), then run from the download directory:
+
+```bash
+docker run --rm --name host-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/host-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  -v "$(pwd):/var/log/host:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+Keep the terminal open while the collector exports the sample, and check its output for errors. Starting a fresh container again can duplicate the sample logs.
+
+</Step>
+<Step title="Verify the demo logs" id="verify-demo-logs">
+
+Open **Search**, select your **Logs** source, filter for `ServiceName:host-demo`, and select **Last 2 days**. Expand a log to inspect its parsed attributes. Stop the collector with **Ctrl+C** after verifying the data.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Host demo logs in ClickHouse Observability Search](/images/clickstack/observability-host-demo-logs.png)
+
+</Frame>
+
+</div>
+
+</Step>
+</Steps>
+
+
+## Dashboards and visualization {#dashboards}
+
+<Steps>
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json" download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download-dashboard" />
+<Step title="Import the dashboard" id="import-dashboard">
+
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `host-logs-dashboard.json`.
+3. Map the charts to your **Logs** source and click **Finish Import**.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
+
+</Step>
+<Step title="View the dashboard" id="view-dashboard">
+
+The imported dashboard displays your logs for the selected time range. To isolate the sample from other services, optionally filter for `ServiceName:host-demo`. Select **Last 2 days** to see the full sample.
+
+The dashboard includes log volume, system units, SSH activity, firewall blocks, and service restarts. Severity is unset unless your ingestion pipeline supplies it.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Host logs dashboard showing log volume, system units, SSH activity, security events, service restarts, and firewall activity](/images/clickstack/observability-host-dashboard.png)
+
+</Frame>
+
+</div>
+
+<Note>
+For your own logs, remove `ServiceName = 'host-demo' AND` from the aggregation filters in the SSH activity, Firewall blocks, and security-events charts if present. Then use the dashboard's service-name filter to select your host logs.
+</Note>
+
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### Collector fails to start {#collector-fails-to-start}
+
+Check the collector terminal for configuration errors. Confirm that the YAML file exists at the mounted path and that the connection variables are set in the terminal where you run Docker.
+
+### No logs appearing {#no-logs}
+
+- Confirm that the file exists on the host and its mounted path matches `include`.
+- Check file permissions and, on macOS, Docker Desktop file sharing.
+- For live logs, generate new entries after the collector starts; `start_at: end` skips existing content.
+- Check the collector output for authentication or export errors.
+- Check the **Logs** source, service-name filter, and time range. For the demo, select **Last 2 days**.
+
+### Logs not parsing correctly {#logs-not-parsing}
+
+Compare a line from your file with the selected timestamp format. Use the matching configuration and adjust the traditional syslog time zone if necessary. Avoid collecting unrelated application log formats with a broad file glob.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/observability/features/alerts) for authentication failures or service errors.
+- Filter by `host.name` or the parsed `unit` attribute to inspect a particular host or service.
+- See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for deployment guidance.

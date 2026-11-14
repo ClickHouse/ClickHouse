@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: Too slow for fast test (~10s), covered by regular stateless runs.
+
 DROP TABLE IF EXISTS t_async_insert_params;
 
 CREATE TABLE t_async_insert_params (id UInt64) ENGINE = MergeTree ORDER BY tuple();

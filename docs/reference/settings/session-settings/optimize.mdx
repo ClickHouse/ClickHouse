@@ -49,6 +49,14 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant."}]}]}/>
+
+Replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -267,6 +275,18 @@ Run a second `PREWHERE` promotion pass after later query plan optimizations may 
 deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
 `JOIN`, projection rewrites). When an existing `PREWHERE` is already present, the new
 filter is `AND`-merged into it instead of staying as a separate filter step.
+
+## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement never runs, because it could only matter for candidates that the primary-key-only comparison rejects anyway."}]}]}/>
+
+When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. `0` always applies them, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
+
+Possible values:
+
+- A float in the range `[0, 1]`.
 
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 

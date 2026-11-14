@@ -10,7 +10,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
-#include <Common/MemoryTracker.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
@@ -369,7 +368,8 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
     return !(settings[Setting::distributed_foreground_insert] && table->isRemote());
 }
 
-static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+static std::optional<std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo>>
+getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
@@ -383,7 +383,10 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
     /// The connection pools and local replica index decided here are returned too, so the remote pass
     /// reuses the exact same replica set rather than recomputing liveness from a fresh snapshot.
     auto parallel_replicas_info = ClusterProxy::dropReadFromRemoteInPlan(plan);
-    return {interpreter.buildQueryPipeline(), std::move(parallel_replicas_info)};
+    if (!parallel_replicas_info)
+        return {};
+
+    return std::make_pair(interpreter.buildQueryPipeline(), std::move(*parallel_replicas_info));
 }
 
 
@@ -544,7 +547,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context, num_concurrent_copies);
+        context);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
@@ -648,7 +651,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             {
                 size_t min_block_size_bytes = table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL;
                 /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, insert_dependencies->getNumSquashesSharingRootBudget());
+                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, settings);
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
@@ -745,8 +748,8 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
             if (settings[Setting::min_insert_block_size_bytes])
             {
                 /// On low-memory systems, cap the input format block size.
-                size_t block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], /*num_simultaneous_squashes=*/ 1);
-                new_settings[Setting::preferred_block_size_bytes] = block_size_bytes;
+                new_settings[Setting::preferred_block_size_bytes]
+                    = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], settings);
             }
         }
 
@@ -800,18 +803,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
 }
 
 
-std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
+std::optional<std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>>
+InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
-    auto [pipeline_builder, parallel_replicas_info]
-        = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    auto local_select = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    if (!local_select)
+        return {};
+
+    auto & [pipeline_builder, parallel_replicas_info] = *local_select;
     /// Parallel replicas builds its own local pipeline and never routes through the async insert queue,
     /// so it hands over no lock and the caller keeps it for the whole pipeline.
     auto local_pipeline = addInsertToSelectPipeline(
         query, table, pipeline_builder, /* add_async_insert_queue_transform */ false, /* destination_lock */ nullptr);
-    return {std::move(local_pipeline), std::move(parallel_replicas_info)};
+    return std::make_pair(std::move(local_pipeline), std::move(parallel_replicas_info));
 }
 
 
@@ -890,9 +897,12 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     /// bringing the plan-based implementation or the automatic mode back for the plans built below, and
     /// the automatic mode would make the probe below decline to distribute the insert. `execute` restores
     /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{
-        std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
+    /// `parallel_replicas_plan_based` is removed from subqueries too: this path is query-based, so the
+    /// setting has no effect anywhere in it, and a subquery keeping it would be rejected as plan-based.
+    static constexpr std::array settings_overridden_for_this_path{std::string_view{"automatic_parallel_replicas_mode"}};
     removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
+    static constexpr std::array settings_without_effect_on_this_path{std::string_view{"parallel_replicas_plan_based"}};
+    removeSettingsFromQuery(query.select, settings_without_effect_on_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
     if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
@@ -916,9 +926,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
                 "timeout separately");
         }
-        else
+        else if (auto local = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context))
         {
-            auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+            auto & [local_pipeline, parallel_replicas_info] = *local;
             auto coordinator = parallel_replicas_info.coordinator;
             auto local_replica_index = parallel_replicas_info.local_replica_index;
             return ClusterProxy::executeInsertSelectWithParallelReplicas(
@@ -928,6 +938,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 std::move(coordinator),
                 std::move(parallel_replicas_info.connection_pools),
                 local_replica_index);
+        }
+        else
+        {
+            LOG_TRACE(logger, "Not using the local insert select pipeline because the SELECT plan has no local part");
         }
     }
 
@@ -1107,8 +1121,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         async_insert,
         /*skip_destination_table*/ no_destination,
         insert_threads,
-        context,
-        num_concurrent_copies);
+        context);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     QueryPipeline pipeline
@@ -1206,10 +1219,9 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     if (should_squash)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
+        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
         /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-        size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
-            insert_dependencies->getNumSquashesSharingRootBudget());
+        min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, settings);
         add_head_transform(std::make_shared<PlanSquashingTransform>(
             insert_header,
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
