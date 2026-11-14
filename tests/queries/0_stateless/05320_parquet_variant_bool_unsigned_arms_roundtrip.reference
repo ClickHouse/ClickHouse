@@ -1,0 +1,15 @@
+-- Variant(Bool, UInt8)
+\N	None
+false	Bool
+true	Bool
+255	UInt8
+7	UInt8
+-- Variant(Bool, String)
+true	Bool
+x	String
+-- Unsigned arms
+x	String
+60000	UInt16
+4000000000	UInt32
+10000000000	UInt64
+200	UInt8

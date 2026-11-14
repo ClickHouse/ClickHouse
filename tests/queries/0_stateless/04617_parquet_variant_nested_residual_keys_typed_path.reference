@@ -1,0 +1,15 @@
+j.metadata
+j.typed_value.a.typed_value
+j.typed_value.a.value
+j.typed_value.arr.typed_value.list.element.typed_value.x.typed_value
+j.typed_value.arr.typed_value.list.element.typed_value.x.value
+j.typed_value.arr.typed_value.list.element.typed_value.y.typed_value
+j.typed_value.arr.typed_value.list.element.typed_value.y.value
+j.typed_value.arr.typed_value.list.element.typed_value.z.typed_value
+j.typed_value.arr.typed_value.list.element.typed_value.z.value
+j.typed_value.arr.typed_value.list.element.value
+j.typed_value.arr.value
+j.value
+{"a":1,"arr":[{"x":2}]}	JSON(a Int64, arr Array(JSON))
+{"a":2,"arr":[{"y":3},{"x":4,"z":5}]}	JSON(a Int64, arr Array(JSON))
+{"a":3,"arr":[]}	JSON(a Int64, arr Array(JSON))

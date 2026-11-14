@@ -1,0 +1,29 @@
+named variants
+1	JSON(a UInt64)
+2	Map(String, JSON(a UInt64))
+3	Int64
+1	{"a":2}
+2	\N
+3	\N
+1	{}
+2	{'k':'{"a":3}'}
+3	{}
+1	{}
+2	{'k':'{"a":3}'}
+3	{}
+1	0
+2	1
+3	1
+shared variant
+1	JSON(a UInt64)
+2	Map(String, JSON(a UInt64))
+3	Int64
+1	{"a":2}
+2	\N
+3	\N
+1	{}
+2	{'k':'{"a":3}'}
+3	{}
+1	0
+2	1
+3	1

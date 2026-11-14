@@ -15,6 +15,7 @@
 #include <Common/StringValueFilter.h>
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -28,6 +29,12 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
 namespace DB::Parquet
 {
+
+namespace VariantReader
+{
+    struct MetadataState;
+    struct SourceState;
+}
 
 // TODO [parquet]:
 //  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
@@ -187,12 +194,24 @@ struct Reader
         size_t schema_idx{};
         /// Index of the top-level column that contains this primitive column.
         size_t idx_in_output_block = UINT64_MAX;
+        VectorWithMemoryTracking<size_t> dependent_output_idxs_in_block;
         String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
         PageDecoderInfo decoder;
 
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
+        DataTypePtr low_cardinality_dictionary_type; // set when `decoded_type` is `LowCardinality`
+
+        /// The type the page decoders and `Dictionary` materialize *values* into. This is
+        /// `decoded_type` with the `LowCardinality` wrapper (and the `Nullable` of its dictionary
+        /// type) removed: `Dictionary` stores plain values and hands them to
+        /// `Dictionary::insertIndexesIntoLowCardinalityColumn`, which assembles the
+        /// `ColumnLowCardinality` itself. Passing the `LowCardinality` type to `Dictionary::decode`
+        /// or materializing dictionary values into a column of it produces a `ColumnLowCardinality`
+        /// where a plain column is expected.
+        DataTypePtr rawDecodedType() const;
         bool output_nullable = false;
+        bool preserve_unexpanded_nullable = false;
         /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
         /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
         /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
@@ -272,10 +291,23 @@ struct Reader
 
     struct OutputColumnInfo
     {
+        enum class SourceKind
+        {
+            None,
+            ParsedObject,
+            Variant,
+            /// A subcolumn of the output column `source_idx`, which is formed in full first.
+            OutputSubcolumn,
+        };
+
         String name; // possibly mapped by ColumnMapper
         /// Range in primitive_columns.
         size_t primitive_start = 0;
         size_t primitive_end = 0;
+        /// Exact primitive columns needed to form this output.
+        /// Unlike `primitive_start`/`primitive_end`, this may include non-contiguous dependencies
+        /// (for example shared `VARIANT` metadata used by a nested exact projection).
+        VectorWithMemoryTracking<size_t> primitive_dependencies;
         DataTypePtr input_type; // make a column of this type from the nested columns...
         DataTypePtr output_type; // ... then castColumn it to this type, if `needs_cast`
         std::optional<size_t> idx_in_output_block;
@@ -286,6 +318,10 @@ struct Reader
         /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
         bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
+        SourceKind source_kind = SourceKind::None;
+        size_t source_idx = UINT64_MAX;
+        String source_subcolumn_name;
+        bool variant_preserve_empty_typed_fields = false;
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
         /// null map reconstructed from the leaves' definition levels. Used to read a physically
@@ -299,6 +335,29 @@ struct Reader
         UInt8 rep = 0;
 
         size_t step_idx = 0;
+    };
+
+    struct ParsedObjectSourceInfo
+    {
+        size_t primitive_idx = UINT64_MAX;
+        String storage_name;
+        DataTypePtr parsed_object_type;
+    };
+
+    struct VariantSourceInfo
+    {
+        size_t metadata_primitive_idx = UINT64_MAX;
+        size_t value_primitive_idx = UINT64_MAX;
+        size_t typed_value_output_idx = UINT64_MAX;
+        size_t state_slot_idx = UINT64_MAX;
+        size_t metadata_state_slot_idx = UINT64_MAX;
+        bool string_output_uses_json = true;
+        bool typed_value_requires_parent_metadata_mapping = false;
+        /// True when this source's rows live at a deeper repetition level than its `metadata`
+        /// column, i.e. it is a nested `VARIANT` reusing an enclosing row's dictionary. Its rows
+        /// then do not line up 1:1 with `MetadataState::metadata_by_row` and need a parent-row
+        /// mapping (see `buildNestedMetadataByRow`).
+        bool rows_deeper_than_metadata = false;
     };
 
     struct RowSet
@@ -520,6 +579,30 @@ struct Reader
         BlockMissingValues block_missing_values;
 
         VectorWithMemoryTracking<OutputColumnState> output; // parallel to extended_sample_block
+        VectorWithMemoryTracking<ColumnPtr> formed_output_columns; // parallel to output_columns
+        /// Parallel to `formed_output_columns`: whether the cached column was formed inside an
+        /// `Array`, so it has one row per array element rather than per row of the subgroup.
+        VectorWithMemoryTracking<UInt8> formed_output_columns_inside_array;
+        VectorWithMemoryTracking<ColumnPtr> formed_parsed_object_source_columns; // parallel to parsed_object_sources
+        VectorWithMemoryTracking<std::shared_ptr<VariantReader::MetadataState>> variant_metadata_states; // parallel to shared metadata state slots
+        VectorWithMemoryTracking<std::shared_ptr<VariantReader::SourceState>> variant_source_states; // parallel to shared variant source state slots
+        VectorWithMemoryTracking<size_t> variant_outputs_remaining; // parallel to shared variant source state slots
+
+        /// Array offsets of the repeated levels that formOutputColumn is currently recursing
+        /// through, outermost first. A nested shredded `VARIANT` value reuses its enclosing
+        /// top-level row's `metadata` dictionary, so composing these levels maps one of its rows
+        /// back to the top-level row that owns the dictionary. Entries point into offsets columns
+        /// owned by the enclosing formOutputColumn frames and are valid only while they are alive.
+        struct NestedArrayLevel
+        {
+            /// Repetition level of the array, see `OutputColumnInfo::rep`.
+            size_t rep = 0;
+            const IColumn::Offsets * offsets = nullptr;
+        };
+        VectorWithMemoryTracking<NestedArrayLevel> nested_array_offsets;
+        /// Serializes forming the columns written to the columns cache in the decoding tasks of the row subgroup,
+        /// which run in parallel, see `decodePrimitiveColumn`.
+        std::mutex form_output_for_cache_mutex;
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
@@ -636,6 +719,12 @@ struct Reader
 
     VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
     size_t total_primitive_columns_in_file = 0;
+    VectorWithMemoryTracking<ParsedObjectSourceInfo> parsed_object_sources;
+    VectorWithMemoryTracking<VariantSourceInfo> variant_sources;
+    size_t variant_source_state_slots = 0;
+    size_t variant_metadata_state_slots = 0;
+    VectorWithMemoryTracking<size_t> variant_source_output_counts;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> variant_output_indices_by_state_slot;
     VectorWithMemoryTracking<OutputColumnInfo> output_columns;
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
@@ -649,6 +738,7 @@ struct Reader
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
     VectorWithMemoryTracking<Step> steps;
+    bool defer_prewhere_execution = false;
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
@@ -709,6 +799,7 @@ struct Reader
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
+    bool isPrewhereDeferred() const { return defer_prewhere_execution; }
 
     /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file and sizes the read to the file otherwise.
     static std::shared_ptr<const FileFooter> readFileFooter(Prefetcher & prefetcher, size_t footer_read_size);
@@ -847,9 +938,12 @@ struct Reader
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
     /// Moves the column out of ColumnSubchunk-s, leaving nullptrs in ColumnSubchunk::column.
-    /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
-    /// is not called again for the moved-out columns.
-    MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
+    /// Caches the result in RowSubgroup::formed_output_columns (and RowSubgroup::output when the
+    /// output has a block slot), so a second call for the same output returns the cached column
+    /// instead of re-forming the moved-out subchunks.
+    MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows, bool skip_cast = false);
+    void cacheOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, const ColumnPtr & column);
+    void releaseVariantSourceInputsIfDone(RowSubgroup & row_subgroup, const OutputColumnInfo & output_info);
     ColumnPtr & getOrFormOutputColumn(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
     /// Finish the writes of the row group to the columns cache, once all its row subgroups are read:
@@ -862,6 +956,8 @@ struct Reader
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
 private:
+    bool shouldDeferPrewhereExecution() const;
+
     struct BloomFilterLookup : public KeyCondition::BloomFilter
     {
         Prefetcher & prefetcher;

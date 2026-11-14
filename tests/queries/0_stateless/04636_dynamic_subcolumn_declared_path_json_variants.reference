@@ -1,0 +1,19 @@
+-- separate parts
+1	JSON	1	1	\N
+2	JSON(a UInt64)	2	2	\N
+3	JSON(a UInt64, b String)	3	3	x
+4	JSON(b String)	\N	\N	y
+5	UInt64	\N	\N	\N
+6	JSON(a String)	x	\N	\N
+-- single part
+1	JSON	1	1	\N
+2	JSON(a UInt64)	2	2	\N
+3	JSON(a UInt64, b String)	3	3	x
+4	JSON(b String)	\N	\N	y
+5	UInt64	\N	\N	\N
+6	JSON(a String)	x	\N	\N
+6	\N
+-- shared variant
+1	JSON	1	1
+2	JSON(a UInt64)	2	2
+3	UInt64	\N	\N
