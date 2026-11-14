@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本文档介绍 MySQL ClickPipe 中并行快照/初始加载的工作原理，并说明可用于控制该过程的快照参数。
 
 <div id="overview-mysql-snapshot">
@@ -27,7 +25,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 启用该功能标志后，你应该会在 ClickPipe 表选择器中看到如下设置 (无论是在创建还是编辑 ClickPipe 时) ：
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="分区键列" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![分区键列](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</Frame>
+
+</div>
 
 MySQL ClickPipe 会使用源表中的某一列对源表进行逻辑分区。该列称为**分区键列**。它用于将源表划分为多个分区，ClickPipe 随后即可并行处理这些分区。
 
@@ -41,7 +47,15 @@ MySQL ClickPipe 会使用源表中的某一列对源表进行逻辑分区。该�
 
 下面介绍这些设置：
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="快照参数" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![快照参数](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</Frame>
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### 每个分区的快照行数
