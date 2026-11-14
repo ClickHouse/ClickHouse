@@ -69,6 +69,15 @@ constexpr std::array system_paths = {
     "/usr/lib/debug",
 };
 
+/// The directories of the CA certificates of the system, which can be links to certificates elsewhere.
+constexpr std::array system_certificate_directories = {
+    "/etc/ssl",
+    "/etc/pki",
+    "/etc/ca-certificates",
+    "/usr/share/ca-certificates",
+    "/usr/local/share/ca-certificates",
+};
+
 /// Whether `path` is `ancestor` or is inside it.
 bool isSameOrInside(const fs::path & path, const fs::path & ancestor)
 {
@@ -114,6 +123,8 @@ public:
             add(path, Access::ReadOnly, "system");
             addLinkTargetDirectories(path, Access::ReadOnly, "system");
         }
+        for (const auto * path : system_certificate_directories)
+            addLinkTargetsInside(path, "the CA certificates of the system");
 
         /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`). Only the
         /// socket is visible, not its directory. A socket on a read-only mount can still be sent to. A name starting
@@ -260,6 +271,55 @@ private:
             if (depth >= 2 && !isSameOrInside(real_directory, "/etc") && !isSameOrInside(real_directory, "/dev"))
                 add(directory, access, fmt::format("the target of a link in {}", source));
         }
+    }
+
+    /// The directories of the targets of the symbolic links inside a directory, as the certificates in `/etc/ssl/certs`,
+    /// which openSUSE links into `/var/lib/ca-certificates`, or the hashed links of a directory of CA certificates. A
+    /// target inside the directory itself is visible anyway; a top-level directory or `/dev` is not made visible, as
+    /// in `addLinkTargetDirectories`. Nothing for a path that is not a directory. The links are recreated by the
+    /// mounts of their targets, also through other links.
+    void addLinkTargetsInside(const fs::path & directory, const std::string & source)
+    {
+        std::error_code error;
+        if (!fs::is_directory(directory, error))
+            return;
+        const fs::path real_directory = fs::canonical(directory, error);
+        if (error)
+            return;
+
+        std::set<fs::path> targets;
+        /// Against an unbounded walk.
+        constexpr size_t max_entries = 100000;
+        size_t entries = 0;
+        for (auto it = fs::recursive_directory_iterator(directory, fs::directory_options::skip_permission_denied, error);
+             !error && it != fs::recursive_directory_iterator() && entries < max_entries;
+             it.increment(error), ++entries)
+        {
+            std::error_code entry_error;
+            if (!it->is_symlink(entry_error))
+                continue;
+            fs::path target = fs::read_symlink(it->path(), entry_error);
+            if (entry_error)
+                continue;
+            if (target.is_relative())
+                target = fs::canonical(it->path().parent_path(), entry_error) / target;
+            if (entry_error)
+                continue;
+            target = absolute(target.string(), "/");
+            const fs::path real_target = fs::canonical(target, entry_error);
+            if (entry_error)
+                continue; /// A dangling link.
+            const bool is_directory = fs::is_directory(real_target, entry_error);
+            const fs::path real_target_directory = is_directory ? real_target : real_target.parent_path();
+            if (isSameOrInside(real_target_directory, real_directory) || isSameOrInside(real_target_directory, "/dev"))
+                continue;
+            const fs::path relative = real_target_directory.relative_path();
+            if (std::distance(relative.begin(), relative.end()) < 2)
+                continue;
+            targets.insert(is_directory ? target : target.parent_path());
+        }
+        for (const auto & target : targets)
+            add(target, Access::ReadOnly, fmt::format("the target of a link in {} ({})", directory.string(), source));
     }
 
     /// The configurations matching a pattern, each processed on its own, as `ExternalLoaderXMLConfigRepository`
@@ -659,17 +719,32 @@ private:
         }
     }
 
+    /// A location of CA certificates, which can be a directory with links to the certificates elsewhere, as a hashed
+    /// directory made by `c_rehash`.
+    void addCertificateAuthorityKey(const std::string & key)
+    {
+        addKeyLocation(key, Access::ReadOnly, runtime_directory);
+        if (const auto value = config.getString(key, ""); !value.empty())
+            addLinkTargetsInside(absolute(value, runtime_directory), fmt::format("`{}`", key));
+    }
+
     void addCertificates()
     {
         for (const auto * side : {"server", "client"})
-            for (const auto * name : {"privateKeyFile", "certificateFile", "caConfig", "dhParamsFile"})
+        {
+            for (const auto * name : {"privateKeyFile", "certificateFile", "dhParamsFile"})
                 addKeyLocation(fmt::format("openSSL.{}.{}", side, name), Access::ReadOnly, runtime_directory);
+            addCertificateAuthorityKey(fmt::format("openSSL.{}.caConfig", side));
+        }
 
         Poco::Util::AbstractConfiguration::Keys protocols;
         config.keys("protocols", protocols);
         for (const auto & protocol : protocols)
-            for (const auto * name : {"privateKeyFile", "certificateFile", "caConfig", "dhParamsFile"})
+        {
+            for (const auto * name : {"privateKeyFile", "certificateFile", "dhParamsFile"})
                 addKeyLocation(fmt::format("protocols.{}.{}", protocol, name), Access::ReadOnly, runtime_directory);
+            addCertificateAuthorityKey(fmt::format("protocols.{}.caConfig", protocol));
+        }
 
         for (const auto * key : {"grpc.ssl_key_file", "grpc.ssl_cert_file", "grpc.ssl_ca_cert_file", "arrowflight.ssl_cert_file", "arrowflight.ssl_key_file", "kerberos.keytab",
                                  "ssh_server.host_rsa_key", "ssh_server.host_ecdsa_key", "ssh_server.host_ed25519_key"})
@@ -678,8 +753,11 @@ private:
         Poco::Util::AbstractConfiguration::Keys ldap_servers;
         config.keys("ldap_servers", ldap_servers);
         for (const auto & server : ldap_servers)
-            for (const auto * name : {"tls_cert_file", "tls_key_file", "tls_ca_cert_file", "tls_ca_cert_dir"})
+        {
+            for (const auto * name : {"tls_cert_file", "tls_key_file", "tls_ca_cert_file"})
                 addKeyLocation(fmt::format("ldap_servers.{}.{}", server, name), Access::ReadOnly, runtime_directory);
+            addCertificateAuthorityKey(fmt::format("ldap_servers.{}.tls_ca_cert_dir", server));
+        }
     }
 
     /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the
