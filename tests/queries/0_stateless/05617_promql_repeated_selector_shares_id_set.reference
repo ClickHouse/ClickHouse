@@ -1,0 +1,10 @@
+[('job','j1'),('pod','p1')]	238
+[('job','j1'),('pod','p1')]	357
+[('job','j1'),('pod','p1')]	4
+[('job','j1')]	538
+[('job','j1'),('pod','p1')]	357
+[('job','j1'),('pod','p1')]	357
+05617_same_twice	1
+05617_same_three_times	1
+05617_other_time_range	2
+05617_other_matchers	2

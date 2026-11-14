@@ -1,0 +1,33 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!-- Repeated selectors with the same matchers and time range. Single selectors and `offset` pairs are the controls. -->
+
+    <create_query>CREATE TABLE promql_repeated_selector_ts ENGINE = TimeSeries</create_query>
+
+    <!-- 100000 series over 50 metrics (2000 series each, 10 jobs, one pod per series),
+         one sample every 15s over [1000000, 1003600): 240 samples per series. -->
+    <fill_query>
+        INSERT INTO promql_repeated_selector_ts (metric_name, tags, samples)
+        SELECT
+            concat('metric_', toString(number % 50)),
+            map('job', concat('job', toString(cityHash64(number) % 10)), 'pod', concat('pod-', toString(number))),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), toFloat64((number % 1000) + step)), range(240))
+        FROM numbers_mt(100000)
+    </fill_query>
+
+    <!-- one series -->
+    <query>SELECT * FROM prometheusQuery('promql_repeated_selector_ts', 'metric_1{{pod="pod-1"}}', 1003585) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_repeated_selector_ts', 'metric_1{{pod="pod-1"}} + metric_1{{pod="pod-1"}}', 1003585) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_repeated_selector_ts', 'metric_1{{pod="pod-1"}} + metric_1{{pod="pod-1"}} + metric_1{{pod="pod-1"}}', 1003585) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_repeated_selector_ts', 'rate(metric_1{{pod="pod-1"}}[5m]) / rate(metric_1{{pod="pod-1"}}[5m] offset 10m)', 1003585) FORMAT Null</query>
+
+    <!-- one job of a metric (about 200 series) -->
+    <query>SELECT * FROM prometheusQuery('promql_repeated_selector_ts', 'metric_1{{job="job3"}}', 1003585) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_repeated_selector_ts', 'metric_1{{job="job3"}} + metric_1{{job="job3"}}', 1003585) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_repeated_selector_ts</drop_query>
+</test>

@@ -353,10 +353,16 @@ using SharedSet = std::shared_future<SetPtr>;
 class PreparedSetsCache
 {
 public:
+    /// When false, a set still being built is not waited on: the builder may need the waiter's thread.
+    explicit PreparedSetsCache(bool wait_for_sets_being_built_ = true) : wait_for_sets_being_built(wait_for_sets_being_built_) {}
+
     /// Lookup for set in the cache.
     /// If it is found, get the future to be able to wait for the set to be built.
     /// Otherwise create a promise, build the set and set the promise value.
     std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuild(const String & key);
+
+    /// Returns the set built under this key, or nullptr if there is none yet: never waits and never promises to build.
+    SetPtr findBuilt(const String & key);
 
 private:
     struct Entry
@@ -364,6 +370,7 @@ private:
         SharedSet future; /// Other tasks can wait for the set to be built.
     };
 
+    const bool wait_for_sets_being_built;
     std::mutex cache_mutex;
     std::unordered_map<String, Entry> cache;
 };

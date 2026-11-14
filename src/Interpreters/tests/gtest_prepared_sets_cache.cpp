@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <future>
+#include <optional>
 #include <stdexcept>
 #include <variant>
 
@@ -125,4 +126,48 @@ TEST(PreparedSetsCache, WaiterFailureIsRebuildableOnRetry)
     /// A later attempt is asked to rebuild rather than getting the poisoned entry again.
     auto retry = cache.findOrPromiseToBuild("key");
     EXPECT_EQ(retry.index(), 0u);
+}
+
+/// A non-waiting cache lets a second caller build again while the first build is in flight.
+TEST(PreparedSetsCache, NonWaitingCacheBuildsAgainWhileInFlight)
+{
+    PreparedSetsCache cache(/* wait_for_sets_being_built_ = */ false);
+
+    auto first = cache.findOrPromiseToBuild("key");
+    ASSERT_EQ(first.index(), 0u);
+    EXPECT_EQ(cache.findBuilt("key"), nullptr) << "A set in flight is not built yet";
+
+    auto second = cache.findOrPromiseToBuild("key");
+    ASSERT_EQ(second.index(), 0u) << "A second caller must not wait for a set in flight";
+
+    /// The second build finishes first: its promise is not registered, so the entry still waits for the first.
+    std::get<0>(second).set_value(makeDummySet());
+    EXPECT_EQ(cache.findBuilt("key"), nullptr);
+
+    auto set = makeDummySet();
+    std::get<0>(first).set_value(set);
+    EXPECT_EQ(cache.findBuilt("key"), set);
+
+    auto third = cache.findOrPromiseToBuild("key");
+    ASSERT_EQ(third.index(), 1u) << "A later caller must reuse the built set";
+    EXPECT_EQ(std::get<1>(third).get(), set);
+}
+
+/// `findBuilt` never hands out an abandoned or failed build.
+TEST(PreparedSetsCache, FindBuiltSkipsAbandonedAndFailedBuilds)
+{
+    PreparedSetsCache cache;
+    EXPECT_EQ(cache.findBuilt("missing"), nullptr);
+
+    auto abandoned = cache.findOrPromiseToBuild("abandoned");
+    ASSERT_EQ(abandoned.index(), 0u);
+    std::get<0>(abandoned).set_value(nullptr);
+    EXPECT_EQ(cache.findBuilt("abandoned"), nullptr);
+
+    auto failed = cache.findOrPromiseToBuild("failed");
+    ASSERT_EQ(failed.index(), 0u);
+    std::get<0>(failed).set_exception(std::make_exception_ptr(std::runtime_error("Limit for IN-set exceeded")));
+    std::optional<SetPtr> found;
+    ASSERT_NO_THROW(found = cache.findBuilt("failed"));
+    EXPECT_EQ(*found, nullptr);
 }

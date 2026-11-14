@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
@@ -35,6 +36,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -192,6 +194,11 @@ void StoragePrometheusQuery::applySettingsForPrometheusQuery(Context & context)
         context.setSetting("enable_materialized_cte", true);
 
     context.setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    /// One non-waiting set cache for this query. A waiting cache can deadlock one pipeline,
+    /// and a mutation's cache must stay with the mutation.
+    if (!context.getSettingsRef()[Setting::make_distributed_plan])
+        context.setPreparedSetsCache(std::make_shared<PreparedSetsCache>(/* wait_for_sets_being_built_ = */ false));
 }
 
 
