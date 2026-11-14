@@ -1,0 +1,23 @@
+replace after except
+0	0
+1	0
+2	0
+\N	1
+unmatched matcher
+0	0
+1	0
+2	0
+\N	1
+apply after except
+0	0
+1	0
+2	0
+\N	1
+qualified matcher
+0	0
+1	0
+2	0
+\N	1
+executed replacement
+1	3
+\N	3

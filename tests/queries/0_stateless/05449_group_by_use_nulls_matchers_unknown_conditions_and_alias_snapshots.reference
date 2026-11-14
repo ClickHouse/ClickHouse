@@ -1,0 +1,16 @@
+condition by alias
+7
+7
+7
+7
+condition constant after GROUP BY
+7
+7
+reachable branch with a non-constant condition
+11
+12
+alias of a projection item without matchers
+0	1
+1	1
+2	1
+3	1

@@ -205,6 +205,22 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
+    /** The shapes in `nullable_group_by_keys` with their keys, grouped by a shallow hash, which covers the names of the
+      * columns and the functions, the constants and the structure of the expression, but not the sources of the columns.
+      * A lookup in `nullable_group_by_keys` computes the tree hash of the node, which also covers the sources of its
+      * columns (the whole subquery for a column of a subquery), so `findNullableGroupByKey` uses this index instead:
+      * it compares only the shapes with the same shallow hash, with `isEqual`, which does not go into a column source
+      * that is the same node on both sides.
+      * Use `addNullableGroupByKey` to keep them in sync.
+      */
+    std::unordered_map<UInt64, std::vector<std::pair<QueryTreeNodePtr, QueryTreeNodePtr>>> nullable_group_by_keys_by_shallow_hash;
+
+    void addNullableGroupByKey(QueryTreeNodePtr key_shape, const QueryTreeNodePtr & key);
+
+    /// The key of `nullable_group_by_keys` that `node` is equal to (ignoring aliases), or nullptr.
+    /// The same as a lookup in `nullable_group_by_keys`, but it does not compute the tree hash of `node`.
+    const QueryTreeNodePtr * findNullableGroupByKey(const QueryTreeNodePtr & node) const;
+
     /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
     QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
 
@@ -260,6 +276,12 @@ struct IdentifierResolveScope
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
     void popExpressionNode();
+
+    /// Whether the name may be bound to a lambda by an alias in this scope or in one of its parents,
+    /// so that a function call with this name may resolve to the lambda instead of an ordinary function.
+    /// This is an over-approximation: the aliases of short identifiers and the aliases of the outer scopes
+    /// that are not visible are counted as well. See `QueryAnalyzer::isLambdaCall` for the exact check.
+    bool hasFunctionAlias(const std::string & name) const;
 
     /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
     /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.
