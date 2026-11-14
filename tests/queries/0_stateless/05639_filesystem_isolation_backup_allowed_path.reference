@@ -1,2 +1,2 @@
-backup next to the link: written
-backup next to the target of the link: absent
+absolute path: backup written where expected
+relative path: backup written where expected

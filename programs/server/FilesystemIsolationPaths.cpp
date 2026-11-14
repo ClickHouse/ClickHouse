@@ -104,6 +104,17 @@ std::string getPathSetting(const Poco::Util::AbstractConfiguration & config, con
     return Poco::trim(config.getString(key, default_value));
 }
 
+/// `path` as the server uses it, as `getCanonicalPath` in `Server.cpp` makes it: a relative one relative to the
+/// original working directory with the links resolved (`weakly_canonical`), an absolute one as it is written. The paths
+/// relative to it, as `backups.allowed_path` in the `File` backup engine, are resolved against this one.
+fs::path getDataPath(const Poco::Util::AbstractConfiguration & config, const fs::path & working_directory)
+{
+    const fs::path path = getPathSetting(config, "path", DBMS_DEFAULT_PATH);
+    if (path.is_absolute())
+        return path;
+    return fs::weakly_canonical(working_directory / path);
+}
+
 class Collector
 {
 public:
@@ -118,7 +129,7 @@ public:
         , is_daemon(config.getBool("application.runAsDaemon", false))
         , config_file(absolute(config_path, startup_directory))
         , config_directory(config_file.parent_path())
-        , data_path(absolute(getPathSetting(config, "path", DBMS_DEFAULT_PATH), working_directory))
+        , data_path(getDataPath(config, working_directory))
         , runtime_directory(is_daemon ? coreDirectory() : working_directory)
     {
     }
