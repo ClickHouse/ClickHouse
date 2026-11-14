@@ -683,9 +683,6 @@ static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const 
     if (!merge_tree_data->merging_params.sign_column.empty())
         key_columns.insert(merge_tree_data->merging_params.sign_column);
 
-    if (!merge_tree_data->merging_params.version_column.empty())
-        key_columns.insert(merge_tree_data->merging_params.version_column);
-
     return key_columns;
 }
 
@@ -703,7 +700,7 @@ static void validateUpdateColumns(
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
-    /// The sign and version columns may be subcolumns, so recomputing the column they belong to changes them as well.
+    /// The sign column may be a subcolumn, so recomputing the column it belongs to changes it as well.
     for (const auto & key_column : key_columns)
     {
         if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
