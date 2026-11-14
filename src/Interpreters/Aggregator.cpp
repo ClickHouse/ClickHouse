@@ -71,6 +71,7 @@ namespace ProfileEvents
     extern const Event ExternalAggregationUncompressedBytes;
     extern const Event ExternalAggregationWritePart;
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event AggregationPartitionsMergedByCellIndex;
     extern const Event AggregationTopKRowsSkipped;
     extern const Event AggregationTopKKeysEvicted;
     extern const Event AggregationTopKKeysPruned;
@@ -3963,6 +3964,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
         {
             if (merge_by_cell_index)
             {
+                ProfileEvents::increment(ProfileEvents::AggregationPartitionsMergedByCellIndex);
                 if (owns_null_slot)
                     for (auto * source : sources)
                         merge_null_slot(getDataVariant<Method>(*source).data);
