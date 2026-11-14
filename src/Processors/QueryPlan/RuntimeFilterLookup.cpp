@@ -12,6 +12,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Columns/IColumn.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -947,13 +948,31 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & 
 
 RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
     : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
+    , canonicalize_negative_zeros(mayContainNegativeZero(*filter_column_target_type))
     , evaluation_state(std::move(config_))
     , data(std::move(data_))
 {
 }
 
+ColumnPtr RuntimeFilter::canonicalizeKeys(ColumnPtr values) const
+{
+    if (!canonicalize_negative_zeros)
+        return values;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(values.get()))
+    {
+        if (auto canonical = canonicalizeNegativeZeroThroughLowCardinality(column_const->getDataColumn()))
+            return ColumnConst::create(std::move(canonical), column_const->size());
+        return values;
+    }
+    if (auto canonical = canonicalizeNegativeZeroThroughLowCardinality(*values))
+        return canonical;
+    return values;
+}
+
 void RuntimeFilter::insert(ColumnPtr values)
 {
+    values = canonicalizeKeys(std::move(values));
+
     std::lock_guard lock(mutex);
     std::visit(
         [&](auto & filter) TSA_REQUIRES(mutex)
@@ -988,8 +1007,11 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
     if (evaluation_state.shouldSkip(rows_in_block))
         return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
+    ColumnWithTypeAndName canonical_values = values;
+    canonical_values.column = canonicalizeKeys(values.column);
+
     std::optional<size_t> rows_passed;
-    auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, data.filter);
+    auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(canonical_values, rows_passed); }, data.filter);
     evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
     return result;
 }
