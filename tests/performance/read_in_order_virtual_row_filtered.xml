@@ -41,5 +41,52 @@
     <query>SELECT a FROM vrow_filtered WHERE b = 1 ORDER BY a LIMIT 10 FORMAT Null</query>
     <query>SELECT a FROM vrow_filtered WHERE b = 1 ORDER BY a LIMIT 100 FORMAT Null</query>
 
+    <!--
+        A key prefix fixed by `WHERE` disables virtual rows. `LIMIT 100` must not read far ahead of the limit,
+        while `LIMIT 3000` spans about six of the 16 parts, which must still be read ahead in parallel.
+    -->
+    <create_query>
+        CREATE TABLE prefix_filtered (k UInt8, a UInt64, b UInt8)
+        ENGINE = MergeTree ORDER BY (k, a)
+        SETTINGS parts_to_throw_insert = 100000, parts_to_delay_insert = 100000
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES prefix_filtered</fill_query>
+    <fill_query>
+        INSERT INTO prefix_filtered
+        SELECT 1, number, number % 4096 = 0 FROM numbers(32000000)
+        SETTINGS max_block_size = 2000000, max_insert_block_size = 2000000,
+                 min_insert_block_size_rows = 2000000, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT a FROM prefix_filtered WHERE k = 1 AND b = 1 ORDER BY a DESC LIMIT 100 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+    <query>SELECT a FROM prefix_filtered WHERE k = 1 AND b = 1 ORDER BY a DESC LIMIT 3000 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+
+    <!--
+        Eight overlapping parts; only two have matches, the other six cannot be skipped by the statistics of `b`.
+        The sort continues past the read-in-order key, so the merge has no limit and needs all rows of the two parts
+        to fill a block: they must be read in parallel with the six parts without matches, and the first rows of the
+        two parts differ, so neither may count the rows of the other.
+    -->
+    <create_query>
+        CREATE TABLE overlap_filtered (k UInt8, a UInt64, b UInt8)
+        ENGINE = MergeTree ORDER BY (k, a)
+        SETTINGS parts_to_throw_insert = 100000, parts_to_delay_insert = 100000
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES overlap_filtered</fill_query>
+    <fill_query>
+        INSERT INTO overlap_filtered
+        SELECT 1, (number % 4000000) * 8 + intDiv(number, 4000000),
+               if(intDiv(number, 4000000) IN (0, 4), number % 1024 = 0, 2 * (number % 2))
+        FROM numbers(32000000)
+        SETTINGS max_block_size = 4000000, max_insert_block_size = 4000000,
+                 min_insert_block_size_rows = 4000000, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT a FROM overlap_filtered WHERE k = 1 AND b = 1 ORDER BY a DESC, b LIMIT 21 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS vrow_filtered</drop_query>
+    <drop_query>DROP TABLE IF EXISTS prefix_filtered</drop_query>
+    <drop_query>DROP TABLE IF EXISTS overlap_filtered</drop_query>
 </test>

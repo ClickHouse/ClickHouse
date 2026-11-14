@@ -1,15 +1,82 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Common/QueueWithMemoryTracking.h>
+#include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <base/defines.h>
 
+#include <array>
+#include <atomic>
+#include <memory>
+#include <mutex>
 #include <queue>
 
 namespace DB
 {
 class Block;
+
+/// Shared by the `BufferChunksTransform`s in front of one read-in-order merge of a sort with a limit.
+/// Inputs of such a merge usually do not overlap: when the first row of one input sorts before the first row of
+/// another, all its rows sort before all rows of the other.
+class ReadInOrderReadAheadTracker
+{
+public:
+    /// A paused input keeps its reader open, so only merges with at most this many inputs use a tracker.
+    static constexpr size_t max_inputs = 128;
+
+    /// `merge_has_limit_` is false when the sort is finished after the merge.
+    ReadInOrderReadAheadTracker(
+        size_t num_inputs, const Block & header, const SortDescription & description_, size_t limit_, bool merge_has_limit_);
+
+    /// The limit of the sort.
+    size_t getLimit() const { return limit; }
+
+    /// Called with every chunk of `input` that has rows; `rows` counts all rows `input` has produced so far.
+    void addChunk(size_t input, const Chunk & chunk, size_t rows);
+
+    struct InputBefore
+    {
+        size_t input = 0;
+        size_t rows = 0;
+        bool overlaps = false;
+    };
+
+    /// Comparison results of `input` against the inputs in `published`, owned by the transform of `input`.
+    struct InputsBefore
+    {
+        size_t num_compared = 0;
+        VectorWithMemoryTracking<InputBefore> inputs;
+    };
+
+    /// Rows produced by the inputs in `published` whose first row sorts strictly before the first row of `input`.
+    /// A merge without a limit can need all rows of overlapping inputs to fill a block, so then only the rows
+    /// produced while the other input had not reached the first row of `input` count. Requires `addChunk(input, ...)`.
+    size_t rowsProducedBefore(size_t input, InputsBefore & inputs_before) const;
+
+private:
+    struct InputState
+    {
+        Columns first_row; /// One row per sort column; written before the input enters `published`, read-only afterwards.
+        mutable std::mutex mutex;
+        Columns last_row TSA_GUARDED_BY(mutex); /// Kept only when the merge has no limit.
+        std::atomic<size_t> produced{0};
+    };
+
+    Columns cutRow(const Chunk & chunk, size_t row) const;
+    int compareRows(const Columns & lhs, const Columns & rhs) const;
+
+    const SortDescription description;
+    const size_t limit;
+    const bool merge_has_limit;
+    VectorWithMemoryTracking<size_t> sort_column_positions;
+    VectorWithMemoryTracking<InputState> inputs; /// Sized in the constructor, never resized.
+    /// `input + 1` for the inputs that called `addChunk`, in that order; 0 in a slot not written yet.
+    std::array<std::atomic<size_t>, max_inputs> published{};
+    std::atomic<size_t> num_published{0};
+};
 
 /// Transform that buffers chunks from the input
 /// up to the certain limit  and pushes chunks to
@@ -24,7 +91,9 @@ public:
         SharedHeader header_,
         size_t max_rows_to_buffer_,
         size_t max_bytes_to_buffer_,
-        size_t limit_);
+        size_t limit_,
+        std::shared_ptr<ReadInOrderReadAheadTracker> read_ahead_tracker_ = nullptr,
+        size_t input_index_ = 0);
 
     Status prepare() override;
     String getName() const override { return "BufferChunks"; }
@@ -54,6 +123,15 @@ private:
     /// `input.setNeeded()` of `prepare` is never reached. This flag makes the invariant
     /// explicit instead of relying on the wake-up pattern of the downstream processor.
     bool wait_for_demand_after_virtual_row = false;
+
+    std::shared_ptr<ReadInOrderReadAheadTracker> read_ahead_tracker;
+    size_t input_index = 0;
+    ReadInOrderReadAheadTracker::InputsBefore inputs_before;
+    bool first_row_published = false;
+    /// The output port holds a chunk the merge has not taken yet.
+    bool output_has_our_chunk = false;
+    /// Chunks the merge took and then asked for more.
+    size_t chunks_taken_by_merge = 0;
 };
 
 }
