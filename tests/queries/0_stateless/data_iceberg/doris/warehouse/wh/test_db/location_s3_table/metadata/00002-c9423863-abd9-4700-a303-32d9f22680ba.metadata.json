@@ -1,0 +1,108 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "204327d3-547f-4533-ac9f-9f1610dd4970",
+  "location" : "s3://warehouse/wh/test_db/location_s3_table",
+  "last-sequence-number" : 2,
+  "last-updated-ms" : 1720770344065,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "val",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.update.mode" : "merge-on-read",
+    "write.delete.mode" : "merge-on-read",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 4354395038983396385,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 4354395038983396385,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 911020606924478872,
+    "timestamp-ms" : 1720770343659,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720770332191",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "594",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "594",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://warehouse/wh/test_db/location_s3_table/metadata/snap-911020606924478872-1-d25db254-368d-41de-8d56-d59b09b9718b.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 4354395038983396385,
+    "parent-snapshot-id" : 911020606924478872,
+    "timestamp-ms" : 1720770344065,
+    "summary" : {
+      "operation" : "overwrite",
+      "spark.app.id" : "local-1720770332191",
+      "added-data-files" : "1",
+      "added-position-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "2080",
+      "added-position-deletes" : "1",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "2674",
+      "total-data-files" : "2",
+      "total-delete-files" : "1",
+      "total-position-deletes" : "1",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://warehouse/wh/test_db/location_s3_table/metadata/snap-4354395038983396385-1-cfa061b2-738a-4a1e-aa75-720fe7581f82.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720770343659,
+    "snapshot-id" : 911020606924478872
+  }, {
+    "timestamp-ms" : 1720770344065,
+    "snapshot-id" : 4354395038983396385
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720770343498,
+    "metadata-file" : "s3://warehouse/wh/test_db/location_s3_table/metadata/00000-45dc7407-0893-41c9-a648-e078ad5d7394.metadata.json"
+  }, {
+    "timestamp-ms" : 1720770343659,
+    "metadata-file" : "s3://warehouse/wh/test_db/location_s3_table/metadata/00001-ac0459aa-6b7c-4a43-8fae-273333d90944.metadata.json"
+  } ]
+}

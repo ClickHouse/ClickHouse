@@ -1,0 +1,579 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "d3b72ae1-4880-4c3e-9111-ca1af3cc9c7c",
+  "location" : "hdfs://hdfs-cluster/user/hive/warehouse/cqtest.db/nested_user_profiles_iceberg_parquet",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1760884432817,
+  "last-column-id" : 92,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "name",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "profile",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 9,
+          "name" : "address",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 12,
+              "name" : "street",
+              "required" : false,
+              "type" : "string"
+            }, {
+              "id" : 13,
+              "name" : "city",
+              "required" : false,
+              "type" : "string"
+            }, {
+              "id" : 14,
+              "name" : "coordinates",
+              "required" : false,
+              "type" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 15,
+                  "name" : "lat",
+                  "required" : false,
+                  "type" : "double"
+                }, {
+                  "id" : 16,
+                  "name" : "lng",
+                  "required" : false,
+                  "type" : "double"
+                } ]
+              }
+            } ]
+          }
+        }, {
+          "id" : 10,
+          "name" : "contact",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 17,
+              "name" : "email",
+              "required" : false,
+              "type" : "string"
+            }, {
+              "id" : 18,
+              "name" : "phone",
+              "required" : false,
+              "type" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 19,
+                  "name" : "country_code",
+                  "required" : false,
+                  "type" : "string"
+                }, {
+                  "id" : 20,
+                  "name" : "number",
+                  "required" : false,
+                  "type" : "string"
+                } ]
+              }
+            } ]
+          }
+        }, {
+          "id" : 11,
+          "name" : "hobbies",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 21,
+            "element" : {
+              "type" : "struct",
+              "fields" : [ {
+                "id" : 22,
+                "name" : "name",
+                "required" : false,
+                "type" : "string"
+              }, {
+                "id" : 23,
+                "name" : "level",
+                "required" : false,
+                "type" : "int"
+              } ]
+            },
+            "element-required" : false
+          }
+        } ]
+      }
+    }, {
+      "id" : 4,
+      "name" : "tags",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 24,
+        "element" : "string",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "friends",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 25,
+        "element" : {
+          "type" : "struct",
+          "fields" : [ {
+            "id" : 26,
+            "name" : "user_id",
+            "required" : false,
+            "type" : "long"
+          }, {
+            "id" : 27,
+            "name" : "nickname",
+            "required" : false,
+            "type" : "string"
+          }, {
+            "id" : 28,
+            "name" : "friendship_level",
+            "required" : false,
+            "type" : "int"
+          } ]
+        },
+        "element-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "recent_activity",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 29,
+        "element" : {
+          "type" : "struct",
+          "fields" : [ {
+            "id" : 30,
+            "name" : "action",
+            "required" : false,
+            "type" : "string"
+          }, {
+            "id" : 31,
+            "name" : "details",
+            "required" : false,
+            "type" : {
+              "type" : "list",
+              "element-id" : 32,
+              "element" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 33,
+                  "name" : "key",
+                  "required" : false,
+                  "type" : "string"
+                }, {
+                  "id" : 34,
+                  "name" : "value",
+                  "required" : false,
+                  "type" : "string"
+                } ]
+              },
+              "element-required" : false
+            }
+          } ]
+        },
+        "element-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "attributes",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 35,
+        "key" : "string",
+        "value-id" : 36,
+        "value" : "string",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "complex_attributes",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 37,
+        "key" : "string",
+        "value-id" : 38,
+        "value" : {
+          "type" : "struct",
+          "fields" : [ {
+            "id" : 39,
+            "name" : "metadata",
+            "required" : false,
+            "type" : {
+              "type" : "struct",
+              "fields" : [ {
+                "id" : 43,
+                "name" : "version",
+                "required" : false,
+                "type" : "string"
+              }, {
+                "id" : 44,
+                "name" : "created_time",
+                "required" : false,
+                "type" : "timestamptz"
+              }, {
+                "id" : 45,
+                "name" : "last_updated",
+                "required" : false,
+                "type" : "timestamptz"
+              }, {
+                "id" : 46,
+                "name" : "quality_score",
+                "required" : false,
+                "type" : "double"
+              } ]
+            }
+          }, {
+            "id" : 40,
+            "name" : "historical_scores",
+            "required" : false,
+            "type" : {
+              "type" : "list",
+              "element-id" : 47,
+              "element" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 48,
+                  "name" : "period",
+                  "required" : false,
+                  "type" : "string"
+                }, {
+                  "id" : 49,
+                  "name" : "score",
+                  "required" : false,
+                  "type" : "double"
+                }, {
+                  "id" : 50,
+                  "name" : "components",
+                  "required" : false,
+                  "type" : {
+                    "type" : "list",
+                    "element-id" : 52,
+                    "element" : {
+                      "type" : "struct",
+                      "fields" : [ {
+                        "id" : 53,
+                        "name" : "component_name",
+                        "required" : false,
+                        "type" : "string"
+                      }, {
+                        "id" : 54,
+                        "name" : "weight",
+                        "required" : false,
+                        "type" : "float"
+                      }, {
+                        "id" : 55,
+                        "name" : "sub_scores",
+                        "required" : false,
+                        "type" : {
+                          "type" : "map",
+                          "key-id" : 56,
+                          "key" : "string",
+                          "value-id" : 57,
+                          "value" : "double",
+                          "value-required" : false
+                        }
+                      } ]
+                    },
+                    "element-required" : false
+                  }
+                }, {
+                  "id" : 51,
+                  "name" : "trends",
+                  "required" : false,
+                  "type" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 58,
+                      "name" : "direction",
+                      "required" : false,
+                      "type" : "string"
+                    }, {
+                      "id" : 59,
+                      "name" : "magnitude",
+                      "required" : false,
+                      "type" : "double"
+                    }, {
+                      "id" : 60,
+                      "name" : "confidence_interval",
+                      "required" : false,
+                      "type" : {
+                        "type" : "struct",
+                        "fields" : [ {
+                          "id" : 61,
+                          "name" : "lower",
+                          "required" : false,
+                          "type" : "double"
+                        }, {
+                          "id" : 62,
+                          "name" : "upper",
+                          "required" : false,
+                          "type" : "double"
+                        } ]
+                      }
+                    } ]
+                  }
+                } ]
+              },
+              "element-required" : false
+            }
+          }, {
+            "id" : 41,
+            "name" : "hierarchical_data",
+            "required" : false,
+            "type" : {
+              "type" : "map",
+              "key-id" : 63,
+              "key" : "string",
+              "value-id" : 64,
+              "value" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 65,
+                  "name" : "category",
+                  "required" : false,
+                  "type" : "string"
+                }, {
+                  "id" : 66,
+                  "name" : "sub_items",
+                  "required" : false,
+                  "type" : {
+                    "type" : "list",
+                    "element-id" : 68,
+                    "element" : {
+                      "type" : "struct",
+                      "fields" : [ {
+                        "id" : 69,
+                        "name" : "item_id",
+                        "required" : false,
+                        "type" : "long"
+                      }, {
+                        "id" : 70,
+                        "name" : "properties",
+                        "required" : false,
+                        "type" : {
+                          "type" : "map",
+                          "key-id" : 72,
+                          "key" : "string",
+                          "value-id" : 73,
+                          "value" : "string",
+                          "value-required" : false
+                        }
+                      }, {
+                        "id" : 71,
+                        "name" : "metrics",
+                        "required" : false,
+                        "type" : {
+                          "type" : "struct",
+                          "fields" : [ {
+                            "id" : 74,
+                            "name" : "value",
+                            "required" : false,
+                            "type" : "double"
+                          }, {
+                            "id" : 75,
+                            "name" : "unit",
+                            "required" : false,
+                            "type" : "string"
+                          } ]
+                        }
+                      } ]
+                    },
+                    "element-required" : false
+                  }
+                }, {
+                  "id" : 67,
+                  "name" : "summary",
+                  "required" : false,
+                  "type" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 76,
+                      "name" : "total_count",
+                      "required" : false,
+                      "type" : "int"
+                    }, {
+                      "id" : 77,
+                      "name" : "average_value",
+                      "required" : false,
+                      "type" : "double"
+                    } ]
+                  }
+                } ]
+              },
+              "value-required" : false
+            }
+          }, {
+            "id" : 42,
+            "name" : "validation_rules",
+            "required" : false,
+            "type" : {
+              "type" : "struct",
+              "fields" : [ {
+                "id" : 78,
+                "name" : "required",
+                "required" : false,
+                "type" : "boolean"
+              }, {
+                "id" : 79,
+                "name" : "constraints",
+                "required" : false,
+                "type" : {
+                  "type" : "list",
+                  "element-id" : 81,
+                  "element" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 82,
+                      "name" : "rule_type",
+                      "required" : false,
+                      "type" : "string"
+                    }, {
+                      "id" : 83,
+                      "name" : "parameters",
+                      "required" : false,
+                      "type" : {
+                        "type" : "map",
+                        "key-id" : 85,
+                        "key" : "string",
+                        "value-id" : 86,
+                        "value" : "string",
+                        "value-required" : false
+                      }
+                    }, {
+                      "id" : 84,
+                      "name" : "error_message",
+                      "required" : false,
+                      "type" : "string"
+                    } ]
+                  },
+                  "element-required" : false
+                }
+              }, {
+                "id" : 80,
+                "name" : "complex_constraint",
+                "required" : false,
+                "type" : {
+                  "type" : "struct",
+                  "fields" : [ {
+                    "id" : 87,
+                    "name" : "logic_operator",
+                    "required" : false,
+                    "type" : "string"
+                  }, {
+                    "id" : 88,
+                    "name" : "operands",
+                    "required" : false,
+                    "type" : {
+                      "type" : "list",
+                      "element-id" : 89,
+                      "element" : {
+                        "type" : "struct",
+                        "fields" : [ {
+                          "id" : 90,
+                          "name" : "field_path",
+                          "required" : false,
+                          "type" : "string"
+                        }, {
+                          "id" : 91,
+                          "name" : "operator",
+                          "required" : false,
+                          "type" : "string"
+                        }, {
+                          "id" : 92,
+                          "name" : "comparison_value",
+                          "required" : false,
+                          "type" : "string"
+                        } ]
+                      },
+                      "element-required" : false
+                    }
+                  } ]
+                }
+              } ]
+            }
+          } ]
+        },
+        "value-required" : false
+      }
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "hive",
+    "write.format.default" : "parquet",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 6622777947381868002,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6622777947381868002,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 6622777947381868002,
+    "timestamp-ms" : 1760884432817,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "application_1738810850199_0681",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "21586",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "21586",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "hdfs://hdfs-cluster/user/hive/warehouse/cqtest.db/nested_user_profiles_iceberg_parquet/metadata/snap-6622777947381868002-1-bee22dff-a1d3-420d-bfba-c1b4193ab0df.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1760884432817,
+    "snapshot-id" : 6622777947381868002
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1760884395135,
+    "metadata-file" : "hdfs://hdfs-cluster/user/hive/warehouse/cqtest.db/nested_user_profiles_iceberg_parquet/metadata/00000-ed5ae7dc-be1a-410b-ae74-7cf04ad10765.metadata.json"
+  } ]
+}

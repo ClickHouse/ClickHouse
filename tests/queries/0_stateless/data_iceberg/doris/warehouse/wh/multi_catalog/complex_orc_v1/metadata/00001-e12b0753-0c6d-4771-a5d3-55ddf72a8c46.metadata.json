@@ -1,0 +1,542 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "548a961a-c3d3-4aa6-a790-172ec0e6eca7",
+  "location" : "s3a://warehouse/wh/multi_catalog/complex_orc_v1",
+  "last-updated-ms" : 1720009330824,
+  "last-column-id" : 50,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 7,
+        "element" : {
+          "type" : "list",
+          "element-id" : 8,
+          "element" : {
+            "type" : "list",
+            "element-id" : 9,
+            "element" : {
+              "type" : "list",
+              "element-id" : 10,
+              "element" : {
+                "type" : "list",
+                "element-id" : 11,
+                "element" : "int",
+                "element-required" : false
+              },
+              "element-required" : false
+            },
+            "element-required" : false
+          },
+          "element-required" : false
+        },
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 12,
+        "key" : {
+          "type" : "list",
+          "element-id" : 14,
+          "element" : "float",
+          "element-required" : false
+        },
+        "value-id" : 13,
+        "value" : {
+          "type" : "map",
+          "key-id" : 15,
+          "key" : "int",
+          "value-id" : 16,
+          "value" : {
+            "type" : "map",
+            "key-id" : 17,
+            "key" : "int",
+            "value-id" : 18,
+            "value" : "float",
+            "value-required" : false
+          },
+          "value-required" : false
+        },
+        "value-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 19,
+          "name" : "x",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 22,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 20,
+          "name" : "y",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 23,
+            "element" : "double",
+            "element-required" : false
+          }
+        }, {
+          "id" : 21,
+          "name" : "z",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 24,
+            "key" : "boolean",
+            "value-id" : 25,
+            "value" : "string",
+            "value-required" : false
+          }
+        } ]
+      }
+    }, {
+      "id" : 5,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 26,
+        "key" : "int",
+        "value-id" : 27,
+        "value" : {
+          "type" : "map",
+          "key-id" : 28,
+          "key" : "int",
+          "value-id" : 29,
+          "value" : {
+            "type" : "map",
+            "key-id" : 30,
+            "key" : "int",
+            "value-id" : 31,
+            "value" : {
+              "type" : "map",
+              "key-id" : 32,
+              "key" : "int",
+              "value-id" : 33,
+              "value" : {
+                "type" : "map",
+                "key-id" : 34,
+                "key" : "float",
+                "value-id" : 35,
+                "value" : {
+                  "type" : "map",
+                  "key-id" : 36,
+                  "key" : "double",
+                  "value-id" : 37,
+                  "value" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 38,
+                      "name" : "x",
+                      "required" : false,
+                      "type" : "int"
+                    }, {
+                      "id" : 39,
+                      "name" : "y",
+                      "required" : false,
+                      "type" : {
+                        "type" : "list",
+                        "element-id" : 40,
+                        "element" : "double",
+                        "element-required" : false
+                      }
+                    } ]
+                  },
+                  "value-required" : false
+                },
+                "value-required" : false
+              },
+              "value-required" : false
+            },
+            "value-required" : false
+          },
+          "value-required" : false
+        },
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 41,
+          "name" : "xx",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 44,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 42,
+          "name" : "yy",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 45,
+            "element" : {
+              "type" : "map",
+              "key-id" : 46,
+              "key" : "double",
+              "value-id" : 47,
+              "value" : "float",
+              "value-required" : false
+            },
+            "element-required" : false
+          }
+        }, {
+          "id" : 43,
+          "name" : "zz",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 48,
+              "name" : "xxx",
+              "required" : false,
+              "type" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 49,
+                  "name" : "xxxx",
+                  "required" : false,
+                  "type" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 50,
+                      "name" : "xxxxx",
+                      "required" : false,
+                      "type" : "decimal(13, 2)"
+                    } ]
+                  }
+                } ]
+              }
+            } ]
+          }
+        } ]
+      }
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 7,
+        "element" : {
+          "type" : "list",
+          "element-id" : 8,
+          "element" : {
+            "type" : "list",
+            "element-id" : 9,
+            "element" : {
+              "type" : "list",
+              "element-id" : 10,
+              "element" : {
+                "type" : "list",
+                "element-id" : 11,
+                "element" : "int",
+                "element-required" : false
+              },
+              "element-required" : false
+            },
+            "element-required" : false
+          },
+          "element-required" : false
+        },
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 12,
+        "key" : {
+          "type" : "list",
+          "element-id" : 14,
+          "element" : "float",
+          "element-required" : false
+        },
+        "value-id" : 13,
+        "value" : {
+          "type" : "map",
+          "key-id" : 15,
+          "key" : "int",
+          "value-id" : 16,
+          "value" : {
+            "type" : "map",
+            "key-id" : 17,
+            "key" : "int",
+            "value-id" : 18,
+            "value" : "float",
+            "value-required" : false
+          },
+          "value-required" : false
+        },
+        "value-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 19,
+          "name" : "x",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 22,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 20,
+          "name" : "y",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 23,
+            "element" : "double",
+            "element-required" : false
+          }
+        }, {
+          "id" : 21,
+          "name" : "z",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 24,
+            "key" : "boolean",
+            "value-id" : 25,
+            "value" : "string",
+            "value-required" : false
+          }
+        } ]
+      }
+    }, {
+      "id" : 5,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 26,
+        "key" : "int",
+        "value-id" : 27,
+        "value" : {
+          "type" : "map",
+          "key-id" : 28,
+          "key" : "int",
+          "value-id" : 29,
+          "value" : {
+            "type" : "map",
+            "key-id" : 30,
+            "key" : "int",
+            "value-id" : 31,
+            "value" : {
+              "type" : "map",
+              "key-id" : 32,
+              "key" : "int",
+              "value-id" : 33,
+              "value" : {
+                "type" : "map",
+                "key-id" : 34,
+                "key" : "float",
+                "value-id" : 35,
+                "value" : {
+                  "type" : "map",
+                  "key-id" : 36,
+                  "key" : "double",
+                  "value-id" : 37,
+                  "value" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 38,
+                      "name" : "x",
+                      "required" : false,
+                      "type" : "int"
+                    }, {
+                      "id" : 39,
+                      "name" : "y",
+                      "required" : false,
+                      "type" : {
+                        "type" : "list",
+                        "element-id" : 40,
+                        "element" : "double",
+                        "element-required" : false
+                      }
+                    } ]
+                  },
+                  "value-required" : false
+                },
+                "value-required" : false
+              },
+              "value-required" : false
+            },
+            "value-required" : false
+          },
+          "value-required" : false
+        },
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 41,
+          "name" : "xx",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 44,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 42,
+          "name" : "yy",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 45,
+            "element" : {
+              "type" : "map",
+              "key-id" : 46,
+              "key" : "double",
+              "value-id" : 47,
+              "value" : "float",
+              "value-required" : false
+            },
+            "element-required" : false
+          }
+        }, {
+          "id" : 43,
+          "name" : "zz",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 48,
+              "name" : "xxx",
+              "required" : false,
+              "type" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 49,
+                  "name" : "xxxx",
+                  "required" : false,
+                  "type" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 50,
+                      "name" : "xxxxx",
+                      "required" : false,
+                      "type" : "decimal(13, 2)"
+                    } ]
+                  }
+                } ]
+              }
+            } ]
+          }
+        } ]
+      }
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "format" : "iceberg/orc",
+    "write.format.default" : "orc",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 7935780522077312001,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7935780522077312001,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 7935780522077312001,
+    "timestamp-ms" : 1720009330824,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720009044068",
+      "added-data-files" : "2",
+      "added-records" : "6",
+      "added-files-size" : "5905",
+      "changed-partition-count" : "1",
+      "total-records" : "6",
+      "total-files-size" : "5905",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/complex_orc_v1/metadata/snap-7935780522077312001-1-4b6a85eb-7055-4487-9ff1-45114dd292a5.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720009330824,
+    "snapshot-id" : 7935780522077312001
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720009295362,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/complex_orc_v1/metadata/00000-6ea48a45-401d-4039-a141-c7692bb551d0.metadata.json"
+  } ]
+}

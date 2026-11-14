@@ -1,0 +1,176 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "baf92432-1443-47fd-971a-0a9df2432e4a",
+  "location" : "hdfs://hdfs-cluster/user/hive/warehouse/cqtest.db/complex_user_profiles_iceberg",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1758188959726,
+  "last-column-id" : 18,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "name",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "profile",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 4,
+          "name" : "address",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 7,
+              "name" : "street",
+              "required" : false,
+              "type" : "string"
+            }, {
+              "id" : 8,
+              "name" : "city",
+              "required" : false,
+              "type" : "string"
+            }, {
+              "id" : 9,
+              "name" : "coordinates",
+              "required" : false,
+              "type" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 10,
+                  "name" : "lat",
+                  "required" : false,
+                  "type" : "double"
+                }, {
+                  "id" : 11,
+                  "name" : "lng",
+                  "required" : false,
+                  "type" : "double"
+                } ]
+              }
+            } ]
+          }
+        }, {
+          "id" : 5,
+          "name" : "contact",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 12,
+              "name" : "email",
+              "required" : false,
+              "type" : "string"
+            }, {
+              "id" : 13,
+              "name" : "phone",
+              "required" : false,
+              "type" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 14,
+                  "name" : "country_code",
+                  "required" : false,
+                  "type" : "string"
+                }, {
+                  "id" : 15,
+                  "name" : "number",
+                  "required" : false,
+                  "type" : "string"
+                } ]
+              }
+            } ]
+          }
+        }, {
+          "id" : 6,
+          "name" : "hobbies",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 16,
+            "element" : {
+              "type" : "struct",
+              "fields" : [ {
+                "id" : 17,
+                "name" : "name",
+                "required" : false,
+                "type" : "string"
+              }, {
+                "id" : 18,
+                "name" : "level",
+                "required" : false,
+                "type" : "int"
+              } ]
+            },
+            "element-required" : false
+          }
+        } ]
+      }
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "hive",
+    "write.format.default" : "parquet",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 1689809712605583552,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 1689809712605583552,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 1689809712605583552,
+    "timestamp-ms" : 1758188959726,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "application_1738810850199_0668",
+      "added-data-files" : "8",
+      "added-records" : "10",
+      "added-files-size" : "32551",
+      "changed-partition-count" : "1",
+      "total-records" : "10",
+      "total-files-size" : "32551",
+      "total-data-files" : "8",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "hdfs://hdfs-cluster/user/hive/warehouse/cqtest.db/complex_user_profiles_iceberg/metadata/snap-1689809712605583552-1-51fb6058-7fc2-4791-96a9-f3111933728a.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1758188959726,
+    "snapshot-id" : 1689809712605583552
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1758188914000,
+    "metadata-file" : "hdfs://hdfs-cluster/user/hive/warehouse/cqtest.db/complex_user_profiles_iceberg/metadata/00000-30938ed9-31af-46c8-9274-506c7f2709c9.metadata.json"
+  } ]
+}
