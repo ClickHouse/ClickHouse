@@ -1227,7 +1227,13 @@ bool VectorQueryPlanCache::planHasVectorSearchRewrite(const QueryPlan & plan)
     return false;
 }
 
-bool VectorQueryPlanCache::refreshDataSnapshots(QueryPlan & plan, const ContextPtr & context)
+namespace
+{
+
+/// Visit every `ReadFromMergeTree` step of the plan. Stops and returns false as soon as the
+/// visitor returns false.
+template <typename Visitor>
+bool forEachReadFromMergeTree(QueryPlan & plan, Visitor && visit)
 {
     QueryPlan::Node * root = plan.getRootNode();
     if (!root)
@@ -1235,7 +1241,6 @@ bool VectorQueryPlanCache::refreshDataSnapshots(QueryPlan & plan, const ContextP
 
     std::vector<QueryPlan::Node *> stack{root};
     std::unordered_set<QueryPlan::Node *> visited;
-    size_t refreshed_reads = 0;
 
     while (!stack.empty())
     {
@@ -1246,16 +1251,39 @@ bool VectorQueryPlanCache::refreshDataSnapshots(QueryPlan & plan, const ContextP
 
         if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
-            if (!read->refreshDataSnapshot(context))
+            if (!visit(*read))
                 return false;
-            ++refreshed_reads;
         }
 
         for (auto * child : node->children)
             stack.push_back(child);
     }
 
-    return refreshed_reads > 0;
+    return true;
+}
+
+}
+
+bool VectorQueryPlanCache::refreshDataSnapshots(QueryPlan & plan, const ContextPtr & context)
+{
+    size_t refreshed_reads = 0;
+    const bool visited = forEachReadFromMergeTree(plan, [&](ReadFromMergeTree & read)
+    {
+        if (!read.refreshDataSnapshot(context))
+            return false;
+        ++refreshed_reads;
+        return true;
+    });
+
+    return visited && refreshed_reads > 0;
+}
+
+bool VectorQueryPlanCache::reanalyzeVectorReads(QueryPlan & plan)
+{
+    return forEachReadFromMergeTree(plan, [](ReadFromMergeTree & read)
+    {
+        return read.reanalyzeVectorSearch();
+    });
 }
 
 void VectorQueryPlanCache::rebuildTableMappings()

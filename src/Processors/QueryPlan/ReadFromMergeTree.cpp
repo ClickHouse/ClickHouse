@@ -3050,6 +3050,27 @@ DataVersion ReadFromMergeTree::getDataVersion() const
     return snapshot_data->data_version;
 }
 
+namespace
+{
+
+/// The `_distance` rewrite assumes that every part to be read got candidate rows and distances
+/// from the vector index. A part without an index granule (or with deletes the index does not know
+/// about) breaks that assumption and would silently drop rows.
+bool analysisHasVectorSearchHintsForAllParts(const ReadFromMergeTree::AnalysisResult & analysis)
+{
+    for (const auto & part_with_ranges : analysis.parts_with_ranges)
+    {
+        if (!part_with_ranges.ranges.empty()
+            && (!part_with_ranges.read_hints.vector_search_results.has_value()
+                || !part_with_ranges.read_hints.vector_search_results.value().distances.has_value()))
+            return false;
+    }
+
+    return true;
+}
+
+}
+
 bool ReadFromMergeTree::refreshDataSnapshot(const ContextPtr & query_context)
 {
     if (!storage_snapshot || !storage_snapshot->metadata || !storage_snapshot->data)
@@ -3091,21 +3112,29 @@ bool ReadFromMergeTree::refreshDataSnapshot(const ContextPtr & query_context)
     if (vector_search_parameters.has_value())
     {
         auto analysis = selectRangesToRead();
-        if (!analysis)
+        if (!analysis || !analysisHasVectorSearchHintsForAllParts(*analysis))
             return false;
-
-        for (const auto & part_with_ranges : analysis->parts_with_ranges)
-        {
-            if (!part_with_ranges.ranges.empty()
-                && (!part_with_ranges.read_hints.vector_search_results.has_value()
-                    || !part_with_ranges.read_hints.vector_search_results.value().distances.has_value()))
-                return false;
-        }
 
         analyzed_result_ptr = std::move(analysis);
     }
 
     return true;
+}
+
+bool ReadFromMergeTree::reanalyzeVectorSearch()
+{
+    if (!vector_search_parameters.has_value())
+        return true;
+
+    /// Drop the analysis that came with the cached plan: it was computed for another reference
+    /// vector and must not be reused.
+    analyzed_result_ptr.reset();
+
+    auto analysis = selectRangesToRead();
+    if (!analysis)
+        return false;
+
+    return analysisHasVectorSearchHintsForAllParts(*analysis);
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool allow_query_condition_cache_) const
@@ -5111,6 +5140,10 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
+    /// A cached vector-search plan is rebound to the executing query's reference vector and then
+    /// re-analyzed. Without the parameters the read step would forget that it was rewritten to
+    /// `_distance` and the analysis could not be reproduced.
+    cloned_step->vector_search_parameters = vector_search_parameters;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read

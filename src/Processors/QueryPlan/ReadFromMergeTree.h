@@ -351,6 +351,10 @@ public:
     /// storage snapshot) with the current one while keeping the rest of the plan untouched.
     /// Returns false when the step cannot be refreshed safely; the caller must then replan instead.
     bool refreshDataSnapshot(const ContextPtr & query_context);
+    /// Recompute the vector-search analysis (candidate rows, distances and mark ranges) for the
+    /// reference vector currently stored in `vector_search_parameters`. Returns false when a part
+    /// that has to be read cannot provide vector results, so the plan shape must not be reused.
+    bool reanalyzeVectorSearch();
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }

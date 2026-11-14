@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool optimize_distinct_in_order;
     extern const SettingsBool vector_query_plan_cache;
     extern const SettingsBool vector_query_plan_cache_only_vector;
+    extern const SettingsBool vector_query_plan_cache_optimized_plan;
     extern const SettingsBool vector_only_cache_query_plan;
     extern const SettingsSeconds vector_query_plan_cache_ttl;
     extern const SettingsUInt64 vector_query_plan_cache_max_size_in_bytes;
@@ -473,10 +474,14 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                     query_plan,
                     pre_optimization_plan ? &*pre_optimization_plan : nullptr,
                     query_result,
-                    vector_query_plan_cache_only_vector);
+                    vector_query_plan_cache_only_vector,
+                    settings[Setting::vector_query_plan_cache_optimized_plan]);
 
                 if (cached_plan)
                 {
+                    LOG_DEBUG(logger, "setPlan");
+                    // LOG_ERROR(logger, "setPlan:{}us", test_watch.elapsedMicroseconds());
+                    // test_watch.restart();
                     vector_query_plan_cache_writer.setQueryAccessInfo(context->serializeQueryAccessInfo());
                     vector_query_plan_cache_writer.setPlanConstantBindings(std::move(cached_plan->bindings));
                     vector_query_plan_cache_writer.setPlanIsOptimized(cached_plan->optimized);

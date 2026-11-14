@@ -3841,24 +3841,20 @@ std::optional<VectorQueryParameters::CachedPlanSelection> VectorQueryParameters:
     QueryPlan & optimized_plan,
     QueryPlan * pre_optimization_plan,
     const NormalizedQueryResult & parameters,
-    bool only_vector)
+    bool only_vector,
+    bool cache_optimized_plan)
 {
     std::vector<CachedPlanSelection> candidates;
-    if (!pre_optimization_plan)
-    {
+    /// The `_distance` rewrite consumed the reference-vector literal, so no AST literal can match
+    /// in the optimized plan; cache only the pre-optimization copy unless explicitly requested.
+    const bool only_pre_optimization_plan = pre_optimization_plan
+        && VectorQueryPlanCache::planHasVectorSearchRewrite(optimized_plan)
+        && !cache_optimized_plan;
+
+    if (!only_pre_optimization_plan)
         candidates.push_back(CachedPlanSelection{&optimized_plan, true, {}});
-    }
-    else if (VectorQueryPlanCache::planHasVectorSearchRewrite(optimized_plan))
-    {
-        /// The `_distance` rewrite consumed the reference-vector literal, so no AST literal can
-        /// match in the optimized plan.
+    if (pre_optimization_plan)
         candidates.push_back(CachedPlanSelection{pre_optimization_plan, false, {}});
-    }
-    else
-    {
-        candidates.push_back(CachedPlanSelection{&optimized_plan, true, {}});
-        candidates.push_back(CachedPlanSelection{pre_optimization_plan, false, {}});
-    }
 
     for (auto & candidate : candidates)
     {

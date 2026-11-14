@@ -465,8 +465,7 @@ struct VectorQueryPlanCacheRestoreResult
     String new_query;                                    ///< Rewritten SQL (with CAST-wrapped vector literals)
     std::optional<Settings> settings_copy;               ///< Snapshot of settings for query result cache consistency
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;  ///< Whether a query result cache hit occurred
-    bool vector_ast_restored = false;                    ///< True if AST was successfully restored from cache
-    bool skip_ast_processing = false;                    ///< True if the restored AST can skip re-normalization
+    bool ast_already_processed = false;                  ///< True if the restored AST can skip re-normalization
     bool query_result_cache_hit = false;                 ///< True if the query result cache had a matching entry
     /// A miss of the query result cache is not recorded yet: `tryExecuteQueryPlan` records it if the query is executed
     /// from a cached plan, `executeQueryImpl` otherwise (after its quota checks), see `QueryResultCacheProbeResult`.
@@ -479,15 +478,15 @@ struct VectorQueryPlanCacheRestoreResult
     String query_access_info_cache;                      ///< Serialized query access info from the cached plan
 };
 
-/// Validate a cached plan against the current table data versions and refresh it when possible.
+/// Validate a cached plan against the current table data versions, refresh it when possible and
+/// rebuild the query-vector-dependent analysis of an optimized plan.
 ///
-/// Returns true when the plan was rejected and must be rebuilt. A refreshed plan stays in
-/// `cached_plan` and is used for this query only; the entry is removed in both cases because the
-/// stored copy still holds the old snapshot and versions, and a later Writer must be able to
-/// publish the fresh plan.
+/// A refreshed plan stays in `cached_plan` and is used for this query only; the entry is removed in
+/// both refresh and rejection cases because the stored copy still holds the old snapshot and
+/// versions, and a later Writer must be able to publish the fresh plan.
 /// Entries are only invalidated here when data version checking is enabled: `isDataVersionValid`
 /// returns true otherwise, and a disabled check relies on DML invalidation instead.
-static bool restoreCachedPlanData(
+static void restoreCachedPlanData(
     QueryPlanPtr & cached_plan,
     const VectorQueryPlanCache::Reader & reader,
     const Settings & settings,
@@ -495,29 +494,42 @@ static bool restoreCachedPlanData(
     VectorQueryPlanCache & cache,
     const VectorQueryPlanCache::Key & key,
     const String & query_for_log,
+    bool cached_plan_optimized,
     const LoggerPtr & logger)
 {
-    if (!cached_plan || reader.isDataVersionValid(settings, context))
-        return false;
+    if (!cached_plan)
+        return;
 
-    /// `isDataVersionValid` returns true when the check is disabled, so this path is only
-    /// reachable with data version checking enabled.
-    if (VectorQueryPlanCache::refreshDataSnapshots(*cached_plan, context))
+    if (!reader.isDataVersionValid(settings, context))
     {
-        ProfileEvents::increment(ProfileEvents::QueryPlanCacheDataRefresh);
-        /// This query uses the refreshed clone; the next query rebuilds and re-caches a plan with
-        /// the current versions because the entry is removed below.
-        LOG_DEBUG(logger, "Refreshed data snapshot of cached QueryPlan({})", query_for_log);
+        /// `isDataVersionValid` returns true when the check is disabled, so this path is only
+        /// reachable with data version checking enabled.
+        if (VectorQueryPlanCache::refreshDataSnapshots(*cached_plan, context))
+        {
+            ProfileEvents::increment(ProfileEvents::QueryPlanCacheDataRefresh);
+            /// This query uses the refreshed clone, which already contains a fresh analysis; the
+            /// next query rebuilds and re-caches a plan because the entry is removed below.
+            LOG_DEBUG(logger, "Refreshed data snapshot of cached QueryPlan({})", query_for_log);
+            cache.remove(key);
+            return;
+        }
+
+        ProfileEvents::increment(ProfileEvents::QueryPlanCacheDataRefreshFailures);
+        /// Reject the plan so the caller falls back to the normal replan path.
+        LOG_DEBUG(logger, "Cached QueryPlan rejected because table data changed({})", query_for_log);
+        cached_plan = nullptr;
         cache.remove(key);
-        return false;
+        return;
     }
 
-    ProfileEvents::increment(ProfileEvents::QueryPlanCacheDataRefreshFailures);
-    /// Reject the plan so the caller falls back to the normal replan path.
-    LOG_DEBUG(logger, "Cached QueryPlan rejected because table data changed({})", query_for_log);
-    cached_plan = nullptr;
-    cache.remove(key);
-    return true;
+    /// An optimized plan is executed with `do_optimize=false`, so the analysis that depends on the
+    /// reference vector must be rebuilt.
+    if (cached_plan_optimized && !VectorQueryPlanCache::reanalyzeVectorReads(*cached_plan))
+    {
+        LOG_DEBUG(logger, "Cached optimized QueryPlan rejected: vector search analysis is not applicable");
+        cached_plan = nullptr;
+        cache.remove(key);
+    }
 }
 
 /// Try to restore a query from the vector query plan cache (SQL-text-based path).
@@ -601,8 +613,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                         LOG_DEBUG(logger, "Restore AST from vector_query_plan_cache({})", result.new_query);
                         InterpreterSetQuery::applySettingsFromQuery(result.ast, context);
                         result.query_access_info_cache = reader.getQueryAccessInfo();
-                        result.vector_ast_restored = true;
-                        result.skip_ast_processing = true;
+                        result.ast_already_processed = true;
                         result.can_use_query_result_cache = query_result_cache != nullptr
                             && settings[Setting::use_query_cache] && !internal
                             && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY
@@ -643,14 +654,9 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                             {
                                 result.cached_plan = reader.getPlan();
                                 result.cached_plan_optimized = reader.isCachedPlanOptimized();
-                                if (restoreCachedPlanData(
-                                        result.cached_plan, reader, settings, context, *vector_query_plan_cache,
-                                        key, result.new_query, logger))
-                                {
-                                    /// Keep the restored AST: the Writer is only created on the normal
-                                    /// replan path, which is needed to publish a fresh entry.
-                                    result.skip_ast_processing = false;
-                                }
+                                /// Constants are rebound before the data version check: a refresh
+                                /// re-runs the vector-search analysis and must already see the
+                                /// reference vector of this query, not the one stored in the entry.
                                 if (result.cached_plan)
                                 {
                                     auto cached_plan_constant_bindings = reader.getPlanConstantBindings();
@@ -675,6 +681,10 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                                         LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
                                     }
                                 }
+
+                                restoreCachedPlanData(
+                                    result.cached_plan, reader, settings, context, *vector_query_plan_cache,
+                                    key, result.new_query, result.cached_plan_optimized, logger);
                             }
                             else
                                 LOG_DEBUG(logger, "QueryPlan not found");
@@ -757,25 +767,32 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                 {
                     result.cached_plan = reader.getPlan();
                     result.cached_plan_optimized = reader.isCachedPlanOptimized();
-                    restoreCachedPlanData(
-                        result.cached_plan, reader, settings, context, *vector_query_plan_cache,
-                        key, ast->formatForLogging(), logger);
+                    /// Rebind before the data version check (see the SQL-text restore path).
                     auto cached_plan_constant_bindings = reader.getPlanConstantBindings();
-                    if (result.cached_plan && !cached_plan_constant_bindings.empty())
+                    if (!result.cached_plan)
                     {
-                        if (!parameterizer.replaceConstantsInQueryPlan(
-                            *result.cached_plan,
-                            ast_result,
-                            cached_plan_constant_bindings))
-                        {
-                            result.cached_plan = nullptr;
-                            LOG_DEBUG(logger, "Restore QueryPlan failed");
-                        }
-                        else
-                            LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", ast->formatForLogging());
+                        LOG_DEBUG(logger, "QueryPlan not found");
+                    }
+                    else if (cached_plan_constant_bindings.empty())
+                    {
+                        LOG_DEBUG(logger, "QueryPlan has no constants to rebind");
+                    }
+                    else if (!parameterizer.replaceConstantsInQueryPlan(
+                                 *result.cached_plan,
+                                 ast_result,
+                                 cached_plan_constant_bindings))
+                    {
+                        result.cached_plan = nullptr;
+                        LOG_DEBUG(logger, "Restore QueryPlan failed");
                     }
                     else
-                        LOG_DEBUG(logger, "QueryPlan not found");
+                    {
+                        LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", ast->formatForLogging());
+                    }
+
+                    restoreCachedPlanData(
+                        result.cached_plan, reader, settings, context, *vector_query_plan_cache,
+                        key, ast->formatForLogging(), result.cached_plan_optimized, logger);
                 }
                 else
                 {
@@ -809,7 +826,7 @@ struct CacheProbeOutput
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;  ///< Query result cache status
     bool is_select = false;                                ///< True if the query is a SELECT
     bool enable_vector_query_plan_cache = false;           ///< True if vector plan caching is enabled
-    bool skip_ast_processing = false;                      ///< True if restored AST skips re-normalization
+    bool ast_already_processed = false;                    ///< True if restored AST skips re-normalization
     bool can_use_query_result_cache = false;               ///< True if query result cache is eligible
     bool query_result_cache_entry_exists = false;          ///< True if a query result cache entry was found
     bool query_result_cache_miss_pending = false;          ///< True if the query result cache missed and the miss is not recorded yet
@@ -2200,7 +2217,7 @@ static std::optional<BlockIO> tryExecuteFromCache(
     output.query_result_cache_usage = cache_result.query_result_cache_usage;
     output.is_select = cache_result.is_select;
     output.enable_vector_query_plan_cache = enable_vector_query_plan_cache;
-    output.skip_ast_processing = cache_result.skip_ast_processing;
+    output.ast_already_processed = cache_result.ast_already_processed;
     output.can_use_query_result_cache = cache_result.can_use_query_result_cache;
     output.query_result_cache_entry_exists = cache_result.query_result_cache_hit;
     /// `tryExecuteQueryPlan` records the miss if the query is executed from a cached plan. Otherwise the query falls
@@ -3359,7 +3376,7 @@ static BlockIO executeQueryImpl(
     bool vector_only_cache_query_plan = settings[Setting::vector_only_cache_query_plan];
     bool enable_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
     CacheProbeOutput cache_output;
-    bool skip_ast_processing = false;
+    bool ast_already_processed = false;
     bool can_use_query_result_cache = false;
     bool query_result_cache_entry_exists = false;
     String vector_query_for_plan_cache;
@@ -3379,7 +3396,7 @@ static BlockIO executeQueryImpl(
             }
             if (!enable_vector_performance_test)
                 is_select = cache_output.is_select;
-            skip_ast_processing = cache_output.skip_ast_processing;
+            ast_already_processed = cache_output.ast_already_processed;
             can_use_query_result_cache = cache_output.can_use_query_result_cache;
             query_result_cache_entry_exists = cache_output.query_result_cache_entry_exists;
             vector_query_for_plan_cache = std::move(cache_output.vector_query_for_plan_cache);
@@ -3971,7 +3988,7 @@ static BlockIO executeQueryImpl(
 
             normalizeAnalyzerSettings(out_ast);
 
-            if (!skip_ast_processing)
+            if (!ast_already_processed)
             {
                 if (settings[Setting::enforce_strict_identifier_format])
                 {
@@ -4401,7 +4418,7 @@ static BlockIO executeQueryImpl(
                     if (interpreter)
                     {
                         interpreter->is_internal = internal;
-                        if (enable_vector_query_plan_cache && !skip_ast_processing)
+                        if (enable_vector_query_plan_cache)
                         {
                             interpreter->params_size = params_size;
                             interpreter->is_select = is_select;

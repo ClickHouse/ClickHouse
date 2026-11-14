@@ -7326,6 +7326,14 @@ This setting applies to every cached query plan, not only vector queries.
 - `0` - Disabled: reuse cached plans without a data version check (the legacy behavior).
 )", 0, \
         {"26.10", false, true, "New setting to avoid stale query plans after data changes; previously cached plans were reused without a data version check."}) \
+    DECLARE(Bool, vector_query_plan_cache_optimized_plan, false, R"(
+Cache the optimized query plan for vector search queries.
+When enabled, a cache hit reuses the optimized plan shape (including the `_distance` rewrite)
+but recomputes the vector index analysis (candidate rows, distances and mark ranges) for the
+current reference vector. When disabled, only the pre-optimization plan is cached and the
+optimizer runs again on every hit.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

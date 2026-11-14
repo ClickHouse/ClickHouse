@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool vector_query_plan_cache;
     extern const SettingsBool vector_query_plan_cache_only_vector;
+    extern const SettingsBool vector_query_plan_cache_optimized_plan;
     extern const SettingsBool vector_only_cache_query_plan;
     extern const SettingsSeconds vector_query_plan_cache_ttl;
     extern const SettingsUInt64 vector_query_plan_cache_max_size_in_bytes;
@@ -734,7 +735,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
                     query_plan,
                     pre_optimization_plan ? &*pre_optimization_plan : nullptr,
                     query_result,
-                    vector_query_plan_cache_only_vector);
+                    vector_query_plan_cache_only_vector,
+                    settings[Setting::vector_query_plan_cache_optimized_plan]);
 
                 if (cached_plan)
                 {

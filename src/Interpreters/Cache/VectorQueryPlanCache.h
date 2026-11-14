@@ -321,6 +321,11 @@ public:
     /// safely (or the plan has no refreshable read step), so the caller can rebuild the plan.
     static bool refreshDataSnapshots(QueryPlan & plan, const ContextPtr & context);
 
+    /// Recompute the vector-search analysis of every read step that carries
+    /// `vector_search_parameters` (used when an optimized plan is reused for another reference
+    /// vector). Returns false when any step cannot reproduce its analysis.
+    static bool reanalyzeVectorReads(QueryPlan & plan);
+
 private:
     /// Reverse lookup from canonical `db.table` name to every cache key whose entry
     /// currently depends on that table. The map is rebuilt after publication/removal

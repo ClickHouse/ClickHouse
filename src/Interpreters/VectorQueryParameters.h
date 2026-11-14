@@ -251,7 +251,8 @@ public:
         QueryPlan & optimized_plan,
         QueryPlan * pre_optimization_plan,
         const NormalizedQueryResult & parameters,
-        bool only_vector = false);
+        bool only_vector = false,
+        bool cache_optimized_plan = false);
 
 };
 
