@@ -75,51 +75,6 @@ struct TextIndexReadInfo
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
 
-String getNameWithoutAliases(const ActionsDAG::Node * node)
-{
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-    {
-        node = node->children[0];
-    }
-
-    if (node->type == ActionsDAG::ActionType::FUNCTION)
-    {
-        String result_name = node->function_base->getName() + "(";
-        for (size_t i = 0; i < node->children.size(); ++i)
-        {
-            if (i)
-                result_name += ", ";
-
-            result_name += getNameWithoutAliases(node->children[i]);
-        }
-
-        result_name += ")";
-        return result_name;
-    }
-
-    /// Render a constant by value: its result_name can differ between the query and preprocessor DAGs,
-    /// so comparing by value keeps the haystack and preprocessor names consistent.
-    if (node->type == ActionsDAG::ActionType::COLUMN && node->column)
-        return applyVisitor(FieldVisitorToString(), node->column->getField());
-
-    return node->result_name;
-}
-
-/// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
-bool hasSubexpression(const ActionsDAG::Node * node, const String & subexpression_name)
-{
-    if (getNameWithoutAliases(node) == subexpression_name)
-        return true;
-
-    for (const auto * child : node->children)
-    {
-        if (hasSubexpression(child, subexpression_name))
-            return true;
-    }
-
-    return false;
-}
-
 const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node * node, const NodesReplacementMap & replacements)
 {
     if (auto it = replacements.find(node); it != replacements.end())
@@ -586,6 +541,7 @@ private:
         const TextIndexReadInfo * info = nullptr;
         /// The virtual column replacing the function. An empty name means the inject-only rewrite (no direct read).
         IndexReadTask::Column virtual_column;
+        bool haystack_is_index_expression = false;
     };
 
     ActionsDAG & actions_dag;
@@ -662,6 +618,7 @@ private:
                 .index_name = index_name,
                 .info = &info,
                 .virtual_column = {},
+                .haystack_is_index_expression = !canonical_node.children.empty() && text_index_condition.isIndexExpression(*canonical_node.children.front()),
             };
 
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise, or if
@@ -757,15 +714,7 @@ private:
 
         if (apply_preprocessor)
         {
-            const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
-            chassert(preprocessor_dag.getOutputs().size() == 1);
-            const auto & preprocessor_output = preprocessor_dag.getOutputs().front();
-            /// The index was analyzed on the expression under lossless conversions, e.g. `s` in `hasToken(toNullable(s), 'Foo')`.
-            const auto * haystack = unwrapLosslessConversion(arg_haystack);
-            auto haystack_name = getNameWithoutAliases(haystack);
-
-            /// Check that preprocessor contains current expression as its argument.
-            if (hasSubexpression(preprocessor_output, haystack_name))
+            if (condition.haystack_is_index_expression)
             {
                 /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
                 new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);

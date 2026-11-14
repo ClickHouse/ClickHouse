@@ -530,6 +530,11 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
 }
 
+bool MergeTreeIndexConditionText::isIndexExpression(const ActionsDAG::Node & node) const
+{
+    return hasIndexForColumn(unwrapLosslessConversion(RPNBuilderTreeNode(&node, getContext())).getColumnName());
+}
+
 std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
 {
     if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
