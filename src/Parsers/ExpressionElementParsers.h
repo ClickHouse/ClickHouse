@@ -25,6 +25,8 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
+    bool parseSubquery(Pos & pos, ASTPtr & node, Expected & expected);
+
     bool starts_with_valid_select_or_explain = false;
 };
 

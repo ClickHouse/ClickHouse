@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 #include <Poco/String.h>
 
@@ -215,15 +216,49 @@ static ASTPtr buildSelectFromTableFunction(const boost::intrusive_ptr<ASTFunctio
     return result_select_query;
 }
 
+struct FailedSubqueryReadings
+{
+    /// The value of `starts_with_valid_select_or_explain` of each failed reading.
+    std::unordered_map<const char *, bool> starts_with_valid_select_or_explain;
+};
+
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     starts_with_valid_select_or_explain = false;
 
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    const char * const opening_bracket = pos->begin;
+
+    /// The reading of a subquery depends only on where it starts, but a failed one is retried at the same
+    /// position by every enclosing alternative (a parenthesized expression, a tuple, a function argument,
+    /// a quantified comparison, a union element), and these alternatives nest. Without remembering the
+    /// failures, the parse time is exponential in the nesting depth of such brackets.
+    if (expected.failed_subquery_readings)
+    {
+        const auto & failed = expected.failed_subquery_readings->starts_with_valid_select_or_explain;
+        if (auto it = failed.find(opening_bracket); it != failed.end())
+        {
+            starts_with_valid_select_or_explain = it->second;
+            return false;
+        }
+    }
+
+    bool parsed = parseSubquery(pos, node, expected);
+    if (!parsed)
+    {
+        if (!expected.failed_subquery_readings)
+            expected.failed_subquery_readings = std::make_shared<FailedSubqueryReadings>();
+        expected.failed_subquery_readings->starts_with_valid_select_or_explain[opening_bracket] = starts_with_valid_select_or_explain;
+    }
+    return parsed;
+}
+
+bool ParserSubquery::parseSubquery(Pos & pos, ASTPtr & node, Expected & expected)
+{
     ParserWithOptionalAlias select(std::make_unique<ParserSelectWithUnionQuery>(), false);
     ParserExplainQuery explain;
 
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
     const auto opening_bracket_pos = pos;
     ++pos;
 
