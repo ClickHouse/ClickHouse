@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/castColumn.h>
 #include <Processors/Port.h>
@@ -237,10 +238,10 @@ void ScatterByPartitionTransform::generateOutputChunks()
         if (cast_type && !cast_type->equals(*hash_input_types[i]))
         {
             auto casted = castColumn({column, hash_input_types[i], ""}, cast_type);
-            casted->computeHashInto(0, num_rows, hash.data(), false);
+            replaceNegativeZeros(casted)->computeHashInto(0, num_rows, hash.data(), false);
         }
         else
-            column->computeHashInto(0, num_rows, hash.data(), false);
+            replaceNegativeZeros(column)->computeHashInto(0, num_rows, hash.data(), false);
     }
 
     selector.resize(num_rows);

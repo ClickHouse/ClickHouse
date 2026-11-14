@@ -1,4 +1,4 @@
--- an insert groups the rows of a projection by a hash table, which keeps 0 and -0 apart, and `MATERIALIZE PROJECTION` merges them as equal
+-- an insert groups the rows of a projection by a hash table, and `MATERIALIZE PROJECTION` by a merge: both have to treat 0 and -0 as equal
 -- one twin table has the projection from the start, the other one adds and materializes it after the insert
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,

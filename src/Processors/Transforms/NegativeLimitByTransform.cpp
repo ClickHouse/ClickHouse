@@ -1,6 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/Block.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
@@ -257,6 +258,9 @@ void NegativeLimitByTransform::consume(Chunk chunk)
         normalized_cols.push_back(removeSpecialRepresentations(cols[pos])->convertToFullColumnIfConst());
         key_columns.push_back(normalized_cols.back().get());
     }
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, normalized_cols);
 
     switch (data.type)
     {

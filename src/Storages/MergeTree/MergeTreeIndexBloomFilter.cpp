@@ -980,6 +980,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             && setHasEmptyArray(index_type, converted_column, row_size))
             return false;
 
+        /// `IN` matches `-0.` and `0.` as equal (the set holds only `0.`), but the index stores the hash of
+        /// the original representation, so a granule with only `-0.` would be skipped. Do not use the index then.
+        /// Check the set elements before the conversion as well: a zero converted to a `String` index type is `'0'`,
+        /// while `IN` compares in the type of the set, where the stored `'-0'` is equal to it.
+        for (size_t i = 0; i < row_size; ++i)
+            if (anyFieldSatisfies((*column)[i], isFloatZeroField) || anyFieldSatisfies((*converted_column)[i], isFloatZeroField))
+                return false;
+
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")

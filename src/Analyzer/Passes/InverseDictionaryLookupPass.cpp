@@ -171,12 +171,14 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
 /// equal-typed probe, yet the key constant the rewrite folds in does not compare equal to that value read
 /// from a column; a convertible probe is cast for `dictGet` while the emitted comparison keeps it uncast.
 /// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
+/// A floating point key diverges as well: a dictionary lookup tells `-0.0` from `0.0` by the representation,
+/// while `IN` matches them as equal (see `replaceNegativeZeros`).
 bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
 {
     if (key_type.hasDynamicStructure())
         return true;
 
-    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested); });
+    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested) || isFloat(nested); });
 }
 
 /// Check whether `dictGet` accepts this key expression shape for the dictionary's key columns.

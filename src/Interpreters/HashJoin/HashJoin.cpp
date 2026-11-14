@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
@@ -1142,7 +1143,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
         if (!isLowCardinalityType(data->type))
             prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
-        all_key_columns[column_name] = prepared_key_column;
+        /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+        all_key_columns[column_name] = replaceNegativeZeros(prepared_key_column);
     }
 
     if (strictness == JoinStrictness::Asof)

@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Core/Block.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
@@ -255,6 +256,9 @@ void LimitByTransform::transform(Chunk & chunk)
             normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position])->convertToFullColumnIfConst());
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
+
+        /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+        replaceNegativeZeros(grouping_key_columns, normalized_grouping_key_columns);
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         switch (data.type)

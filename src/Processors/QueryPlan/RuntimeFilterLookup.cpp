@@ -10,6 +10,7 @@
 #include <vector>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
@@ -289,8 +290,13 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
 }
 
 template <typename ProcessBatch>
-void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
+void forEachColumnHashBatch(const IColumn & original_column, UInt64 seed, ProcessBatch && process_batch)
 {
+    /// The join matches `-0.` and `0.` as equal keys, so the Bloom filter has to hash them identically,
+    /// both when inserting and when probing.
+    const ColumnPtr normalized_column = replaceNegativeZeros(original_column);
+    const IColumn & column = normalized_column ? *normalized_column : original_column;
+
     const size_t row_count = column.size();
     if (row_count == 0)
         return;

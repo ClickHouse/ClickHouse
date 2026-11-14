@@ -1,5 +1,5 @@
 -- `<=>` on `Nullable(Float*)` join keys, split into `isNull` and a non-Nullable key, matches `NaN` and signed zeros
--- as the `tuple` lowering does: the hash table compares the keys bitwise.
+-- as the `tuple` lowering does: the hash table compares the keys bitwise, after `-0.` is replaced with `0.`.
 
 SET join_algorithm = 'hash';
 

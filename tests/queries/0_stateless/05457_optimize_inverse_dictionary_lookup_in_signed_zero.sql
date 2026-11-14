@@ -1,5 +1,5 @@
--- `IN` sets compare floating-point values by their binary representation, so `-0.0` does not match
--- the attribute `DEFAULT` `+0.0`. The rewrite must classify the `DEFAULT` the same way.
+-- `IN` sets match `-0.0` with `+0.0`, so `-0.0` matches the attribute `DEFAULT` `+0.0`.
+-- The rewrite must classify the `DEFAULT` the same way.
 
 DROP DICTIONARY IF EXISTS d_float_signed_zero;
 DROP TABLE IF EXISTS t_float_signed_zero;

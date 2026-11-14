@@ -214,6 +214,13 @@ bool traverseDAGFilterSingleColumn(
         if (floatValuesMissKeyValues(set_column_ptr, set_data_type_ptr, primary_key_type, removeLowCardinalityAndNullable(set_data_type_ptr)))
             return false;
 
+        /// `IN` matches a floating-point zero of the set with the key value that converts to the zero of either
+        /// sign (`'-0'` for a `String` key), but the cast below yields only one serialized key (`'0'`).
+        /// Check before the cast, which loses the information that the element is a floating-point zero.
+        for (size_t row = 0; row < set_column_ptr->size(); ++row)
+            if (anyFieldSatisfies((*set_column_ptr)[row], isFloatZeroField))
+                return false;
+
         // In case set values can be safely casted to PK data type, simply convert them,
         // and return as filter.
         //
@@ -459,6 +466,11 @@ bool traverseDAGFilter(
                 {
                     Field field;
                     set_elements[col]->get(row, field);
+
+                    /// A floating-point zero matches the key value that converts to the zero of either sign
+                    /// (`'-0'` for a `String` key), but the conversion below yields only one key (`'0'`).
+                    if (anyFieldSatisfies(field, isFloatZeroField))
+                        return false;
 
                     /// Converted with the type of the element it comes from, and with the wrappers
                     /// stripped: without it a date-family element is reinterpreted in the key's unit space.
