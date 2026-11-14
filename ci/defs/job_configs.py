@@ -340,6 +340,26 @@ common_integration_test_job_config = Job.Config(
 )
 
 
+# Cross-compiled builds that pull requests do not run: the merge queue builds them once per
+# merge instead of on every PR commit, and master builds them on every commit. Over
+# 2026-09-15 to 2026-11-14 each of them was the only failing build in 0 to 12 PRs (25 in
+# total, about 3 a week), while they cost about $2.4 per PR commit together.
+# `Build (arm_darwin)` stays in pull requests because `Fast test (arm_darwin)` needs its binary,
+# and so do `Build (wasm64)` (the only Emscripten build, 14 PRs) and `Build (arm_fuzzers)` (66 PRs).
+MERGE_QUEUE_SPECIAL_BUILD_TYPES = (
+    BuildTypes.AMD_DARWIN,
+    BuildTypes.ARM_V80COMPAT,
+    BuildTypes.AMD_FREEBSD,
+    BuildTypes.AMD_ILLUMOS,
+    BuildTypes.PPC64LE,
+    BuildTypes.AMD_COMPAT,
+    BuildTypes.AMD_MUSL,
+    BuildTypes.RISCV64,
+    BuildTypes.S390X,
+    BuildTypes.LOONGARCH64,
+)
+
+
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
@@ -733,6 +753,21 @@ class JobConfigs:
             else job
         )
         for job in special_build_jobs
+    ]
+    # See `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
+    special_build_pr_jobs = [
+        job
+        for job in special_build_jobs
+        if job.parameter not in MERGE_QUEUE_SPECIAL_BUILD_TYPES
+    ]
+    # Only checks that they compile: no artifacts, since no merge queue job uses them, and no post
+    # hooks, since the merge queue has no PR number, so `build_master_head_hook.py` would publish
+    # the binaries as the master ones and `build_profile_hook.py` would record the build as a
+    # master baseline.
+    special_build_mq_jobs = [
+        job.set_post_hooks([]).set_provides([], reset=True)
+        for job in special_build_jobs
+        if job.parameter in MERGE_QUEUE_SPECIAL_BUILD_TYPES
     ]
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
