@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -199,6 +200,17 @@ private:
     /// column names with dots (e.g. `integer.col` in Iceberg).
     std::string_view useColumnMapperIfNeeded(
         const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+
+    /// Whether the file proves the field at `path` of the ColumnMapper absent: all fields at its level of the file schema
+    /// have field ids and none of them is its id.
+    bool isAbsentFromFile(const String & path) const;
+    /// The `initial-default` of the field at `path` of the ColumnMapper as a value of `type`, if the field is absent.
+    std::optional<Field> getAbsentFieldDefault(const String & path, const DataTypePtr & type) const;
+
+    /// The field ids of the top-level fields of the file, and of the fields of each of its structs by the path of the
+    /// struct; nullopt if one of them has no field id.
+    std::optional<UnorderedSetWithMemoryTracking<Int64>> top_level_field_ids;
+    UnorderedMapWithMemoryTracking<String, std::optional<UnorderedSetWithMemoryTracking<Int64>>> struct_field_ids;
 };
 
 }

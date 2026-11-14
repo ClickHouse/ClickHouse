@@ -2631,9 +2631,6 @@ PartitionColumnValues getIdentityPartitionColumnValues(
 
         Field value = convertFieldToTypeOrThrow(
             normalizePartitionValue(partition_key_value[partition_field.tuple_index], name_and_type->type), *name_and_type->type);
-        if (value.isNull())
-            continue;
-
         result.emplace_back(name_and_type->name, std::move(value));
     }
 

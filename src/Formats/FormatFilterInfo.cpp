@@ -5,6 +5,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
@@ -13,6 +14,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
@@ -28,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int TYPE_MISMATCH;
     extern const int INCORRECT_DATA;
 }
 
@@ -135,6 +139,128 @@ void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encod
     for (const auto & [column_name, field_id] : storage_encoding)
         if (!field_id_to_clickhouse_name.emplace(field_id, column_name).second)
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
+}
+
+String ColumnMapper::getIcebergParentPath(const String & path) const
+{
+    if (const String * struct_path = getIcebergStructPath(path))
+        return *struct_path;
+    /// A list element, map key or map value is named `element`, `key` or `value`.
+    auto pos = path.rfind('.');
+    return pos == String::npos ? String{} : path.substr(0, pos);
+}
+
+String ColumnMapper::getIcebergFieldPath(const String & path) const
+{
+    for (size_t end = path.size(); end != String::npos && end > 0; end = path.rfind('.', end - 1))
+    {
+        String prefix = path.substr(0, end);
+        if (storage_encoding.contains(prefix))
+            return prefix;
+    }
+    return {};
+}
+
+UInt64 ColumnMapper::getIcebergInitialDefaultsHash() const
+{
+    if (iceberg_initial_defaults.empty())
+        return 0;
+    std::vector<std::pair<std::string_view, const Field *>> sorted;
+    sorted.reserve(iceberg_initial_defaults.size());
+    for (const auto & [path, initial_default] : iceberg_initial_defaults)
+        sorted.emplace_back(path, &initial_default.value);
+    std::sort(sorted.begin(), sorted.end());
+    SipHash hash;
+    hash.update(sorted.size());
+    for (const auto & [path, field] : sorted)
+    {
+        hash.update(path.size());
+        hash.update(path);
+        applyVisitor(FieldVisitorHash(hash), *field);
+    }
+    return hash.get64();
+}
+
+/// `value` of the type `from` as a value of the type `to`, whose structs can have only some of the elements of the structs of
+/// `from`, at any depth. A tuple cannot be converted to a tuple with fewer elements, so the elements are taken by name.
+static Field projectIcebergInitialDefault(const Field & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (value.isNull())
+        return convertFieldToTypeOrThrow(value, *to);
+
+    const auto from_nested = removeNullable(from);
+    const auto to_nested = removeNullable(to);
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_nested.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_nested.get());
+    if (from_tuple && to_tuple && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+        && value.getType() == Field::Types::Tuple)
+    {
+        const auto & elements = value.safeGet<Tuple>();
+        Tuple result;
+        result.reserve(to_tuple->getElements().size());
+        for (size_t i = 0; i < to_tuple->getElements().size(); ++i)
+        {
+            const auto & name = to_tuple->getNameByPosition(i + 1);
+            auto pos = from_tuple->tryGetPositionByName(name);
+            if (!pos || *pos >= elements.size())
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH, "Cannot read the Iceberg initial-default of type {} as {}: it has no element {}",
+                    from->getName(), to->getName(), name);
+            result.push_back(projectIcebergInitialDefault(elements[*pos], from_tuple->getElement(*pos), to_tuple->getElement(i)));
+        }
+        return result;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_nested.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_nested.get());
+    if (from_array && to_array && value.getType() == Field::Types::Array)
+    {
+        const auto & elements = value.safeGet<Array>();
+        Array result;
+        result.reserve(elements.size());
+        for (const auto & element : elements)
+            result.push_back(projectIcebergInitialDefault(element, from_array->getNestedType(), to_array->getNestedType()));
+        return result;
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from_nested.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to_nested.get());
+    if (from_map && to_map && value.getType() == Field::Types::Map)
+    {
+        const auto & entries = value.safeGet<Map>();
+        Map result;
+        result.reserve(entries.size());
+        for (const auto & entry : entries)
+        {
+            const auto & key_value = entry.safeGet<Tuple>();
+            result.push_back(Tuple{
+                projectIcebergInitialDefault(key_value.at(0), from_map->getKeyType(), to_map->getKeyType()),
+                projectIcebergInitialDefault(key_value.at(1), from_map->getValueType(), to_map->getValueType())});
+        }
+        return result;
+    }
+
+    return convertFieldToTypeOrThrow(value, *to);
+}
+
+std::optional<Field> ColumnMapper::getIcebergInitialDefault(const String & path, const DataTypePtr & type) const
+{
+    if (auto it = iceberg_initial_defaults.find(path); it != iceberg_initial_defaults.end())
+        return projectIcebergInitialDefault(it->second.value, it->second.type, type);
+
+    const String field = getIcebergFieldPath(path);
+    auto it = field.empty() || field == path ? iceberg_initial_defaults.end() : iceberg_initial_defaults.find(field);
+    if (it == iceberg_initial_defaults.end())
+        return {};
+    const auto & [value, field_type] = it->second;
+    const String subcolumn_name = path.substr(field.size() + 1);
+    auto subcolumn_type = field_type->tryGetSubcolumnType(subcolumn_name);
+    if (!subcolumn_type)
+        return {};
+    auto column = field_type->createColumn();
+    column->insert(value);
+    auto subcolumn = field_type->getSubcolumn(subcolumn_name, std::move(column));
+    return projectIcebergInitialDefault((*subcolumn)[0], subcolumn_type, type);
 }
 
 std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(

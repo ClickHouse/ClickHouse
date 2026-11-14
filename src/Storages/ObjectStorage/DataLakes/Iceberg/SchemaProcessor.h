@@ -29,6 +29,10 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
 
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
+/// The `initial-default` of the schema field `field` as a value of its ClickHouse type `type`, or nullopt if the field
+/// has none. Throws ICEBERG_SPECIFICATION_VIOLATION if the default is malformed.
+std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type);
+
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -131,7 +135,8 @@ public:
     /// or the legacy `schema` when there is no `schemas`.
     static void checkTableSchemas(const Poco::JSON::Object & metadata);
 
-    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema);
+    /// With `struct_paths`, also the paths of `ColumnMapper::getIcebergStructPath`.
+    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema, std::unordered_map<String, String> * struct_paths = nullptr);
 
     /// The largest field id in `schema`, nested ids included.
     static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);
@@ -145,6 +150,9 @@ public:
 
     /// Field ids (including nested ones) whose Iceberg type is `time`.
     static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
+
+    /// The effective `initial-default` of the fields (including nested ones) that have one, by the paths of `traverseSchema`.
+    static std::unordered_map<String, ColumnMapper::IcebergInitialDefault> collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;

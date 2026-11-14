@@ -4690,6 +4690,14 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
     MutableColumnPtr res;
 
+    if (output_info.is_missing_column && output_info.missing_column_default)
+    {
+        /// Not a missing value: `AddingDefaultsTransform` must not replace it.
+        res = output_info.output_type->createColumn();
+        res->insertMany(*output_info.missing_column_default, num_rows);
+        return res;
+    }
+
     if (output_info.is_missing_column)
     {
         res = output_info.output_type->createColumn();
@@ -5005,6 +5013,10 @@ void Reader::initColumnsCache()
     /// in `system.columns_cache`.
     columns_cache_identities.assign(extended_sample_block.columns(), 0);
     bool any_column = false;
+    /// A tuple can have elements absent from the file, filled with these defaults.
+    const UInt64 defaults_hash = format_filter_info && format_filter_info->column_mapper
+        ? format_filter_info->column_mapper->getIcebergInitialDefaultsHash()
+        : 0;
     for (size_t idx = 0; idx < extended_sample_block.columns(); ++idx)
     {
         const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
@@ -5019,6 +5031,7 @@ void Reader::initColumnsCache()
         hash.update(info.input_type->getName());
         hash.update(info.output_type->getName());
         hash.update(info.nullable_group);
+        hash.update(defaults_hash);
         bool decoded = true;
         for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
         {

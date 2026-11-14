@@ -1,0 +1,219 @@
+iceberg_v3
+schema ids	[0,1]
+1	-1
+2	2
+1
+1
+-1	2
+1	-1
+2	2
+1
+1	-1
+2	2
+1
+all_types
+1	false	-1	-1	1.5	2.5	123.45	initial_default	2024-01-01	1969-12-31 23:59:59.123456	0102030405060708	1970-01-01 00:00:00.000000	2024-01-15 10:30:45.123456
+2	true	42	9999999999	3.14	2.71828	999.99	explicit	2024-12-25	2024-12-25 10:30:45.123456	DEADBEEF	1970-01-01 00:00:00.000000	2024-01-15 10:30:45.123456
+complex_default
+1	(NULL,NULL)	2024-01-15 10:30:45.123456
+2	(100,'hello')	2024-12-26 02:30:45.123456
+default_part
+1	-1
+2	-1
+3	5
+4	10
+5	\N
+1
+2
+3
+-1	2
+5	1
+10	1
+\N	1
+time travel
+1
+duckdb
+click	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+purchase	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	2023-05-15 14:30:45.000000	World	020d4fc7-acd6-45ac-b216-7873f4038e1f	8000800080	800080
+test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	\N	World	\N	\N	800080
+test	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+impala
+schema ids	[1,1]
+1	-1
+2	2
+1
+1
+-1	2
+1	-1
+2	2
+1
+1	-1
+2	2
+1
+duckdb, current schema
+schema ids	[1,1]
+click	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+purchase	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	2023-05-15 14:30:45.000000	World	020d4fc7-acd6-45ac-b216-7873f4038e1f	8000800080	800080
+test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	\N	World	\N	\N	800080
+test	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+identity partition values
+4	\N	(NULL,'null-city',(NULL,'null-code'))
+9	unknown-region	('unknown-country','default-city',(-1,'default-code'))
+11	\N	(NULL,NULL,(NULL,NULL))
+3	21
+3	21
+9
+columns cache	test	453243
+columns cache	test	\N
+columns cache	test	342342
+columns cache	test	453243
+query condition cache, v4	1
+Parquet
+schema ids	[0]
+1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
+1	8
+readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
+null struct	1	(NULL,5)
+null struct	2	(10,5)
+Parquet, current schema
+schema ids	[1]
+1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
+10	5	6	\N
+1
+1
+1	(10,5)	[(11,5)]	7	8	(6)	[1,NULL]
+readd, current schema	1	(9)	9
+readd, current schema	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
+readd nested	((10,9))
+readd nested	(10,9)
+readd nested	(10,9)
+readd nested	10	9
+rename	(10,100)
+rename	10	100
+rename	100
+rename	10	100
+rename to dropped	(100)	100
+rename to dropped, t.x = 100	(100)
+rename to dropped, t.x = 100	(100)
+element field	(10,([9]))
+element field	[9]
+struct in struct	1	(10,(6,9),[(1,2),(3,9)])
+struct in struct	1	9
+struct in struct	1	10	6
+struct in struct	1	1
+struct in struct	0	(10,(6,9),[(1,2),(3,9)])
+struct in struct	0	9
+struct in struct	0	10	6
+struct in struct	0	1
+dotted	7	(11)
+dotted element	1	100	8
+dotted element	1	(5)	5
+dotted element	0	100	8
+dotted element	0	(5)	5
+dotted sibling	(11,100,7)
+dotted sibling	100	7
+dotted sibling	1
+dotted struct sibling	((11),100,7)
+dotted struct sibling	100	7
+dotted struct sibling	1
+dotted prefix	(100,7,11)
+dotted prefix	100	7
+dotted container sibling	([(11)],{'a':11},7,9,9)
+dotted container sibling	9	9	7
+dotted container sibling	1
+null struct	1	(NULL,5)
+null struct	2	(10,5)
+null struct	1	\N	5
+null struct	2	10	5
+null struct	2
+absent list	[(1,2),(3,9)]	(10,[(1,2),(3,9)])
+absent list	[1,3]	[2,9]	[2,9]
+absent list	1
+ORC
+schema ids	[0]
+1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
+1	8
+readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
+null struct	1	(NULL,5)
+null struct	2	(10,5)
+ORC, current schema
+schema ids	[1]
+1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
+10	5	6	\N
+1
+1
+readd, current schema	1	(9)	9
+readd, current schema	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
+readd nested	((10,9))
+readd nested	(10,9)
+readd nested	(10,9)
+readd nested	10	9
+rename	(10,100)
+rename	10	100
+rename	100
+rename	10	100
+rename to dropped	(100)	100
+rename to dropped, t.x = 100	(100)
+rename to dropped, t.x = 100	(100)
+element field	(10,([9]))
+element field	[9]
+readd in list	([(10,9)])	[((10,9))]	(1,[(10,9)])
+readd in list	[9]	[9]	[9]
+rename list	([(9)],7)
+rename list	[9]	7
+rename list	[9]	7
+struct in struct	1	(10,(6,9),[(1,2),(3,9)])
+struct in struct	1	9
+struct in struct	1	10	6
+struct in struct	1	1
+struct in struct	0	(10,(6,9),[(1,2),(3,9)])
+struct in struct	0	9
+struct in struct	0	10	6
+struct in struct	0	1
+dotted	7	(11)
+dotted element	1	100	8
+dotted element	1	(5)	5
+dotted element	0	100	8
+dotted element	0	(5)	5
+dotted sibling	(11,100,7)
+dotted sibling	100	7
+dotted sibling	1
+dotted struct sibling	((11),100,7)
+dotted struct sibling	100	7
+dotted struct sibling	1
+dotted prefix	(100,7,11)
+dotted prefix	100	7
+dotted container sibling	([(11)],{'a':11},7,9,9)
+dotted container sibling	9	9	7
+dotted container sibling	1
+null struct	1	(NULL,5)
+null struct	2	(10,5)
+null struct	1	\N	5
+null struct	2	10	5
+null struct	2
+absent list	[(1,2),(3,9)]	(10,[(1,2),(3,9)])
+absent list	[1,3]	[2,9]	[2,9]
+absent list	1
+Avro
+schema ids	[0]
+1	(10,5)	[(11,5)]	7	(6)	(NULL)	[1,NULL]
+1	8
+readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
+Avro, current schema
+schema ids	[1]
+1	7	8	(6)	(NULL)	[1,NULL]
+readd, current schema	1	9
+readd, current schema	1	9
+malformed defaults

@@ -63,6 +63,38 @@ SchemaConverter::SchemaConverter(
     }
 }
 
+bool SchemaConverter::isAbsentFromFile(const String & path) const
+{
+    const auto & encoding = column_mapper->getStorageColumnEncoding();
+    auto field_id = encoding.find(path);
+    if (field_id == encoding.end())
+        return false;
+
+    const std::optional<UnorderedSetWithMemoryTracking<Int64>> * level_field_ids = &top_level_field_ids;
+    if (const String parent = column_mapper->getIcebergParentPath(path); !parent.empty())
+    {
+        auto it = struct_field_ids.find(parent);
+        if (it == struct_field_ids.end())
+        {
+            /// The struct is not in the file either: the field has a value only if the struct has a default.
+            const Field * parent_default = column_mapper->getIcebergInitialDefault(parent);
+            return parent_default && parent_default->getType() == Field::Types::Tuple && isAbsentFromFile(parent);
+        }
+        level_field_ids = &it->second;
+    }
+    return level_field_ids->has_value() && !(*level_field_ids)->contains(field_id->second);
+}
+
+std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & path, const DataTypePtr & type) const
+{
+    if (!column_mapper)
+        return {};
+    const String field = column_mapper->getIcebergFieldPath(path);
+    if (!column_mapper->getIcebergInitialDefault(field) || !isAbsentFromFile(field))
+        return {};
+    return column_mapper->getIcebergInitialDefault(path, type);
+}
+
 void SchemaConverter::checkHasColumns()
 {
     if (file_metadata.schema.size() < 2)
@@ -78,10 +110,15 @@ void SchemaConverter::prepareForReading()
 
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
+    top_level_field_ids.emplace();
     for (size_t i = 0; i < top_level_columns; ++i)
     {
         TraversalNode node;
         processSubtree(node);
+        if (!node.element->__isset.field_id)
+            top_level_field_ids.reset();
+        else if (top_level_field_ids)
+            top_level_field_ids->insert(node.element->field_id);
     }
 
     /// Check that all requested columns were found.
@@ -118,17 +155,20 @@ void SchemaConverter::prepareForReading()
     {
         if (found_columns[i])
             continue;
-        if (!options.format.parquet.allow_missing_columns)
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
-        if (addMissingElementOfTupleInArray(i))
+        const auto & missing_column = sample_block->getByPosition(i);
+        auto missing_column_default = getAbsentFieldDefault(missing_column.name, missing_column.type);
+        if (!options.format.parquet.allow_missing_columns && !missing_column_default)
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", missing_column.name);
+        if (!missing_column_default && addMissingElementOfTupleInArray(i))
             continue;
 
         OutputColumnInfo & missing_output = output_columns.emplace_back();
         missing_output.idx_in_output_block = i;
-        missing_output.name = sample_block->getByPosition(i).name;
-        missing_output.input_type = sample_block->getByPosition(i).type;
+        missing_output.name = missing_column.name;
+        missing_output.input_type = missing_column.type;
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
+        missing_output.missing_column_default = std::move(missing_column_default);
     }
 
 }
@@ -1114,8 +1154,14 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     size_t output_start = output_columns.size();
     size_t skipped_unsupported_columns = 0;
     VectorWithMemoryTracking<String> element_names_in_file;
+    std::optional<UnorderedSetWithMemoryTracking<Int64>> element_field_ids{std::in_place};
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
+        if (!file_metadata.schema.at(schema_idx).__isset.field_id)
+            element_field_ids.reset();
+        else if (element_field_ids)
+            element_field_ids->insert(file_metadata.schema.at(schema_idx).field_id);
+
         bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
             useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
@@ -1181,6 +1227,11 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         }
     }
 
+    /// Only for a struct that is the field of the mapper with its id: one with another id can have the same name.
+    if (column_mapper && column_mapper->hasIcebergInitialDefaults() && node.element->__isset.field_id
+        && column_mapper->getFieldIdToClickHouseName().contains(node.element->field_id))
+        struct_field_ids[node.name] = std::move(element_field_ids);
+
     if (!node.requested)
     {
         if (is_tuple_in_array)
@@ -1203,15 +1254,19 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         {
             if (elements[i] != UINT64_MAX)
                 continue;
-            if (!options.format.parquet.allow_missing_columns)
+            String missing_name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+            const DataTypePtr & missing_type = tuple_type_hint->getElement(i);
+            auto missing_column_default = getAbsentFieldDefault(missing_name, missing_type);
+            if (!options.format.parquet.allow_missing_columns && !missing_column_default)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), node.getNameForLogging(), element_names_in_file);
 
             elements[i] = output_columns.size();
             OutputColumnInfo & missing_output = output_columns.emplace_back();
-            missing_output.name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
-            missing_output.input_type = tuple_type_hint->getElement(i);
+            missing_output.name = std::move(missing_name);
+            missing_output.input_type = missing_type;
             missing_output.output_type = missing_output.input_type;
             missing_output.is_missing_column = true;
+            missing_output.missing_column_default = std::move(missing_column_default);
         }
         output_type = node.type_hint;
     }

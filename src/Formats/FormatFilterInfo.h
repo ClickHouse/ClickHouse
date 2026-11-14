@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <Common/PODArray_fwd.h>
 
 namespace DB
@@ -109,6 +110,48 @@ public:
     bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
     bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
+    /// Iceberg `initial-default` of a field: the value of the field absent from a data file, of its type in the data lake schema.
+    struct IcebergInitialDefault
+    {
+        Field value;
+        DataTypePtr type;
+    };
+
+    /// Iceberg `initial-default` of fields, keyed like the storage encoding.
+    void setIcebergInitialDefaults(std::unordered_map<String, IcebergInitialDefault> && iceberg_initial_defaults_)
+    {
+        iceberg_initial_defaults = std::move(iceberg_initial_defaults_);
+    }
+    const Field * getIcebergInitialDefault(const String & path) const
+    {
+        auto it = iceberg_initial_defaults.find(path);
+        return it == iceberg_initial_defaults.end() ? nullptr : &it->second.value;
+    }
+    /// The `initial-default` of `path` as a value of `type`, the type that a reader reads the field with. It can have only some of
+    /// the elements of a struct, at any depth (a read of some of its subcolumns): they are taken from the default by name.
+    /// For a subcolumn of a field (`l.y` of a list of structs `l`), the subcolumn of the field's default.
+    std::optional<Field> getIcebergInitialDefault(const String & path, const DataTypePtr & type) const;
+    void removeIcebergInitialDefault(const String & path) { iceberg_initial_defaults.erase(path); }
+    bool hasIcebergInitialDefaults() const { return !iceberg_initial_defaults.empty(); }
+    /// 0 if there are no defaults.
+    UInt64 getIcebergInitialDefaultsHash() const;
+
+    /// The path of the struct that has the field `path` of the storage encoding, empty for a top-level field, or nullptr for a list
+    /// element or a map key or value. A field name can have dots, so `t.s.j` can be the field `s.j` of `t` or the field `j` of `t.s`.
+    void setIcebergStructPaths(std::unordered_map<String, String> && iceberg_struct_paths_)
+    {
+        iceberg_struct_paths = std::move(iceberg_struct_paths_);
+    }
+    const String * getIcebergStructPath(const String & path) const
+    {
+        auto it = iceberg_struct_paths.find(path);
+        return it == iceberg_struct_paths.end() ? nullptr : &it->second;
+    }
+    /// The path of the struct, list or map that has the field `path`, empty for a top-level field.
+    String getIcebergParentPath(const String & path) const;
+    /// The field of the storage encoding that is `path` or has it as a subcolumn (the longest such prefix), empty if none.
+    String getIcebergFieldPath(const String & path) const;
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
@@ -121,6 +164,8 @@ private:
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
+    std::unordered_map<String, IcebergInitialDefault> iceberg_initial_defaults;
+    std::unordered_map<String, String> iceberg_struct_paths;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;

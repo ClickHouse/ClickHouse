@@ -49,8 +49,16 @@ private:
 class AvroDeserializer
 {
 public:
-    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false.
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns = {});
+    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false:
+    /// their `initial-default` from `column_mapper` if any, else the type default. No field of the file is read into them.
+    AvroDeserializer(
+        const Block & header,
+        avro::ValidSchema schema,
+        bool allow_missing_fields,
+        bool null_as_default_,
+        const FormatSettings & settings_,
+        const NameSet & absent_columns_ = {},
+        const ColumnMapper * column_mapper = nullptr);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
@@ -148,6 +156,9 @@ private:
 
     /// Bitmap of columns found in Avro schema
     VectorWithMemoryTracking<bool> column_found;
+    NameSet absent_columns;
+    /// By column position.
+    VectorWithMemoryTracking<std::optional<Field>> absent_column_defaults;
     /// Deserialize/Skip actions for a row
     Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
