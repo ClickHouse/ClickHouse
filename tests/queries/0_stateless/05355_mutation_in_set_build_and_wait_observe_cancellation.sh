@@ -32,11 +32,12 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO t_main VALUES (0, 0), (1, 0), (2, 0)"
 $CLICKHOUSE_CLIENT --query "
 ALTER TABLE t_main UPDATE v = (id IN ($filtered_subquery)) WHERE 1 SETTINGS mutations_sync = 0"
 
+# The subquery's sources are read once the pipeline runs: a task killed before that stops without building the set.
 started=0
 deadline=$((SECONDS + 60))
 while [ $SECONDS -lt $deadline ]; do
     if [ "$($CLICKHOUSE_CLIENT --query "
-        SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_main' AND elapsed > 2")" != 0 ]; then
+        SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_main' AND rows_read > 0")" != 0 ]; then
         started=1
         break
     fi
