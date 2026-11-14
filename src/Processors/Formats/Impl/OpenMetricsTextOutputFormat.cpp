@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -291,103 +292,133 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     /// For the types with a suffix rule (counter, histogram, gaugehistogram, summary, info), each sample
     /// name must be the family name plus one of the type's suffixes, which is the same table the reader
     /// uses to fold samples back into their family. Histogram buckets must also carry a valid `le`, and
-    /// bare summary samples a valid `quantile`.
+    /// bare summary samples a valid `quantile`. The types without a suffix rule (`unknown`, `gauge`,
+    /// `stateset`, and an absent type) only have samples named after the family itself: a sample with
+    /// another name would be read back as a separate family by any OpenMetrics parser.
     ///
-    /// `point_group[i]` identifies the metric point (the label set without the boundary label) that the
-    /// i-th series belongs to; all samples of one metric point at one timestamp must be emitted together.
-    std::vector<size_t> point_group(current_family.series.size());
-    if (const auto * suffixes = OpenMetricsText::familySampleSuffixes(current_family.type))
-    {
-        /// The canonical position of each series within the family, used below to order the samples.
-        struct SortKey
-        {
-            std::vector<std::pair<String, String>> labels; /// sorted labels without the boundary label
-            size_t suffix_rank = 0;                        /// index of the suffix in `familySampleSuffixes`
-            double boundary = 0;                           /// value of `le` / `quantile`, if required
-        };
-        std::vector<SortKey> keys;
-        keys.reserve(current_family.series.size());
+    /// Every series is also assigned to its metric point: the label set without the boundary label
+    /// (`le` / `quantile`) or, for `stateset`, without the state label named after the family. All
+    /// samples of one metric point are emitted together, and the metric points do not interleave.
+    const auto * suffixes = OpenMetricsText::familySampleSuffixes(current_family.type);
+    const bool is_stateset = current_family.type == "stateset";
 
-        for (const auto & series : current_family.series)
+    /// The canonical position of each series within the family, used below to order the samples.
+    struct SortKey
+    {
+        std::vector<std::pair<String, String>> labels; /// sorted labels of the metric point
+        size_t suffix_rank = 0;                        /// index of the suffix in `familySampleSuffixes`
+        double boundary = 0;                           /// value of `le` / `quantile`, if required
+    };
+    std::vector<SortKey> keys;
+    keys.reserve(current_family.series.size());
+
+    for (const auto & series : current_family.series)
+    {
+        SortKey key;
+        std::string_view suffix;
+        if (suffixes)
         {
             const std::string_view name = series.metric_name;
-            const auto it = std::find_if(suffixes->begin(), suffixes->end(), [&](std::string_view suffix)
+            const auto it = std::find_if(suffixes->begin(), suffixes->end(), [&](std::string_view candidate)
             {
-                return name.size() == current_family.name.size() + suffix.size()
-                    && name.starts_with(current_family.name) && name.ends_with(suffix);
+                return name.size() == current_family.name.size() + candidate.size()
+                    && name.starts_with(current_family.name) && name.ends_with(candidate);
             });
             if (it == suffixes->end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "OpenMetrics {} sample '{}' is not a valid sample name of metric family '{}' for output format '{}'",
                     current_family.type, series.metric_name, current_family.name, FORMAT_NAME);
-
-            SortKey key;
             key.suffix_rank = static_cast<size_t>(it - suffixes->begin());
-            const char * boundary = OpenMetricsText::requiredBoundaryLabel(current_family.type, *it);
-            if (boundary)
-            {
-                const auto boundary_it = std::find_if(series.tags.begin(), series.tags.end(),
-                    [&](const auto & tag) { return tag.first == boundary; });
-                if (boundary_it == series.tags.end())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "OpenMetrics {} sample '{}' is missing the '{}' label for output format '{}'",
-                        current_family.type, series.metric_name, boundary, FORMAT_NAME);
-                if (!OpenMetricsText::tryParseBoundaryValue(boundary, boundary_it->second, key.boundary))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "OpenMetrics {} sample '{}' has an invalid '{}' label value '{}' for output format '{}'",
-                        current_family.type, series.metric_name, boundary, boundary_it->second, FORMAT_NAME);
-            }
-            for (const auto & tag : series.tags)
-                if (!boundary || tag.first != boundary)
-                    key.labels.push_back(tag);
-            std::sort(key.labels.begin(), key.labels.end());
-            keys.push_back(std::move(key));
+            suffix = *it;
+        }
+        else if (series.metric_name != current_family.name)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "OpenMetrics sample '{}' of metric family '{}' with type '{}' must be named after its family for output format '{}'",
+                series.metric_name, current_family.name, current_family.type.empty() ? "unknown" : current_family.type, FORMAT_NAME);
         }
 
-        /// OpenMetrics orders the samples of a metric point: histogram buckets by increasing `le` and
-        /// summary quantiles by increasing `quantile`, followed by the other samples in the suffix order
-        /// (`_count`, `_sum`, `_created`, ...). Sort the series accordingly, keeping the series of one label
-        /// set together in the order the label sets first appear, so the output does not depend on how the
-        /// query orders e.g. `le="+Inf"` and `le="1"`.
-        std::map<std::vector<std::pair<String, String>>, size_t> label_set_rank;
-        for (const auto & key : keys)
-            label_set_rank.try_emplace(key.labels, label_set_rank.size());
-
-        std::vector<size_t> order(current_family.series.size());
-        for (size_t i = 0; i < order.size(); ++i)
-            order[i] = i;
-        std::stable_sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs)
+        const char * boundary = OpenMetricsText::requiredBoundaryLabel(current_family.type, suffix);
+        if (is_stateset)
+            boundary = current_family.name.c_str();
+        if (boundary)
         {
-            const auto & l = keys[lhs];
-            const auto & r = keys[rhs];
-            return std::tuple(label_set_rank.at(l.labels), l.suffix_rank, l.boundary)
-                < std::tuple(label_set_rank.at(r.labels), r.suffix_rank, r.boundary);
-        });
-
-        std::vector<Series> sorted;
-        sorted.reserve(order.size());
-        for (size_t k = 0; k < order.size(); ++k)
-        {
-            point_group[k] = label_set_rank.at(keys[order[k]].labels);
-            sorted.push_back(std::move(current_family.series[order[k]]));
-        }
-        current_family.series = std::move(sorted);
-    }
-    else
-    {
-        /// The types without a suffix rule (`unknown`, `gauge`, `stateset`, and an absent type) only
-        /// have samples named after the family itself. A sample with another name would be read back
-        /// as a separate family by any OpenMetrics parser, losing its association with this family.
-        for (const auto & series : current_family.series)
-            if (series.metric_name != current_family.name)
+            const auto boundary_it = std::find_if(series.tags.begin(), series.tags.end(),
+                [&](const auto & tag) { return tag.first == boundary; });
+            if (boundary_it == series.tags.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "OpenMetrics sample '{}' of metric family '{}' with type '{}' must be named after its family for output format '{}'",
-                    series.metric_name, current_family.name, current_family.type.empty() ? "unknown" : current_family.type, FORMAT_NAME);
+                    "OpenMetrics {} sample '{}' is missing the '{}' label for output format '{}'",
+                    current_family.type, series.metric_name, boundary, FORMAT_NAME);
+            if (!is_stateset && !OpenMetricsText::tryParseBoundaryValue(boundary, boundary_it->second, key.boundary))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "OpenMetrics {} sample '{}' has an invalid '{}' label value '{}' for output format '{}'",
+                    current_family.type, series.metric_name, boundary, boundary_it->second, FORMAT_NAME);
+        }
 
-        /// Each series is a metric point of its own.
-        for (size_t i = 0; i < point_group.size(); ++i)
-            point_group[i] = i;
+        /// OpenMetrics type rules for the sample values (https://prometheus.io/docs/specs/om/open_metrics_spec/#metric-types),
+        /// checked before any of this family's bytes are written.
+        const bool is_count = suffix == "_bucket" || suffix == "_count" || suffix == "_gcount";
+        const bool is_counter_like = is_count || suffix == "_total" || suffix == "_sum" || suffix == "_gsum";
+        const bool is_quantile = current_family.type == "summary" && suffix.empty();
+        const bool may_be_negative = (!is_counter_like || suffix == "_gsum") && !is_quantile;
+        for (const auto & [ms, value] : series.points)
+        {
+            const char * violation = nullptr;
+            if (is_stateset && value != 0 && value != 1)
+                violation = "a 'stateset' sample must be 0 or 1";
+            else if (current_family.type == "info" && value != 1)
+                violation = "an 'info' sample must be 1";
+            else if (is_counter_like && std::isnan(value))
+                violation = "a counter-like sample must not be NaN";
+            else if (!may_be_negative && value < 0)
+                violation = "the sample must not be negative";
+            else if (is_count && (!std::isfinite(value) || value != std::trunc(value)))
+                violation = "a bucket or count sample must be an integer";
+            if (violation)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid value {} of OpenMetrics {} sample '{}': {} for output format '{}'",
+                    formatSampleValue(value), current_family.type.empty() ? "unknown" : current_family.type,
+                    series.metric_name, violation, FORMAT_NAME);
+        }
+
+        for (const auto & tag : series.tags)
+            if (!boundary || tag.first != boundary)
+                key.labels.push_back(tag);
+        std::sort(key.labels.begin(), key.labels.end());
+        keys.push_back(std::move(key));
     }
+
+    /// OpenMetrics orders the samples of a metric point: histogram buckets by increasing `le` and
+    /// summary quantiles by increasing `quantile`, followed by the other samples in the suffix order
+    /// (`_count`, `_sum`, `_created`, ...). Sort the series accordingly, keeping the series of one metric
+    /// point together in the order the metric points first appear, so the output does not depend on how
+    /// the query orders e.g. `le="+Inf"` and `le="1"`, and the fragments of one series that arrive in
+    /// several rows (as `TimeSeries` returns one row per time bucket) are merged into one metric point.
+    std::map<std::vector<std::pair<String, String>>, size_t> label_set_rank;
+    for (const auto & key : keys)
+        label_set_rank.try_emplace(key.labels, label_set_rank.size());
+
+    std::vector<size_t> order(current_family.series.size());
+    for (size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs)
+    {
+        const auto & l = keys[lhs];
+        const auto & r = keys[rhs];
+        return std::tuple(label_set_rank.at(l.labels), l.suffix_rank, l.boundary)
+            < std::tuple(label_set_rank.at(r.labels), r.suffix_rank, r.boundary);
+    });
+
+    /// `point_group[i]` identifies the metric point that the i-th sorted series belongs to.
+    std::vector<size_t> point_group(order.size());
+    std::vector<Series> sorted;
+    sorted.reserve(order.size());
+    for (size_t k = 0; k < order.size(); ++k)
+    {
+        point_group[k] = label_set_rank.at(keys[order[k]].labels);
+        sorted.push_back(std::move(current_family.series[order[k]]));
+    }
+    current_family.series = std::move(sorted);
 
     /// Validate every label value before emitting any bytes, so a malformed value (a tab or other
     /// control character) fails the whole family up front instead of throwing mid-stream.
@@ -444,31 +475,39 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     /// timestamp, all its buckets, `_count`, `_sum` and `_created` come before the next timestamp. The
     /// series of one metric point are adjacent (see the sort above), so merge their points by timestamp:
     /// repeatedly take the next point with the smallest timestamp, preferring the earlier series on ties.
-    /// Each series keeps the order of its own points, so a single series is written as given.
-    std::vector<size_t> cursors;
+    /// Each series keeps the order of its own points, so a single series is written as given. A min-heap
+    /// of the series' cursors keeps the merge `O(points * log(series))`.
+    using HeapEntry = std::pair<Int64, size_t>; /// (timestamp of the next point, series index)
+    std::vector<HeapEntry> heap;
+    std::vector<size_t> cursors(current_family.series.size(), 0);
+    const auto heap_greater = std::greater<HeapEntry>();
     for (size_t group_begin = 0; group_begin < current_family.series.size();)
     {
         size_t group_end = group_begin + 1;
         while (group_end < current_family.series.size() && point_group[group_end] == point_group[group_begin])
             ++group_end;
 
-        cursors.assign(group_end - group_begin, 0);
-        while (true)
+        heap.clear();
+        for (size_t i = group_begin; i < group_end; ++i)
+            if (!current_family.series[i].points.empty())
+                heap.emplace_back(current_family.series[i].points.front().first, i);
+        std::make_heap(heap.begin(), heap.end(), heap_greater);
+
+        while (!heap.empty())
         {
-            std::optional<size_t> next;
-            for (size_t i = group_begin; i < group_end; ++i)
-            {
-                const auto & points = current_family.series[i].points;
-                const size_t cursor = cursors[i - group_begin];
-                if (cursor < points.size()
-                    && (!next || points[cursor].first < current_family.series[*next].points[cursors[*next - group_begin]].first))
-                    next = i;
-            }
-            if (!next)
-                break;
-            const auto & series = current_family.series[*next];
-            const auto & [ms, value] = series.points[cursors[*next - group_begin]++];
+            std::pop_heap(heap.begin(), heap.end(), heap_greater);
+            const size_t i = heap.back().second;
+            heap.pop_back();
+
+            const auto & series = current_family.series[i];
+            const auto & [ms, value] = series.points[cursors[i]++];
             write_sample(series, ms, value);
+
+            if (cursors[i] < series.points.size())
+            {
+                heap.emplace_back(series.points[cursors[i]].first, i);
+                std::push_heap(heap.begin(), heap.end(), heap_greater);
+            }
         }
 
         group_begin = group_end;

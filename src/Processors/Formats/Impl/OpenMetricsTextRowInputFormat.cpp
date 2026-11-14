@@ -429,10 +429,13 @@ void OpenMetricsTextRowInputFormat::parseAll()
 {
     /// OpenMetrics requires every `# HELP` / `# TYPE` / `# UNIT` to precede the family's samples: the
     /// metadata governs family membership (`_bucket` / `_sum` / `_count`, counter `_total`, and the
-    /// `_created` / `_gcount` / `_gsum` / `_info` siblings), so a sample already emitted under any of
-    /// them means the metadata is late and would make the parse order-dependent. Probe with `find` so
-    /// checking siblings never grows the map.
-    const auto familyOrSiblingEmittedSample = [this](const String & family) -> bool
+    /// `_created` / `_gcount` / `_gsum` / `_info` siblings), so a sample already emitted under the
+    /// family name, or under a sibling name that the family's type owns, means the metadata is late and
+    /// would make the parse order-dependent. A sibling name the type does not own belongs to an
+    /// independent family (a gauge `x` cannot own an earlier `x_sum`), so it does not make the metadata
+    /// late. When the type is not known yet, only the family name itself is checked here; the later
+    /// `# TYPE` line checks the siblings. Probe with `find` so checking siblings never grows the map.
+    const auto metadataIsLate = [this](const String & family, std::string_view type) -> bool
     {
         const auto emitted = [this](const String & key)
         {
@@ -442,9 +445,10 @@ void OpenMetricsTextRowInputFormat::parseAll()
 
         if (emitted(family))
             return true;
-        for (const auto suffix : OpenMetricsText::ALL_FAMILY_SAMPLE_SUFFIXES)
-            if (emitted(family + String{suffix}))
-                return true;
+        if (const auto * suffixes = OpenMetricsText::familySampleSuffixes(type))
+            for (const auto suffix : *suffixes)
+                if (!suffix.empty() && emitted(family + String{suffix}))
+                    return true;
         return false;
     };
 
@@ -490,7 +494,7 @@ void OpenMetricsTextRowInputFormat::parseAll()
             {
                 parseMetadataLine(line, sizeof("# HELP ") - 1, name, rest);
                 auto & fm = family_meta[name];
-                if (familyOrSiblingEmittedSample(name))
+                if (metadataIsLate(name, fm.type))
                     throwIncorrect("'# HELP' metadata cannot follow samples for a metric family", line);
                 if (fm.has_help)
                     throwIncorrect("Duplicate '# HELP' metadata for a metric family", line);
@@ -512,22 +516,23 @@ void OpenMetricsTextRowInputFormat::parseAll()
                         throwIncorrect("Unexpected trailing data in # TYPE descriptor", line);
                 rest.resize(end);
                 auto & fm = family_meta[name];
-                if (familyOrSiblingEmittedSample(name))
-                    throwIncorrect("'# TYPE' metadata cannot follow samples for a metric family", line);
                 if (fm.has_type)
                     throwIncorrect("Duplicate '# TYPE' metadata for a metric family", line);
-                declare_family(name, fm);
                 /// Normalize to the OpenMetrics 1.0 vocabulary (Prometheus `untyped` -> `unknown`).
-                fm.type = OpenMetricsText::normalizeOpenMetricsType(rest);
-                if (!OpenMetricsText::isValidOpenMetricsType(fm.type))
+                String type = OpenMetricsText::normalizeOpenMetricsType(rest);
+                if (!OpenMetricsText::isValidOpenMetricsType(type))
                     throwIncorrect("Unknown metric type in # TYPE descriptor", line);
+                if (metadataIsLate(name, type))
+                    throwIncorrect("'# TYPE' metadata cannot follow samples for a metric family", line);
+                declare_family(name, fm);
+                fm.type = std::move(type);
                 fm.has_type = true;
             }
             else if (line.starts_with("# UNIT "))
             {
                 parseMetadataLine(line, sizeof("# UNIT ") - 1, name, rest);
                 auto & fm = family_meta[name];
-                if (familyOrSiblingEmittedSample(name))
+                if (metadataIsLate(name, fm.type))
                     throwIncorrect("'# UNIT' metadata cannot follow samples for a metric family", line);
                 if (fm.has_unit)
                     throwIncorrect("Duplicate '# UNIT' metadata for a metric family", line);
