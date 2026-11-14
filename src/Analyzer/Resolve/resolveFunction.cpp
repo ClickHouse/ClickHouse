@@ -45,6 +45,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/misc.h>
@@ -743,7 +744,16 @@ static DataTypePtr getLeastSupertypeForInArrayElements(
     for (const auto & arg : array_elements)
         arg_types.push_back(arg->getResultType());
 
-    return tryGetLeastSupertype(arg_types);
+    auto common_type = tryGetLeastSupertype(arg_types);
+    if (!common_type)
+        return nullptr;
+
+    /// `IDataType::equals` does not tell `Bool` from `UInt8`, so the supertype can keep a `Bool` facing an `UInt8`
+    /// element, and a `CAST` into `Bool` turns every nonzero integer into `true`.
+    for (const auto & arg : array_elements)
+        common_type = JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), in_first_argument->getResultType(), arg->getResultType());
+
+    return common_type;
 }
 
 template <typename CastNodeToType>
