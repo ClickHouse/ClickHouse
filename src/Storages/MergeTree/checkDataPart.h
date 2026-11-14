@@ -18,5 +18,8 @@ bool isNotEnoughMemoryErrorCode(int code);
 bool isRetryableException(std::exception_ptr exception_ptr);
 /// True for an I/O error (`EIO`) of a read, open or stat: the access failed, which does not mean that the data is wrong.
 bool isIOErrorException(std::exception_ptr exception_ptr);
+/// True for the cancellation of the current query (`KILL QUERY`, a client disconnect or `max_execution_time`),
+/// which can surface from inside a part read and says nothing about the part.
+bool isQueryCancellation(std::exception_ptr exception_ptr);
 
 }

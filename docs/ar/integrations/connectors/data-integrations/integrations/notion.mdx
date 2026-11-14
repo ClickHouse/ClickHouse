@@ -10,7 +10,6 @@ integration:
   - category: 'data_integration'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -35,13 +34,29 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 1. في Notion، أنشئ Custom Agent جديدًا من قسم **Agents** في الشريط الجانبي.
 2. في **Settings** الخاصة بالوكيل، ضمن **Tools and Access**، اختر **Add connection** ثم أضف **ClickHouse** من قائمة الاتصالات المتاحة.
 
-<Image img="/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp" size="md" alt="اختيار ClickHouse من منتقي Add connection في Notion" />
+<div className="ch-image-md">
+
+<Frame>
+
+![اختيار ClickHouse من منتقي Add connection في Notion](/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp)
+
+</Frame>
+
+</div>
 
 3. انقر على **Connect** وأكمِل OAuth flow باستخدام بيانات اعتماد ClickHouse Cloud الخاصة بك. يقتصر الوصول على المؤسسات والخدمات التي يمكن لحسابك الوصول إليها بالفعل.
 
 4. وسّع اتصال ClickHouse الجديد في إعدادات الوكيل، ثم فعّل الأدوات التي تريد أن يستخدمها هذا الوكيل. ولكل أداة، يمكنك أيضًا اختيار ما إذا كان ينبغي للوكيل تشغيلها تلقائيًا أو طلب الموافقة دائمًا. جميع الأدوات التي يوفّرها ClickHouse Remote MCP server للقراءة فقط. راجع مرجع [available tools](/ar/products/cloud/features/ai-ml/remote-mcp#available-tools) للاطلاع على القائمة الكاملة والمحدّثة.
 
-<Image img="/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp" size="md" alt="اتصال ClickHouse الموسّع في Notion مع إظهار مفاتيح التبديل لكل أداة" />
+<div className="ch-image-md">
+
+<Frame>
+
+![اتصال ClickHouse الموسّع في Notion مع إظهار مفاتيح التبديل لكل أداة](/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   يتطلب كل Custom Agent اتصال ClickHouse خاصًا به، ولا يمكن تغيير إعدادات أدوات هذا الاتصال إلا من قِبل الشخص الذي أجرى المصادقة عليه. راجع [أفضل ممارسات الأمان لاتصالات Agent](https://www.notion.com/help/security-best-practices-for-agent-connections) في Notion لمزيد من التفاصيل.
