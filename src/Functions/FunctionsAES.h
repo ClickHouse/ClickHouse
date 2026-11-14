@@ -651,16 +651,29 @@ private:
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
                     // 1.a.1: Init CTX with custom IV length and optionally with AAD
-                    if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                    if (!ctx_key_state.hasContext() && EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_EncryptInit_ex");
 
                     if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size()), nullptr) != 1)
                         onError("EVP_CIPHER_CTX_ctrl");
 
-                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_EncryptInit_ex");
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_EncryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()),
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_EncryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
 
                     // 1.a.2 Set AAD
                     if (aad_column)
@@ -1082,7 +1095,7 @@ private:
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder{};
-        [[maybe_unused]] CachedKeyState ctx_key_state;
+        CachedKeyState ctx_key_state;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -1135,7 +1148,7 @@ private:
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
+                    if (!ctx_key_state.hasContext() && EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("EVP_DecryptInit_ex");
 
                     // 1.a.1 : Set custom IV length
@@ -1143,10 +1156,23 @@ private:
                         onError("EVP_CIPHER_CTX_ctrl");
 
                     // 1.a.1 : Init CTX with key and IV
-                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char*>(key_value.data()),
-                            reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
-                        onError("EVP_DecryptInit_ex");
+                    if (ctx_key_state.matches(key_value))
+                    {
+                        /// The context already holds the expanded key schedule for this
+                        /// key: reset only the IV, skipping the cipher setup and key
+                        /// schedule expansion that dominate the per-row cost in OpenSSL 3.x.
+                        if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_DecryptInit_ex");
+                    }
+                    else
+                    {
+                        if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char*>(key_value.data()),
+                                reinterpret_cast<const unsigned char*>(iv_value.data())) != 1)
+                            onError("EVP_DecryptInit_ex");
+                        ctx_key_state.remember(key_value);
+                    }
 
                     // 1.a.2: Set AAD if present
                     if (aad_column)
