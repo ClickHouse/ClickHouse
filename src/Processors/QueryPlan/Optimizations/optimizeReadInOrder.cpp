@@ -16,6 +16,10 @@
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/TypeTree.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -987,6 +991,8 @@ struct InputOrder
     /// False when a Merge table's children read the matched prefix in opposite physical directions,
     /// so that a single sort_description cannot describe all of them.
     bool children_directions_agree = true;
+    /// Whether a key matched a sorting key column through a monotonic function rather than directly.
+    bool has_monotonic_match = false;
 };
 
 /// For the case when the order of keys is not important (GROUP BY / DISTINCT)
@@ -1061,6 +1067,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     /// So far, 0 means any direction is possible. It is ok for constant prefix.
     int read_direction = 0;
     size_t next_sort_key = 0;
+    bool has_monotonic_match = false;
 
     SortDescription sort_description;
     sort_description.reserve(unordered_keys.size());
@@ -1125,6 +1132,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
                 current_direction = 1;
                 if (match->monotonicity)
                 {
+                    has_monotonic_match = true;
                     current_direction *= match->monotonicity->direction;
                     strict_monotonic = match->monotonicity->strict;
                 }
@@ -1187,7 +1195,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     //     group_by_sort_description.emplace_back(SortColumnDescription(std::string(key)));
 
     auto input_order = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, /*read_direction*/ 1, /* limit */ 0);
-    return { std::move(input_order), std::move(sort_description) }; // std::move(group_by_sort_description) };
+    return {.input_order = std::move(input_order), .sort_description = std::move(sort_description), .has_monotonic_match = has_monotonic_match};
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
@@ -1623,7 +1631,8 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(
+                order_info.input_order->direction, optimization_settings);
             if (!can_read)
                 return nullptr;
 
@@ -1637,7 +1646,13 @@ InputOrderInfoPtr buildInputOrderInfo(
     return nullptr;
 }
 
-InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+/// With `request_reading = false`, only matches the order of a `ReadFromMergeTree` without asking it to read in that order.
+InputOrder buildInputOrderInfo(
+    AggregatingStep & aggregating,
+    const Names & keys,
+    QueryPlan::Node & node,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    bool request_reading = true)
 {
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
@@ -1648,7 +1663,9 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     if (!reading_node)
         return {};
 
-    const auto & keys = aggregating.getParams().keys;
+    if (!request_reading && !typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+        return {};
+
     size_t limit = 0;
 
     std::optional<ActionsDAG> dag;
@@ -1676,7 +1693,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             fixed_columns,
             dag, keys);
 
-        if (order_info.input_order)
+        if (order_info.input_order && request_reading)
         {
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
@@ -1725,7 +1742,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
         if (order_info.input_order)
         {
-            bool can_read = object_storage_step->requestReadingInOrder();
+            bool can_read = object_storage_step->requestReadingInOrder(
+                order_info.input_order->direction, optimization_settings);
             if (!can_read)
                 return {};
         }
@@ -1874,7 +1892,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
 
-        if (!object_storage_step->requestReadingInOrder())
+        if (!object_storage_step->requestReadingInOrder(
+                order_info.input_order->direction, optimization_settings))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -2207,7 +2226,65 @@ void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
     }
 }
 
-void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+/// Splits the read into layers by the first `prefix` sorting key columns, so that no value of the argument is in two
+/// layers (see `ReadFromMergeTree::readByLayers`). With `apply = false`, only checks that the split succeeds.
+static bool splitUniqExactInOrderIntoLayers(AggregatingStep & aggregating, size_t prefix, ReadFromMergeTree & reading, bool apply)
+{
+    if (prefix == 0 || !aggregating.canUseRadixUniqExact() || reading.isQueryWithFinal() || reading.isParallelReadingFromReplicas()
+        || reading.getNumStreams() <= 1)
+        return false;
+
+    const auto & metadata = reading.getStorageMetadata();
+    const auto & primary_key = metadata->getPrimaryKey();
+    if (prefix > primary_key.column_names.size())
+        return false;
+    for (size_t i = 0; i < prefix; ++i)
+    {
+        if (!isSafePrimaryDataKeyType(*primary_key.data_types[i]))
+            return false;
+    }
+
+    const auto in_reverse_order = deriveReverseOrder(primary_key, metadata->getSortingKey());
+    if (!in_reverse_order)
+        return false;
+
+    auto analysis = reading.getAnalyzedResult();
+    const bool analyzed = analysis != nullptr;
+    if (!analyzed)
+        analysis = reading.selectRangesToRead();
+    if (!analysis->split_parts.layers.empty())
+        return false;
+
+    auto split = splitIntersectingPartsRangesIntoLayers(
+        analysis->parts_with_ranges, reading.getNumStreams(), prefix, *in_reverse_order, getLogger("optimizeUniqExactInOrderLayers"));
+    if (split.layers.size() <= 1)
+        return false;
+
+    if (apply)
+    {
+        if (!analyzed)
+            reading.setAnalyzedResult(analysis);
+        split.in_reverse_order = *in_reverse_order;
+        analysis->split_parts = std::move(split);
+        aggregating.setUniqExactInOrderDisjointStreams();
+    }
+    return true;
+}
+
+static bool readsWithParallelReplicas(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = true,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+    };
+    const auto * reading_node = findReadingStep(node, find_reading_ctx);
+    const auto * reading = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+    return reading && reading->isParallelReadingFromReplicas();
+}
+
+void optimizeAggregationInOrder(
+    QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings, bool before_projections)
 {
     if (node.children.size() != 1)
         return;
@@ -2216,6 +2293,19 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, cons
     if (!aggregating)
         return;
 
+    /// Parallel replicas have to read in the same order, but a replica can read the table where another one uses a
+    /// projection, so their order is decided once, from the table, before the projections. The step is visited again
+    /// above the read of a chosen projection. Otherwise the order is decided after the projections, as a read in order
+    /// rules them out.
+    if (aggregating->isOrderDecidedBeforeProjections())
+        return;
+    if (before_projections)
+    {
+        if (!readsWithParallelReplicas(*node.children.front(), optimization_settings))
+            return;
+        aggregating->setOrderDecidedBeforeProjections();
+    }
+
     if ((aggregating->inOrder() && !aggregating->explicitSortingRequired()) || aggregating->isGroupingSets())
         return;
 
@@ -2223,8 +2313,51 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, cons
     if (aggregating->getParams().overflow_row)
         return;
 
+    /// A single `uniqExact(x)` without `GROUP BY` over input sorted by `x` counts the changes of `x`.
+    if (aggregating->getParams().keys.empty())
+    {
+        if (aggregating->hasUniqExactInOrder() || !aggregating->canUseRadixUniqExact())
+            return;
+
+        /// Sorting compares floats by value and `uniqExact` by bits; only top-level floats are counted by bits.
+        const auto argument_type = removeNullable(aggregating->getParams().aggregates[0].function->getArgumentTypes()[0]);
+        if (!isFloat(argument_type) && anyInTypeTree(*argument_type, [](const IDataType & type) { return isFloat(type); }))
+            return;
+
+        const auto & argument_names = aggregating->getParams().aggregates[0].argument_names;
+        auto matches_argument = [&](const InputOrder & order_info)
+        {
+            return order_info.input_order && order_info.sort_description.size() == 1
+                && order_info.sort_description[0].column_name == argument_names[0];
+        };
+
+        /// Match the order first without asking the read for it: a read in order is slower when nothing counts in order.
+        auto order_info = buildInputOrderInfo(*aggregating, argument_names, *node.children.front(), optimization_settings, /*request_reading=*/false);
+        if (!matches_argument(order_info))
+            return;
+
+        /// The read can be split into layers by the key prefix ending at the argument (see `optimizeUniqExactInOrderLayers`)
+        /// only if equal arguments have equal prefixes: no function of the key, and no float, compared by bits.
+        const size_t layer_prefix
+            = order_info.has_monotonic_match || isFloat(argument_type) ? 0 : order_info.input_order->used_prefix_of_sorting_key_size;
+
+        /// Several streams that are not split into layers would be merged into one on a single thread, which is many times
+        /// slower than the radix partitioned `uniqExact` (e.g. 164 ms instead of 17 ms for 8 million floats in 8 parts on 8 threads).
+        FindReadingStepContext find_reading_ctx{.allow_existing_order = false, .read_in_order_through_join = false};
+        QueryPlan::Node * reading_node = findReadingStep(*node.children.front(), find_reading_ctx);
+        auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+        if (!reading
+            || (reading->getNumStreams() > 1 && !splitUniqExactInOrderIntoLayers(*aggregating, layer_prefix, *reading, /*apply=*/false)))
+            return;
+
+        order_info = buildInputOrderInfo(*aggregating, argument_names, *node.children.front(), optimization_settings);
+        if (matches_argument(order_info))
+            aggregating->applyUniqExactInOrder(std::move(order_info.sort_description), layer_prefix);
+        return;
+    }
+
     /// TODO: maybe add support for UNION later.
-    auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), optimization_settings);
+    auto order_info = buildInputOrderInfo(*aggregating, aggregating->getParams().keys, *node.children.front(), optimization_settings);
     if (order_info.input_order)
     {
         std::unordered_set<std::string_view> used_keys;
@@ -2239,6 +2372,24 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, cons
 
         aggregating->applyOrder(std::move(order_info.sort_description), std::move(group_by_sort_description));
     }
+}
+
+void optimizeUniqExactInOrderLayers(QueryPlan::Node & node)
+{
+    auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
+    if (!aggregating || !aggregating->hasUniqExactInOrder() || node.children.size() != 1)
+        return;
+
+    FindReadingStepContext find_reading_ctx{.allow_existing_order = true, .read_in_order_through_join = false};
+    QueryPlan::Node * reading_node = findReadingStep(*node.children.front(), find_reading_ctx);
+    auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+    if (reading && reading->getInputOrder()
+        && splitUniqExactInOrderIntoLayers(*aggregating, aggregating->getUniqExactInOrderLayerPrefix(), *reading, /*apply=*/true))
+        return;
+
+    /// The read changed since `optimizeAggregationInOrder` checked the split: avoid merging several streams into one.
+    if (!reading || reading->getNumStreams() > 1)
+        aggregating->clearUniqExactInOrder();
 }
 
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)

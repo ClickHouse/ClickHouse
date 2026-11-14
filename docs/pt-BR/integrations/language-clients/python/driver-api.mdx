@@ -153,6 +153,10 @@ O padrão é um banco de dados em memória. Passe `path="/data/my_chdb"` ou use 
 
 Tanto os clientes HTTP síncronos quanto os assíncronos tentam novamente as leituras elegíveis após determinados fechamentos de conexão pelo lado remoto e após respostas HTTP 429, 503 ou 504. Para `query`, seus métodos de consulta especializados, `raw_query` e `raw_stream`, `query_retries` define o número de tentativas adicionais. Leituras elegíveis permitem pelo menos uma nova tentativa após um fechamento remoto, mesmo quando `query_retries=0`. Uma leitura enviada por meio de `command` pode ser repetida uma vez após um fechamento remoto, mas não consome o limite de `query_retries` nem é repetida após esses status HTTP.
 
+Antes de tentar novamente após uma resposta HTTP 429, 503 ou 504, ambos os clientes aguardam `0.1 * attempt` segundos, com `attempt` começando em 1, e fecham a resposta que falhou.
+
+Uma conexão fechada após a linha de status HTTP ou os cabeçalhos de progresso, mas antes de o ClickHouse enviar os cabeçalhos de resposta finais, segue a mesma política de fechamento remoto.
+
 O cliente reconhece instruções de leitura como `SELECT`, `SHOW`, `DESCRIBE` e `EXISTS`, incluindo as formas compatíveis de `WITH` e `EXPLAIN`. SQL que não puder ser reconhecido como leitura não é repetido após essas falhas. Instruções com `PARALLEL WITH`, `INTO OUTFILE` ou com múltiplas instruções também ficam de fora.
 
 Gravações SQL, DDL e mutações enviadas por meio de `command`, `query`, `raw_query` ou `raw_stream` não são reaplicadas após essas falhas. O mesmo vale quando o DB-API ou o SQLAlchemy executa SQL por meio desses métodos. Um erro de conexão não indica se uma gravação foi confirmada. Verifique o resultado antes de tentar novamente na sua aplicação.
