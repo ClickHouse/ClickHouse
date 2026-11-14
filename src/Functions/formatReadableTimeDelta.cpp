@@ -135,6 +135,11 @@ public:
             }
             else
             {
+                /// Turn `-0.` into `0.`: it is not less than zero, but `std::modf` keeps its sign and `getFractionalString`
+                /// would return `.000000000` for it, so the sub-second units would be computed from the '.' character.
+                if (value == 0)
+                    value = 0;
+
                 bool is_negative = value < 0;
                 if (is_negative)
                 {
