@@ -55,6 +55,10 @@ PRELIMINARY_JOBS = [
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = [
     j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
 ]
+# The stateless jobs that run with plan-based parallel replicas (see `ci/workflows/pull_request.py`).
+PLAN_BASED_PARALLEL_REPLICAS_JOBS = [
+    j.name for j in JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
+]
 COVERAGE_REPLACEMENT_JOBS = [
     j.name
     for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
@@ -1212,10 +1216,13 @@ def should_skip_job(job_name):
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
     # The coverage family and its `arm_binary` replacements are already handled above and must run
     # in full when they run at all, so this only narrows down the other plain (non-coverage) test jobs.
+    # The plan-based parallel replicas jobs run in full too: a change to the job script can break how they
+    # install and start the server with the plan-based profile.
     if (
         changed_files
         and all(f.startswith("ci/") and f.endswith(".py") for f in changed_files)
         and job_name not in COVERAGE_REPLACEMENT_JOBS
+        and job_name not in PLAN_BASED_PARALLEL_REPLICAS_JOBS
         and "llvm_coverage" not in job_name
         and "excluded_from_llvm" not in job_name
     ):

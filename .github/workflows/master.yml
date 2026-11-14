@@ -3545,6 +3545,84 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, AsyncInsert, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
 
+  stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_parallel:
+    runs-on: [self-hosted, arm-medium]
+    needs:
+    - build_arm_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, parallel)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
+
+  stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_sequential:
+    runs-on: [self-hosted, arm-small]
+    needs:
+    - build_arm_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, sequential)' --workflow "MasterCI" --ci --timestamp
+
   stateless_tests_arm_asan_ubsan_azure_parallel:
     runs-on: [self-hosted, arm-large]
     needs:
@@ -6609,6 +6687,8 @@ jobs:
     - stateless_tests_arm_asan_ubsan_azure_sequential_2_2
     - stateless_tests_arm_binary_asyncinsert_s3_storage_parallel
     - stateless_tests_arm_binary_asyncinsert_s3_storage_sequential
+    - stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_parallel
+    - stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_sequential
     - stateless_tests_arm_binary_parallelreplicas_s3_storage_parallel
     - stateless_tests_arm_binary_parallelreplicas_s3_storage_sequential
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_1_2

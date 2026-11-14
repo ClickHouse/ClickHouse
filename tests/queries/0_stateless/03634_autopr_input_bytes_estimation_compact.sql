@@ -46,7 +46,9 @@ SELECT COUNT(*) FROM t WHERE a > 10101 FORMAT Null SETTINGS log_comment='query_6
 
 SELECT COUNT(*) FROM t WHERE a <= 10101 FORMAT Null SETTINGS log_comment='query_7', allow_experimental_projection_optimization=0, optimize_use_implicit_projections=0;
 
-SELECT a, s FROM t WHERE s LIKE '1%' ORDER BY a DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_8';
+-- Read in order: otherwise Top-K filtering keeps the read local with plan-based parallel replicas, so no
+-- statistics are collected for it.
+SELECT a, s FROM t WHERE s LIKE '1%' ORDER BY a DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_8', optimize_read_in_order=1;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 

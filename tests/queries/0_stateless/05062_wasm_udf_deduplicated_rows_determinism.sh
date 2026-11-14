@@ -5,6 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# A plan-based parallel replica cannot find a WASM UDF in the plan fragment:
+# https://github.com/ClickHouse/ClickHouse/issues/130859
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_plan_based 0"
+
 MODULE="host_api_${CLICKHOUSE_DATABASE}"
 FUNCTION="wasm_random_${CLICKHOUSE_DATABASE}"
 FUNCTION_DETERMINISTIC="wasm_random_deterministic_${CLICKHOUSE_DATABASE}"

@@ -140,9 +140,10 @@ DELETE FROM t_lwd_proj_index WHERE a % 11 = 0;
 -- `a` equals the base `_part_offset` here, so a deleted row's offset is a multiple of 11.
 SELECT 'index projection rows', count(), countIf(_parent_part_offset % 11 = 0)
 FROM mergeTreeProjection(currentDatabase(), t_lwd_proj_index, p);
+-- Without the local plan, with parallel replicas every replica is a remote one and reads the join.
 SELECT 'index parent-offset matches', sum(l.b = r.b), count()
 FROM t_lwd_proj_index l JOIN mergeTreeProjection(currentDatabase(), t_lwd_proj_index, p) r ON l._part_offset = r._parent_part_offset
-SETTINGS enable_analyzer = 1, optimize_use_projections = 0;
+SETTINGS enable_analyzer = 1, optimize_use_projections = 0, parallel_replicas_local_plan = 0;
 
 DROP TABLE t_lwd_proj_index;
 

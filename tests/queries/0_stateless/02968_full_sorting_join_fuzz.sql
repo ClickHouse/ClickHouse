@@ -1,4 +1,7 @@
 SET max_bytes_in_join = 0, join_algorithm = 'full_sorting_merge', max_block_size = 10240;
+-- A randomized join order can put the 10M-row table on the side that plan-based parallel replicas reads in full on
+-- every replica, which exceeds the read limit of the test profile.
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
