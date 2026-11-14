@@ -17,6 +17,7 @@
 namespace DB
 {
 
+class AccessFlags;
 class Context;
 struct StorageID;
 
@@ -116,6 +117,9 @@ public:
     /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
+    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by `ITableFunctionCluster`.
+    virtual bool isClusterFunction() const { return false; }
+
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
     /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
@@ -140,8 +144,9 @@ public:
     StoragePtr
     execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
 
-    /// Returns actual table structure after enforcing source access checks.
-    /// Use this instead of getActualTableStructure() from outside execute().
+    /// Returns actual table structure after enforcing the same access checks as `execute`: source, engine,
+    /// source object, and `CREATE TEMPORARY TABLE` (for table functions not allowed in readonly mode).
+    /// Use this instead of `getActualTableStructure` from outside `execute`.
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
 
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
@@ -151,6 +156,10 @@ public:
     /// opposed to its source kind, which `checkSourceAccess` covers. Called from both base-class
     /// seams: resolving a structure is a `DESCRIBE` and needs `SHOW COLUMNS`, naming needs `SHOW TABLES`.
     virtual void checkSourceObjectAccess(const ContextPtr & /*context*/, bool /*for_structure*/) const {}
+
+    /// Check the `CREATE TEMPORARY TABLE` grant, required to use a table function unless it is allowed
+    /// in readonly mode and the query is not an insert.
+    void checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const;
 
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
@@ -163,14 +172,17 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
+    /// `uri` normalized by Poco; an unparsable URI becomes empty.
+    static String normalizeURIForAccessCheck(const String & uri);
+
+    /// Checks the source grant for `uri`; a location that no filter would see as accessed needs the whole-source grant.
+    static void checkSourceAccessForURI(
+        const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
+
     virtual ~ITableFunction() = default;
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
-
-    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
-    /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
-    virtual bool isClusterFunction() const { return false; }
 
     /// Check `access_type` on the name the function was given, before that name is resolved.
     void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;
@@ -198,9 +210,6 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
-
-protected:
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

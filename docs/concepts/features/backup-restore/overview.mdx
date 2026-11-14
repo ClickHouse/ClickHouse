@@ -169,6 +169,13 @@ This functionality only works for configurations managed through SQL commands
 Access configurations defined in ClickHouse server configuration files (e.g. `users.xml`)
 aren't included in backups and can't be restored through this method.
 
+<Note>
+In ClickHouse versions before 26.10, row policies, settings profiles and quotas restored with `RESTORE` are
+listed in `system.row_policies`, `system.settings_profiles` and `system.quotas`, but aren't applied to queries
+right away. Run [`SYSTEM RELOAD USERS`](/reference/statements/system#reload-users) after the restore completes
+to apply them.
+</Note>
+
 ## General syntax {#syntax}
 
 <Syntax/>

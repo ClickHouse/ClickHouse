@@ -23,9 +23,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}]}]}/>
 
-Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads have repeat-dominated staged streams, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
+Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads thaw, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator. A query of the form `GROUP BY ... ORDER BY count() DESC LIMIT n` merges only the groups that can reach the top (top-K pruning). It remembers its verdict separately from the same aggregation without the `LIMIT`. If `count()` is its only aggregate, a thread also keeps its table frozen while the pruning is expected to discard most of the rows that the table stages.
 
-With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
+With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
 
 ## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
@@ -417,9 +417,9 @@ Which dialect will be used to parse query.
 
 Supported values:
 - `clickhouse` (default) — standard ClickHouse SQL.
-- `kusto` — Kusto Query Language. Requires the beta setting `allow_experimental_kusto_dialect`.
-- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
-- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `kusto` — Kusto Query Language. Requires the beta setting `enable_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `enable_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `enable_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `enable_logsql_dialect`.
@@ -613,6 +613,8 @@ Default partition strategy for file like engines. Applied only to `CREATE` queri
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
+
+It also applies to merges and mutations.
 
 ## filter {#filter}
 
@@ -877,10 +879,10 @@ Timeout in milliseconds for receiving Hello packet from replicas during handshak
 
 <SettingsInfoBlock type="HashJoinLayout" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "New setting to force the layout of a hash join. `auto` keeps choosing it with `parallel_hash_join_threshold`."}]}]}/>
 
 How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
-The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+`auto`, the default, lets the planner choose the layout with `parallel_hash_join_threshold`; set `serial` or `parallel` to force one.
 
 Possible values:
 
@@ -946,9 +948,9 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+If enabled, injects `SHUFFLE` into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
-If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+If the top-level construct is UNION, `SHUFFLE` is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
 
 ## input_format {#input_format}
@@ -1892,6 +1894,10 @@ Read from the recent samples table of a [TimeSeries](/reference/engines/table-en
 Checks that execution speed is not too slow (no less than `min_execution_speed`),
 after the specified time in seconds has expired.
 
+If set to `0`, the execution speed limits are checked from the start of the query,
+but [`max_estimated_execution_time`](/reference/settings/session-settings/max#max_estimated_execution_time)
+is not checked at all.
+
 ## to_start_of_interval_preserves_argument_type {#to_start_of_interval_preserves_argument_type}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -2089,7 +2095,7 @@ Scheduling priority of the query within its workload, used by the `priority` wor
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
-Write full paths (including s3://) into iceberg metadata files.
+Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
 
 ## zstd_window_log_max {#zstd_window_log_max}
 

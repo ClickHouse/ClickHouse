@@ -471,6 +471,13 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/arrow-testing"]
+	path = contrib/arrow-testing
+	url = https://github.com/apache/arrow-testing
 [submodule "contrib/parquet-testing"]
 	path = contrib/parquet-testing
 	url = https://github.com/apache/parquet-testing
+[submodule "contrib/gdeflate"]
+	path = contrib/gdeflate
+	url = https://github.com/ClickHouse/libdeflate.git
+	branch = gdeflate

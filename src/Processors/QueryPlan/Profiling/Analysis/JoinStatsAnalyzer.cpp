@@ -214,6 +214,17 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
         static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
 }
 
+void prependSideEstimate(MetricGroup & group, std::optional<UInt64> estimated_rows, const JoinSideRows & side)
+{
+    group.metrics.insert(group.metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimated_rows)});
+    if (!side.input_rows)
+        return;
+    const auto q_error = resultRowsQError(estimated_rows, *side.input_rows);
+    const auto rows_it = std::ranges::find(group.metrics, MetricKey::Rows, &StepMetric::key);
+    if (q_error && rows_it != group.metrics.end())
+        group.metrics.insert(std::next(rows_it), {MetricKey::QError, *q_error});
+}
+
 void prependEstimationComparison(
     StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
 {
@@ -233,9 +244,9 @@ void prependEstimationComparison(
     const JoinSideRows right_side = readSideRows(right_group);
 
     if (left_group)
-        left_group->metrics.insert(left_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.left_rows)});
+        prependSideEstimate(*left_group, estimation.left_rows, left_side);
     if (right_group)
-        right_group->metrics.insert(right_group->metrics.begin(), {MetricKey::RowsEstimated, optionalQuantity(estimation.right_rows)});
+        prependSideEstimate(*right_group, estimation.right_rows, right_side);
 
     MetricGroup cost{MetricGroupKey::Cost, {}};
     cost.metrics.emplace_back(MetricKey::Estimated, optionalDouble(estimation.cost));
