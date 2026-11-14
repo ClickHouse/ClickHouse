@@ -2,6 +2,7 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
@@ -11,7 +12,11 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Common/StringUtils.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <base/EnumReflection.h>
 
@@ -23,6 +28,49 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+
+namespace
+{
+
+/// Formats the first expression after `LIMIT` (a count or an offset). `parseLimitRange` reads a leading `after` or
+/// `until` word as the keyword of a range when an expression follows it, so an expression other than an identifier
+/// whose text starts with such a word (an identifier is printed without quotes) is enclosed in parentheses, with an
+/// alias outside them, as a parenthesized expression is printed. The expression is formatted only once.
+void formatLimitFirstExpression(const IAST & expression, WriteBuffer & ostr, const IAST::FormatSettings & s, IAST::FormatState & state, IAST::FormatStateStacked frame)
+{
+    WriteBufferFromOwnString buf;
+    expression.format(buf, s, state, frame);
+    std::string_view text = buf.stringView();
+
+    size_t word_end = 0;
+    while (word_end < text.size() && isWordCharASCII(text[word_end]))
+        ++word_end;
+    std::string_view first_word = text.substr(0, word_end);
+
+    if (expression.as<ASTIdentifier>() || !(boost::iequals(first_word, "AFTER") || boost::iequals(first_word, "UNTIL")))
+    {
+        ostr << text;
+        return;
+    }
+
+    std::string_view alias_text;
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&expression); with_alias && !with_alias->alias.empty())
+    {
+        WriteBufferFromOwnString alias_buf;
+        alias_buf << " AS ";
+        s.writeIdentifier(alias_buf, with_alias->alias, /*ambiguous=*/false);
+        if (text.ends_with(alias_buf.stringView()))
+        {
+            alias_text = text.substr(text.size() - alias_buf.stringView().size());
+            text.remove_suffix(alias_text.size());
+        }
+    }
+
+    ostr << "(" << text << ")" << alias_text;
+}
+
 }
 
 
@@ -264,10 +312,12 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws << indent_str << "LIMIT ";
         if (limitByOffset())
         {
-            limitByOffset()->format(ostr, s, state, frame);
+            formatLimitFirstExpression(*limitByOffset(), ostr, s, state, frame);
             ostr << ", ";
+            limitByLength()->format(ostr, s, state, frame);
         }
-        limitByLength()->format(ostr, s, state, frame);
+        else
+            formatLimitFirstExpression(*limitByLength(), ostr, s, state, frame);
         ostr << " BY";
         if (limit_by_all)
         {
@@ -286,7 +336,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         if (limitOffset())
         {
             ostr << " ";
-            limitOffset()->format(ostr, s, state, frame);
+            formatLimitFirstExpression(*limitOffset(), ostr, s, state, frame);
             ostr << ", ";
         }
         else if (limitLength())
@@ -294,7 +344,12 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << " ";
         }
         if (limitLength())
-            limitLength()->format(ostr, s, state, frame);
+        {
+            if (limitOffset())
+                limitLength()->format(ostr, s, state, frame);
+            else
+                formatLimitFirstExpression(*limitLength(), ostr, s, state, frame);
+        }
         if (limit_with_ties)
             ostr << s.nl_or_ws << indent_str << " WITH TIES";
         if (limitAfter())
