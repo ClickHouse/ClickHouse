@@ -1318,7 +1318,7 @@ Enables the log messages of the Delta Kernel library, which reads [`DeltaLake`](
 SYSTEM RELOAD DELTA KERNEL TRACING level
 ```
 
-The statement does not require any privilege.
+The statement does not require any privilege. In a build without Delta Kernel support it fails with `SUPPORT_IS_DISABLED`.
 
 ## SYSTEM CLEAR|DROP DNS CACHE {#drop-dns-cache}
 
@@ -1695,7 +1695,7 @@ Requires the `SYSTEM JEMALLOC` privilege. In a build without `jemalloc` it fails
 
 Introduced in: v24.1.0
 
-Writes the current `jemalloc` heap profile to a file in `/tmp` on the server and returns the path of the file in the column `filename`. The setting [`jemalloc_profile_text_output_format`](/reference/settings/session-settings/jemalloc-profile#jemalloc_profile_text_output_format) selects collapsed stacks (`collapsed`, the default, file suffix `.collapsed`), a symbolized profile (`symbolized`, suffix `.symbolized`) or the raw profile (`raw`). The profile holds the allocations sampled while the heap profiler is enabled by the server setting [`jemalloc_enable_global_profiler`](/reference/settings/server-settings/settings/jemalloc-enable#jemalloc_enable_global_profiler) or, for a query, by the setting [`jemalloc_enable_profiler`](/reference/settings/session-settings/jemalloc#jemalloc_enable_profiler). See [Flushing heap profiles to disk](/concepts/features/performance/allocation-profiling#flushing-heap-profiles).
+Writes the current `jemalloc` heap profile to a file in `/tmp` on the server and returns the path of the file in the column `filename`. With `ON CLUSTER`, each server writes its own file, and the statement returns the status of the query on each server, as set by [`distributed_ddl_output_mode`](/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode), instead of the paths. The setting [`jemalloc_profile_text_output_format`](/reference/settings/session-settings/jemalloc-profile#jemalloc_profile_text_output_format) selects collapsed stacks (`collapsed`, the default, file suffix `.collapsed`), a symbolized profile (`symbolized`, suffix `.symbolized`) or the raw profile (`raw`). The profile holds the allocations sampled while the heap profiler is enabled by the server setting [`jemalloc_enable_global_profiler`](/reference/settings/server-settings/settings/jemalloc-enable#jemalloc_enable_global_profiler) or, for a query, by the setting [`jemalloc_enable_profiler`](/reference/settings/session-settings/jemalloc#jemalloc_enable_profiler). See [Flushing heap profiles to disk](/concepts/features/performance/allocation-profiling#flushing-heap-profiles).
 
 ```sql
 SYSTEM JEMALLOC FLUSH PROFILE [ON CLUSTER cluster_name]
