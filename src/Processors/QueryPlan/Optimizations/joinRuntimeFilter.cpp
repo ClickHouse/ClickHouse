@@ -693,6 +693,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
+    join_step->setHasRuntimeFilters();
+
     return true;
 }
 
