@@ -989,7 +989,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     if (effective_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes, *this);
     QueryPlanOptimizations::optimizeTreeSecondPass(effective_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
@@ -1316,7 +1316,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
 // }
 
-QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan)
 {
     UnorderedSetWithMemoryTracking<Node *> used;
     StackWithMemoryTracking<Node *> stack;
@@ -1337,6 +1337,14 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 
     QueryPlan new_plan;
     new_plan.root = root;
+
+    /// The subplan may be executed after `source_plan` has been consumed into a pipeline (e.g. the
+    /// right side of a `JOIN` converted to `IN` is built later as a set), so it must keep the same
+    /// execution limits and hold the same table locks, storage holders and interpreter contexts.
+    /// append copies the shared handles, so ownership is only shared, never moved out of the source.
+    new_plan.max_threads = source_plan.max_threads;
+    new_plan.concurrency_control = source_plan.concurrency_control;
+    new_plan.resources.append(source_plan.resources);
 
     auto it = nodes.begin();
     while (it != nodes.end())

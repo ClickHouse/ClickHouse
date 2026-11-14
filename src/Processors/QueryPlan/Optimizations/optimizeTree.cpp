@@ -69,7 +69,7 @@ namespace QueryPlanOptimizations
 /// `ExtraSettings` reads every field as zero, which silently turns the gated behaviour off - a filter that
 /// stops short of a read, or a step description truncated to nothing - and the two passes had already
 /// drifted apart by three fields. Build it here instead of at each call site, where one is easy to forget.
-static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimizationSettings & optimization_settings)
+static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan & query_plan)
 {
     return {
         optimization_settings.max_step_description_length,
@@ -96,6 +96,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.use_query_condition_cache_for_top_k,
         optimization_settings.is_explain,
         optimization_settings.max_block_size,
+        &query_plan,
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
@@ -120,9 +121,13 @@ static String describeProjectionRejections(const UnorderedMapWithMemoryTracking<
     return fmt::format("{}", fmt::join(formatted_reasons, "; "));
 }
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & nodes,
+    const QueryPlan & query_plan)
 {
-    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings));
+    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings, query_plan));
 
     if (!optimization_settings.optimize_plan)
         return;
@@ -143,7 +148,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     size_t total_applied_optimizations = 0;
 
 
-    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
+    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings, query_plan);
 
     /// Whether the limit of optimizations is reached, checked before each optimization. EXPLAIN stops there and shows
     /// the plan as it is; a query throws.
@@ -296,7 +301,7 @@ void optimizeTreeSecondPass(
     UnorderedMapWithMemoryTracking<String, String> projection_reject_reasons;
     bool has_reading_from_mt = false;
 
-    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
+    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings, query_plan);
 
     Stack stack;
 
@@ -781,7 +786,7 @@ void optimizeTreeSecondPass(
             /// The local plan was optimized under `local_optimization_settings`, so merge the seam it
             /// forms with the outer plan under the same ones.
             if (local_optimization_settings.merge_expressions)
-                tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings));
+                tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings, query_plan));
 
             /// The merge after the join runtime filters ran while this plan was still opaque, so give it the
             /// same merge, or it keeps steps the single-node plan has merged (e.g. the part of an expression
@@ -790,7 +795,7 @@ void optimizeTreeSecondPass(
             if (join_runtime_filters_were_added)
             {
                 Stack local_stack;
-                const auto local_extra_settings = makeExtraSettings(local_optimization_settings);
+                const auto local_extra_settings = makeExtraSettings(local_optimization_settings, query_plan);
                 traverseQueryPlan(local_stack, *local_plan_node,
                     [&](auto & frame_node)
                     {
