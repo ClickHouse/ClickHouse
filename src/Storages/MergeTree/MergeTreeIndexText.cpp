@@ -336,7 +336,7 @@ static UInt64 getMaxSegmentCardinality(const TokenPostingsInfo & info, size_t se
 }
 
 /// The row range of a segment is written as its first and its last row id, so a decoded segment must start and end at them.
-/// This is the only check of the decoded row ids: their order inside the segment is not verified.
+/// The order of the row ids inside the segment is verified only for raw postings (see `checkRawRowIdsOrder`).
 static void checkSegmentRowRange(const TokenPostingsInfo & info, size_t segment_idx, UInt64 cardinality, UInt64 first_row_id, UInt64 last_row_id)
 {
     const auto & range = info.ranges[segment_idx];
@@ -346,6 +346,21 @@ static void checkSegmentRowRange(const TokenPostingsInfo & info, size_t segment_
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in text index: posting list segment {} has {} row ids from {} to {} while its row range is [{}, {}]",
             segment_idx, cardinality, first_row_id, last_row_id, range.begin, range.end);
+    }
+}
+
+/// Raw and embedded postings are written in the strictly increasing order. Together with the row range of the segment
+/// (equal to the first and the last row id), it guarantees that every row id lies inside the range, which consumers rely on.
+static void checkRawRowIdsOrder(std::span<const UInt32> row_ids)
+{
+    for (size_t i = 1; i < row_ids.size(); ++i)
+    {
+        if (row_ids[i - 1] >= row_ids[i])
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: raw posting list row id {} at position {} does not follow the previous row id {}",
+                row_ids[i], i, row_ids[i - 1]);
+        }
     }
 }
 
@@ -364,6 +379,8 @@ static void deserializeRawPostings(
 
     for (size_t i = old_size; i < row_ids.size(); ++i)
         readVarUInt(row_ids[i], istr);
+
+    checkRawRowIdsOrder({row_ids.data() + old_size, cardinality});
 
     const bool has_weights = (header & PostingsSerialization::HasWeights) != 0;
 
@@ -1649,6 +1666,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         else if (info.cardinality != 0)
         {
             readVarUInts(istr, info.cardinality, info.embedded_postings);
+            checkRawRowIdsOrder(info.embedded_postings);
             info.offsets.emplace_back(0);
             info.ranges.emplace_back(info.embedded_postings.front(), info.embedded_postings.back());
         }
