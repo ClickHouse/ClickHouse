@@ -440,16 +440,40 @@ LookupTableState getLookupTableState(
     /// its control block alive, so the identity cannot be reused by another part.
     result.parts.reserve(snapshot_data.parts->size());
 
+    /// A column absent from a part (written before the column was added) is filled on every read by
+    /// evaluating its default expression. The expression may depend on mutable state (`dictGet`, `now`,
+    /// another table), which neither the part identity nor the signature above captures, so a read that
+    /// has to evaluate a default is never cached.
+    const auto & columns_description = storage_snapshot->metadata->getColumns();
+    Names columns_with_default_expression;
+    for (const auto & column_name : columns_to_read)
+    {
+        auto column_default = columns_description.getDefault(column_name);
+        if (column_default && column_default->expression)
+            columns_with_default_expression.push_back(column_name);
+    }
+
     for (const auto & ranges_in_part : *snapshot_data.parts)
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_part.data_part, snapshot_data.mutations_snapshot, query_context);
+        const auto & data_part = ranges_in_part.data_part;
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(data_part, snapshot_data.mutations_snapshot, query_context);
 
-        result.parts.push_back(ranges_in_part.data_part);
+        result.parts.push_back(data_part);
         result.expected_rows += ranges_in_part.getRowsCount();
-        if (ranges_in_part.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()
+        if (data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()
             || alter_conversions->hasMutations() || alter_conversions->hasPatches())
         {
             result.cacheable = false;
+        }
+
+        for (const auto & column_name : columns_with_default_expression)
+        {
+            auto column_in_part = data_part->tryGetColumn(column_name);
+            if (!column_in_part || !data_part->hasColumnFiles(*column_in_part))
+            {
+                result.cacheable = false;
+                break;
+            }
         }
     }
 
