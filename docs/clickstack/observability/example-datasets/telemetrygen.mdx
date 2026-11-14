@@ -10,7 +10,6 @@ keywords: ['clickstack', 'telemetrygen', 'synthetic data', 'OpenTelemetry', 'tes
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
 <Tab title="Fully managed">
@@ -45,7 +44,15 @@ go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemet
 
 Open your ClickHouse Observability service and go to **Team Settings → Managed Telemetry**. Copy the **OTLP HTTP endpoint** and **API key**.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry in Team Settings showing the masked OTLP HTTP endpoint and API key" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry in Team Settings showing the masked OTLP HTTP endpoint and API key](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Set the endpoint to its host and port, removing the `https://` prefix. For example, `https://YOUR_OTEL_ENDPOINT:4318` becomes `YOUR_OTEL_ENDPOINT:4318`. Do not append a signal path such as `/v1/logs`.
 
