@@ -118,7 +118,7 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
                     /// DPsize also includes non-connecting predicates (single-relation filters merged into the
                     /// join graph), unlike DPhyp which bails out on them and falls back to another algorithm.
                     bool has_direct_connection = false;
-                    std::vector<JoinActionRef *> edge;
+                    VectorWithMemoryTracking<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
                         /// Placement is driven by the relations that must all be present before the predicate
