@@ -7,6 +7,7 @@
 -- written, so the cache ends up populated rather than empty.
 
 SET max_threads = 1;
+SET use_statistics_for_sum_avg_aggregation = 0;
 
 DROP TABLE IF EXISTS t_cc_soft_budget;
 

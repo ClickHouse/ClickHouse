@@ -50,6 +50,11 @@ class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
+/// True for statements that change only metadata, judged by the kind of statement: e.g. DROP, RENAME,
+/// access control, SYSTEM, CREATE without a `SELECT` or a table function, and ALTER without commands
+/// that copy parts. Such queries are exempt from workload scheduling.
+bool isMetadataQuery(const IAST & ast);
+
 /// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
 /// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
 struct MemoryReservation;
@@ -125,7 +130,10 @@ protected:
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
 
-    Stopwatch watch;
+    /// Since the query start, including the wait for admission. For system.processes
+    Stopwatch total_watch;
+    /// Since admission. For max_execution_time.
+    Stopwatch execution_watch;
 
     /// Progress of input stream
     Progress progress_in;
@@ -345,7 +353,7 @@ public:
     [[nodiscard]] bool checkTimeLimitSoft();
 
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
-    UInt64 getQueryCPUStartTime() { return watch.getStart(); }
+    UInt64 getQueryCPUStartTime() { return total_watch.getStart(); }
 
     bool isInternal() const
     {

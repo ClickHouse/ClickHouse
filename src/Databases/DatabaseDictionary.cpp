@@ -147,7 +147,7 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQueryImpl() const
         WriteBufferFromString buffer(query);
         buffer << "CREATE DATABASE " << backQuoteIfNeed(database_name) << " ENGINE = Dictionary";
         if (!comment.empty())
-            buffer << " COMMENT " << backQuote(comment);
+            buffer << " COMMENT " << quoteString(comment);
     }
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;

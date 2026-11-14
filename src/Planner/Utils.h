@@ -22,9 +22,12 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/WindowDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+class ColumnsDescription;
 
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
@@ -37,7 +40,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
     SharedHeaders & query_plans_headers,
     ContextPtr context);
@@ -96,6 +99,16 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 /// their expressions are not entered, because a grant on the alias name is sufficient to use it.
 NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression);
 
+/// Names of the columns and subcolumns of a table that the current user can read with `SELECT`, for a trivial query like
+/// `SELECT count() FROM table`, which is allowed if at least one of them is readable. Besides the columns, it includes
+/// subcolumns with a grant on their exact name, on the table itself or on a table of its `Alias` chain (`storage` may be
+/// null). Each name is checked like a query that reads it, on the table and on every hop of the `Alias` chain.
+NameSet getColumnsSelectableByTrivialQuery(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const ColumnsDescription & columns,
+    const ContextPtr & query_context);
+
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
@@ -107,9 +120,11 @@ NameSet checkAccessRights(
     const ContextPtr & query_context);
 
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
+/// `view_source_in_subqueries`: see `SelectQueryOptions`.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
+        bool view_source_in_subqueries,
         bool check_access_rights = false);
 
 /// Build filter for specific table_expression
@@ -150,11 +165,6 @@ void planPreparedSetSubqueries(const PreparedSets::Subqueries & subqueries, cons
 /// lookup would compute a different key and fail with "No set is registered for key". The regular
 /// planner path (`addBuildSubqueriesForSetsStepIfNeeded`) observes the same order.
 void buildPreparedSetsInplace(const PlannerContextPtr & planner_context, const ContextPtr & context);
-
-/// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise return empty.
-/// If the window frame is set in sql, use it anyway.
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 

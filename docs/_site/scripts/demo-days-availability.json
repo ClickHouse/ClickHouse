@@ -23,5 +23,8 @@
   "2026-06-05": [
     "anomaly-alerts",
     "schema-migrations"
+  ],
+  "2026-10-15": [
+    "source-level-access-control-for-promql-sources"
   ]
 }

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -59,7 +60,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     /// `tryPushDownVolumeReducingFunction` moves these functions below the filter so that the wide
     /// argument column is not copied by the filter. Keeping them in the filter part here prevents
     /// the two optimizations from moving the same nodes in opposite directions forever.
-    std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> volume_reducing_functions;
     if (settings.push_down_volume_reducing_functions)
         volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expr, filter_dag_node);
 

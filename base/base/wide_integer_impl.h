@@ -636,18 +636,13 @@ struct integer<Bits, Signed>::_impl
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
-        if constexpr (std::is_same_v<Integral, float> || std::is_same_v<Integral, BFloat16>)
+        if constexpr (std::is_same_v<Integral, BFloat16>)
         {
-            const float value = static_cast<float>(rhs);
-            /// |value| < 2^63, false for NaN and infinities.
-            if ((std::bit_cast<uint32_t>(value) & 0x7fffffffu) < std::bit_cast<uint32_t>(0x1p63f))
-                wide_integer_from_builtin(self, static_cast<int64_t>(value));
-            else
-                wide_integer_from_builtin(self, static_cast<double>(value));
+            wide_integer_from_builtin(self, static_cast<double>(static_cast<float>(rhs)));
         }
         else if constexpr (std::is_floating_point_v<Integral>)
         {
-            /// An 8-byte `long double` (arm64 macOS).
+            /// `float`, or an 8-byte `long double` (arm64 macOS).
             wide_integer_from_builtin(self, static_cast<double>(rhs));
         }
         else
@@ -771,32 +766,33 @@ struct integer<Bits, Signed>::_impl
 #endif
         static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
     {
-        constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
-        constexpr int64_t min_int = std::numeric_limits<int64_t>::lowest();
-
-        /// There are values in int64 that have more than 53 significant bits (in terms of double
-        /// representation). Such values, being promoted to double, are rounded up or down. If they are rounded up,
-        /// the result may not fit in 64 bits.
-        /// The example of such a number is 9.22337e+18.
-        /// As to_Integral does a static_cast to int64_t, it may result in UB.
-        /// The necessary check here is that FromDoubleIntermediateType has enough significant (mantissa) bits to store the
-        /// int64_t max value precisely.
-
-        if (static_cast<FromDoubleIntermediateType>(rhs) > static_cast<FromDoubleIntermediateType>(min_int)
-            && static_cast<FromDoubleIntermediateType>(rhs) < static_cast<FromDoubleIntermediateType>(max_int))
+        /// Every `double` in (-2^63, 2^63) truncates to a representable `int64_t`; NaN fails both comparisons.
+        if (rhs > -0x1p63 && rhs < 0x1p63) [[likely]]
         {
             self = static_cast<int64_t>(rhs);
             return;
         }
 
+        self = from_double_out_of_line(rhs);
+    }
+
+    /// Out of line and returned by value, so that the inlined caller can keep `self` in registers.
+    NO_INLINE
+#if (LDBL_MANT_DIG >= 64)
+    constexpr
+#endif
+    static integer<Bits, Signed> from_double_out_of_line(double rhs) noexcept
+    {
         const FromDoubleIntermediateType rhs_long_double = (static_cast<FromDoubleIntermediateType>(rhs) < 0)
             ? -static_cast<FromDoubleIntermediateType>(rhs)
             : static_cast<FromDoubleIntermediateType>(rhs);
 
+        integer<Bits, Signed> self;
         set_multiplier(self, rhs_long_double);
 
         if (rhs < 0)
             self = -self;
+        return self;
     }
 
     template <size_t Bits2, typename Signed2>
@@ -983,6 +979,36 @@ private:
         return res;
     }
 
+    /// 128-bit and 256-bit addition and subtraction use add_sub instead of the generic two-pass loops (plus / minus),
+    /// which branch on the sign of the right-hand side and propagate the carry in a second pass. The right-hand side is
+    /// a wide integer of at most `Bits` bits or a native integer of up to 64 bits, which is sign- or zero-extended first.
+    template <typename T>
+    static constexpr bool use_add_sub = (Bits == 128 || Bits == 256)
+        && (IsWideInteger<T>::value || (std::is_integral_v<T> && sizeof(T) <= sizeof(base_type)));
+
+    /// Two's-complement addition and subtraction are the same for signed and unsigned values, so add_sub needs no
+    /// branch on the sign. It makes one pass over the 64-bit pieces, with the carry (or borrow) running from each
+    /// piece to the next and no branches. This portable method uses the compiler's add/subtract-with-carry builtins,
+    /// which compile to a scalar carry chain, and for 256 bits it is as fast as `_BitInt(256)`.
+    template <bool subtract, typename T>
+    constexpr static integer<Bits, Signed> add_sub(const integer<Bits, Signed> & lhs, const T & rhs) noexcept
+    {
+        static_assert(sizeof(unsigned long long) == sizeof(base_type));
+        const integer<Bits, Signed> r = rhs;
+        integer<Bits, Signed> res;
+        unsigned long long carry = 0;
+        for (unsigned i = 0; i < item_count; ++i)
+        {
+            const unsigned long long a = lhs.items[little(i)];
+            const unsigned long long b = r.items[little(i)];
+            if constexpr (subtract)
+                res.items[little(i)] = static_cast<base_type>(__builtin_subcll(a, b, carry, &carry));
+            else
+                res.items[little(i)] = static_cast<base_type>(__builtin_addcll(a, b, carry, &carry));
+        }
+        return res;
+    }
+
     template <typename T>
     constexpr static integer<Bits, Signed> multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
@@ -1105,15 +1131,9 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
+            if constexpr (use_add_sub<T>)
             {
-                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
-                {
-                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
-                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(new_rhs));
-                }
-                else
-                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(rhs));
+                return add_sub<false>(lhs, rhs);
             }
             else
             {
@@ -1136,15 +1156,9 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
+            if constexpr (use_add_sub<T>)
             {
-                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
-                {
-                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
-                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(new_rhs));
-                }
-                else
-                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(rhs));
+                return add_sub<true>(lhs, rhs);
             }
             else
             {
@@ -1504,7 +1518,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            /// Not routed through _BitInt(256), unlike addition and multiplication: for division
+            /// Not routed through _BitInt(256), unlike multiplication: for division
             /// the compiler emits a generic bignum sequence that is an order of magnitude slower
             /// than `divide` below.
             integer<Bits, unsigned> numerator = make_positive(lhs);
