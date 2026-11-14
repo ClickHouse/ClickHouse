@@ -1,0 +1,28 @@
+values, UTC
+[21,22,23,0,1,2]
+values, Asia/Kolkata
+[10,11,12,13,14,15]
+values, Date32 in America/New_York
+[0,10,5]
+partition IDs
+['2','21','22','23','96']
+partition pruning across the epoch
+4	4
+1	1
+primary key analysis across the epoch
+1	1
+2	2
+DateTime64(3) primary key analysis across the epoch
+[23,23,0]
+2	2
+sorting key analysis across the epoch
+3	3
+sorting key analysis across the epoch, Asia/Kolkata
+[15,16,18,20,109]
+3	3
+Date32 primary key analysis across the epoch
+[0,10,5,29]
+1	1
+Date primary key analysis after 1970-01-01
+[4294967294,11,35]
+1	1
