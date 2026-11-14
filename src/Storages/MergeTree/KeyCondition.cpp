@@ -57,6 +57,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/itoa.h>
@@ -3013,9 +3014,25 @@ static bool castColumnWithoutNulls(
 }
 
 
+/// Whether `column` holds a NULL, at the top level or inside a `Tuple`, `Array` or `Map`.
+static bool columnHoldsNull(const IColumn & column, const IDataType & type)
+{
+    if (!anyInTypeTree(type, [](const IDataType & node) { return canContainNull(node); }))
+        return false;
+
+    /// A `Null` field also carries the `-inf`/`+inf` stand-ins of a key range, so ask for a real NULL.
+    auto is_null = [](const Field & field) { return field.isNull() && !field.isPositiveInfinity() && !field.isNegativeInfinity(); };
+    for (size_t i = 0; i < column.size(); ++i)
+        if (anyFieldSatisfies(column[i], is_null))
+            return true;
+    return false;
+}
+
+
 /// Converts `in_column` to the type the transform DAG consumes and writes it to `out_column`/`out_type`,
 /// so the value the transform will see is observable before the transform runs.
-/// Returns false when the conversion cannot be applied accurately to every value in `in_column`.
+/// Returns false when the conversion cannot be applied accurately to every value in `in_column`, or when
+/// `in_column` holds a NULL and the transform reads the value stored under a NULL.
 static bool convertColumnForDeterministicDag(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
@@ -3025,6 +3042,12 @@ static bool convertColumnForDeterministicDag(
     bool & out_cast_is_exact)
 {
     out_cast_is_exact = true;
+
+    /// A NULL stands for every NULL row, while a key expression such as `assumeNotNull` gives each such row the
+    /// value stored under its own NULL.
+    if (QueryPlanOptimizations::dagReadsUnspecifiedValueUnderNull(dag.actions->getActionsDAG())
+        && columnHoldsNull(*in_column, *in_type))
+        return false;
 
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
