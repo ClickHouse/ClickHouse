@@ -81,6 +81,7 @@ COPY table_name [(column [, ...])] FROM STDIN [[WITH] (option [, ...])]
 - `COPY ... TO STDOUT` sends the rows of a table, or the result of a query, to the client. `COPY ... FROM STDIN` inserts the rows that the client sends. The rows are inserted only after the client has sent all of them and they have all been parsed, so a copy that the client aborts, or whose data cannot be parsed, inserts no rows.
 - The data is in the PostgreSQL text format (tab-separated, the default) or in CSV (`FORMAT csv`). `HEADER` adds a first line with the column names, or skips it when reading. The binary format is not supported.
 - `DELIMITER` and `QUOTE` are accepted only with their default values for the format (`QUOTE` only with CSV), and `NULL` only as `'\N'` or, with CSV, as the empty string, which is the CSV default. Other options, such as `ENCODING` or `FORCE_QUOTE`, are not supported. Copying to or from a file or a program on the server is not supported.
+- `COPY` runs only as a simple query, as `psql` sends it. A `COPY` sent with the extended query protocol (`Parse`, `Bind` and `Execute` messages) is rejected with the error `COPY is not supported in extended PostgreSQL protocol queries`.
 
 For example, with `psql`:
 
