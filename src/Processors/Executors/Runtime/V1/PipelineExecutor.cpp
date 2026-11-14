@@ -61,7 +61,8 @@ namespace Runtime::V1
 // Class helping a thread to deal with acquired workload resources
 struct WorkloadResources
 {
-    // CPU slots lease
+    // CPU slot of the thread, and the same slot as a lease if it is one
+    IAcquiredSlot * cpu_slot;
     ISlotLease * lease;
     UInt64 last_renew_ns = 0;
 
@@ -73,8 +74,9 @@ struct WorkloadResources
     ISlotLease * prev_cpu_lease = nullptr;
     bool publishes_lease = false; // moved to the new instance by the move constructor
 
-    WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
-        : lease(dynamic_cast<ISlotLease*>(cpu_slot))
+    WorkloadResources(IAcquiredSlot * cpu_slot_, const QueryStatusPtr & status)
+        : cpu_slot(cpu_slot_)
+        , lease(dynamic_cast<ISlotLease*>(cpu_slot))
         , reservation(status ? status->getMemoryReservation() : nullptr)
         , tracker(status ? status->getMemoryTracker() : nullptr)
     {
@@ -100,7 +102,8 @@ struct WorkloadResources
     }
 
     WorkloadResources(WorkloadResources && other) noexcept
-        : lease(other.lease)
+        : cpu_slot(other.cpu_slot)
+        , lease(other.lease)
         , last_renew_ns(other.last_renew_ns)
         , reservation(other.reservation)
         , tracker(other.tracker)
@@ -421,6 +424,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 #endif
 
     WorkloadResources resources(std::move(resources_));
+    CurrentCPUSlotScope cpu_slot_scope(resources.cpu_slot);
 
     auto & context = tasks.getThreadContext(thread_num);
 
@@ -615,6 +619,11 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
     //    all thread should be allocated through scheduler using different resource links
     // 4) If we have no cpu-related resources:
     //    the ConcurrencyControl class is used instead of resource scheduler
+    // 5) If the execution is started by a processor, on a thread that already executes on a CPU slot (e.g. the query of a `direct` dictionary):
+    //    in modes 1) and 3), master thread uses "free" noncompeting CPU slot, as in mode 2), the other threads are allocated as usual.
+    //    That thread executes the master thread itself, also with several threads (see `executeImpl`), while the outer execution
+    //    waits for it, so this does not add a thread, and the CPU it consumes is accounted to the slot it holds. Requesting
+    //    another slot instead could wait forever for the slot held by the thread itself, e.g. with `max_concurrent_threads = 1`.
     if (concurrency_control)
     {
         auto query_context = CurrentThread::tryGetQueryContext();
@@ -639,6 +648,9 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                 workload_cpu_scheduling_is_enabled = !master_thread_resource_name.empty() || !worker_thread_resource_name.empty();
             }
         }
+
+        if (getCurrentCPUSlot())
+            master_thread_link = {};
 
         if (workload_cpu_scheduling_is_enabled)
         {
@@ -772,7 +784,36 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
     try
     {
-        if (num_threads > 1)
+        if (num_threads > 1 && getCurrentCPUSlot())
+        {
+            /// The thread already executes on a CPU slot, so it executes the master thread on it, see `allocateCPU`, instead of
+            /// waiting for the other threads, during which it would park its CPU lease while the master thread runs for free.
+            /// The async tasks, which take no CPU slot, are processed by another thread.
+            ThreadFromGlobalPool async_tasks_thread([this, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
+                try
+                {
+                    tasks.processAsyncTasks();
+                }
+                catch (...)
+                {
+                    cancelWithException(std::current_exception());
+                }
+            });
+            SCOPE_EXIT({
+                if (!tasks.isFinished())
+                    finish();
+                async_tasks_thread.join();
+            });
+
+            auto slot = cpu_slots->acquire();
+            tasks.upscale(slot->slot_id);
+            spawnThreads({});
+            executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
+            pool->wait();
+        }
+        else if (num_threads > 1)
         {
             // Start at least one thread, could block to acquire the first CPU slot
             spawnThreads(cpu_slots->acquire());
