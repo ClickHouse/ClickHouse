@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -21,9 +22,6 @@ namespace ErrorCodes
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
-
-class IGeneralWindowFunction;
-using GeneralWindowFunctionPtr = std::shared_ptr<const IGeneralWindowFunction>;
 
 /** Function node represents function in query tree.
   * Function syntax: function_name(parameter_1, ...)(argument_1, ...).
@@ -162,10 +160,10 @@ public:
     bool isResolved() const { return function != nullptr; }
 
     /// Is function node window function
-    bool isWindowFunction() const { return hasWindow(); }
+    bool isWindowFunction() const { return kind == FunctionKind::WINDOW; }
 
     /// Is function node aggregate function
-    bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE && !isWindowFunction(); }
+    bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
 
     /// Is function node ordinary function
     bool isOrdinaryFunction() const { return kind == FunctionKind::ORDINARY; }

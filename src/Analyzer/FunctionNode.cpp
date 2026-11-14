@@ -141,10 +141,10 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     buffer << ", function_name: " << function_name;
 
     std::string function_type = "ordinary";
-    if (isAggregateFunction())
-        function_type = "aggregate";
-    else if (isWindowFunction())
+    if (hasWindow())
         function_type = "window";
+    else if (isAggregateFunction())
+        function_type = "aggregate";
 
     buffer << ", function_type: " << function_type;
 
@@ -156,7 +156,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     if (function)
     {
         buffer << ", result_type: " + getResultType()->getName();
-        if (!isAggregateFunction() && !isWindowFunction() && getFunction()->isSpatialPredicate())
+        if (!isAggregateFunction() && !hasWindow() && getFunction()->isSpatialPredicate())
             buffer << ", is_spatial_predicate: true";
     }
 
@@ -259,7 +259,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// Table functions are `TableFunctionNode`, so `not` here is boolean NOT
     function_ast->setIsOperator(is_operator || function_name == "not");
 
-    if (isWindowFunction())
+    if (hasWindow())
     {
         function_ast->setIsWindowFunction(true);
         function_ast->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
