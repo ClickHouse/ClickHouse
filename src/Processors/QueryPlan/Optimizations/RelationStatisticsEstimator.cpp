@@ -165,7 +165,8 @@ std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilt
 
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
+RelationStats estimateReadRowsCount(
+    QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport, const FindSingleNodeRead & find_single_node_read)
 {
     if (prunesNothingAtPlanTime(filter))
         filter = nullptr;
@@ -181,13 +182,30 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
-            /// Range analysis normally enforces throwing read limits and memoizes its result.
-            /// At this stage, however, later planning may make the executed read exempt from those
-            /// limits. In that case use an estimation-only analysis; execution will analyze again
-            /// after its final read mode is known.
-            analyzed_result = reading->hasThrowingReadRowLimit()
-                ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
-                : reading->selectRangesToRead();
+            /// A read of the probe plan of automatic parallel replicas has no index conditions, and takes the
+            /// analysis of its single-node read if that plan is chosen. Estimate from that analysis as well, or from
+            /// the one the single-node estimate ran under a throwing read limit, which it does not keep as the read's,
+            /// so that the probe chooses what the single-node plan chose. Without either, leave the read without an
+            /// estimate rather than analyze it here, which would repeat the work and prune nothing.
+            if (find_single_node_read)
+            {
+                if (const auto * single_node_read = find_single_node_read(*reading))
+                {
+                    analyzed_result = single_node_read->getAnalyzedResult();
+                    if (!analyzed_result)
+                        analyzed_result = single_node_read->getAnalyzedResultForEstimation();
+                }
+            }
+            else
+            {
+                /// Range analysis normally enforces throwing read limits and memoizes its result.
+                /// At this stage, however, later planning may make the executed read exempt from those
+                /// limits. In that case use an estimation-only analysis; execution will analyze again
+                /// after its final read mode is known.
+                analyzed_result = reading->hasThrowingReadRowLimit()
+                    ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+                    : reading->selectRangesToRead();
+            }
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty
@@ -369,7 +387,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport);
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport, find_single_node_read);
     }
 
     /// A join that has already been optimized enters its parent's join graph as a single relation,
@@ -396,7 +414,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -409,7 +427,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (array_join_step || (expression_step && expression_step->getExpression().hasArrayJoin()))
     {
         /// A filter above the array join can read its output, which the statistics of the input do not describe.
-        auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
+        auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport, find_single_node_read);
         if (stats.estimated_rows && *stats.estimated_rows != 0)
         {
             /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.
@@ -431,7 +449,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (expression_step)
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -440,21 +458,21 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport);
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport, find_single_node_read);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -470,11 +488,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// exact phase from this estimate, and the build filter sits below the join shuffle, so
     /// the walk has to cross exchanges on every build.
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport, find_single_node_read);
 
     return {};
 }

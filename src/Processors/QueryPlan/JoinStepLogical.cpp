@@ -2062,8 +2062,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
-            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
-            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(
+                *children[0], /*filter=*/nullptr, /*for_runtime_filter_transport=*/false, optimization_settings.find_single_node_read)
+                .column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(
+                *children[1], /*filter=*/nullptr, /*for_runtime_filter_transport=*/false, optimization_settings.find_single_node_read)
+                .column_stats;
         }
     }
 
@@ -2550,7 +2554,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
     if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
     {
         auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
+            ? QueryPlanOptimizations::estimateReadRowsCount(
+                  *children[1], /*filter=*/nullptr, /*for_runtime_filter_transport=*/false, optimization_settings.find_single_node_read)
+                  .column_stats
             : right_relation_column_stats;
         QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
         for (const auto & [name, stats] : right_column_stats)
