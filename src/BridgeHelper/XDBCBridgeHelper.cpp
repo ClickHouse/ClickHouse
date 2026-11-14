@@ -1,4 +1,8 @@
 #include <BridgeHelper/XDBCBridgeHelper.h>
+#include <Common/quoteString.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeCustomGeo.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -8,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int UNKNOWN_TYPE;
 }
 
 template <typename T>
@@ -86,6 +91,19 @@ IdentifierQuotingStyle XDBCBridgeHelper<T>::getIdentifierQuotingStyle()
     }
 
     return *quote_style;
+}
+
+void ODBCBridgeMixin::checkColumnTypes(const NamesAndTypesList & columns)
+{
+    /// clickhouse-odbc-bridge parses the types with an older ClickHouse, where `Time` and `Geometry` are aliases of
+    /// `Int64` and `String`, so it would exchange the values of such a column in another binary layout.
+    for (const auto & column : columns)
+    {
+        if (anyInTypeTree(*column.type, [](const IDataType & type)
+                { return isTime(type) || dynamic_cast<const DataTypeGeometryName *>(type.getCustomName()); }))
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Type {} of column {} is not supported by the ODBC bridge",
+                column.type->getName(), backQuoteIfNeed(column.name));
+    }
 }
 
 template class XDBCBridgeHelper<ODBCBridgeMixin>;
