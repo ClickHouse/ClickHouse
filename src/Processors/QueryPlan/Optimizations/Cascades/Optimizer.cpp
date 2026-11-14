@@ -1,4 +1,6 @@
 #include <Common/ThreadStatus.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -424,7 +426,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
     /// cycle only while an exchange costs more than nothing, so the path excludes it by construction.
     /// Path-local: added when a frame is pushed, removed when popped, so the same expression
     /// can still be reused in an independent sibling branch.
-    std::unordered_set<GroupExpression *> active_path;
+    UnorderedSetWithMemoryTracking<GroupExpression *> active_path;
 
     /// Select the cheapest implementation of a group that is not on the current path.
     auto select_best = [&](GroupId group_id, const ExpressionProperties & props) -> GroupExpressionPtr
@@ -445,11 +447,11 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         GroupId group_id;
         GroupExpressionPtr expression;
         size_t next_child = 0;
-        std::vector<QueryPlanPtr> child_plans;
+        QueryPlanPtrs child_plans;
         bool on_active_path = false;  /// whether this frame's expression was added to `active_path`
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     QueryPlanPtr result;
 
     /// Push a frame for `expression`, recording it on the active path if it is single-input.

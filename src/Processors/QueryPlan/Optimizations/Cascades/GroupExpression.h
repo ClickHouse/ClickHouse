@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
@@ -63,14 +65,14 @@ public:
         ExpressionProperties required_properties;
     };
 
-    std::vector<Input> inputs;
+    VectorWithMemoryTracking<Input> inputs;
 
     ExpressionProperties properties;
 
     /// For an enforcer: the required properties that enforcer rules made it for. Empty for other
     /// expressions. An enforcer is an answer only to these required properties and to required
     /// properties equal to its own (see `answers`).
-    std::vector<ExpressionProperties> enforced_for;
+    VectorWithMemoryTracking<ExpressionProperties> enforced_for;
 
     bool isEnforcer() const { return !enforced_for.empty(); }
 
@@ -87,7 +89,7 @@ public:
     /// only a single instance keeps that promise (see `AggregationImplementation`).
     bool is_partial_of_two_stage_aggregation = false;
 
-    std::unordered_set<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
+    UnorderedSetWithMemoryTracking<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 
     std::optional<ExpressionCost> cost;
 

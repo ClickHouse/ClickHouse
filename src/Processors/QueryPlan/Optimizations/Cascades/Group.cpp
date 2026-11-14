@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
@@ -114,7 +115,7 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
 ExpressionWithCost Group::getBestImplementation(
     const ExpressionProperties & required_properties,
     const CostConfig & cost_config,
-    const std::unordered_set<GroupExpression *> & excluded) const
+    const UnorderedSetWithMemoryTracking<GroupExpression *> & excluded) const
 {
     UInt64 key = distributionKey(required_properties.distribution);
     auto it = best_implementations.find(key);

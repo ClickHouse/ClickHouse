@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['пользователи базы данных', 'управление доступом', 'безопасность', 'разрешения', 'управление пользователями']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом руководстве показаны два способа управления пользователями базы данных: через консоль SQL и непосредственно в базе данных.
 
 <div id="sql-console-passwordless-authentication">
@@ -103,7 +101,15 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 На иллюстрации ниже показаны различные способы выдачи разрешений пользователю.
 
-<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="Иллюстрация, показывающая различные способы выдачи разрешений пользователю" size="md" background="black" />
+<div className="ch-image-md ch-image-background-black">
+
+<Frame>
+
+![Иллюстрация, показывающая различные способы выдачи разрешений пользователю](/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp)
+
+</Frame>
+
+</div>
 
 <div id="initial-settings">
   ### Начальные настройки

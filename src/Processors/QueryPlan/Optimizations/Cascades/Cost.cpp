@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -445,7 +446,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 
     /// Select the best implementation of each input first: the subtree cost accumulates over
     /// them, and an exchange prices its transfer on the selected child's physical output rows.
-    std::vector<ExpressionWithCost> selected_inputs;
+    VectorWithMemoryTracking<ExpressionWithCost> selected_inputs;
     selected_inputs.reserve(expression->inputs.size());
     bool has_unsatisfiable_input = false;
     for (const auto & input : expression->inputs)
