@@ -34,6 +34,7 @@
 #include <Core/Settings.h>
 
 #include <stack>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -625,7 +626,7 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
     ParentNodes parents;
     std::unordered_set<const FutureSet *> removed_filter_sets;
     std::vector<QueryPlan::Node *> delayed_creating_sets_nodes;
-    std::stack<QueryPlan::Node *> stack;
+    StackWithMemoryTracking<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
     {

@@ -8,13 +8,20 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 관리형 모드(Managed mode)는 사용자가 소유한 Amazon EKS 클러스터에서 실행됩니다. 각 릴리스에는 4개의 Terraform 루트 모듈(이하 루트)이 포함되며, 이 모듈은 요구 사항을 충족하는 클러스터를 새로 생성하거나 기존 VPC 또는 클러스터에 필요한 요소를 추가합니다. 루트는 시스템 노드 그룹과 관리형 애드온(`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`)을 포함한 클러스터를 생성하고, IAM role, KMS 키, 태그도 함께 생성합니다. 반면 `existing-eks`는 `install_addons`에 지정한 애드온만 설치합니다. Helm 대상 환경에서는 이어서 `clicklink clctl init`가 출력값과 플랫폼 bundle을 바탕으로 플랫폼 계층을 설치합니다. 플랫폼 계층에는 Karpenter, AWS Load Balancer 컨트롤러, StorageClass, 버전이 고정된 구성 요소가 포함됩니다([Terraform 출력값으로 커넥터 초기화하기](#hand-off) 참조). 루트를 사용하려면 Terraform 1.10 이상 또는 OpenTofu 1.12 이상과 AWS provider `~> 6.0`이 필요합니다. 이 페이지의 모든 명령에서 `terraform` 대신 `tofu`를 사용할 수 있습니다.
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="AWS에서 ClickHouse Connector를 위한 Terraform 프로비저닝 흐름" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![AWS에서 ClickHouse Connector를 위한 Terraform 프로비저닝 흐름](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+
+</Frame>
+
+</div>
 
 ## 시작하기 전에 {#before-you-begin}
 

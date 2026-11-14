@@ -19,7 +19,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
-#include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -30,7 +29,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -77,6 +75,27 @@ bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
     return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
 }
 
+/// A data file with the size its `add` action records.
+struct DataObjectInfo : public DB::ObjectInfo
+{
+    DataObjectInfo(std::string path_, int64_t size_)
+        : DB::ObjectInfo(DB::RelativePathWithMetadata(std::move(path_)))
+        , size(size_)
+    {
+    }
+
+    std::shared_ptr<DB::ObjectInfo> clone() const override { return std::make_shared<DataObjectInfo>(*this); }
+
+    std::optional<size_t> getFileSizeHint() const override
+    {
+        if (size > 0)
+            return static_cast<size_t>(size);
+        return std::nullopt;
+    }
+
+    const int64_t size;
+};
+
 }
 
 class TableSnapshot::Iterator final : public DB::IObjectIterator, private DB::WithContext
@@ -109,7 +128,6 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
-        DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -126,7 +144,6 @@ public:
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
-        , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
@@ -173,18 +190,24 @@ public:
 
     ~Iterator() override
     {
-        shutdown.store(true);
+        {
+            /// Under the mutex, so that the scanning thread does not miss the notification between checking
+            /// the condition and starting to wait.
+            std::lock_guard lock(next_mutex);
+            shutdown.store(true);
+        }
         schedule_next_batch_cv.notify_one();
         if (thread.joinable())
             thread.join();
     }
 
-    const std::string & getDataPath() const { return helper->getDataPath(); }
-
     const std::string & getTableLocation() const { return helper->getTableLocation(); }
 
+    /// Called on the scanning thread. Under the mutex, so that `next` does not miss the notification between
+    /// checking the condition and starting to wait, and reads `scan_exception` after it is set.
     void setScanException()
     {
+        std::lock_guard lock(next_mutex);
         if (!scan_exception)
         {
             scan_exception = std::current_exception();
@@ -428,14 +451,9 @@ public:
             }
 
             parseDVHandle(*scan_item, object);
-            object->setObjectMetadata(
-                DB::getObjectMetadataForRead(*object_storage, DB::RelativePathWithMetadata(object->getPath()), /*with_tags=*/ false));
 
             if (callback)
-            {
-                chassert(object->getObjectMetadata());
-                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
-            }
+                callback(DB::FileProgress(0, object->getFileSizeHint().value_or(0)));
             return object;
         }
     }
@@ -610,9 +628,8 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        std::string full_path = DB::resolvePathInsideTable(
-            context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
-        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path), context->getContext());
+        auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
         object->data_lake_metadata.emplace();
         if (stats)
             object->data_lake_metadata->num_rows = stats->num_records;
@@ -658,7 +675,6 @@ private:
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
-    const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
@@ -1013,7 +1029,6 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
-        object_storage,
         filter_dag,
         callback,
         list_batch_size,

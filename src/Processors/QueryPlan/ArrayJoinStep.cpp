@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/array/emptyArrayToSingle.h>
@@ -11,7 +12,9 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Common/JSONBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 namespace DB
 {
 
@@ -71,6 +74,48 @@ std::optional<ActionsDAG> ArrayJoinStep::toActionsDAG() const
         dag.addOrReplaceInOutputs(dag.addAlias(dag.addArrayJoin(*array, {}), name));
     }
     return dag;
+}
+
+NameSet ArrayJoinStep::getReadColumns() const
+{
+    NameSet names(array_join.columns.begin(), array_join.columns.end());
+    if (element_filter)
+        for (const auto & name : element_filter->getRequiredColumnsNames())
+            names.insert(name);
+    return names;
+}
+
+bool ArrayJoinStep::canRemoveUnusedColumns() const
+{
+    /// The step finds the columns it reads by name.
+    const auto & header = *input_headers.front();
+    return std::ranges::all_of(getReadColumns(), [&](const String & name)
+    {
+        return std::ranges::count_if(header, [&](const auto & column) { return column.name == name; }) == 1;
+    });
+}
+
+IQueryPlanStep::UnneededInputPositions ArrayJoinStep::getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
+{
+    auto unneeded = unneeded_output_positions;
+    for (const auto & name : getReadColumns())
+        std::erase(unneeded, input_headers.front()->getPositionByName(name));
+    return {std::move(unneeded)};
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult
+ArrayJoinStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/, const VectorWithMemoryTracking<PrunedInput> & inputs)
+{
+    const auto & pruned = inputs.at(0);
+
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = pruned.dropped_positions;
+    result.step_changed = !blocksHaveEqualStructure(*input_headers.front(), *pruned.header);
+
+    if (result.step_changed)
+        updateInputHeader(pruned.header, 0);
+
+    return result;
 }
 
 void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column)
@@ -157,9 +202,9 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
-    /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
-    /// distributed, serialized and plan-based parallel replicas plans, so an older worker or replica never
-    /// receives it and no version bump is needed
+    /// The filter is serialized locally (e.g. calculateHashTableCacheKeys) and in plan fragments of plan-based
+    /// parallel replicas, which go only to replicas at `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS`
+    /// or later, which can read it. Fusion bails for distributed and serialized plans, so an older worker never receives it
     const bool serialize_filter = element_filter.has_value();
 
     UInt8 flags = 0;

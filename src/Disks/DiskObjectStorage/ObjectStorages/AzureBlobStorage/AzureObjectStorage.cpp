@@ -12,6 +12,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/getRandomASCIIString.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
@@ -61,6 +62,16 @@ namespace ErrorCodes
 namespace
 {
 
+/// An account with a hierarchical namespace lists each directory as an empty blob with
+/// `hdi_isfolder=true` metadata (the marker `DataLakePathClient::GetProperties` reads).
+bool isDirectoryEntry(const Azure::Storage::Blobs::Models::BlobItem & blob)
+{
+    if (blob.BlobSize != 0)
+        return false;
+    auto it = blob.Details.Metadata.find("hdi_isfolder");
+    return it != blob.Details.Metadata.end() && it->second == "true";
+}
+
 class AzureIteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
@@ -77,6 +88,7 @@ public:
     {
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
+        options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     }
 
     ~AzureIteratorAsync() override
@@ -99,6 +111,8 @@ private:
 
         for (const auto & blob : blobs_list)
         {
+            if (isDirectoryEntry(blob))
+                continue;
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -106,7 +120,7 @@ private:
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -211,6 +225,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
+    options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     if (max_keys)
         options.PageSizeHint = max_keys;
     else
@@ -228,6 +243,8 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         for (const auto & blob : blob_list_response.Blobs)
         {
+            if (isDirectoryEntry(blob))
+                continue;
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -235,7 +252,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     .last_modified = Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
-                    .etag = blob.Details.ETag.ToString(),
+                    .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -422,6 +439,7 @@ void AzureObjectStorage::removeObjectImpl(
 
     auto params = connection_params.get();
 
+    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch watch;
     Int32 error_code = 0;
     String error_message;
@@ -546,6 +564,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         auto object_batch = rest_objects.first(std::min(rest_objects.size(), AZURE_BATCH_MAX_SUBREQUESTS));
         SCOPE_EXIT({ rest_objects = rest_objects.last(rest_objects.size() - object_batch.size()); });
 
+        HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
         Stopwatch watch;
         AzureBlobStorage::BlobContainerBatch requests = client_ptr->CreateBatch();
         std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;
@@ -709,7 +728,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
-    result.etag = properties.ETag.ToString();
+    result.etag = AzureBlobStorage::getETag(properties.ETag, path);
     if (!properties.Metadata.empty())
     {
         result.attributes.emplace();

@@ -10,15 +10,15 @@ integration:
   - category: 'clickpipes'
 ---
 
-[ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) هي خدمة Postgres مُدارة بالكامل في ClickHouse Cloud، وهي أسرع مصادر Postgres في الاتصال بـ ClickPipes: فالنسخ المتماثل المنطقي مُفعَّل على كل instance، وعناوين IP الخاصة بـ ClickPipes مسموح بها افتراضيًا، وتفاصيل الاتصال متاحة في نفس الكونسول الذي تُدار فيه خدمة ClickHouse الخاصة بك.
+[ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) هي خدمة Postgres مُدارة بالكامل في ClickHouse Cloud، وهي أسرع مصادر Postgres في الاتصال بـ ClickPipes: فالنسخ المتماثل المنطقي مُفعَّل على كل مثيل، وعناوين IP الخاصة بـ ClickPipes مسموح بها افتراضيًا، وتفاصيل الاتصال متاحة في نفس الكونسول الذي تُدار فيه خدمة ClickHouse الخاصة بك.
 
-هناك طريقتان لبدء النسخ المتماثل من instance تابع لـ ClickHouse Managed Postgres، وكلتاهما تُنشئ ClickPipe عاديًا لـ Postgres، لذا ينطبق كل ما ورد في [توثيق Postgres ClickPipe](/ar/integrations/clickpipes/postgres/index) بمجرد أن يبدأ الـ pipe في العمل.
+هناك ثلاث طرق لبدء النسخ المتماثل من مثيل تابع لـ ClickHouse Managed Postgres، وجميعها تُنشئ ClickPipe عاديًا لـ Postgres، لذا ينطبق كل ما ورد في [توثيق Postgres ClickPipe](/ar/integrations/clickpipes/postgres/index) بمجرد أن يبدأ مسار استيعاب البيانات في العمل.
 
 ## الخيار 1: المزامنة إلى ClickHouse من خدمة Postgres {#sync-to-clickhouse}
 
 افتح خدمة ClickHouse Managed Postgres الخاصة بك في كونسول ClickHouse Cloud وانقر على **Sync to ClickHouse** في الشريط الجانبي. يملأ المعالج بيانات اتصال المصدر تلقائيًا، ويتيح لك اختيار destination خدمة ClickHouse وطريقة النسخ المتماثل والجداول المراد نسخها. ولا يتطلب ذلك إعداد أي USER أو publication أو شبكة.
 
-اتبع دليل [Sync to ClickHouse](/ar/products/managed-postgres/sync-to-clickhouse/clickpipes) للحصول على شرح تفصيلي خطوة بخطوة. وللحصول على النسخ المتماثل بزمن استجابة منخفض، يمكنك أيضًا اختيار [WalShadow](/ar/products/managed-postgres/sync-to-clickhouse/walshadow)، وهو engine للنسخ المتماثل native يقرأ على مستوى نظام الملفات، وهو متاح حاليًا في private preview.
+اتبع دليل [Sync to ClickHouse](/ar/products/managed-postgres/clickpipes) للحصول على شرح تفصيلي خطوة بخطوة. وللحصول على النسخ المتماثل بزمن استجابة منخفض، يمكنك أيضًا اختيار [WalShadow](/ar/products/managed-postgres/walshadow)، وهو engine للنسخ المتماثل native يقرأ على مستوى نظام الملفات، وهو متاح حاليًا في private preview.
 
 ## الخيار 2: اختيار ClickHouse Managed Postgres كمصدر في ClickPipes {#clickpipes-source}
 
@@ -28,9 +28,11 @@ integration:
 
 افتح خدمة ClickHouse Managed Postgres وانقر على **Connect** لعرض المضيف والمنفذ وقاعدة البيانات والمستخدم وكلمة المرور. استخدم اتصال Postgres المباشر، وليس خيار **via PgBouncer**، إذ لا يدعم ClickPipes النسخ المتماثل عبر PgBouncer أو أي مجمّع اتصالات آخر. راجع [Connection](/ar/products/managed-postgres/connection) للمزيد من التفاصيل.
 
+باستخدام [clickhousectl](/ar/concepts/features/interfaces/cli)، يعرض الأمر `clickhousectl cloud postgres get <postgres-id>` اسم المضيف واسم المستخدم، لكنه لا يُعيد كلمة المرور أبدًا، إذ لا تُعرض إلا مرة واحدة عند تنفيذ الأمر `cloud postgres create`. ولتعيين كلمة مرور جديدة، استخدم الأمر `clickhousectl cloud postgres reset-password <postgres-id> --generate`.
+
 ### إنشاء مستخدم مع الأذونات {#creating-a-user-with-permissions}
 
-يمكنك الاتصال باستخدام المستخدم الافتراضي `postgres`. أما في بيئة الإنتاج فنوصي بمستخدم replication مخصص للقراءة فقط، تمامًا كما هو الحال مع أي مصدر Postgres آخر. اتصل بالـ instance الخاص بك عبر `psql` ثم نفّذ:
+يمكنك الاتصال باستخدام المستخدم الافتراضي `postgres`. أما في بيئة الإنتاج فنوصي بمستخدم replication مخصص للقراءة فقط، تمامًا كما هو الحال مع أي مصدر Postgres آخر. اتصل بالمثيل الخاص بك عبر `psql` ثم نفّذ:
 
 1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
 
@@ -52,23 +54,23 @@ integration:
    ALTER USER clickpipes_user WITH REPLICATION;
    ```
 
-4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي ترغب في نسخها. ونوصي بشدة بأن تُضمّن في الـ publication الجداول التي تحتاجها فقط، تجنبًا للأعباء الإضافية على الأداء.
+4. أنشئ [منشورًا](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي ترغب في نسخها. ونوصي بشدة بأن تُضمّن في المنشور الجداول التي تحتاجها فقط، تجنبًا للأعباء الإضافية على الأداء.
 
 <Warning>
-  يجب أن يكون لأي جدول مُضمَّن في الـ publication إما **primary key** معرّف *أو* أن تكون **replica identity** الخاصة به مهيّأة على `FULL`. راجع [أسئلة Postgres الشائعة](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للاطلاع على إرشادات تحديد النطاق.
+  يجب أن يكون لأي جدول مُضمَّن في المنشور إما **primary key** معرّف *أو* أن تكون **replica identity** الخاصة به مهيّأة على `FULL`. راجع [أسئلة Postgres الشائعة](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للاطلاع على إرشادات تحديد النطاق.
 </Warning>
 
-* لإنشاء publication لجداول محددة:
+* لإنشاء منشور لجداول محددة:
 
   ```sql
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * لإنشاء publication لجميع الجداول في schema محدد:
+* لإنشاء منشور لجميع الجداول في schema محدد:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 ### النسخ المتماثل المنطقي (النسخ المتماثل المنطقي) {#logical-replication}
 
@@ -80,20 +82,48 @@ SHOW wal_level; -- should be logical
 
 ### الوصول عبر الشبكة {#network-access}
 
-يقبل ClickHouse Managed Postgres الاتصالات من ClickPipes افتراضيًا. أما إذا كنت قد هيّأت [IP filters](/ar/products/managed-postgres/security#ip-whitelisting) على خدمة Postgres الخاصة بك، فأضف [عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي يوجد بها **خدمة ClickHouse** إلى قائمة العناوين المسموح بها.
+يقبل ClickHouse Managed Postgres الاتصالات من ClickPipes افتراضيًا. أما إذا كنت قد هيّأت [IP filters](/ar/products/managed-postgres/security#ip-whitelisting) على خدمة Postgres الخاصة بك، فأضف [عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي يوجد بها **خدمة ClickHouse** إلى قائمة العناوين المسموح بها. وباستخدام clickhousectl، أضف قاعدة واحدة لكل عنوان على منفذ Postgres المباشر، ثم شغّل `clickhousectl cloud postgres get <postgres-id>` للتحقق من النتيجة:
+
+```bash
+clickhousectl cloud postgres update <postgres-id> \
+  --add-ip-allow '<clickpipes-ip>:5432=clickpipes'
+```
 
 ### TLS {#tls}
 
-تُقدّم instances الخاصة بـ ClickHouse Managed Postgres شهادة موقّعة من CA فريدة لكل instance وغير موثوقة علنًا. ويكون التحقق من الشهادة مُمكّنًا افتراضيًا في ClickPipes، لذا يفشل فحص الاتصال إلى أن تقوم بأحد الإجراءين التاليين:
+تُقدّم المثيلات الخاصة بـ ClickHouse Managed Postgres شهادة موقّعة من CA فريدة لكل مثيل وغير موثوقة علنًا. ويكون التحقق من الشهادة مُمكّنًا افتراضيًا في ClickPipes، لذا يفشل فحص الاتصال إلى أن تقوم بأحد الإجراءين التاليين:
 
-* تنزيل حزمة شهادة CA من علامة التبويب **Settings** في خدمة Postgres الخاصة بك وتوفيرها عبر **Upload CA** في إعدادات اتصال ClickPipe. وهذا هو الخيار الموصى به. راجع [اتصال TLS مُتحقَّق منه](/ar/products/managed-postgres/connection#verified-tls) لمعرفة مكان الحصول على الحزمة.
-* تفعيل **Skip certificate verification** في إعدادات اتصال ClickPipe. يبقى الاتصال مشفّرًا، لكن دون التحقق من هوية server.
+* تنزيل حزمة شهادات جهات إصدار الشهادات من علامة التبويب **Settings** في خدمة Postgres الخاصة بك وتوفيرها عبر **Upload CA** في إعدادات اتصال ClickPipe. وهذا هو الخيار الموصى به. راجع [اتصال TLS مُتحقَّق منه](/ar/products/managed-postgres/connection#verified-tls) لمعرفة مكان الحصول على الحزمة.
+* تفعيل **Skip certificate verification** في إعدادات اتصال ClickPipe. يبقى الاتصال مشفّرًا، لكن دون التحقق من هوية خادم.
 
-إذا أنشأت pipe باستخدام `clickhousectl`، فاحصل على الحزمة ومرّرها عبر `--ca-certificate`:
+إذا أنشأت مسار استيعاب البيانات باستخدام clickhousectl، فاحصل على الحزمة ومرّرها عبر `--ca-certificate`، كما هو موضّح في [الخيار 3](#clickhousectl).
+
+## الخيار 3: إنشاء مسار استيعاب البيانات باستخدام clickhousectl {#clickhousectl}
+
+تُنشئ أداة [clickhousectl](/ar/concepts/features/interfaces/cli) مسار استيعاب البيانات نفسه من سطر الأوامر. أعدّ أولاً المستخدم والمنشور `clickpipes` كما هو موضح في [الخيار 2](#clickpipes-source). أما إذا كنت تستخدم المستخدم الافتراضي `postgres` بدلاً من ذلك، فاحذف الخيار `--publication-name`، وستتولى واجهة سطر الأوامر إنشاء منشور للجداول المُعيَّنة. يتطلب إنشاء مسار استيعاب البيانات [مفتاح API](/ar/products/cloud/features/admin-features/api/openapi)، لأن تسجيل الدخول عبر OAuth يمنح صلاحية القراءة فقط.
+
+ابحث عن اسم المضيف، ثم احفظ حزمة شهادات جهات إصدار الشهادات الخاصة بالمثيل:
 
 ```bash
-clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output pg-ca.pem
 ```
+
+أنشئ مسار استيعاب البيانات على خدمة ClickHouse الوجهة، مع تمرير حزمة شهادات جهات إصدار الشهادات عبر `--ca-certificate`:
+
+```bash
+clickhousectl cloud clickpipe create postgres <clickhouse-service-id> \
+  --name events-sync \
+  --host <postgres-hostname> \
+  --pg-database postgres \
+  --username clickpipes_user \
+  --password '<password>' \
+  --ca-certificate pg-ca.pem \
+  --publication-name clickpipes \
+  --table-mapping public.events:events
+```
+
+ينشئ مسار استيعاب البيانات جداول `ReplacingMergeTree`. لقراءة الحالة الحالية، استخدم `SELECT ... FROM events FINAL WHERE _peerdb_is_deleted = 0`. للاطلاع على الشرح الكامل، بما في ذلك انتظار وصول مسار استيعاب البيانات إلى الحالة `Running` والتحقق من البيانات، راجع طريقة العرض الخاصة بواجهة سطر الأوامر في [دليل Postgres ClickPipe](/ar/integrations/clickpipes/postgres/index).
 
 ## ما الخطوة التالية؟ {#whats-next}
 

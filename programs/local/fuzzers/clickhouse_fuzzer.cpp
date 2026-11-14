@@ -7,6 +7,7 @@
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
+#include <Common/StackTraceServiceSignal.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
@@ -87,7 +88,7 @@ static int clickhouseMain(int argc_, char ** argv_)
     updatePHDRCache();
 
 #if !defined(USE_MUSL)
-    checkHarmfulEnvironmentVariables(argv_);
+    checkHarmfulEnvironment(argv_);
 #endif
 
     /// This is used for testing. For example,
@@ -384,6 +385,14 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         struct sigaction usr1 = {};
         usr1.sa_sigaction = fuzzerSigusr1Handler;
         usr1.sa_flags = SA_SIGINFO;
+        /// `StackTrace(const ucontext_t &)` shares one thread-local unwind-fault recovery
+        /// (`asynchronous_stack_unwinding` and its `sigjmp_buf`) with the query profiler,
+        /// `system.stack_trace` and the `SIGTSTP` stack dumper. Block their signals while
+        /// this handler runs, so none of them can nest and clobber that state.
+        sigemptyset(&usr1.sa_mask);
+        sigaddset(&usr1.sa_mask, SIGUSR2);
+        sigaddset(&usr1.sa_mask, DB::STACK_TRACE_SERVICE_SIGNAL);
+        sigaddset(&usr1.sa_mask, SIGTSTP);
         sigaction(SIGUSR1, &usr1, &original_sigusr1_action);
 #pragma clang diagnostic pop
         handlers_installed = true;

@@ -3,21 +3,24 @@ slug: /use-cases/observability/clickstack/deployment/docker-compose
 title: 'Docker Compose'
 description: 'Deploying ClickStack Open Source with Docker Compose - The ClickHouse Observability Stack'
 doc_type: 'guide'
-keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'HyperDX Docker deployment', 'ClickStack deployment guide', 'OpenTelemetry Docker Compose']
+keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'ClickStack UI Docker deployment', 'ClickStack deployment guide', 'OpenTelemetry Docker Compose']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 import JSONSupport from '/snippets/_json_support.mdx';
 
 All ClickStack Open Source components are distributed separately as individual Docker images:
 
 * **ClickHouse**
-* **HyperDX**
+* **ClickStack UI**
 * **OpenTelemetry (OTel) collector**
 * **MongoDB**
 
 These images can be combined and deployed locally using Docker Compose.
+
+<Tip>
+Take your observability beyond a local deployment without managing the infrastructure with [ClickHouse Observability](/clickstack/observability). [Sign up for ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-docker-compose-inline) to get started.
+</Tip>
 
 Docker Compose exposes additional ports for observability and ingestion based on the default `otel-collector` setup:
 
@@ -49,9 +52,9 @@ git clone https://github.com/ClickHouse/ClickStack.git
 docker compose up
 ```
 </Step>
-<Step title="Navigate to the HyperDX UI" id="navigate-to-hyperdx-ui">
+<Step title="Navigate to the ClickStack UI" id="navigate-to-hyperdx-ui">
 
-Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
+Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI.
 
 Create a user, providing a username and password which meets the requirements. 
 
@@ -63,7 +66,15 @@ On clicking `Create` data sources will be created for the ClickHouse instance de
 You can override the default connection to the integrated ClickHouse instance. For details, see ["Using ClickHouse Cloud"](#using-clickhouse-cloud).
 </Info>
 
-<Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack UI](/images/use-cases/observability/hyperdx-login.webp)
+
+</Frame>
+
+</div>
 
 For an example of using an alternative ClickHouse instance, see ["Using ClickHouse Cloud"](#using-clickhouse-cloud).
 </Step>
@@ -75,7 +86,15 @@ If you prefer to connect to your own **external ClickHouse cluster** e.g. ClickH
 
 If prompted to create a source, retain all default values and complete the `Table` field with the value `otel_logs`. All other settings should be auto-detected, allowing you to click `Save New Source`.
 
-<Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Create logs source" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Create logs source](/images/use-cases/observability/hyperdx-logs.webp)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -114,7 +133,7 @@ The OTel collector configuration can be modified if required - see ["Modifying c
 
 ## Using ClickHouse Cloud {#using-clickhouse-cloud}
 
-This distribution can be used with ClickHouse Cloud, but it differs from [Managed ClickStack](/clickstack/deployment/managed). In this setup, you manage the ClickStack UI yourself while using ClickHouse Cloud only for compute and storage. Unless you have a specific reason to operate the UI independently, we recommend using Managed ClickStack, which includes integrated authentication and additional enterprise features, and removes the need to manage the ClickStack UI yourself.
+This distribution can be used with ClickHouse Cloud, but it differs from [Self-managed ClickHouse Observability](/clickstack/self-configured/deployment/managed). In this setup, you manage the ClickStack UI yourself while using ClickHouse Cloud only for compute and storage. Unless you have a specific reason to operate the UI independently, we recommend using Self-managed ClickHouse Observability, which includes integrated authentication and additional enterprise features, and removes the need to manage the ClickStack UI yourself.
 
 You should:
 
@@ -144,6 +163,6 @@ You should:
 
     The `CLICKHOUSE_ENDPOINT` should be the ClickHouse Cloud HTTPS endpoint, including the port `8443` e.g. `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
 
-- On connecting to the HyperDX UI and creating a connection to ClickHouse, use your Cloud credentials.
+- On connecting to the ClickStack UI and creating a connection to ClickHouse, use your Cloud credentials.
 
 <JSONSupport/>

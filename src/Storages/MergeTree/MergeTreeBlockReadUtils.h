@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 #include <algorithm>
@@ -128,6 +129,12 @@ protected:
     double max_size_per_row_dynamic = 0;
 
     size_t number_of_rows_in_part;
+
+    /// Columns with values of a fixed size that are read from the part, with the size of a value.
+    /// Together with the initial `dynamic_columns_infos` this is the estimation of all columns read from the part.
+    /// Columns that are read only by `PREWHERE` steps are absent from the result block, so when the estimation
+    /// is reinitialized in `update` they are taken from here instead of being dropped.
+    std::vector<std::pair<String, size_t>> fixed_columns_from_part;
 
     bool is_initialized_in_update = false;
     bool allow_subcolumns_sizes_calculation = false;
