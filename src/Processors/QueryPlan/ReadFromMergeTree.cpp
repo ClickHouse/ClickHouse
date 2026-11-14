@@ -2567,7 +2567,13 @@ static NameSet getColumnsRequiredForMergingFinal(
 
 bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 {
-    const auto & settings = context->getSettingsRef();
+    return doNotMergePartsAcrossPartitionsFinal(context, data, storage_snapshot->metadata);
+}
+
+bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal(
+    const ContextPtr & query_context, const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
+{
+    const auto & settings = query_context->getSettingsRef();
 
     /// If setting do_not_merge_across_partitions_select_final is set always prefer it
     if (settings[Setting::do_not_merge_across_partitions_select_final])
@@ -2580,7 +2586,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
         return false;
 
-    if (!storage_snapshot->metadata->hasPrimaryKey() || !storage_snapshot->metadata->hasPartitionKey())
+    if (!metadata_snapshot->hasPrimaryKey() || !metadata_snapshot->hasPartitionKey())
         return false;
 
     /** To avoid merging parts across partitions we want result of partition key expression for
@@ -2590,11 +2596,11 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
       * in primary key, then for same primary key column values, result of partition key expression
       * will be the same.
       */
-    const auto & partition_key_expression = storage_snapshot->metadata->getPartitionKey().expression;
+    const auto & partition_key_expression = metadata_snapshot->getPartitionKey().expression;
     if (partition_key_expression->getActionsDAG().hasNonDeterministic())
         return false;
 
-    const auto & primary_key_columns = storage_snapshot->metadata->getPrimaryKey().column_names;
+    const auto & primary_key_columns = metadata_snapshot->getPrimaryKey().column_names;
     NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
 
     /** The proof above equates "same primary key column values" with "one logical key for the FINAL
@@ -3260,24 +3266,24 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
     const MergeTreeData & data,
     const ContextPtr & query_context,
     const StorageMetadataPtr & metadata_snapshot,
-    bool skip_partition_pruning_,
+    const FinalPartitionPruning & final_pruning,
     bool require_ready_sets)
 {
     const auto & settings = query_context->getSettingsRef();
-    const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
+    const bool skip_constant_folding = final_pruning.skip_partition_pruning || !settings[Setting::use_constant_folding_in_index_analysis];
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = data.getSettings();
 
     if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
     {
-        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, metadata_snapshot, final_pruning, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
             KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning],
+                /* skip_analysis_ = */ final_pruning.skip_partition_pruning || final_pruning.skip_minmax_pruning || !query_context->getSettingsRef()[Setting::use_partition_pruning],
                 require_ready_sets};
             /// The part minmax bound comes from `getExtremes`, which skips NaN.
             condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
@@ -3293,7 +3299,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
             *filter_dag_ptr,
             query_context,
             /*strict=*/false,
-            /*skip_analysis=*/skip_partition_pruning_ || !settings[Setting::use_partition_pruning],
+            /*skip_analysis=*/final_pruning.skip_partition_pruning || !settings[Setting::use_partition_pruning],
             require_ready_sets);
     }
 }
@@ -3304,11 +3310,12 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & query_context,
-    bool skip_partition_pruning_)
+    bool is_final)
 {
     auto filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate, query_context, /* boolean_context */ true);
     Indexes partition_indexes(nullptr);
-    buildPartitionPruningIndexes(partition_indexes, filter_dag, data, query_context, metadata_snapshot, skip_partition_pruning_, /* require_ready_sets */ true);
+    const auto final_pruning = is_final ? getFinalPartitionPruning(query_context, data, metadata_snapshot) : FinalPartitionPruning{};
+    buildPartitionPruningIndexes(partition_indexes, filter_dag, data, query_context, metadata_snapshot, final_pruning, /* require_ready_sets */ true);
     IndexStats unused_stats;
     /// Execution checks forced index usage after it builds subquery sets.
     return MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -3341,8 +3348,7 @@ void ReadFromMergeTree::buildIndexes(
     [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
     const ContextPtr & query_context,
     const SelectQueryInfo & query_info_,
-    const StorageMetadataPtr & metadata_snapshot,
-    bool skip_partition_pruning_)
+    const StorageMetadataPtr & metadata_snapshot)
 {
     indexes.reset();
 
@@ -3350,7 +3356,8 @@ void ReadFromMergeTree::buildIndexes(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
 
     const auto & settings = query_context->getSettingsRef();
-    const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
+    const auto final_pruning = query_info_.isFinal() ? getFinalPartitionPruning(query_context, data, metadata_snapshot) : FinalPartitionPruning{};
+    const bool skip_constant_folding = final_pruning.skip_partition_pruning || !settings[Setting::use_constant_folding_in_index_analysis];
 
     std::optional<ActionsDAG> graphite_final_filter;
     if (filter_actions_dag_ && query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
@@ -3373,7 +3380,7 @@ void ReadFromMergeTree::buildIndexes(
         indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
 
-    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
+    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, final_pruning);
 
     indexes->part_values
         = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
@@ -3590,12 +3597,16 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     if (!isQueryWithFinal())
         return;
 
-    const auto & settings = context->getSettingsRef();
-
     if (isRowPolicyDeferredAfterFinal())
         deferred_row_level_filter = query_info.row_level_filter;
     if (query_info.prewhere_info && isPrewhereDeferredAfterFinal())
         deferred_prewhere_info = query_info.prewhere_info;
+}
+
+ReadFromMergeTree::FinalPartitionPruning ReadFromMergeTree::getFinalPartitionPruning(
+    const ContextPtr & query_context, const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
+{
+    FinalPartitionPruning result;
 
     /// Don't prune partitions unless the partition key is determined by the sorting key:
     /// when FINAL merges across partitions, rows with the same primary key in different
@@ -3605,40 +3616,44 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     /// Users whose data structure guarantees same-PK rows cannot span partitions (e.g. event-log
     /// tables whose partition column is set at insert time and never changes) can opt out via
     /// `defer_partition_pruning_after_final = 0` to restore pre-26.3 performance.
-    if (settings[Setting::defer_partition_pruning_after_final]
-        && !doNotMergePartsAcrossPartitionsFinal()
-        && storage_snapshot->metadata->hasPartitionKey())
-    {
-        const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
-        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-        NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+    if (!query_context->getSettingsRef()[Setting::defer_partition_pruning_after_final] || !metadata_snapshot->hasPartitionKey())
+        return result;
 
-        const auto & partition_expr_names = partition_key.column_names;
-        bool exprs_match = std::all_of(
-            partition_expr_names.begin(), partition_expr_names.end(),
-            [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+    NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
 
-        const auto & partition_required_columns = partition_key.expression->getRequiredColumnsWithTypes();
-        bool columns_match = std::all_of(
-            partition_required_columns.begin(), partition_required_columns.end(),
-            [&](const auto & col) { return sorting_key_set.contains(col.name); });
+    const auto & partition_expr_names = partition_key.column_names;
+    bool exprs_match = std::all_of(
+        partition_expr_names.begin(), partition_expr_names.end(),
+        [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
 
-        /// "Determined by the sorting key" holds for value identity, not for comparator equality, and
-        /// the two differ for floating-point columns: `-0.0` compares equal to `0.0`, and every `NaN`
-        /// bit pattern compares equal to every other. A partition expression can tell exactly those
-        /// values apart - `toString(f)` maps `-0.0` and `0.0` to `'-0'` and `'0'`,
-        /// `reinterpretAsUInt64(f)` separates `NaN` payloads - so two rows of one deduplication group
-        /// can sit in different partitions. Pruning then drops the partition holding the group's
-        /// winner and the superseded row survives the FINAL merge.
-        bool reads_float_column = std::any_of(
-            partition_required_columns.begin(), partition_required_columns.end(),
-            [](const auto & col)
-            {
-                return anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); });
-            });
+    const auto & partition_required_columns = partition_key.expression->getRequiredColumnsWithTypes();
+    bool columns_match = std::all_of(
+        partition_required_columns.begin(), partition_required_columns.end(),
+        [&](const auto & col) { return sorting_key_set.contains(col.name); });
 
-        skip_partition_pruning = (!exprs_match && !columns_match) || reads_float_column;
-    }
+    /// "Determined by the sorting key" holds for value identity, not for comparator equality, and
+    /// the two differ for floating-point columns: `-0.0` compares equal to `0.0`, and every `NaN`
+    /// bit pattern compares equal to every other. A partition expression can tell exactly those
+    /// values apart - `toString(f)` maps `-0.0` and `0.0` to `'-0'` and `'0'`,
+    /// `reinterpretAsUInt64(f)` separates `NaN` payloads - so two rows of one deduplication group
+    /// can sit in different partitions. Pruning then drops the partition holding the group's
+    /// winner and the superseded row survives the FINAL merge.
+    bool reads_float_column = std::any_of(
+        partition_required_columns.begin(), partition_required_columns.end(),
+        [](const auto & col)
+        {
+            return anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); });
+        });
+
+    if (!doNotMergePartsAcrossPartitionsFinal(query_context, data, metadata_snapshot))
+        result.skip_partition_pruning = (!exprs_match && !columns_match) || reads_float_column;
+
+    /// The min-max index of a part ranges over the columns the partition key reads, which the versions merged
+    /// within one partition share only when the sorting key has them.
+    result.skip_minmax_pruning = !columns_match || reads_float_column;
+    return result;
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -3733,8 +3748,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             top_k_filter_info,
             context,
             query_info,
-            storage_snapshot->metadata,
-            skip_partition_pruning);
+            storage_snapshot->metadata);
 
         /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
         /// PREWHERE is evaluated at the storage level during data reading, before the
@@ -5905,8 +5919,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             top_k_filter_info,
             context,
             query_info,
-            storage_snapshot->metadata,
-            skip_partition_pruning);
+            storage_snapshot->metadata);
 
     /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
     RuntimeFilterLookupPtr runtime_filter_lookup;
@@ -7168,7 +7181,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 
     /// Statistics-only plans have not built indexes yet. Analyze the scalar predicate
     /// without executing `IN` subqueries, which belong to the actual execution plan.
-    auto parts = filterPartsForStatistics(getParts(), predicate, data, getStorageMetadata(), getContext(), skip_partition_pruning);
+    auto parts = filterPartsForStatistics(getParts(), predicate, data, getStorageMetadata(), getContext(), isQueryWithFinal());
 
     /// Without the primary key analysis, only the total number of marks bounds the read, see `min_marks_per_part_to_load_statistics`.
     /// Statistics that are already in memory cost nothing, so only the parts whose statistics would be loaded count.

@@ -2119,9 +2119,8 @@ deduplication input.
 
 When disabled, partition pruning is applied even with `FINAL`, restoring the pre-26.3
 behavior. This can be substantially faster for queries with `WHERE` predicates on the
-partition column, but is only correct when rows with the same primary key cannot exist
-in different partitions — e.g. event-log tables whose partition column is set at insert
-time and never changes.
+partition column, but is only correct when the partition-key columns of a row never change
+between its versions, e.g. event-log tables whose partition column is set at insert time.
 
 This setting only affects partitioned tables whose partition-key columns are not contained
 in the sorting key; for other tables partition pruning is always applied.

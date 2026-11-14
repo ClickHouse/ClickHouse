@@ -1,0 +1,40 @@
+-- FINAL must not prune parts by the min-max index of a partition key column that is not in the sorting key:
+-- the versions of a row merged within one partition can have different values of it.
+
+DROP TABLE IF EXISTS t_final_minmax_replacing;
+DROP TABLE IF EXISTS t_final_minmax_collapsing;
+DROP TABLE IF EXISTS t_final_minmax_dnm;
+
+CREATE TABLE t_final_minmax_replacing (k UInt64, d Date, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY (toYYYYMM(d), k);
+SYSTEM STOP MERGES t_final_minmax_replacing;
+INSERT INTO t_final_minmax_replacing VALUES (1, '2026-01-01', 1);
+INSERT INTO t_final_minmax_replacing VALUES (1, '2026-01-02', 2);
+
+SELECT 'replacing';
+SELECT * FROM t_final_minmax_replacing FINAL WHERE d = '2026-01-01';
+SELECT * FROM t_final_minmax_replacing FINAL WHERE d = '2026-01-02';
+SELECT count() FROM t_final_minmax_replacing FINAL WHERE d < '2026-01-02';
+
+CREATE TABLE t_final_minmax_collapsing (k UInt64, d Date, sign Int8)
+ENGINE = CollapsingMergeTree(sign) PARTITION BY toYYYYMM(d) ORDER BY (toYYYYMM(d), k);
+SYSTEM STOP MERGES t_final_minmax_collapsing;
+INSERT INTO t_final_minmax_collapsing VALUES (1, '2026-01-01', 1);
+INSERT INTO t_final_minmax_collapsing VALUES (1, '2026-01-02', -1);
+
+SELECT 'collapsing';
+SELECT * FROM t_final_minmax_collapsing FINAL WHERE d = '2026-01-01';
+
+CREATE TABLE t_final_minmax_dnm (k UInt64, d Date, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY k;
+SYSTEM STOP MERGES t_final_minmax_dnm;
+INSERT INTO t_final_minmax_dnm VALUES (1, '2026-01-01', 1);
+INSERT INTO t_final_minmax_dnm VALUES (1, '2026-01-02', 2);
+
+SELECT 'do_not_merge_across_partitions_select_final';
+SELECT * FROM t_final_minmax_dnm FINAL WHERE d = '2026-01-01' SETTINGS do_not_merge_across_partitions_select_final = 1;
+SELECT * FROM t_final_minmax_dnm FINAL WHERE d = '2026-01-02' SETTINGS do_not_merge_across_partitions_select_final = 1;
+
+DROP TABLE t_final_minmax_replacing;
+DROP TABLE t_final_minmax_collapsing;
+DROP TABLE t_final_minmax_dnm;

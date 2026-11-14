@@ -603,7 +603,7 @@ public:
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & query_context,
-        bool skip_partition_pruning_ = false);
+        bool is_final);
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -614,8 +614,7 @@ public:
         [[maybe_unused]] std::optional<TopKFilterInfo> top_k_filter_info,
         const ContextPtr & query_context,
         const SelectQueryInfo & query_info_,
-        const StorageMetadataPtr & metadata_snapshot,
-        bool skip_partition_pruning_ = false);
+        const StorageMetadataPtr & metadata_snapshot);
 
     /// The primary-key condition of `buildIndexes`.
     static ConditionTemplate<KeyCondition>::Ptr buildPrimaryKeyCondition(
@@ -790,13 +789,25 @@ private:
     /// Prunes the filters and the columns of this read as `pruning` says.
     RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
 
+    static bool doNotMergePartsAcrossPartitionsFinal(
+        const ContextPtr & query_context, const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
+
+    /// Which partition pruning a FINAL read may do.
+    struct FinalPartitionPruning
+    {
+        bool skip_partition_pruning = false;
+        bool skip_minmax_pruning = false;
+    };
+    static FinalPartitionPruning getFinalPartitionPruning(
+        const ContextPtr & query_context, const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
+
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
         const MergeTreeData & data,
         const ContextPtr & query_context,
         const StorageMetadataPtr & metadata_snapshot,
-        bool skip_partition_pruning_,
+        const FinalPartitionPruning & final_pruning,
         bool require_ready_sets = false);
 
     MergeTreeSettingsPtr data_settings;
@@ -838,7 +849,6 @@ private:
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
     PrewhereInfoPtr deferred_prewhere_info;
-    bool skip_partition_pruning = false;
 
     LoggerPtr log;
     UInt64 selected_parts = 0;
