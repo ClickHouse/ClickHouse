@@ -46,7 +46,7 @@ void LogFileImpl::writeImpl(const std::string& text, bool flush)
 	if (!_str.good())
 	{
 		_str.clear();  // Clear error flags to allow recovery after disk full
-		throw WriteFileException(_path);
+		throw WriteFileException(_path, errno);
 	}
 }
 
@@ -57,7 +57,7 @@ void LogFileImpl::writeBinaryImpl(const char * data, size_t size, bool flush)
 	if (!_str.good())
 	{
 		_str.clear();  // Clear error flags to allow recovery after disk full
-		throw WriteFileException(_path);
+		throw WriteFileException(_path, errno);
 	}
 }
 
