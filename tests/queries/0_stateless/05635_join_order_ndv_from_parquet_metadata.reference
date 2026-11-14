@@ -1,0 +1,8 @@
+The rows of the files
+100.00 thousand
+A dictionary-encoded column: the number of values of the dictionary pages
+300
+Without the setting: no estimate
+no stats
+A unique column: its row groups have as many distinct values as rows, so the column has about as many as the file
+1

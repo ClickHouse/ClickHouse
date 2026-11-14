@@ -33,6 +33,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_statistics;
+extern const SettingsBool estimate_distinct_values_from_metadata;
 }
 
 namespace QueryPlanOptimizations
@@ -165,6 +166,49 @@ std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilt
 
 }
 
+namespace
+{
+
+/// Sets the numbers of distinct values estimated from the metadata of the parts for the columns of the read that have
+/// none measured by statistics: without statistics at all, or with statistics without `uniq`, for which the estimator
+/// takes a fixed fraction of the rows. See the setting `estimate_distinct_values_from_metadata`.
+void addDistinctValuesFromMetadata(
+    const ReadFromMergeTree & reading,
+    const ReadFromMergeTree::AnalysisResultPtr & analyzed_result,
+    const ConditionSelectivityEstimator * estimator,
+    RelationStats & stats)
+{
+    const auto & settings = reading.getContext()->getSettingsRef();
+    if (!settings[Setting::use_statistics] || !settings[Setting::estimate_distinct_values_from_metadata])
+        return;
+
+    Names column_names;
+    for (const auto & column_name : reading.getAllColumnNames())
+        if (!stats.column_stats.contains(column_name) || (estimator && !estimator->hasCardinality(column_name)))
+            column_names.push_back(column_name);
+    if (column_names.empty())
+        return;
+
+    for (const auto & [column_name, distinct_values] : reading.estimateDistinctValuesFromMetadata(column_names, analyzed_result))
+    {
+        auto & column_stats = stats.column_stats[column_name];
+        /// A filter keeps at most as many distinct values as rows.
+        column_stats.num_distinct_values = stats.estimated_rows
+            ? std::clamp<UInt64>(distinct_values, 1, std::max<UInt64>(*stats.estimated_rows, 1))
+            : distinct_values;
+        column_stats.num_distinct_values_from_metadata = true;
+    }
+}
+
+void markDistinctValuesFromMetadata(const DataLakeReadEstimate & estimate, RelationStats & stats)
+{
+    for (const auto & column_name : estimate.distinct_values_from_metadata)
+        if (auto it = stats.column_stats.find(column_name); it != stats.column_stats.end())
+            it->second.num_distinct_values_from_metadata = true;
+}
+
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
 {
     if (prunesNothingAtPlanTime(filter))
@@ -265,6 +309,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
+                addDistinctValuesFromMetadata(*reading, analyzed_result, estimator.get(), stats);
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;
             }
@@ -272,27 +317,24 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())
             return stats_hint;
 
-        if (!analyzed_result)
-            return RelationStats{
-                .estimated_rows = {},
-                .table_name = table_display_name,
-                .imprecise_estimate = true,
-                .source = RowEstimateSource::NoStatistics};
-
+        RelationStats stats;
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
-            return RelationStats{
+        if (!analyzed_result || (has_filter && !is_filtered_by_index))
+            stats = RelationStats{
                 .estimated_rows = {},
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
+        else
+            stats = RelationStats{
+                .estimated_rows = analyzed_result->selected_rows,
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::PrimaryIndex};
 
-        return RelationStats{
-            .estimated_rows = analyzed_result->selected_rows,
-            .table_name = table_display_name,
-            .imprecise_estimate = true,
-            .source = RowEstimateSource::PrimaryIndex};
+        addDistinctValuesFromMetadata(*reading, analyzed_result, nullptr, stats);
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
@@ -322,6 +364,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 if (rows != 0)
                     floorReadWithRows(profile);
                 stats.column_stats = std::move(profile.column_stats);
+                markDistinctValuesFromMetadata(*estimate, stats);
             }
             /// Without conditions, the rows of the remaining files, imprecise with delete files, also when they leave 0 rows.
             stats.imprecise_estimate = estimate->has_delete_files;
@@ -335,6 +378,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             floorReadWithRows(filtered);
             stats.estimated_rows = filtered.rows;
             stats.column_stats = std::move(filtered.column_stats);
+            markDistinctValuesFromMetadata(*estimate, stats);
             return stats;
         }
 

@@ -25,6 +25,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
+# The rules without the estimate from the sizes of the columns (`estimate_distinct_values_from_metadata`), which
+# 05636_iceberg_ndv_from_column_sizes tests.
 # The join order, the trace line, the labels and the Iceberg file layout depend on these; most are randomized.
 PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_order_limit=10
     --query_plan_optimize_join_order_algorithm=greedy --query_plan_join_swap_table=auto
@@ -32,7 +34,7 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --enable_join_runtime_filters=0 --enable_parallel_replicas=0 --enable_join_transitive_predicates=0
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
     --use_datalake_metadata_statistics=1 --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1
-    --max_block_size=1000000 --allow_insert_into_iceberg=1"
+    --max_block_size=1000000 --allow_insert_into_iceberg=1 --estimate_distinct_values_from_metadata=0"
 ON="--use_iceberg_table_statistics_ndv=1"
 OFF="--use_iceberg_table_statistics_ndv=0"
 
