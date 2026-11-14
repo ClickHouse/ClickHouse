@@ -9,12 +9,15 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -179,6 +182,25 @@ bool isIOErrorException(std::exception_ptr exception_ptr)
     }
 }
 
+/// A killed query rethrows the exception it was cancelled with, which can have any code.
+static bool isCodeOfCancelledQuery(int code)
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    auto query_status = query_context ? query_context->getProcessListElementSafe() : nullptr;
+    if (!query_status)
+        return false;
+
+    try
+    {
+        query_status->throwIfKilled();
+    }
+    catch (...) /// Ok: only the code of the exception the query was cancelled with is needed.
+    {
+        return getCurrentExceptionCode() == code;
+    }
+    return false;
+}
+
 /// A query that was killed or hit `max_execution_time` can throw from inside a part read, e.g. from
 /// `FileSegment::wait`, from the S3 client or from the marks loader. Such an exception says nothing
 /// about the data on disk, so a reader must not report the part as broken because of it.
@@ -194,12 +216,13 @@ bool isQueryCancellation(std::exception_ptr exception_ptr)
     {
         return e.code() == ErrorCodes::QUERY_WAS_CANCELLED
             || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED;
+            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED
+            || isCodeOfCancelledQuery(e.code());
     }
     catch (...)
     {
-        /// Ok: only a `DB::Exception` can carry a cancellation code.
-        return false;
+        /// Ok: any other exception is a cancellation only if the query was cancelled with it.
+        return isCodeOfCancelledQuery(getCurrentExceptionCode());
     }
 }
 

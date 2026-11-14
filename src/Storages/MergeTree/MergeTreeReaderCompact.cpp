@@ -7,6 +7,8 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <ranges>
@@ -615,6 +617,13 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 }
 
 
+/// Its `throwIfKilled` also fires past `max_execution_time` in throw mode: `CancellationChecker` then cancels the query.
+static QueryStatusPtr getQueryStatusOfCurrentThread()
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    return query_context ? query_context->getProcessListElementSafe() : nullptr;
+}
+
 size_t MergeTreeReaderCompact::readGranules(
     size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
     MutableColumns & res_columns, Columns & shared_columns)
@@ -639,9 +648,13 @@ size_t MergeTreeReaderCompact::readGranules(
 
     createColumnsForReading(res_columns);
 
+    const auto query_status = getQueryStatusOfCurrentThread();
     size_t read_rows = 0;
     while (read_rows < max_rows_to_read)
     {
+        if (query_status)
+            query_status->throwIfKilled();
+
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
         readGranule(from_mark, rows_to_read, res_columns, nullptr);
         ++from_mark;
@@ -822,8 +835,12 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
     /// The other columns, granule by granule.
     std::vector<bool> columns_mask(num_columns);
     std::vector<size_t> sizes_before_reading(num_columns);
+    const auto query_status = getQueryStatusOfCurrentThread();
     for (size_t mark = from_mark; mark < end_mark; ++mark)
     {
+        if (query_status)
+            query_status->throwIfKilled();
+
         const size_t granule_rows = index_granularity.getMarkRows(mark);
         const size_t granule_row_begin = index_granularity.getMarkStartingRow(mark);
 
