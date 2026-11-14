@@ -12,3 +12,9 @@ block-dependent WHERE
 4	1000
 block-dependent PREWHERE
 0
+block-dependent column default
+0
+deterministic column default
+1
+block-dependent default behind a pending DROP COLUMN
+0

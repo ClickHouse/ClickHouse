@@ -48,4 +48,39 @@ SELECT count() FROM (EXPLAIN actions = 1
     SELECT a, count() FROM t_gb_dyn_block PREWHERE blockSize() > 0 GROUP BY a ORDER BY a LIMIT 3)
 WHERE explain LIKE '%\_\_topKFilter%';
 
+SELECT 'block-dependent column default';
+DROP TABLE IF EXISTS t_gb_dyn_block_default;
+CREATE TABLE t_gb_dyn_block_default (a UInt32, b UInt32)
+ENGINE = MergeTree ORDER BY b SETTINGS index_granularity = 128;
+-- A merge would store the defaults.
+SYSTEM STOP MERGES t_gb_dyn_block_default;
+INSERT INTO t_gb_dyn_block_default SELECT number % 100, number FROM numbers(10000);
+-- The part lacks both columns: the reader computes them from their defaults, after the PREWHERE.
+ALTER TABLE t_gb_dyn_block_default
+    ADD COLUMN rn UInt64 DEFAULT rowNumberInAllBlocks(),
+    ADD COLUMN c UInt32 DEFAULT b + 1;
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT a, max(rn) FROM t_gb_dyn_block_default GROUP BY a ORDER BY a LIMIT 3)
+WHERE explain LIKE '%\_\_topKFilter%';
+
+SELECT 'deterministic column default';
+SELECT count() > 0 FROM (EXPLAIN actions = 1
+    SELECT a, max(c) FROM t_gb_dyn_block_default GROUP BY a ORDER BY a LIMIT 3)
+WHERE explain LIKE '%\_\_topKFilter(a)%';
+DROP TABLE t_gb_dyn_block_default;
+
+SELECT 'block-dependent default behind a pending DROP COLUMN';
+DROP TABLE IF EXISTS t_gb_dyn_block_drop;
+CREATE TABLE t_gb_dyn_block_drop (a UInt32, b UInt32, rn UInt64)
+ENGINE = MergeTree ORDER BY b SETTINGS index_granularity = 128;
+SYSTEM STOP MERGES t_gb_dyn_block_drop;
+INSERT INTO t_gb_dyn_block_drop SELECT number % 100, number, 0 FROM numbers(10000);
+-- The part still stores `rn`, but the reader discards it and computes the new default.
+ALTER TABLE t_gb_dyn_block_drop DROP COLUMN rn SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_gb_dyn_block_drop ADD COLUMN rn UInt64 DEFAULT rowNumberInAllBlocks();
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT a, max(rn) FROM t_gb_dyn_block_drop GROUP BY a ORDER BY a LIMIT 3)
+WHERE explain LIKE '%\_\_topKFilter%';
+DROP TABLE t_gb_dyn_block_drop;
+
 DROP TABLE t_gb_dyn_block;
