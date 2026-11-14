@@ -18,6 +18,7 @@ IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
     max_depth = rhs.max_depth;
     backtracks = std::max(backtracks, rhs.backtracks);
     max_backtracks = rhs.max_backtracks;
+    in_column_named_from_lookahead = rhs.in_column_named_from_lookahead;
 
     if (rhs < *this)
     {

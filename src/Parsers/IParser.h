@@ -129,6 +129,9 @@ public:
         uint32_t backtracks = 0;
         uint32_t max_backtracks = 0;
 
+        /// Set while `parenthesesHoldExpressionOverColumnNamedFrom` parses the contents of parentheses.
+        bool in_column_named_from_lookahead = false;
+
         Pos(Tokens & tokens_, uint32_t max_depth_, uint32_t max_backtracks_)
             : TokenIterator(tokens_), max_depth(max_depth_), max_backtracks(max_backtracks_)
         {
@@ -148,6 +151,7 @@ public:
             , max_depth(inherit_from.max_depth)
             , backtracks(inherit_from.backtracks)
             , max_backtracks(inherit_from.max_backtracks)
+            , in_column_named_from_lookahead(inherit_from.in_column_named_from_lookahead)
         {
         }
 
