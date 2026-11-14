@@ -2,6 +2,9 @@
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Common/Scheduler/CurrentCPULease.h>
+
+#include <optional>
 
 
 namespace DB
@@ -20,21 +23,37 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
         return {};
 
     Chunk chunk;
-    if (milliseconds)
     {
-        if (!queue.tryPop(chunk, milliseconds))
-            return {};
-    }
-    else
-    {
-        if (!queue.pop(chunk))
-            return {};
+        std::optional<CPULeaseParkGuard> park;
+        if (queue.empty())
+            park.emplace();
+
+        if (milliseconds)
+        {
+            if (!queue.tryPop(chunk, milliseconds))
+                return {};
+        }
+        else
+        {
+            if (!queue.pop(chunk))
+                return {};
+        }
     }
 
     if (chunk)
         info.update(chunk.getNumRows(), chunk.allocatedBytes());
 
     return chunk;
+}
+
+void LazyOutputFormat::consume(Chunk chunk)
+{
+    /// This is the only producer, so a free place stays free.
+    std::optional<CPULeaseParkGuard> park;
+    if (queue.size() >= queue.maxFill())
+        park.emplace();
+
+    (void)(queue.emplace(std::move(chunk)));
 }
 
 Chunk LazyOutputFormat::getTotals()
