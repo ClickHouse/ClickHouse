@@ -3,19 +3,22 @@
 # - no-fasttest: the container of the fast test is not privileged, so it does not allow the namespaces of the
 #   isolation, and it has no `cc` to build the stand-in for the bridge.
 
-# A server with `filesystem_isolation` keeps visible the dynamic loader and the shared libraries of
-# `clickhouse-odbc-bridge` next to its executable, which it starts after the isolation, also the ones that the server
-# itself does not map, and the ones that the dynamic loader finds through the `DT_RUNPATH` of the bridge. A program
-# built here stands for the bridge: it needs a private library in `../lib`, found through `$ORIGIN/../lib`, and the
-# bridge next to the server is a link to it in another directory, so `$ORIGIN` is the directory of the target of the
-# link, as the dynamic loader takes it. The isolated server runs it as an executable user defined function.
+# A server with `filesystem_isolation` keeps visible what `clickhouse-odbc-bridge` next to its executable needs, which
+# it starts after the isolation: its dynamic loader and the shared libraries that the server itself does not map, as the
+# dynamic loader finds them, and the locations of its logs. A program built here stands for the bridge, and the
+# isolated server runs it as an executable user defined function. The bridge next to the server is a link to it in
+# another directory, so its `$ORIGIN` is the directory of the target of the link. It needs a chain of private
+# libraries: `libouter.so` through its `DT_RPATH` `$ORIGIN/../ancestor`, then `libmiddle.so` through the `DT_RUNPATH`
+# `$ORIGIN/../middle` of `libouter.so`, then `libleaf.so`, which `libmiddle.so` without search paths of its own finds
+# through the `DT_RPATH` of the executable, inherited across the `DT_RUNPATH` of `libouter.so`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 EXPECTED="libraries of the bridge: visible
-result of the bridge: 42"
+result of the bridge: 42
+logs of the bridge: writable"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
 # `tests/config/install.sh`.
@@ -27,29 +30,43 @@ fi
 
 DIR="${CLICKHOUSE_TMP}/filesystem_isolation_bridge_libraries"
 rm -rf "$DIR"
-mkdir -p "$DIR/bin" "$DIR/pkg/bin" "$DIR/pkg/lib" "$DIR/src" "$DIR/conf" "$DIR/data" "$DIR/log"
+mkdir -p "$DIR/bin" "$DIR/pkg/bin" "$DIR/pkg/ancestor" "$DIR/pkg/middle" "$DIR/src" "$DIR/conf" "$DIR/data" "$DIR/log" "$DIR/bridge_logs"
 DIR=$(cd "$DIR" && pwd -P)
 
 # The server looks for the bridge in the directory of its executable as it is named in `argv[0]`.
 ln -s "$(command -v "$CLICKHOUSE_BINARY")" "$DIR/bin/clickhouse-server"
 
-cat > "$DIR/src/private.c" <<'EOF'
-int private_value(void) { return 42; }
+cat > "$DIR/src/leaf.c" <<'EOF'
+int leaf_value(void) { return 42; }
+EOF
+cat > "$DIR/src/middle.c" <<'EOF'
+int leaf_value(void);
+int middle_value(void) { return leaf_value(); }
+EOF
+cat > "$DIR/src/outer.c" <<'EOF'
+int middle_value(void);
+int outer_value(void) { return middle_value(); }
 EOF
 cat > "$DIR/src/bridge.c" <<'EOF'
 #include <stdio.h>
-int private_value(void);
+int outer_value(void);
 int main(void)
 {
     char line[256];
     while (fgets(line, sizeof(line), stdin))
-        printf("%d\n", private_value());
+        printf("%d\n", outer_value());
     return 0;
 }
 EOF
-cc -shared -fPIC -o "$DIR/pkg/lib/libprivate.so" "$DIR/src/private.c"
 # shellcheck disable=SC2016
-cc -o "$DIR/pkg/bin/bridge" "$DIR/src/bridge.c" -L"$DIR/pkg/lib" -lprivate -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN/../lib'
+{
+    cc -shared -fPIC -o "$DIR/pkg/ancestor/libleaf.so" "$DIR/src/leaf.c"
+    cc -shared -fPIC -o "$DIR/pkg/middle/libmiddle.so" "$DIR/src/middle.c" -L"$DIR/pkg/ancestor" -lleaf
+    cc -shared -fPIC -o "$DIR/pkg/ancestor/libouter.so" "$DIR/src/outer.c" -L"$DIR/pkg/middle" -lmiddle \
+        -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN/../middle'
+    cc -o "$DIR/pkg/bin/bridge" "$DIR/src/bridge.c" -L"$DIR/pkg/ancestor" -louter -Wl,-rpath-link,"$DIR/pkg/middle:$DIR/pkg/ancestor" \
+        -Wl,--disable-new-dtags -Wl,-rpath,'$ORIGIN/../ancestor'
+}
 ln -s ../pkg/bin/bridge "$DIR/bin/clickhouse-odbc-bridge"
 
 # The loader and the libraries of the stand-in, without their links.
@@ -76,6 +93,10 @@ cat > "$DIR/conf/config.xml" <<EOF
         <level>information</level>
         <log>$DIR/log/server.log</log>
         <errorlog>$DIR/log/server.err.log</errorlog>
+        <odbc_bridge_log>$DIR/bridge_logs/bridge.log</odbc_bridge_log>
+        <odbc_bridge_errlog>$DIR/bridge_logs/bridge.err.log</odbc_bridge_errlog>
+        <odbc_bridge_stdout>$DIR/bridge_logs/stdout.log</odbc_bridge_stdout>
+        <odbc_bridge_stderr>$DIR/bridge_logs/stderr.log</odbc_bridge_stderr>
     </logger>
     <path>$DIR/data/</path>
     <user_scripts_path>$DIR/bin/</user_scripts_path>
@@ -128,3 +149,6 @@ else
 fi
 
 echo "result of the bridge: $(cat "$DIR/data/user_files/bridge_result.tsv" 2>/dev/null || grep -m1 'test_filesystem_isolation_bridge' "$DIR/log/server.err.log")"
+
+# The directory of the logs of the bridge is outside of every other mount, so it is a writable mount of its own.
+echo "logs of the bridge: $(awk -v dir="$DIR/bridge_logs" '$2 == dir && $4 ~ /^rw(,|$)/' "/proc/$PID/mounts" | grep -q . && echo writable || echo absent)"

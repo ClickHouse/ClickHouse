@@ -742,6 +742,11 @@ private:
             Access::ReadOnly,
             "the ODBC bridge",
             /* executable = */ true});
+
+        /// The logs and the standard output and error of the bridge, which `IBridgeHelper::startBridgeCommand` passes
+        /// to it. It runs in the working directory of the server, which it inherits.
+        for (const auto * suffix : {"log", "errlog", "stdout", "stderr"})
+            addKeyLocation(fmt::format("logger.odbc_bridge_{}", suffix), Access::ReadWrite, runtime_directory);
     }
 
     /// The directory of the heap profiles that jemalloc writes, if its option `prof_prefix` names one, for example
