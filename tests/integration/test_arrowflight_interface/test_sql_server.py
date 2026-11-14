@@ -365,6 +365,91 @@ def test_get_session_options():
     assert result.session_options["max_threads"].string_value != ""
 
 
+def test_close_session_without_named_session():
+    """CloseSession succeeds as a no-op when no named session is used."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+    token = client.authenticate_basic_token(b"default", b"")
+    options = flight.FlightCallOptions(headers=[token])
+    results = list(client.do_action(flight.Action("CloseSession", b""), options))
+    assert len(results) == 1
+    # CloseSessionResult{status=CLOSED} serializes as field 1 varint 1.
+    assert results[0].body.to_pybytes() == b"\x08\x01"
+
+
+def test_close_session_closes_named_session():
+    """CloseSession tears down named-session state, not only prepared statements."""
+    close_session_id = "close_session_" + "".join(random.choices(string.ascii_letters, k=8))
+    client = FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        insecure=True,
+        disable_server_verification=True,
+        metadata={"x-clickhouse-session-id": close_session_id},
+        features={"metadata-reflection": "true"},
+    )
+    default_threads = _query_setting(client, "max_threads")
+    new_threads = "7" if default_threads != "7" else "5"
+    result = client.set_session_options({"max_threads": new_threads})
+    assert len(result.errors) == 0
+    assert _query_setting(client, "max_threads") == new_threads
+    client.execute_update(
+        "CREATE TEMPORARY TABLE close_session_tmp (id UInt8) ENGINE = Memory"
+    )
+    stmt = client.prepare("SELECT 1")
+    assert client.close_session() == b"\x08\x01"
+    with pytest.raises(pa.lib.ArrowKeyError, match="Prepared statement handle not found"):
+        client.execute(stmt)
+
+    # The same session id must start a fresh named session (settings and temp tables gone).
+    client2 = FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        insecure=True,
+        disable_server_verification=True,
+        metadata={"x-clickhouse-session-id": close_session_id},
+        features={"metadata-reflection": "true"},
+    )
+    assert _query_setting(client2, "max_threads") == default_threads
+    flight_info = client2.execute(
+        "SELECT count() FROM system.tables WHERE name = 'close_session_tmp' AND is_temporary"
+    )
+    reader = client2.do_get(flight_info.endpoints[0].ticket)
+    assert reader.read_all().column(0)[0].as_py() == 0
+
+
+def test_close_session_not_closable_when_disabled():
+    """CloseSession returns NOT_CLOSEABLE when enable_arrow_close_session is false."""
+    config_path = "/etc/clickhouse-server/config.d/disable_arrow_close_session.xml"
+    node.replace_config(
+        config_path,
+        "<clickhouse><enable_arrow_close_session>false</enable_arrow_close_session></clickhouse>",
+    )
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        close_session_id = "close_session_disabled_" + "".join(
+            random.choices(string.ascii_letters, k=8)
+        )
+        client = FlightSQLClient(
+            host=node.ip_address,
+            port=8888,
+            insecure=True,
+            disable_server_verification=True,
+            metadata={"x-clickhouse-session-id": close_session_id},
+            features={"metadata-reflection": "true"},
+        )
+        default_threads = _query_setting(client, "max_threads")
+        new_threads = "7" if default_threads != "7" else "5"
+        result = client.set_session_options({"max_threads": new_threads})
+        assert len(result.errors) == 0
+        # CloseSessionResult{status=NOT_CLOSEABLE} serializes as field 1 varint 3.
+        # Varint 2 is CLOSING.
+        assert client.close_session() == b"\x08\x03"
+        assert _query_setting(client, "max_threads") == new_threads
+    finally:
+        node.exec_in_container(["rm", "-f", config_path])
+        node.query("SYSTEM RELOAD CONFIG")
+
+
 def _query_setting(client, name):
     """Read the current value of a setting via SQL query."""
     flight_info = client.execute(f"SELECT value FROM system.settings WHERE name = '{name}'")
