@@ -34,10 +34,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Formats the first expression after `LIMIT` (a count or an offset). `parseLimitRange` reads a leading `after` or
-/// `until` word as the keyword of a range when an expression follows it, so an expression other than an identifier
-/// whose text starts with such a word (an identifier is printed without quotes) is enclosed in parentheses, with an
-/// alias outside them, as a parenthesized expression is printed. The expression is formatted only once.
+/// `parseLimitRange` reads a leading `after` or `until` word as the keyword of a range when an expression follows it.
 void formatLimitFirstExpression(const IAST & expression, WriteBuffer & ostr, const IAST::FormatSettings & s, IAST::FormatState & state, IAST::FormatStateStacked frame)
 {
     WriteBufferFromOwnString buf;
