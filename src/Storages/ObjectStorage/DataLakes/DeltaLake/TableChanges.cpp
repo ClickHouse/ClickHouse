@@ -14,7 +14,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
-#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <delta_kernel_ffi.hpp>
 
@@ -77,7 +76,8 @@ public:
         KernelTableChangesScan scan_,
         DB::NamesAndTypesList read_schema_,
         DB::NamesAndTypesList expression_schema_,
-        std::string data_path_,
+        KernelHelperPtr helper_,
+        DB::ContextPtr context_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         bool enable_expression_visitor_logging_)
         : engine(std::move(engine_))
@@ -85,7 +85,8 @@ public:
         , read_schema(std::move(read_schema_))
         , cdc_read_schema(read_schema)
         , expression_schema(std::move(expression_schema_))
-        , data_path(std::move(data_path_))
+        , helper(std::move(helper_))
+        , context(std::move(context_))
         , callback(std::move(callback_))
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
         , log(getLogger("DeltaLakeTableChangesIterator"))
@@ -187,7 +188,8 @@ private:
         if (!transform)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No transform expression for the change data feed file {}", path);
 
-        auto object = std::make_shared<DataObjectInfo>(DB::resolvePathInsideTable(data_path, DB::unescapeForFileName(path)), size);
+        /// The path can be an absolute URI, e.g. in a shallow clone, which references the files of its source table.
+        auto object = std::make_shared<DataObjectInfo>(helper->resolveDataFilePath(path, context), size);
         auto & metadata = object->data_lake_metadata.emplace();
 
         metadata.schema_transform = visitScanCallbackExpression(
@@ -225,7 +227,8 @@ private:
     const DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList cdc_read_schema;
     const DB::NamesAndTypesList expression_schema;
-    const std::string data_path;
+    const KernelHelperPtr helper;
+    const DB::ContextPtr context;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const bool enable_expression_visitor_logging;
     const LoggerPtr log;
@@ -338,7 +341,8 @@ DB::ObjectIterator TableChanges::iterate(
         std::move(scan),
         std::move(read_schema),
         std::move(expression_schema),
-        helper->getDataPath(),
+        helper,
+        context,
         std::move(callback),
         context->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging]);
 }
