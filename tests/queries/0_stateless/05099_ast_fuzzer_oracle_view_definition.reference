@@ -1,0 +1,18 @@
+view over a non-deterministic definition: oracle skipped
+view over a deterministic definition: oracle ran
+view over a view over a non-deterministic definition: oracle skipped
+view over a system table: oracle skipped
+temporary view over a non-deterministic definition: oracle skipped
+Alias engine over a non-deterministic definition: oracle skipped
+materialized view: oracle skipped
+ALIAS column with a non-deterministic expression: oracle skipped
+ALIAS column with a deterministic expression: oracle ran
+DEFAULT column with a non-deterministic expression: oracle skipped
+DEFAULT column with a deterministic expression: oracle ran
+MATERIALIZED column with a non-deterministic expression: oracle skipped
+EPHEMERAL expression reached through a DEFAULT: oracle skipped
+IN over a non-deterministic definition: oracle skipped
+IN over a deterministic definition: oracle ran
+row policy with a non-deterministic filter: oracle skipped
+row policy with a deterministic filter: oracle ran
+DEFINER view over the definer's row policy: oracle skipped

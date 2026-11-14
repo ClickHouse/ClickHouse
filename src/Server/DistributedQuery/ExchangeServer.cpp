@@ -5,7 +5,6 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/makeSocketAddress.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -39,11 +38,10 @@ static constexpr size_t HANDSHAKE_POOL_MAX_THREADS = 64;
 static constexpr size_t HANDSHAKE_POOL_MAX_FREE_THREADS = 0;
 static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
 
-ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, UInt32 listen_backlog, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_)
+ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_, ExchangeConnectionAuthenticator authenticate_connection_)
     : connections(std::move(connections_))
     , authenticate_connection(std::move(authenticate_connection_))
-    /// A consumer connects to all its producers at once; connections beyond the backlog are dropped and retried by TCP after 1 s.
-    , server_socket(Poco::Net::ServerSocket(makeSocketAddress(listen_host, port, getLogger("ExchangeServer")), static_cast<int>(listen_backlog)))
+    , server_socket(Poco::Net::ServerSocket(Poco::Net::SocketAddress(listen_host, port)))
     , accept_thread("ExchangeServer")
     , handshake_pool(
         CurrentMetrics::ExchangeServerThreads,

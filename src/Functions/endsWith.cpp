@@ -36,7 +36,6 @@ Checks whether a string ends with the provided suffix.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEndsWith>(documentation);
-    factory.registerAlias("ends_with", NameEndsWith::name, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(EndsWithCaseInsensitive)

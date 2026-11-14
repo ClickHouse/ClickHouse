@@ -200,11 +200,6 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMe
     return {};
 }
 
-bool MergeTreeMergePredicate::areMergesBlockedInPartition(const String & partition_id) const
-{
-    return storage.merger_mutator.merges_blocker.isCancelledForPartition(partition_id);
-}
-
 PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(const PartsRange & range) const
 {
     if (range.empty())

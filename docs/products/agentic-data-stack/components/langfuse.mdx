@@ -1,0 +1,27 @@
+---
+sidebarTitle: 'Langfuse'
+title: 'Langfuse'
+description: 'How Langfuse provides observability and tracing for the agentic data stack'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'Langfuse', 'observability', 'tracing', 'LLM']
+---
+
+Langfuse is the **observability layer** of the [Agentic Data Stack](/products/agentic-data-stack/overview). It records what the agent did in LibreChat, so you can debug it, measure quality, and track cost. Built on OpenTelemetry, Langfuse runs on ClickHouse.
+
+## Trace and inspect every run {#trace}
+
+Every conversation is captured as a [Langfuse trace](https://langfuse.com/docs/observability/overview): the prompts, each tool call (including the SQL the agent ran), and the response. Each trace also records token usage, cost, and latency. Open a run to see what the agent did and where it failed. Sort by user and session to see who is spending the most.
+
+## Score output quality {#evals}
+
+Model output is nondeterministic, so Langfuse lets you measure quality instead of guessing at it. Score runs with [human annotation](https://langfuse.com/docs/evaluation/evaluation-methods/annotation) or an automated [LLM-as-a-judge](https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge) evaluator, for example to flag when an answer is wrong or an analysis is unhelpful.
+
+## In the stack {#in-the-stack}
+
+The stack wires LibreChat to Langfuse, so every run is traced automatically, with no instrumentation to add. Traces are stored in the stack's own ClickHouse instance, keeping your observability data alongside the data you query. To run it as part of the stack, see the [Docker setup guide](/products/agentic-data-stack/docker-setup).
+
+To send traces from a standalone LibreChat instance, or to use a regional or HIPAA Langfuse endpoint, see the [Langfuse companion guide](https://langfuse.com/integrations/agentic-data-stack). For Langfuse on ClickHouse generally, see the [Langfuse overview](/products/cloud/features/ai-ml/langfuse).
+
+<Info>
+**Prefer a managed experience?** [Langfuse Cloud](https://cloud.langfuse.com) is a fully managed deployment powered by a managed ClickHouse cluster — no infrastructure to run.
+</Info>

@@ -7,7 +7,10 @@ title: '定时扩缩容'
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
 
 ClickHouse Cloud 服务会根据 CPU 和内存利用率自动扩缩容，但许多工作负载都呈现出可预测的模式——例如每日的摄取高峰、夜间运行的批次作业，或周末大幅下降的流量。对于这些场景，定时扩缩容可让您精确定义服务应在何时扩容或缩容，而不受实时指标影响。
 
@@ -15,7 +18,11 @@ ClickHouse Cloud 服务会根据 CPU 和内存利用率自动扩缩容，但许�
 
 这与基于指标的自动扩缩容不同，后者会根据 CPU 和内存压力动态调整。定时扩缩容是确定性的：您可以清楚知道扩缩容会在何时发生，以及会调整到什么规模。这两种方式是互补的——服务既可以有一个基础的扩缩容计划，也仍然能够在该时间窗口内受益于自动扩缩容，以应对工作负载的意外波动。
 
-## 设置扩缩容计划 {#setting-up-a-scaling-schedule}
+定时扩缩容目前处于 **Beta** 阶段。
+
+<div id="setting-up-a-scaling-schedule">
+  ## 设置扩缩容计划
+</div>
 
 要配置计划，请在 ClickHouse Cloud 控制台中进入你的服务并前往设置。在这里，选择 **Schedule Override**，然后添加一条新规则。
 

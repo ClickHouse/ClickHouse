@@ -4,7 +4,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB

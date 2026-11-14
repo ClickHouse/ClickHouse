@@ -44,14 +44,14 @@ doc_type: 'reference'
 
 Поля настроек:
 
-| Настройка              | Описание                                                                                                                                                                                                                                     |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db`                   | Имя базы данных. Не указывайте его, если имя базы данных задано в параметрах `<connection_string>`.                                                                                                                                          |
-| `table`                | Имя таблицы и схемы, если она есть.                                                                                                                                                                                                          |
-| `connection_string`    | Строка подключения.                                                                                                                                                                                                                          |
-| `invalidate_query`     | Запрос для проверки состояния словаря. Необязательно. Подробнее см. в разделе [Обновление данных словаря с помощью LIFETIME](/ru/reference/statements/create/dictionary/lifetime).                                                              |
-| `background_reconnect` | Повторно подключаться к реплике в фоновом режиме, если соединение не удалось. Необязательно.                                                                                                                                                 |
-| `query`                | Пользовательский запрос. Необязательно. Его столбцы сопоставляются по позиции, поэтому запрос должен возвращать их в [порядке, который ожидает словарь](/ru/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
+| Настройка              | Описание                                                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db`                   | Имя базы данных. Не указывайте его, если имя базы данных задано в параметрах `<connection_string>`.                                                                             |
+| `table`                | Имя таблицы и схемы, если она есть.                                                                                                                                             |
+| `connection_string`    | Строка подключения.                                                                                                                                                             |
+| `invalidate_query`     | Запрос для проверки состояния словаря. Необязательно. Подробнее см. в разделе [Обновление данных словаря с помощью LIFETIME](/ru/reference/statements/create/dictionary/lifetime). |
+| `background_reconnect` | Повторно подключаться к реплике в фоновом режиме, если соединение не удалось. Необязательно.                                                                                    |
+| `query`                | Пользовательский запрос. Необязательно.                                                                                                                                         |
 
 <Note>
   Поля `table` и `query` нельзя использовать одновременно. При этом должно быть указано либо поле `table`, либо `query`.
@@ -61,7 +61,9 @@ ClickHouse получает символы кавычек от ODBC-драйве
 
 Если при использовании Oracle у вас возникают проблемы с кодировками, см. соответствующий пункт [FAQ](/ru/resources/support-center/knowledge-base/integrations/oracle-odbc).
 
-### Известная уязвимость функциональности ODBC-словарей {#known-vulnerability-of-the-odbc-dictionary-functionality}
+<div id="known-vulnerability-of-the-odbc-dictionary-functionality">
+  ### Известная уязвимость функциональности ODBC-словарей
+</div>
 
 <Note>
   При подключении к базе данных через параметр подключения ODBC-драйвера `Servername` его можно подменить. В этом случае значения `USERNAME` и `PASSWORD` из `odbc.ini` отправляются на удалённый сервер и могут быть скомпрометированы.
@@ -90,7 +92,9 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC-драйвер отправит значения `USERNAME` и `PASSWORD` из `odbc.ini` на сервер `some-server.com`.
 
-### Пример подключения PostgreSQL {#example-of-connecting-postgresql}
+<div id="example-of-connecting-postgresql">
+  ### Пример подключения PostgreSQL
+</div>
 
 ОС Ubuntu.
 
@@ -177,7 +181,9 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 
 При необходимости отредактируйте `odbc.ini`, чтобы указать полный путь к библиотеке драйвера: `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Пример подключения к MS SQL Server {#example-of-connecting-ms-sql-server}
+<div id="example-of-connecting-ms-sql-server">
+  ### Пример подключения к MS SQL Server
+</div>
 
 В ОС Ubuntu.
 

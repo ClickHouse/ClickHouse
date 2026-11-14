@@ -6,16 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-encode_queries=""
-decode_queries=""
-num_values=0
-
 function test
 {
-    num_values=$((num_values + 1))
-    local file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_${num_values}"
-    encode_queries+="select $1 as value into outfile '${file}.rowbinary' format RowBinaryWithNamesAndTypes; select $1 as value into outfile '${file}.native' format Native; "
-    decode_queries+="select value, toTypeName(value) from file('${file}.rowbinary', RowBinaryWithNamesAndTypes); select value, toTypeName(value) from file('${file}.native', Native); "
+    $CLICKHOUSE_LOCAL --stacktrace --allow_experimental_dynamic_type=1 --allow_experimental_variant_type=1 --output_format_binary_encode_types_in_binary_format=1 -q "select $1 as value format RowBinaryWithNamesAndTypes" | $CLICKHOUSE_LOCAL --input-format RowBinaryWithNamesAndTypes --input_format_binary_decode_types_in_binary_format=1 -q "select value, toTypeName(value) from table"
+    $CLICKHOUSE_LOCAL --stacktrace --allow_experimental_dynamic_type=1 --allow_experimental_variant_type=1 --output_format_native_encode_types_in_binary_format=1 -q "select $1 as value format Native" | $CLICKHOUSE_LOCAL --input-format Native --input_format_native_decode_types_in_binary_format=1 -q "select value, toTypeName(value) from table"
 }
 
 test "materialize(42)::UInt8"
@@ -75,8 +69,3 @@ test "materialize(42::UInt32)::Variant(UInt32, String, Tuple(a UInt32, b Array(M
 test "materialize([map(42, tuple(1, [tuple(2, map(1, 2))]))])::Dynamic"
 test "materialize([map(42, tuple(1, [tuple(2, map(1, 2))]))])::Dynamic(max_types=10)"
 test "materialize([map(42, tuple(1, [tuple(2, map(1, 2))]))])::Dynamic(max_types=254)"
-
-$CLICKHOUSE_LOCAL --stacktrace --allow_experimental_dynamic_type=1 --allow_experimental_variant_type=1 --output_format_binary_encode_types_in_binary_format=1 --output_format_native_encode_types_in_binary_format=1 -q "$encode_queries"
-$CLICKHOUSE_LOCAL --input_format_binary_decode_types_in_binary_format=1 --input_format_native_decode_types_in_binary_format=1 -q "$decode_queries"
-
-rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"_*

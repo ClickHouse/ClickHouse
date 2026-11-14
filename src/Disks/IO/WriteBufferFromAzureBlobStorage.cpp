@@ -10,7 +10,6 @@
 #include <Common/Throttler.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceGuard.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <base/sleep.h>
 
 
@@ -190,10 +189,6 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             Azure::Core::IO::MemoryBodyStream memory_stream(
                 reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
 
-            /// One row is written for the whole `execWithRetry` sequence, so when a write is
-            /// retried the connection columns of that row report zeroes: its elapsed time covers
-            /// every attempt, and no single socket describes it.
-            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -220,7 +215,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getAzureErrorCodeForLog(e);
+                error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -257,10 +252,6 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         {
             Azure::Core::IO::MemoryBodyStream memory_stream(nullptr, 0);
 
-            /// One row is written for the whole `execWithRetry` sequence, so when a write is
-            /// retried the connection columns of that row report zeroes: its elapsed time covers
-            /// every attempt, and no single socket describes it.
-            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -287,7 +278,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getAzureErrorCodeForLog(e);
+                error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -343,10 +334,6 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
-        /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
-        /// the connection columns of that row report zeroes: its elapsed time covers every
-        /// attempt, and no single socket describes it.
-        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;
@@ -373,7 +360,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = getAzureErrorCodeForLog(e);
+            error_code = static_cast<Int32>(e.StatusCode);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(
@@ -550,10 +537,6 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);
 
-        /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
-        /// the connection columns of that row report zeroes: its elapsed time covers every
-        /// attempt, and no single socket describes it.
-        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;
@@ -573,7 +556,7 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = getAzureErrorCodeForLog(e);
+            error_code = static_cast<Int32>(e.StatusCode);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(

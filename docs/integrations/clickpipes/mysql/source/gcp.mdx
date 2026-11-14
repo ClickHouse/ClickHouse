@@ -11,22 +11,21 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
-import { CloudSQLIAMAuthentication } from "/snippets/clickpipes/_cloudsql_iam_authentication.mdx";
 
 This is a step-by-step guide on how to configure your Cloud SQL for MySQL instance for replicating its data via the MySQL ClickPipe.
 
 ## Enable binary log retention {#enable-binlog-retention-gcp}
-The binary log is a set of log files that contain information about data modifications made to a MySQL server instance, and binary log files are required for replication.
+The binary log is a set of log files that contain information about data modifications made to an MySQL server instance, and binary log files are required for replication.
 
 ### Enable binary logging via PITR {#enable-binlog-logging-gcp}
 The PITR feature determines whether binary logging is turned on or off for MySQL in Google Cloud. It can be set in the Cloud console, by editing your Cloud SQL instance and scrolling down to the below section.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp" alt="Enabling PITR in Cloud SQL" size="lg" border/>
 
-Set the transaction log retention to at least 3 days. Cloud SQL keeps binary logs for the shorter of this setting and `binlog_expire_logs_seconds`.
+Setting the value to a reasonably long value depending on the replication use-case is advisable.
 
 If not already configured, make sure to set these in the database flags section by editing the Cloud SQL:
-1. `binlog_expire_logs_seconds` to a value >= `259200` (3 days).
+1. `binlog_expire_logs_seconds` to a value >= `86400` (1 day).
 2. `binlog_row_metadata` to `FULL`
 3. `binlog_row_image` to `FULL`
 
@@ -59,10 +58,6 @@ Connect to your Cloud SQL MySQL instance as the root user and execute the follow
     GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
     ```
-
-## Using IAM database authentication (optional, Beta) {#iam-database-authentication}
-
-<CloudSQLIAMAuthentication engine="mysql" />
 
 ## Configure network access {#configure-network-access-gcp-mysql}
 

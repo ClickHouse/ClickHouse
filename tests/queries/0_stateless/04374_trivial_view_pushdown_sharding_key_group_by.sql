@@ -12,6 +12,7 @@
 --
 -- Tags: shard
 
+SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 
 DROP TABLE IF EXISTS data_04374;

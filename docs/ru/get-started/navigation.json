@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-get-started.svg",
   "item": "Get started",
   "pages": [
     {
@@ -29,7 +30,8 @@
               "group": "Аналитика в реальном времени",
               "pages": [
                 "ru/get-started/quickstarts/create-your-first-materialized-view",
-                "ru/get-started/quickstarts/create-your-first-projection"
+                "ru/get-started/quickstarts/create-your-first-projection",
+                "ru/get-started/quickstarts/tutorial"
               ]
             },
             {

@@ -1,3 +1,4 @@
+set enable_analyzer = 1;
 
 EXPLAIN QUERY TREE dump_ast = 1
 SELECT a

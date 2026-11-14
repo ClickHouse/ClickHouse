@@ -8,7 +8,6 @@ doc_type: 'مرجع'
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
-import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="معمارية Cloud" />
 
@@ -67,17 +66,9 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 تتيح لك [الحوسبة-الحوسبة separation](/ar/products/cloud/features/infrastructure/warehouses) إنشاء مجموعات متعددة من عُقد المعالجة، لكلٍ منها URL خدمة خاص بها، مع استخدام تخزين الكائنات المشترك نفسه جميعًا. ويتيح ذلك عزل موارد المعالجة لحالات استخدام مختلفة، مثل فصل عمليات القراءة عن عمليات الكتابة، مع مشاركة البيانات نفسها. كما يؤدي ذلك إلى استخدام أكثر كفاءة للموارد من خلال إتاحة التوسّع المستقل لمجموعات المعالجة حسب الحاجة.
 
-## الحوسبة عند الطلب {#on-demand-compute}
-
-<PrivatePreviewBadge />
-
-تُخصّص الحوسبة عند الطلب مؤقتًا **workers** من pool تديره ClickHouse لتشغيل الأحمال المدعومة عبر خدمة ClickHouse Cloud الحالية لديك. فتتولّى خدمتك المصادقة وتنسيق الـ query، بينما ينفّذ الـ workers المخصّصون الجزء الأكبر من أعمال الفحص والـ join والتجميع المؤهّلة خارج حوسبة الخدمة. ويُشترك في الـ pool بين خدمات ClickHouse Cloud، إلا أن كل worker يخدم خدمة واحدة فقط في الوقت ذاته.
-
-خلال private preview، لا تدعم الحوسبة عند الطلب سوى استعلامات `SELECT` المؤهّلة. ويُوفَّر التوافر على أساس بذل أفضل الجهود، ويتفاوت الأداء، ولا تنطبق أهداف مستوى الخدمة واتفاقيات مستوى الخدمة الخاصة بـ ClickHouse Cloud.
-
-[شروط خدمة Private Preview](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
-
-## حدود التزامن {#concurrency-limits}
+<div id="concurrency-limits">
+  ## حدود التزامن
+</div>
 
 لا يوجد حدّ لعدد الاستعلامات في الثانية (QPS) في خدمة ClickHouse Cloud الخاصة بك. ومع ذلك، يوجد حد أقصى يبلغ 1000 استعلام متزامن لكل نسخة متماثلة. ويعتمد QPS في النهاية على متوسط وقت تنفيذ الاستعلام وعدد النسخ المتماثلة في خدمتك.
 

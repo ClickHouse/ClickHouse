@@ -12,23 +12,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки используются для конфигурации сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-## cpu_slot_parking {#cpu_slot_parking}
-
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
-
-Определяет, освобождает ли (паркует) поток запроса свой слот CPU, пока он заблокирован в ожидании, не связанном с CPU, например при некоторых операциях ввода-вывода или при простое из-за отсутствия доступных задач. Припаркованный поток не учитывается в лимите параллелизма CPU, поэтому другой поток может задействовать CPU, который в противном случае простаивал бы; по окончании ожидания слот захватывается повторно. Действует только в том случае, если включена настройка `cpu_slot_preemption` и один и тот же ресурс CPU задан одновременно для MASTER THREAD и WORKER THREAD; в остальных конфигурациях ни на что не влияет. Может быть изменена без перезапуска сервера.
-
-**Пример**
-
-```xml
-<cpu_slot_parking>true</cpu_slot_parking>
-```
-
-**См. также**
-
-* [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling)
-
-## cpu_slot_preemption {#cpu_slot_preemption}
+<div id="cpu_slot_preemption">
+  ## cpu_slot_preemption
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
 
@@ -47,7 +33,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 * [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling)
 
-## cpu_slot_preemption_timeout_ms {#cpu_slot_preemption_timeout_ms}
+<div id="cpu_slot_preemption_timeout_ms">
+  ## cpu_slot_preemption_timeout_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />
 
@@ -63,7 +51,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 * [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling)
 
-## cpu_slot_quantum_ns {#cpu_slot_quantum_ns}
+<div id="cpu_slot_quantum_ns">
+  ## cpu_slot_quantum_ns
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />
 

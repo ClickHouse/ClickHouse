@@ -1,5 +1,6 @@
 ---
-description: '关于 ALTER TABLE ... MODIFY COMMENT 的文档，用于添加、修改或删除表注释'
+description: '关于 ALTER TABLE ... MODIFY COMMENT 的文档，用于
+添加、修改或删除表注释'
 sidebarTitle: 'ALTER TABLE ... MODIFY COMMENT'
 slug: /sql-reference/statements/alter/comment
 title: 'ALTER TABLE ... MODIFY COMMENT'
@@ -14,13 +15,17 @@ doc_type: 'reference'
 注释的更改会同时反映在 [`system.tables`](/zh/reference/system-tables/tables)
 和 `SHOW CREATE TABLE` 查询中。
 
-## 语法 {#syntax}
+<div id="syntax">
+  ## 语法
+</div>
 
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-## 示例 {#examples}
+<div id="examples">
+  ## 示例
+</div>
 
 要创建带注释的表：
 
@@ -75,7 +80,9 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 └─────────┘
 ```
 
-## 注意事项 {#caveats}
+<div id="caveats">
+  ## 注意事项
+</div>
 
 对于复制表，不同副本上的注释可以不同。
 修改注释仅会应用到单个副本。
@@ -83,7 +90,9 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 该功能自 23.9 版本起可用。在更早的
 ClickHouse 版本中无法使用。
 
-## 相关内容 {#related-content}
+<div id="related-content">
+  ## 相关内容
+</div>
 
 * [`COMMENT`](/zh/reference/statements/create/table#comment-clause) 子句
 * [`ALTER DATABASE ... MODIFY COMMENT`](/zh/reference/statements/alter/database-comment)

@@ -46,12 +46,6 @@ enum class MergeTreeDynamicSerializationVersion : uint8_t
     V3,
 };
 
-/// Serialization version of the typed shared data (SHARED typed paths) of JSON columns. 0 is reserved.
-enum class MergeTreeObjectTypedSharedDataSerializationVersion : uint8_t
-{
-    V1 = 1,
-};
-
 enum class MergeTreePatchPartsVersion : uint8_t
 {
     V1,

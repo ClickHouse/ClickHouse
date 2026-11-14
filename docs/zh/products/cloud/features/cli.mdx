@@ -1,115 +1,167 @@
 ---
-sidebarTitle: 'ClickHouse 命令行客户端'
+sidebarTitle: 'ClickHouse CLI'
 slug: /cloud/features/cli
-title: 'ClickHouse 命令行客户端'
-description: '使用 ClickHouse 命令行客户端（clickhousectl）在终端中创建和管理 ClickHouse Cloud 服务、Managed Postgres、ClickPipes 和 ClickStack'
-keywords: ['clickhousectl', 'chctl', 'CLI', 'cloud management', 'command line']
-doc_type: 'guide'
+title: 'ClickHouse CLI'
+description: '使用 ClickHouse 命令行客户端管理 ClickHouse Cloud 服务和本地 ClickHouse 实例'
+keywords: ['clickhousectl', 'CLI', 'Cloud 管理', '本地开发']
+doc_type: 'reference'
 ---
 
-ClickHouse 命令行客户端 (`clickhousectl`，别名 `chctl`) 支持通过终端、脚本或编程智能体来管理 ClickHouse Cloud。本页介绍该命令行客户端中与 Cloud 相关的功能。如需了解所有命令组、本地开发以及完整的行为说明，请参阅 [clickhousectl 参考文档](/zh/concepts/features/interfaces/cli)。
+ClickHouse 命令行客户端 (`clickhousectl`) 是一款统一的命令行工具，用于管理 ClickHouse Cloud 资源，并支持基于 ClickHouse 的本地开发。它还可管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
 
-## 可管理的内容 {#what-you-can-manage}
-
-`clickhousectl cloud` 命令涵盖以下功能：
-
-* **服务：** 创建、扩缩容、启动和停止 ClickHouse Cloud 服务，并通过查询 API 对其执行 SQL。
-* **[Managed Postgres](/zh/products/managed-postgres/overview) (Beta) ：** 创建 Postgres 服务、只读副本和时间点恢复，并修改其配置。
-* **[ClickPipes](/zh/integrations/clickpipes/home)：** 从对象存储、Kafka、Kinesis、Pub/Sub、Postgres、MySQL、MongoDB 和 BigQuery 摄取数据。
-* **[ClickStack](/zh/clickstack/overview)：** 在[托管 ClickStack](/zh/clickstack/deployment/managed) 服务上管理数据源、仪表盘、告警、Webhook、保存的搜索和角色。
-* **用户自定义函数：** 在本地测试可执行 UDF，然后将其部署到云服务。
-* **备份：** 列出备份、修改备份计划，以及将备份恢复到新服务。
-* **组织访问：** 管理组织、成员、邀请、API 密钥和活动日志。
-
-运行 `clickhousectl cloud <command> --help` 可查看任意命令的参数及其所需的 API key 权限。
-
-## 安装 {#installation}
+<div id="installation">
+  ## 安装
+</div>
 
 ```bash
-curl -fsSL https://clickhouse.com/cli | sh
+curl https://clickhouse.com/cli | sh
 ```
 
-该脚本会安装 `~/.local/bin/clickhousectl`，并创建别名 `chctl`。请确保 `~/.local/bin` 已添加到 `PATH` 中。如需通过 npm、pip、uv 或其他方式安装，请参阅[安装](/zh/concepts/features/interfaces/cli#installation)。
+为方便使用，系统还会自动创建一个 `chctl` 别名。
 
-## 身份验证 {#authentication}
+<div id="cloud-management">
+  ## Cloud 管理
+</div>
 
-通过浏览器 OAuth 登录仅具有只读权限。如需创建或更改资源，必须使用 [API key](/zh/products/cloud/features/admin-features/api/openapi)，且该 API key 所关联的角色须具备执行相应更改的权限。
+直接通过命令行在 ClickHouse Cloud 中完成身份验证并管理您的服务。
+
+<div id="authentication">
+  ### 身份验证
+</div>
 
 ```bash
-# Read-only: OAuth device flow in your browser
-clickhousectl cloud auth login
-
-# Read and write: prompts for the API key and secret, keeping the secret out of shell history
-clickhousectl cloud auth login --interactive
-
-# Alternative for scripts
-clickhousectl cloud auth login --api-key <key> --api-secret <secret>
+clickhousectl cloud auth
 ```
 
-登录时会验证凭证并输出当前身份。您可以随时运行 `clickhousectl cloud auth whoami` 查看当前身份。如果您属于多个组织，请在 Cloud 命令中添加 `--org-id <org-id>` (或 `--org-name <name>`) 。在 CI 环境中，无需登录，只需设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 即可。有关凭证的优先级以及如何登出，请参阅[身份验证](/zh/concepts/features/interfaces/cli#authentication)。
+系统会提示你输入 API 密钥 和 secret，并将它们保存到 `.clickhouse/credentials.json` (仅限当前项目，且已加入 git 忽略) 。
 
-## 示例 {#examples}
-
-### 创建并查询服务 {#create-and-query-a-service}
+你也可以使用环境变量：
 
 ```bash
-# Create a service. Save the initial password; it is printed only once.
-# Omitting --ip-allow allows all addresses (0.0.0.0/0).
-clickhousectl cloud service create --name analytics \
-  --provider aws --region us-east-1 \
-  --ip-allow '203.0.113.10/32=Office'
-
-# Look up the service ID, then run SQL over the Query API
-CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
-clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
+export CLICKHOUSE_CLOUD_API_KEY=your-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-secret
 ```
 
-创建命令会在服务开始运行之前就返回。请轮询 `clickhousectl cloud service get "$CH_ID"`，直到 `state` 变为 `running`。
-
-首次使用 API key 执行查询时，clickhousectl 会将您的 API key 添加到该服务的查询 API 端点 (如端点尚不存在则会先创建) ，但不会创建新的 key。如果希望在这种情况下直接报错，请传入 `--no-auto-enable`。使用 OAuth 时，`service query` 只能执行只读的 `SELECT` 语句。查询 API 的超时时间约为 30 秒，因此对于耗时较长的查询和批量加载，请使用 `clickhouse client`。
-
-### 创建托管 Postgres 服务 {#create-a-managed-postgres-service}
+<div id="services">
+  ### 服务
+</div>
 
 ```bash
-clickhousectl cloud postgres create --name app-db \
-  --provider aws --region us-east-1 --size c6gd.xlarge --pg-version 18 \
-  --ip-allow '203.0.113.10/32:5432=Office'
-clickhousectl cloud postgres get <postgres-id>
-clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
+# 列出服务
+clickhousectl cloud service list
+
+# 创建服务
+clickhousectl cloud service create --name my-service \
+  --provider aws \
+  --region us-east-1
+
+# 获取服务详情
+clickhousectl cloud service get <service-id>
+
+# 扩缩服务
+clickhousectl cloud service scale <service-id> \
+  --min-replica-memory-gb 24 \
+  --max-replica-memory-gb 48 \
+  --num-replicas 3
+
+# 启动/停止服务
+clickhousectl cloud service start <service-id>
+clickhousectl cloud service stop <service-id>
+
+# 删除服务
+clickhousectl cloud service delete <service-id>
 ```
 
-只有 `create` 命令会返回密码和连接字符串，请务必妥善保存。如果省略 `--ip-allow`，端口 5432 和 6432 将对所有地址开放。等待 `state` 变为 `running` 后，即可使用 CA 证书通过 `psql` 进行连接。
+<div id="postgres-services">
+  ### Postgres 服务 (Beta)
+</div>
 
-### 检查 ClickPipes、ClickStack 和备份 {#inspect-clickpipes-clickstack-and-backups}
+创建和管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
 
 ```bash
-clickhousectl cloud clickpipe list "$CH_ID"
-clickhousectl cloud clickstack source list <clickstack-service-id>
-clickhousectl cloud backup list "$CH_ID"
+# List Postgres services
+clickhousectl cloud postgres list
+
+# Create a Postgres service
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size m6gd.xlarge \
+  --pg-version 18
+
+# Get service details
+clickhousectl cloud postgres get <pg-id>
+
+# Update a service
+clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
+
+# Reset the password
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Read replicas and point-in-time restore
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# Delete a service
+clickhousectl cloud postgres delete <pg-id>
 ```
 
-这些只读命令支持 OAuth 认证。创建 ClickPipe 或修改 ClickStack 资源则需要使用 API key，详见下方的代码仓库指南。
-
-### 部署用户自定义函数 {#deploy-a-user-defined-function}
+<div id="organizations">
+  ### 组织
+</div>
 
 ```bash
-# Uploads clickhouse/udfs/my_udf/, waits for the build, then attaches that version to the service
-clickhousectl cloud udf deploy my_udf --service "$CH_ID"
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
 ```
 
-请先针对本地服务器运行 `clickhousectl local udf deploy my_udf`，对该函数进行测试。
+<div id="api-keys">
+  ### API 密钥
+</div>
 
-## JSON 输出与编程智能体 {#json-output}
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key delete <key-id>
+```
 
-Cloud 命令支持 `--json` 参数；命令行客户端在检测到编程智能体时，会自动切换为 JSON 输出。此时 `cloud service query` 默认采用 `JSONEachRow` 格式，因此需要解析其输出的脚本应显式指定 `--format`，例如 `--format TabSeparated`。详见 [JSON 输出](/zh/concepts/features/interfaces/cli#json-output)和[退出码](/zh/concepts/features/interfaces/cli#exit-codes)。可通过 `clickhousectl skills` 安装 ClickHouse agent skills。
+<div id="members-and-invitations">
+  ### 成员与邀请
+</div>
 
-## 了解更多 {#learn-more}
+```bash
+clickhousectl cloud member list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+```
 
-* [clickhousectl 参考文档](/zh/concepts/features/interfaces/cli)：涵盖所有命令组、本地开发、技能、自更新以及遥测数据。
-* 代码仓库中的指南：
-  * [ClickHouse Cloud 服务](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md)
-  * [ClickHouse Managed Postgres](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/managed-postgres.md)
-  * [ClickPipes](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md)
-  * [ClickStack](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md)
-  * [用户自定义函数](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md)
-* 代码仓库中的参考文档：[身份验证与访问](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md)、[SQL 与查询 API](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md)、[ClickPipe 配置](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md)以及[自动化与输出契约](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/automation.md)。
+<div id="backups">
+  ### 备份
+</div>
+
+```bash
+clickhousectl cloud backup list <service-id>
+clickhousectl cloud backup get <service-id> <backup-id>
+```
+
+<div id="json-output">
+  ### JSON 输出
+</div>
+
+使用 `--json` 标志可让任何云端命令返回 JSON 格式的响应：
+
+```bash
+clickhousectl cloud --json service list
+```
+
+<div id="local-development">
+  ## 本地开发
+</div>
+
+命令行客户端 还可管理本地的 ClickHouse 安装和服务器。要开始进行本地开发，请参阅 [clickhousectl (CLI)](/zh/get-started/setup/self-managed/clickhousectl) 页面。
+
+<div id="requirements">
+  ## 要求
+</div>
+
+* macOS (aarch64、x86&#95;64) 或 Linux (aarch64、x86&#95;64)
+* Cloud 命令需要 [ClickHouse Cloud API 密钥](/zh/products/cloud/features/admin-features/api/openapi)

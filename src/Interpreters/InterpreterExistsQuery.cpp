@@ -42,7 +42,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     ASTQueryWithTableAndOutput * exists_query = nullptr;
     bool result = false;
 
-    if (exists_query = query_ptr->as<ASTExistsTableQuery>(); exists_query)
+    if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
     {
         if (exists_query->isTemporary())
         {
@@ -72,15 +72,11 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             else
             {
                 getContext()->checkAccess(AccessType::SHOW_TABLES, database, table);
-                /// With the asynchronous loading of tables, a table is attached only by its load job, so
-                /// wait for it the same way `tryGetTable` does: a table that is still loading exists.
-                if (auto db = DatabaseCatalog::instance().tryGetDatabase(database))
-                    db->waitTableStarted(table);
                 result = DatabaseCatalog::instance().isTableExist({database, table}, getContext());
             }
         }
     }
-    else if (exists_query = query_ptr->as<ASTExistsViewQuery>(); exists_query)
+    else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
     {
         if (exists_query->isTemporary())
         {
@@ -104,13 +100,13 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             result = table && table->isView();
         }
     }
-    else if (exists_query = query_ptr->as<ASTExistsDatabaseQuery>(); exists_query)
+    else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
     {
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_DATABASES, database);
         result = DatabaseCatalog::instance().isDatabaseExist(database);
     }
-    else if (exists_query = query_ptr->as<ASTExistsDictionaryQuery>(); exists_query)
+    else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {
         if (exists_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");

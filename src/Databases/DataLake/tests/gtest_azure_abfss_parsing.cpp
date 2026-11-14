@@ -284,34 +284,4 @@ TEST_F(AzureAbfssParsingTest, TableMetadataS3EndpointAlreadyEndsWithBucketForceA
     EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/warehouse-rest/data/testns/testtable/");
 }
 
-TEST_F(AzureAbfssParsingTest, TableMetadataAbfssContainerIsPrefixOfAccountHost)
-{
-    TableMetadata metadata;
-    metadata.withLocation();
-    metadata.setLocation("abfss://data@datalake.dfs.core.windows.net/some/path");
-    EXPECT_EQ(metadata.getLocationWithEndpoint("https://datalake.dfs.core.windows.net"),
-              "https://datalake.dfs.core.windows.net/data/some/path/");
-
-    TableMetadata same_name;
-    same_name.withLocation();
-    same_name.setLocation("abfss://analytics@analytics.dfs.core.windows.net/warehouse/t");
-    EXPECT_EQ(same_name.getLocationWithEndpoint("https://analytics.dfs.core.windows.net"),
-              "https://analytics.dfs.core.windows.net/analytics/warehouse/t/");
-}
-
-TEST_F(AzureAbfssParsingTest, TableMetadataAbfssContainerMatchesWholeEndpointPathSegment)
-{
-    TableMetadata metadata;
-    metadata.withLocation();
-    metadata.setLocation("abfss://dev@devstoreaccount1.dfs.core.windows.net/t");
-    EXPECT_EQ(metadata.getLocationWithEndpoint("http://azurite1:10000/devstoreaccount1"),
-              "http://azurite1:10000/devstoreaccount1/dev/t/");
-
-    TableMetadata in_endpoint;
-    in_endpoint.withLocation();
-    in_endpoint.setLocation("abfss://mycontainer@devstoreaccount1.dfs.core.windows.net/t");
-    EXPECT_EQ(in_endpoint.getLocationWithEndpoint("http://azurite1:10000/devstoreaccount1/mycontainer"),
-              "http://azurite1:10000/devstoreaccount1/mycontainer/t/");
-}
-
 }

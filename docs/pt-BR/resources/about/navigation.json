@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Sobre o ClickHouse",
+      "group": "About ClickHouse",
       "pages": [
         "pt-BR/resources/about/index",
         "pt-BR/resources/about/adopters",
@@ -9,5 +9,6 @@
       ]
     }
   ],
-  "item": "Sobre"
+  "icon": "/images/icons/icon-about.svg",
+  "item": "About"
 }

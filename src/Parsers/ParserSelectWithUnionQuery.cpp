@@ -3,6 +3,8 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -38,16 +40,19 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     /// The query can be followed by a chain of pipe operators, e.g.: FROM t |> WHERE x |> LIMIT 1.
     if (pos->type == TokenType::PipeOperator)
-        return ParserPipeOperators().parse(pos, node, expected);
+        return parsePipeOperators(pos, node, expected);
 
     return true;
 }
 
-std::map<String, Documentation> ParserSelectWithUnionQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["UNION"] =
+namespace DB
+{
+
+void registerStatementUnion(StatementFactory & factory)
+{
+    factory.registerStatement("UNION",
     {
         .description = R"DOCS_MD(
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
@@ -126,9 +131,9 @@ SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "INTERSECT", "EXCEPT", "DISTINCT", "JOIN"},
-    };
+    });
 
-    documentation["INTERSECT"] =
+    factory.registerStatement("INTERSECT",
     {
         .description = R"DOCS_MD(
 The `INTERSECT` clause returns only those rows that result from both the first and the second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
@@ -151,7 +156,7 @@ The condition could be any expression based on your requirements.
 
 ## Examples {#examples}
 
-Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 10:
+Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 8:
 
 ```sql title="Query"
 SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
@@ -165,8 +170,6 @@ SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 │      6 │
 │      7 │
 │      8 │
-│      9 │
-│     10 │
 └────────┘
 ```
 
@@ -189,7 +192,6 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
-    NOSIGN,
     'CSVWithNames'
 );
 
@@ -230,7 +232,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10),
+   ('DOGEFI', 10);
    ('Bitcoin Diamond', 5000);
 ```
 
@@ -284,9 +286,9 @@ SELECT column1 [, column2] FROM table2 [WHERE condition]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "UNION", "EXCEPT", "IN"},
-    };
+    });
 
-    documentation["EXCEPT"] =
+    factory.registerStatement("EXCEPT",
     {
         .description = R"DOCS_MD(
 > The `EXCEPT` clause returns only those rows that result from the first query without the second.
@@ -349,11 +351,11 @@ FROM numbers(3, 6)
 `EXCEPT()` can be used to quickly exclude columns from a result. For instance if we want to select all columns from a table, except a few select columns as shown in the example below:
 
 ```sql title="Query"
-SHOW COLUMNS IN system.settings;
+SHOW COLUMNS IN system.settings
 
 SELECT * EXCEPT (default, alias_for, readonly, description)
 FROM system.settings
-LIMIT 5;
+LIMIT 5
 ```
 
 ```response title="Response"
@@ -403,7 +405,6 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
-    NOSIGN,
     'CSVWithNames'
 );
 
@@ -495,9 +496,7 @@ SELECT column1 [, column2] FROM table2 [WHERE condition]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "UNION", "INTERSECT", "EXCEPT modifier"},
-    };
-
-    return documentation;
+    });
 }
 
 }
