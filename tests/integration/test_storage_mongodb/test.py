@@ -1683,10 +1683,15 @@ def test_where_nullable_null_limit(started_cluster):
     collection_name = "nullable_null_limit"
     drop_mongo_collection_if_exists(db, collection_name)
     collection = db[collection_name]
-    collection.insert_many([{"n": None if i % 2 == 0 else 1} for i in range(100)])
+    collection.insert_many(
+        [
+            {"n": None, "a": []} if i % 2 == 0 else {"n": 1, "a": [None]}
+            for i in range(100)
+        ]
+    )
 
     node = started_cluster.instances["node"]
-    structure = "n Nullable(Int64)"
+    structure = "n Nullable(Int64), a Array(Nullable(Int32))"
     arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
     node.query(
         f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
@@ -1697,6 +1702,8 @@ def test_where_nullable_null_limit(started_cluster):
             for predicate, expected in (
                 ("isNull(n)", "\\N\n"),
                 ("isNotNull(n)", "1\n"),
+                ("empty(a)", "\\N\n"),
+                ("notEmpty(a)", "1\n"),
             ):
                 query_id = str(uuid.uuid4())
                 assert node.query(
@@ -1710,6 +1717,46 @@ def test_where_nullable_null_limit(started_cluster):
                     f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
                 ) == "1\n"
     finally:
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+def test_order_by_reader_values_limit(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "order_by_reader_values_limit"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    # MongoDB sorts a `null` first and a number before a string, but the reader reads `null` as `NULL` and 10 as '10'.
+    collection.insert_many([{"id": 1, "s": None, "t": 10}, {"id": 2, "s": "a", "t": "0"}])
+
+    node = started_cluster.instances["node"]
+    structure = "id UInt8, s Nullable(String), t String"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for order_by, expected in (
+                ("s", "2\n"),
+                ("s DESC NULLS FIRST", "1\n"),
+                ("t", "2\n"),
+                ("t DESC", "1\n"),
+            ):
+                query = f"SELECT id FROM {{}} ORDER BY {order_by} LIMIT 1"
+                assert node.query(query.format(reference)) == expected
+                assert node.query(query.format(source)) == expected, (query, source)
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
         node.query(f"DROP TABLE {collection_name}")
         collection.drop()
 
