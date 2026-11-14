@@ -2795,6 +2795,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     MergeTreeTransactionPtr txn;
     if (transactions_enabled.load(std::memory_order_relaxed))
     {
+        /// A transactional commit also removes the outdated parts covered by its new part, so it must not miss unloaded ones.
+        if (!outdated_data_parts_loading_finished)
+            return false;
+
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
         txn = TransactionManager::instance().beginTransaction();
         transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
@@ -2908,7 +2912,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
-        if (is_cancelled(mutate_entry))
+        if (is_cancelled(mutate_entry) || (mutate_entry->txn && !outdated_data_parts_loading_finished))
             return false;
 
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
@@ -3256,6 +3260,10 @@ bool StorageMergeTree::optimize(
     }
 
     auto txn = local_context->getCurrentTransaction();
+
+    /// See `scheduleDataProcessingJob`.
+    if (txn)
+        waitForOutdatedPartsToBeLoaded();
 
     PreformattedMessage disable_reason;
     auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
