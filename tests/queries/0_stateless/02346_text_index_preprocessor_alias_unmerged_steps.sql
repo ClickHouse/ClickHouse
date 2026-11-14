@@ -145,6 +145,27 @@ SELECT count() FROM tab WHERE hasAnyTokens(v, 'FOO') SETTINGS query_plan_enable_
 
 DROP TABLE tab;
 
+-- A function of `m['a']` matches the index on `mapKeys(m)`, and one of `j.a` the index on `JSONAllPaths(j)`, also when computed below.
+CREATE TABLE tab
+(
+    m Map(String, String),
+    j JSON(a String),
+    v String ALIAS reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(m['a'])))))))))))))))))),
+    w String ALIAS reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(reverse(j.a)))))))))))))))))),
+    INDEX idx_m(mapKeys(m)) TYPE text(tokenizer = splitByString([' '])),
+    INDEX idx_j(JSONAllPaths(j)) TYPE text(tokenizer = splitByString([' ']))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(m, j) VALUES (map('a', 'FOO-QUX '), '{"a" : "FOO-QUX "}');
+
+SELECT hasAnyTokens(v, 'FOO'), hasAnyTokens(w, 'FOO') FROM tab SETTINGS query_plan_enable_optimizations = 0;
+SELECT hasAnyTokens(v, 'FOO'), hasAnyTokens(w, 'FOO') FROM (SELECT v, w FROM tab ORDER BY v LIMIT 1);
+SELECT count() FROM tab WHERE hasAnyTokens(v, 'FOO') SETTINGS query_plan_enable_optimizations = 0, use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokens(w, 'FOO') SETTINGS query_plan_enable_optimizations = 0, use_skip_indexes = 0;
+
+DROP TABLE tab;
+
 -- Steps referencing a column twice share subexpressions: matching a function on the composed DAG must not expand them.
 CREATE TABLE tab
 (

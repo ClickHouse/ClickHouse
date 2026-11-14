@@ -153,11 +153,13 @@ size_t getNameLengthLowerBound(
     return bound;
 }
 
-/// Replaces the parts of `node` whose name in index analysis is longer than `max_name_length` by opaque inputs of `dag`.
-/// Such a part is not in an indexed expression, but one may ignore it, like the key of `m[key]` for `mapValues(m)`.
+/// Replaces the parts of `node` whose name in index analysis is longer than `max_name_length` by opaque inputs of `dag`
+/// named `opaque_name` and a number. `max_name_length` is at least the length of every index column name, so such a part
+/// is not in an indexed expression, but one may ignore it, like the key of `m[key]` for `mapValues(m)`.
 const ActionsDAG::Node * replaceLongSubexpressions(
     const ActionsDAG::Node * node,
     size_t max_name_length,
+    const String & opaque_name,
     ActionsDAG & dag,
     NameLengthBounds & bounds,
     ActionsDAG::NodeMapping & replaced)
@@ -167,10 +169,9 @@ const ActionsDAG::Node * replaceLongSubexpressions(
         return getNameLengthLowerBound(expression, max_name_length + 1, bounds, {}) > max_name_length;
     };
 
-    /// Longer than every index column name, so no indexed expression contains this name.
     auto add_opaque_input = [&](const DataTypePtr & type) -> const ActionsDAG::Node *
     {
-        return &dag.addInput(String(max_name_length + 1, '_') + std::to_string(dag.getInputs().size()), type);
+        return &dag.addInput(opaque_name + std::to_string(dag.getInputs().size()), type);
     };
 
     if (!is_long(node))
@@ -182,13 +183,13 @@ const ActionsDAG::Node * replaceLongSubexpressions(
     const ActionsDAG::Node * result = nullptr;
     if (node->type == ActionsDAG::ActionType::ALIAS)
     {
-        result = replaceLongSubexpressions(node->children.front(), max_name_length, dag, bounds, replaced);
+        result = replaceLongSubexpressions(node->children.front(), max_name_length, opaque_name, dag, bounds, replaced);
     }
     else if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
         auto children = node->children;
         for (auto & child : children)
-            child = replaceLongSubexpressions(child, max_name_length, dag, bounds, replaced);
+            child = replaceLongSubexpressions(child, max_name_length, opaque_name, dag, bounds, replaced);
 
         /// A long `m[key]` is matched only to `mapValues(m)` or with a constant key, so any other key is opaque.
         if (node->function_base->getName() == "arrayElement" && children.size() == 2 && isMap(children[0]->result_type)
@@ -1332,6 +1333,11 @@ void processAndOptimizeTextIndexFunctions(
         for (const auto & name : typeid_cast<const MergeTreeIndexConditionText &>(*info.condition).getHeader().getNames())
             max_index_name_length = std::max(max_index_name_length, name.size());
 
+    /// Longer than every index column name, so no indexed expression contains the name of an opaque input.
+    const String opaque_name(max_index_name_length + 1, '_');
+    /// Bounds the expansion of columns referenced several times by the steps above; a written expression is far shorter.
+    const size_t max_name_length = std::max<size_t>(max_index_name_length, 10000);
+
     /// The steps walked so far, composed into one DAG over the scan columns. Each step is composed before it is rewritten.
     ActionsDAG steps_below;
     NameLengthBounds name_length_bounds;
@@ -1343,7 +1349,8 @@ void processAndOptimizeTextIndexFunctions(
 
         /// The steps above see the long subexpressions of a column as opaque inputs and do not expand them.
         for (auto & output : steps_below.getOutputs())
-            if (const auto * replacement = replaceLongSubexpressions(output, max_index_name_length, steps_below, name_length_bounds, replaced_nodes);
+            if (const auto * replacement
+                = replaceLongSubexpressions(output, max_name_length, opaque_name, steps_below, name_length_bounds, replaced_nodes);
                 replacement != output)
                 output = &steps_below.addAlias(*replacement, output->result_name);
 
