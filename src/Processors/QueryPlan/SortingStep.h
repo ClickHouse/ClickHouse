@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -180,10 +181,11 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
+    bool hasTopKThresholdTracker() const { return threshold_tracker != nullptr; }
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
-    std::vector<size_t> getStepGroups() const override;
+    VectorWithMemoryTracking<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
     void describePipeline(FormatSettings & settings) const override;

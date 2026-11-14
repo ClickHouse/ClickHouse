@@ -46,16 +46,6 @@ Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_ha
 Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.
 However, enabling this setting adds extra merging effort on each node, as deduplication (DISTINCT) must be performed. Use this setting when network transfer is a bottleneck and the additional merging cost is acceptable.
 
-## enable_alp_codec {#enable_alp_codec}
-
-<BetaBadge/>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}]}]}/>
-
-Enables the `ALP` compression codec.
-
 ## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -554,6 +544,22 @@ When disabled, the legacy `StringHashTable`-based method (the default before 26.
 
 All servers participating in a distributed query must agree on this value: with `distributed_aggregation_memory_efficient`, two-level bucket numbers depend on the key hash, which differs between the two methods, so servers disagreeing on this setting may split the same key into different buckets and produce an incorrectly merged result. To guarantee agreement, the initiator always sends its effective value with the secondary queries (even when it comes only from server/profile defaults), overriding the remote servers' own defaults.
 
+## enable_packed_string_keys_in_hash_join {#enable_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to store the single `String` key of `hash`, `parallel_hash` and `grace_hash` joins in 16 bytes: inline up to 15 bytes, as a 127-bit `SipHash` for longer keys."}]}]}/>
+
+In `hash`, `parallel_hash` and `grace_hash` joins on a single `String` key, store each key in the hash table as a 16-byte value. This includes a join with `OR` whose every condition has a single `String` key. It also includes a `hash` or `parallel_hash` join after it is converted to `grace_hash` to spill to disk.
+
+A key of up to 15 bytes is stored inline and compared exactly. A key of 16 bytes or more is stored as its 128-bit `SipHash`. One bit of the hash marks the key as hashed, so two such keys are compared by their other 127 bits. In both cases the hash table keeps no separate copy of the string.
+
+Two different keys of 16 bytes or more whose hashes have the same 127 bits are matched as equal. For N distinct keys the probability of that is about N^2/2^128. Disable the setting to compare the keys exactly.
+
+The hash tables are smaller, so a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
+
+The setting does not apply to `FixedString` keys or to `LowCardinality(Nullable(String))` keys. A join on a non-nullable `LowCardinality(String)` key can use a hash table of the key's dictionary instead. This needs a join that has one condition, is not `ASOF` and builds its hash table as one part: a `grace_hash` join, or a `hash` join with the serial layout (see `parallel_hash_join_threshold` and `hash_join_layout`). Tables with the `Join` engine and `joinGet` keep exact keys. So does a join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join`.
+
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 
 <ExperimentalBadge/>
@@ -661,6 +667,14 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
+
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting. In 26.10 the hash tables of the `parallel_hash` join used the Robin Hood mode when they became large, which saves memory but can make large joins slower."}]}]}/>
+
+Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
 
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 

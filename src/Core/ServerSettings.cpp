@@ -1359,12 +1359,18 @@ The replica name in ZooKeeper.
     DECLARE(UInt64, http_connections_warn_limit, 500, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_store_limit, 1000, R"(The maximum number of idle connections kept in the pool for reuse. Once this many connections are stored, further connections are reset after use instead of being kept. The limit does not bound the connections in use. Set to 0 to turn connection cache off. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
     DECLARE(UInt64, http_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the http connections which do not belong to any disk or storage.)", 0) \
+    DECLARE(UInt64, amber_connections_soft_limit, 5000, R"(Connections above this limit have significantly shorter time to live. The limit applies to the Amber connections.)", 0) \
+    DECLARE(UInt64, amber_connections_warn_limit, 8000, R"(Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the Amber connections.)", 0) \
+    DECLARE(UInt64, amber_connections_store_limit, 10000, R"(The maximum number of idle connections kept in the pool for reuse. Once this many connections are stored, further connections are reset after use instead of being kept. The limit does not bound the connections in use. Set to 0 to turn connection cache off. The limit applies to the Amber connections.)", 0) \
+    DECLARE(UInt64, amber_connections_hard_limit, 200000, R"(Exception is thrown at a creation attempt when this limit is reached. Set to 0 to turn off hard limitation. The limit applies to the Amber connections.)", 0) \
     DECLARE(UInt64, disk_connections_rcvbuf, 204800, R"(The size of the SO_RCVBUF option for disk (S3, Azure, GCS) connections. Defaults to 204800 (200 KB): object storage is reached intra-region where the bandwidth-delay product is well below 100 KB, so a small cap delivers full throughput while avoiding the multi-MiB per-socket buffers kernel autotuning would otherwise allocate. Set to 0 to use kernel TCP autotuning for the receive buffer instead. Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, disk_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for disk (S3, Azure, GCS) connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, storage_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, amber_connections_rcvbuf, 204800, R"(The size of the SO_RCVBUF option for Amber connections. Defaults to 204800 (200 KB): object storage is reached intra-region where the bandwidth-delay product is well below 100 KB, so a small cap delivers full throughput while avoiding the multi-MiB per-socket buffers kernel autotuning would otherwise allocate. Set to 0 to use kernel TCP autotuning for the receive buffer instead. Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
+    DECLARE(UInt64, amber_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for Amber connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, streaming_exchange_sndbuf, 0, R"(The size of the SO_SNDBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket send buffer (clamped by net.core.wmem_max), at the cost of capping the stream at sndbuf/RTT on high-RTT links. Read per connection, so a config reload applies to new connections only.)", 0) \
     DECLARE(UInt64, streaming_exchange_rcvbuf, 0, R"(The size of the SO_RCVBUF option for streaming exchange sockets of multi-stage distributed queries. 0 = kernel default (TCP autotuning). A value greater than 0 caps the per-socket receive buffer (clamped by net.core.rmem_max). Read per connection, so a config reload applies to new connections only.)", 0) \
     DECLARE(UInt64, global_profiler_real_time_period_ns, default_global_profiler_period_ns, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
@@ -1784,8 +1790,11 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
     DECLARE(Bool, enable_silk_runtime, false, R"(Enable experimental support for the silk fiber runtime: initialize the silk fiber scheduler at server startup, so that subsystems supporting it can run their jobs on fibers)", EXPERIMENTAL) \
     DECLARE(Bool, enable_gpu, false, R"(Take the GPU at the start of the server to run queries on it. The server refuses to start if it is built without GPU support or there is no CUDA device.)", EXPERIMENTAL) \
     DECLARE(UInt64, gpu_pinned_memory_pool_release_threshold, 1024UL * 1024 * 1024, R"(The maximum size of freed pinned host memory that the GPU's pool of pinned host memory keeps for reuse instead of returning it to the system.)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_expression_kernel_cache_size, 256UL * 1024 * 1024, R"(The maximum size, in bytes of the PTX, of the cache of the kernels that the GPU engine compiles for expressions. The kernels over the limit are unloaded from the device. The change takes effect without a restart.)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_expression_kernel_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(The maximum number of kernels in the cache of the kernels that the GPU engine compiles for expressions. The change takes effect without a restart.)", EXPERIMENTAL) \
     DECLARE(UInt64, gpu_memory_pool_release_threshold, std::numeric_limits<uint64_t>::max(), R"(The amount of freed device memory that the GPU's default memory pool keeps instead of returning it to the driver. With the default, the pool grows to the peak of the queries and stays there until the server shuts down.)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_iceberg_rest_catalog, false, R"(Enable the experimental Iceberg REST catalog server, configured in the `iceberg_rest_catalog` section. A change takes effect after a server restart.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.", EXPERIMENTAL) \
@@ -2027,6 +2036,23 @@ Enabling this option is recommended but will lead to increased startup time for 
 ```
 )", 0) \
     DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
+    DECLARE(Bool, quick_startup, false, R"(
+Start up as fast as possible by skipping the optional work that the server does at startup:
+- `<mlock>` of the executable, as with `mlock_executable` = `false`;
+- remapping of the executable to huge pages, as with `remap_executable` = `false`;
+- the integrity check of the executable, as with `skip_binary_checksum_checks` = `true`;
+- the checks of the environment (such as the clock source, transparent huge pages, memory overcommit, kernel limits, delay accounting and disk readahead), which only produce warnings in `system.warnings`.
+
+The validation of the configuration is not skipped.
+
+The executable code is about 500 MiB, and both the `<mlock>` and the integrity check read all of it. On a cold page cache and a network disk, that takes several seconds, most of the startup time. It is useful where the server is often restarted, such as in tests, benchmarks and short-lived instances. The cost is that the code can be paged out under memory pressure, and a corrupted executable is not detected at startup.
+
+**Example**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+)", 0) \
     DECLARE(SeccompMode, seccomp, SeccompMode::Log, R"(
 What the Linux kernel does when the server makes a system call that it is not supposed to make.
 
@@ -2969,6 +2995,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Silk fiber runtime
         "silk",
+
+        /// Amber
+        "amber",
 
         /// Testing
         "_functional_tests_helper_database_replicated_replace_args_macros",
@@ -4229,6 +4258,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {context->getServerWideDistributedCacheReadThrottler() ? std::to_string(context->getServerWideDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
              {context->getServerWideDistributedCacheWriteThrottler() ? std::to_string(context->getServerWideDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+#if USE_GPU
+            {"gpu_expression_kernel_cache_size", {std::to_string(context->getGPUKernelCacheLimits().first), ChangeableWithoutRestart::Yes}},
+            {"gpu_expression_kernel_cache_elements_size", {std::to_string(context->getGPUKernelCacheLimits().second), ChangeableWithoutRestart::Yes}},
+#endif
 #if ENABLE_DISTRIBUTED_CACHE
             {"distributed_cache_write_pool_size",
              {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
@@ -4293,6 +4326,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"amber_connections_rcvbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::AMBER).rcvbuf), ChangeableWithoutRestart::Yes}},
+            {"amber_connections_sndbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::AMBER).sndbuf), ChangeableWithoutRestart::Yes}},
             {"streaming_exchange_sndbuf",
              {std::to_string(StreamingExchangeProtocol::getSocketBufferSizes().sndbuf), ChangeableWithoutRestart::Yes}},
             {"streaming_exchange_rcvbuf",
