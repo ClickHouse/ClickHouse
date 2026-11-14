@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones de configuración configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="max_local_read_bandwidth_for_server">
-  ## max_local_read_bandwidth_for_server
-</div>
+## max_local_read_bandwidth_for_server {#max_local_read_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sí" />
 
 La velocidad máxima de lectura local en bytes por segundo.
 
+El límite se aplica a los datos leídos desde los dispositivos de bloques: las lecturas servidas desde la caché de páginas del sistema operativo no se contabilizan, siempre que el método de lectura pueda detectarlas (como ocurre con el valor predeterminado `local_filesystem_read_method = 'pread_threadpool'`, con `pread` y con las lecturas de los archivos de la caché del sistema de archivos).
+
 <Note>
   Un valor de `0` significa que no hay límite.
 </Note>
 
-<div id="max_local_write_bandwidth_for_server">
-  ## max_local_write_bandwidth_for_server
-</div>
+## max_local_write_bandwidth_for_server {#max_local_write_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sí" />
 

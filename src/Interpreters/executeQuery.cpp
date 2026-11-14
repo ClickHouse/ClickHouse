@@ -332,6 +332,8 @@ namespace FailPoints
     extern const char query_plan_cache_pause_after_logical_plan[];
     extern const char query_plan_cache_pause_before_resolve_storages[];
     extern const char query_plan_cache_pause_after_validation[];
+    extern const char segfault_read_access[];
+    extern const char segfault_write_access[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -4832,6 +4834,16 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         fiu_do_on(FailPoints::trigger_sanitizer_error,
         {
             triggerSanitizerError();
+        });
+
+        fiu_do_on(FailPoints::segfault_read_access,
+        {
+            [[maybe_unused]] int value = *reinterpret_cast<volatile int *>(16);
+        });
+
+        fiu_do_on(FailPoints::segfault_write_access,
+        {
+            *reinterpret_cast<volatile int *>(16) = 1;
         });
     }
 

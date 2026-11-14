@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
@@ -54,7 +56,7 @@ struct PrewhereInfo
         UInt64 key;
         String condition;
         /// Hashes of the leading conjuncts of the PREWHERE condition that the key covers.
-        std::vector<UInt64> conjunct_hashes;
+        VectorWithMemoryTracking<UInt64> conjunct_hashes;
     };
     std::optional<QueryConditionCacheAttribution> query_condition_cache_attribution;
 
@@ -258,6 +260,6 @@ struct SelectQueryInfo
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

@@ -1224,13 +1224,29 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (settings.query_plan_options.fragments)
             {
-                if (settings.json)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'json'");
                 if (settings.query_plan_options.distributed)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'distributed'");
                 if (!settings.optimize)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'fragments' requires option 'optimize'");
             }
+
+            /// The `json = 1` document: a one-element array holding `element`, written as one record. `fragments = 1`
+            /// writes its keys in camelCase, the keys of the steps too, so a reader of it sees one style.
+            const auto write_json = [&](std::unique_ptr<JSONBuilder::JSONMap> element, bool camel_case_keys)
+            {
+                auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
+                plan_array->add(std::move(element));
+
+                auto format_settings = getFormatSettings(query_context);
+                format_settings.json.quote_64bit_integers = false;
+
+                JSONBuilder::FormatSettings json_format_settings{.settings = format_settings, .camel_case_keys = camel_case_keys};
+                JSONBuilder::FormatContext format_context{.out = buf};
+
+                plan_array->format(json_format_settings, format_context);
+
+                single_record = true;
+            };
 
             QueryPlan plan;
 
@@ -1261,7 +1277,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                     const auto build_explain = [&](const FragmentGraph & graph)
                     {
-                        if (settings.query_plan_options.tree)
+                        if (settings.json)
+                            write_json(explainAsFragmentsJSON(graph, settings.query_plan_options), /*camel_case_keys=*/ true);
+                        else if (settings.query_plan_options.tree)
                             explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
                         else
                             explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
@@ -1294,18 +1312,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// Add extra layers to make plan look more like from postgres.
                 auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
                 plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
-                auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
-                plan_array->add(std::move(plan_map));
-
-                auto format_settings = getFormatSettings(query_context);
-                format_settings.json.quote_64bit_integers = false;
-
-                JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
-                JSONBuilder::FormatContext format_context{.out = buf};
-
-                plan_array->format(json_format_settings, format_context);
-
-                single_record = true;
+                write_json(std::move(plan_map), /*camel_case_keys=*/ false);
             }
             else
                 plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
