@@ -166,6 +166,21 @@ getSnapshotVersion(const Settings & settings)
         value);
 }
 
+/// The version range of the change data feed, if the settings request it. A range without an end version ends at
+/// `snapshot_version` if it is known, so that the change data feed and the schema are read at the same version.
+static std::optional<DeltaLake::TableChangesVersionRange> getChangeDataFeedVersionRange(
+    const Settings & settings, std::optional<DeltaLakeMetadataDeltaKernel::SnapshotVersion> snapshot_version)
+{
+    const auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+    if (start_version == DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+        return std::nullopt;
+
+    auto version_range = DeltaLake::TableChanges::getVersionRange(start_version, settings[Setting::delta_lake_snapshot_end_version].value);
+    if (!version_range.second.has_value())
+        version_range.second = snapshot_version;
+    return version_range;
+}
+
 DeltaLake::TableSnapshotPtr
 DeltaLakeMetadataDeltaKernel::getTableSnapshot(std::optional<SnapshotVersion> version) const
 {
@@ -285,13 +300,9 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
     }
 }
 
-DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
-    const DeltaLake::TableChangesVersionRange & version_range,
-    const Block & header,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context) const
+DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(const DeltaLake::TableChangesVersionRange & version_range) const
 {
-    return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper, header, format_settings, format_name, context);
+    return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper);
 }
 
 std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTableStateSnapshot(ContextPtr context) const
@@ -305,14 +316,18 @@ std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTable
 }
 
 std::unique_ptr<StorageInMemoryMetadata> DeltaLakeMetadataDeltaKernel::buildStorageMetadataFromState(
-    const DataLakeTableStateSnapshot & state, ContextPtr) const
+    const DataLakeTableStateSnapshot & state, ContextPtr context) const
 {
     chassert(std::holds_alternative<DeltaLake::TableStateSnapshot>(state));
     const auto & delta_state = std::get<DeltaLake::TableStateSnapshot>(state);
-    auto snapshot = getTableSnapshot(static_cast<SnapshotVersion>(delta_state.version));
+    const auto snapshot_version = static_cast<SnapshotVersion>(delta_state.version);
 
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(ColumnsDescription{snapshot->getTableSchema()});
+    /// The change data feed has its own columns (`_change_type`, ...), as in `getTableSchema`.
+    if (auto version_range = getChangeDataFeedVersionRange(context->getSettingsRef(), snapshot_version))
+        result->setColumns(ColumnsDescription{getTableChanges(*version_range)->getSchema()});
+    else
+        result->setColumns(ColumnsDescription{getTableSnapshot(snapshot_version)->getTableSchema()});
     result->setDataLakeTableState(state);
     return result;
 }
@@ -347,28 +362,24 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No version found in table state snapshot");
     }
 
+    /// The change data feed (`delta_lake_snapshot_start_version`): delta-kernel-rs lists the data files with the changes,
+    /// which are read like the data files of a snapshot. The column mapping is that of the last version of the range.
+    if (auto version_range = getChangeDataFeedVersionRange(context->getSettingsRef(), snapshot_version))
+    {
+        /// A copy: the snapshot can be evicted from the cache of snapshots while the files are listed.
+        const auto physical_names_map = getTableSnapshot(version_range->second)->getPhysicalNamesMap();
+        return getTableChanges(*version_range)->iterate(filter_dag, physical_names_map, callback, context);
+    }
+
     return getTableSnapshot(snapshot_version)->iterate(filter_dag, callback, list_batch_size, context);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
-        start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-    {
-        auto version_range = DeltaLake::TableChanges::getVersionRange(
-            start_version,
-            settings[Setting::delta_lake_snapshot_end_version].value);
+    if (auto version_range = getChangeDataFeedVersionRange(settings, /* snapshot_version */ std::nullopt))
+        return getTableChanges(*version_range)->getSchema();
 
-        /// TODO: Once we support passing metadata state via metadata snapshot
-        /// (already done in iceberg),
-        /// then need to put table changes there as well to reuse.
-        return getTableChanges(
-            version_range,
-            /* source_header */{},
-            /* format_settings */{},
-            local_context)->getSchema();
-    }
     const auto snapshot_version = getSnapshotVersion(local_context->getSettingsRef());
     return getTableSnapshot(snapshot_version)->getTableSchema();
 }
@@ -395,84 +406,6 @@ static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
             non_virtual_columns.push_back(column_name);
     }
     return {non_virtual_columns, virtual_columns};
-}
-
-static DataTypePtr replaceTypeNamesToPhysicalRecursively(
-    const DataTypePtr & type,
-    const std::string & parent_logical_name,
-    const std::string & parent_physical_name,
-    const NameToNameMap & physical_names_map)
-{
-    if (physical_names_map.empty())
-        return type;
-
-    /// The fields of a struct inside an array or a map have physical names of their own. The schema visitor
-    /// stores them under the special names the kernel gives to an array element and to a map key and value,
-    /// and, as the element, key and value have no physical names, without a physical parent prefix.
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-    {
-        return std::make_shared<DataTypeArray>(replaceTypeNamesToPhysicalRecursively(
-            array_type->getNestedType(), DeltaLake::appendToLogicalPath(parent_logical_name, "array_element"), "", physical_names_map));
-    }
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-    {
-        return std::make_shared<DataTypeMap>(
-            replaceTypeNamesToPhysicalRecursively(
-                map_type->getKeyType(), DeltaLake::appendToLogicalPath(parent_logical_name, "map_key"), "", physical_names_map),
-            replaceTypeNamesToPhysicalRecursively(
-                map_type->getValueType(), DeltaLake::appendToLogicalPath(parent_logical_name, "map_value"), "", physical_names_map));
-    }
-
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-    if (!tuple_type || !tuple_type->hasExplicitNames())
-        return type;
-
-    const auto & element_names = tuple_type->getElementNames();
-    const auto & elements = tuple_type->getElements();
-
-    Names result_element_names;
-    DataTypes result_elements;
-    result_element_names.resize(element_names.size());
-    result_elements.resize(element_names.size());
-
-    for (size_t i = 0; i < element_names.size(); ++i)
-    {
-        const auto & element_name = element_names[i];
-        const auto full_element_name = DeltaLake::appendToLogicalPath(parent_logical_name, element_name);
-
-        auto physical_name = DeltaLake::tryGetPhysicalName(full_element_name, physical_names_map);
-        /// full_child_physical_path: the complete "parent.child" physical path as stored in the
-        /// map (e.g. "d2.inner" or "d2.inner.a.foo"). Passed to recursive calls so that deeper
-        /// levels can correctly strip *their* parent prefix regardless of nesting depth.
-        std::string full_child_physical_path;
-        if (physical_name)
-        {
-            full_child_physical_path = *physical_name;
-            /// The map value is the full physical path "parent_physical.child_physical".
-            /// Strip the parent prefix to get just the child's local physical name.
-            /// We cannot use find_last_of('.') because the child physical name may itself
-            /// contain dots (e.g. column mapping "name" mode where logical name "a.foo" is
-            /// also used as the physical name).
-            if (!parent_physical_name.empty() && physical_name->size() > parent_physical_name.size() + 1)
-                result_element_names[i] = physical_name->substr(parent_physical_name.size() + 1);
-            else
-                result_element_names[i] = *physical_name;
-        }
-        else
-        {
-            /// Field not in the map (no column mapping). Reconstruct a best-effort full path
-            /// so children at deeper levels still have a correct prefix to strip against.
-            full_child_physical_path = parent_physical_name.empty()
-                ? element_name
-                : parent_physical_name + "." + element_name;
-            result_element_names[i] = element_name;
-        }
-
-        const auto & child_type = elements[i];
-        result_elements[i] = replaceTypeNamesToPhysicalRecursively(child_type, full_element_name, full_child_physical_path, physical_names_map);
-    }
-    return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
 }
 
 /// Finds the field named by `name` (field names joined with dots) among `names`, `types` and the tuple elements below them,
@@ -622,7 +555,7 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     const auto column = resolveSubcolumn(requested_column, table_columns, delta_schema, physical_names_map);
     const auto logical_path = getLogicalPath(column.getNameInStorage(), table_columns, delta_schema, physical_names_map);
     auto physical_name_in_storage = DeltaLake::getPhysicalName(logical_path, physical_names_map);
-    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), logical_path, physical_name_in_storage, physical_names_map);
+    auto physical_type_in_storage = DeltaLake::replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), logical_path, physical_name_in_storage, physical_names_map);
 
     /// Take column from read_schema, but only use it to check if column is readable,
     /// because read_schema_column.type can be different from physical_type_in_storage,
@@ -689,20 +622,45 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             snapshot_version.has_value() ? toString(snapshot_version.value()) : "Latest");
     }
 
+    /// The change data feed is read with the schema of the last version of its range.
+    const auto change_data_feed_version_range = getChangeDataFeedVersionRange(context->getSettingsRef(), snapshot_version);
+    if (change_data_feed_version_range)
+        snapshot_version = change_data_feed_version_range->second;
+
     auto snapshot = getTableSnapshot(snapshot_version);
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
-    const auto physical_names_map = snapshot->getPhysicalNamesMap();
+    auto physical_names_map = snapshot->getPhysicalNamesMap();
     const auto & delta_schema = snapshot->getTableSchema();
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto read_columns_desc = ColumnsDescription(snapshot->getReadSchema());
+    /// Columns that are not read from the data files.
     std::unordered_set<std::string> partition_columns;
     {
         auto columns = snapshot->getPartitionColumns();
         partition_columns.insert(columns.begin(), columns.end());
     }
+
+    /// The columns of the change data feed (`_change_type`, ...) are added by the schema transform of each data file
+    /// (CDC files contain `_change_type`, but they read it as an additional column of the file). They are not in the
+    /// column mapping, and keep their names.
+    if (change_data_feed_version_range)
+    {
+        for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+        {
+            if (!DeltaLake::TableChanges::isChangeDataFeedColumn(column.name))
+                continue;
+            partition_columns.insert(column.name);
+            if (!physical_names_map.empty())
+                physical_names_map.emplace(DeltaLake::appendToLogicalPath({}, column.name), column.name);
+        }
+    }
+
+    /// These columns are added by the schema transform of each data file, so the filter on them must not be used
+    /// by the format: e.g. a data file can have an incidental physical `_change_type` column with other values.
+    info.columns_added_after_format.insert(partition_columns.begin(), partition_columns.end());
 
     Names columns_to_read;
     std::tie(columns_to_read, info.requested_virtual_columns) =

@@ -45,8 +45,7 @@ KNOWN_ISSUES = {
 # ClickHouse bugs exposed by corpus tables; their checks stay in the reference with the wrong results
 # (`MISMATCH` or an error code) until they are fixed:
 #  - with column mapping, the fields of a struct inside an `Array` or a `Map` are read as empty or NULL
-#    (`column_mapping_id`, `delta332_column_mapping_id`, `iceberg_compat_v2`);
-#  - a subcolumn (`st.a`, `arr.size0`) of a partitioned table fails with `UNKNOWN_IDENTIFIER` (`type_widening_nested`).
+#    (`column_mapping_id`, `delta332_column_mapping_id`, `iceberg_compat_v2`).
 
 
 def run(g, args):

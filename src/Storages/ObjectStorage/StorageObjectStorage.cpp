@@ -40,10 +40,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
@@ -907,46 +903,17 @@ void StorageObjectStorage::read(
     }
 
     const auto & settings = local_context->getSettingsRef();
-#if USE_DELTA_KERNEL_RS
-    if (configuration->isDataLakeConfiguration())
+    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read like a snapshot:
+    /// `IDataLakeMetadata::iterate` returns the data files with the changes.
+    if (configuration->isDataLakeConfiguration()
+        && settings[Setting::delta_lake_snapshot_start_version] == -1
+        && settings[Setting::delta_lake_snapshot_end_version] != -1)
     {
-        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
-            start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            if (const auto delta_kernel_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadataDeltaKernel>(configuration->getExternalMetadata());
-                delta_kernel_metadata != nullptr)
-            {
-                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
-                auto version_range = DeltaLake::TableChanges::getVersionRange(
-                    start_version,
-                    settings[Setting::delta_lake_snapshot_end_version].value);
-                auto table_changes = delta_kernel_metadata->getTableChanges(
-                    version_range,
-                    source_header,
-                    format_settings,
-                    local_context);
-
-                auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
-                    std::move(table_changes),
-                    source_header,
-                    column_names,
-                    query_info,
-                    storage_snapshot,
-                    num_streams,
-                    local_context);
-                query_plan.addStep(std::move(read_step));
-                return;
-            }
-        }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
-                 end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
-        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
     }
-#endif
+
     const auto hive_columns = hive_partitioning_columns.get();
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,

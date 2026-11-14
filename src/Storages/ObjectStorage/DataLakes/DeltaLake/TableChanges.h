@@ -1,11 +1,15 @@
 #pragma once
+
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
+
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
-#include <mutex>
-#include "delta_kernel_ffi.hpp"
 
 namespace DeltaLake
 {
@@ -13,50 +17,44 @@ namespace DeltaLake
 /// from_version or version_range.
 using TableChangesVersionRange = std::pair<size_t, std::optional<size_t>>;
 
-class TableChanges : private DB::WithContext
+/// The change data feed of a Delta Lake table: the rows inserted, deleted and updated in a range of versions.
+///
+/// delta-kernel-rs only reads the log: it lists the data files that hold the changes and reads their
+/// deletion vectors. The data files are read by ClickHouse, like the data files of a snapshot. Every file
+/// comes with a transform which adds the partition values and the `_change_type`, `_commit_version` and
+/// `_commit_timestamp` columns, and with the rows that its deletion vectors exclude or select.
+class TableChanges
 {
 public:
-    explicit TableChanges(
-        const TableChangesVersionRange & version_range_,
-        KernelHelperPtr helper_,
-        const DB::Block & header_,
-        const std::optional<DB::FormatSettings> & format_settings_,
-        const std::string & format_name_,
-        DB::ContextPtr context_);
+    TableChanges(const TableChangesVersionRange & version_range_, KernelHelperPtr helper_);
 
-    DB::Chunk next();
-
+    /// The table columns and the columns of the change data feed.
     DB::NamesAndTypesList getSchema() const;
 
-    void setFilter(const DB::ActionsDAG * filter_) { filter = filter_->clone(); }
+    /// Iterates over the data files of the change data feed. `physical_names_map` is the column mapping of the table,
+    /// as in the snapshot of the last version of the range. `filter_dag` is used to skip data files by their statistics.
+    DB::ObjectIterator iterate(
+        const DB::ActionsDAG * filter_dag,
+        const DB::NameToNameMap & physical_names_map,
+        DB::IDataLakeMetadata::FileProgressCallback callback,
+        DB::ContextPtr context) const;
 
     static TableChangesVersionRange getVersionRange(int64_t start_version, int64_t end_version);
 
+    /// The columns which the change data feed adds to the columns of the table.
+    static bool isChangeDataFeedColumn(const std::string & name);
+
+    static constexpr auto CHANGE_TYPE_COLUMN = "_change_type";
+
 private:
-    using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
-    using KernelTableChanges = KernelPointerWrapper<ffi::ExclusiveTableChanges, ffi::free_table_changes>;
-    using KernelTableChangesScan = KernelPointerWrapper<ffi::SharedTableChangesScan, ffi::free_table_changes_scan>;
-    using KernelTableChangesScanIterator = KernelPointerWrapper<ffi::SharedScanTableChangesIterator, ffi::free_scan_table_changes_iter>;
-
-    KernelTableChanges & getTableChanges() const;
-    KernelTableChangesScanIterator & getTableChangesScanIterator() const;
-    DB::NamesAndTypesList getSchemaUnlocked() const;
-
     const TableChangesVersionRange version_range;
     const KernelHelperPtr helper;
-    const DB::Block header;
-    const DB::FormatSettings format_settings;
-    const std::string format_name;
-    std::optional<DB::ActionsDAG> filter;
     const LoggerPtr log;
 
     mutable std::mutex mutex;
-    mutable KernelExternEngine engine;
-    mutable KernelTableChanges table_changes;
-    mutable KernelTableChangesScan table_changes_scan;
-    mutable KernelTableChangesScanIterator table_changes_scan_iterator;
     mutable std::optional<DB::NamesAndTypesList> schema;
 };
+
 using TableChangesPtr = std::shared_ptr<TableChanges>;
 
 }

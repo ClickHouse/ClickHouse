@@ -35,6 +35,7 @@
 #include <Parsers/ASTExpressionList.h>
 
 #include <fmt/ranges.h>
+#include <unordered_set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -102,6 +103,8 @@ private:
     std::shared_ptr<DB::ActionsDAG> dag;
     /// Intermediate parsing result.
     std::map<size_t, DB::ActionsDAG::NodeRawConstPtrs> node_lists;
+    /// Input nodes of the columns of the read schema, see `isReadSchemaNode`.
+    std::unordered_set<const DB::ActionsDAG::Node *> read_schema_nodes;
     /// First exception thrown from visitor functions.
     std::exception_ptr visitor_exception;
 
@@ -365,6 +368,61 @@ public:
 
     /// Move a list from `from_list_id` to `to_list_id`.
     /// If prepend = false, moves one list in the end of another.
+    /// A transform expression starts from the columns of the read schema.
+    void fillWithReadSchemaIfEmpty(size_t list_id)
+    {
+        /// `read_schema` is empty when every column of the table is a partition column.
+        if (node_lists[list_id].empty())
+        {
+            for (const auto & elem : read_schema)
+            {
+                addIdentifier(list_id, elem.name);
+                read_schema_nodes.insert(node_lists[list_id].back());
+            }
+        }
+    }
+
+    /// The input columns of the read schema. Field transforms refer to them by name, and an expression of the transform
+    /// can be a column with the same name (e.g. `_change_type`, which is dropped and inserted at another position).
+    bool isReadSchemaNode(const DB::ActionsDAG::Node * node, const std::string & name) const
+    {
+        return node->type == DB::ActionsDAG::ActionType::INPUT && node->result_name == name && read_schema_nodes.contains(node);
+    }
+
+    /// Replaces the input column `field_name` in the list `to_list_id` with the list `from_list_id`,
+    /// or drops it if `from_list_id` is not specified.
+    void replaceField(size_t to_list_id, const std::string & field_name, std::optional<size_t> from_list_id)
+    {
+        auto to_it = node_lists.find(to_list_id);
+        if (to_it == node_lists.end())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find list id {}", to_list_id);
+
+        fillWithReadSchemaIfEmpty(to_list_id);
+        auto & to_list = to_it->second;
+
+        auto field_it = std::find_if(to_list.begin(), to_list.end(), [&](const auto * node) { return isReadSchemaNode(node, field_name); });
+        if (field_it == to_list.end())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Did not find {} in list by id {}", field_name, to_list_id);
+
+        auto insert_pos = to_list.erase(field_it);
+
+        if (from_list_id)
+        {
+            auto from_it = node_lists.find(*from_list_id);
+            if (from_it == node_lists.end())
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find list id {}", *from_list_id);
+
+            auto & from_list = from_it->second;
+            to_list.insert(insert_pos, std::make_move_iterator(from_list.begin()), std::make_move_iterator(from_list.end()));
+            node_lists.erase(from_it);
+        }
+
+        if (enable_logging)
+            LOG_TEST(
+                log, "Replaced field {} in list id {} with list id {}",
+                field_name, to_list_id, from_list_id ? DB::toString(*from_list_id) : "None");
+    }
+
     /// If prepend = true, moves one list in the beginning of another.
     /// If after field name is specified, moves one list after specified field in another list.
     /// If such field does not exists, throws an exception.
@@ -391,12 +449,7 @@ public:
         auto & to_list = to_it->second;
         auto & from_list = from_it->second;
 
-        /// `read_schema` is empty when every column of the table is a partition column.
-        if (to_list.empty())
-        {
-            for (const auto & elem : read_schema)
-                addIdentifier(to_list_id, elem.name);
-        }
+        fillWithReadSchemaIfEmpty(to_list_id);
 
         if (after_field_name)
         {
@@ -406,7 +459,7 @@ public:
             {
                 ++pos;
                 const auto * node = *elem_it;
-                if (node->type == DB::ActionsDAG::ActionType::INPUT && node->result_name == *after_field_name)
+                if (isReadSchemaNode(node, *after_field_name))
                 {
                     result_pos = pos;
                     to_list.insert(
@@ -775,7 +828,7 @@ private:
             /// "The 128bit integer
             /// is split into the most significant 64 bits in `value_ms`, and the least significant 64
             /// bits in `value_ls`"
-            /// Also in clickhouse decimal is in little endian, so we switch the order for Decimal128.
+            /// The halves are the numerical high and low parts of the value, independent of the byte order of the machine.
 
             DB::Field value;
             if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
@@ -790,7 +843,8 @@ private:
             }
             else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal128>)
             {
-                Int128 combined_value = (static_cast<DB::Int128>(value_ls) << 64) | value_ms;
+                const auto combined_value = static_cast<DB::Int128>(
+                    (static_cast<DB::UInt128>(static_cast<UInt64>(value_ms)) << 64) | static_cast<DB::UInt128>(value_ls));
                 value = DB::DecimalField<DB::Decimal128>(combined_value, scale);
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal128>(precision, scale));
             }
@@ -1046,13 +1100,16 @@ private:
             /// | YES | YES | NO  | Insert a list of expressions after the named input field
             /// | YES | YES | YES | Replace the named input field with a list of expressions
 
-            if (is_replace)
+            /// A list id is never 0 here, because 0 is the id of the root list.
+            if (is_replace && field_name)
             {
-                /// Will be implemented with CDF support.
-                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Replace action is not implemented");
+                /// E.g. the `_change_type` column of the change data feed, which is taken from CDC files physically.
+                state->replaceField(
+                    sibling_list_id,
+                    field_name_str,
+                    expr_list_id ? std::optional<size_t>(expr_list_id) : std::nullopt);
             }
-
-            if (expr_list_id)
+            else if (expr_list_id)
             {
                 state->moveList(
                     sibling_list_id,
@@ -1060,11 +1117,7 @@ private:
                     field_name ? &field_name_str : nullptr,
                     /* prepend */!field_name);
             }
-            else
-            {
-                /// Will be implemented with CDF support.
-                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Drop action is not implemented");
-            }
+            /// Otherwise it is a no-op: an empty list of expressions is inserted.
         });
     }
 

@@ -7,6 +7,9 @@
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Processors/Chunk.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
@@ -231,6 +234,84 @@ std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & 
             name, fmt::join(keys, ", "));
     }
     return *physical_name;
+}
+
+DB::DataTypePtr replaceTypeNamesToPhysicalRecursively(
+    const DB::DataTypePtr & type,
+    const std::string & parent_logical_name,
+    const std::string & parent_physical_name,
+    const DB::NameToNameMap & physical_names_map)
+{
+    if (physical_names_map.empty())
+        return type;
+
+    /// The fields of a struct inside an array or a map have physical names of their own. The schema visitor
+    /// stores them under the special names the kernel gives to an array element and to a map key and value,
+    /// and, as the element, key and value have no physical names, without a physical parent prefix.
+    if (const auto * array_type = typeid_cast<const DB::DataTypeArray *>(type.get()))
+    {
+        return std::make_shared<DB::DataTypeArray>(replaceTypeNamesToPhysicalRecursively(
+            array_type->getNestedType(), appendToLogicalPath(parent_logical_name, "array_element"), "", physical_names_map));
+    }
+
+    if (const auto * map_type = typeid_cast<const DB::DataTypeMap *>(type.get()))
+    {
+        return std::make_shared<DB::DataTypeMap>(
+            replaceTypeNamesToPhysicalRecursively(
+                map_type->getKeyType(), appendToLogicalPath(parent_logical_name, "map_key"), "", physical_names_map),
+            replaceTypeNamesToPhysicalRecursively(
+                map_type->getValueType(), appendToLogicalPath(parent_logical_name, "map_value"), "", physical_names_map));
+    }
+
+    const auto * tuple_type = typeid_cast<const DB::DataTypeTuple *>(type.get());
+    if (!tuple_type || !tuple_type->hasExplicitNames())
+        return type;
+
+    const auto & element_names = tuple_type->getElementNames();
+    const auto & elements = tuple_type->getElements();
+
+    DB::Names result_element_names;
+    DB::DataTypes result_elements;
+    result_element_names.resize(element_names.size());
+    result_elements.resize(element_names.size());
+
+    for (size_t i = 0; i < element_names.size(); ++i)
+    {
+        const auto & element_name = element_names[i];
+        const auto full_element_name = appendToLogicalPath(parent_logical_name, element_name);
+
+        auto physical_name = tryGetPhysicalName(full_element_name, physical_names_map);
+        /// full_child_physical_path: the complete "parent.child" physical path as stored in the
+        /// map (e.g. "d2.inner" or "d2.inner.a.foo"). Passed to recursive calls so that deeper
+        /// levels can correctly strip *their* parent prefix regardless of nesting depth.
+        std::string full_child_physical_path;
+        if (physical_name)
+        {
+            full_child_physical_path = *physical_name;
+            /// The map value is the full physical path "parent_physical.child_physical".
+            /// Strip the parent prefix to get just the child's local physical name.
+            /// We cannot use find_last_of('.') because the child physical name may itself
+            /// contain dots (e.g. column mapping "name" mode where logical name "a.foo" is
+            /// also used as the physical name).
+            if (!parent_physical_name.empty() && physical_name->size() > parent_physical_name.size() + 1)
+                result_element_names[i] = physical_name->substr(parent_physical_name.size() + 1);
+            else
+                result_element_names[i] = *physical_name;
+        }
+        else
+        {
+            /// Field not in the map (no column mapping). Reconstruct a best-effort full path
+            /// so children at deeper levels still have a correct prefix to strip against.
+            full_child_physical_path = parent_physical_name.empty()
+                ? element_name
+                : parent_physical_name + "." + element_name;
+            result_element_names[i] = element_name;
+        }
+
+        const auto & child_type = elements[i];
+        result_elements[i] = replaceTypeNamesToPhysicalRecursively(child_type, full_element_name, full_child_physical_path, physical_names_map);
+    }
+    return std::make_shared<DB::DataTypeTuple>(result_elements, result_element_names);
 }
 
 }

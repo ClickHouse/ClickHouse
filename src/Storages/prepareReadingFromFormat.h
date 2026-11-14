@@ -44,6 +44,11 @@ namespace DB
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
 
+        /// The serialization version of the enclosing step (`ctx.step_version`) since which `columns_added_after_format`
+        /// is written. The step that serializes this structure (`ReadFromObjectStorage`) has to register this version in
+        /// `QueryPlanStepRegistry` to send the set; at an older version it is dropped, and the peer reads it as empty.
+        static constexpr UInt64 SERIALIZATION_VERSION_WITH_COLUMNS_ADDED_AFTER_FORMAT = 1;
+
         void serialize(QueryPlanStepSerialization & ctx) const;
         static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);
 
@@ -52,7 +57,11 @@ namespace DB
         /// True if `format_header` has a hive partition column. Its values in the file are not the values
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
-        /// The filter without the conjuncts on hive partition and virtual columns:
+        /// Other columns that are added to the chunk after the format, e.g. the partition columns and the columns of the
+        /// change data feed of a data lake, which are added by the schema transform of each data file.
+        /// A column of the data file with the same name can hold other values, so they must not be used by the format.
+        NameSet columns_added_after_format;
+        /// The filter without the conjuncts on hive partition, virtual columns and `columns_added_after_format`:
         /// they are added after the format, and a column of the data file with the same name holds other values.
         std::shared_ptr<const ActionsDAG> getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const;
         /// A row-level filter (row policy) is not stored here and does not change the headers. The source

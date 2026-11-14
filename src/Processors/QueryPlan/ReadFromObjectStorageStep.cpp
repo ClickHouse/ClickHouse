@@ -61,6 +61,8 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
@@ -526,6 +528,11 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     /// from the name of the table, while the entries are keyed by its UUID, which a `RENAME TABLE` keeps.
     if (info.requested_virtual_columns.contains("_tags") || info.requested_virtual_columns.contains("_time")
         || info.requested_virtual_columns.contains("_table"))
+        return {};
+
+    /// The change data feed of a Delta Lake table reads the data files of a range of versions, not of the
+    /// pinned snapshot, so the snapshot does not identify them.
+    if (settings[Setting::delta_lake_snapshot_start_version] != -1 || settings[Setting::delta_lake_snapshot_end_version] != -1)
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the

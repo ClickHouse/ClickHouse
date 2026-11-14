@@ -3,10 +3,9 @@
 # Tag no-fasttest: delta-kernel-rs and MinIO are not in fast test
 # Tag no-msan: delta-kernel-rs is not built with MSan
 
-# The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read by
-# `ReadFromDeltaLakeTableChangesStep`, which does not distribute work between replicas. With parallel
-# replicas the `deltaLakeS3` table function was replaced with its `Cluster` variant anyway, and every
-# change was returned once per replica.
+# The data files of the change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) are
+# not distributed between replicas. With parallel replicas the `deltaLakeS3` table function was replaced
+# with its `Cluster` variant anyway, and every change was returned once per replica.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
