@@ -21,24 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static bool anyChunkColumnReplicated(const Chunk & chunk)
-{
-    if (!chunk)
-        return false;
-    for (const auto & column : chunk.getColumns())
-        if (column->isReplicated())
-            return true;
-    return false;
-}
-
-static bool anyInputColumnReplicated(const IMergingAlgorithm::Inputs & inputs)
-{
-    for (const auto & input : inputs)
-        if (anyChunkColumnReplicated(input.chunk))
-            return true;
-    return false;
-}
-
 static void rememberVirtualRowBoundary(const SortCursorImpl & cursor, Columns & virtual_row_boundary)
 {
     virtual_row_boundary.clear();

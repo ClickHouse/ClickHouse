@@ -79,6 +79,11 @@ public:
         SharedHeader origin_header;
 
         bool allow_tuple_element_aggregation = false;
+
+        /// Whether a group of one row results in that row, so that such rows can be copied.
+        bool can_copy_rows_of_own_groups = false;
+        /// Whether a row whose sums are all zero is removed (see `finishGroup`).
+        bool removes_zero_rows = false;
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.
@@ -99,6 +104,12 @@ public:
         bool isGroupStarted() const { return is_group_started; }
         void addRow(ColumnRawPtrs & raw_columns, size_t row); /// Possible only when group was started.
 
+        /// Writes the rows at the positions [begin, end), each a group of its own, as `startGroup` and `finishGroup` would
+        /// for each of them (including the removal of rows with only zero sums). Possible only when no group is started.
+        void insertRowsOfOwnGroups(const ColumnRawPtrs & raw_columns, size_t begin, size_t end, const IColumn::Permutation * permutation);
+
+        bool limitsBlockBytes() const { return max_block_size_bytes != 0 || use_average_block_size; }
+
         Chunk pull();
 
     private:
@@ -113,6 +124,9 @@ public:
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);
 
+        VectorWithMemoryTracking<const char *> sum_data;
+        VectorWithMemoryTracking<size_t> rows_to_insert;
+
         /// Initialize aggregate descriptions with columns.
         void initAggregateDescription();
     };
@@ -121,6 +135,18 @@ private:
     /// Order between members is important because merged_data has reference to columns_definition.
     ColumnsDefinition columns_definition;
     SummingMergedData merged_data;
+
+    template <bool take_batches>
+    Status mergeImpl();
+
+    /// Whether `merge` takes the rows of a single source that differ from both neighbours in one go.
+    bool take_runs_of_distinct_keys = false;
+    size_t group_start_pos = std::numeric_limits<size_t>::max();
+    bool previous_group_has_one_row = true;
+
+    /// Finishes the group of the current row and writes the following rows of the batch, each a group of its own; with
+    /// `compare_keys` (duplicate keys possible) only those that differ from the next row. Returns false if it did nothing.
+    bool takeRowsOfOwnGroups(SortCursor current, size_t batch_size, bool compare_keys);
 };
 
 }
