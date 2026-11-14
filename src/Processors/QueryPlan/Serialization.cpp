@@ -16,6 +16,7 @@
 #include <Interpreters/SetSerialization.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
+#include <Common/config_version.h>
 
 #include <stack>
 #include <Common/StackWithMemoryTracking.h>
@@ -112,6 +113,15 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     SerializationFlags flags;
     flags.version = version;
     serialize(out, flags);
+}
+
+UInt64 QueryPlan::limitSerializationVersionForPeer(UInt64 version, UInt64 peer_version_major, UInt64 peer_version_minor)
+{
+    const bool is_26_8 = VERSION_MAJOR == 26 && VERSION_MINOR == 8;
+    const bool peer_is_26_8 = peer_version_major == 26 && peer_version_minor == 8;
+    if (is_26_8 != peer_is_26_8)
+        return std::min<UInt64>(version, DBMS_MAX_QUERY_PLAN_SERIALIZATION_VERSION_BETWEEN_26_8_AND_LATER);
+    return version;
 }
 
 void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
