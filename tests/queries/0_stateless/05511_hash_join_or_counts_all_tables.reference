@@ -1,0 +1,8 @@
+keys	05511_ks_parallel	937
+keys	05511_ks_serial	937
+keys	05511_sk_parallel	937
+keys	05511_sk_serial	937
+bytes	05511_parallel	1
+bytes	05511_serial	1
+explain	937.00
+explain swapped	937.00
