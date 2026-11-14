@@ -303,14 +303,23 @@ void optimizeTreeSecondPass(
     /// Before the join reordering and index analysis below, which read the join kinds it rewrites.
     convertOuterJoinToInnerJoinTransitively(optimization_settings, root);
 
-    /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
-    /// filters, which would hide the source filters
+    /// The copies that prune go before index analysis, so that they take part in it. Both stages run
+    /// before the runtime filters, which would hide the source filters. `query_plan_optimize_primary_key`
+    /// is off only in the plan built to cost automatic parallel replicas, which is left as it was before this pass
+    const bool propagate_predicates
+        = optimization_settings.propagate_predicate_across_join && optimization_settings.query_plan_optimize_primary_key;
+    std::unordered_set<const QueryPlan::Node *> propagated_filters;
     bool predicates_were_propagated = false;
-    if (optimization_settings.propagate_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
+    auto propagate_predicates_across_join = [&](QueryPlan::Node & node, PredicatePropagationStage stage)
+    {
+        predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(
+            &node, nodes, stage, optimization_settings.index_analysis_enabled, propagated_filters, extra_settings) > 0;
+    };
+    if (propagate_predicates)
     {
         traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
         {
-            predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
+            propagate_predicates_across_join(frame_node, PredicatePropagationStage::Pruning);
         });
     }
 
@@ -391,6 +400,9 @@ void optimizeTreeSecondPass(
         {
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
+            /// after join reordering: these copies would make the row estimates of their targets unknown
+            if (propagate_predicates)
+                propagate_predicates_across_join(frame_node, PredicatePropagationStage::Shrinking);
             useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
         },
         [&](auto & frame_node)

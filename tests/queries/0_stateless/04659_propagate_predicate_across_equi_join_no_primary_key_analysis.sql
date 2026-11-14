@@ -20,7 +20,7 @@ FROM (
     INNER JOIN prop_nopk_dst AS d ON s.k = d.k
 );
 
--- Without `use_primary_key` the copy would be a full scan filter, so the pass stays off
+-- `use_primary_key = 0` only removes the pruning; a cheap copy still shrinks the target's input
 SELECT 'primary key analysis off',
        countIf(explain LIKE '%ilter column:%k = 12345%')
 FROM (
@@ -31,12 +31,11 @@ FROM (
     SETTINGS use_primary_key = 0
 );
 
-SELECT 'correctness',
-       (SELECT count() FROM (SELECT * FROM prop_nopk_src WHERE k BETWEEN 100 AND 200) AS s
-        INNER JOIN prop_nopk_dst AS d ON s.k = d.k
-        SETTINGS use_primary_key = 0)
-     - (SELECT count() FROM (SELECT * FROM prop_nopk_src WHERE k BETWEEN 100 AND 200) AS s
-        INNER JOIN prop_nopk_dst AS d ON s.k = d.k);
+-- 101 matching keys; a copy that dropped matching rows would give fewer
+SELECT 'correctness', count()
+FROM (SELECT * FROM prop_nopk_src WHERE k BETWEEN 100 AND 200) AS s
+INNER JOIN prop_nopk_dst AS d ON s.k = d.k
+SETTINGS use_primary_key = 0;
 
 DROP TABLE prop_nopk_src;
 DROP TABLE prop_nopk_dst;

@@ -687,6 +687,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// index analysis and the reader.
     parallel_replicas_step->allow_query_condition_cache = allow_query_condition_cache;
     parallel_replicas_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
+    parallel_replicas_step->allow_query_condition_cache_filter_tagging = allow_query_condition_cache_filter_tagging;
     parallel_replicas_step->top_k_filter_info = top_k_filter_info;
     /// Same for the text-index read tasks: `createLocalPlanForParallelReplicas` runs the full plan
     /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
@@ -5119,6 +5120,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
+    cloned_step->allow_query_condition_cache_filter_tagging = allow_query_condition_cache_filter_tagging;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read

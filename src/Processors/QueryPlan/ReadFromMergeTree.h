@@ -537,6 +537,10 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    /// A filter above the read applies a condition that `query_info.filter_actions_dag` lacks, so `updateQueryConditionCache`
+    /// must not tag it with the key of that DAG. The read still skips granules by the cache entries under its own key
+    void disableQueryConditionCacheFilterTagging() { allow_query_condition_cache_filter_tagging = false; }
+    bool isQueryConditionCacheFilterTaggingAllowed() const { return allow_query_condition_cache_filter_tagging; }
     void disableSpreadingSmallRead() { allow_spreading_small_read = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
@@ -687,6 +691,7 @@ public:
         top_k_filter_info = replaced_step.top_k_filter_info;
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
         allow_top_k_prewhere_query_condition_cache = replaced_step.allow_top_k_prewhere_query_condition_cache;
+        allow_query_condition_cache_filter_tagging = replaced_step.allow_query_condition_cache_filter_tagging;
     }
 
     /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
@@ -978,6 +983,7 @@ private:
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
     bool allow_spreading_small_read = true;
+    bool allow_query_condition_cache_filter_tagging = true;
     bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;

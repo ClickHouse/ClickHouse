@@ -9,6 +9,7 @@
 #include <array>
 #include <expected>
 #include <unordered_map>
+#include <unordered_set>
 
 class SipHash;
 
@@ -242,9 +243,27 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, 
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution
-/// so that index pruning (MergeTree primary key) on the other side picks them up
-size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+/// `Pruning` runs before index analysis and copies the atoms whose keys are all in the target's primary key.
+/// `Shrinking` runs after join reordering and copies the cheap atoms left. A copy that the index cannot use makes
+/// the row estimate of the target unknown, and with an unknown estimate the join does not swap its sides
+enum class PredicatePropagationStage : uint8_t
+{
+    Pruning,
+    Shrinking,
+};
+
+/// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution.
+/// With `index_analysis_enabled` off (`use_primary_key = 0`) no key column prunes, so `Pruning` copies nothing.
+/// `added_filters` collects the filters this pass adds, so that a later stage does not take one for a source filter.
+/// A read that gets a `Shrinking` copy does not let `updateQueryConditionCache` tag the filter above it: the copy is
+/// not in its `filter_actions_dag`, which keys the query condition cache
+size_t tryPropagatePredicateAcrossEquiJoin(
+    QueryPlan::Node * parent_node,
+    QueryPlan::Nodes & nodes,
+    PredicatePropagationStage stage,
+    bool index_analysis_enabled,
+    std::unordered_set<const QueryPlan::Node *> & added_filters,
+    const Optimization::ExtraSettings & settings);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
