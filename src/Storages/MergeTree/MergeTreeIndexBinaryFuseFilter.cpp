@@ -573,6 +573,23 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseFunction(const RPNBuilderT
     return false;
 }
 
+/// `Set::execute` casts the key column to the type of the set before the lookup, while the index
+/// casts the set to the key type and hashes the result. The two agree only when the conversion from
+/// the key type to the set type is injective, so that every stored value matching a set element is
+/// equal to that element converted to the key type. For a `String` key and a `UInt64` set it is not:
+/// `'01'` and `'1'` both match `1`. Accept the set only when its type is the key type up to a
+/// top-level `Nullable` or `LowCardinality`, or when both are integers (a value-preserving conversion).
+/// The comparison is strict below the top level: a set of `Array(Nullable(UInt64))` holding `[NULL]`
+/// cannot even be cast to an `Array(UInt64)` key.
+static bool setTypeIsHashCompatibleWithIndexType(const DataTypePtr & set_type, const DataTypePtr & index_type)
+{
+    const auto set_nested_type = removeLowCardinalityAndNullable(set_type);
+    const auto index_nested_type = removeLowCardinalityAndNullable(index_type);
+    if (set_nested_type->equals(*index_nested_type))
+        return true;
+    return isInteger(set_nested_type) && isInteger(index_nested_type);
+}
+
 /// True when the index column is an `Array` and the set holds an empty array. A set column that is
 /// not a `ColumnArray` cannot be inspected, so it counts as holding one.
 static bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
@@ -610,6 +627,9 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
         if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            return false;
+
+        if (!setTypeIsHashCompatibleWithIndexType(type, index_type))
             return false;
 
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
@@ -756,6 +776,8 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
+            if (!setTypeIsHashCompatibleWithIndexType(type, array_nested_type))
+                return false;
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
         }
