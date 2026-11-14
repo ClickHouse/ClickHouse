@@ -84,6 +84,8 @@ void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
+void registerInputFormatNetCDF(FormatFactory & factory);
+void registerOutputFormatNetCDF(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
 #if USE_SQLITE
 void registerInputFormatSQLite(FormatFactory & factory);
@@ -169,6 +171,7 @@ void registerPuffinSchemaReaders(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
+void registerNetCDFSchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
 #if USE_SQLITE
 void registerSQLiteSchemaReader(FormatFactory & factory);
@@ -260,6 +263,8 @@ void registerFormats()
     registerOutputFormatVortex(factory);
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
+    registerInputFormatNetCDF(factory);
+    registerOutputFormatNetCDF(factory);
 #if USE_SQLITE
     registerInputFormatSQLite(factory);
     registerOutputFormatSQLite(factory);
@@ -345,6 +350,7 @@ void registerFormats()
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
+    registerNetCDFSchemaReader(factory);
     registerFormSchemaReader(factory);
 #if USE_SQLITE
     registerSQLiteSchemaReader(factory);

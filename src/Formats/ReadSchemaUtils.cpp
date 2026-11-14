@@ -85,6 +85,7 @@ static const std::vector<String> & getFormatsOrderForDetection()
         "Avro",
         "AvroConfluent",
         "Npy",
+        "NetCDF",
         "Native",
         "BSONEachRow",
         "Values",

@@ -610,6 +610,13 @@ struct FormatSettings : FormatSettingsEnums
 
     struct
     {
+        bool fill_value_as_null = false;
+        bool add_dimension_columns = false;
+        bool allow_missing_columns = true;
+    } netcdf{};
+
+    struct
+    {
         UnsupportedGeometryHandling unsupported_geometry_handling = UnsupportedGeometryHandling::Throw;
         bool validate_geometry = true;
     } geojson{};
