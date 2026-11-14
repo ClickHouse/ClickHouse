@@ -1616,6 +1616,30 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             match_result = std::move(any_match);
         }
         else if (source_array_type
+            && (isNumber(removeNullable(removeLowCardinality(element_arg->getResultType())))
+                || isBool(removeNullable(removeLowCardinality(element_arg->getResultType()))))
+            && (isDynamic(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
+                || isVariant(removeNullable(removeLowCardinality(source_array_type->getNestedType())))))
+        {
+            const String candidate_name = "__in_numeric_carrier_array_candidate";
+            auto candidate = std::make_shared<IdentifierNode>(Identifier{candidate_name});
+            auto converted = std::make_shared<FunctionNode>("accurateCastOrNull");
+            converted->getArguments().getNodes() = {
+                std::move(candidate),
+                std::make_shared<ConstantNode>(
+                    removeNullable(removeLowCardinality(element_arg->getResultType()))->getName(),
+                    std::make_shared<DataTypeString>())};
+            auto comparison = std::make_shared<FunctionNode>("equals");
+            comparison->getArguments().getNodes() = {element_arg, std::move(converted)};
+            auto non_null_match = std::make_shared<FunctionNode>("ifNull");
+            non_null_match->getArguments().getNodes() = {std::move(comparison), std::make_shared<ConstantNode>(Field{0u})};
+            auto lambda = std::make_shared<LambdaNode>(
+                std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(non_null_match), false /*is_operator*/);
+            auto any_match = std::make_shared<FunctionNode>("arrayExists");
+            any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
+            match_result = std::move(any_match);
+        }
+        else if (source_array_type
             && isNumber(removeNullable(removeLowCardinality(element_arg->getResultType())))
             && isNumber(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
             && !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_array_type->getNestedType()}))

@@ -15,6 +15,11 @@ FROM (SELECT toUInt8(number) AS x FROM numbers(2))
 WHERE x IN (materialize(CAST(toUInt16(1) AS Dynamic)), NULL)
 SETTINGS in_null_as_unknown = 1;
 
+SELECT
+    toUInt8(1) IN materialize(array(CAST(toUInt16(1) AS Dynamic), CAST(NULL AS Dynamic))),
+    toUInt8(2) IN materialize(array(CAST(toUInt16(1) AS Dynamic), CAST(NULL AS Dynamic)))
+SETTINGS in_null_as_unknown = 1;
+
 DROP TABLE IF EXISTS squality_dynamic_numeric_carrier_in;
 SET in_null_as_unknown = 1;
 CREATE TABLE squality_dynamic_numeric_carrier_in
