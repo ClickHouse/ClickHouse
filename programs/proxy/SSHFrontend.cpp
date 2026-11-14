@@ -273,6 +273,36 @@ bool pump(PendingOutput & out, ssh_channel source, ssh_channel destination, bool
     return drained;
 }
 
+/// Called from the EOF callback of @p source: moves the data that the source channel still buffers into @p out,
+/// beyond its bound. No data follows EOF, so it is at most the receive window of the channel. It must be taken
+/// now: a peer that disconnects after EOF puts its session in the error state, in which libssh no longer reads
+/// the buffered data. libssh sets the EOF of the channel before the callback, so the reads here take only
+/// the buffered data and do not process further packets.
+void takeBufferedAfterEof(PendingOutput & out, ssh_channel source, bool with_stderr, Backend * backend, bool to_client)
+{
+    for (const bool is_stderr : {false, true})
+    {
+        if (is_stderr && !with_stderr)
+            break;
+        while (true)
+        {
+            char buffer[16384];
+            const int read = ssh_channel_read_nonblocking(source, buffer, sizeof(buffer), is_stderr);
+            if (read <= 0)
+                break;
+            out.segments.emplace_back(is_stderr, String(buffer, read));
+            out.bytes += read;
+            if (backend)
+            {
+                if (to_client)
+                    backend->addBytesToClient(read);
+                else
+                    backend->addBytesFromClient(read);
+            }
+        }
+    }
+}
+
 int onClientData(ssh_session, ssh_channel, void * data, uint32_t len, int is_stderr, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
@@ -284,10 +314,11 @@ int onClientData(ssh_session, ssh_channel, void * data, uint32_t len, int is_std
     return static_cast<int>(consumed);
 }
 
-void onClientEof(ssh_session, ssh_channel, void * userdata)
+void onClientEof(ssh_session, ssh_channel channel, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
     bridge->to_backend.eof_received = true;
+    takeBufferedAfterEof(bridge->to_backend, channel, /*with_stderr=*/ false, bridge->backend.get(), /*to_client=*/ false);
 }
 
 int onBackendData(ssh_session, ssh_channel, void * data, uint32_t len, int is_stderr, void * userdata)
@@ -301,10 +332,11 @@ int onBackendData(ssh_session, ssh_channel, void * data, uint32_t len, int is_st
     return static_cast<int>(consumed);
 }
 
-void onBackendEof(ssh_session, ssh_channel, void * userdata)
+void onBackendEof(ssh_session, ssh_channel channel, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
     bridge->to_client.eof_received = true;
+    takeBufferedAfterEof(bridge->to_client, channel, /*with_stderr=*/ true, bridge->backend.get(), /*to_client=*/ true);
 }
 
 void onBackendExitStatus(ssh_session, ssh_channel, int exit_status, void * userdata)
