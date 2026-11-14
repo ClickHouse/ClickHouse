@@ -1,0 +1,23 @@
+equals chain
+(1)	1
+(3)	\N
+(NULL)	\N
+(1)	1
+(3)	\N
+(NULL)	\N
+equals chain in WHERE
+0
+0
+equals chain with non-NULL constants
+1
+1
+notEquals chain
+0
+0
+arrayExists
+[(1)]	0
+[(NULL)]	0
+[(1)]	0
+[(NULL)]	0
+0
+0
