@@ -118,9 +118,13 @@ public:
         : op(op_), type(type_), column_id(column_id_), literals(std::move(literals_)) {}
 
     UInt64 getColumnId() const { return column_id; }
+    PredicateDataType getType() const { return type; }
 
     /// `writer_version` is from the postscript of the file. `bloom_filter` can be nullptr.
-    TruthValue evaluate(UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter) const;
+    /// `timestamps_shifted` means the `TIMESTAMP` values read are not the UTC instants of the statistics
+    /// and the literals (a writer or reader time zone is not UTC), so they cannot be compared.
+    TruthValue evaluate(
+        UInt32 writer_version, const Proto::ColumnStatistics & stats, const BloomFilter * bloom_filter, bool timestamps_shifted) const;
 
 private:
     TruthValue evaluatePredicateMinMax(const Proto::ColumnStatistics & stats) const;
