@@ -530,41 +530,53 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
     const auto right = removeNullable(removeLowCardinality(right_type));
-    DataTypePtr left_value;
-    DataTypePtr right_value;
+    const auto nested_pair_needs_exact_comparison = [](const DataTypePtr & left_nested, const DataTypePtr & right_nested)
+    {
+        const auto left_bare = removeNullable(removeLowCardinality(left_nested));
+        const auto right_bare = removeNullable(removeLowCardinality(right_nested));
+        return (isNumber(left_bare) && isNumber(right_bare)
+                && !tryGetLeastSupertype(DataTypes{left_nested, right_nested}))
+            || needsExactCompoundNumericInComparison(left_nested, right_nested);
+    };
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
     {
         const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
-        if (!right_array)
-            return false;
-        left_value = left_array->getNestedType();
-        right_value = right_array->getNestedType();
+        return right_array && nested_pair_needs_exact_comparison(left_array->getNestedType(), right_array->getNestedType());
     }
-    else if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
     {
         const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
-        if (!right_map || !tryGetLeastSupertype(DataTypes{left_map->getKeyType(), right_map->getKeyType()}))
-            return false;
-        left_value = left_map->getValueType();
-        right_value = right_map->getValueType();
+        return right_map
+            && (nested_pair_needs_exact_comparison(left_map->getKeyType(), right_map->getKeyType())
+                || nested_pair_needs_exact_comparison(left_map->getValueType(), right_map->getValueType()));
     }
-    else
-        return false;
-
-    return isNumber(removeNullable(removeLowCardinality(left_value)))
-        && isNumber(removeNullable(removeLowCardinality(right_value)))
-        && !tryGetLeastSupertype(DataTypes{left_value, right_value});
+    return false;
 }
 
-ASTPtr makeExactNumericArrayInComparison(
+ASTPtr makeExactCompoundNumericInComparison(
+    ASTPtr left, ASTPtr right, const DataTypePtr & left_type, const DataTypePtr & right_type);
+
+ASTPtr makeExactArrayInComparison(
     ASTPtr left_array, ASTPtr right_array, const DataTypePtr & left_value_type, const DataTypePtr & right_value_type)
 {
     const String left_name = "__in_exact_compound_left";
     const String right_name = "__in_exact_compound_right";
-    auto scalar_in = makeASTFunction(
-        "in", make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name));
-    auto equal = makeNumericNonConstantInReplacement(
-        *scalar_in, left_value_type, right_value_type, DataTypes{right_value_type}, false);
+    ASTPtr equal;
+    if (needsExactCompoundNumericInComparison(left_value_type, right_value_type))
+        equal = makeExactCompoundNumericInComparison(
+            make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name),
+            left_value_type, right_value_type);
+    else if (isNumber(removeNullable(removeLowCardinality(left_value_type)))
+        && isNumber(removeNullable(removeLowCardinality(right_value_type))))
+    {
+        auto scalar_in = makeASTFunction(
+            "in", make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name));
+        equal = makeNumericNonConstantInReplacement(
+            *scalar_in, left_value_type, right_value_type, DataTypes{right_value_type}, false);
+    }
+    else
+        equal = makeASTFunction(
+            "equals", make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name));
     auto both_null = makeASTFunction(
         "and", makeASTFunction("isNull", make_intrusive<ASTIdentifier>(left_name)),
         makeASTFunction("isNull", make_intrusive<ASTIdentifier>(right_name)));
@@ -586,15 +598,16 @@ ASTPtr makeExactCompoundNumericInComparison(
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
     {
         const auto * right_array = assert_cast<const DataTypeArray *>(right_bare.get());
-        return makeExactNumericArrayInComparison(
+        return makeExactArrayInComparison(
             std::move(left), std::move(right), left_array->getNestedType(), right_array->getNestedType());
     }
 
     const auto * left_map = assert_cast<const DataTypeMap *>(left_bare.get());
     const auto * right_map = assert_cast<const DataTypeMap *>(right_bare.get());
-    auto keys_equal = makeASTFunction(
-        "equals", makeASTFunction("mapKeys", left->clone()), makeASTFunction("mapKeys", right->clone()));
-    auto values_equal = makeExactNumericArrayInComparison(
+    auto keys_equal = makeExactArrayInComparison(
+        makeASTFunction("mapKeys", left->clone()), makeASTFunction("mapKeys", right->clone()),
+        left_map->getKeyType(), right_map->getKeyType());
+    auto values_equal = makeExactArrayInComparison(
         makeASTFunction("mapValues", std::move(left)), makeASTFunction("mapValues", std::move(right)),
         left_map->getValueType(), right_map->getValueType());
     return makeASTFunction("and", std::move(keys_equal), std::move(values_equal));

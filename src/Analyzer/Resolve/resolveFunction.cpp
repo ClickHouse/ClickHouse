@@ -1266,33 +1266,36 @@ static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type,
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
     const auto right = removeNullable(removeLowCardinality(right_type));
-    DataTypePtr left_value;
-    DataTypePtr right_value;
+    const auto nested_pair_needs_exact_comparison = [](const DataTypePtr & left_nested, const DataTypePtr & right_nested)
+    {
+        const auto left_bare = removeNullable(removeLowCardinality(left_nested));
+        const auto right_bare = removeNullable(removeLowCardinality(right_nested));
+        return (isNumber(left_bare) && isNumber(right_bare)
+                && !tryGetLeastSupertype(DataTypes{left_nested, right_nested}))
+            || needsExactCompoundNumericInComparison(left_nested, right_nested);
+    };
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
     {
         const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
-        if (!right_array)
-            return false;
-        left_value = left_array->getNestedType();
-        right_value = right_array->getNestedType();
+        return right_array && nested_pair_needs_exact_comparison(left_array->getNestedType(), right_array->getNestedType());
     }
-    else if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
     {
         const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
-        if (!right_map || !tryGetLeastSupertype(DataTypes{left_map->getKeyType(), right_map->getKeyType()}))
-            return false;
-        left_value = left_map->getValueType();
-        right_value = right_map->getValueType();
+        return right_map
+            && (nested_pair_needs_exact_comparison(left_map->getKeyType(), right_map->getKeyType())
+                || nested_pair_needs_exact_comparison(left_map->getValueType(), right_map->getValueType()));
     }
-    else
-        return false;
-
-    return isNumber(removeNullable(removeLowCardinality(left_value)))
-        && isNumber(removeNullable(removeLowCardinality(right_value)))
-        && !tryGetLeastSupertype(DataTypes{left_value, right_value});
+    return false;
 }
 
-static QueryTreeNodePtr buildExactNumericArrayInComparison(
+static QueryTreeNodePtr buildExactCompoundNumericInComparison(
+    const QueryTreeNodePtr & left,
+    const QueryTreeNodePtr & right,
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type);
+
+static QueryTreeNodePtr buildExactArrayInComparison(
     const QueryTreeNodePtr & left_array,
     const QueryTreeNodePtr & right_array,
     const DataTypePtr & left_value_type,
@@ -1302,7 +1305,18 @@ static QueryTreeNodePtr buildExactNumericArrayInComparison(
     const String right_name = "__in_exact_compound_right";
     auto left_value = std::make_shared<IdentifierNode>(Identifier{left_name});
     auto right_value = std::make_shared<IdentifierNode>(Identifier{right_name});
-    auto equal = buildNumericInEquality(left_value, right_value, left_value_type, right_value_type);
+    QueryTreeNodePtr equal;
+    if (needsExactCompoundNumericInComparison(left_value_type, right_value_type))
+        equal = buildExactCompoundNumericInComparison(left_value, right_value, left_value_type, right_value_type);
+    else if (isNumber(removeNullable(removeLowCardinality(left_value_type)))
+        && isNumber(removeNullable(removeLowCardinality(right_value_type))))
+        equal = buildNumericInEquality(left_value, right_value, left_value_type, right_value_type);
+    else
+    {
+        auto equals = std::make_shared<FunctionNode>("equals");
+        equals->getArguments().getNodes() = {left_value, right_value};
+        equal = std::move(equals);
+    }
     auto left_null = std::make_shared<FunctionNode>("isNull");
     left_null->getArguments().getNodes().push_back(left_value);
     auto right_null = std::make_shared<FunctionNode>("isNull");
@@ -1339,7 +1353,7 @@ static QueryTreeNodePtr buildExactCompoundNumericInComparison(
     if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
     {
         const auto * right_array = assert_cast<const DataTypeArray *>(right_bare.get());
-        return buildExactNumericArrayInComparison(
+        return buildExactArrayInComparison(
             left, right, left_array->getNestedType(), right_array->getNestedType());
     }
 
@@ -1349,13 +1363,13 @@ static QueryTreeNodePtr buildExactCompoundNumericInComparison(
     left_keys->getArguments().getNodes().push_back(left);
     auto right_keys = std::make_shared<FunctionNode>("mapKeys");
     right_keys->getArguments().getNodes().push_back(right);
-    auto keys_equal = std::make_shared<FunctionNode>("equals");
-    keys_equal->getArguments().getNodes() = {std::move(left_keys), std::move(right_keys)};
+    auto keys_equal = buildExactArrayInComparison(
+        left_keys, right_keys, left_map->getKeyType(), right_map->getKeyType());
     auto left_values = std::make_shared<FunctionNode>("mapValues");
     left_values->getArguments().getNodes().push_back(left);
     auto right_values = std::make_shared<FunctionNode>("mapValues");
     right_values->getArguments().getNodes().push_back(right);
-    auto values_equal = buildExactNumericArrayInComparison(
+    auto values_equal = buildExactArrayInComparison(
         left_values, right_values, left_map->getValueType(), right_map->getValueType());
     auto result = std::make_shared<FunctionNode>("and");
     result->getArguments().getNodes() = {std::move(keys_equal), std::move(values_equal)};
