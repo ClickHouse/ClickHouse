@@ -59,6 +59,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \
     DECLARE(String, upload_checksum_algorithm, "", "", 0) \
+    DECLARE(String, delete_checksum_algorithm, "", "Checksum algorithm for `DeleteObjects` requests: `MD5`, `CRC32` or `SHA256`. Empty selects automatically.", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
@@ -203,6 +204,12 @@ void S3RequestSettings::updateIfChanged(const S3RequestSettings & settings)
     }
 }
 
+void S3RequestSettings::setByName(const String & name, const String & value)
+{
+    impl->set(name, value);
+    normalizeSettings();
+}
+
 bool S3RequestSettings::hasChangesAffectingClient(const S3RequestSettings & settings) const
 {
     return impl->hasChangesAffectingClient(*settings.impl);
@@ -222,20 +229,21 @@ void S3RequestSettings::validateUploadSettings()
             ReadableSize((*this)[S3RequestSetting::strict_upload_part_size].value),
             ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
 
+    /// `copyS3File` splits by min and max even when a strict size is set.
+    if (!(*this)[S3RequestSetting::min_upload_part_size])
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting min_upload_part_size ({}) cannot be zero",
+            ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
+
+    if ((*this)[S3RequestSetting::max_upload_part_size] < (*this)[S3RequestSetting::min_upload_part_size])
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
+            ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value), ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
+
     if (!(*this)[S3RequestSetting::strict_upload_part_size])
     {
-        if (!(*this)[S3RequestSetting::min_upload_part_size])
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting min_upload_part_size ({}) cannot be zero",
-                ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
-
-        if ((*this)[S3RequestSetting::max_upload_part_size] < (*this)[S3RequestSetting::min_upload_part_size])
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-                ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value), ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
-
         if (!(*this)[S3RequestSetting::upload_part_size_multiply_factor])
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
@@ -269,6 +277,13 @@ void S3RequestSettings::validateUploadSettings()
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
             upload_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
+
+    const auto & delete_checksum_algorithm = (*this)[S3RequestSetting::delete_checksum_algorithm].value;
+    if (!delete_checksum_algorithm.empty() && !S3::RequestChecksum::tryParse(delete_checksum_algorithm))
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting delete_checksum_algorithm has invalid value {} which only supports {}",
+            delete_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
 
     /// Only the name is validated: usability depends on the client (`GCS` sends no flexible checksum at all),
     /// so the FIPS `MD5` rejection lives in `RequestChecksum::getUploadChecksumAlgorithm`.
@@ -335,6 +350,9 @@ void S3RequestSettings::normalizeSettings()
 
     if (!(*this)[S3RequestSetting::upload_checksum_algorithm].value.empty() && (*this)[S3RequestSetting::upload_checksum_algorithm].changed)
         (*this)[S3RequestSetting::upload_checksum_algorithm] = Poco::toUpperInPlace((*this)[S3RequestSetting::upload_checksum_algorithm].value);
+
+    if (!(*this)[S3RequestSetting::delete_checksum_algorithm].value.empty() && (*this)[S3RequestSetting::delete_checksum_algorithm].changed)
+        (*this)[S3RequestSetting::delete_checksum_algorithm] = Poco::toUpperInPlace((*this)[S3RequestSetting::delete_checksum_algorithm].value);
 }
 
 void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const

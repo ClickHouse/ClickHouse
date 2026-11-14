@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import Tagging from '/snippets/_clickstack_tagging.mdx';
 
 ClickStack allows you to do a full-text search on your events (logs and traces). You can get started searching by just typing keywords that match your events. For example, if your log contains "Error", you can find it by just typing in "Error" in the search bar.
@@ -32,7 +30,15 @@ as well.
   `Error OR Exception`)
 - Exact matches can be done via double quotes (ex. `"Error tests not found"`)
 
-<Image img="/images/use-cases/observability/hyperdx-27.webp" alt="Search" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Search](/images/use-cases/observability/hyperdx-27.webp)
+
+</Frame>
+
+</div>
 
 #### Column/property search {#column-search}
 
@@ -69,11 +75,27 @@ Aliases aren't supported at this time (ex. you can not use `column as "alias"`).
 
 You can save your searches for quick access later. Once saved, your searches will appear on the `Saved Searches` page, making it easy to revisit frequently used search queries without having to reconstruct them.
 
-<Image img="/images/use-cases/observability/clickstack-saved-search-listing.webp" alt="Saved Search Listing Page" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Saved Search Listing Page](/images/use-cases/observability/clickstack-saved-search-listing.webp)
+
+</Frame>
+
+</div>
 
 To save a search, simply configure your search query and click the save button. You can give your saved search a descriptive name to help identify it later.
 
-<Image img="/images/use-cases/observability/clickstack-saved-search.webp" alt="Saving a Search" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Saving a Search](/images/use-cases/observability/clickstack-saved-search.webp)
+
+</Frame>
+
+</div>
 
 ### Adding alerts to saved searches {#alerts-on-saved-searches}
 

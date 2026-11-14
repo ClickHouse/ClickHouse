@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsQuirks.h>
 #include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
@@ -594,8 +595,11 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
+    /// A fixed-shard-count scatter must keep one sorted stream per shard: the join above pairs the shards
+    /// of its two sides positionally, and the thread count is a per-side budget, not a shared contract.
     /// If there are several streams, then we merge them into one
-    const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
+    const bool merge_needed = scatter_partitions == 0 && pipeline.getNumStreams() > 1
+        && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
     if (merge_needed && !allConstantMergeCanStall(pipeline, result_sort_desc))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
@@ -892,11 +896,18 @@ QueryPlanStepPtr SortingStep::clone() const
     /// Reconstructing another type as Full would silently drop its ordered-input contract.
     if (type != Type::Full)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of SortingStep is implemented only for Full sorting");
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
+    /// The merge-join scattered sort carries extra state (`scatter_partitions`, the skip
+    /// flag) this reconstruction would drop.
+    if (!partition_by_description.empty() && (is_sorting_for_merge_join || scatter_partitions > 0 || skip_scatter_by_partition))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of a partitioned sorting with scatter state is not implemented for SortingStep");
 
-    auto cloned = std::make_unique<SortingStep>(
-        input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    std::unique_ptr<SortingStep> cloned;
+    if (partition_by_description.empty())
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    else
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, partition_by_description, limit, sort_settings);
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
     cloned->use_buffering = use_buffering;
@@ -908,7 +919,7 @@ QueryPlanStepPtr SortingStep::clone() const
     return cloned;
 }
 
-std::vector<size_t> SortingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> SortingStep::getStepGroups() const
 {
     return { static_cast<size_t>(SortingStage::Scatter),
         static_cast<size_t>(SortingStage::Sort),

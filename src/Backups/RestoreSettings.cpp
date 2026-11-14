@@ -70,6 +70,12 @@ namespace
                 }
             }
 
+            if (field.getType() == Field::Types::Bool)
+            {
+                value = field.safeGet<bool>() ? RestoreTableCreationMode::kCreate : RestoreTableCreationMode::kMustExist;
+                return;
+            }
+
             throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse creation mode from {}", field);
         }
 
@@ -77,8 +83,8 @@ namespace
         {
             switch (value)
             {
-                case RestoreTableCreationMode::kCreate: return Field{true};
-                case RestoreTableCreationMode::kMustExist: return Field{false};
+                case RestoreTableCreationMode::kCreate: return Field{"create"};
+                case RestoreTableCreationMode::kMustExist: return Field{"must-exist"};
                 case RestoreTableCreationMode::kCreateIfNotExists: return Field{"if-not-exists"};
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
@@ -139,6 +145,12 @@ namespace
                 }
             }
 
+            if (field.getType() == Field::Types::Bool && field.safeGet<bool>())
+            {
+                value = RestoreAccessCreationMode::kCreate;
+                return;
+            }
+
             throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse creation mode from {}", field);
         }
 
@@ -146,7 +158,7 @@ namespace
         {
             switch (value)
             {
-                case RestoreAccessCreationMode::kCreate: return Field{true};
+                case RestoreAccessCreationMode::kCreate: return Field{"create"};
                 case RestoreAccessCreationMode::kCreateIfNotExists: return Field{"if-not-exists"};
                 case RestoreAccessCreationMode::kReplace: return Field{"replace"};
             }

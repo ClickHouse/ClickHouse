@@ -1,5 +1,7 @@
 #include <Core/ProtocolDefines.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsFieldsConversionHelpers.h>
@@ -8,6 +10,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -247,14 +250,14 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (d * 1000000 > std::numeric_limits<Int64>::max() || d * 1000000 < std::numeric_limits<Int64>::min())
+        if (d < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value in seconds cannot be negative. Got {}", d);
+        const Float64 microseconds = d * 1000000;
+        if (accurate::greaterOp(microseconds, std::numeric_limits<Int64>::max()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
-#pragma clang diagnostic pop
 
-        return static_cast<Int64>(d * 1000000);
+        return static_cast<Int64>(microseconds);
     }
 
 }

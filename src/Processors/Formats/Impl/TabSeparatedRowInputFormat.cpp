@@ -149,9 +149,9 @@ void TabSeparatedFormatReader::skipHeaderRow()
 }
 
 template <bool is_header_row>
-std::vector<String> TabSeparatedFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> TabSeparatedFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readFieldIntoString<is_header_row>());
@@ -172,7 +172,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
     if (format_settings.tsv.empty_as_default && is_empty_field)
     {
-        column.insertDefault();
+        type->insertDefaultInto(column);
         return false;
     }
 
@@ -181,7 +181,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     if (is_raw)
     {
         if (as_nullable)
-            return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization);
+            return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization, type.get());
 
         serialization->deserializeTextRaw(column, *buf, format_settings);
         return true;
@@ -189,7 +189,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
 
     if (as_nullable)
-        return SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, *buf, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, *buf, format_settings, serialization, type.get());
 
     serialization->deserializeTextEscaped(column, *buf, format_settings);
     return true;
@@ -306,6 +306,7 @@ void TabSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+    first_row = true;
 }
 
 bool TabSeparatedFormatReader::checkForSuffix()
@@ -387,7 +388,7 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> TabSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
@@ -419,7 +420,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
                 const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, is_raw, settings);
-            });
+            }, /*supports_reset_parser=*/ true);
         };
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
