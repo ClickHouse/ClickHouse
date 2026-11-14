@@ -113,7 +113,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
     StreamBaseManifestPtr stream_base_manifest,
-    std::optional<FinishedColumns> finished_columns)
+    std::optional<FinishedColumns> finished_columns,
+    std::unordered_map<String, size_t> low_cardinality_raised_max_dictionary_size_by_column)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -138,6 +139,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         try_adaptive_codec);
 
     writer_settings.stream_base_manifest = std::move(stream_base_manifest);
+    writer_settings.low_cardinality_raised_max_dictionary_size_by_column = std::move(low_cardinality_raised_max_dictionary_size_by_column);
 
     data_part_storage->createDirectories();
 

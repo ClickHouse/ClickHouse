@@ -38,7 +38,8 @@ public:
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
         StreamBaseManifestPtr stream_base_manifest,
-        std::optional<FinishedColumns> finished_columns = {});
+        std::optional<FinishedColumns> finished_columns = {},
+        std::unordered_map<String, size_t> low_cardinality_raised_max_dictionary_size_by_column = {});
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 

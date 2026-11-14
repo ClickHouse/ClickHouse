@@ -624,6 +624,9 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     auto serialize_settings = getSerializationSettings();
     serialize_settings.getter = createStreamGetter(name_and_type, offset_substreams);
     serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
+    if (auto it = settings.low_cardinality_raised_max_dictionary_size_by_column.find(name_and_type.name);
+        it != settings.low_cardinality_raised_max_dictionary_size_by_column.end())
+        serialize_settings.low_cardinality_raised_max_dictionary_size = it->second;
     serialize_settings.stream_mark_getter = [this, name_and_type](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
         const auto & stream = column_streams.at(getStreamName(name_and_type, substream_path));
