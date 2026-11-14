@@ -16,7 +16,6 @@
 #include <base/PackedStringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
-#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
