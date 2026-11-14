@@ -7,6 +7,10 @@
 -- effective value from the node's context rather than the first `use_query_cache` entry of the clause,
 -- otherwise `use_query_cache = 1, use_query_cache = 0` takes the cache path for a subquery that opted out.
 
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
+
 SYSTEM DROP QUERY CACHE TAG '05154_last_wins_out';
 SYSTEM DROP QUERY CACHE TAG '05154_last_wins_in';
 SYSTEM DROP QUERY CACHE TAG '05154_reset_out';

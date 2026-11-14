@@ -2771,8 +2771,13 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
+        /// The row policies of the initial user are added to the row policies of the current user. The initiator of
+        /// a secondary query also forwards the current roles of the initial user (after `SET ROLE`); if the initial user
+        /// is the current user, the query still runs with the default roles of the user on a connection without
+        /// an interserver secret, so the row policies of the forwarded roles are needed then too.
         std::optional<UUID> initial_user_id;
-        if (client_info.initial_user != client_info.current_user)
+        if (client_info.initial_user != client_info.current_user
+            || (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.current_roles.has_value()))
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
@@ -9508,6 +9513,9 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 
 void Context::setInitialUserName(const String & initial_user_name)
 {
+    /// The forwarded current roles are the roles of the initial user, so they cannot be kept for another user.
+    if (client_info.initial_user != initial_user_name)
+        client_info.current_roles.reset();
     client_info.initial_user = initial_user_name;
     need_recalculate_access = true;
 }
