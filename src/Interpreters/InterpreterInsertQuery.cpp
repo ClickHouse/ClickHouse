@@ -221,11 +221,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 {
     /// If the query does not include information about columns
     if (!query.columns)
-    {
-        if (no_destination)
-            return metadata_snapshot->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
-        return metadata_snapshot->getSampleBlockNonMaterialized();
-    }
+        return getSampleBlockWithoutColumnList(metadata_snapshot, no_destination);
 
     /// Form the block based on the column names from the query
     const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, query.columns);
@@ -238,6 +234,13 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     return getSampleBlock(names, table, metadata_snapshot, no_destination, allow_materialized);
+}
+
+Block InterpreterInsertQuery::getSampleBlockWithoutColumnList(const StorageMetadataPtr & metadata_snapshot, bool no_destination)
+{
+    if (no_destination)
+        return metadata_snapshot->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+    return metadata_snapshot->getSampleBlockNonMaterialized();
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
