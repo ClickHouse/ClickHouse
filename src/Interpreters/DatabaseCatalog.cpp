@@ -1,5 +1,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 #include <Access/ContextAccess.h>
 
@@ -60,6 +61,9 @@
 namespace CurrentMetrics
 {
     extern const Metric TablesToDropQueueSize;
+    extern const Metric DatabaseCatalogThreads;
+    extern const Metric DatabaseCatalogThreadsActive;
+    extern const Metric DatabaseCatalogThreadsScheduled;
 }
 
 namespace DB
@@ -76,6 +80,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
@@ -313,11 +318,62 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
+    /// Delay shutdown of temporary and system databases. They will be shutdown last.
+    /// Because some databases might use them until their shutdown is called, but calling shutdown
+    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
+    std::vector<DatabasePtr> databases_with_delayed_shutdown;
+    std::vector<DatabasePtr> databases_to_shutdown;
+    for (const auto & database : current_databases)
+    {
+        if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
+            databases_with_delayed_shutdown.push_back(database.second);
+        else
+            databases_to_shutdown.push_back(database.second);
+    }
+
+    /// Runs the shutdown work whose order does not matter: stopping background writers and shutting databases down.
+    /// Each database waits for its tables in the shared shutdown pool, so as many threads as that pool keep it busy.
+    /// Its threads are not from the global pool, as the table workers that a database waits for are taken from there.
+    auto & tables_pool = getDatabaseCatalogShutdownTablesThreadPool();
+    tables_pool.initializeWithDefaultSettingsIfNotInitialized();
+    FreeThreadPool shutdown_pool(
+        CurrentMetrics::DatabaseCatalogThreads,
+        CurrentMetrics::DatabaseCatalogThreadsActive,
+        CurrentMetrics::DatabaseCatalogThreadsScheduled,
+        tables_pool.get().getMaxThreads(),
+        /*max_free_threads=*/ 0,
+        /*queue_size=*/ 0,
+        /*shutdown_on_exception=*/ false);
+
+    /// Runs inline if the OS refuses a new thread, so the work is still done.
+    auto run_concurrently = [&](const std::function<void()> & task)
+    {
+        auto job = [task]
+        {
+            ThreadStatus thread_status;
+            task();
+        };
+
+        if (!shutdown_pool.trySchedule(job))
+            task();
+    };
+
+    auto wait_for_concurrent_work = [&]
+    {
+        try
+        {
+            shutdown_pool.wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to wait for the shutdown work");
+        }
+    };
+
     /** Hand the buffered rows over before any database goes away.
       *
-      * A `Buffer` table flushes into its destination when its own database shuts down, and databases
-      * shut down one at a time in name order: a destination in an earlier-sorting database is already
-      * gone by then ("Destination table ... doesn't exist. Block of data is discarded."), and a chain
+      * A `Buffer` table flushes into its destination when it is prepared for shutdown below, one table
+      * at a time: its destination can already be prepared and reject the rows by then, and a chain
       * of `Buffer` tables moves rows at most one link per pass, so the rows left in an
       * already-prepared `Buffer` die with it. Both are silent losses of acknowledged rows on a
       * graceful shutdown.
@@ -327,60 +383,137 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
       * `Buffer` whose destination is itself would otherwise keep the loop alive forever.
       */
     {
-        size_t total_tables = 0;
-        std::vector<StoragePtr> buffered_tables;
-        for (const auto & database : current_databases)
+        auto list_user_tables = [&]
         {
-            /// Only user databases: enumerating a predefined one can materialize a lazily created
-            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
-            if (isPredefinedDatabase(database.first))
-                continue;
-
-            try
+            std::vector<StoragePtr> tables;
+            for (const auto & database : current_databases)
             {
-                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
-                {
-                    ++total_tables;
-                    buffered_tables.push_back(it->table());
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(
-                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
-            }
-        }
-
-        for (size_t pass = 0; pass <= total_tables; ++pass)
-        {
-            size_t flushed = 0;
-            for (const auto & table : buffered_tables)
-            {
-                if (!table)
+                /// Only user databases: enumerating a predefined one can materialize a lazily created
+                /// system table during shutdown, and none of them holds a `Buffer` table anyway.
+                /// Not external ones either: listing them asks the remote side, and they hold no `Buffer` table or background writer.
+                if (isPredefinedDatabase(database.first) || database.second->isExternal())
                     continue;
 
                 try
                 {
-                    flushed += table->flushBufferedRowsBeforeShutdown();
+                    for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                        tables.push_back(it->table());
                 }
                 catch (...)
                 {
                     tryLogCurrentException(
-                        log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
+                        log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
                 }
             }
+            return tables;
+        };
 
-            if (flushed == 0)
-                break;
+        /// Background writers do not depend on each other, so they stop concurrently, and all of them before returning.
+        /// Returns whether it stopped a writer for the first time.
+        std::unordered_set<StoragePtr> stopped_writers;
+        auto stop_background_writes = [&](const std::vector<StoragePtr> & tables)
+        {
+            bool stopped_new = false;
+            for (const auto & table : tables)
+            {
+                try
+                {
+                    if (!table || stopped_writers.contains(table) || !table->hasBackgroundWrites())
+                        continue;
+                    stopped_writers.insert(table);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to check whether a table writes in the background");
+                    continue;
+                }
 
-            LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
+                stopped_new = true;
+                run_concurrently([this, table]
+                {
+                    auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
+                    try
+                    {
+                        table->stopBackgroundWrites();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to stop background writes of table {}", table->getStorageID().getNameForLogs()));
+                    }
+                });
+            }
+            wait_for_concurrent_work();
+            return stopped_new;
+        };
+
+        auto drain_buffers = [&](const std::vector<StoragePtr> & tables)
+        {
+            for (size_t pass = 0; pass <= tables.size(); ++pass)
+            {
+                size_t flushed = 0;
+                for (const auto & table : tables)
+                {
+                    if (!table)
+                        continue;
+
+                    try
+                    {
+                        flushed += table->flushBufferedRowsBeforeShutdown();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(
+                            log, fmt::format("Failed to flush buffered rows of table {}", table->getStorageID().getNameForLogs()));
+                    }
+                }
+
+                if (flushed == 0)
+                    break;
+
+                LOG_TRACE(log, "Flushed {} buffers of tables before shutdown (pass {})", flushed, pass + 1);
+            }
+        };
+
+        drain_buffers(list_user_tables());
+
+        /// After the drain, which can wait for a destination that is still starting, nothing may load,
+        /// start or replicate tables anymore. Replicated DDL must not drop or detach a table prepared below.
+        for (const auto & database : databases_to_shutdown)
+        {
+            try
+            {
+                database->stopLoading();
+                if (database->hasReplicationThread())
+                    database->stopReplication();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to stop loading or replication of database {}", backQuoteIfNeed(database->getDatabaseName())));
+            }
+        }
+
+        /// Background writers stop before all tables are prepared, and what they wrote is drained while destinations still accept it.
+        /// Every call lists the tables anew, so a writer that a stop creates or a drain loads is found by the next stop.
+        while (stop_background_writes(list_user_tables()))
+            drain_buffers(list_user_tables());
+
+        /// List again to include the tables that finished loading meanwhile.
+        for (const auto & table : list_user_tables())
+        {
+            if (!table)
+                continue;
+
+            try
+            {
+                table->flushAndPrepareForShutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
+            }
         }
     }
 
-    /// Delay shutdown of temporary and system databases. They will be shutdown last.
-    /// Because some databases might use them until their shutdown is called, but calling shutdown
-    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
-    std::vector<DatabasePtr> databases_with_delayed_shutdown;
     /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).
     /// It must not skip the steps below: shutdown_system_logs() joins the system log flush threads,
     /// and if one stays alive into the static thread pool teardown in `main` its lazy backing-table
@@ -388,23 +521,23 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     /// user databases -> system logs -> system / temporary databases. The throwing shutdown() still
     /// releases that database's table references (see DatabaseWithOwnTablesBase::shutdown), so the
     /// UUID mappings below are emptied as usual.
-    for (auto & database : current_databases)
+    for (const auto & database : databases_to_shutdown)
     {
-        if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
+        run_concurrently([this, database]
         {
-            databases_with_delayed_shutdown.push_back(database.second);
-            continue;
-        }
-        LOG_TRACE(log, "Shutting down database {}", database.first);
-        try
-        {
-            database.second->shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("Failed to shut down database {}", backQuoteIfNeed(database.first)));
-        }
+            auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
+            try
+            {
+                LOG_TRACE(log, "Shutting down database {}", database->getDatabaseName());
+                database->shutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to shut down database {}", backQuoteIfNeed(database->getDatabaseName())));
+            }
+        });
     }
+    wait_for_concurrent_work();
 
     LOG_TRACE(log, "Shutting down system logs");
     shutdown_system_logs();
@@ -735,6 +868,14 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
 void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
 {
     std::lock_guard lock{databases_mutex};
+    /// Shutdown sets the flag before it copies the databases under this mutex, so a database attached later never shuts down.
+    if (is_shutting_down)
+        throw Exception(ErrorCodes::ABORTED, "Cannot attach database {}, the server is shutting down", backQuoteIfNeed(database_name));
+    attachDatabaseUnlocked(database_name, database);
+}
+
+void DatabaseCatalog::attachDatabaseUnlocked(const String & database_name, const DatabasePtr & database)
+{
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
     if (!database->isDatalakeCatalog())
@@ -799,7 +940,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         }
         catch (...)
         {
-            attachDatabase(database_name, db);
+            std::lock_guard lock{databases_mutex};
+            attachDatabaseUnlocked(database_name, db);
             throw;
         }
     }
@@ -817,7 +959,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         }
         catch (...)
         {
-            attachDatabase(database_name, db);
+            std::lock_guard lock{databases_mutex};
+            attachDatabaseUnlocked(database_name, db);
             throw;
         }
 

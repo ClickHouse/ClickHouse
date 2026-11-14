@@ -179,6 +179,18 @@ public:
     void startup() override { getNested()->startup(); }
     void shutdown(bool is_drop) override { getNested()->shutdown(is_drop); }
     void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
+    /// Only an existing nested storage can write in the background, so these must not create it.
+    bool hasBackgroundWrites() const override
+    {
+        auto nested = tryGetNested();
+        return nested && nested->hasBackgroundWrites();
+    }
+
+    void stopBackgroundWrites() override
+    {
+        if (auto nested = tryGetNested())
+            nested->stopBackgroundWrites();
+    }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 

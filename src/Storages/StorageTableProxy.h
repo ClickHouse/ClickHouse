@@ -120,18 +120,17 @@ public:
     /// Startup is deferred until first access via `getNested`.
     void startup() override { }
 
+    /// Not under `nested_mutex`: these can wait for work, such as `QueryRunner` jobs, that needs this proxy.
     void shutdown(bool is_drop) override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            nested->shutdown(is_drop);
+        if (auto nested_storage = tryGetNested())
+            nested_storage->shutdown(is_drop);
     }
 
     void flushAndPrepareForShutdown() override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            nested->flushAndPrepareForShutdown();
+        if (auto nested_storage = tryGetNested())
+            nested_storage->flushAndPrepareForShutdown();
     }
 
     void drop() override

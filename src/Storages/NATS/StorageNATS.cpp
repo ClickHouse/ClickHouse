@@ -773,9 +773,23 @@ ActionLock StorageNATS::getActionLock(StorageActionBlockType action_type)
 }
 
 
+void StorageNATS::stopBackgroundWrites()
+{
+    /// The consumers initialization task activates streaming, so it stops first.
+    deactivateTask(initialize_consumers_task);
+    /// Blocking lets the in-flight cycle finish instead of streaming until the time limit, and stopping the consumers
+    /// closes its batch with the rows already read instead of waiting for the flush interval.
+    auto lock = stream_control.block();
+    consumers_stopped = true;
+    deactivateTask(streaming_task);
+    /// The stopped task cannot unsubscribe, and a subscribed consumer keeps taking messages away from its queue group.
+    unsubscribeConsumers();
+}
+
 void StorageNATS::shutdown(bool /* is_drop */)
 {
     shutdown_called = true;
+    consumers_stopped = true;
 
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
@@ -848,13 +862,13 @@ INATSConsumerPtr StorageNATS::createConsumer(const NATSConnectionPtr & connectio
     {
         auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value
                                                                                   : getStorageID().getFullTableName();
-        return std::make_shared<NATSCoreConsumer>(connection, subjects, queue_name, log, queue_size, shutdown_called);
+        return std::make_shared<NATSCoreConsumer>(connection, subjects, queue_name, log, queue_size, consumers_stopped);
     }
 
     auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group];
 
     return std::make_shared<NATSJetStreamConsumer>(
-        connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
+        connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, consumers_stopped);
 }
 
 INATSProducerPtr StorageNATS::createProducer(String subject)
