@@ -35,6 +35,13 @@ static void checkForCarriageReturn(ReadBuffer & in)
             "\nor else enable setting 'input_format_tsv_crlf_end_of_line'");
 }
 
+static bool isCRAtEndOfRow(PeekableReadBuffer & in)
+{
+    PeekableReadBufferCheckpoint checkpoint(in, true);
+    ++in.position();
+    return in.eof() || *in.position() == '\n';
+}
+
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     SharedHeader header_,
     ReadBuffer & in_,
@@ -168,7 +175,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     /// A field is empty if it is followed by the field delimiter or the end of the row.
     /// The row can end before the last file column with `input_format_tsv_allow_variable_number_of_columns`.
     const bool is_empty_field = buf->eof() || *buf->position() == '\t' || *buf->position() == '\n'
-        || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r');
+        || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r' && isCRAtEndOfRow(*buf));
 
     if (format_settings.tsv.empty_as_default && is_empty_field)
     {
@@ -370,7 +377,7 @@ void TabSeparatedFormatReader::skipRow()
 
 bool TabSeparatedFormatReader::checkForEndOfRow()
 {
-    return buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r');
+    return buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r' && isCRAtEndOfRow(*buf));
 }
 
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(
