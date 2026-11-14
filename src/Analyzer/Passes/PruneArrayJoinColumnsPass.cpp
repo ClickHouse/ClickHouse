@@ -32,7 +32,7 @@ namespace
 /// Per-expression usage state inside a single ARRAY JOIN node.
 struct ExpressionUsage
 {
-    /// True when the expression is referenced directly (not via tupleElement),
+    /// True when the expression is referenced directly (not via tupleElement or getSubcolumn),
     /// meaning all subcolumns are needed, or it has no nested() inner function.
     bool fully_used = false;
 
@@ -49,6 +49,22 @@ struct ExpressionUsage
     std::unordered_map<UInt64, UInt64> index_remap;
 
     bool hasNested() const { return !nested_subcolumn_names.empty(); }
+
+    /// `type` resolves the name to a substream path, as `getSubcolumn` does. The first tuple element of the path is the used subcolumn.
+    void markUsedBySubcolumn(const IDataType & type, const String & subcolumn_name)
+    {
+        if (auto info = type.tryGetSubcolumnInfo(subcolumn_name))
+        {
+            auto element = std::ranges::find(info->substreams_path, ISerialization::Substream::TupleElement, &ISerialization::Substream::type);
+            if (element != info->substreams_path.end() && std::ranges::contains(nested_subcolumn_names, element->name_of_substream))
+            {
+                used_subcolumns.insert(element->name_of_substream);
+                return;
+            }
+        }
+
+        fully_used = true;
+    }
 
     bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
 };
@@ -80,6 +96,12 @@ ExpressionUsage * findReferencedExpression(const ColumnNode & column_node, Array
         return nullptr;
 
     return &expr_it->second;
+}
+
+/// `x.a` resolves to `tupleElement(x, 'a')` or to `getSubcolumn(x, 'a')`.
+bool isSubcolumnFunction(const FunctionNode & function_node)
+{
+    return function_node.getFunctionName() == "tupleElement" || function_node.getFunctionName() == "getSubcolumn";
 }
 
 /// Collects every ARRAY JOIN node of the tree, including those inside subqueries, CTEs and UNION branches.
@@ -159,10 +181,10 @@ public:
 
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child [[maybe_unused]])
     {
-        /// tupleElement(array_join_column, ...) is handled as a whole in enterImpl:
+        /// tupleElement(array_join_column, ...) and getSubcolumn(array_join_column, ...) are handled as a whole in enterImpl:
         /// visiting the column child would mark the expression as fully used.
         auto * function_node = parent->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "tupleElement")
+        if (function_node && isSubcolumnFunction(*function_node))
         {
             const auto & arguments = function_node->getArguments().getNodes();
             if (arguments.size() >= 2)
@@ -180,10 +202,10 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
-        /// Case 1: tupleElement(array_join_col, 'subcolumn_name') — mark specific subcolumn.
+        /// Case 1: tupleElement(array_join_col, 'subcolumn_name') or getSubcolumn(array_join_col, 'subcolumn_name') — mark specific subcolumn.
         if (auto * function_node = node->as<FunctionNode>())
         {
-            if (function_node->getFunctionName() != "tupleElement")
+            if (!isSubcolumnFunction(*function_node))
                 return;
 
             auto & arguments = function_node->getArguments().getNodes();
@@ -209,7 +231,11 @@ public:
             if (expr_usage->hasNested())
             {
                 const auto & value = constant_node->getValue();
-                if (value.getType() == Field::Types::String)
+                if (function_node->getFunctionName() == "getSubcolumn")
+                {
+                    expr_usage->markUsedBySubcolumn(*column_node->getColumnType(), value.safeGet<String>());
+                }
+                else if (value.getType() == Field::Types::String)
                 {
                     expr_usage->used_subcolumns.insert(value.safeGet<String>());
                 }
@@ -314,7 +340,7 @@ void pruneNestedFunctionArguments(
 }
 
 /// Updates reference ColumnNode types, rewrites stale numeric tupleElement
-/// indices, and re-resolves tupleElement functions after nested() arguments have been pruned.
+/// indices, and re-resolves tupleElement and getSubcolumn functions after nested() arguments have been pruned.
 class UpdateArrayJoinReferenceTypesVisitor : public InDepthQueryTreeVisitorWithContext<UpdateArrayJoinReferenceTypesVisitor>
 {
 public:
@@ -329,7 +355,7 @@ public:
     void enterImpl(const QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || function_node->getFunctionName() != "tupleElement")
+        if (!function_node || !isSubcolumnFunction(*function_node))
             return;
 
         auto & arguments = function_node->getArguments().getNodes();
@@ -373,8 +399,8 @@ public:
 
         column_node->setColumnType(std::move(new_column_type));
 
-        auto tuple_element_function = FunctionFactory::instance().get("tupleElement", getContext());
-        function_node->resolveAsFunction(tuple_element_function->build(function_node->getArgumentColumns()));
+        auto function = FunctionFactory::instance().get(function_node->getFunctionName(), getContext());
+        function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
     }
 
 private:
@@ -455,7 +481,7 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
         }
     }
 
-    /// 3c: Update types of reference ColumnNodes, rewrite numeric indices, and re-resolve tupleElement functions.
+    /// 3c: Update types of reference ColumnNodes, rewrite numeric indices, and re-resolve tupleElement and getSubcolumn functions.
     UpdateArrayJoinReferenceTypesVisitor type_updater(context, usage_map);
     type_updater.visit(query_tree_node);
 }
