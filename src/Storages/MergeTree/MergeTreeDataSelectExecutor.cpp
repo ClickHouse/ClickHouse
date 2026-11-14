@@ -2,6 +2,7 @@
 #include <optional>
 #include <numeric>
 #include <DataTypes/DataTypeString.h>
+#include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
@@ -1465,7 +1466,39 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
         const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
-        auto process_part = [&](size_t part_index)
+        const bool use_primary_key_for_parts = use_primary_key && (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition);
+
+        /// The skip index reader also uses the RPN template at read time, when the `IN` sets cannot be built in place.
+        const bool prepare_key_condition_rpn_template = use_skip_indexes_for_disjunctions_ && key_condition_rpn_template && !skip_indexes.empty();
+
+        /// Generating a condition may execute an `IN` subquery: the conditions are prepared here, so that the parts are
+        /// analyzed with lookups only. The skip index ones are prepared only for the parts the primary key keeps.
+        const bool prepare_primary_key = use_primary_key_for_parts
+            && (key_condition->needsPreparation() || (part_offset_condition && part_offset_condition->needsPreparation())
+                || (total_offset_condition && total_offset_condition->needsPreparation()));
+        const bool prepare_skip_indexes_after_primary_key
+            = (prepare_key_condition_rpn_template && key_condition_rpn_template->needsPreparation())
+            || std::ranges::any_of(skip_indexes.useful_indices, [](const auto & index_and_condition)
+                { return index_and_condition.condition_template->needsPreparation(); });
+
+        if (prepare_primary_key)
+        {
+            Stopwatch watch;
+            for (const auto & ranges : parts_with_ranges)
+            {
+                if (query_status)
+                    query_status->checkTimeLimit();
+
+                key_condition->prepareForPart(ranges.data_part);
+                if (part_offset_condition)
+                    part_offset_condition->prepareForPart(ranges.data_part);
+                if (total_offset_condition)
+                    total_offset_condition->prepareForPart(ranges.data_part);
+            }
+            LOG_TRACE(log, "Prepared the primary key conditions for {} parts in {} ms", parts_with_ranges.size(), watch.elapsedMilliseconds());
+        }
+
+        auto filter_by_primary_key = [&](size_t part_index)
         {
             fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
 
@@ -1473,7 +1506,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
-            if (use_primary_key && (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition))
+            if (use_primary_key_for_parts)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
@@ -1486,9 +1519,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPart(ranges.data_part),
-                    part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
-                    total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
+                    key_condition->getForPart(ranges.data_part),
+                    part_offset_condition ? &part_offset_condition->getForPart(ranges.data_part) : nullptr,
+                    total_offset_condition ? &total_offset_condition->getForPart(ranges.data_part) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
@@ -1510,6 +1543,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             {
                 ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
             }
+        };
+
+        auto filter_by_skip_indexes = [&](size_t part_index)
+        {
+            if (query_status)
+                query_status->checkTimeLimit();
+
+            auto & ranges = parts_with_ranges[part_index];
 
             /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
             if (!skip_indexes.empty() && !ranges.ranges.empty())
@@ -1558,7 +1599,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
                 const KeyCondition * rpn_template_for_part
-                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->generateForPart(ranges.data_part) : nullptr;
+                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->getForPart(ranges.data_part) : nullptr;
 
                 PartialDisjunctionResult partial_eval_results;
                 if (rpn_template_for_part)
@@ -1595,7 +1636,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition_template->generateForPart(ranges.data_part),
+                            index_and_condition.condition_template->getForPart(ranges.data_part),
                             rpn_template_for_part,
                             part_info_for_reader,
                             ranges.ranges,
@@ -1680,15 +1721,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         };
 
-        LOG_TRACE(log, "Filtering marks by primary and secondary keys");
+        auto for_each_part = [&](const auto & process_part)
+        {
+            if (num_threads <= 1)
+            {
+                for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+                    process_part(part_index);
+                return;
+            }
 
-        if (num_threads <= 1)
-        {
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
-                process_part(part_index);
-        }
-        else
-        {
             /// Outlives `pool`, whose destructor joins the jobs that still read it when scheduling throws.
             std::atomic<size_t> next_part_index = 0;
 
@@ -1723,8 +1764,44 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             pool.wait();
-        }
+        };
 
+        LOG_TRACE(log, "Filtering marks by primary and secondary keys");
+
+        if (!prepare_skip_indexes_after_primary_key)
+        {
+            for_each_part([&](size_t part_index)
+            {
+                filter_by_primary_key(part_index);
+                filter_by_skip_indexes(part_index);
+            });
+        }
+        else
+        {
+            for_each_part(filter_by_primary_key);
+
+            Stopwatch watch;
+            size_t num_prepared_parts = 0;
+            for (const auto & ranges : parts_with_ranges)
+            {
+                if (ranges.ranges.empty())
+                    continue;
+
+                if (query_status)
+                    query_status->checkTimeLimit();
+
+                if (prepare_key_condition_rpn_template)
+                    key_condition_rpn_template->prepareForPart(ranges.data_part);
+
+                for (const auto & index_and_condition : skip_indexes.useful_indices)
+                    index_and_condition.condition_template->prepareForPart(ranges.data_part);
+
+                ++num_prepared_parts;
+            }
+            LOG_TRACE(log, "Prepared the skip index conditions for {} parts in {} ms", num_prepared_parts, watch.elapsedMilliseconds());
+
+            for_each_part(filter_by_skip_indexes);
+        }
     }
 
     /// merge top-N results if optimization is done

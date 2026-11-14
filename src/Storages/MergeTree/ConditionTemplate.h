@@ -31,6 +31,7 @@ class ConditionTemplate
     const Cond & setSubstituted(const std::string & cache_key, Cond && cond) const;
 
     const Cond & generateForPartition(const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const;
+    const Cond & getForPartition(const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const;
 
 public:
     using Factory = std::function<Cond(const ActionsDAG *, const ActionsDAG::Node *)>;
@@ -52,6 +53,16 @@ public:
     const Cond & generateForPart(const MergeTreeDataPartPtr & part) const;
     const Cond & generateForPart(const IMergeTreeDataPartInfoForReader & part_info) const;
 
+    /// Generating a condition may execute an `IN` subquery, so the planning thread calls `prepareForPart` for each part
+    /// before other threads call `getForPart`. If the filter has such a subquery, `getForPart` never generates: it returns
+    /// the condition prepared for the part's partition, else the unsubstituted one.
+    void prepareForPart(const MergeTreeDataPartPtr & part) const;
+    const Cond & getForPart(const MergeTreeDataPartPtr & part) const;
+    const Cond & getForPart(const IMergeTreeDataPartInfoForReader & part_info) const;
+
+    /// Whether `prepareForPart` generates anything: the filter has an `IN` subquery and is specialized per partition.
+    bool needsPreparation() const { return needs_preparation; }
+
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);
 
@@ -61,6 +72,7 @@ private:
     const StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
     const bool skip_folding;
+    const bool needs_preparation;
 
     mutable std::mutex mutex;
     mutable std::optional<Cond> unsubstituted;

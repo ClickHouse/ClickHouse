@@ -6098,6 +6098,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         if (!applicable_skip_indexes.empty())
         {
+            /// The reader runs on the read threads and only looks the conditions up.
+            for (const auto & ranges : result.parts_with_ranges)
+            {
+                if (indexes->use_skip_indexes_for_disjunctions && indexes->key_condition_rpn_template)
+                    indexes->key_condition_rpn_template->prepareForPart(ranges.data_part);
+                for (const auto & index_and_condition : applicable_skip_indexes.useful_indices)
+                    index_and_condition.condition_template->prepareForPart(ranges.data_part);
+            }
+
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
                 indexes->key_condition_rpn_template,
