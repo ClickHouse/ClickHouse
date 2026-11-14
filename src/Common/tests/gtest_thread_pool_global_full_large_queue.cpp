@@ -9,6 +9,11 @@
 #include <gtest/gtest.h>
 
 
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
@@ -85,6 +90,26 @@ TEST(ThreadPool, GlobalFullLargeQueue)
             direct_thread_threw = true;
         }
         EXPECT_TRUE(direct_thread_threw) << "a direct permanent thread with no free global-pool worker must throw";
+
+        /// A plain finite `ThreadFromGlobalPool` (such as the thread of `PullingAsyncPipelineExecutor`) may
+        /// wait in the queue behind ordinary jobs, but here no worker is ever going to be free for it, and its
+        /// creator would hang in `join`. So it must be rejected too.
+        bool plain_thread_threw = false;
+        try
+        {
+            ThreadFromGlobalPool plain_thread([] {});
+            /// The unfixed pool queued it: let it run before `join`, otherwise the test hangs.
+            release = true;
+            plain_thread.join();
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+            plain_thread_threw = true;
+        }
+        EXPECT_TRUE(plain_thread_threw) << "a plain finite thread with all global-pool workers held by permanent threads must throw";
+        if (!plain_thread_threw)
+            return;
 
         /// There is no thread left for a new one and there never will be while the jobs above run, so
         /// this has to fail instead of waiting for a thread that is never going to be free.

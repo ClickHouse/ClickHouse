@@ -487,12 +487,13 @@ struct ThreadFromGlobalPoolState
 
 enum class ThreadFromGlobalPoolScheduleMode : uint8_t
 {
-    /// An ordinary job of the global pool (`scheduleOrThrow`).
-    Queue,
     /// Takes a slot for a long-lived job, but may wait in the queue (`scheduleThreadOrQueueOrThrow`).
     ReserveSlot,
     /// Takes no slot, is rejected only when all of them are taken by long-lived jobs, and may wait in
-    /// the queue (`scheduleReturningThreadOrQueueOrThrow`).
+    /// the queue (`scheduleReturningThreadOrQueueOrThrow`). This is the default for a `ThreadFromGlobalPool`:
+    /// it lets a finite thread wait behind ordinary jobs, but does not queue it when the permanent threads
+    /// hold all the workers of the global pool, because then it would never start, and its creator would
+    /// wait for it (or hang in `join`) forever.
     QueueUnlessSlotsExhausted,
     /// Takes a slot for a long-lived job and a worker right away (`scheduleThreadOrThrow`).
     FailIfNoWorker,
@@ -526,7 +527,7 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
-        : ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode::Queue, std::forward<Function>(func), std::forward<Args>(args)...)
+        : ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted, std::forward<Function>(func), std::forward<Args>(args)...)
     {
     }
 

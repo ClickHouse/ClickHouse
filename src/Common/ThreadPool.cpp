@@ -2044,13 +2044,10 @@ void startThreadFromGlobalPool(
     {
         GlobalThreadPool::instance().scheduleThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
     }
-    else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted)
-    {
-        GlobalThreadPool::instance().scheduleReturningThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
-    }
     else
     {
-        GlobalThreadPool::instance().scheduleOrThrow(std::move(job), {}, 0, propagate_opentelemetry_context);
+        chassert(schedule_mode == ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted);
+        GlobalThreadPool::instance().scheduleReturningThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
     }
 }
 
