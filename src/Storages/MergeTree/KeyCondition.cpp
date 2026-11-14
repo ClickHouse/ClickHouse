@@ -1738,9 +1738,24 @@ KeyCondition::KeyCondition(
         return;
     }
 
+    auto key_subexpr_names = getAllSubexpressionNames(*key_expr_);
+
+    /// A key column whose value depends on a session setting the query sets differently from the
+    /// baseline the key was built under means something else in the predicate than in the stored key
+    /// (e.g. `tupleElement(h3ToGeo(h), 1)` is the latitude in the key and the longitude in the query
+    /// under `h3togeo_lon_lat_result_order = 1`). Matching it by name would prune away the rows the
+    /// runtime filter keeps, so such columns are hidden from the analysis and the condition over them
+    /// stays FUNCTION_UNKNOWN, i.e. a full scan of that key column. Partition pruning and the `minmax`
+    /// skip index build their condition here too, so this covers them as well.
+    for (const auto & name : getKeySubexpressionsWithSessionDependentValues(*key_expr_, context))
+    {
+        key_subexpr_names.erase(name);
+        key_columns.erase(name);
+    }
+
     auto info = BuildInfo {
         .key_expr = key_expr_,
-        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .key_subexpr_names = std::move(key_subexpr_names),
         .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
         .require_ready_sets = require_ready_sets_};
 

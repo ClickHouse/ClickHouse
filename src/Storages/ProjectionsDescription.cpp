@@ -47,6 +47,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -849,9 +850,10 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.query_ast = select_query->cloneToASTSelect();
 
     StoragePtr storage = createProjectionQuerySource(columns, MergeTreeData::createVirtuals(partition_key));
+    /// The aggregate states are filled from the key values of the parts, so resolve them like the keys.
     InterpreterSelectQuery select(
         result.query_ast,
-        query_context,
+        createKeyExpressionContext(query_context),
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
