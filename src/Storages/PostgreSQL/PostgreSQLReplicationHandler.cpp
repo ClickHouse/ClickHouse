@@ -1351,7 +1351,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
                 "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
                 "cannot be proven to belong to this engine's schema '{}'",
                 doubleQuoteString(legacy_publication_name), postgres_schema);
-        for (const auto & row : result)
+        for (const auto row : result)
         {
             if (row[0].as<std::string>() != postgres_schema)
             {
@@ -4051,7 +4051,7 @@ void PostgreSQLReplicationHandler::ensureCoordinatedSourceRelationsCompatible(pq
     pqxx::result result{tx.exec(query_str)};
 
     String local_relations;
-    for (const auto & row : result)
+    for (const auto row : result)
     {
         if (row[1].is_null())
             throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
