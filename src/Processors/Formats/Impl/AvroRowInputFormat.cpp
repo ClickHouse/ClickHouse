@@ -843,9 +843,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             size_t fixed_size = root_node->fixedSize();
             if (canBeDeserializedFromFixed(target_type, fixed_size))
             {
-                return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
+                return [tmp_fixed = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `avro::Decoder` returns and fills std::vector
                 {
-                    decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
+                    decoder.decodeFixed(fixed_size, tmp_fixed);
                     column.insertData(reinterpret_cast<const char *>(tmp_fixed.data()), tmp_fixed.size());
                     return true;
                 };

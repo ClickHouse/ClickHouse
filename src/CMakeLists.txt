@@ -1153,6 +1153,10 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 
+    if (TARGET ch_contrib::avrocpp)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::avrocpp)
+    endif()
+
     if (TARGET ch_contrib::arrow_ipc_metadata)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::arrow_ipc_metadata)
     endif()

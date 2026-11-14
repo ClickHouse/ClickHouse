@@ -2484,7 +2484,9 @@ void forEachAvroEntry(
             filename,
             static_cast<int>(reader.readerSchema().root()->type()));
 
-    avro::GenericDatum datum(reader.readerSchema());
+    /// The datum that is read into is shallow: constructing all of the datums of a schema from the file before reading the first
+    /// of them is exponential in the size of a schema whose records refer to a named record several times.
+    avro::GenericDatum datum(reader.readerSchema(), avro::ShallowTag());
     while (reader.read(datum))
         callback(datum);
 }
