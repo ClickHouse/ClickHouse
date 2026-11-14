@@ -936,7 +936,9 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     if (name.empty())
         return {};
 
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    /// Hold the database during the call. Otherwise a concurrent `DROP DATABASE` could destroy it.
+    auto database = DatabaseCatalog::instance().tryGetDatabase(name);
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(database.get()))
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();

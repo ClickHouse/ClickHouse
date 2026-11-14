@@ -58,6 +58,12 @@ public:
     /// Number of nodes to plan a query for, given the requested worker count.
     virtual size_t getPlanningNodeCount(size_t requested_workers) const = 0;
 
+    /// Returns a provider with the workers that are usable now, if the usable workers can change
+    /// while the provider lives (e.g. when a replica stops). A query takes it one time and then plans
+    /// with it and allocates from it, so both steps see the same workers. Null means that the query
+    /// uses this provider.
+    virtual std::shared_ptr<IStatelessWorkersProvider> tryGetQuerySnapshot() { return nullptr; }
+
     /// The token to present when dialing this provider's workers; empty when there is none.
     virtual std::string getAuthToken() const = 0;
 
