@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -540,6 +541,12 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     {
         auto nested = widenIntegerElements(array->getNestedType(), carrier);
         return nested ? std::make_shared<DataTypeArray>(nested) : nullptr;
+    }
+
+    if (const auto * fixed_array = typeid_cast<const DataTypeFixedArray *>(type.get()))
+    {
+        auto nested = widenIntegerElements(fixed_array->getNestedType(), carrier);
+        return nested ? std::make_shared<DataTypeFixedArray>(fixed_array->getArraySize(), nested) : nullptr;
     }
 
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -1179,6 +1186,32 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return have_unconvertible_element ? Field(Null()) : Field(res);
         }
     }
+    else if (const DataTypeFixedArray * type_fixed_array = typeid_cast<const DataTypeFixedArray *>(&type))
+    {
+        if (src.getType() == Field::Types::Array)
+        {
+            const Array & src_arr = src.safeGet<Array>();
+            size_t size = type_fixed_array->getArraySize();
+            if (src_arr.size() != size)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of array when converting to {}. Expected size: {}, actual size: {}",
+                    type.getName(), size, src_arr.size());
+
+            const auto & element_type = *(type_fixed_array->getNestedType());
+            bool have_unconvertible_element = false;
+            Array res(size);
+            for (size_t i = 0; i < size; ++i)
+            {
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                /// The same as for Array above.
+                if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_arr[i].isNull())))
+                    have_unconvertible_element = true;
+            }
+
+            return have_unconvertible_element ? Field(Null()) : Field(res);
+        }
+    }
     else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
     {
         if (src.getType() == Field::Types::Tuple)
@@ -1510,7 +1543,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         /// A composite or `Variant` type cannot be promoted, so its integer leaves are parsed at their own width.
-        const bool parse_composite = which_type.isArray() || which_type.isTuple() || which_type.isMap() || which_type.isVariant();
+        const bool parse_composite = which_type.isArray() || which_type.isFixedArray() || which_type.isTuple() || which_type.isMap() || which_type.isVariant();
         std::optional<FormatSettings> composite_settings;
         if (parse_composite)
         {
@@ -1607,7 +1640,7 @@ Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type,
         return {};
 
     const WhichDataType which(removeNullable(type));
-    if (!which.isArray() && !which.isTuple() && !which.isMap())
+    if (!which.isArray() && !which.isFixedArray() && !which.isTuple() && !which.isMap())
         return {};
 
     for (auto carrier : {WideIntegerCarrier::SameSignedness, WideIntegerCarrier::SignedExceptUInt256, WideIntegerCarrier::Signed,

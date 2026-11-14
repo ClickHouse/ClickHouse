@@ -4,6 +4,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -279,8 +280,9 @@ bool equalsMatchesSeveralValues(
         return false;
     constant = removeNullable(constant->convertToFullColumnIfLowCardinality());
 
-    auto column_type = removeLowCardinalityAndNullable(column_type_with_wrappers);
-    auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
+    /// `equals` compares `FixedArray` values as `Array` (see `FunctionBaseFixedArrayAdaptor`), so check them as `Array`.
+    auto column_type = recursiveRemoveFixedArray(removeLowCardinalityAndNullable(column_type_with_wrappers));
+    auto constant_type = recursiveRemoveFixedArray(removeLowCardinalityAndNullable(constant_type_with_wrappers));
 
     /// The type of the value that a `Variant` or `Dynamic` constant holds is in the value, not in `constant_type`.
     if (const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(constant.get()))

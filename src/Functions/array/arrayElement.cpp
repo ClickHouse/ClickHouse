@@ -7,12 +7,15 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/LowCardinalityValueIndex.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
+#include <Functions/FunctionFixedArrayAdaptor.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -121,6 +124,8 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForDynamic() const override { return true; }
     bool useDefaultImplementationForVariant() const override { return true; }
+    /// `FixedArray` is processed as `Array` only at the first level, see `removeFixedArrayFromArguments`.
+    bool useDefaultImplementationForFixedArray() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -3018,9 +3023,36 @@ String FunctionArrayElement<mode>::getName() const
     return name;
 }
 
-template <ArrayElementExceptionMode mode>
-DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & arguments) const
+namespace
 {
+
+/** The source `FixedArray(N, T)` is processed as `Array(T)`, without converting `T`: the element of a multidimensional
+  * `FixedArray` is a `FixedArray`. The conversion does not copy the elements. The array of indices is converted entirely.
+  */
+DataTypes removeFixedArrayFromArguments(const DataTypes & arguments)
+{
+    return {removeOuterFixedArray(arguments[0]), recursiveRemoveFixedArray(arguments[1])};
+}
+
+std::optional<ColumnsWithTypeAndName> removeFixedArrayFromArguments(const ColumnsWithTypeAndName & arguments)
+{
+    if (!isFixedArray(arguments[0].type) && recursiveRemoveFixedArray(arguments[1].type).get() == arguments[1].type.get())
+        return {};
+
+    ColumnsWithTypeAndName res{removeOuterFixedArray(arguments[0]), arguments[1]};
+    res[1].type = recursiveRemoveFixedArray(res[1].type);
+    if (res[1].column)
+        res[1].column = recursiveRemoveFixedArray(res[1].column);
+    return res;
+}
+
+}
+
+template <ArrayElementExceptionMode mode>
+DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & arguments_maybe_fixed_array) const
+{
+    const DataTypes arguments = removeFixedArrayFromArguments(arguments_maybe_fixed_array);
+
     /// `useDefaultImplementationForNulls` is disabled for the whole overload set because of QBit
     /// (see executeImpl). Reproduce the type of the default adapter for a NULL literal argument.
     /// This convention holds for every source type, QBit included.
@@ -3260,6 +3292,9 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    if (auto arguments_without_fixed_array = removeFixedArrayFromArguments(arguments))
+        return executeImpl(*arguments_without_fixed_array, result_type, input_rows_count);
+
     /// A replicated column can arrive in either position.
     if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
         || typeid_cast<const ColumnReplicated *>(arguments[1].column.get()))

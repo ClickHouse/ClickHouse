@@ -31,6 +31,7 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForFixedArray() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

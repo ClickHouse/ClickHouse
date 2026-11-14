@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -180,6 +181,28 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
                 const auto & from_type_array = assert_cast<const DataTypeArray &>(*from_type);
                 const auto & to_type_array = assert_cast<const DataTypeArray &>(*to_type_unwrapped);
                 return canBeSafelyCast(from_type_array.getNestedType(), to_type_array.getNestedType());
+            }
+
+            if (to_which_type.isString())
+                return true;
+
+            return false;
+        }
+        case TypeIndex::FixedArray:
+        {
+            const auto & from_type_fixed_array = assert_cast<const DataTypeFixedArray &>(*from_type);
+
+            if (to_which_type.isFixedArray())
+            {
+                const auto & to_type_fixed_array = assert_cast<const DataTypeFixedArray &>(*to_type_unwrapped);
+                return from_type_fixed_array.getArraySize() == to_type_fixed_array.getArraySize()
+                    && canBeSafelyCast(from_type_fixed_array.getNestedType(), to_type_fixed_array.getNestedType());
+            }
+
+            if (to_which_type.isArray())
+            {
+                const auto & to_type_array = assert_cast<const DataTypeArray &>(*to_type_unwrapped);
+                return canBeSafelyCast(from_type_fixed_array.getNestedType(), to_type_array.getNestedType());
             }
 
             if (to_which_type.isString())

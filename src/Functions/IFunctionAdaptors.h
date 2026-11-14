@@ -206,6 +206,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForSparseColumns() const override { return function->useDefaultImplementationForSparseColumns(); }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
+    bool useDefaultImplementationForFixedArray() const override { return function->useDefaultImplementationForFixedArray(); }
     bool useDefaultImplementationForDynamic() const override { return function->useDefaultImplementationForDynamic(); }
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return function->getReturnTypeForDefaultImplementationForDynamic(); }
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override { return function->getReturnTypeForDefaultImplementationForDynamic(arguments); }

@@ -902,6 +902,50 @@ Values (2 strings, 4 bytes total):
 
 That comes to 24 (outer offsets) + 24 (middle offsets) + 20 (values) = 68 bytes.
 
+#### FixedArray(N, T) {#fixedarray}
+
+Type string: `FixedArray(N, InnerType)` or, for a multidimensional array, `FixedArray(N1, N2, ..., InnerType)`. Examples: `FixedArray(3, UInt8)`, `FixedArray(4, Float32)`, `FixedArray(2, 3, UInt8)`, `FixedArray(2, String)`.
+`N` is a positive integer, and every row has exactly `N` elements. The server always writes the type string of a multidimensional array in the second form; `FixedArray(N, M, T)` and `FixedArray(N, FixedArray(M, T))` are the same type with the same wire layout.
+
+Unlike [Array](#array), there is **no offsets stream**: the size of every row is known from the type. The wire layout is the inner [prefix phase](#composite-types) (empty unless the inner type is versioned) followed by a single values stream:
+
+```text
+[inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
+[values stream]               inner type's encoding for num_rows × N values
+```
+
+The elements of row `R` are the values `[R × N, (R + 1) × N)` of the values stream. A multidimensional array is encoded recursively: the values stream of `FixedArray(N, M, T)` is the encoding of `FixedArray(M, T)` for `num_rows × N` rows, so it is the encoding of `T` for `num_rows × N × M` values, in the row-major order (the last dimension changes fastest). There are no bytes between rows or dimensions.
+
+An empty column (`num_rows == 0`) writes zero bytes, apart from the inner prefix phase. A decoder must reject a values stream whose number of values is not a multiple of `N`.
+
+`FixedArray(3, UInt16)` with rows `[[1, 2, 3], [4, 5, 6]]` (12 bytes total):
+
+```text
+Values (6 × UInt16 LE = 12 bytes):
+01 00 02 00 03 00            row 0: 1, 2, 3
+04 00 05 00 06 00            row 1: 4, 5, 6
+```
+
+`FixedArray(2, 2, UInt8)` with rows `[[[1, 2], [3, 4]], [[5, 6], [7, 8]]]` (8 bytes total):
+
+```text
+Values (8 × UInt8 = 8 bytes):
+01 02 03 04                  row 0: [1, 2], [3, 4]
+05 06 07 08                  row 1: [5, 6], [7, 8]
+```
+
+`FixedArray(2, String)` with rows `[["a", "bb"], ["", "c"]]` (9 bytes total):
+
+```text
+Values (4 strings):
+01 'a'                       row 0, element 0: "a"
+02 'b' 'b'                   row 0, element 1: "bb"
+00                           row 1, element 0: ""
+01 'c'                       row 1, element 1: "c"
+```
+
+`FixedArray(2, LowCardinality(String))` follows the [prefix phase](#composite-types) rule: the `LowCardinality` state prefix comes first, then the `LowCardinality` payload for `num_rows × 2` values. `FixedArray` may be nested in `Array`, `Tuple` and `Map`, and may contain `Nullable` elements, but it cannot be inside `Nullable` itself.
+
 #### Tuple(T1, T2, ...) {#tuple}
 
 Type string: `Tuple(T1, T2, ..., Tn)`. Examples: `Tuple(UInt32, String)`, `Tuple(Int32)`, `Tuple(Array(UInt32), String)`, `Tuple(UInt8, Tuple(Int32, String))`. ClickHouse also supports **named tuples** via `Tuple(a UInt32, b String)`; names are metadata only and do not affect the wire format.

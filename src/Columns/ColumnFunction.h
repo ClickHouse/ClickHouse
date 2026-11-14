@@ -201,6 +201,9 @@ public:
     /// Create copy of this column, but with recursively_convert_result_to_full_column_if_low_cardinality = true
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
 
+    /// Create copy of this column, but with recursively_remove_fixed_array_from_result = true
+    ColumnPtr recursivelyRemoveFixedArrayFromResult() const;
+
     const FunctionBasePtr & getFunction() const { return function; }
     const ShortCircuitArgumentStatisticsPtr & getShortCircuitArgumentStatistics() const { return short_circuit_argument_statistics; }
     const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
@@ -222,6 +225,12 @@ private:
     /// It's used when short-circuit function uses default implementation
     /// for low cardinality arguments.
     bool recursively_convert_result_to_full_column_if_low_cardinality = false;
+
+    /// Special flag for lazy executed argument for short-circuit function.
+    /// If true, call `recursiveRemoveFixedArray` on the result column when the function is executed.
+    /// It's used when a function that does not support `FixedArray` gets the arguments converted to `Array`,
+    /// see `FunctionBaseFixedArrayAdaptor`: the lazy argument must produce the type that it advertises.
+    bool recursively_remove_fixed_array_from_result = false;
 
     /// Determine if passed function is compiled. Used for profiling.
     bool is_function_compiled;

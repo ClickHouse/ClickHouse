@@ -23,6 +23,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -6105,6 +6106,8 @@ private:
     WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const;
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
+
+    WrapperType createFixedArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeFixedArray & to_type) const;
 
     using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
 

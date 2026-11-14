@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -963,6 +964,11 @@ DimensionsRange getNumberOfDimensionsForCast(const IDataType & type)
         const DimensionsRange nested = getNumberOfDimensionsForCast(*type_array->getNestedType());
         return {nested.min + 1, nested.max + 1};
     }
+    if (const auto * type_fixed_array = typeid_cast<const DataTypeFixedArray *>(&type))
+    {
+        const DimensionsRange nested = getNumberOfDimensionsForCast(*type_fixed_array->getNestedType());
+        return {nested.min + 1, nested.max + 1};
+    }
     if (typeid_cast<const DataTypeMap *>(&type))
         return {0, 1};
     return {0, 0};
@@ -1041,6 +1047,21 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
         return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
         {
             return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, settings);
+        };
+    }
+
+    /// FixedArray is converted as an Array with the same elements.
+    if (const auto * from_type_fixed_array = checkAndGetDataType<DataTypeFixedArray>(from_type_untyped.get()))
+    {
+        auto from_array_type = std::make_shared<DataTypeArray>(from_type_fixed_array->getNestedType());
+        auto array_wrapper = createArrayWrapper(from_array_type, to_type);
+
+        return [array_wrapper, from_array_type](
+            ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+        {
+            const auto & column_fixed_array = assert_cast<const ColumnFixedArray &>(*arguments.front().column);
+            ColumnsWithTypeAndName array_arguments{{column_fixed_array.convertToArray(), from_array_type, arguments.front().name}};
+            return array_wrapper(array_arguments, result_type, nullable_source, input_rows_count);
         };
     }
 
@@ -1127,6 +1148,58 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
                 "Illegal column {} for function CAST AS Array",
                 argument_column.column->getName());
         }
+    };
+}
+
+FunctionCast::WrapperType FunctionCast::createFixedArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeFixedArray & to_type) const
+{
+    /// Conversion from String through parsing. The parser checks the number of elements.
+    if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
+    {
+        return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
+        {
+            return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, settings);
+        };
+    }
+
+    size_t n = to_type.getArraySize();
+
+    if (const auto * from_type_fixed_array = checkAndGetDataType<DataTypeFixedArray>(from_type_untyped.get()))
+    {
+        if (from_type_fixed_array->getArraySize() != n)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "CAST AS FixedArray can only be performed between FixedArray types of the same size, got {} and {}",
+                from_type_untyped->getName(), to_type.getName());
+
+        auto nested_function = prepareUnpackDictionaries(from_type_fixed_array->getNestedType(), to_type.getNestedType());
+        return [nested_function, from_nested_type = from_type_fixed_array->getNestedType(), to_nested_type = to_type.getNestedType(), n](
+            ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
+        {
+            const auto & column_fixed_array = assert_cast<const ColumnFixedArray &>(*arguments.front().column);
+            ColumnsWithTypeAndName nested_columns{{column_fixed_array.getDataPtr(), from_nested_type, ""}};
+            auto result_column = nested_function(nested_columns, to_nested_type, nullptr, column_fixed_array.getData().size());
+            return ColumnFixedArray::create(result_column, n);
+        };
+    }
+
+    /// Everything else is converted to Array of the same elements, which is then checked to have the fixed size.
+    auto array_type = std::make_shared<DataTypeArray>(to_type.getNestedType());
+    auto array_wrapper = createArrayWrapper(from_type_untyped, *array_type);
+
+    return [array_wrapper, array_type, n](
+        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+    {
+        auto result = array_wrapper(arguments, array_type, nullable_source, input_rows_count);
+        const auto & column_array = assert_cast<const ColumnArray &>(*result);
+        const auto & offsets = column_array.getOffsets();
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            size_t size = offsets[i] - offsets[i - 1];
+            if (size != n)
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Cannot convert array of size {} to FixedArray({}, ...): the sizes don't match", size, n);
+        }
+        return ColumnFixedArray::create(column_array.getDataPtr(), n);
     };
 }
 
@@ -3542,6 +3615,8 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN(), requested_result_is_nullable);
         case TypeIndex::Array:
             return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
+        case TypeIndex::FixedArray:
+            return createFixedArrayWrapper(from_type, static_cast<const DataTypeFixedArray &>(*to_type));
         case TypeIndex::Tuple:
             return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
         case TypeIndex::QBit:

@@ -1,4 +1,5 @@
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/Resolve/EinsumLambdaRewrite.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/FunctionCompositionRewrite.h>
@@ -1418,6 +1419,34 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             array_function_node->setAlias(node->getAlias());
             array_function_node->setOriginalAST(node->getOriginalAST());
             node = std::move(array_function_node);
+            return resolveFunction(node, scope, allow_niladic_functions);
+        }
+    }
+
+    /// The lambda form of `einsum` with the indices as the arguments of the lambda is rewritten to the form with subscripts.
+    if (function_name == "einsum"
+        && !function_node_ptr->isWindowFunction()
+        && function_node_ptr->getParameters().getNodes().empty()
+        && !function_node_ptr->getArguments().getNodes().empty()
+        && function_node_ptr->getArguments().getNodes().front()->getNodeType() == QueryTreeNodeType::LAMBDA)
+    {
+        ScopedFunctionLookup is_scoped_function = [&](const String & name)
+        {
+            return tryResolveIdentifier({Identifier{name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
+        };
+        /// A lambda function bound to the name `einsum` in the query, like `WITH f -> ... AS einsum`, is called as usual.
+        if (!is_scoped_function(function_name))
+        {
+            /// The same order of lookup as for a call below: a lambda function in the scope, then a SQL user defined function.
+            ScopedFunctionLookup get_called_lambda = [&](const String & name) -> QueryTreeNodePtr
+            {
+                if (auto scoped_function = is_scoped_function(name))
+                    return scoped_function;
+                if (auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(name))
+                    return tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
+                return nullptr;
+            };
+            node = rewriteEinsumLambda(*function_node_ptr, is_scoped_function, get_called_lambda);
             return resolveFunction(node, scope, allow_niladic_functions);
         }
     }

@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -78,6 +79,11 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         {
             const auto & data_type_array = static_cast<const DataTypeArray &>(data_type);
             return isSafePrimaryDataKeyType(*data_type_array.getNestedType());
+        }
+        case TypeIndex::FixedArray:
+        {
+            const auto & data_type_fixed_array = static_cast<const DataTypeFixedArray &>(data_type);
+            return isSafePrimaryDataKeyType(*data_type_fixed_array.getNestedType());
         }
         case TypeIndex::Tuple:
         {

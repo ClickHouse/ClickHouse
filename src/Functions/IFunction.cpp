@@ -1,5 +1,8 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Functions/FunctionVariantAdaptor.h>
+#include <Functions/FunctionFixedArrayAdaptor.h>
+#include <DataTypes/DataTypeFixedArray.h>
+#include <DataTypes/DataTypeFunction.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -891,6 +894,10 @@ int IFunction::getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
+    if (useDefaultImplementationForFixedArray())
+        if (auto converted_arguments = FunctionBaseFixedArrayAdaptor::convertArguments(arguments))
+            return getReturnType(*converted_arguments);
+
     if (useDefaultImplementationForLowCardinalityColumns())
     {
         bool has_low_cardinality = false;
@@ -937,6 +944,25 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
     FunctionBasePtr base;
+
+    /// Use FunctionBaseFixedArrayAdaptor if default implementation for FixedArray is enabled and we have FixedArray in arguments.
+    /// It goes first, so that the other default implementations work with the converted arguments.
+    if (useDefaultImplementationForFixedArray())
+    {
+        if (auto converted_arguments = FunctionBaseFixedArrayAdaptor::convertArguments(arguments))
+        {
+            checkNumberOfArguments(arguments.size());
+
+            DataTypes argument_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                argument_types[i] = arguments[i].type;
+
+            base = std::make_shared<FunctionBaseFixedArrayAdaptor>(build(*converted_arguments), std::move(argument_types));
+            if (factory_handle)
+                base->setFactoryHandle(factory_handle);
+            return base;
+        }
+    }
 
     /// Use FunctionBaseDynamicAdaptor if default implementation for Dynamic is enabled and we have Dynamic type in arguments.
     if (useDefaultImplementationForDynamic())
@@ -993,6 +1019,24 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const
 {
     checkNumberOfArguments(arguments.size());
+
+    if (useDefaultImplementationForFixedArray())
+    {
+        /// The lambdas are resolved for the same arguments as the function is built for, see `build`.
+        /// Only the types of lambdas are returned back, other arguments are left as they are.
+        DataTypes converted_arguments = arguments;
+        for (auto & argument : converted_arguments)
+            if (argument)
+                argument = recursiveRemoveFixedArray(argument);
+
+        getLambdaArgumentTypesImpl(converted_arguments);
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+            if (typeid_cast<const DataTypeFunction *>(converted_arguments[i].get()))
+                arguments[i] = converted_arguments[i];
+        return;
+    }
+
     getLambdaArgumentTypesImpl(arguments);
 }
 

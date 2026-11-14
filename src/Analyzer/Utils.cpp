@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -30,6 +31,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
@@ -1923,6 +1925,17 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             for (size_t i = start; i < end; ++i)
                 elements.push_back(columnConstantToExactLiteralASTImpl(nested_column, i, nested_type, date_time_as_numbers));
             return makeASTFunctionFromList("array", std::move(elements));
+        }
+        case TypeIndex::FixedArray:
+        {
+            const auto & fixed_array_column = assert_cast<const ColumnFixedArray &>(*column);
+            const auto & nested_type = assert_cast<const DataTypeFixedArray &>(*type).getNestedType();
+            const auto & nested_column = fixed_array_column.getDataPtr();
+            size_t n = fixed_array_column.getArraySize();
+            ASTs elements;
+            for (size_t i = row * n; i < (row + 1) * n; ++i)
+                elements.push_back(columnConstantToExactLiteralASTImpl(nested_column, i, nested_type, date_time_as_numbers));
+            return makeASTFunction("_CAST", makeASTFunctionFromList("array", std::move(elements)), make_intrusive<ASTLiteral>(type->getName()));
         }
         case TypeIndex::Tuple:
         {

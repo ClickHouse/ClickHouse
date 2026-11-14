@@ -1,6 +1,7 @@
 #include <Functions/array/emptyArrayToSingle.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFixedArrayAdaptor.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -330,8 +331,19 @@ namespace
     }
 }
 
-ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
+    ColumnsWithTypeAndName converted_arguments;
+    converted_arguments.reserve(arguments.size());
+    for (const auto & argument : arguments)
+        converted_arguments.push_back(removeOuterFixedArray(argument));
+    return IFunction::getReturnTypeImpl(converted_arguments);
+}
+
+ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & original_arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    const ColumnsWithTypeAndName arguments{removeOuterFixedArray(original_arguments.at(0))};
+
     if (auto res = FunctionEmptyArrayToSingleImpl::executeConst(arguments, result_type, input_rows_count))
         return res;
 

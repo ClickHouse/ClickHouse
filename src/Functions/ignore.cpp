@@ -41,6 +41,7 @@ public:
     /// We should never return LowCardinality result, cause we declare that result is always constant zero.
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForFixedArray() const override { return false; }
 
     bool useDefaultImplementationForSparseColumns() const override { return false; }
 

@@ -14,6 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
@@ -1060,6 +1061,7 @@ template class IColumnHelper<ColumnLowCardinality, IColumn>;
 template class IColumnHelper<ColumnNullable, IColumn>;
 template class IColumnHelper<ColumnConst, IColumn>;
 template class IColumnHelper<ColumnArray, IColumn>;
+template class IColumnHelper<ColumnFixedArray, IColumn>;
 template class IColumnHelper<ColumnTuple, IColumn>;
 template class IColumnHelper<ColumnQBit, IColumn>;
 template class IColumnHelper<ColumnMap, IColumn>;
