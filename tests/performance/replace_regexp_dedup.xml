@@ -1,0 +1,74 @@
+<test>
+    <!-- The result cache of ReplaceRegexpImpl is used only on the RE2 path, so the JIT is disabled. -->
+    <settings>
+        <min_count_to_compile_regular_expression>1000000000</min_count_to_compile_regular_expression>
+    </settings>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(Referer, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
+    <!-- FixedString haystacks have their own entry point. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(toFixedString(substring(Referer, 1, 64), 64), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
+    <!-- No row starts with the literal after '^'. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^missing', 'X'))</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^missing', 'X'))</query>
+
+    <!-- The same in short blocks. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^missing', 'X')) SETTINGS max_block_size = 100</query>
+
+    <!-- In each block, distinct rejected rows followed by distinct matching rows. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(if(number % 100000 &lt; 25000, 'nonmatching:', 'https://example.com/'), toString(number)), '^https?://([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 100000</query>
+
+    <!-- The same with a shorter matching run. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(if(number % 32000 &lt; 25000, 'nonmatching:', 'https://example.com/'), toString(number)), '^https?://([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 32000</query>
+
+    <!-- Short rejected rows with a long matching row every 64th. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(if(number % 64 = 0, concat('https://example.com/', repeat('longpathcomponent/', 100)), concat('nonmatching:', toString(number))), '^https?://([^/]+)/.*$', '\\1'))</query>
+
+    <!-- One repeated haystack. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '^missing', 'X'))</query>
+
+    <!-- The same with a reject that scans the whole haystack. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '[0-9]{{50}}', 'X'))</query>
+
+    <!-- A cycle of ten haystacks with a reject that scans the whole haystack. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '[0-9]{{50}}', 'X'))</query>
+
+    <!-- Distinct haystacks sharing a long prefix. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example.com/', repeat('longpathcomponent/', 100), leftPad(toString(number), 7, '0')), '^missing', 'X'))</query>
+
+    <!-- The same with a match that settles at the first bytes. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example.com/', repeat('longpathcomponent/', 100), leftPad(toString(number), 7, '0')), '^https', 'X'))</query>
+
+    <!-- Distinct haystacks. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
+    <!-- The same in short blocks. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 500</query>
+
+    <!-- In each block, one repeated haystack followed by distinct ones. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 4000 &lt; 400, 'https://example.com/path/repeated', concat('https://example.com/path/', toString(number))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 4000</query>
+
+    <!-- In each block, distinct haystacks followed by a cycle of four. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 2000 &lt; 256, concat('https://example.com/path/', toString(number)), concat('https://example.com/path/', toString(number % 4))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 2000</query>
+
+    <!-- In each block, distinct haystacks followed by one repeated haystack. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 500 &lt; 256, concat('https://example.com/path/', toString(number)), 'https://example.com/path/repeated'), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 500</query>
+
+    <!-- In each block, distinct haystacks followed by a cycle of nine. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 2000 &lt; 256, concat('https://example.com/path/', toString(number)), concat('https://example.com/path/', toString(number % 9))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 2000</query>
+
+    <!-- A regexp that is cheaper than hashing the long, mostly distinct haystacks, in long and in short blocks. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(toString(if(number % 100 &lt; 85, number, number % 3)), repeat('abcdefghij', 200)), '^[a-z]', 'X'))</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(replaceRegexpOne(concat(toString(number), repeat('abcdefghij', 400)), '^[a-z]', 'X')) SETTINGS max_block_size = 100</query>
+
+    <!-- A cycle of ten haystacks with a reject that is cheaper than hashing them. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^https?://missing', 'X'))</query>
+
+    <!-- A long matching row every 64th for an unanchored pattern. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(if(number % 64 = 0, concat('https://example.com/', repeat('longpathcomponent/', 100)), concat('nonmatching:', toString(number))), 'https?://([^/]+)/.*$', '\\1'))</query>
+
+    <!-- The same for a pattern anchored with '^' and with captures, but without a literal prefix. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(if(number % 64 = 0, concat('https://example.com/', repeat('longpathcomponent/', 100), toString(number)), concat('nonmatching:', toString(number))), '^([a-z]+)://([^/]+)/.*$', ''))</query>
+</test>
