@@ -1,0 +1,4 @@
+rabbitmq_address = 'amqp://host:5672/x\'y\\z'	1
+SETTINGS after_processing_move_connection_string = 'x\'y\\z'	1
+SETTINGS nats_url = 'x\'y\\z'	1
+SETTINGS rabbitmq_address = 'x\'y\\z'	1
