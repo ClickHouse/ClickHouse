@@ -7,8 +7,6 @@ sidebarTitle: 'Консоль ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Сервисы в ClickHouse Cloud поставляются со встроенными компонентами мониторинга, которые дают пользователям доступ к панелям мониторинга и уведомлениям. По умолчанию все пользователи в консоли ClickHouse Cloud имеют доступ к этим панелям мониторинга.
 
 <div id="dashboards">
@@ -68,7 +66,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Эта панель мониторинга — измененная версия [встроенной панели расширенной обсервабилити](/ru/products/cloud/features/monitoring/advanced-dashboard), где каждая серия показывает метрики по каждой реплике. Эта панель мониторинга полезна для мониторинга и устранения неполадок, связанных с ClickHouse.
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard в ClickHouse Cloud" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Advanced dashboard в ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
   ClickHouse Cloud собирает и хранит метрики, отображаемые на этой панели мониторинга, из системных таблиц, поэтому их можно просматривать, даже когда сервис переведен в неактивное состояние. Доступ к этим метрикам не отправляет запрос к самому сервису и не выводит неактивные сервисы из этого состояния.
@@ -115,7 +121,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 После выбора сервиса пункт **Monitoring** на левой боковой панели раскрывается, и в нем появляется подпункт **Query insights**:
 
-<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Обзор интерфейса Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Обзор интерфейса Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="top-level-metrics">
   ### Метрики верхнего уровня
@@ -123,7 +137,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Сводные блоки со статистикой в верхней части показывают основные метрики запросов за выбранный период времени. Ниже графики временных рядов отображают объем запросов, задержку и долю ошибок с разбивкой по типу запросов (select, insert, other). График задержки можно настроить для отображения задержек p50, p90 и p99:
 
-<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="График задержки Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![График задержки Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</Frame>
+
+</div>
 
 <div id="recent-queries">
   ### Недавние запросы
@@ -131,7 +153,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В таблице отображаются записи журнала запросов, сгруппированные по нормализованному хэшу запроса и пользователю в выбранном временном диапазоне. Недавние запросы можно фильтровать и сортировать по любому доступному полю, а также настраивать отображение дополнительных полей, таких как таблицы и задержки p90 и p99:
 
-<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Таблица недавних запросов Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Таблица недавних запросов Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
+
+</Frame>
+
+</div>
 
 <div id="query-drill-down">
   ### Детализация запроса
@@ -139,11 +169,27 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 При выборе запроса из таблицы **Recent queries** откроется выдвижная панель с метриками и информацией по выбранному запросу:
 
-<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Интерфейс Query Insights: детализация запроса" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Интерфейс Query Insights: детализация запроса](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</Frame>
+
+</div>
 
 Все метрики на вкладке **Query info** являются агрегированными, но также можно просматривать метрики отдельных запусков, выбрав вкладку **Query history**:
 
-<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Интерфейс Query Insights: информация о запросе" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![Интерфейс Query Insights: информация о запросе](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</Frame>
+
+</div>
 
 На этой панели для каждого запуска запроса можно развернуть элементы `Settings` и `Profile Events`, чтобы увидеть дополнительную информацию.
 

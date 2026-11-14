@@ -1,0 +1,27 @@
+startsWith, % at the end	[1,12]
+startsWith, % at the end	[1,12]
+endsWith, % at the start	[5]
+endsWith, % at the start	[5]
+LIKE with an escaped %	[1,12]
+LIKE with an escaped %	[1,12]
+startsWith, % at the start	[6]
+startsWith, % at the start	[6]
+endsWith, % at the end	[8,12]
+endsWith, % at the end	[8,12]
+startsWith, _	[9]
+startsWith, _	[9]
+endsWith, _	[9]
+endsWith, _	[9]
+startsWith, backslash at the end	[11]
+startsWith, backslash at the end	[11]
+endsWith, backslash at the end	[13]
+endsWith, backslash at the end	[13]
+startsWith, % at the end	1	0
+endsWith, % at the start	1	0
+LIKE with an escaped %	1	0
+startsWith, % at the start	1	0
+endsWith, % at the end	1	0
+startsWith, _	1	0
+endsWith, _	1	0
+startsWith, backslash at the end	1	0
+endsWith, backslash at the end	1	0
