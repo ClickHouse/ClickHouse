@@ -93,7 +93,9 @@ void ReadManager::init(
 
     row_groups_to_read = std::move(row_groups_to_read_);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
-    reader.preparePrewhere();
+    /// The PREWHERE steps are used only to read row groups.
+    if (!reader.row_groups.empty())
+        reader.preparePrewhere();
 
     /// The row groups of other buckets of a split file are neither read nor pruned by this reader. Otherwise,
     /// the row groups not in the bucket count as pruned, e.g. the ones the query condition cache knows to
