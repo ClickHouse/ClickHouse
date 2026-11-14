@@ -1,0 +1,4 @@
+CREATE TABLE t (`col` Tuple(CPU, double, Memory double)) ENGINE = Memory
+SELECT CAST((1, 2), \'Tuple(a UInt8, UInt8)\')
+SELECT CAST((1, 2), \'Tuple(a UInt8, b UInt8)\')
+SELECT CAST((1, 2), \'Tuple(UInt8, UInt8)\')
