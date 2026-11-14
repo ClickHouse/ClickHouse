@@ -407,7 +407,7 @@ template <is_decimal T>
 bool ColumnDecimal<T>::tryInsert(const Field & x)
 {
     DecimalField<T> value;
-    if (!x.tryGet<DecimalField<T>>(value))
+    if (!x.tryGet<DecimalField<T>>(value) || value.getScale() != scale)
         return false;
     data.push_back(value);
     return true;
