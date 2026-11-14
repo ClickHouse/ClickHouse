@@ -8,6 +8,8 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
+#include <span>
+
 namespace DB
 {
 
@@ -124,6 +126,8 @@ private:
     PODArray<UInt64> current_page_values;
     Arena arena;
     size_t num_values = 0;
+    /// The i-th value is the first value plus i, across all pages.
+    bool is_contiguous = true;
 
 public:
     /// @param val The _part_offset value to insert (must be greater than all previously inserted values)
@@ -151,10 +155,16 @@ public:
         /// key, or a table without one - inserts consecutive runs, which span exactly size() - 1.
         if (current_page_values.back() - current_page_values.front() == current_page_values.size() - 1)
         {
+            /// Only the last page can be incomplete, so pages.size() * PACKED_PAGE_SIZE values precede this one.
+            if (!pages.empty() && current_page_values.front() != pages.front().min_val + (pages.size() * PACKED_PAGE_SIZE))
+                is_contiguous = false;
+
             pages.emplace_back(current_page_values.front(), current_page_values.size());
             current_page_values.clear();
             return;
         }
+
+        is_contiguous = false;
 
         size_t bits_per_val = 64 - getLeadingZeroBits(current_page_values.back() - current_page_values.front());
         chassert(bits_per_val >= 1);
@@ -175,6 +185,55 @@ public:
         chassert(page_pos < pages.size());
         size_t page_idx = i & PACKED_PAGE_MASK;
         return pages[page_pos][page_idx];
+    }
+
+    /// Replaces every offset with its value, as operator[] does. Offsets must be less than size(), values must fit into UInt32.
+    void mapOffsets(std::span<UInt32> offsets) const
+    {
+        if (offsets.empty())
+            return;
+
+        chassert(!pages.empty());
+
+        if (is_contiguous)
+        {
+            const UInt32 delta = static_cast<UInt32>(pages.front().min_val);
+            for (UInt32 & offset : offsets)
+                offset += delta;
+            return;
+        }
+
+        static constexpr size_t min_offsets_per_page_for_runs = 32;
+        const size_t first_page = offsets.front() >> PACKED_PAGE_SIZE_DEGREE;
+        const size_t last_page = offsets.back() >> PACKED_PAGE_SIZE_DEGREE;
+
+        if (last_page < first_page || offsets.size() < (last_page - first_page + 1) * min_offsets_per_page_for_runs)
+        {
+            for (UInt32 & offset : offsets)
+                offset = static_cast<UInt32>((*this)[offset]);
+            return;
+        }
+
+        for (size_t i = 0; i < offsets.size();)
+        {
+            const size_t page_pos = offsets[i] >> PACKED_PAGE_SIZE_DEGREE;
+            chassert(page_pos < pages.size());
+            const Page & page = pages[page_pos];
+            const UInt32 page_begin = static_cast<UInt32>(page_pos << PACKED_PAGE_SIZE_DEGREE);
+
+            /// An offset below the page wraps around and ends the run like an offset beyond it.
+            if (page.bits_per_val == 0)
+            {
+                const UInt32 delta = static_cast<UInt32>(page.min_val) - page_begin;
+                for (; i < offsets.size() && offsets[i] - page_begin < PACKED_PAGE_SIZE; ++i)
+                    offsets[i] += delta;
+            }
+            else
+            {
+                for (; i < offsets.size() && offsets[i] - page_begin < PACKED_PAGE_SIZE; ++i)
+                    offsets[i] = static_cast<UInt32>(page[offsets[i] - page_begin]);
+            }
+        }
     }
 
     void clearTemporaryStorage() { current_page_values = {}; }
@@ -219,6 +278,13 @@ public:
         chassert(mode == MappingMode::Enabled);
         chassert(part_index < offset_maps.size());
         return offset_maps[part_index][part_offset];
+    }
+
+    void mapOffsets(UInt64 part_index, std::span<UInt32> offsets) const
+    {
+        chassert(mode == MappingMode::Enabled);
+        chassert(part_index < offset_maps.size());
+        offset_maps[part_index].mapOffsets(offsets);
     }
 
     /// Number of rows of the part, which is the number of its mapped offsets.
