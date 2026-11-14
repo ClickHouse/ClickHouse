@@ -14,10 +14,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 memory_limit=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'")
 
-for cap in 2 3 4; do
-    table="t_merge_width_bg_$cap"
+# The base is lowered fully only when the partition has at least `max_parts_to_lower_base` (50) parts.
+num_parts=56
+
+run_cap()
+{
+    local cap=$1
+    local table="t_merge_width_bg_$cap"
     # The cap is `memory_limit / 16 / columns / estimate`, and the table has two columns.
-    estimate=$(( memory_limit / 32 / cap ))
+    local estimate=$(( memory_limit / 32 / cap ))
 
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS $table;
@@ -34,7 +39,7 @@ for cap in 2 3 4; do
     # to the size of its part, and squashing is disabled, so that each block becomes its own part.
     $CLICKHOUSE_CLIENT -q "
         INSERT INTO $table
-        SELECT number % 40000, intDiv(number, 40000) + 1 FROM numbers(60 * 40000)
+        SELECT number % 40000, intDiv(number, 40000) + 1 FROM numbers($num_parts * 40000)
         WHERE multiIf(intDiv(number, 40000) % 2 = 0, number % 40000 = 0, intDiv(number, 40000) % 4 = 1, number % 40000 < 10000, true)
         SETTINGS max_block_size = 40000, max_threads = 1, max_insert_threads = 1,
             min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
@@ -63,4 +68,15 @@ for cap in 2 3 4; do
         SELECT $cap, count(), sum(v) FROM $table;
         DROP TABLE $table;
     "
+}
+
+# The caps are independent, so check them concurrently: creating the parts dominates the runtime of the test.
+for cap in 2 3 4; do
+    run_cap "$cap" > "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_$cap.out" 2>&1 &
+done
+wait
+
+for cap in 2 3 4; do
+    cat "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_$cap.out"
+    rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_$cap.out"
 done
