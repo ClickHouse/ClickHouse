@@ -737,7 +737,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
 void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 {
-    if (columns_substreams.getTotalSubstreams() || (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact && !index_granularity_info.mark_type.with_substreams))
+    if (columns_substreams.getTotalSubstreams())
         return;
 
     /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
