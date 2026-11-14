@@ -63,6 +63,14 @@ WITH toDecimal32(number + 1000, 0) AS x
 SELECT if(number > 0, multiIf(x > 1001, toDecimal32(1, 9), number = 7, toDecimal32(2, 9), multiIf(number = 100, x, number = 200, toDecimal32(2, 9), toDecimal32(0, 9))), toDecimal32(0, 9))
 FROM numbers(3) SETTINGS short_circuit_function_evaluation = 'enable', optimize_multiif_to_if = 0;
 
+-- The reduced columns are replaced once inside a node shared by both branches of `if`.
+WITH cityHash64(number) AS r, if(r % 3 = 0, r % 7, r % 11) AS a1, if(r % 2 = 0, a1 + 1, a1 * 2) AS a2, if(intDiv(r, 3) % 2 = 0, a2 + 1, a2 * 2) AS a3
+SELECT sum(if(number < 1000000, multiIf(r % 5 = 0, 1, r % 5 = 1, a3, 0), 0)) FROM numbers(1000)
+SETTINGS short_circuit_function_evaluation = 'enable', optimize_multiif_to_if = 0, short_circuit_function_evaluation_reorder_arguments = 0;
+WITH cityHash64(number) AS r, if(r % 3 = 0, r % 7, r % 11) AS a1, if(r % 2 = 0, a1 + 1, a1 * 2) AS a2, if(intDiv(r, 3) % 2 = 0, a2 + 1, a2 * 2) AS a3
+SELECT sum(if(number < 1000000, multiIf(r % 5 = 0, 1, r % 5 = 1, a3, 0), 0)) FROM numbers(1000)
+SETTINGS short_circuit_function_evaluation = 'disable';
+
 CREATE TABLE t2_05628 (k UInt64, v UInt8) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t2_05628 SELECT number + 1000, number + 10 FROM numbers(3);
 CREATE DICTIONARY d2_05628 (k UInt64, v UInt8) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 't2_05628')) LIFETIME(0) LAYOUT(HASHED());

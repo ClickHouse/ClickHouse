@@ -247,12 +247,18 @@ private:
 
     /// The results of the shared nodes already reduced on the rows of the tree that is being reduced.
     struct ReducedColumns;
+    /// The lazy executed columns already visited by one `getReplacements` call, mapped to their replacement (nullptr if unchanged).
+    struct ReplacedColumns;
+    /// The positions of the replaced columns, with the new columns.
+    using Replacements = VectorWithMemoryTracking<std::pair<size_t, ColumnWithTypeAndName>>;
 
     ColumnWithTypeAndName reduceImpl(bool dry_run, ReducedColumns & reduced) const;
-    /// Replaces the arguments of `function` that are already reduced, and those inside its lazy executed arguments. A lazy executed
-    /// argument of a short-circuit function stays lazy, because the function executes it only on some rows. One of `and`/`or` is not
-    /// replaced: they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.
-    static bool replaceReducedColumns(ColumnsWithTypeAndName & columns, const ReducedColumns & reduced, const IFunctionBase & function);
+    /// Returns the replacements of the arguments of `function` that are already reduced, and of those inside its lazy executed arguments.
+    /// A lazy executed argument of a short-circuit function stays lazy, because the function executes it only on some rows. One of
+    /// `and`/`or` is not replaced: they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.
+    static Replacements getReplacements(
+        const ColumnsWithTypeAndName & columns, const IFunctionBase & function, const ReducedColumns & reduced, ReplacedColumns & replaced);
+    static void applyReplacements(ColumnsWithTypeAndName & columns, Replacements && replacements);
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };
