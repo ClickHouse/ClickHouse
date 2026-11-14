@@ -53,10 +53,6 @@
 05332_obfuscate_profile_seed_query_cache
 05488_shuffle_query_cache
 
-    A replica throws `UNKNOWN_FUNCTION` for a WASM UDF in the plan fragment
-    https://github.com/ClickHouse/ClickHouse/issues/130859
-05062_wasm_udf_deduplicated_rows_determinism
-
     A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
     https://github.com/ClickHouse/ClickHouse/issues/128539
 02377_optimize_sorting_by_input_stream_properties_2
@@ -89,6 +85,7 @@
 05175_time_series_table_functions_parallel_replicas
 
     The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
+02810_fix_remove_dedundant_distinct_view
 05141_hypothetical_projection_verdict_rules
 05175_hypothetical_projection_part_offset
 
