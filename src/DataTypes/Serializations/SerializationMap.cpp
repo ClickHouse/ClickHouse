@@ -647,6 +647,12 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     }
 };
 
+/// A `JSON` or `Dynamic` key hashes differently across versions, so such a `Map` is written in one bucket, read whole by every version.
+size_t getMaxBucketsInMap(const ColumnMap & column, size_t max_buckets_in_map)
+{
+    return column.getNestedData().getColumn(0).hasDynamicStructure() ? 1 : max_buckets_in_map;
+}
+
 }
 
 void SerializationMap::enumerateStreams(
@@ -721,7 +727,7 @@ void SerializationMap::enumerateStreams(
     if (map_deserialize_state)
         buckets = checkAndGetState<DeserializeBinaryBulkStateBucketsInfo>(map_deserialize_state->buckets_info_state)->buckets;
     else if (map_column)
-        buckets = calculateNumberOfBuckets(map_column->getOrCalculateStatistics(), settings.max_buckets_in_map, settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
+        buckets = calculateNumberOfBuckets(map_column->getOrCalculateStatistics(), getMaxBucketsInMap(*map_column, settings.max_buckets_in_map), settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
 
     /// Enumerate the bucket index stream (used to preserve original key order).
     /// Only needed when there are multiple buckets — single-bucket serialization
@@ -782,7 +788,7 @@ void SerializationMap::serializeBinaryBulkStatePrefix(
     /// Determine the number of buckets from column statistics and write it to the stream.
     UInt64 buckets = 1;
     ColumnMap::StatisticsPtr statistics = assert_cast<const ColumnMap &>(column).getOrCalculateStatistics();
-    buckets = calculateNumberOfBuckets(statistics, settings.max_buckets_in_map, settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
+    buckets = calculateNumberOfBuckets(statistics, getMaxBucketsInMap(assert_cast<const ColumnMap &>(column), settings.max_buckets_in_map), settings.map_buckets_strategy, settings.map_buckets_coefficient, settings.map_buckets_min_avg_size);
     writeBinaryLittleEndian(buckets, *stream);
     map_state->buckets = buckets;
 

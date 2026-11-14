@@ -180,7 +180,7 @@ DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) con
 
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
 /// creating a `SerializationMapKeyValue` that reads the bucket of the key (the whole Map when the key
-/// has a float zero), and optionally pre-extracting the values from an existing column.
+/// has a float zero or a `JSON` or `Dynamic` value), and optionally pre-extracting the values from an existing column.
 /// The subcolumn name must start with "key_" followed by the text-serialized key value.
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
@@ -214,9 +214,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
 
     /// The bucket of a key is the hash of its bits. The two zeros are equal, but their bits differ,
     /// so the other zero may be in another bucket. A key with a float zero at any depth, e.g. in a `Tuple`
-    /// or in a path of a `JSON`, reads the whole Map.
+    /// or in a path of a `JSON`, reads the whole Map. So does a key with a `JSON` or `Dynamic` value:
+    /// older versions put such keys into buckets by another hash of them.
     bool read_whole_map = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
-        && anyFieldSatisfies((*key_column)[0], isFloatZeroField);
+        && (key_type->hasDynamicStructure() || anyFieldSatisfies((*key_column)[0], isFloatZeroField));
 
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
@@ -402,6 +403,8 @@ This rewrite happens only for tables that use `with_buckets` serialization: with
 reads the whole `Map` anyway.
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
+
+A `Map` whose key type contains `JSON` or `Dynamic` is always written in one bucket, and a lookup of one of its keys reads the whole map.
 
 <Note>
 Since version 26.8, `with_buckets` serialization preserves the original key order: an additional `bucket_indexes` substream records which bucket every key-value pair was taken from, so the map is reassembled in the order it was written instead of in bucket order.

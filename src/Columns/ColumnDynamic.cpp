@@ -922,15 +922,22 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
-        hash.update(type->getName());
+        updateHashWithTypeName(hash, type->getName());
         auto tmp_column = type->createColumn();
         type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
         return;
     }
 
-    hash.update(variant_info.variant_names[discr]);
+    updateHashWithTypeName(hash, variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
+}
+
+void ColumnDynamic::updateHashWithTypeName(SipHash & hash, std::string_view type_name)
+{
+    hash.update(UInt8(0));
+    hash.update(type_name.size());
+    hash.update(type_name);
 }
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const

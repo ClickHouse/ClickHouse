@@ -33,11 +33,11 @@ Buffers via file() source and INSERT
 8	name_8
 9	name_9
 JSON, Variant, Dynamic
-9da23da0fd661fb07f68b73441470192
+3b91bffb037a7aac5ca8b1d426e8c06b
 {"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2025-01-01"}	42	42
 {"a":{"b":0},"d":"2025-01-02","f":"Hello"}	Hello, World!	Hello, World!
 {"a":{"b":43,"g":43.43},"c":[4,5,6]}	[1,2,3]	[1,2,3]
-9da23da0fd661fb07f68b73441470192
+3b91bffb037a7aac5ca8b1d426e8c06b
 {"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2025-01-01"}	42	42
 {"a":{"b":0},"d":"2025-01-02","f":"Hello"}	Hello, World!	Hello, World!
 {"a":{"b":43,"g":43.43},"c":[4,5,6]}	[1,2,3]	[1,2,3]

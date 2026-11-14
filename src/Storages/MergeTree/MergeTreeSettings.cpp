@@ -454,6 +454,7 @@ Possible values:
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+A `Map` whose key type contains `JSON` or `Dynamic` is always written in one bucket, regardless of other bucket settings.
 )", 0, \
         {"26.3", "basic", "basic", "Add a setting to control Map serialization version"}) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
