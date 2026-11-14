@@ -66,9 +66,13 @@ std::map<String, Documentation> ParserKillQueryQuery::getDocumentation() const
     documentation["KILL"] =
     {
         .description = R"DOCS_MD(
-This page describes the `KILL QUERY` and `KILL MUTATION` statements.
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+This page describes the `KILL QUERY`, `KILL MUTATION`, `KILL TRANSACTION` and `KILL PART_MOVE_TO_SHARD` statements.
 
 By default, `KILL QUERY` throws a `NOTHING_TO_KILL` exception when its `WHERE` expression leaves no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when its `WHERE` expression matches zero rows in `system.mutations`. To allow empty matches without an exception, set [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) to `false`.
+`KILL TRANSACTION` and `KILL PART_MOVE_TO_SHARD` never throw for empty matches: they return an empty result.
 `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 ## KILL QUERY {#kill-query}
@@ -214,12 +218,111 @@ Changes already made by the mutation are not rolled back.
 <Note>
 `is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/reference/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
 </Note>
+
+## KILL TRANSACTION {#kill-transaction}
+
+Introduced in: v22.4.0
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Note>
+This statement is part of an experimental feature set.
+Enable experimental transaction support by adding this setting to your [configuration](/concepts/features/configuration/server-config/configuration-files):
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+For more information see the page [Transactional (ACID) support](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+```sql
+KILL TRANSACTION [ON CLUSTER cluster]
+  WHERE <where expression to SELECT FROM system.transactions query>
+  [TEST]
+  [FORMAT format]
+```
+
+Rolls back the running [transactions](/reference/statements/transactions) selected from the [`system.transactions`](/reference/system-tables/transactions) table by the `WHERE` clause.
+In the session of a killed transaction, `COMMIT` and the other queries then throw an `INVALID_TRANSACTION` exception until the session runs `ROLLBACK`.
+
+The statement requires the `KILL TRANSACTION` privilege.
+The response contains the `kill_status` column, which is `waiting` for a transaction that was rolled back, followed by the `tid`, `tid_hash`, `elapsed`, `is_readonly` and `state` columns of `system.transactions`.
+
+A test query (`TEST`) only checks the user's rights and displays a list of transactions to roll back.
+
+Example:
+
+```sql title="Query"
+KILL TRANSACTION WHERE tid_hash = 17701405580889899494 FORMAT Vertical
+```
+
+```text title="Response"
+Row 1:
+──────
+kill_status: waiting
+tid:         (105,84,'42343455-b083-479e-b5d5-d50cf2ec2f58',3)
+tid_hash:    17701405580889899494
+elapsed:     0.160418317
+is_readonly: 0
+state:       RUNNING
+```
+
+## KILL PART_MOVE_TO_SHARD {#kill-part-move-to-shard}
+
+Introduced in: v21.11.0
+
+<ExperimentalBadge/>
+
+<Note>
+Moving parts between shards is an experimental feature, enabled per table by the MergeTree setting [`part_moves_between_shards_enable`](/reference/settings/merge-tree-settings/part-moves#part_moves_between_shards_enable).
+</Note>
+
+```sql
+KILL PART_MOVE_TO_SHARD [ON CLUSTER cluster]
+  WHERE <where expression to SELECT FROM system.part_moves_between_shards query>
+  [TEST]
+  [FORMAT format]
+```
+
+Cancels the moves of parts between shards, started by `ALTER TABLE ... MOVE PART ... TO SHARD`, that are selected from the [`system.part_moves_between_shards`](/reference/system-tables/part_moves_between_shards) table by the `WHERE` clause.
+A cancelled move is rolled back in the background, and its `state` in `system.part_moves_between_shards` becomes `CANCELLED`.
+A move that has reached the `SOURCE_DROP` state can no longer be cancelled and runs to completion.
+
+The statement requires the `ALTER MOVE PARTITION` privilege on the table and the `MOVE PARTITION BETWEEN SHARDS` privilege.
+The response contains the `kill_status` column, which is `waiting` for a cancelled move and `cant_cancel` for a move that can no longer be cancelled, followed by the `database`, `table`, `task_name`, `task_uuid`, `part_name`, `to_shard` and `state` columns of `system.part_moves_between_shards`.
+
+A test query (`TEST`) only displays a list of moves to cancel. The `SYNC` modifier is not supported and throws a `NOT_IMPLEMENTED` exception.
+
+Example:
+
+```sql title="Query"
+KILL PART_MOVE_TO_SHARD WHERE database = 'default' AND table = 'src' FORMAT Vertical
+```
+
+```text title="Response"
+Row 1:
+──────
+kill_status: waiting
+database:    default
+table:       src
+task_name:   task-0000000000
+task_uuid:   7e073eb5-be5a-46a9-9538-ea176bd7ebe8
+part_name:   all_0_0_0
+to_shard:    /clickhouse/tables/s2
+state:       SYNC_SOURCE
+```
 )DOCS_MD",
         .syntax = R"(
 KILL QUERY [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
 KILL MUTATION [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.mutations query> [TEST] [FORMAT format]
+KILL TRANSACTION [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.transactions query> [TEST] [FORMAT format]
+KILL PART_MOVE_TO_SHARD [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.part_moves_between_shards query> [TEST] [FORMAT format]
 )",
-        .related = {"SYSTEM", "SHOW", "ALTER"},
+        .related = {"SYSTEM", "SHOW", "ALTER", "BEGIN TRANSACTION"},
     };
 
     return documentation;
