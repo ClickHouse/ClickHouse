@@ -16,3 +16,12 @@
 05632_log	0	1
 05632_empty_table	1	0
 05632_log_after_empty	0	1
+05632_empty_log	0	1
+05632_log_after_empty_log	0	1
+05632_stripe	0	1
+05632_empty_stripe	0	1
+05632_stripe_after_empty	0	1
+05632_remote	0	1
+05632_remote_empty	0	1
+05632_remote_after_empty	0	1
+05632_values_after_empty	0	1

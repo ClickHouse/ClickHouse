@@ -45,6 +45,9 @@ public:
 
     String getName() const override { return "ReadFromRemote"; }
 
+    const StorageID & getMainTable() const { return main_table; }
+    const ASTPtr & getTableFunction() const { return table_func_ptr; }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;

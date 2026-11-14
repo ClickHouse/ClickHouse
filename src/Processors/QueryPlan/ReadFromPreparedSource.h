@@ -32,6 +32,7 @@ public:
     String getName() const override { return "ReadFromStorage"; }
 
     const StoragePtr & getStorage() const { return storage; }
+    const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
     void serialize(Serialization & ctx) const override;
     /// serialize is implemented only for StorageSystemOne.
