@@ -136,6 +136,9 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+/// Whether `tryMergeExpressions` may merge the actions of a step into the actions of its child.
+bool canMergeExpressions(const ActionsDAG & child_actions, const ActionsDAG & parent_actions);
+
 /// replace a dropped always-true filter with an expression
 size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 

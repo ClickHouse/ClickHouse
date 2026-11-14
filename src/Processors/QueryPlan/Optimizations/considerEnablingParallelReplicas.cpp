@@ -180,9 +180,14 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                 /// Stop above the reading step: it records only input bytes, so landing on it leaves
                 /// no estimate of what the replicas would send and the optimization is skipped
                 /// altogether. The last wrapper above it does record output bytes.
+                ///
+                /// Stop at the top of a chain of `Expression` steps too: `calculateHashTableCacheKeys` keys the chain as
+                /// its merge, which is what the other plan may hold instead, while the step below has a key of its own.
                 auto * node = child;
                 while (node->children.size() == 1 && isPassthroughWrapper(*node->step)
-                       && !node->children.front()->children.empty())
+                       && !node->children.front()->children.empty()
+                       && !(typeid_cast<const ExpressionStep *>(node->step.get())
+                            && typeid_cast<const ExpressionStep *>(node->children.front()->step.get())))
                 {
                     node = node->children.front();
                 }
@@ -420,13 +425,13 @@ size_t canonicalChild(const QueryPlan::Node & node, size_t index)
     return index;
 }
 
-/// A rename-only `Expression` gets its child's key in `calculateHashTableCacheKeys`, so the plans can match
-/// with such a step present in one and absent in the other: when PREWHERE takes over a filter, the
-/// single-node plan keeps one the parallel replicas local branch merges away.
-const QueryPlan::Node & skipRenames(const QueryPlan::Node & node)
+/// `calculateHashTableCacheKeys` keys a chain of `Expression` steps as its merge, so the plans can match with a
+/// chain in one and its merge in the other: when PREWHERE takes over a filter, the single-node plan keeps a step
+/// the parallel replicas local branch merges away. Walk past the whole chain on both sides.
+const QueryPlan::Node & skipExpressionChain(const QueryPlan::Node & node)
 {
     const auto * current = &node;
-    while (current->children.size() == 1 && isPassthroughExpressionWithRenames(*current->step))
+    while (current->children.size() == 1 && typeid_cast<const ExpressionStep *>(current->step.get()))
         current = current->children.front();
     return *current;
 }
@@ -455,8 +460,8 @@ const QueryPlan::Node & skipRenames(const QueryPlan::Node & node)
 /// `T *`.
 bool collectCoordinatedReads(const QueryPlan::Node & replicas_node_in, const QueryPlan::Node & single_node_in, CoordinatedReads & reads)
 {
-    const auto & replicas_node = skipRenames(replicas_node_in);
-    const auto & single_node = skipRenames(single_node_in);
+    const auto & replicas_node = skipExpressionChain(replicas_node_in);
+    const auto & single_node = skipExpressionChain(single_node_in);
 
     if (auto * coordinated = typeid_cast<ReadFromMergeTree *>(replicas_node.step.get());
         coordinated && coordinated->isParallelReadingFromReplicas())

@@ -34,6 +34,19 @@ static void removeFromOutputs(ActionsDAG & dag, const ActionsDAG::Node & node)
     }
 }
 
+bool canMergeExpressions(const ActionsDAG & child_actions, const ActionsDAG & parent_actions)
+{
+    /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
+    /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
+    /// Such a query will return two zeroes if we combine actions together.
+    /// A function that is merely non-deterministic within the query (`rand64`, `generateUUIDv4`,
+    /// ...) has the same problem for the same reason: merged into the child DAG it is computed
+    /// once per source row and the value is then replicated across the rows the `arrayJoin`
+    /// expands, instead of being drawn once per output row.
+    return !child_actions.hasArrayJoin()
+        || !(parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions));
+}
+
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -53,15 +66,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_expr->getExpression();
 
-        /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
-        /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
-        /// Such a query will return two zeroes if we combine actions together.
-        /// A function that is merely non-deterministic within the query (`rand64`, `generateUUIDv4`,
-        /// ...) has the same problem for the same reason: merged into the child DAG it is computed
-        /// once per source row and the value is then replicated across the rows the `arrayJoin`
-        /// expands, instead of being drawn once per output row.
-        if (child_actions.hasArrayJoin()
-            && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
+        if (!canMergeExpressions(child_actions, parent_actions))
             return 0;
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
@@ -80,8 +85,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         /// Same as for the expression step above: a stateful or non-deterministic filter must not be
         /// computed before the `arrayJoin` replicates the rows it applies to.
-        if (child_actions.hasArrayJoin()
-            && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
+        if (!canMergeExpressions(child_actions, parent_actions))
             return 0;
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
