@@ -541,6 +541,42 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
+def test_nats_materialized_column_direct_select(nats_cluster):
+
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64, value2 UInt64 MATERIALIZED value + 1)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_commit_on_select = 1;
+        CREATE TABLE test.view (key UInt64, value2 UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 1, "value": 10})]))
+    assert TSV(instance.query("SELECT key, value2 FROM test.nats SETTINGS rabbitmq_max_wait_ms = 60000")) == TSV("1\t11")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.refresh REFRESH EVERY 1 YEAR APPEND TO test.view EMPTY AS
+            SELECT key, value2 FROM test.nats SETTINGS rabbitmq_max_wait_ms = 60000;
+        """
+    )
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 2, "value": 20})]))
+    instance.query("SYSTEM REFRESH VIEW test.refresh; SYSTEM WAIT VIEW test.refresh;")
+    assert TSV(instance.query("SELECT key, value2 FROM test.view")) == TSV("2\t21")
+
+
 def test_nats_protobuf(nats_cluster):
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))

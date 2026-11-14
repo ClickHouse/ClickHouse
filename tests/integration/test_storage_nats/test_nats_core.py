@@ -338,37 +338,15 @@ def test_nats_materialized_column(nats_cluster):
                      nats_subjects = 'mvmaterialized',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
-        CREATE TABLE test.nats_direct (key UInt64, value UInt64, value2 UInt64 MATERIALIZED value + 1)
-            ENGINE = NATS
-            SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'mvmaterializeddirect',
-                     nats_format = 'JSONEachRow',
-                     nats_row_delimiter = '\\n';
         CREATE TABLE test.view1 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE TABLE test.view2 (key UInt64, value UInt64, value2 UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
-        CREATE TABLE test.view3 (key UInt64, value2 UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
         """
     )
     nats_helpers.wait_for_table_is_ready(instance, "test.nats")
-    nats_helpers.wait_for_table_is_ready(instance, "test.nats_direct")
-
-    assert instance.query("SELECT key, value2 FROM test.nats_direct") == ""
-
-    instance.query(
-        """
-        CREATE MATERIALIZED VIEW test.refresh REFRESH EVERY 1 YEAR APPEND TO test.view3 EMPTY AS
-            SELECT key, value2 FROM test.nats_direct;
-        SYSTEM REFRESH VIEW test.refresh;
-        SYSTEM WAIT VIEW test.refresh;
-        """
-    )
-    assert int(instance.query("SELECT count() FROM test.view3")) == 0
 
     instance.query(
         """
