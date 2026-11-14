@@ -338,12 +338,13 @@ public:
 static_assert(sizeof(SingleValueDataString) == SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataString struct");
 
 /// For any other value types.
-struct SingleValueDataGeneric final : public SingleValueDataBase
+template <bool holds_strings>
+struct SingleValueDataGenericImpl final : public SingleValueDataBase
 {
     static constexpr bool is_compilable = false;
 
 private:
-    using Self = SingleValueDataGeneric;
+    using Self = SingleValueDataGenericImpl;
     Field value;
 
 public:
@@ -367,7 +368,15 @@ public:
     static bool allocatesMemoryInArena() { return false; }
 };
 
+using SingleValueDataGeneric = SingleValueDataGenericImpl<false>;
+/// For value types that can hold strings: a `Field` allocates them with `operator new`, which the memory tracker counts
+/// but does not refuse, so every store is followed by `checkMemoryLimitAfterStoringField`.
+using SingleValueDataGenericWithStrings = SingleValueDataGenericImpl<true>;
+extern template struct SingleValueDataGenericImpl<false>;
+extern template struct SingleValueDataGenericImpl<true>;
+
 static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGeneric struct");
+static_assert(sizeof(SingleValueDataGenericWithStrings) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGenericWithStrings struct");
 
 /// The same as SingleValueDataGeneric but stores value inside IColumn instead of Field.
 /// It's less performant as IColumn is not optimized to store single value.
@@ -437,6 +446,11 @@ struct SingleValueReference final : public SingleValueDataBase
 static_assert(sizeof(SingleValueReference) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueReference struct");
 
 bool canUseFieldForValueData(const DataTypePtr & value_type);
+/// False only for types whose values cannot hold strings in a `Field`: numbers and `Nullable`/`Array`/`Tuple`/`Map` of them.
+bool singleValueTypeHoldsStrings(const DataTypePtr & value_type);
+/// Checks the memory limits when the memory of this thread has changed by 1 MiB since its last check, or when it is
+/// charged to another tracker than at that check.
+void checkMemoryLimitAfterStoringField();
 
 /// min, max, any, anyLast, anyHeavy, etc...
 template <template <typename, bool...> class AggregateFunctionTemplate, bool unary, bool... isMin>
@@ -465,7 +479,11 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
         return new AggregateFunctionTemplate<SingleValueDataString, isMin...>(argument_types);
 
     if (canUseFieldForValueData(value_type))
+    {
+        if (singleValueTypeHoldsStrings(value_type))
+            return new AggregateFunctionTemplate<SingleValueDataGenericWithStrings, isMin...>(argument_types);
         return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_types);
+    }
     return new AggregateFunctionTemplate<SingleValueDataGenericWithColumn, isMin...>(argument_types);
 }
 
@@ -477,6 +495,7 @@ struct SingleValueDataBaseMemoryBlock
         SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromType
         SingleValueDataString,
         SingleValueDataGeneric,
+        SingleValueDataGenericWithStrings,
         SingleValueDataGenericWithColumn>
         memory;
     SingleValueDataBase & get() { return *reinterpret_cast<SingleValueDataBase *>(&memory); }

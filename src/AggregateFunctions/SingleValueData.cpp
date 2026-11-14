@@ -4,7 +4,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/NaNUtils.h>
+#include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <DataTypes/TypeTree.h>
@@ -1472,7 +1475,8 @@ bool SingleValueDataString::wouldSetIfGreater(const SingleValueDataBase & other)
 
 /// Generic
 
-void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
+template <bool holds_strings>
+void SingleValueDataGenericImpl<holds_strings>::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
     if (has())
         to.insert(value);
@@ -1480,7 +1484,8 @@ void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & 
         type->insertDefaultInto(to);
 }
 
-void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
+template <bool holds_strings>
+void SingleValueDataGenericImpl<holds_strings>::write(WriteBuffer & buf, const ISerialization & serialization) const
 {
     if (!value.isNull())
     {
@@ -1491,39 +1496,55 @@ void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & ser
         writeBinary(false, buf);
 }
 
-void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
+template <bool holds_strings>
+void SingleValueDataGenericImpl<holds_strings>::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
 {
     bool is_not_null = false;
     readBinary(is_not_null, buf);
 
     if (is_not_null)
+    {
         serialization.deserializeBinary(value, buf, {});
+        if constexpr (holds_strings)
+            checkMemoryLimitAfterStoringField();
+    }
 }
 
-bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) const
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::isEqualTo(const IColumn & column, size_t row_num) const
 {
     return has() && value == column[row_num];
 }
 
-bool SingleValueDataGeneric::isEqualTo(const SingleValueDataBase & other) const
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return has() && to.has() && to.value == value;
 }
 
-void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *)
+template <bool holds_strings>
+void SingleValueDataGenericImpl<holds_strings>::set(const IColumn & column, size_t row_num, Arena *)
 {
     column.get(row_num, value);
+    if constexpr (holds_strings)
+        checkMemoryLimitAfterStoringField();
 }
 
-void SingleValueDataGeneric::set(const SingleValueDataBase & other, Arena *)
+template <bool holds_strings>
+void SingleValueDataGenericImpl<holds_strings>::set(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (other.has())
+    {
         value = to.value;
+        if constexpr (holds_strings)
+            checkMemoryLimitAfterStoringField();
+    }
 }
 
-bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
     if (!has())
     {
@@ -1536,23 +1557,29 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
     if (new_value < value)
     {
         value = new_value;
+        if constexpr (holds_strings)
+            checkMemoryLimitAfterStoringField();
         return true;
     }
     return false;
 }
 
-bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::setIfSmaller(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.value < value))
     {
         value = to.value;
+        if constexpr (holds_strings)
+            checkMemoryLimitAfterStoringField();
         return true;
     }
     return false;
 }
 
-bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
     if (!has())
     {
@@ -1565,33 +1592,43 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
     if (new_value > value)
     {
         value = new_value;
+        if constexpr (holds_strings)
+            checkMemoryLimitAfterStoringField();
         return true;
     }
     return false;
 }
 
-bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::setIfGreater(const SingleValueDataBase & other, Arena *)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.value > value))
     {
         value = to.value;
+        if constexpr (holds_strings)
+            checkMemoryLimitAfterStoringField();
         return true;
     }
     return false;
 }
 
-bool SingleValueDataGeneric::wouldSetIfSmaller(const SingleValueDataBase & other) const
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::wouldSetIfSmaller(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return to.has() && (!has() || to.value < value);
 }
 
-bool SingleValueDataGeneric::wouldSetIfGreater(const SingleValueDataBase & other) const
+template <bool holds_strings>
+bool SingleValueDataGenericImpl<holds_strings>::wouldSetIfGreater(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return to.has() && (!has() || to.value > value);
 }
+
+template struct SingleValueDataGenericImpl<false>;
+template struct SingleValueDataGenericImpl<true>;
 
 /// GenericWithColumn
 
@@ -1806,12 +1843,57 @@ bool SingleValueReference::wouldSetIfGreater(const SingleValueDataBase & /*other
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::wouldSetIfGreater is not implemented");
 }
 
+namespace
+{
+
+/// Variant, Dynamic and Object types doesn't work well with Field
+/// because they can store values of different data types in a single column.
+bool needsColumnForValueData(const IDataType & type)
+{
+    return isVariant(type) || isDynamic(type) || isObject(type);
+}
+
+/// Only numbers and `Nullable`, `Array`, `Tuple`, `Map` of them are known to keep no strings in a `Field`; any other
+/// type (`String`, `FixedString`, `QBit`, `Dynamic`, `Variant`, `JSON`, `AggregateFunction`, a future one) is checked.
+bool mayHoldStringsInField(const IDataType & type)
+{
+    WhichDataType which(type);
+    return !type.isValueRepresentedByNumber() && !which.isNullable() && !which.isArray() && !which.isTuple() && !which.isMap();
+}
+
+}
+
 bool canUseFieldForValueData(const DataTypePtr & value_type)
 {
-    /// Variant, Dynamic and Object types doesn't work well with Field
-    /// because they can store values of different data types in a single column.
-    return !anyInTypeTree(*value_type, [](const IDataType & type) { return isVariant(type) || isDynamic(type) || isObject(type); });
-};
+    return !anyInTypeTree(*value_type, needsColumnForValueData);
+}
+
+bool singleValueTypeHoldsStrings(const DataTypePtr & value_type)
+{
+    return anyInTypeTree(*value_type, mayHoldStringsInField);
+}
+
+void checkMemoryLimitAfterStoringField()
+{
+    static constexpr UInt64 check_every_bytes = 1024 * 1024;
+    /// The memory of this thread can be charged to different trackers over time (another query, `MemoryTrackerSwitcher`),
+    /// the parent of its tracker, so a store charged to another one checks at once. Any decrease re-bases.
+    static thread_local const MemoryTracker * checked_parent = nullptr;
+    static thread_local Int64 checked_amount = 0;
+
+    ThreadStatus * thread = current_thread;
+    if (!thread) [[unlikely]]
+        return;
+
+    const MemoryTracker * parent = thread->memory_tracker.getParent();
+    const Int64 amount = thread->memory_tracker.get();
+    if (parent == checked_parent && static_cast<UInt64>(amount - checked_amount) < check_every_bytes) [[likely]]
+        return;
+
+    checked_parent = parent;
+    checked_amount = amount;
+    CurrentMemoryTracker::check();
+}
 
 void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data)
 {
@@ -1850,11 +1932,23 @@ void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMe
         return;
     }
 
-    if (canUseFieldForValueData(type))
+    /// One walk for both decisions: this runs for every new state.
+    bool holds_strings = false;
+    const bool needs_column = anyInTypeTree(*type, [&holds_strings](const IDataType & node)
+    {
+        holds_strings = holds_strings || mayHoldStringsInField(node);
+        return needsColumnForValueData(node);
+    });
+    if (!needs_column)
     {
         static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
         static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
-        new (&data.memory) SingleValueDataGeneric;
+        static_assert(sizeof(SingleValueDataGenericWithStrings) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataGenericWithStrings) <= alignof(SingleValueDataBaseMemoryBlock));
+        if (holds_strings)
+            new (&data.memory) SingleValueDataGenericWithStrings;
+        else
+            new (&data.memory) SingleValueDataGeneric;
         return;
     }
 
