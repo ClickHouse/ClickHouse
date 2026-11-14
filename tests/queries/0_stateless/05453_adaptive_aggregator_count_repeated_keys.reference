@@ -1,0 +1,22 @@
+UInt64 runs
+0
+UInt64 runs of frequent and new keys
+0
+String runs of varied lengths
+0
+String runs of frequent and new keys
+0
+String runs of varied lengths, unpacked string keys
+0
+FixedString runs
+0
+Nullable key pairs
+0
+Three number keys
+0
+Float64 runs with zeros of both signs and NaN
+0
+String runs across blocks with keys first seen after the freeze
+0
+Alternating keys
+0
