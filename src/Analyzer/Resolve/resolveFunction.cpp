@@ -32,6 +32,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -1261,6 +1262,106 @@ static QueryTreeNodePtr buildNumericInEquality(
     const DataTypePtr & left_argument_type,
     const DataTypePtr & right_argument_type);
 
+static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    DataTypePtr left_value;
+    DataTypePtr right_value;
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+        if (!right_array)
+            return false;
+        left_value = left_array->getNestedType();
+        right_value = right_array->getNestedType();
+    }
+    else if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+        if (!right_map || !tryGetLeastSupertype(DataTypes{left_map->getKeyType(), right_map->getKeyType()}))
+            return false;
+        left_value = left_map->getValueType();
+        right_value = right_map->getValueType();
+    }
+    else
+        return false;
+
+    return isNumber(removeNullable(removeLowCardinality(left_value)))
+        && isNumber(removeNullable(removeLowCardinality(right_value)))
+        && !tryGetLeastSupertype(DataTypes{left_value, right_value});
+}
+
+static QueryTreeNodePtr buildExactNumericArrayInComparison(
+    const QueryTreeNodePtr & left_array,
+    const QueryTreeNodePtr & right_array,
+    const DataTypePtr & left_value_type,
+    const DataTypePtr & right_value_type)
+{
+    const String left_name = "__in_exact_compound_left";
+    const String right_name = "__in_exact_compound_right";
+    auto left_value = std::make_shared<IdentifierNode>(Identifier{left_name});
+    auto right_value = std::make_shared<IdentifierNode>(Identifier{right_name});
+    auto equal = buildNumericInEquality(left_value, right_value, left_value_type, right_value_type);
+    auto left_null = std::make_shared<FunctionNode>("isNull");
+    left_null->getArguments().getNodes().push_back(left_value);
+    auto right_null = std::make_shared<FunctionNode>("isNull");
+    right_null->getArguments().getNodes().push_back(right_value);
+    auto both_null = std::make_shared<FunctionNode>("and");
+    both_null->getArguments().getNodes() = {std::move(left_null), std::move(right_null)};
+    auto value_equal = std::make_shared<FunctionNode>("ifNull");
+    value_equal->getArguments().getNodes() = {std::move(equal), std::move(both_null)};
+    auto lambda = std::make_shared<LambdaNode>(
+        std::make_shared<LambdaArgumentsNode>(Names{left_name, right_name}), std::move(value_equal), false /*is_operator*/);
+    auto left_length = std::make_shared<FunctionNode>("length");
+    left_length->getArguments().getNodes().push_back(left_array);
+    auto resized = std::make_shared<FunctionNode>("arrayResize");
+    resized->getArguments().getNodes() = {right_array, left_length};
+    auto all_equal = std::make_shared<FunctionNode>("arrayAll");
+    all_equal->getArguments().getNodes() = {std::move(lambda), left_array, std::move(resized)};
+    auto right_length = std::make_shared<FunctionNode>("length");
+    right_length->getArguments().getNodes().push_back(right_array);
+    auto same_length = std::make_shared<FunctionNode>("equals");
+    same_length->getArguments().getNodes() = {std::move(left_length), std::move(right_length)};
+    auto result = std::make_shared<FunctionNode>("and");
+    result->getArguments().getNodes() = {std::move(same_length), std::move(all_equal)};
+    return result;
+}
+
+static QueryTreeNodePtr buildExactCompoundNumericInComparison(
+    const QueryTreeNodePtr & left,
+    const QueryTreeNodePtr & right,
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type)
+{
+    const auto left_bare = removeNullable(removeLowCardinality(left_type));
+    const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
+    {
+        const auto * right_array = assert_cast<const DataTypeArray *>(right_bare.get());
+        return buildExactNumericArrayInComparison(
+            left, right, left_array->getNestedType(), right_array->getNestedType());
+    }
+
+    const auto * left_map = assert_cast<const DataTypeMap *>(left_bare.get());
+    const auto * right_map = assert_cast<const DataTypeMap *>(right_bare.get());
+    auto left_keys = std::make_shared<FunctionNode>("mapKeys");
+    left_keys->getArguments().getNodes().push_back(left);
+    auto right_keys = std::make_shared<FunctionNode>("mapKeys");
+    right_keys->getArguments().getNodes().push_back(right);
+    auto keys_equal = std::make_shared<FunctionNode>("equals");
+    keys_equal->getArguments().getNodes() = {std::move(left_keys), std::move(right_keys)};
+    auto left_values = std::make_shared<FunctionNode>("mapValues");
+    left_values->getArguments().getNodes().push_back(left);
+    auto right_values = std::make_shared<FunctionNode>("mapValues");
+    right_values->getArguments().getNodes().push_back(right);
+    auto values_equal = buildExactNumericArrayInComparison(
+        left_values, right_values, left_map->getValueType(), right_map->getValueType());
+    auto result = std::make_shared<FunctionNode>("and");
+    result->getArguments().getNodes() = {std::move(keys_equal), std::move(values_equal)};
+    return result;
+}
+
 static QueryTreeNodePtr makeExactInCast(
     const QueryTreeNodePtr & source,
     const DataTypePtr & source_type,
@@ -1394,6 +1495,21 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             non_null_match->getArguments().getNodes() = {std::move(comparison), std::make_shared<ConstantNode>(Field{0u})};
             auto lambda = std::make_shared<LambdaNode>(
                 std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(non_null_match), false /*is_operator*/);
+            auto any_match = std::make_shared<FunctionNode>("arrayExists");
+            any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
+            match_result = std::move(any_match);
+        }
+        else if (source_array_type
+            && needsExactCompoundNumericInComparison(element_arg->getResultType(), source_array_type->getNestedType()))
+        {
+            const String candidate_name = "__in_compound_array_candidate";
+            auto comparison = buildExactCompoundNumericInComparison(
+                element_arg,
+                std::make_shared<IdentifierNode>(Identifier{candidate_name}),
+                element_arg->getResultType(),
+                source_array_type->getNestedType());
+            auto lambda = std::make_shared<LambdaNode>(
+                std::make_shared<LambdaArgumentsNode>(Names{candidate_name}), std::move(comparison), false /*is_operator*/);
             auto any_match = std::make_shared<FunctionNode>("arrayExists");
             any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
             match_result = std::move(any_match);
@@ -3457,12 +3573,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto source_null_predicate = makeInSourceNullPredicate(source_elements, in_rhs_has_explicit_null);
                     QueryTreeNodes matchable_elements = source_elements;
                     QueryTreeNodes string_elements;
+                    QueryTreeNodes exact_compound_elements;
                     const auto left_complex_type = removeNullable(removeLowCardinality(in_first_argument->getResultType()));
                     if (use_standard_null_semantics)
                     {
                         std::erase_if(matchable_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
                         if (isArray(left_complex_type) || isMap(left_complex_type))
                         {
+                            std::erase_if(matchable_elements, [&](const auto & arg)
+                            {
+                                if (needsExactCompoundNumericInComparison(in_first_argument->getResultType(), arg->getResultType()))
+                                {
+                                    exact_compound_elements.push_back(arg);
+                                    return true;
+                                }
+                                return false;
+                            });
                             /// An incompatible scalar cannot equal an `Array` or `Map`, but its
                             /// nullable carrier can still contribute a source `NULL`.
                             std::erase_if(matchable_elements, [&](const auto & arg)
@@ -3487,6 +3613,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// the original source count below.
                     QueryTreeNodePtr array_arg = convertTupleToArray(matchable_elements, in_first_argument, scope, compare_nulls);
                     QueryTreeNodePtr extra_match_predicate;
+                    for (const auto & source_compound : exact_compound_elements)
+                    {
+                        QueryTreeNodePtr match = buildExactCompoundNumericInComparison(
+                            in_first_argument, source_compound,
+                            in_first_argument->getResultType(), source_compound->getResultType());
+                        resolveFunction(match, scope);
+                        if (extra_match_predicate)
+                        {
+                            auto either_match = std::make_shared<FunctionNode>("or");
+                            either_match->getArguments().getNodes() = {std::move(extra_match_predicate), std::move(match)};
+                            extra_match_predicate = std::move(either_match);
+                            resolveFunction(extra_match_predicate, scope);
+                        }
+                        else
+                            extra_match_predicate = std::move(match);
+                    }
                     for (const auto & source_string : string_elements)
                     {
                         if (isMap(left_complex_type))

@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -525,6 +526,80 @@ ASTPtr makeNumericNonConstantInReplacement(
 
 /// Keep a nullable scalar's source `NULL` separate from its conversion to an
 /// `Array` or `Map` candidate. A complex type cannot hold the conversion's `NULL`.
+bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    DataTypePtr left_value;
+    DataTypePtr right_value;
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+        if (!right_array)
+            return false;
+        left_value = left_array->getNestedType();
+        right_value = right_array->getNestedType();
+    }
+    else if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+        if (!right_map || !tryGetLeastSupertype(DataTypes{left_map->getKeyType(), right_map->getKeyType()}))
+            return false;
+        left_value = left_map->getValueType();
+        right_value = right_map->getValueType();
+    }
+    else
+        return false;
+
+    return isNumber(removeNullable(removeLowCardinality(left_value)))
+        && isNumber(removeNullable(removeLowCardinality(right_value)))
+        && !tryGetLeastSupertype(DataTypes{left_value, right_value});
+}
+
+ASTPtr makeExactNumericArrayInComparison(
+    ASTPtr left_array, ASTPtr right_array, const DataTypePtr & left_value_type, const DataTypePtr & right_value_type)
+{
+    const String left_name = "__in_exact_compound_left";
+    const String right_name = "__in_exact_compound_right";
+    auto scalar_in = makeASTFunction(
+        "in", make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(right_name));
+    auto equal = makeNumericNonConstantInReplacement(
+        *scalar_in, left_value_type, right_value_type, DataTypes{right_value_type}, false);
+    auto both_null = makeASTFunction(
+        "and", makeASTFunction("isNull", make_intrusive<ASTIdentifier>(left_name)),
+        makeASTFunction("isNull", make_intrusive<ASTIdentifier>(right_name)));
+    auto value_equal = makeASTFunction("ifNull", std::move(equal), std::move(both_null));
+    auto lambda = makeASTLambda({left_name, right_name}, std::move(value_equal));
+    auto same_length = makeASTFunction(
+        "equals", makeASTFunction("length", left_array->clone()), makeASTFunction("length", right_array->clone()));
+    auto resized = makeASTFunction(
+        "arrayResize", std::move(right_array), makeASTFunction("length", left_array->clone()));
+    auto all_equal = makeASTFunction("arrayAll", std::move(lambda), std::move(left_array), std::move(resized));
+    return makeASTFunction("and", std::move(same_length), std::move(all_equal));
+}
+
+ASTPtr makeExactCompoundNumericInComparison(
+    ASTPtr left, ASTPtr right, const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left_bare = removeNullable(removeLowCardinality(left_type));
+    const auto right_bare = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_bare.get()))
+    {
+        const auto * right_array = assert_cast<const DataTypeArray *>(right_bare.get());
+        return makeExactNumericArrayInComparison(
+            std::move(left), std::move(right), left_array->getNestedType(), right_array->getNestedType());
+    }
+
+    const auto * left_map = assert_cast<const DataTypeMap *>(left_bare.get());
+    const auto * right_map = assert_cast<const DataTypeMap *>(right_bare.get());
+    auto keys_equal = makeASTFunction(
+        "equals", makeASTFunction("mapKeys", left->clone()), makeASTFunction("mapKeys", right->clone()));
+    auto values_equal = makeExactNumericArrayInComparison(
+        makeASTFunction("mapValues", std::move(left)), makeASTFunction("mapValues", std::move(right)),
+        left_map->getValueType(), right_map->getValueType());
+    return makeASTFunction("and", std::move(keys_equal), std::move(values_equal));
+}
+
 ASTPtr makeComplexNonConstantInReplacement(
     const ASTFunction & node,
     const DataTypePtr & left_operand_type,
@@ -567,7 +642,12 @@ ASTPtr makeComplexNonConstantInReplacement(
 
         const auto source_bare_type = removeNullable(removeLowCardinality(source_type));
         ASTPtr match;
-        if (isStringOrFixedString(source_bare_type))
+        if (needsExactCompoundNumericInComparison(left_operand_type, source_type))
+        {
+            match = makeExactCompoundNumericInComparison(
+                left_operand->clone(), elements[i]->clone(), left_operand_type, source_type);
+        }
+        else if (isStringOrFixedString(source_bare_type))
         {
             if (isMap(left_bare_type))
             {
@@ -1647,9 +1727,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     const bool left_is_complex = left_bare_type && (isArray(left_bare_type) || isMap(left_bare_type));
                     const bool compare_complex_sources = use_standard_null_semantics && left_is_complex
                         && element_types_known && !element_types.empty()
-                        && std::any_of(element_types.begin(), element_types.end(), needs_complex_candidate_rewrite);
+                        && std::any_of(element_types.begin(), element_types.end(), [&](const auto & type)
+                        {
+                            return needs_complex_candidate_rewrite(type)
+                                || needsExactCompoundNumericInComparison(left_argument_type, type);
+                        });
                     const bool compare_complex_array_sources = use_standard_null_semantics && right_argument_is_array && left_is_complex
-                        && right_array_type && needs_complex_candidate_rewrite(right_array_type->getNestedType());
+                        && right_array_type
+                        && (needs_complex_candidate_rewrite(right_array_type->getNestedType())
+                            || needsExactCompoundNumericInComparison(left_argument_type, right_array_type->getNestedType()));
                     if (compare_numeric_array_sources)
                         replacement = makeArrayCandidateInReplacement(
                             node, left_argument_type, right_array_type->getNestedType(), false);
