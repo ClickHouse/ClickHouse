@@ -317,8 +317,17 @@ inline ptrdiff_t floatTokenClassLength(const char * first, const char * last)
 {
     const char * const scan_end = (last - first > max_u128_integer_digits + 2) ? first + (max_u128_integer_digits + 2) : last;
     const char * p = first;
-    while (p + 8 <= scan_end && is_made_of_eight_digits_fast(p)) /// skip digit runs 8 at a time
+    while (scan_end - p >= 8)
+    {
+        if (!is_made_of_eight_digits_fast(p))
+        {
+            /// A failure in either of the first two blocks implies a short integer run.
+            if (p - first < 16)
+                return max_short_float_chars;
+            break;
+        }
         p += 8;
+    }
     while (p < scan_end && isNumericASCII(*p))
         ++p;
     /// A '.', 'e' or 'E' means this is not a pure integer, so neither integer fast path applies.
