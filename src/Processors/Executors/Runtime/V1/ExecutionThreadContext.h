@@ -77,7 +77,6 @@ public:
 
     void setException(std::exception_ptr exception_);
     std::exception_ptr getException();
-    void rethrowExceptionIfHas();
 
     /// Hands the recorded intervals to the profiler; called once, after the thread finished.
     void flushWorkIntervals();

@@ -1,6 +1,9 @@
 #include <Analyzer/Passes/getSubcolumnOfFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -136,7 +139,7 @@ ActionsDAG * findActionsBelowHeaderPreservingSteps(QueryPlan::Node * node)
 NameSet collectInputsNeededByNode(const ActionsDAG::Node * root)
 {
     NameSet names;
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     ActionsDAG::NodeRawConstPtrs stack{root};
     while (!stack.empty())
     {
@@ -200,7 +203,7 @@ bool canPushBelowStep(IQueryPlanStep * step, NameSet & columns_pinned_by_step)
 
 bool hasDuplicatedNames(const Block & header)
 {
-    std::unordered_set<std::string_view> seen;
+    UnorderedSetWithMemoryTracking<std::string_view> seen;
     for (const auto & column : header)
         if (!seen.insert(column.name).second)
             return true;
@@ -210,7 +213,7 @@ bool hasDuplicatedNames(const Block & header)
 
 bool hasDuplicatedInputNames(const ActionsDAG & actions)
 {
-    std::unordered_set<std::string_view> seen;
+    UnorderedSetWithMemoryTracking<std::string_view> seen;
     for (const auto * input : actions.getInputs())
         if (!seen.insert(input->result_name).second)
             return true;
@@ -238,11 +241,11 @@ namespace
 /// The functions of `actions` that `is_candidate` accepts, grouped by the column their first argument is (an input, or
 /// a chain of renames of one), restricted to columns nothing else in the DAG reads. Their other arguments are constants.
 template <typename IsCandidate>
-std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
+UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
 collectFunctionsReplacingTheirArgument(const ActionsDAG & actions, IsCandidate && is_candidate)
 {
     /// The column a node stands for, for inputs and for chains of renames of an input.
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> column_of_node;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> column_of_node;
     for (const auto & node : actions.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::INPUT)
@@ -252,7 +255,7 @@ collectFunctionsReplacingTheirArgument(const ActionsDAG & actions, IsCandidate &
                 column_of_node.emplace(&node, source);
     }
 
-    std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs> result;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs> result;
     for (const auto & node : actions.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
@@ -277,7 +280,7 @@ collectFunctionsReplacingTheirArgument(const ActionsDAG & actions, IsCandidate &
 
     /// A column is replaced only if nothing but those functions reads it: otherwise the wide column
     /// is needed anyway and computing the functions early only adds to the data being carried.
-    std::unordered_set<const ActionsDAG::Node *> has_other_readers;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> has_other_readers;
     for (const auto & node : actions.getNodes())
     {
         const auto * reader_column = column_of_node.contains(&node) ? column_of_node.at(&node) : nullptr;
@@ -333,17 +336,17 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
         });
 }
 
-std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
+UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
     const ActionsDAG & actions, const ActionsDAG::Node * low_part_root)
 {
     /// A column the DAG surfaces crosses the step no matter where the function is computed, so the
     /// function may be lifted as before.
-    std::unordered_set<const ActionsDAG::Node *> surfaced;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> surfaced;
     for (const auto * output : actions.getOutputs())
         surfaced.insert(resolveAliases(output));
 
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
-    std::unordered_set<const ActionsDAG::Node *> low_part_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> split_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> low_part_nodes;
     if (low_part_root)
     {
         ActionsDAG::NodeRawConstPtrs stack{low_part_root};
@@ -1740,8 +1743,8 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
         child_filter_inputs = collectInputsNeededByNode(filter_column);
     }
 
-    std::unordered_set<const ActionsDAG::Node *> functions_to_split;
-    std::vector<PushedFunction> pushed_functions;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> functions_to_split;
+    VectorWithMemoryTracking<PushedFunction> pushed_functions;
     /// Names of the columns the child stops surfacing, on the parent's and on the child's side.
     NameSet columns_to_stop_surfacing;
     NameSet columns_to_stop_producing;
@@ -1937,7 +1940,7 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     /// per pushed function named exactly like the parent's node, so that the second part of the
     /// split below finds it as an input after the child passes it through.
     ActionsDAG pushed_actions;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> input_by_name;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> input_by_name;
     ActionsDAG::NodeRawConstPtrs pushed_outputs;
     pushed_outputs.reserve(child_input_header.columns() + pushed_functions.size());
     for (const auto & column : child_input_header)

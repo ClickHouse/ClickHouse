@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_adaptive_insert;
 DROP TABLE IF EXISTS t_adaptive_mutation;
 DROP TABLE IF EXISTS t_adaptive_compact;
 
+-- adaptive_codec_selection_period = 1, as the expected block counts assume every block is priced.
 CREATE TABLE t_adaptive_on
 (
     a UInt64,              -- no codec, narrow range -> T64
@@ -17,7 +18,7 @@ CREATE TABLE t_adaptive_on
     f Array(Int32)         -- candidate leaf -> T64
 )
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, adaptive_codec_selection_period = 1;
 
 CREATE TABLE t_adaptive_off AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
@@ -25,11 +26,11 @@ SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 
 CREATE TABLE t_adaptive_insert AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, adaptive_codec_selection_period = 1;
 
 CREATE TABLE t_adaptive_mutation AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, adaptive_codec_selection_period = 1;
 
 CREATE TABLE t_adaptive_compact AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
