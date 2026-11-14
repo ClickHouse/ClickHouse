@@ -9832,6 +9832,11 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
               num_deleted, partition_id, min_block_num, max_block_num, num_failed);
 }
 
+static String getReplaceFromBlockIdPath(const String & zookeeper_path, const String & partition_id, const String & hash_hex)
+{
+    return fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex);
+}
+
 void StorageReplicatedMergeTree::replacePartitionFrom(
     const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context)
 {
@@ -9872,6 +9877,49 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
                 || (*src_data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
+    /// All-or-nothing check of the database `max_rows` limit for `ATTACH PARTITION ALL FROM`, because
+    /// `replacePartitionFromImpl` commits each partition separately. Parts that are already attached
+    /// (their block ids exist) add no rows. Like the other `max_rows` checks, it is best-effort.
+    std::optional<std::exception_ptr> rows_limit_verdict;
+    if (partitions.size() > 1)
+    {
+        chassert(!replace);
+        rows_limit_verdict = nullptr;
+        if (hasDatabaseRowsLimit())
+        {
+            UInt64 incoming_rows = 0;
+            Strings block_id_paths;
+            std::vector<UInt64> block_id_rows;
+            for (const auto & partition_id : partitions)
+            {
+                DataPartsVector src_parts;
+                {
+                    auto parts_lock = src_data.readLockParts();
+                    src_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id, parts_lock);
+                }
+
+                /// As in `replacePartitionFromImpl`, only the first part with a given checksum has a block id.
+                std::unordered_set<String> seen_hashes;
+                for (const auto & src_part : src_parts)
+                {
+                    incoming_rows += src_part->rows_count;
+                    const String hash_hex = src_part->checksums.getTotalChecksumHex();
+                    if (seen_hashes.insert(hash_hex).second)
+                    {
+                        block_id_paths.push_back(getReplaceFromBlockIdPath(zookeeper_path, partition_id, hash_hex));
+                        block_id_rows.push_back(src_part->rows_count);
+                    }
+                }
+            }
+
+            auto exists_results = zookeeper->exists(block_id_paths);
+            for (size_t i = 0; i < block_id_paths.size(); ++i)
+                if (exists_results[i].error == Coordination::Error::ZOK)
+                    incoming_rows -= block_id_rows[i];
+            rows_limit_verdict = getDatabaseRowsLimitException(incoming_rows);
+        }
+    }
+
     using Entry = std::unique_ptr<ReplicatedMergeTreeLogEntryData>;
     std::vector<Entry> entries(partitions.size());
     size_t idx = 0;
@@ -9886,7 +9934,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 replace,
                 zero_copy_enabled,
                 (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
-                query_context);
+                query_context,
+                rows_limit_verdict);
         ++idx;
     }
 
@@ -9908,7 +9957,8 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     bool requested_replace,
     const bool & zero_copy_enabled,
     const bool & always_use_copy_instead_of_hardlinks,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const std::optional<std::exception_ptr> & rows_limit_verdict)
 {
     DataPartsVector src_all_parts;
     DataPartsVector src_patch_parts;
@@ -10039,7 +10089,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             else
                 LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
-            std::vector<std::string> block_id_path = (replace || is_duplicated_part) ? std::vector<std::string>() : std::vector<std::string>{(fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex))};
+            std::vector<std::string> block_id_path = (replace || is_duplicated_part) ? std::vector<std::string>() : std::vector<std::string>{getReplaceFromBlockIdPath(zookeeper_path, partition_id, hash_hex)};
 
             auto lock = allocateBlockNumber(
                 partition_id,
@@ -10055,8 +10105,17 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             /// The part acquired a block number, so it will actually add rows: charge it against
             /// the database `max_rows` limit before cloning. Throwing here is safe: the block
             /// number locks are ephemeral and released on unwind, and no rows were added yet.
-            accepted_rows += src_part->rows_count;
-            checkDatabaseRowsLimit(accepted_rows, outgoing_rows);
+            /// With several partitions, `replacePartitionFrom` checks the limit for all of them at once.
+            if (rows_limit_verdict)
+            {
+                if (*rows_limit_verdict)
+                    std::rethrow_exception(*rows_limit_verdict);
+            }
+            else
+            {
+                accepted_rows += src_part->rows_count;
+                checkDatabaseRowsLimit(accepted_rows, outgoing_rows);
+            }
 
             UInt64 index = lock.getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, getLevelForAdoptedPart(src_data, src_part->info.level));
