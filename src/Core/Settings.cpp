@@ -8335,7 +8335,7 @@ in between. Takes effect only if `query_plan_optimize_lazy_materialization` is e
 Enable experimental lazy materialization across shards for eligible distributed `ORDER BY ... LIMIT` queries.
 It takes effect only with `serialize_query_plan`. Then a plain read from a `Distributed` table of a local `MergeTree`
 table sends a single serialized plan to all shards and finishes the query on the initiator.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", false, false, "New setting for experimental two-phase lazy materialization of `ORDER BY ... LIMIT` queries over `Distributed` tables."}) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0, \
