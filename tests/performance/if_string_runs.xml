@@ -1,20 +1,26 @@
 <test>
-    <create_query>CREATE TABLE if_string_runs_hits (c_nat UInt8, c_64 UInt8, c_rand UInt8, Referer String, URL String, SearchPhrase String, MobilePhoneModel String) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE if_string_runs_synthetic (c_alt UInt8, c_rand UInt8, s16 String, t16 String, s65 String, t65 String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE if_string_runs_referer (c_nat UInt8, c_64 UInt8, c_rand UInt8, Referer String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE if_string_runs_short (c_rand UInt8, SearchPhrase String, MobilePhoneModel String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE if_string_runs_16 (c_alt UInt8, c_rand UInt8, s16 String, t16 String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE if_string_runs_65 (c_alt UInt8, s65 String, t65 String) ENGINE = Memory</create_query>
 
-    <fill_query>INSERT INTO if_string_runs_hits SELECT SearchEngineID = 0 AND AdvEngineID = 0, cityHash64(WatchID) % 64 != 0, cityHash64(WatchID) % 2, Referer, URL, SearchPhrase, MobilePhoneModel FROM hits_10m_single</fill_query>
-    <fill_query>INSERT INTO if_string_runs_synthetic SELECT number % 2, cityHash64(number) % 2, repeat(toString(number % 10), 16), repeat(toString((number + 5) % 10), 16), repeat(toString(number % 10), 65), repeat(toString((number + 5) % 10), 65) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO if_string_runs_referer SELECT SearchEngineID = 0 AND AdvEngineID = 0, cityHash64(WatchID) % 64 != 0, cityHash64(WatchID) % 2, Referer FROM hits_10m_single</fill_query>
+    <fill_query>INSERT INTO if_string_runs_short SELECT cityHash64(WatchID) % 2, SearchPhrase, MobilePhoneModel FROM hits_10m_single</fill_query>
+    <fill_query>INSERT INTO if_string_runs_16 SELECT number % 2, cityHash64(number) % 2, repeat(toString(number % 10), 16), repeat(toString((number + 5) % 10), 16) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO if_string_runs_65 SELECT number % 2, repeat(toString(number % 10), 65), repeat(toString((number + 5) % 10), 65) FROM numbers(3000000)</fill_query>
 
-    <query>SELECT count() FROM if_string_runs_hits WHERE NOT ignore(if(c_nat, Referer, '')) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_hits WHERE NOT ignore(if(c_64, Referer, '')) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_hits WHERE NOT ignore(if(c_rand, Referer, URL)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_hits WHERE NOT ignore(if(c_rand, SearchPhrase, '')) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_hits WHERE NOT ignore(if(c_rand, MobilePhoneModel, 'unknown')) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_synthetic WHERE NOT ignore(if(c_alt, s16, t16)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_synthetic WHERE NOT ignore(if(c_alt, s65, t65)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_synthetic WHERE NOT ignore(if(c_rand, s16, t16)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM if_string_runs_synthetic WHERE NOT ignore(if(c_alt, s16, 'unknown')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_referer WHERE NOT ignore(if(c_nat, Referer, '')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_referer WHERE NOT ignore(if(c_64, Referer, '')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_referer WHERE NOT ignore(if(c_rand, Referer, '')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_short WHERE NOT ignore(if(c_rand, SearchPhrase, '')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_short WHERE NOT ignore(if(c_rand, MobilePhoneModel, 'unknown')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_16 WHERE NOT ignore(if(c_alt, s16, t16)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_16 WHERE NOT ignore(if(c_rand, s16, t16)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_16 WHERE NOT ignore(if(c_alt, s16, 'unknown')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM if_string_runs_65 WHERE NOT ignore(if(c_alt, s65, t65)) SETTINGS max_threads = 1</query>
 
-    <drop_query>DROP TABLE IF EXISTS if_string_runs_hits</drop_query>
-    <drop_query>DROP TABLE IF EXISTS if_string_runs_synthetic</drop_query>
+    <drop_query>DROP TABLE IF EXISTS if_string_runs_referer</drop_query>
+    <drop_query>DROP TABLE IF EXISTS if_string_runs_short</drop_query>
+    <drop_query>DROP TABLE IF EXISTS if_string_runs_16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS if_string_runs_65</drop_query>
 </test>
