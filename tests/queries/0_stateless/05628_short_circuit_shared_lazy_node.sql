@@ -2,6 +2,8 @@
 
 DROP DICTIONARY IF EXISTS d_05628;
 DROP TABLE IF EXISTS t_05628;
+DROP DICTIONARY IF EXISTS d2_05628;
+DROP TABLE IF EXISTS t2_05628;
 
 CREATE TABLE t_05628 (k String, a1 Array(UInt64), a2 Array(UInt64), a3 Array(UInt8)) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_05628 SELECT toString(number), range(number % 10), arrayMap(i -> i * 2, range(number % 10)), arrayMap(i -> toUInt8(i % 2), range(number % 10)) FROM numbers(100);
@@ -53,6 +55,20 @@ SETTINGS short_circuit_function_evaluation = 'enable';
 SELECT count() FROM numbers(1000) WHERE number % 7 != 0 AND intDiv(7000, number % 7) > 1000 AND intDiv(7000, number % 7) < 3000
 SETTINGS short_circuit_function_evaluation = 'enable';
 
+-- A reused result is still executed lazily by the function that needs it only on some rows, so its other rows are not converted.
+WITH toDecimal32(number + 1000, 0) AS x
+SELECT if(number > 0, multiIf(x > 0, toDecimal32(1, 9), number = 0, toDecimal32(0, 9), x), toDecimal32(0, 9))
+FROM numbers(3) SETTINGS short_circuit_function_evaluation = 'enable', optimize_multiif_to_if = 0;
+WITH toDecimal32(number + 1000, 0) AS x
+SELECT if(number > 0, multiIf(x > 1001, toDecimal32(1, 9), number = 7, toDecimal32(2, 9), multiIf(number = 100, x, number = 200, toDecimal32(2, 9), toDecimal32(0, 9))), toDecimal32(0, 9))
+FROM numbers(3) SETTINGS short_circuit_function_evaluation = 'enable', optimize_multiif_to_if = 0;
+
+CREATE TABLE t2_05628 (k UInt64, v UInt8) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t2_05628 SELECT number + 1000, number + 10 FROM numbers(3);
+CREATE DICTIONARY d2_05628 (k UInt64, v UInt8) PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 't2_05628')) LIFETIME(0) LAYOUT(HASHED());
+SELECT if(number > 0, dictGetOrDefault('d2_05628', 'v', number + 1000, number + 1000), 0) FROM numbers(3)
+SETTINGS short_circuit_function_evaluation = 'force_enable';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -65,3 +81,5 @@ ORDER BY name;
 
 DROP DICTIONARY d_05628;
 DROP TABLE t_05628;
+DROP DICTIONARY d2_05628;
+DROP TABLE t2_05628;

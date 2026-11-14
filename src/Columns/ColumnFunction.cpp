@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
@@ -28,6 +29,25 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Returns its argument as it is.
+class FunctionReducedColumn final : public IFunction
+{
+public:
+    String getName() const override { return "__reducedColumn"; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override { return arguments[0].column; }
+};
+
 }
 
 ColumnFunction::ColumnFunction(
@@ -544,11 +564,16 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
     return reduceImpl(dry_run, reduced);
 }
 
-bool ColumnFunction::replaceReducedColumns(ColumnsWithTypeAndName & columns, const ReducedColumns & reduced, bool replace_columns)
+bool ColumnFunction::replaceReducedColumns(ColumnsWithTypeAndName & columns, const ReducedColumns & reduced, const IFunctionBase & function)
 {
+    IFunction::ShortCircuitSettings settings;
+    bool is_short_circuit = function.isShortCircuit(settings, columns.size());
+    bool replace_columns = !is_short_circuit || !settings.arguments_are_commutative;
+
     bool replaced = false;
-    for (auto & column : columns)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
+        auto & column = columns[i];
         const ColumnFunction * column_function = checkAndGetShortCircuitArgument(column.column);
         if (!column_function)
             continue;
@@ -557,18 +582,25 @@ bool ColumnFunction::replaceReducedColumns(ColumnsWithTypeAndName & columns, con
         if (reduced_column)
         {
             chassert(reduced_column->column->size() == column_function->elements_size);
-            column.column = reduced_column->column;
+            if (is_short_circuit && !settings.arguments_with_disabled_lazy_execution.contains(i))
+                column.column = ColumnFunction::create(
+                    column_function->elements_size,
+                    std::make_shared<FunctionToFunctionBaseAdaptor>(
+                        std::make_shared<FunctionReducedColumn>(), DataTypes{reduced_column->type}, reduced_column->type),
+                    ColumnsWithTypeAndName{*reduced_column},
+                    /*is_short_circuit_argument_=*/ true,
+                    /*is_function_compiled_=*/ false,
+                    /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                    column_function->allow_lazy_replicated_captures);
+            else
+                column.column = reduced_column->column;
             column.type = reduced_column->type;
             replaced = true;
             continue;
         }
 
-        IFunction::ShortCircuitSettings settings;
-        bool replace_arguments = !column_function->function->isShortCircuit(settings, column_function->captured_columns.size())
-            || !settings.arguments_are_commutative;
-
         ColumnsWithTypeAndName capture = column_function->captured_columns;
-        if (!replaceReducedColumns(capture, reduced, replace_arguments))
+        if (!replaceReducedColumns(capture, reduced, *column_function->function))
             continue;
 
         column.column = ColumnFunction::create(
@@ -625,7 +657,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(bool dry_run, ReducedColumns & 
 
             /// The lazy executed arguments run on a subset of these rows, so the columns reduced on all of them can be reused.
             if (!reduced.columns.empty())
-                replaceReducedColumns(columns, reduced, !settings.arguments_are_commutative);
+                replaceReducedColumns(columns, reduced, *function);
         }
         else
         {

@@ -249,10 +249,10 @@ private:
     struct ReducedColumns;
 
     ColumnWithTypeAndName reduceImpl(bool dry_run, ReducedColumns & reduced) const;
-    /// Replaces the lazy executed arguments that are already reduced inside the lazy executed `columns`,
-    /// and `columns` themselves if `replace_columns`. A lazy executed argument of `and`/`or` is not replaced:
-    /// they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.
-    static bool replaceReducedColumns(ColumnsWithTypeAndName & columns, const ReducedColumns & reduced, bool replace_columns);
+    /// Replaces the arguments of `function` that are already reduced, and those inside its lazy executed arguments. A lazy executed
+    /// argument of a short-circuit function stays lazy, because the function executes it only on some rows. One of `and`/`or` is not
+    /// replaced: they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.
+    static bool replaceReducedColumns(ColumnsWithTypeAndName & columns, const ReducedColumns & reduced, const IFunctionBase & function);
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };
