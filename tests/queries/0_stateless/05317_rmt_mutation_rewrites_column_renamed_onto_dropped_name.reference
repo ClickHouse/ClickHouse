@@ -1,0 +1,10 @@
+drop rename patch	1	11	100
+drop rename patch	2	21	999
+1
+drop rename patch no queue	1	10	100
+drop rename patch no queue	2	20	999
+1
+drop rename materialized	1	11	12
+drop rename materialized	2	21	22
+drop rename materialized	a
+1

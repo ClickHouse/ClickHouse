@@ -2381,6 +2381,51 @@ MutationCommands getMetadataMutationCommands(const MutationCommands & commands)
     return result;
 }
 
+/// The commands of an ALTER whose renames and drops the part already has, without them. A command names a column as it
+/// is at its position in the ALTER, so it is moved to the name that the later renames give, or skipped if a later drop
+/// removes the column.
+MutationCommands getCommandsWithoutAppliedRenames(const MutationCommands & commands)
+{
+    MutationCommands result;
+    for (auto it = commands.begin(); it != commands.end(); ++it)
+    {
+        if (AlterConversions::isSupportedMetadataMutation(it->type) && !it->clear)
+            continue;
+
+        auto follow_later_commands = [&](String & name)
+        {
+            for (auto later = std::next(it); later != commands.end(); ++later)
+            {
+                if (later->type == MutationCommand::RENAME_COLUMN && later->column_name == name)
+                    name = later->rename_to;
+                else if (later->type == MutationCommand::DROP_COLUMN && !later->clear && later->column_name == name)
+                    return false;
+            }
+            return true;
+        };
+
+        MutationCommand command = *it;
+        if (command.type == MutationCommand::DROP_STATISTICS && !command.statistics_columns.empty())
+        {
+            Names columns;
+            for (auto name : command.statistics_columns)
+                if (follow_later_commands(name))
+                    columns.push_back(std::move(name));
+            if (columns.empty())
+                continue;
+            command.statistics_columns = std::move(columns);
+        }
+        else if (command.type == MutationCommand::DROP_COLUMN || command.type == MutationCommand::READ_COLUMN
+                 || command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            if (!follow_later_commands(command.column_name))
+                continue;
+        }
+        result.push_back(std::move(command));
+    }
+    return result;
+}
+
 }
 
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
@@ -2391,6 +2436,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
     if (in_partition == mutations_by_partition.end())
         return {};
 
+    const Int64 max_mutation_version_to_include = getMaxMutationVersionForPartition(params, partition_id);
     Int64 part_data_version = part->info.getDataVersion();
     Int64 part_metadata_version = part->getMetadataVersion();
 
@@ -2422,7 +2468,12 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
             if (alter_version > part_metadata_version)
             {
                 if (alter_version > params.min_part_metadata_version)
-                    addSupportedCommands(entry->commands, mutation_version, result);
+                {
+                    if (mutation_version > max_mutation_version_to_include)
+                        addSupportedCommands(getMetadataMutationCommands(entry->commands), mutation_version, result);
+                    else
+                        addSupportedCommands(entry->commands, mutation_version, result);
+                }
                 /// A patch at metadata version 0 may have been written after the ALTER, so for it the data version decides.
                 else if (part->info.isPatch()
                     && (part_metadata_version > 0 || static_cast<Int64>(part->getPatchPartIndex().getMaxDataVersion()) < mutation_version))
@@ -2497,9 +2548,6 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             if (seen_all_data_mutations && seen_all_metadata_mutations)
                 break;
 
-            if (mutation_version > max_mutation_version_to_include)
-                continue;
-
             auto alter_version = status->entry->alter_version;
             if (alter_version != -1)
             {
@@ -2509,9 +2557,20 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
                 /// We take commands with bigger metadata version
                 if (alter_version > params.min_part_metadata_version)
                 {
+                    /// A part is read with the snapshot's metadata, so the renames and drops of every ALTER up to it are needed
+                    /// even when the ALTER is newer than max_mutation_version_to_include.
+                    if (mutation_version > max_mutation_version_to_include)
+                    {
+                        auto metadata_commands = getMetadataMutationCommands(status->entry->commands);
+                        if (!metadata_commands.empty())
+                        {
+                            partition_snapshot.emplace(mutation_version, status->entry);
+                            incrementMutationsCounters(mutations_snapshot_counters, metadata_commands);
+                        }
+                    }
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.
                     /// Required commands will be copied later only for specific parts.
-                    if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
+                    else if (MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, status->entry->commands))
                     {
                         partition_snapshot.emplace(mutation_version, status->entry);
                         incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
@@ -2533,6 +2592,9 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
             }
             else if (!seen_all_data_mutations)
             {
+                if (mutation_version > max_mutation_version_to_include)
+                    continue;
+
                 if (mutation_version > min_part_data_version)
                 {
                     /// Copy a pointer to the whole entry to avoid extracting and copying commands.
@@ -2604,8 +2666,18 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         /// but it's still present https://github.com/ClickHouse/ClickHouse/issues/65275
         /// chassert(mutation_pointer < it->second->entry->znode_name);
         mutation_ids.push_back(it->second->entry->znode_name);
-        const auto & commands_from_entry = it->second->entry->commands;
-        commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
+        const auto & entry = *it->second->entry;
+
+        /// A part at the ALTER's metadata version already has its column names, so replaying its renames and
+        /// drops would move or drop another column when a name is reused (RENAME a TO b, RENAME c TO a).
+        if (entry.alter_version != -1 && entry.alter_version <= part->getMetadataVersion()
+            && !part->old_part_with_no_metadata_version_on_disk)
+        {
+            auto commands_from_entry = getCommandsWithoutAppliedRenames(entry.commands);
+            commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
+        }
+        else
+            commands.insert(commands.end(), entry.commands.begin(), entry.commands.end());
     }
 
     return commands;

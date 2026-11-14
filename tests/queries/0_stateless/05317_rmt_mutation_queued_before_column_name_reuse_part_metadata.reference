@@ -1,0 +1,13 @@
+readd marker	1	11	7	100
+readd marker	2	21	7	200
+1
+drop rename marker	1	11	0
+drop rename marker	2	21	0
+1
+drop rename sparse	4500	9	500500
+drop rename sparse	a	Sparse
+clear rename	a1	[]
+clear rename	b	['TDigest','Basic']
+clear rename	x	['Basic']
+clear drop rename	a	['TDigest','Basic']
+clear drop rename	x	['Basic']

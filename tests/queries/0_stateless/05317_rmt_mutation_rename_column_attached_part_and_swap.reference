@@ -1,0 +1,19 @@
+attach before	1	1111	2222
+attach before	2	3333	4444
+attach	1	1112	2222
+attach	2	3334	4444
+1
+attach target	1	1111	2223
+attach target	2	3333	4445
+1
+swap wide pending	3
+swap wide	1	11	11	100
+swap wide	2	21	21	200
+1
+swap compact	1	11	11	100
+swap compact	2	21	21	200
+swap rewrite	1	11	12	100
+swap rewrite	2	21	22	200
+swap shared	1	10	11	100
+swap shared	2	20	21	200
+1

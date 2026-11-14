@@ -1357,12 +1357,20 @@ static void splitAndModifyMutationCommands(
 
         /// We don't add renames from commands, instead we take them from rename_map.
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
-        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
-        /// can be deduced based on difference between part's schema and table schema.
+        /// but also on part's metadata version. The same holds for drops, which the difference between part's schema
+        /// and table schema does not show when the name is reused (DROP COLUMN a, ADD COLUMN a). All other types of
+        /// alter can be deduced based on that difference.
+        const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+        for (const auto & column : part->getColumns())
+        {
+            if (alter_conversions->isColumnRemoved(column.name, share_nested))
+                for_file_renames.push_back({.type = MutationCommand::Type::DROP_COLUMN, .column_name = column.name});
+        }
 
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
-            for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+            if (!alter_conversions->isColumnRemoved(rename_from, share_nested))
+                for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
     }
 
@@ -1410,6 +1418,8 @@ getColumnsForNewDataPart(
     all_commands.insert(all_commands.end(), commands_for_removes.begin(), commands_for_removes.end());
 
     NameSet removed_columns;
+    /// The new names of the missing-column markers that the commands drop; `removed_columns` also has them.
+    NameSet removed_markers;
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
     ColumnsDescription part_columns(source_part->getColumns());
@@ -1471,8 +1481,17 @@ getColumnsForNewDataPart(
         auto it = renamed_columns_to_from.find(command.column_name);
         const String & original_name = it != renamed_columns_to_from.end() ? it->second : command.column_name;
         if (serialization_infos.isMissingColumn(original_name))
+        {
             removed_columns.insert(command.column_name);
+            removed_markers.insert(command.column_name);
+        }
     }
+
+    /// `removed_columns` has names of the source part. In the new part, a removed name that a column is renamed to is that column.
+    auto is_removed_from_new_part = [&](const String & name)
+    {
+        return removed_columns.contains(name) && !renamed_columns_to_from.contains(name);
+    };
 
     for (const auto & [name, type] : persistent_virtuals)
     {
@@ -1541,8 +1560,9 @@ getColumnsForNewDataPart(
         auto it = renamed_columns_from_to.find(name);
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
-        /// Column can be removed only in this data part by CLEAR COLUMN query.
-        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+        /// Column can be removed only in this data part by CLEAR COLUMN query. A removed name can be given to another
+        /// column (DROP COLUMN a, RENAME COLUMN c TO a), so it is checked before the rename.
+        if (!storage_columns_set.contains(new_name) || removed_columns.contains(name))
             continue;
 
         /// In compact part we read all columns and all of them are in @updated_header.
@@ -1607,7 +1627,7 @@ getColumnsForNewDataPart(
             auto it = renamed_columns_from_to.find(mc.name);
             auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
 
-            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+            if (!storage_columns_set.contains(new_name) || removed_markers.contains(new_name))
                 continue;
             if (updated_header.has(new_name))
                 continue;
@@ -1632,7 +1652,7 @@ getColumnsForNewDataPart(
     {
         for (const auto & column : updated_header.getNamesAndTypesList())
         {
-            if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
+            if (!storage_columns_set.contains(column.name) || is_removed_from_new_part(column.name) || new_serialization_infos.contains(column.name))
                 continue;
 
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
@@ -1660,7 +1680,7 @@ getColumnsForNewDataPart(
             /// a default value for projection rebuild) yet still be removed from the
             /// part by CLEAR COLUMN. In that case we must drop it from the column list
             /// so that the part does not claim to contain data it no longer has.
-            if (removed_columns.contains(it->name))
+            if (is_removed_from_new_part(it->name))
             {
                 it = storage_columns.erase(it);
                 continue;
@@ -1745,6 +1765,14 @@ getColumnsForNewDataPart(
                         /// RENAME xxx TO zzz + RENAME yyy TO xxx).
                         auto renamed_from = renamed_columns_to_from.at(it->name);
                         auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
+
+                        /// Renamed from a missing-column marker, which the new part keeps under this name.
+                        if (!maybe_name_and_type && serialization_infos.isMissingColumn(renamed_from))
+                        {
+                            it = storage_columns.erase(it);
+                            continue;
+                        }
+
                         if (!maybe_name_and_type)
                             throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,
@@ -2085,6 +2113,7 @@ static NameToNameVector collectFilesForRenames(
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
+    const Block & updated_header,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension,
@@ -2117,8 +2146,13 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
+    NameSet columns_with_removed_streams;
     auto remove_column_streams = [&](const String & column_name)
     {
+        /// A column can be dropped both by the mutation and by `alter_conversions`; count its shared streams once.
+        if (!columns_with_removed_streams.insert(column_name).second)
+            return;
+
         /// Delete files if they are no longer shared with another column.
         auto remove_stream = [&](const std::optional<String> & stream_name)
         {
@@ -2190,6 +2224,12 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
+    /// The streams of a renamed column are moved or removed by its RENAME_COLUMN entry.
+    NameSet renamed_columns;
+    for (const auto & command : commands_for_renames)
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            renamed_columns.insert(command.column_name);
+
     const auto new_part_column_names = new_part->getColumns().getNameSet();
 
     /// Remove old data
@@ -2239,16 +2279,14 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (!new_part_column_names.contains(command.rename_to))
+                /// A rewritten target gets new files: writing through a hardlink would modify the source part.
+                if (!new_part_column_names.contains(command.rename_to) || updated_header.has(command.rename_to)
+                    || updated_columns_in_patches.contains(command.rename_to))
                 {
                     if (columns_renamed_to_not_stored.insert(command.column_name).second)
                         remove_column_streams(command.column_name);
                     continue;
                 }
-
-                /// Columns updated in patches should be rewritten by mutation.
-                if (updated_columns_in_patches.contains(command.rename_to))
-                    continue;
 
                 const auto * substreams = source_part->getColumnsSubstreams().tryGetColumnSubstreams(command.column_name);
                 if (substreams)
@@ -2325,8 +2363,13 @@ static NameToNameVector collectFilesForRenames(
                 /// Remove files for streams that exist in source_part,
                 /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
                 /// type with higher number of streams (e.g. LowCardinality -> String).
-                auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
-                auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
+                Names columns_to_check;
+                for (const auto & name : source_part->getColumns().getNames())
+                    if (!renamed_columns.contains(name))
+                        columns_to_check.push_back(name);
+
+                auto old_streams = getStreamCounts(source_part, source_part->checksums, columns_to_check);
+                auto new_streams = getStreamCounts(new_part, source_part->checksums, columns_to_check);
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
@@ -2524,8 +2567,8 @@ static void processStatisticsChanges(
             auto removed_stats = MutationHelpers::getRemovedStatistics(metadata_snapshot, command);
 
             /// The first `num_commands_from_mutation` entries of `commands_for_renames` are the
-            /// mutation's own commands, in the order they ran; the rest are the renames from
-            /// `alter_conversions`' rename map, which translate the names the columns had in the part
+            /// mutation's own commands, in the order they ran; the rest are the drops and renames from
+            /// `alter_conversions`, which translate the names the columns had in the part
             /// and say nothing about when a name was given.
             std::span<const MutationCommand> later_commands;
             if (command_index < num_commands_from_mutation)
@@ -2549,17 +2592,13 @@ static void processStatisticsChanges(
                     process_rename(stats_name, "");
             }
         }
-        else if (command.type == MutationCommand::Type::DROP_COLUMN)
+        else if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
         {
-            process_rename(command.column_name, "");
-        }
-        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-        {
-            /// A rename-map entry names the column by its name in the source part, and on a wide part it repeats
-            /// the mutation's own renames: it moves only a source-part entry that no command has taken yet.
+            /// An entry from `alter_conversions` names the column by its name in the source part, and on a wide part it repeats
+            /// the mutation's own drops and renames: it applies only to a source-part entry that no command has taken yet.
             if (command_index >= num_commands_from_mutation && !all_statistics.contains(command.column_name))
                 continue;
-            process_rename(command.column_name, command.rename_to);
+            process_rename(command.column_name, command.type == MutationCommand::Type::RENAME_COLUMN ? command.rename_to : "");
         }
         else if (command.type == MutationCommand::Type::READ_COLUMN)
         {
@@ -2891,7 +2930,7 @@ struct MutationContext
     MutationCommands for_interpreter;
     MutationCommands for_file_renames;
     /// The leading entries of `for_file_renames` that come from the mutation's own commands, in their
-    /// order; the renames from `alter_conversions`' rename map follow them.
+    /// order; the drops and renames from `alter_conversions` follow them.
     size_t num_for_file_renames_from_commands = 0;
 
     NamesAndTypesList storage_columns;
@@ -5436,9 +5475,23 @@ bool MutateTask::prepare()
     const bool rewrites_all_columns = MutationHelpers::rewritesAllPartColumns(
         ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
 
+    /// The new part is written at the latest metadata version, so the missing-column marker of a column that a pending
+    /// DROP COLUMN drops must not be kept for the column added later under the same name (DROP COLUMN a, ADD COLUMN a).
+    std::optional<SerializationInfoByName> serialization_infos_without_dropped_markers;
+    {
+        const bool share_nested = (*ctx->data->getSettings())[MergeTreeSetting::share_nested_offsets];
+        auto markers = ctx->source_part->getSerializationInfos().getMissingColumns();
+        if (std::erase_if(markers, [&](const auto & marker) { return alter_conversions->isColumnRemoved(marker.name, share_nested); }))
+        {
+            serialization_infos_without_dropped_markers = ctx->source_part->getSerializationInfos().clone();
+            serialization_infos_without_dropped_markers->setMissingColumns(std::move(markers));
+        }
+    }
+
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns, ctx->changes_storage_type);
+        serialization_infos_without_dropped_markers ? *serialization_infos_without_dropped_markers : ctx->source_part->getSerializationInfos(),
+        ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns, ctx->changes_storage_type);
 
     /// A part cannot be left with no columns: it could not be loaded or read.
     if (new_columns.empty())
@@ -5583,6 +5636,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
+            ctx->updated_header,
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension,
