@@ -534,6 +534,16 @@ class ClickHouseProc:
                     return False
         return True
 
+    def _stop_thread_fuzzer(self):
+        for proc, port in zip(
+            (self.proc, self.proc_1, self.proc_2), (self.port, self.port_1, self.port_2)
+        ):
+            if proc:
+                Shell.check(
+                    f'clickhouse-client --port {port} --receive_timeout=5 --query "SYSTEM STOP THREAD FUZZER"',
+                    verbose=True,
+                )
+
     # Grace period between the TERM the bound sends and the KILL that follows,
     # so a client that ignores TERM is still bounded.
     PREP_STEP_KILL_AFTER_S = 60
@@ -774,6 +784,8 @@ fi
             except subprocess.TimeoutExpired:
                 self.kafka_proc.kill()
 
+        # ThreadFuzzer (enabled in flaky check) makes the flush and shutdown many times slower.
+        self._stop_thread_fuzzer()
         self._flush_system_logs()
 
         self.save_system_metadata_files_from_remote_database_disk()
