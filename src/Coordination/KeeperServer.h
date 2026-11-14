@@ -112,6 +112,11 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
+    /// Used by yieldLeadershipBeforeShutdown to wait for the new leader.
+    std::atomic<bool> waiting_for_new_leader = false;
+    std::mutex new_leader_mutex;
+    std::condition_variable new_leader_cv;
+
     /// Milliseconds since monotonic clock epoch, or 0 if this node is not a leader.
     std::atomic<UInt64> leader_since_ms = 0;
 
@@ -255,6 +260,10 @@ public:
     bool requestLeader();
 
     void yieldLeadership();
+
+    /// If this server is the leader and a follower is in sync, hands leadership over to another server
+    /// and waits until the new leader is known (bounded by `yield_leadership_on_shutdown_timeout_ms`).
+    void yieldLeadershipBeforeShutdown();
 
     /// Ask the leader to start, or stop, waiting for replicas that cannot keep
     /// up. Can be sent to any node and is forwarded to the leader.
