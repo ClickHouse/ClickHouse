@@ -89,13 +89,17 @@ protected:
     const FilterDAGInfoPtr row_level_filter;
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
+    /// Declared before `reader_settings`: the columns cache is selected once, and the same snapshot
+    /// decides the write policy and the schema identity in `reader_settings`. Selecting it again
+    /// could see a different effective size after `autoResize` and give the readers a cache
+    /// without the write budget state and the schema identity.
+    const ColumnsCachePtr owned_columns_cache;
     const MergeTreeReaderSettings reader_settings;
     const Names column_names;
     const PoolSettings pool_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
-    const ColumnsCachePtr owned_columns_cache;
     const PatchJoinCachePtr patch_join_cache;
     const Block header;
 
