@@ -34,6 +34,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
@@ -1558,6 +1559,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        auto query_scope = QueryScope::createForQueryContext(session->sessionContext());
         auto query_context = session->makeQueryContext();
         assignStatementQueryId(query_context);
 
@@ -1573,7 +1575,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         /// `COPY` path sees the same catalog surface as ordinary queries on a fresh connection.
         prepareSystemTables(query_context, query);
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        query_scope.attachToQueryContext(query_context);
 
         String columns_to_insert;
         if (!copy_query->column_names.empty())
@@ -1930,6 +1932,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_TO)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        auto query_scope = QueryScope::createForQueryContext(session->sessionContext());
         auto query_context = session->makeQueryContext();
         assignStatementQueryId(query_context);
 
@@ -1947,7 +1950,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         /// succeeds.
         prepareSystemTables(query_context, query);
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        query_scope.attachToQueryContext(query_context);
 
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())
@@ -2287,11 +2290,12 @@ void PostgreSQLHandler::processQuery()
             if (copy_result == CopyQueryResult::ErrorHandled)
                 break;
 
+            if (processExecute(sql_query))
+                continue;
+
+            auto query_scope = QueryScope::createForQueryContext(session->sessionContext());
             auto query_context = session->makeQueryContext();
             assignStatementQueryId(query_context);
-
-            if (processExecute(sql_query, query_context))
-                continue;
 
             /// Refresh the emulated catalog against each actual statement rather than the outer message text:
             /// a semicolon-separated `CREATE TABLE t ...; SELECT oid FROM pg_class ...` must see `t` in the
@@ -2299,7 +2303,7 @@ void PostgreSQLHandler::processQuery()
             /// `t` exists). This mirrors the extended-protocol path, which refreshes on the bound statement.
             prepareSystemTables(query_context, sql_query);
 
-            QueryScope query_scope = QueryScope::create(query_context);
+            query_scope.attachToQueryContext(query_context);
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
@@ -2396,7 +2400,7 @@ bool PostgreSQLHandler::processPrepareStatement(const String & query)
     return true;
 }
 
-bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr query_context)
+bool PostgreSQLHandler::processExecute(const String & query)
 {
     auto parser = ParserExecute();
     ASTPtr prepare;
@@ -2411,6 +2415,10 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 
     auto result_query = prepared_statements_manager.getStatement(prepare->as<ASTExecute>());
 
+    auto query_scope = QueryScope::createForQueryContext(session->sessionContext());
+    auto query_context = session->makeQueryContext();
+    assignStatementQueryId(query_context);
+
     /// Refresh the emulated catalog against the resolved statement, not the outer `EXECUTE s` text:
     /// the prepared SQL is what may actually read `pg_*` catalog objects.
     prepareSystemTables(query_context, result_query);
@@ -2418,7 +2426,7 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(result_query);
 
-    QueryScope query_scope = QueryScope::create(query_context);
+    query_scope.attachToQueryContext(query_context);
 
     UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
 
@@ -2551,13 +2559,14 @@ void PostgreSQLHandler::processExecuteQuery()
         if (query->max_rows != 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bounded Execute is not supported in the PostgreSQL wire protocol");
 
+        auto query_scope = QueryScope::createForQueryContext(session->sessionContext());
         auto query_context = session->makeQueryContext();
         assignStatementQueryId(query_context);
 
         auto sql_query = prepared_statements_manager.getStatmentFromBind();
         prepareSystemTables(query_context, sql_query);
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        query_scope.attachToQueryContext(query_context);
 
         PostgreSQLProtocol::Messaging::CommandComplete::Command command =
             PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
@@ -3307,6 +3316,8 @@ SELECT * FROM VALUES(
 
 void PostgreSQLHandler::prepareSystemTables(ContextMutablePtr query_context, const String & query)
 {
+    /// Catalog queries have their own scopes; restore the caller's setup tracker after they detach.
+    MemoryTrackerSwitcher catalog_memory_scope(&total_memory_tracker);
     if (should_init_system_tables)
     {
         initializeSystemTables(query_context);

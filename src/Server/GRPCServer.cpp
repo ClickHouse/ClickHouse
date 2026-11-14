@@ -7,7 +7,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
@@ -68,6 +71,11 @@ using GRPCObsoleteTransportCompression = clickhouse::grpc::ObsoleteTransportComp
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char grpc_pause_after_query_id_release[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -884,6 +892,7 @@ namespace
 
         void finishQuery();
         void onException(const Exception & exception);
+        void releaseQueryContext();
         void releaseQueryIDAndSessionID();
         void close();
 
@@ -909,8 +918,8 @@ namespace
         LoggerRawPtr log = nullptr;
 
         std::optional<Session> session;
-        ContextMutablePtr query_context;
         std::optional<QueryScope> query_scope;
+        ContextMutablePtr query_context;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
@@ -1084,6 +1093,9 @@ namespace
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
         }
 
+        query_scope = session->sessionContext()
+            ? QueryScope::createForQueryContext(session->sessionContext())
+            : QueryScope::createForQueryContext(CurrentThread::get().untracked_memory_limit);
         query_context = session->makeQueryContext(std::move(client_info));
 
         auto settings_changes = settingsChangesFromMap(query_info.settings());
@@ -1091,7 +1103,7 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope = QueryScope::create(query_context, /* fatal_error_callback */
+        query_scope->attachToQueryContext(query_context, /* fatal_error_callback */
             [weak_call_responder = std::weak_ptr<CallResponder>(call_responder)]
             {
                 if (auto shared_call_responder = weak_call_responder.lock())
@@ -1617,6 +1629,8 @@ namespace
 
     void Call::onException(const Exception & exception)
     {
+        /// The retained context can still exceed its limit while we send the original error.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         /// Stops the format's writing thread before the output buffer is finalized.
         output_format_processor.reset();
         io.onException();
@@ -1650,18 +1664,34 @@ namespace
         close();
     }
 
+    void Call::releaseQueryContext()
+    {
+        pipeline_executor.reset();
+        pipeline = nullptr;
+        output_format_processor.reset();
+        io.resetPipeline(/*cancel=*/false);
+        io.releaseWorkloadResources();
+        auto process_list_entries = std::move(io.process_list_entries);
+        io = {};
+        if (query_context)
+            query_context->setProcessListElement(nullptr);
+        query_context.reset();
+        /// Flush context cleanup before releasing the process-list entries.
+        CurrentThread::flushUntrackedMemory();
+        process_list_entries.clear();
+    }
+
     void Call::releaseQueryIDAndSessionID()
     {
         /// releaseQueryIDAndSessionID() should be called before sending the final result to the client
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        /// `io` goes as a whole: its callbacks read the process list elements of their contexts.
-        io = {};
-        if (query_context)
-            query_context->setProcessListElement(nullptr);
+        releaseQueryContext();
         if (session)
             session->releaseSessionID();
+        if (FailPointInjection::hasAnyFailPointBeenRegistered())
+            FailPointInjection::pauseFailPoint(FailPoints::grpc_pause_after_query_id_release);
     }
 
     void Call::close()
@@ -1677,9 +1707,7 @@ namespace
         }
 
         call_responder->close();
-        pipeline_executor.reset();
-        pipeline = nullptr;
-        output_format_processor.reset();
+        releaseQueryContext();
         read_buffer.reset();
         /// Not finalized when `sendFatalError` finished the call first.
         if (write_buffer)
@@ -1687,10 +1715,15 @@ namespace
         write_buffer.reset();
         nested_write_buffer = nullptr;
         compressing_write_buffer = nullptr;
-        io = {};
-        query_scope.reset();
-        query_context.reset();
+        ast.reset();
+        insert_query = nullptr;
+        output = {};
+        String{}.swap(input_format);
+        String{}.swap(input_data_delimiter);
+        String{}.swap(output_format);
+        result = GRPCResult{};
         thread_trace_context.reset();
+        query_scope.reset();
         session.reset();
     }
 
