@@ -9940,7 +9940,10 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
     for (const auto & column : columns)
     {
         const auto name_in_storage = column.getNameInStorage();
+        /// A pending drop or rename of a `Nested` column changes its members too, see `AlterConversions::isColumnDropped`.
+        const auto nested_parent = name_in_storage.substr(0, name_in_storage.find('.'));
         if (!changed_on_fly.contains(name_in_storage)
+            && !changed_on_fly.contains(nested_parent)
             && std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
             result.push_back(column);
     }

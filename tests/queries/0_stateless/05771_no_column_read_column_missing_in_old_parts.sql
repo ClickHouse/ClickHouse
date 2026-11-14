@@ -55,3 +55,13 @@ SELECT count() FROM t_rename SETTINGS query_plan_remove_unused_columns = 1, opti
 SELECT count() FROM t_rename SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 SELECT count() FROM t_rename GROUP BY _part SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
 DROP TABLE t_rename;
+
+DROP TABLE IF EXISTS t_nested;
+CREATE TABLE t_nested (k UInt64, s String, `n.a` Array(UInt8)) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, share_nested_offsets = 1;
+SYSTEM STOP MERGES t_nested;
+INSERT INTO t_nested SELECT number, if(number = 500, 'n/a', toString(number)), [0] FROM numbers(1000);
+ALTER TABLE t_nested DROP COLUMN n, ADD COLUMN `n.a` Array(UInt64) DEFAULT [toUInt64(s)] SETTINGS alter_sync = 0;
+SELECT count() FROM t_nested SETTINGS query_plan_remove_unused_columns = 1, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_nested SETTINGS query_plan_remove_unused_columns = 0, optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0;
+DROP TABLE t_nested;
