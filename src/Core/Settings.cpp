@@ -2417,7 +2417,9 @@ When enabled, the aggregator maintains a bounded heap of the top `K` keys seen s
 
 The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the requested `LIMIT`.
 
-The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, a `COLLATE` on any of the matched `GROUP BY` keys (a `COLLATE` on a later `ORDER BY` column past the full key prefix cannot affect which groups qualify, so it does not disable the optimization), `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+
+With `COLLATE` on a ranked key, a row is first looked up in the hash table, and only a row with a new key is compared with the heap boundary under the collation, because such a comparison costs more than the lookup.
 
 Possible values:
 
@@ -2473,7 +2475,7 @@ For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): w
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
-It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas.
+It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas. Nor when the first key is sorted with `COLLATE`: the filter would compare every read row under the collation, also after the heap gives up.
 
 Possible values:
 

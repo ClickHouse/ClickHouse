@@ -19,6 +19,7 @@ size_t TopKAggregationHeapBase::initBase(
     size_t query_k,
     const std::vector<int> & dirs,
     const std::vector<int> & null_dirs,
+    const std::vector<std::shared_ptr<Collator>> & cols,
     UInt64 observation_rows)
 {
     is_prefix_mode = heap_key_count < total_group_by_keys;
@@ -29,12 +30,13 @@ size_t TopKAggregationHeapBase::initBase(
             *key_columns[0],
             query_k,
             dirs.empty() ? 1 : dirs[0],
-            null_dirs.empty() ? 1 : null_dirs[0]);
+            null_dirs.empty() ? 1 : null_dirs[0],
+            cols);
     }
     else
     {
         ColumnRawPtrs heap_cols(key_columns.begin(), key_columns.begin() + heap_key_count);
-        init(heap_cols, query_k, dirs, null_dirs);
+        init(heap_cols, query_k, dirs, null_dirs, cols);
     }
 
     /// The window must cover at least one full fill of the set plus as
@@ -45,10 +47,13 @@ size_t TopKAggregationHeapBase::initBase(
     return next_trim_size + 1;
 }
 
+/// A trim compares the kept keys under the locale, so a heap with a `COLLATE` key trims less often.
+static constexpr size_t collated_min_trim_slack = 256;
+
 void TopKAggregationHeapBase::setK(size_t query_k)
 {
     k = query_k;
-    trim_slack = std::max<size_t>(1, k / 2);
+    trim_slack = std::max<size_t>(has_collators ? collated_min_trim_slack : 1, k / 2);
     next_trim_size = k + trim_slack;
     tie_overflow_limit = k + max_tie_rows;
 }
@@ -57,10 +62,13 @@ void TopKAggregationHeapBase::init(
     const IColumn & source_column,
     size_t query_k,
     int direction,
-    int nulls_direction)
+    int nulls_direction,
+    const std::vector<std::shared_ptr<Collator>> & cols)
 {
     directions = {direction};
     nulls_directions = {nulls_direction};
+    collators = {cols.empty() ? nullptr : cols[0]};
+    has_collators = collators[0] != nullptr;
     is_composite = false;
     setK(query_k);
     heap_column = source_column.cloneEmpty();
@@ -74,18 +82,18 @@ void TopKAggregationHeapBase::init(
     findLowCardinalityColumns();
 
     const TypeIndex type = heap_column->getDataType();
-    typed_key_type = dispatchNumericKeyType(type, []<typename>() {}) ? type : TypeIndex::Nothing;
+    typed_key_type = !has_collators && dispatchNumericKeyType(type, []<typename>() {}) ? type : TypeIndex::Nothing;
 }
 
 void TopKAggregationHeapBase::init(
     const ColumnRawPtrs & source_columns,
     size_t query_k,
     const std::vector<int> & dirs,
-    const std::vector<int> & null_dirs)
+    const std::vector<int> & null_dirs,
+    const std::vector<std::shared_ptr<Collator>> & cols)
 {
     const size_t n = source_columns.size();
     is_composite = true;
-    setK(query_k);
 
     directions.assign(n, 1);
     for (size_t i = 0; i < dirs.size() && i < n; ++i)
@@ -94,6 +102,12 @@ void TopKAggregationHeapBase::init(
     nulls_directions.assign(n, 1);
     for (size_t i = 0; i < null_dirs.size() && i < n; ++i)
         nulls_directions[i] = null_dirs[i];
+
+    collators.assign(n, nullptr);
+    for (size_t i = 0; i < cols.size() && i < n; ++i)
+        collators[i] = cols[i];
+    has_collators = std::ranges::any_of(collators, [](const auto & collator) { return collator != nullptr; });
+    setK(query_k);
 
     MutableColumns sub_columns;
     sub_columns.reserve(n);
@@ -120,8 +134,8 @@ bool TopKAggregationHeapBase::shouldFreeze() const
     const UInt64 window_observed = observed_rows - window_start_observed_rows;
     const UInt64 window_skipped = skipped_rows - window_start_skipped_rows;
     if (profitability_window && window_observed >= profitability_window
-        && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1 && evicted_keys < k
-        && heap_indices.size() >= k)
+        && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1
+        && evicted_keys < k && heap_indices.size() >= k)
         return true;
 
     return tie_overflow;
@@ -176,13 +190,13 @@ void TopKAggregationHeapBase::initBoundary()
 int TopKAggregationHeapBase::compareRanked(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const
 {
     if (!is_composite)
-        return directions[0] * lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[0]);
+        return directions[0] * compareColumns(lhs, lhs_row, rhs, rhs_row, 0);
 
     const auto & lhs_tuple = assert_cast<const ColumnTuple &>(lhs);
     const auto & rhs_tuple = assert_cast<const ColumnTuple &>(rhs);
     for (size_t i = 0; i < directions.size(); ++i)
     {
-        const int cmp = lhs_tuple.getColumn(i).compareAt(lhs_row, rhs_row, rhs_tuple.getColumn(i), nulls_directions[i]);
+        const int cmp = compareColumns(lhs_tuple.getColumn(i), lhs_row, rhs_tuple.getColumn(i), rhs_row, i);
         if (cmp != 0)
             return directions[i] * cmp;
     }
@@ -362,6 +376,13 @@ void TopKAggregationHeapBase::findLowCardinalityColumns()
     }
     else if (typeid_cast<const ColumnLowCardinality *>(heap_column.get()))
         low_cardinality_columns.push_back(0);
+}
+
+bool TopKAggregationHeapBase::shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const
+{
+    if (is_composite)
+        return sourceAboveBoundaryComposite<true>(source_columns, source_row);
+    return sourceAboveBoundary<true>(*source_columns[0], source_row);
 }
 
 int TopKAggregationHeapBase::compareHeapRowsComposite(size_t a, size_t b) const

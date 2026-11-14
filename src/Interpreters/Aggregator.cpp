@@ -14,6 +14,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
+#include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -611,6 +612,15 @@ static Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Colu
     return aggregate_columns;
 }
 
+static Strings topKCollationLocales(const Aggregator::Params::TopKParams & top_k)
+{
+    Strings locales;
+    locales.reserve(top_k.collators.size());
+    for (const auto & collator : top_k.collators)
+        locales.push_back(collator ? collator->getLocale() : String{});
+    return locales;
+}
+
 void Aggregator::Params::explain(ExplainFormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
@@ -649,8 +659,13 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
     }
 
     if (top_k)
+    {
         out << fmt::format(
-            "{}Top-K: limit={}, columns={}, directions=[{}]\n", prefix, top_k->k, top_k->key_columns, fmt::join(top_k->directions, ","));
+            "{}Top-K: limit={}, columns={}, directions=[{}]", prefix, top_k->k, top_k->key_columns, fmt::join(top_k->directions, ","));
+        if (top_k->hasCollators())
+            out << fmt::format(", collations=[{}]", fmt::join(topKCollationLocales(*top_k), ","));
+        out << '\n';
+    }
 }
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
@@ -685,6 +700,13 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
         for (int direction : top_k->directions)
             directions->add(direction);
         top_k_map->add("Directions", std::move(directions));
+        if (top_k->hasCollators())
+        {
+            auto collations = std::make_unique<JSONBuilder::JSONArray>();
+            for (const auto & locale : topKCollationLocales(*top_k))
+                collations->add(locale);
+            top_k_map->add("Collations", std::move(collations));
+        }
         map.add("Top-K", std::move(top_k_map));
     }
 }
@@ -1277,6 +1299,7 @@ void Aggregator::executeImpl(
             params.keys.size(),
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
+            params.top_k->collators,
             params.top_k->observation_rows,
             params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr,
             params.top_k->threshold_tracker);
@@ -1526,6 +1549,21 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
+    [[maybe_unused]] auto heap_should_skip = [&](size_t row) ALWAYS_INLINE -> bool
+    {
+        if constexpr (top_k && has_typed_key)
+            return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
+        else if constexpr (top_k)
+            return method.top_k_heap.shouldSkip(heap_key_cols, row);
+        return false;
+    };
+
+    /// See `TopKAggregationHeapBase::ranksUnderCollation`. Only for a key holder that is cheap to build twice.
+    static constexpr bool may_look_up_first = top_k && !has_typed_key && State::has_cheap_key_holder;
+    [[maybe_unused]] bool look_up_first = false;
+    if constexpr (may_look_up_first)
+        look_up_first = method.top_k_heap.ranksUnderCollation();
+
     auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
     {
         if constexpr (top_k)
@@ -1594,9 +1632,15 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
         if constexpr (top_k)
         {
+            if constexpr (may_look_up_first)
+            {
+                /// A known key has nothing to add.
+                if (look_up_first && method.top_k_heap.hasBoundary() && state.findKey(method.data, i, *aggregates_pool).isFound())
+                    continue;
+            }
+
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                            : (method.top_k_heap.hasBoundary()
-                               && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
+                            : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
             {
                 ++top_k_rows_skipped;
                 continue;
@@ -1749,12 +1793,20 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
-    [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
+    [[maybe_unused]] auto heap_should_skip = [&](size_t row) ALWAYS_INLINE -> bool
     {
-        if constexpr (top_k)
+        if constexpr (top_k && has_typed_key)
             return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
+        else if constexpr (top_k)
+            return method.top_k_heap.shouldSkip(heap_key_cols, row);
         return false;
     };
+
+    /// See `TopKAggregationHeapBase::ranksUnderCollation`. Only for a key holder that is cheap to build twice.
+    static constexpr bool may_look_up_first = top_k && !has_typed_key && State::has_cheap_key_holder;
+    [[maybe_unused]] bool look_up_first = false;
+    if constexpr (may_look_up_first)
+        look_up_first = method.top_k_heap.ranksUnderCollation();
 
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
@@ -1884,6 +1936,19 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
+                    if constexpr (may_look_up_first)
+                    {
+                        if (look_up_first && method.top_k_heap.hasBoundary())
+                        {
+                            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+                            if (find_result.isFound())
+                            {
+                                ++getInlineCountState(find_result.getMapped());
+                                continue;
+                            }
+                        }
+                    }
+
                     if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
                                     : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                     {
@@ -2005,6 +2070,19 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (top_k)
             {
+                if constexpr (may_look_up_first)
+                {
+                    if (look_up_first && method.top_k_heap.hasBoundary())
+                    {
+                        auto find_result = state.findKey(method.data, i, *aggregates_pool);
+                        if (find_result.isFound())
+                        {
+                            places[i] = find_result.getMapped();
+                            continue;
+                        }
+                    }
+                }
+
                 if (skip_bitmap
                     ? static_cast<bool>(skip_bitmap[i])
                     : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
@@ -2680,6 +2758,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
+
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     const bool over_external_threshold = params.max_bytes_before_external_group_by
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by);
