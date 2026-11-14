@@ -1719,6 +1719,97 @@ def test_where_numeric_reader_values(started_cluster, column_type):
         collection.drop()
 
 
+@pytest.mark.parametrize("column_type", ["String", "Nullable(String)"])
+def test_where_string_reader_values(started_cluster, column_type):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "string_reader_values"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    # The reader writes every BSON value as text and reads a missing field as the default. The values that MongoDB
+    # compares differently come first, so a remote limit would drop the matches.
+    collection.insert_many(
+        [
+            {"id": 1, "s": 1},
+            {"id": 2, "s": True},
+            {"id": 3, "s": 1.5},
+            {"id": 4, "s": bson.Int64(1)},
+            {"id": 5},
+            {"id": 6, "s": None},
+            {"id": 7, "s": ["a"]},
+            {"id": 8, "s": bson.Binary(b"a")},
+            {"id": 9, "s": {"k": "a"}},
+            {"id": 10, "s": bson.Decimal128("1.5")},
+            {"id": 11, "s": datetime.datetime(2020, 1, 1)},
+            {"id": 12, "s": bson.ObjectId("5f0000000000000000000000")},
+            {"id": 13, "s": "1"},
+            {"id": 14, "s": "a"},
+            {"id": 15, "s": ""},
+            {"id": 16, "s": "b"},
+        ]
+    )
+
+    node = started_cluster.instances["node"]
+    structure = f"id Int32, s {column_type}"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        predicates = [
+            "s = '1'",
+            "'1' = s",
+            "s = 'true'",
+            "s = 'a'",
+            "s = ''",
+            "s = '1.5'",
+            "s = '[\"a\"]'",
+            "s = '5f0000000000000000000000'",
+            "s IN ('1', 'a')",
+            "s != 'a'",
+            "s NOT IN ('a', '1')",
+            "s < 'b'",
+            "s > '1'",
+            "s >= 'a'",
+            "s <= ''",
+            "s > ''",
+            "s IN ('', 'b')",
+            "s = 'a' OR id = 3",
+            "s > '0' AND id > 2",
+        ]
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for predicate in predicates:
+                for query in (
+                    "SELECT id FROM {} WHERE " + predicate + " ORDER BY id",
+                    "SELECT count() FROM (SELECT id FROM {} WHERE "
+                    + predicate
+                    + " LIMIT 1)",
+                ):
+                    expected = node.query(query.format(reference))
+                    for throw_on_unsupported_query in (0, 1):
+                        assert (
+                            node.query(
+                                query.format(source),
+                                settings={
+                                    "mongodb_throw_on_unsupported_query": throw_on_unsupported_query
+                                },
+                            )
+                            == expected
+                        ), (query, source)
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
 def test_where_unary_predicates(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]

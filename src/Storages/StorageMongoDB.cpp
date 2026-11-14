@@ -780,6 +780,29 @@ static std::optional<bsoncxx::document::value> numberColumnFilter(
     return make_document(kvp("$or", filters.extract()));
 }
 
+/// A filter on a `String` column. The reader writes every BSON value as text: a number, a bool, an `ObjectId`, a binary,
+/// a date, an array or a document, and reads a missing field or a `null` as the default (`BSONElementAsString`). A MongoDB
+/// comparison with a string takes only strings and the arrays with a matching element, so the filter takes every document
+/// that the reader may write as a matching string, and the `WHERE` decides them.
+static bsoncxx::document::value stringColumnFilter(
+    const std::string & column_name, const std::string & func_name, const bsoncxx::types::bson_value::value & func_value, const DataTypePtr & column_type)
+{
+    auto filters = bsoncxx::builder::basic::array{};
+    filters.append(make_document(kvp(column_name, make_document(kvp(func_name, BSONCXXHelper::writableBSONView(func_value))))));
+    /// An array is written as JSON, and `$ne` and `$nin` drop an array with an excluded element.
+    filters.append(make_document(kvp(column_name, make_document(kvp("$type", "array")))));
+    if (func_name != "$ne" && func_name != "$nin")
+    {
+        filters.append(make_document(kvp(column_name, make_document(kvp("$type", make_array(
+            "objectId", "binData", "bool", "int", "long", "double", "decimal", "date", "timestamp", "object", "regex", "dbPointer",
+            "symbol", "undefined"))))));
+        /// `null` also matches a missing field.
+        if (!column_type->isNullable())
+            filters.append(make_document(kvp(column_name, bsoncxx::types::b_null{})));
+    }
+    return make_document(kvp("$or", filters.extract()));
+}
+
 static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const JoinNode * join_node, const StorageID & storage_id)
 {
     const auto * column = node->as<ColumnNode>();
@@ -971,7 +994,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     if (func_name == "$nin" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
         func_name = "$ne";
 
-    return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
+    /// An `ObjectId` column is compared as an `ObjectId`.
+    if (isString(removeNullable(column_node->getResultType())) && !is_oid)
+    {
+        is_superset = true;
+        return stringColumnFilter(column_node->getColumnName(), func_name, func_value, column_node->getResultType());
+    }
+
+    return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, BSONCXXHelper::writableBSONView(func_value)))));
 }
 
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
