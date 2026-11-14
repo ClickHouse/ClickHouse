@@ -203,9 +203,9 @@ private:
 
     [[nodiscard]] size_t clampReach(size_t predicted_end, size_t phys_pos) const;
     /// Physical end of the request-map run that holds the position; the file end without a map.
-    size_t requestRunEnd(size_t block_bytes) const;
+    [[nodiscard]] size_t requestRunEnd(size_t block_bytes) const;
     /// How far a held GET may reach: `requestRunEnd` with a map, else the predicted run end.
-    size_t longConnectionReach(size_t block_bytes) const;
+    [[nodiscard]] size_t longConnectionReach(size_t block_bytes) const;
     /// `window_bytes` is the window this read serves, so the admission rule ("the run outlives the
     /// current window") holds at every pressure level, not only where the window equals `window_size`.
     [[nodiscard]] bool shouldOpenLongConnection(size_t reach, size_t window_bytes) const;
@@ -225,7 +225,7 @@ private:
     void ensureResolved(size_t pos, size_t look_ahead, size_t request_run_end);
     /// Extends `fetch` up to `limit` to the last demanded byte of the miss segment where it ends: the segment
     /// fills only from its committed front, so the bytes before that byte are read in any case.
-    ByteRange extendFetchThroughMissSegment(ByteRange fetch, size_t limit) const;
+    [[nodiscard]] ByteRange extendFetchThroughMissSegment(ByteRange fetch, size_t limit) const;
     /// Serve one block from `pos` out of a FETCH run: read `fetch_range` from source once, fill the
     /// tiers it spans, hold what no tier accepted, and serve. (Details in the definition.)
     ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes);

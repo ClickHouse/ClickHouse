@@ -44,7 +44,7 @@ struct HypotheticalBinding
     static HypotheticalBinding of(const ProjectionDescription & projection, const StorageInMemoryMetadata & metadata);
 
     /// empty when nothing changed, otherwise what changed; a change needs SELECT on the columns it names
-    String changeIn(const StorageInMemoryMetadata & metadata, const ContextPtr & context, const StorageID & table_id) const;
+    [[nodiscard]] String changeIn(const StorageInMemoryMetadata & metadata, const ContextPtr & context, const StorageID & table_id) const;
 };
 
 /// Session-scoped store for hypothetical indexes and projections, used by EXPLAIN WHATIF

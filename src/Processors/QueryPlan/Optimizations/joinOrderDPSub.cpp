@@ -155,7 +155,7 @@ private:
     [[nodiscard]] UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
     /// The classes of all keys of a join, in the order a single relation can be read in, starting with the merge key;
     /// empty if it cannot be read in an order that covers them.
-    VectorWithMemoryTracking<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
+    [[nodiscard]] VectorWithMemoryTracking<Int32> keyOrder(UInt32 relation_mask, UInt64 key_classes, Int32 order_class) const;
     /// The number of distinct values of the class's columns in a set of relations, at most `rows`; 1 when unknown.
     [[nodiscard]] double distinctValues(UInt32 relations, Int32 order_class, UInt64 rows) const;
     /// The work of a hash join of the two sides, see `computeHashJoinWork`. 0 without interesting orders, where costs

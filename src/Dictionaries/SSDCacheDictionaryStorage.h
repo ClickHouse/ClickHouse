@@ -230,7 +230,7 @@ public:
 
     /// Serialized columns of the record at offset_in_block. Their size is the size_t stored
     /// immediately before the payload (see the block layout above); the record must fit the block.
-    std::string_view getRecordView(size_t offset_in_block) const
+    [[nodiscard]] std::string_view getRecordView(size_t offset_in_block) const
     {
         if (offset_in_block < block_header_size + sizeof(size_t) || offset_in_block > block_size)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
@@ -450,7 +450,7 @@ public:
         current_write_block.writeCheckSum();
     }
 
-    std::string_view getRecordView(SSDCacheIndex index) const
+    [[nodiscard]] std::string_view getRecordView(SSDCacheIndex index) const
     {
         SSDCacheBlock block(block_size);
         block.reset(buffer.m_data + index.block_index * block_size);

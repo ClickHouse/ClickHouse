@@ -380,7 +380,7 @@ struct IMergeTreeIndex
     [[nodiscard]] IsShadowingColumn getMapSubcolumnShadowingCheck() const;
 
     /// Tells whether a name that looks like a subcolumn of a `JSON` column can belong to another column.
-    IsShadowingJSONSubcolumn getJSONSubcolumnShadowingCheck() const;
+    [[nodiscard]] IsShadowingJSONSubcolumn getJSONSubcolumnShadowingCheck() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;

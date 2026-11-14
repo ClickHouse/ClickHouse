@@ -30,10 +30,10 @@ public:
 
     /// End of the interval that holds `offset`, or of the next interval if it starts at most `max_lead` bytes
     /// after `offset`; `nullopt` otherwise.
-    std::optional<size_t> intervalEndAhead(size_t offset, size_t max_lead) const;
+    [[nodiscard]] std::optional<size_t> intervalEndAhead(size_t offset, size_t max_lead) const;
 
     /// The set with every gap up to `max_gap` filled.
-    ByteRangeSet mergeGapsUpTo(size_t max_gap) const;
+    [[nodiscard]] ByteRangeSet mergeGapsUpTo(size_t max_gap) const;
 
     void shift(size_t delta);
 

@@ -23,7 +23,7 @@ public:
 
     [[nodiscard]] String getName() const override { return "BroadcastSend"; }
 
-    const String & getExchangeId() const { return exchange_id; }
+    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
 
     [[nodiscard]] bool hasOutputStream() const { return false; }
 

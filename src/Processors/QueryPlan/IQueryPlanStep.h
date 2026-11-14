@@ -214,7 +214,7 @@ public:
     /// What removeUnusedColumns would not need of each child once nobody needs these outputs.
     /// The children are to be pruned by that before the step itself is.
     /// Can be used only if canRemoveUnusedColumns returns true, for a step with children.
-    virtual UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/) const;
+    [[nodiscard]] virtual UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/) const;
 
     /// Different Steps have different stages of execution.
     /// For example JoinStep has build and probe stages.
@@ -225,7 +225,7 @@ public:
     /// In order for EXPLAIN ANALYZE to track all the time for every step
     /// redefine the methods below when adding a new step with several stages
     /// Follow the pattern of classes with multi stage execution that already implements these methods
-    virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
+    [[nodiscard]] virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
     [[nodiscard]] virtual String getStepGroupName(size_t) const { return {}; }
 
     [[nodiscard]] virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }

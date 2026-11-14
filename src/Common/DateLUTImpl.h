@@ -924,7 +924,7 @@ public:
 
     /// The offset from UTC at the local time `t`, which is a wall clock read as seconds since the epoch, so that
     /// `t - timezoneOffsetAtLocalTime(t)` is its UTC time. A repeated or skipped local time is resolved as in `makeDateTime`.
-    Time timezoneOffsetAtLocalTime(Time t) const
+    [[nodiscard]] Time timezoneOffsetAtLocalTime(Time t) const
     {
         Int64 day = t / 86400;
         Time time_of_day = t % 86400;
@@ -2031,7 +2031,7 @@ private:
     [[nodiscard]] DateTimeComponents toDateTimeComponentsOutOfRange(Time t) const;
     [[nodiscard]] Time toTimeOutOfRange(Time t) const;
     [[nodiscard]] Time timezoneOffsetOutOfRange(Time t) const;
-    Time timezoneOffsetAtLocalTimeOutOfRange(Time t) const;
+    [[nodiscard]] Time timezoneOffsetAtLocalTimeOutOfRange(Time t) const;
     [[nodiscard]] Time addDaysOutOfRange(Time t, Int64 delta) const;
     [[nodiscard]] Time addMonthsOutOfRange(Time t, Int64 delta) const;
     [[nodiscard]] Time addYearsOutOfRange(Time t, Int64 delta) const;
