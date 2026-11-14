@@ -1530,8 +1530,9 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
     # means the skip survived the reconnect, two mean it was handed back. Losing the recovery's
     # publish can only keep the count at one, so this is asked on both arms; only the
     # acknowledgement itself is asked where the guard below says. The ACK deadline is far beyond
-    # every wait here, so a redelivery cannot come from anywhere else, and the run holds the flush
-    # interval open so the reconnect lands inside a cycle.
+    # every wait here, so a redelivery cannot come from anywhere else. The flush interval keeps the
+    # cycle open across a broker restart, which `docker kill` alone can stretch past half a minute,
+    # and `nats_max_block_size = 1` ends the cycle at the first row instead.
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
 
     # Anchored before the table exists, so the first streaming cycle counts however quickly it
@@ -1551,7 +1552,8 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n',
                      nats_skip_broken_messages = 1000,
-                     nats_flush_interval_ms = 30000,
+                     nats_max_block_size = 1,
+                     nats_flush_interval_ms = 300000,
                      nats_wait_for_flush_interval = 1;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.consume;
@@ -1613,8 +1615,8 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
         "{} deliveries for one message".format(consumer_seq))
 
     # A stale subscription consumes nothing, so the view holding this row also means the recovery
-    # did happen - deferred to a cycle that holds nothing rather than skipped altogether. It waits
-    # out the rest of the current cycle and then a whole cycle of its own.
+    # did happen - deferred to a cycle that holds nothing rather than skipped altogether. The row
+    # ends the cycle that consumes it.
     messages = [json.dumps({"key": 42, "value": 42})]
     asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
     result = instance.query_with_retry(
