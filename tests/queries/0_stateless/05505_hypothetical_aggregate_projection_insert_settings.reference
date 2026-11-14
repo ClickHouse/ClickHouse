@@ -1,0 +1,10 @@
+Baseline (after PK + partition + existing indexes):
+marks: 11
+With p (aggregate projection, hypothetical):
+marks: 11
+marks_span: 11 to 12
+verdict: too close to call
+f_inserted: Wide, 500 rows, 12 marks
+f_materialized: Compact, 500 rows, 11 marks
+inserted: 11 marks
+materialized: 11 marks

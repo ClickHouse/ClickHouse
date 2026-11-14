@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1337070",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1422730",
       "email": "support@clickhouse.com"
     }
   },
@@ -1496,7 +1496,7 @@
     "/v1/organizations/{organizationId}/serviceProfiles": {
       "get": {
         "summary": "List available service profiles",
-        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).",
+        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. v2-default (Gen 2 hardware) is listed for organizations with Gen 2 enabled and included in their plan (SCALE or ENTERPRISE) or settings, in AWS regions where Gen 2 is available, and never for BYOC infrastructure. Some other profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).",
         "operationId": "serviceProfilesList",
         "parameters": [
           {
@@ -1613,8 +1613,243 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. v2-default (Gen 2 hardware) is listed for organizations with Gen 2 enabled and included in their plan (SCALE or ENTERPRISE) or settings, in AWS regions where Gen 2 is available, and never for BYOC infrastructure. Some other profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/previews": {
+      "get": {
+        "summary": "Get list of organization preview features",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the preview features offered to the organization, with whether each one is on and whether the caller can switch it.",
+        "operationId": "organizationPublicPreviewsGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PublicPreview"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/previews/{previewId}": {
+      "patch": {
+        "summary": "Update organization preview feature",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Switches a preview feature on or off for the organization. Use an ID returned by the list endpoint; an unknown ID returns 404. Only previews offered to the organization can be switched on, otherwise the request returns 403; switching off is always allowed.",
+        "operationId": "organizationPublicPreviewPatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "previewId",
+            "description": "ID of the requested preview feature.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicPreviewPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PublicPreview"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services": {
@@ -2087,7 +2322,7 @@
       },
       "delete": {
         "summary": "Delete service",
-        "description": "Deletes the service. The service must be in stopped state and is deleted asynchronously after this method call.",
+        "description": "Deletes the service. The service must be in stopped state and is deleted asynchronously after this method call. Returns 409 if deletion protection is enabled for the service.",
         "operationId": "instanceDelete",
         "parameters": [
           {
@@ -2191,7 +2426,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Deletes the service. The service must be in stopped state and is deleted asynchronously after this method call.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:delete` permission.\n\n</div>\n</div>"
+          "content": "Deletes the service. The service must be in stopped state and is deleted asynchronously after this method call. Returns 409 if deletion protection is enabled for the service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:delete` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -2779,7 +3014,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/scaling": {
       "patch": {
         "summary": "Update service auto scaling settings",
-        "description": "Updates minimum and maximum total memory limits and idle mode scaling behavior for the service. The memory settings are available only for \"production\" services and must be a multiple of 12 starting from 24GB. Please contact support to enable adjustment of numReplicas.",
+        "description": "Updates minimum and maximum total memory limits and idle mode scaling behavior for the service. The memory settings are available only for \"production\" services and must be a multiple of 12 starting from 24GB. Gen 2 (v2-default) services use a fixed size and cannot idle: minTotalMemoryGb must equal maxTotalMemoryGb and idleScaling cannot be true.",
         "operationId": "instanceScalingUpdate",
         "parameters": [
           {
@@ -2900,7 +3135,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/replicaScaling": {
       "patch": {
         "summary": "Update service auto scaling settings",
-        "description": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For vertical autoscaling, please contact support to enable adjustment of numReplicas. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization.",
+        "description": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile. On a BYOC service, equal memory values without a profile must be one of the following sizes: 48, 116, 172, 232; send a BYOC profile to pin a size from the infrastructure's catalogue. When BYOC vertical autoscaling is enabled for the organization (contact support), a minReplicaMemoryGb lower than maxReplicaMemoryGb scales the service vertically between sizes listed by the serviceProfiles endpoint; this unpins any BYOC profile, and the service then reports 'v1-default'. Gen 2 (v2-default) services use a fixed size and cannot idle: minReplicaMemoryGb must equal maxReplicaMemoryGb, the replica count is fixed (numReplicas, or equal minReplicas and maxReplicas in either mode), and idleScaling cannot be true.",
         "operationId": "instanceReplicaScalingUpdate",
         "parameters": [
           {
@@ -3016,7 +3251,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For vertical autoscaling, please contact support to enable adjustment of numReplicas. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
+          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile. On a BYOC service, equal memory values without a profile must be one of the following sizes: 48, 116, 172, 232; send a BYOC profile to pin a size from the infrastructure's catalogue. When BYOC vertical autoscaling is enabled for the organization (contact support), a minReplicaMemoryGb lower than maxReplicaMemoryGb scales the service vertically between sizes listed by the serviceProfiles endpoint; this unpins any BYOC profile, and the service then reports 'v1-default'. Gen 2 (v2-default) services use a fixed size and cannot idle: minReplicaMemoryGb must equal maxReplicaMemoryGb, the replica count is fixed (numReplicas, or equal minReplicas and maxReplicas in either mode), and idleScaling cannot be true.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -3377,7 +3612,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule": {
       "get": {
         "summary": "Get service autoscaling schedule",
-        "description": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization.",
+        "description": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization. On a Gen 2 (v2-default) service, no entry has a memory range, a replica range or idling on; fields an entry leaves to the base config are omitted.",
         "operationId": "scalingScheduleGet",
         "parameters": [
           {
@@ -3484,12 +3719,12 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the autoscaling schedule for a service. Returns 404 if no schedule has been configured or if the schedule was cleared. Requires the scheduled autoscaling feature to be enabled for the organization. On a Gen 2 (v2-default) service, no entry has a memory range, a replica range or idling on; fields an entry leaves to the base config are omitted.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:view` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
         "summary": "Create or replace service autoscaling schedule",
-        "description": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization.",
+        "description": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization. Gen 2 (v2-default) services use a fixed size and cannot idle. An entry may leave out fields it takes from the base config, but each entry combined with those fields must have equal minReplicaMemoryGb and maxReplicaMemoryGb, a fixed replica count (numReplicas, or equal minReplicas and maxReplicas), and idling off; otherwise the request is rejected.",
         "operationId": "scalingScheduleUpsert",
         "parameters": [
           {
@@ -3605,7 +3840,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
+          "content": "Creates or fully replaces the autoscaling schedule for a service. Pass an empty `entries` array to clear the schedule — a subsequent GET will return 404, and the response will contain an empty `baseConfig` (all fields absent). The base scaling config (applied when no entry is active) is managed separately via the `replicaScaling` endpoint. Requires the scheduled autoscaling feature to be enabled for the organization. Gen 2 (v2-default) services use a fixed size and cannot idle. An entry may leave out fields it takes from the base config, but each entry combined with those fields must have equal minReplicaMemoryGb and maxReplicaMemoryGb, a fixed replica count (numReplicas, or equal minReplicas and maxReplicas), and idling off; otherwise the request is rejected.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -4060,6 +4295,630 @@
         "x-mint": {
           "content": "Deletes the upgrade window for a service, restoring the default scheduling behaviour. The upgrade window can only be deleted on primary services. Deletion succeeds even if the organization has lost the scheduled upgrades entitlement, so a window can be cleared after entitlement loss.\n\nErrors:\n- 400: the service is a secondary service.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service.\n- 404: service does not exist, is not visible to the caller, or no upgrade window is configured.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/jwtProviders": {
+      "get": {
+        "summary": "List service JWT providers",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the JWT authentication providers configured on the service. A service has at most 5 providers.\n\nErrors:\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.",
+        "operationId": "jwtProviderGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/JwtProvider"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a key set with a supported signing key, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration.",
+        "operationId": "jwtProviderCreate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JwtProviderPostRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/JwtProvider"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/jwtProviders/{jwtProviderName}": {
+      "get": {
+        "summary": "Get service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a single JWT authentication provider of the service.\n\nErrors:\n- 400: invalid provider name.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "operationId": "jwtProviderGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jwtProviderName",
+            "description": "Name of the JWT authentication provider.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/JwtProvider"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "put": {
+        "summary": "Update service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the configuration of a JWT authentication provider. The JWKS URL is fetched and validated before the change is saved.\n\nErrors:\n- 400: invalid provider name or field values, or the JWKS URL is unreachable or does not return a key set with a supported signing key.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "operationId": "jwtProviderUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jwtProviderName",
+            "description": "Name of the JWT authentication provider.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JwtProviderPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/JwtProvider"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Delete service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Removes a JWT authentication provider from the service. Tokens issued by the provider are no longer accepted.\n\nErrors:\n- 400: invalid provider name.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "operationId": "jwtProviderDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jwtProviderName",
+            "description": "Name of the JWT authentication provider.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings": {
@@ -5544,7 +6403,7 @@
       },
       "patch": {
         "summary": "Update service snapshot configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, gap and timeFrame (in minutes) must together be one of the supported (gap, timeFrame) pairs: (30, 1440), (60, 2880). Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, the resulting configuration (in minutes) must satisfy: gap must be one of 10, 20, 30, 60; timeFrame must be a whole number of days (a multiple of 1440), at least 1440; and timeFrame / gap (the number of snapshots the configuration keeps) must not exceed 300. Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Gap or timeFrame may be changed on its own; the rules are checked against the configuration that results from merging the request into the stored one. After a change to gap or timeFrame, snapshots taken under the previous configuration expire by the new timeFrame, and cleanup also deletes the oldest snapshots beyond the limit of 300, including ones still inside the new timeFrame. Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
         "operationId": "snapshotConfigurationUpdate",
         "parameters": [
           {
@@ -8417,6 +9276,306 @@
         ]
       }
     },
+    "/v1/organizations/{organizationId}/members/{userId}/notificationSettings": {
+      "get": {
+        "summary": "List a member's notification settings",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the notification settings an organization member has explicitly chosen. A member who has never changed a setting has none, so an empty list means every notification follows the platform default for their role — it does not mean notifications are off. Settings for notification types the member cannot use are omitted, which depends on their permissions rather than the caller's. Slack is configured for the whole organization and never appears here. A page holds at most `limit` settings (default 100, maximum 250; a larger value is clamped) and the server may return fewer. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
+        "operationId": "memberNotificationSettingsGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization the member belongs to.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "ID of the member whose settings are returned.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "description": "Filter to settings for this notification type.",
+            "schema": {
+              "type": "string",
+              "example": "service_backup_failed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "description": "Filter to settings for this resource.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type",
+            "description": "Filter to settings for resources of this kind. One of 'service', 'organization', 'clickpipe', 'postgres'.",
+            "schema": {
+              "type": "string",
+              "example": "service"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationSetting"
+                      }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update a member's notification settings",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Sets the notification settings an organization member has explicitly chosen. Each rule names notification types, resources and channels, and applies one effect to every combination of them. A notification type no rule names keeps the setting it had, so this endpoint never has to carry a member's whole configuration. Three effects: 'enabled' and 'disabled' store an explicit choice, and 'inherit' removes the stored setting so the notification follows the platform default again. Sending the same body twice changes nothing the second time. The request either applies completely or changes nothing: a rule naming a notification type that does not exist, that the member cannot configure, or a resource the caller cannot access is rejected whole, as is a request that names the same type, resource and channel twice. A request carries at most 100 rules, addressing at most 1000 settings in total.",
+        "operationId": "memberNotificationSettingsUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization the member belongs to.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "description": "ID of the member whose settings are updated.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberNotificationSettingsPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/MemberNotificationSettingsPatchResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/usageCost": {
       "get": {
         "summary": "Get organization usage costs",
@@ -8790,7 +9949,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes": {
       "get": {
         "summary": "List ClickPipes",
-        "description": "Returns a list of ClickPipes.",
+        "description": "Returns the ClickPipes in the specified service. If neither `limit` nor `cursor` is provided, returns all ClickPipes. In this case, `limit` and `totalCount` both equal the number of ClickPipes, and `nextCursor` is `null`. To paginate results, provide `limit` or `cursor`. Paginated results are sorted by creation date in descending order. Use `limit` to set the page size (default: 50). The server caps `limit` at its maximum page size and may return fewer results. Each response includes `limit`, `totalCount`, and `nextCursor`. To retrieve the next page, pass `nextCursor` as the `cursor` query parameter. Continue until `nextCursor` is `null`.",
         "operationId": "clickPipeGetList",
         "parameters": [
           {
@@ -8811,6 +9970,23 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -8837,6 +10013,24 @@
                       "items": {
                         "$ref": "#/components/schemas/ClickPipe"
                       }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "totalCount": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "Total number of results across all pages. It has only informative value, thus is not guaranteed and it is provided on a best-effort basis. Null if the total count is unknown."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
                     }
                   }
                 }
@@ -8900,7 +10094,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Returns a list of ClickPipes.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
+          "content": "Returns the ClickPipes in the specified service. If neither `limit` nor `cursor` is provided, returns all ClickPipes. In this case, `limit` and `totalCount` both equal the number of ClickPipes, and `nextCursor` is `null`. To paginate results, provide `limit` or `cursor`. Paginated results are sorted by creation date in descending order. Use `limit` to set the page size (default: 50). The server caps `limit` at its maximum page size and may return fewer results. Each response includes `limit`, `totalCount`, and `nextCursor`. To retrieve the next page, pass `nextCursor` as the `cursor` query parameter. Continue until `nextCursor` is `null`.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -9641,7 +10835,7 @@
       },
       "put": {
         "summary": "Update ClickPipe settings",
-        "description": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans.",
+        "description": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans. Omitted keys keep their current value. `null` is not accepted; to reset a setting, send its default value.",
         "operationId": "clickPipeSettingsUpdate",
         "parameters": [
           {
@@ -9767,7 +10961,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
+          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans. Omitted keys keep their current value. `null` is not accepted; to reset a setting, send its default value.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -11151,7 +12345,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts": {
       "get": {
         "summary": "ClickStack: List Alerts",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves alerts for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves alerts for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all. Optional filters narrow the result set, and `totalCount` counts only the matching alerts.",
         "operationId": "clickStackListAlerts",
         "parameters": [
           {
@@ -11193,6 +12387,62 @@
               "type": "integer",
               "minimum": 0,
               "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "description": "Only return alerts that have any of the given tags. Repeat the parameter to pass several tags. Matches the tags stored on the alert, not tags inherited from the linked dashboard or saved search.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "maxItems": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "description": "Only return alerts whose display name contains this text (case-insensitive). Matches the display name stored on the alert, not a name derived from the linked dashboard or saved search.",
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "description": "Only return alerts of any of the given sources. Repeat the parameter to pass several sources.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "saved_search",
+                  "tile",
+                  "inline"
+                ]
+              }
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "description": "Only return alerts in any of the given states. Repeat the parameter to pass several states.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ALERT",
+                  "OK",
+                  "INSUFFICIENT_DATA",
+                  "DISABLED",
+                  "PENDING"
+                ]
+              }
             }
           }
         ],
@@ -15367,7 +16617,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/state": {
       "patch": {
         "summary": "Update Postgres service state",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Initiate a process for a Postgres service:\n* restart: Initiates a service restart\n* promote: Promotes a read replica to primary\n* switchover: Switch a primary over to a standby\n",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Initiate a process for a Postgres service:\n* restart: Initiates a service restart\n* promote: Promotes a read replica to primary\n* switchover: Switch a primary over to a standby. If there is no standby, replace the primary with a newly provisioned server and switch over to it.\n",
         "operationId": "postgresServicePatchState",
         "parameters": [
           {
@@ -16843,9 +18093,19 @@
           {
             "in": "query",
             "name": "severity",
-            "description": "Filter to log entries with this PostgreSQL severity (for example, ERROR, WARNING, LOG).",
+            "description": "Filter to log entries with this PostgreSQL severity. Case-sensitive; an empty value applies no filter.",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "DEBUG",
+                "LOG",
+                "INFO",
+                "NOTICE",
+                "WARNING",
+                "ERROR",
+                "FATAL",
+                "PANIC"
+              ]
             }
           },
           {
@@ -17953,6 +19213,247 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/ByocInfrastructurePrivateEndpointConfig"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}/customerAuthorizedAccess": {
+      "get": {
+        "summary": "Get BYOC infrastructure customer-authorized access",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the customer setting that controls when ClickHouse personnel may access the BYOC infrastructure, together with the data plane verdict at the time of the request.",
+        "operationId": "organizationByocInfrastructureCustomerAuthorizedAccessGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "byocInfrastructureId",
+            "description": "ID of the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ByocCustomerAuthorizedAccess"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update BYOC infrastructure customer-authorized access",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the customer setting that controls when ClickHouse personnel may access the BYOC infrastructure. Allow access with `mode: always`, deny it with `mode: never`, or allow it for a single window with `mode: window`, `startTimestamp` and `durationSeconds`. Returns the stored setting together with the data plane verdict.",
+        "operationId": "organizationByocInfrastructureCustomerAuthorizedAccessUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "byocInfrastructureId",
+            "description": "ID of the BYOC infrastructure.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ByocCustomerAuthorizedAccessPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ByocCustomerAuthorizedAccess"
                     }
                   }
                 }
@@ -24371,7 +25872,7 @@
             "type": "integer"
           },
           "idleScaling": {
-            "description": "Whether idle scaling is enabled during this window.",
+            "description": "Whether idle scaling is enabled during this window. Never true on a Gen 2 (v2-default) service.",
             "type": "boolean"
           },
           "idleTimeoutMinutes": {
@@ -24532,7 +26033,7 @@
             "example": 3
           },
           "idleScaling": {
-            "description": "Whether idle scaling is enabled during this window.",
+            "description": "Whether idle scaling is enabled during this window. Cannot be true on a Gen 2 (v2-default) service.",
             "type": "boolean"
           },
           "idleTimeoutMinutes": {
@@ -24779,7 +26280,7 @@
             "example": 120
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
+            "description": "Number of replicas for the service. The number of replicas must be between 1 and 50. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -24884,7 +26385,7 @@
             ]
           },
           "byocId": {
-            "description": "This is the ID returned after setting up a region for Bring Your Own Cloud (BYOC). When the byocId parameter is specified, the minReplicaMemoryGb and the maxReplicaGb parameters are required too, with values included among the following sizes: 48, 116, 172, 232.",
+            "description": "This is the ID returned after setting up a region for Bring Your Own Cloud (BYOC). When the byocId parameter is specified, the minReplicaMemoryGb and maxReplicaMemoryGb parameters are required too. With a BYOC profile, both must equal that profile's memory size. Without a profile, equal values must be one of the following sizes: 48, 116, 172, 232. When BYOC vertical autoscaling is enabled for the organization (contact support), a minReplicaMemoryGb lower than maxReplicaMemoryGb, without a profile, creates a service that scales vertically between the two. Both values must be memory sizes listed by the serviceProfiles endpoint, and the service reports the profile 'v1-default'.",
             "type": "string"
           },
           "hasTransparentDataEncryption": {
@@ -24892,7 +26393,7 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "description": "Custom instance profile. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. 'v2-default' is Gen 2 hardware. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. A BYOC service that scales vertically within a memory range has no BYOC profile and reports 'v1-default'. Use the serviceProfiles endpoint to list the profiles available to the organization.",
             "type": "string"
           },
           "transparentDataEncryptionKeyId": {
@@ -24921,6 +26422,10 @@
           },
           "enableCoreDumps": {
             "description": "True if the service's underline infra is enabled for collecting core dumps. This is an experimental feature",
+            "type": "boolean"
+          },
+          "deletionProtection": {
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off.",
             "type": "boolean"
           },
           "scalingSchedule": {
@@ -26027,7 +27532,7 @@
             "example": "*.my-service.example.com"
           },
           "targetId": {
-            "description": "Optional DNS target ID. Supported only for VPC_RESOURCE, where it is the CHILD resource configuration ID (rcfg-…), or the configuration ID for a single resource. Set it at create time to route a custom DNS name to that resource. If the target is not reported in dnsTargets yet, the mapping is not served until it appears; it does not fall back to the default target. If omitted, the default target is used. Once dnsTargets is non-empty, adding or changing a targetId requires an ID in that list; unchanged target IDs are not re-checked.",
+            "description": "Optional DNS target ID. For VPC_RESOURCE, it is the CHILD resource configuration ID (rcfg-…), or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, it is an AWS availability zone ID (for example use1-az1, not the zone name us-east-1a) that the endpoint service offers and ClickPipes supports in the region; if the endpoint is not in that zone yet, ClickPipes adds the zone to the endpoint. Cross-region VPC endpoint services reject targetId. Not supported for other endpoint types. Set it at create time to route a custom DNS name to that target. If the target is not reported in dnsTargets yet, the mapping is not served until it appears; it does not fall back to the default target. If omitted, the default target is used. For VPC_RESOURCE, once dnsTargets is non-empty, adding or changing a targetId requires an ID in that list; unchanged target IDs are not re-checked.",
             "type": "string",
             "example": "rcfg-097648d8068504966"
           }
@@ -26050,16 +27555,13 @@
       "ReversePrivateEndpointDnsTarget": {
         "properties": {
           "id": {
-            "description": "DNS target ID. For VPC_RESOURCE, the associated CHILD resource configuration ID, or the configuration ID for a single resource.",
+            "description": "DNS target ID. For VPC_RESOURCE, the associated CHILD resource configuration ID, or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, the AWS availability zone ID of the zonal endpoint DNS name.",
             "type": "string",
             "example": "rcfg-097648d8068504966"
           },
           "kind": {
-            "description": "DNS target kind.",
+            "description": "DNS target kind. Current values: 'RESOURCE_CONFIGURATION', 'AVAILABILITY_ZONE'. RESOURCE_CONFIGURATION is used for VPC_RESOURCE targets and AVAILABILITY_ZONE for VPC_ENDPOINT_SERVICE zonal targets. New kinds may be added, so clients must accept unknown values.",
             "type": "string",
-            "enum": [
-              "RESOURCE_CONFIGURATION"
-            ],
             "example": "RESOURCE_CONFIGURATION"
           },
           "internalDnsName": {
@@ -26298,7 +27800,7 @@
           },
           "dnsTargets": {
             "type": "array",
-            "description": "Read-only DNS targets the Reverse Private Endpoint currently reports. For VPC_RESOURCE, there is one RESOURCE_CONFIGURATION target per resource configuration association, identified by its CHILD resource configuration ID, or the configuration ID for a single resource. Other endpoint types report an empty list. Targets can appear over time; a custom mapping with a targetId that is not reported yet is not served until it appears.",
+            "description": "Read-only DNS targets the Reverse Private Endpoint currently reports. For VPC_RESOURCE, there is one RESOURCE_CONFIGURATION target per resource configuration association, identified by its CHILD resource configuration ID, or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, there is one AVAILABILITY_ZONE target per zonal endpoint DNS name, identified by its AWS availability zone ID; the regional DNS name is the default target and is not listed. Cross-region VPC endpoint services report no AVAILABILITY_ZONE targets. Other endpoint types report an empty list. Targets can appear over time; a custom mapping with a targetId that is not reported yet is not served until it appears.",
             "items": {
               "$ref": "#/components/schemas/ReversePrivateEndpointDnsTarget"
             },
@@ -26585,7 +28087,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -26704,7 +28206,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -26802,12 +28304,19 @@
             "minLength": 1,
             "writeOnly": true
           }
-        }
+        },
+        "required": [
+          "type",
+          "format",
+          "brokers",
+          "topics",
+          "authentication"
+        ]
       },
       "ClickPipePatchKafkaSource": {
         "properties": {
           "authentication": {
-            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, SCRAM-SHA-512, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": [
               "string",
               "null"
@@ -27137,6 +28646,13 @@
             ],
             "example": ","
           },
+          "skipFirstLines": {
+            "description": "Number of lines to skip at the start of each file. Only for TabSeparated and TabSeparatedWithNames formats. Can only be set at pipe creation.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 1
+          },
           "compression": {
             "description": "Compression algorithm used for the files.",
             "type": [
@@ -27274,6 +28790,13 @@
               "null"
             ],
             "example": ","
+          },
+          "skipFirstLines": {
+            "description": "Number of lines to skip at the start of each file. Only for TabSeparated and TabSeparatedWithNames formats. Can only be set at pipe creation.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 1
           },
           "compression": {
             "description": "Compression algorithm used for the files.",
@@ -29813,6 +31336,13 @@
             "maximum": 10000,
             "example": 100
           },
+          "object_storage_max_file_size": {
+            "description": "Max file size. Files larger than this are skipped and not retried. Can only lower the limit. Private preview. Contact support to enable it for your organization.",
+            "type": "integer",
+            "minimum": 1048576,
+            "maximum": 536870912000,
+            "example": 10737418240
+          },
           "clickhouse_max_threads": {
             "description": "Max threads. Maximum number of concurrent threads for file processing",
             "type": [
@@ -30055,37 +31585,6 @@
           "database"
         ]
       },
-      "ClickPipePatchDestination": {
-        "properties": {
-          "columns": {
-            "type": "array",
-            "description": "Columns of the destination table. This will not update the table schema, only the ClickPipe configuration.",
-            "items": {
-              "$ref": "#/components/schemas/ClickPipeDestinationColumn"
-            }
-          }
-        }
-      },
-      "ClickPipesCdcScaling": {
-        "properties": {
-          "replicaCpuMillicores": {
-            "description": "CPU in millicores for DB ClickPipes.",
-            "type": "integer",
-            "minimum": 1000,
-            "maximum": 32000,
-            "multipleOf": 1000,
-            "example": 2000
-          },
-          "replicaMemoryGb": {
-            "description": "Memory in GiB for DB ClickPipes. Must be 4× the CPU core count.",
-            "type": "number",
-            "minimum": 4,
-            "maximum": 128,
-            "multipleOf": 4,
-            "example": 8
-          }
-        }
-      },
       "ClickPipeSettingsPutRequest": {
         "properties": {
           "streaming_max_insert_wait_ms": {
@@ -30122,6 +31621,13 @@
             "minimum": 1,
             "maximum": 10000,
             "example": 100
+          },
+          "object_storage_max_file_size": {
+            "description": "Max file size. Files larger than this are skipped and not retried. Can only lower the limit. Private preview. Contact support to enable it for your organization.",
+            "type": "integer",
+            "minimum": 1048576,
+            "maximum": 536870912000,
+            "example": 10737418240
           },
           "clickhouse_max_threads": {
             "description": "Max threads. Maximum number of concurrent threads for file processing",
@@ -30175,6 +31681,37 @@
           }
         }
       },
+      "ClickPipePatchDestination": {
+        "properties": {
+          "columns": {
+            "type": "array",
+            "description": "Columns of the destination table. This will not update the table schema, only the ClickPipe configuration.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeDestinationColumn"
+            }
+          }
+        }
+      },
+      "ClickPipesCdcScaling": {
+        "properties": {
+          "replicaCpuMillicores": {
+            "description": "CPU in millicores for DB ClickPipes.",
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 32000,
+            "multipleOf": 1000,
+            "example": 2000
+          },
+          "replicaMemoryGb": {
+            "description": "Memory in GiB for DB ClickPipes. Must be 4× the CPU core count.",
+            "type": "number",
+            "minimum": 4,
+            "maximum": 128,
+            "multipleOf": 4,
+            "example": 8
+          }
+        }
+      },
       "ClickPipeSchemaDiscoverySource": {
         "properties": {
           "kafka": {
@@ -30205,6 +31742,20 @@
           },
           "optional": {
             "description": "Whether the field is optional (nullable) in the source.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "isVirtual": {
+            "description": "Whether the field is metadata added by ClickPipes (for example `_topic` or `_path`) rather than part of the source data.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "isVirtualDisabledDefault": {
+            "description": "Whether this metadata field is left unselected by default when building destination columns.",
             "type": [
               "boolean",
               "null"
@@ -30252,139 +31803,9 @@
             "format": "date-time"
           },
           "type": {
-            "description": "Type of the activity.",
+            "description": "Type of the activity. One of 'create_organization', 'delete_organization', 'organization_update_name', 'transfer_service_in', 'transfer_service_out', 'save_payment_method', 'marketplace_subscription', 'migrate_marketplace_billing_details_in', 'migrate_marketplace_billing_details_out', 'organization_update_tier', 'organization_invite_create', 'organization_invite_delete', 'organization_member_join', 'organization_member_add', 'organization_member_leave', 'organization_member_delete', 'organization_member_update_role', 'organization_member_update_roles', 'organization_member_update_mfa_method', 'organization_saml_connection_create', 'organization_saml_connection_update', 'user_login', 'user_login_failed', 'user_logout', 'key_create', 'key_delete', 'openapi_key_update', 'service_create', 'service_start', 'service_stop', 'service_awaken', 'service_idle', 'service_running', 'service_partially_running', 'service_delete', 'service_update_name', 'service_update_ip_access_list', 'service_update_autoscaling_memory', 'service_update_autoscaling_idling', 'service_update_password', 'service_update_autoscaling_replicas', 'service_update_max_allowable_replicas', 'service_update_backup_configuration', 'service_restore_backup', 'service_update_release_channel', 'service_update_gpt_usage_consent', 'service_update_private_endpoints', 'service_import_to_organization', 'service_export_from_organization', 'service_maintenance_start', 'service_maintenance_end', 'service_update_core_dump', 'service_update_deletion_protection', 'service_update_autoscaling_schedule', 'service_update_query_endpoints', 'service_update_direct_connection', 'service_update_sql_console_jwt_auth', 'service_update_snapshot_configuration', 'service_update_collector_ip_access_list', 'service_update_mysql_interface', 'service_update_upgrade_window', 'service_delete_upgrade_window', 'service_trigger_failover', 'service_trigger_recovery', 'service_mcp_enabled', 'service_mcp_disabled', 'service_upgrade', 'service_scaled_down_for_tier_change', 'service_encryption_key_check_failed', 'service_encryption_key_rotation_failed', 'service_encryption_key_rotated', 'service_stop_encryption_key_inaccessible', 'service_restart_encryption_key_rotation', 'backup_delete', 'backup_bucket_create', 'backup_bucket_update', 'backup_bucket_delete', 'backup_bucket_archive', 'warehouse_update_name', 'warehouse_update_release_channel', 'role_create', 'role_update', 'role_delete', 'role_resources_delete', 'organization_member_remove_roles', 'scim_user_profile_update', 'scim_group_create', 'scim_group_update', 'scim_group_delete', 'organization_saml_connection_delete', 'organization_update_saml_query_ownership_migration', 'organization_approved_domain_verify', 'organization_approved_domain_update', 'organization_approved_domain_delete', 'organization_approved_domain_auto_join', 'organization_approved_domain_auto_invite', 'datadog_integration_create', 'datadog_integration_delete', 'organization_update_spend_alert', 'organization_update_core_dumps', 'organization_update_private_endpoints', 'organization_update_pci_compliance', 'organization_update_hipaa_status', 'organization_security_contact_add', 'organization_security_contact_remove', 'organization_security_contact_replace', 'organization_update_public_preview', 'byoc_infrastructure_update_customer_authorized_access', 'transfer_credits_in', 'transfer_credits_out', 'promo_code_claim', 'schema_advisor_seed', 'schema_advisor_generate_plan', 'schema_advisor_approve_plan', 'schema_advisor_start_deployment', 'schema_advisor_start_benchmark', 'schema_advisor_run_benchmark', 'schema_advisor_start_promotion', 'schema_advisor_exchange_tables', 'schema_advisor_drop_sandbox', 'udf_create', 'udf_update', 'udf_delete', 'udf_version_create', 'udf_version_delete', 'udf_attach', 'udf_detach', 'udf_update_services', 'udf_redeploy', 'udf_rebuild', 'postgres_action'. New values may be added; treat unknown values as valid.",
             "type": "string",
-            "enum": [
-              "create_organization",
-              "delete_organization",
-              "organization_update_name",
-              "transfer_service_in",
-              "transfer_service_out",
-              "save_payment_method",
-              "marketplace_subscription",
-              "migrate_marketplace_billing_details_in",
-              "migrate_marketplace_billing_details_out",
-              "organization_update_tier",
-              "organization_invite_create",
-              "organization_invite_delete",
-              "organization_member_join",
-              "organization_member_add",
-              "organization_member_leave",
-              "organization_member_delete",
-              "organization_member_update_role",
-              "organization_member_update_roles",
-              "organization_member_update_mfa_method",
-              "organization_saml_connection_create",
-              "organization_saml_connection_update",
-              "user_login",
-              "user_login_failed",
-              "user_logout",
-              "key_create",
-              "key_delete",
-              "openapi_key_update",
-              "service_create",
-              "service_start",
-              "service_stop",
-              "service_awaken",
-              "service_idle",
-              "service_running",
-              "service_partially_running",
-              "service_delete",
-              "service_update_name",
-              "service_update_ip_access_list",
-              "service_update_autoscaling_memory",
-              "service_update_autoscaling_idling",
-              "service_update_password",
-              "service_update_autoscaling_replicas",
-              "service_update_max_allowable_replicas",
-              "service_update_backup_configuration",
-              "service_restore_backup",
-              "service_update_release_channel",
-              "service_update_gpt_usage_consent",
-              "service_update_private_endpoints",
-              "service_import_to_organization",
-              "service_export_from_organization",
-              "service_maintenance_start",
-              "service_maintenance_end",
-              "service_update_core_dump",
-              "service_update_autoscaling_schedule",
-              "service_update_query_endpoints",
-              "service_update_direct_connection",
-              "service_update_sql_console_jwt_auth",
-              "service_update_snapshot_configuration",
-              "service_update_collector_ip_access_list",
-              "service_update_mysql_interface",
-              "service_update_upgrade_window",
-              "service_delete_upgrade_window",
-              "service_trigger_failover",
-              "service_trigger_recovery",
-              "service_mcp_enabled",
-              "service_mcp_disabled",
-              "service_upgrade",
-              "service_scaled_down_for_tier_change",
-              "service_encryption_key_check_failed",
-              "service_encryption_key_rotation_failed",
-              "service_encryption_key_rotated",
-              "service_stop_encryption_key_inaccessible",
-              "service_restart_encryption_key_rotation",
-              "backup_delete",
-              "backup_bucket_create",
-              "backup_bucket_update",
-              "backup_bucket_delete",
-              "backup_bucket_archive",
-              "warehouse_update_name",
-              "warehouse_update_release_channel",
-              "role_create",
-              "role_update",
-              "role_delete",
-              "role_resources_delete",
-              "organization_member_remove_roles",
-              "scim_user_profile_update",
-              "scim_group_create",
-              "scim_group_update",
-              "scim_group_delete",
-              "organization_saml_connection_delete",
-              "organization_update_saml_query_ownership_migration",
-              "organization_approved_domain_verify",
-              "organization_approved_domain_update",
-              "organization_approved_domain_delete",
-              "organization_approved_domain_auto_join",
-              "organization_approved_domain_auto_invite",
-              "datadog_integration_create",
-              "datadog_integration_delete",
-              "organization_update_spend_alert",
-              "organization_update_core_dumps",
-              "organization_update_private_endpoints",
-              "organization_update_pci_compliance",
-              "organization_update_hipaa_status",
-              "organization_security_contact_add",
-              "organization_security_contact_remove",
-              "organization_security_contact_replace",
-              "organization_update_public_preview",
-              "transfer_credits_in",
-              "transfer_credits_out",
-              "promo_code_claim",
-              "schema_advisor_seed",
-              "schema_advisor_generate_plan",
-              "schema_advisor_approve_plan",
-              "schema_advisor_start_deployment",
-              "schema_advisor_start_benchmark",
-              "schema_advisor_run_benchmark",
-              "schema_advisor_start_promotion",
-              "schema_advisor_exchange_tables",
-              "schema_advisor_drop_sandbox",
-              "udf_create",
-              "udf_update",
-              "udf_delete",
-              "udf_version_create",
-              "udf_version_delete",
-              "udf_attach",
-              "udf_detach",
-              "udf_update_services",
-              "udf_redeploy",
-              "udf_rebuild",
-              "postgres_action"
-            ]
+            "example": "service_create"
           },
           "actorType": {
             "description": "Type of the actor: 'user', 'support', 'system', 'api'.",
@@ -31018,11 +32439,11 @@
             "type": "boolean"
           },
           "gap": {
-            "description": "Interval between snapshots, in minutes. Set together with timeFrame; only supported preset pairs are accepted.",
+            "description": "Interval between snapshots, in minutes. One of 10, 20, 30, 60. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           },
           "timeFrame": {
-            "description": "Retention window the snapshots cover, in minutes. Set together with gap; only supported preset pairs are accepted.",
+            "description": "Retention window the snapshots cover, in minutes. A whole number of days (a multiple of 1440), at least 1440; timeFrame / gap must not exceed 300 snapshots. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           }
         }
@@ -35817,6 +37238,7 @@
               "Role",
               "Notebook",
               "SchemaMigration",
+              "App",
               "all"
             ],
             "example": "Dashboard"
@@ -35930,6 +37352,7 @@
               "Role",
               "Notebook",
               "SchemaMigration",
+              "App",
               "all"
             ],
             "example": "Dashboard"
@@ -37122,6 +38545,11 @@
               "null"
             ],
             "example": "507f1f77bcf86cd799439011"
+          },
+          "minAutoGranularity": {
+            "description": "Floor for the auto-inferred chart granularity. Set it to the scrape/report interval of the metrics so a short time range does not produce buckets smaller than that interval (sparse, steppy series). Only constrains \"Auto\" granularity; an explicit granularity picked on a tile is never overridden. Omit for no minimum. Uses the SQL interval format (a positive integer followed by second, minute, hour, or day), not the short form of the materialized view granularity fields.",
+            "type": "string",
+            "example": "1 minute"
           }
         },
         "required": [
@@ -37261,6 +38689,11 @@
             "description": "Required by the API for all source kinds; not used by PromQL queries.",
             "type": "string",
             "example": "timestamp"
+          },
+          "minAutoGranularity": {
+            "description": "Floor for the auto-inferred chart granularity, and the scrape interval that `$__rate_interval` is computed from. Set it to the Prometheus scrape interval so a short time range does not produce buckets smaller than that interval. Only constrains \"Auto\" granularity; an explicit granularity picked on a tile is never overridden. Omit for no minimum. Uses the SQL interval format (a positive integer followed by second, minute, hour, or day), not the short form of the materialized view granularity fields.",
+            "type": "string",
+            "example": "1 minute"
           }
         },
         "required": [
@@ -39335,6 +40768,60 @@
           }
         }
       },
+      "ByocCustomerAuthorizedAccess": {
+        "properties": {
+          "mode": {
+            "description": "When ClickHouse personnel may access the infrastructure. Current values: always, never, window. New values may be added over time. When the setting has never been configured this is `always`, the data plane default",
+            "type": "string",
+            "example": "window"
+          },
+          "startTimestamp": {
+            "description": "Start of the access window. ISO-8601. Present only when `mode` is `window`",
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationSeconds": {
+            "description": "Length of the access window in seconds, counted from `startTimestamp`. Present only when `mode` is `window`",
+            "type": "integer",
+            "example": 14400
+          },
+          "allowed": {
+            "description": "Whether the data plane currently allows ClickHouse personnel access, evaluated at the time of the request",
+            "type": "boolean"
+          },
+          "windowEndTimestamp": {
+            "description": "End of the current access window. ISO-8601. Present only while access is allowed until a deadline",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "mode",
+          "allowed"
+        ]
+      },
+      "ByocCustomerAuthorizedAccessPatchRequest": {
+        "properties": {
+          "mode": {
+            "description": "When ClickHouse personnel may access the infrastructure. Current values: always, never, window. New values may be added over time. `always` allows access, `never` denies it, and `window` allows it during a single time window described by `startTimestamp` and `durationSeconds`",
+            "type": "string",
+            "example": "window"
+          },
+          "startTimestamp": {
+            "description": "Start of the access window. ISO-8601. Required when `mode` is `window`, not allowed otherwise",
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationSeconds": {
+            "description": "Length of the access window in seconds, from 1 to 172800 (48 hours). Required when `mode` is `window`, not allowed otherwise",
+            "type": "integer",
+            "example": 14400
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
       "WhoamiOrganization": {
         "properties": {
           "organizationId": {
@@ -39427,6 +40914,99 @@
           }
         ]
       },
+      "NotificationSetting": {
+        "properties": {
+          "type": {
+            "description": "Notification type the setting applies to, named as in [List notification types](#tag/Notifications/operation/notificationTypesGetList). New types are added over time, so treat this as an open set.",
+            "type": "string",
+            "example": "service_backup_failed"
+          },
+          "resourceType": {
+            "description": "Kind of resource `resourceId` identifies. Current values: service, organization, clickpipe, postgres. New values may be added over time. [List notification types](#tag/Notifications/operation/notificationTypesGetList) reports the same value for every notification of a given type.",
+            "type": "string",
+            "example": "service"
+          },
+          "resourceId": {
+            "description": "ID of the resource the setting applies to, of the kind `resourceType` gives. Settings that apply to the organization itself, such as billing notifications, carry the organization ID.",
+            "type": "string"
+          },
+          "channelType": {
+            "description": "Delivery channel the setting applies to. One of 'ui', 'email'.",
+            "type": "string",
+            "example": "email"
+          },
+          "effect": {
+            "description": "Whether the member receives this notification on this channel for this resource. One of 'enabled', 'disabled'.",
+            "type": "string",
+            "example": "disabled"
+          }
+        },
+        "required": [
+          "type",
+          "resourceType",
+          "resourceId",
+          "channelType",
+          "effect"
+        ]
+      },
+      "NotificationSettingRule": {
+        "properties": {
+          "effect": {
+            "description": "What the rule does to the settings it names. One of 'enabled', 'disabled', 'inherit'. 'inherit' removes the setting, so the notification follows the platform default for the member's role again, whoever set it.",
+            "type": "string",
+            "example": "enabled"
+          },
+          "notifications": {
+            "type": "array",
+            "description": "Notification types the rule applies to, named as in [List notification types](#tag/Notifications/operation/notificationTypesGetList).",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "service_backup_failed"
+            ],
+            "minItems": 1
+          },
+          "resources": {
+            "type": "array",
+            "description": "IDs of the resources the rule applies to, of the kind each notification type reports as its `resourceType`. Name every ID: there are no wildcards, and a rule covers no resource created afterwards. Notification types that apply to the organization itself, such as billing, take the organization ID.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "channels": {
+            "type": "array",
+            "description": "Delivery channels the rule applies to. One of 'ui', 'email'. Omit to apply the rule to every channel.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "ui",
+              "email"
+            ]
+          }
+        },
+        "required": [
+          "effect",
+          "notifications",
+          "resources"
+        ]
+      },
+      "MemberNotificationSettingsPatchResponse": {
+        "properties": {
+          "settings": {
+            "type": "array",
+            "description": "The member's settings for what the request addressed, after the change. A setting the request set to 'inherit' is absent, because it no longer exists.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSetting"
+            }
+          }
+        },
+        "required": [
+          "settings"
+        ]
+      },
       "NotificationType": {
         "properties": {
           "name": {
@@ -39480,6 +41060,44 @@
           "resourceType",
           "isConfigurable",
           "isAvailable"
+        ]
+      },
+      "PublicPreview": {
+        "properties": {
+          "id": {
+            "description": "Stable identifier of the preview feature.",
+            "type": "string",
+            "example": "preview-id"
+          },
+          "name": {
+            "description": "Name of the preview feature.",
+            "type": "string"
+          },
+          "description": {
+            "description": "What the preview feature does.",
+            "type": "string"
+          },
+          "docsUrl": {
+            "description": "Link to the documentation of the preview feature.",
+            "type": "string",
+            "example": "https://clickhouse.com/docs"
+          },
+          "enabled": {
+            "description": "Whether the preview feature is on for the organization.",
+            "type": "boolean"
+          },
+          "canToggle": {
+            "description": "Whether the caller may switch the preview feature on or off.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "docsUrl",
+          "enabled",
+          "canToggle"
         ]
       },
       "OrganizationQuota": {
@@ -39546,11 +41164,11 @@
             "type": "string"
           },
           "cpuCores": {
-            "description": "Number of vCPUs per replica.",
+            "description": "Number of vCPUs per replica. For v2-default, ignore this value: a Gen 2 service's size is set by the minReplicaMemoryGb and maxReplicaMemoryGb you send when creating or scaling it, not by the profile.",
             "type": "number"
           },
           "memoryGi": {
-            "description": "Memory per replica in GiB. When creating a BYOC service with this profile, minReplicaMemoryGb and maxReplicaMemoryGb must both equal this value.",
+            "description": "Memory per replica in GiB. A BYOC service pinned to this profile must send minReplicaMemoryGb and maxReplicaMemoryGb equal to this value. A BYOC service that scales vertically (no profile, minReplicaMemoryGb lower than maxReplicaMemoryGb) takes both bounds from the memoryGi values in this list. For v2-default, ignore this value: a Gen 2 service's size is set by the minReplicaMemoryGb and maxReplicaMemoryGb you send when creating or scaling it, not by the profile.",
             "type": "number"
           }
         }
@@ -40758,6 +42376,26 @@
           "c4d-standard-lssd-96",
           "c4d-standard-lssd-192",
           "c4d-standard-lssd-384",
+          "c3-standard-lssd-4",
+          "c3-standard-lssd-8",
+          "c3-standard-lssd-22",
+          "c3-standard-lssd-44",
+          "c3-standard-lssd-88",
+          "c3-standard-lssd-176",
+          "c3d-highmem-lssd-8",
+          "c3d-highmem-lssd-16",
+          "c3d-highmem-lssd-30",
+          "c3d-highmem-lssd-60",
+          "c3d-highmem-lssd-90",
+          "c3d-highmem-lssd-180",
+          "c3d-highmem-lssd-360",
+          "c3d-standard-lssd-8",
+          "c3d-standard-lssd-16",
+          "c3d-standard-lssd-30",
+          "c3d-standard-lssd-60",
+          "c3d-standard-lssd-90",
+          "c3d-standard-lssd-180",
+          "c3d-standard-lssd-360",
           "z3-highmem-highlssd-8",
           "z3-highmem-highlssd-16",
           "z3-highmem-highlssd-22",
@@ -40768,16 +42406,54 @@
           "z3-highmem-standardlssd-22",
           "z3-highmem-standardlssd-44",
           "z3-highmem-standardlssd-88",
-          "z3-highmem-standardlssd-176"
+          "z3-highmem-standardlssd-176",
+          "n2-highmem-2xlssd-4",
+          "n2-highmem-2xlssd-8",
+          "n2-highmem-2xlssd-16",
+          "n2-highmem-2xlssd-32",
+          "n2-highmem-2xlssd-48",
+          "n2-highmem-2xlssd-64",
+          "n2-highmem-2xlssd-96",
+          "n2-standard-2xlssd-4",
+          "n2-standard-2xlssd-8",
+          "n2-standard-2xlssd-16",
+          "n2-standard-2xlssd-32",
+          "n2-standard-2xlssd-48",
+          "n2-standard-2xlssd-64",
+          "n2-standard-2xlssd-96",
+          "n2-highmem-4xlssd-2",
+          "n2-highmem-4xlssd-4",
+          "n2-highmem-4xlssd-8",
+          "n2-highmem-4xlssd-16",
+          "n2-highmem-4xlssd-32",
+          "n2-highmem-4xlssd-48",
+          "n2-highmem-8xlssd-2",
+          "n2-highmem-8xlssd-4",
+          "n2-highmem-8xlssd-8",
+          "n2-highmem-8xlssd-16",
+          "n2-highmem-8xlssd-32",
+          "n2-highmem-16xlssd-2",
+          "n2-highmem-16xlssd-4",
+          "n2-highmem-16xlssd-8",
+          "n2-highmem-16xlssd-16"
         ]
       },
       "pgHaType": {
         "type": "string",
-        "description": "Type of high availability: “none” for no replication, “async” for asynchronous replication to a single standby, and “sync” for synchronous replication to two standbys.",
+        "description": "Type of high availability: “none” for no replication, “async” for asynchronous replication to a single standby, and “sync” for synchronous replication to the number of standbys in `standbyCount` (two by default).",
         "enum": [
           "none",
           "async",
           "sync"
+        ]
+      },
+      "pgStandbyCount": {
+        "type": "integer",
+        "description": "Number of hot standby instances. Accepted values and defaults depend on `haType`:\n- “none”: 0 (default)\n- “async”: 1 (default)\n- “sync”: 1, or 2 (default)\n\nWhen `haType` is updated without `standbyCount`, the default for the new `haType` applies.",
+        "enum": [
+          0,
+          1,
+          2
         ]
       },
       "pgProvider": {
@@ -40877,6 +42553,9 @@
           "haType": {
             "$ref": "#/components/schemas/pgHaType"
           },
+          "standbyCount": {
+            "$ref": "#/components/schemas/pgStandbyCount"
+          },
           "tags": {
             "$ref": "#/components/schemas/pgTags"
           }
@@ -40901,6 +42580,9 @@
           },
           "haType": {
             "$ref": "#/components/schemas/pgHaType"
+          },
+          "standbyCount": {
+            "$ref": "#/components/schemas/pgStandbyCount"
           },
           "tags": {
             "$ref": "#/components/schemas/pgTags"
@@ -40973,6 +42655,9 @@
           "haType": {
             "$ref": "#/components/schemas/pgHaType"
           },
+          "standbyCount": {
+            "$ref": "#/components/schemas/pgStandbyCount"
+          },
           "tags": {
             "$ref": "#/components/schemas/pgTags"
           },
@@ -41010,6 +42695,9 @@
           },
           "haType": {
             "$ref": "#/components/schemas/pgHaType"
+          },
+          "standbyCount": {
+            "$ref": "#/components/schemas/pgStandbyCount"
           },
           "tags": {
             "$ref": "#/components/schemas/pgTags"
@@ -41101,6 +42789,9 @@
           },
           "haType": {
             "$ref": "#/components/schemas/pgHaType"
+          },
+          "standbyCount": {
+            "$ref": "#/components/schemas/pgStandbyCount"
           },
           "tags": {
             "$ref": "#/components/schemas/pgTags"
@@ -41333,7 +43024,7 @@
           },
           "avgDurationUs": {
             "description": "Average execution time per call, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "maxDurationUs": {
             "description": "Maximum execution time of any call, in microseconds.",
@@ -41341,15 +43032,15 @@
           },
           "p50DurationUs": {
             "description": "50th percentile execution time, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "p95DurationUs": {
             "description": "95th percentile execution time, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "p99DurationUs": {
             "description": "99th percentile execution time, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "totalRows": {
             "description": "Total number of rows returned or affected across all calls.",
@@ -41711,6 +43402,118 @@
           "startHourUtc"
         ]
       },
+      "JwtProvider": {
+        "properties": {
+          "name": {
+            "description": "Name of the JWT provider, unique within the service. Lowercase letters, digits and hyphens, at most 59 characters. Cannot be one of, or start with one of followed by a hyphen: `cloud`, `clickhouse`, `ch`, `internal`, `system`, `default`.",
+            "type": "string",
+            "example": "my-oidc-provider",
+            "maxLength": 59,
+            "pattern": "^[a-z0-9-]{1,59}$"
+          },
+          "issuer": {
+            "description": "Expected `iss` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "https://auth.example.com",
+            "maxLength": 256
+          },
+          "audience": {
+            "description": "Expected `aud` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "my-clickhouse-service",
+            "maxLength": 256
+          },
+          "jwksUrl": {
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
+            "type": "string",
+            "example": "https://auth.example.com/.well-known/jwks.json",
+            "maxLength": 256
+          },
+          "rolesClaim": {
+            "description": "Name of the token claim that lists the ClickHouse roles to grant the user. Printable ASCII without whitespace, at most 256 characters, and not a registered JWT claim (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`). Absent when no roles claim is configured.",
+            "type": "string",
+            "example": "clickhouse:roles"
+          }
+        },
+        "required": [
+          "name",
+          "issuer",
+          "audience",
+          "jwksUrl"
+        ]
+      },
+      "JwtProviderPostRequest": {
+        "properties": {
+          "name": {
+            "description": "Name of the JWT provider, unique within the service. Lowercase letters, digits and hyphens, at most 59 characters. Cannot be one of, or start with one of followed by a hyphen: `cloud`, `clickhouse`, `ch`, `internal`, `system`, `default`.",
+            "type": "string",
+            "example": "my-oidc-provider",
+            "maxLength": 59,
+            "pattern": "^[a-z0-9-]{1,59}$"
+          },
+          "issuer": {
+            "description": "Expected `iss` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "https://auth.example.com",
+            "maxLength": 256
+          },
+          "audience": {
+            "description": "Expected `aud` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "my-clickhouse-service",
+            "maxLength": 256
+          },
+          "jwksUrl": {
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
+            "type": "string",
+            "example": "https://auth.example.com/.well-known/jwks.json",
+            "maxLength": 256
+          },
+          "rolesClaim": {
+            "description": "Name of the token claim that lists the ClickHouse roles to grant the user. Printable ASCII without whitespace, at most 256 characters, and not a registered JWT claim (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`). Omit to configure no roles claim.",
+            "type": "string",
+            "example": "clickhouse:roles"
+          }
+        },
+        "required": [
+          "name",
+          "issuer",
+          "audience",
+          "jwksUrl"
+        ]
+      },
+      "JwtProviderPutRequest": {
+        "properties": {
+          "issuer": {
+            "description": "Expected `iss` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "https://auth.example.com",
+            "maxLength": 256
+          },
+          "audience": {
+            "description": "Expected `aud` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "my-clickhouse-service",
+            "maxLength": 256
+          },
+          "jwksUrl": {
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one supported signing key: RS256 (RSA), or on ClickHouse 26.8 and later also ES256, ES384 or ES512 (EC); it is fetched and validated when the provider is created or updated.",
+            "type": "string",
+            "example": "https://auth.example.com/.well-known/jwks.json",
+            "maxLength": 256
+          },
+          "rolesClaim": {
+            "description": "Name of the token claim that lists the ClickHouse roles to grant the user. Printable ASCII without whitespace, at most 256 characters, and not a registered JWT claim (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`). The request replaces the whole provider configuration, so omitting this field removes an existing roles claim.",
+            "type": "string",
+            "example": "clickhouse:roles"
+          }
+        },
+        "required": [
+          "issuer",
+          "audience",
+          "jwksUrl"
+        ]
+      },
       "OrganizationPatchRequest": {
         "properties": {
           "name": {
@@ -41725,6 +43528,17 @@
             "type": "boolean"
           }
         }
+      },
+      "PublicPreviewPatchRequest": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the preview feature should be on.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
       },
       "InstanceServiceQueryApiEndpointsPostRequest": {
         "properties": {
@@ -41940,7 +43754,7 @@
             ]
           },
           "byocId": {
-            "description": "This is the ID returned after setting up a region for Bring Your Own Cloud (BYOC). When the byocId parameter is specified, the minReplicaMemoryGb and the maxReplicaGb parameters are required too, with values included among the following sizes: 48, 116, 172, 232.",
+            "description": "This is the ID returned after setting up a region for Bring Your Own Cloud (BYOC). When the byocId parameter is specified, the minReplicaMemoryGb and maxReplicaMemoryGb parameters are required too. With a BYOC profile, both must equal that profile's memory size. Without a profile, equal values must be one of the following sizes: 48, 116, 172, 232. When BYOC vertical autoscaling is enabled for the organization (contact support), a minReplicaMemoryGb lower than maxReplicaMemoryGb, without a profile, creates a service that scales vertically between the two. Both values must be memory sizes listed by the serviceProfiles endpoint, and the service reports the profile 'v1-default'.",
             "type": "string"
           },
           "hasTransparentDataEncryption": {
@@ -41955,7 +43769,7 @@
             }
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "description": "Custom instance profile. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. 'v2-default' is Gen 2 hardware. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. A BYOC service that scales vertically within a memory range has no BYOC profile and reports 'v1-default'. Use the serviceProfiles endpoint to list the profiles available to the organization. Creating a 'v2-default' service needs Gen 2 enabled for the organization and included in its plan (SCALE or ENTERPRISE) or settings, an AWS region where Gen 2 is available, and no byocId (BYOC infrastructure is not supported). Gen 2 services use a fixed size: minReplicaMemoryGb must equal maxReplicaMemoryGb and the replica count is fixed (numReplicas, or equal minReplicas and maxReplicas). Gen 2 services cannot idle: send idleScaling as false, since it defaults to true.",
             "type": "string"
           },
           "complianceType": {
@@ -41976,6 +43790,10 @@
           },
           "enableCoreDumps": {
             "description": "Enables the underlying infra for collecting core dumps. Default is enabled.",
+            "type": "boolean"
+          },
+          "deletionProtection": {
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Default is false. Setting it to true requires the `control-plane:service:delete` permission granted for all services in the organization (not service by service), in addition to `control-plane:organization:create-service`.",
             "type": "boolean"
           }
         },
@@ -42026,6 +43844,10 @@
           "enableCoreDumps": {
             "description": "If true, the underlying infra is enabled for collecting core dumps.",
             "type": "boolean"
+          },
+          "deletionProtection": {
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off. Changing it in either direction requires the `control-plane:service:delete` permission on the service, in addition to `control-plane:service:manage`; sending the current value changes nothing and needs no extra permission. ClickStack services can't be updated through the API; manage their deletion protection in the console.",
+            "type": "boolean"
           }
         }
       },
@@ -42066,7 +43888,7 @@
             "deprecated": true
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers.",
+            "description": "Number of replicas for the service. The number of replicas must be between 1 and 50. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -42218,7 +44040,7 @@
             "example": 120
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
+            "description": "Number of replicas for the service. The number of replicas must be between 1 and 50. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -42323,7 +44145,7 @@
             ]
           },
           "byocId": {
-            "description": "This is the ID returned after setting up a region for Bring Your Own Cloud (BYOC). When the byocId parameter is specified, the minReplicaMemoryGb and the maxReplicaGb parameters are required too, with values included among the following sizes: 48, 116, 172, 232.",
+            "description": "This is the ID returned after setting up a region for Bring Your Own Cloud (BYOC). When the byocId parameter is specified, the minReplicaMemoryGb and maxReplicaMemoryGb parameters are required too. With a BYOC profile, both must equal that profile's memory size. Without a profile, equal values must be one of the following sizes: 48, 116, 172, 232. When BYOC vertical autoscaling is enabled for the organization (contact support), a minReplicaMemoryGb lower than maxReplicaMemoryGb, without a profile, creates a service that scales vertically between the two. Both values must be memory sizes listed by the serviceProfiles endpoint, and the service reports the profile 'v1-default'.",
             "type": "string"
           },
           "hasTransparentDataEncryption": {
@@ -42331,7 +44153,7 @@
             "type": "boolean"
           },
           "profile": {
-            "description": "Custom instance profile. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "description": "Custom instance profile. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. 'v2-default' is Gen 2 hardware. BYOC services may instead use a dynamic BYOC profile configured for their infrastructure (e.g. 'v1-standard-byoc-4'); it requires byocId, and minReplicaMemoryGb and maxReplicaMemoryGb must both equal the profile's memory size. A BYOC service that scales vertically within a memory range has no BYOC profile and reports 'v1-default'. Use the serviceProfiles endpoint to list the profiles available to the organization.",
             "type": "string"
           },
           "transparentDataEncryptionKeyId": {
@@ -42360,6 +44182,10 @@
           },
           "enableCoreDumps": {
             "description": "True if the service's underline infra is enabled for collecting core dumps. This is an experimental feature",
+            "type": "boolean"
+          },
+          "deletionProtection": {
+            "description": "When true, the service cannot be deleted: the delete endpoint returns 409 until deletion protection is turned off.",
             "type": "boolean"
           },
           "scalingSchedule": {
@@ -42402,7 +44228,7 @@
             "example": "vertical"
           },
           "numReplicas": {
-            "description": "Fixed replica count for vertical autoscaling (autoscalingMode \"vertical\"). Mutually exclusive with minReplicas/maxReplicas. When switching to vertical (autoscalingMode \"vertical\") with numReplicas and no memory, the service's stored baseline per-replica memory is kept as the new vertical range. Please contact support to enable adjustment of numReplicas.",
+            "description": "Fixed replica count for vertical autoscaling (autoscalingMode \"vertical\"). Mutually exclusive with minReplicas/maxReplicas. When switching to vertical (autoscalingMode \"vertical\") with numReplicas and no memory, the service's stored baseline per-replica memory is kept as the new vertical range.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -42429,6 +44255,10 @@
           "idleTimeoutMinutes": {
             "description": "Set minimum idling timeout (in minutes). Must be >= 5 minutes.",
             "type": "number"
+          },
+          "profile": {
+            "description": "Custom instance profile. Omit to leave the current profile unchanged. Profiles other than v1-default and v2-default are only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v2-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. A BYOC profile (e.g. 'v1-standard-byoc-16') is a pin: minReplicaMemoryGb and maxReplicaMemoryGb must both be sent and equal that profile's memory size, and a memory range cannot be combined with it. To move a pinned BYOC service to a memory range, send the range without a profile, or with 'v1-default'. A non-BYOC custom profile other than v2-default cannot be combined with a memory change; send the profile alone to change only the name. The profile cannot switch a service between Gen 1 and Gen 2 hardware (to or from 'v2-default'): the request is rejected with a 400 error; contact support to move it. While a schedule entry is active the new profile is stored on the schedule base config and the running service keeps the entry profile until the window ends. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           }
         }
       },
@@ -42509,11 +44339,11 @@
             "type": "boolean"
           },
           "gap": {
-            "description": "Interval between snapshots, in minutes. Set together with timeFrame; only supported preset pairs are accepted.",
+            "description": "Interval between snapshots, in minutes. One of 10, 20, 30, 60. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           },
           "timeFrame": {
-            "description": "Retention window the snapshots cover, in minutes. Set together with gap; only supported preset pairs are accepted.",
+            "description": "Retention window the snapshots cover, in minutes. A whole number of days (a multiple of 1440), at least 1440; timeFrame / gap must not exceed 300 snapshots. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           }
         }
@@ -42691,6 +44521,22 @@
           "email"
         ]
       },
+      "MemberNotificationSettingsPatchRequest": {
+        "properties": {
+          "rules": {
+            "type": "array",
+            "description": "Rules to apply. Every rule is applied, in the order given.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSettingRule"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "rules"
+        ]
+      },
       "ClickPipePostRequest": {
         "properties": {
           "name": {
@@ -42714,7 +44560,7 @@
             "$ref": "#/components/schemas/ClickPipeScaling"
           },
           "settings": {
-            "$ref": "#/components/schemas/ClickPipeSettings"
+            "$ref": "#/components/schemas/ClickPipeSettingsPutRequest"
           },
           "startPaused": {
             "description": "Create the ClickPipe in the Stopped state instead of starting ingestion immediately. Start it later with the state endpoint. Not supported for database ClickPipes.",
@@ -42757,7 +44603,7 @@
             }
           },
           "settings": {
-            "$ref": "#/components/schemas/ClickPipeSettings"
+            "$ref": "#/components/schemas/ClickPipeSettingsPutRequest"
           }
         }
       },
@@ -44149,6 +45995,12 @@
         "scheme": "basic",
         "description": "Use key ID and key secret obtained in ClickHouse Cloud console: https://clickhouse.com/docs/cloud/manage/openapi",
         "x-permission-scopes": "The scope list of a `security` requirement holds ClickHouse Cloud API key permission ids (for example `control-plane:organization:view`), not OAuth scopes. OpenAPI has no field for API key permissions, so this is the closest available place. A key must hold every permission listed on an operation to call it; an operation with no scopes needs none beyond a valid key. Every operation declares at most one requirement object, always for this scheme, so the list is only ever conjunctive — alternative sets of permissions are never expressed."
+      },
+      "bearerJwt": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "ClickHouse Cloud user access token, sent as `Authorization: Bearer <JWT>`. API keys are rejected. The token audience must be one of the `x-jwt-audiences` listed on the operation."
       }
     }
   },

@@ -859,7 +859,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 currentDatabase()
 ```
 
-**別名**: `current_database`, `DATABASE`, `SCHEMA`
+**別名**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **引数**
 
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-導入バージョン: v26.6.0
+導入バージョン: v26.8.0
 
 クエリを呼び出した、SQL で定義された HTTP ハンドラー (`CREATE HANDLER` で作成) の名前を返します。
 このようなハンドラー経由でクエリが呼び出されなかった場合は、空文字列を返します。
@@ -905,7 +905,7 @@ SELECT CURRENT_DATABASE
 呼び出されたハンドラーに応じてクエリの動作をカスタマイズする場合に役立ちます。
 
 <Note>
-  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+  この関数は非決定的です。同じ引数に対しても異なる結果を返すことがあります。
 </Note>
 
 **構文**
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-導入バージョン: v26.6.0
+導入バージョン: v26.8.0
 
 クエリを実行した HTTP リクエストの URL (パスおよびクエリ文字列) を返します。
 クエリが HTTP 経由で実行されなかった場合は、空文字列を返します。
@@ -1017,7 +1017,7 @@ SQL で定義された HTTP ハンドラー (`CREATE HANDLER`) と組み合わ�
 埋め込まれたパラメータを抽出できます。
 
 <Note>
-  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+  この関数は非決定的です。同じ引数に対して異なる結果を返す場合があります。
 </Note>
 
 **構文**
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+導入バージョン: v26.8.0
+
+PostgreSQL 互換性関数です。実行時の設定パラメーターの値を返します。エミュレートされるのは、クライアントによるイントロスペクションに使用される少数の読み取り専用パラメータのみです。
+
+<Note>
+  この関数は非決定的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
+
+**構文**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**引数**
+
+* `name` — 設定パラメーター名。[`String`](/ja/reference/data-types/string)
+* `missing_ok` — 不明なパラメーターが指定された場合に、例外をスローせず `NULL` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+設定パラメーターの値。`missing_ok` が true の場合、不明なパラメーターに対しては `NULL` を返します。[`Nullable(String)`](/ja/reference/data-types/nullable)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2348,6 +2385,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+導入バージョン: v26.8.0
+
+PostgreSQL 互換性関数です。型の OID を受け取り、その型の SQL 名を返します。`numeric` の場合、型修飾子はデコードされて精度と小数点以下の桁数 (`numeric(p, s)`) に変換されます。それ以外の型では、修飾子は無視されます。型修飾子が `NULL` の場合は、`-1` と同様に修飾子が不明であることを意味します。また、型 OID が `NULL` の場合は `NULL` を返します。
+
+**構文**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**引数**
+
+* `type_oid` — 型の OID。[`(U)Int*`](/ja/reference/data-types/int-uint)
+* `typemod` — 型修飾子、または `NULL`。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`NULL`](/ja/reference/syntax#null)
+
+**戻り値**
+
+型の SQL 名。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4190,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -4994,7 +5064,8 @@ SELECT pg_get_userbyid(10)
 
 PostgreSQL ワイヤプロトコルとの互換性関数で、`pg_catalog.pg_table_is_visible` に相当します。
 PostgreSQL クライアント (たとえば `psql` の `\d` コマンド) は、検索パス内で可視のテーブルを絞り込むためにこの関数を使用します。
-ClickHouse がエミュレートする `pg_class` ビューには、すべて可視である現在のデータベースのテーブルのみが含まれるため、この関数は常に `1` を返します。
+PostgreSQL ワイヤプロトコルの session 外では、oid の解決先となるエミュレートされたカタログが存在しないため、この関数は `1` を返します。
+そのような session 内では、エミュレートされたカタログがすべてのデータベースをスキーマとして公開しているため、PostgreSQL ハンドラーはこの呼び出しを、エミュレートされたカタログに対する検索パスのチェックに書き換えます。
 
 **構文**
 
@@ -6085,6 +6156,10 @@ ROLLBACK;
   詳細については、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)のページを参照してください。
 </Note>
 
+<Note>
+  この関数は非決定的です。同じ引数に対しても異なる結果を返す場合があります。
+</Note>
+
 **構文**
 
 ```sql
@@ -6135,6 +6210,10 @@ ROLLBACK;
   ```
 
   詳細については、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) のページを参照してください。
+</Note>
+
+<Note>
+  この関数は非決定的です。同じ引数に対しても異なる結果を返す場合があります。
 </Note>
 
 **構文**

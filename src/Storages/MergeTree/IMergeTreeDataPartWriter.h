@@ -17,6 +17,9 @@
 namespace DB
 {
 
+/// The same alias as in DataTypes/Serializations/ISerialization.h, which this header does not otherwise need.
+using SerializationByName = std::unordered_map<String, SerializationPtr>;
+
 using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;

@@ -250,8 +250,11 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (!reading.getStorageID().hasDatabase() || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
         return false;
 
+    /// A pending DROP COLUMN (a metadata mutation) makes the reader return defaults, so the cardinalities are stale.
     if (const auto & mutations = reading.getMutationsSnapshot();
-        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
+        mutations
+        && (mutations->hasDataMutations() || mutations->hasMetadataMutations() || mutations->hasPatchParts()
+            || mutations->hasLightweightDeletedMask()))
         return false;
 
     if (reading.getStorageMetadata()->hasUniqueKey())

@@ -28,8 +28,8 @@ namespace
 constexpr std::string_view extra_credentials_visible_keys[] = {"role_arn"};
 
 constexpr std::string_view s3_secret_keys[]
-    = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id",
-       "role_session_name"};
+    = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",
+       "external_id", "role_session_name"};
 
 /// Single source of truth for reading an S3-style argument list the way the S3 parsers do:
 /// `headers(..)` / `extra_credentials(..)` can appear at any position and are stripped before
