@@ -1,0 +1,33 @@
+-- Tags: no-fasttest, need-query-parameters
+-- Tag no-fasttest: Iceberg needs Avro.
+
+-- `system.iceberg_history` exposes the operation and the full summary of each snapshot that ClickHouse writes:
+-- the round-trip write -> metadata -> read of its own summaries. Totals of a fresh table equal the deltas,
+-- and the second snapshot adds its deltas to the totals of its parent.
+
+SET allow_insert_into_iceberg = 1;
+
+{% for fv in [1, 2] -%}
+SELECT '--- format version {{ fv }}';
+DROP TABLE IF EXISTS t_fv{{ fv }};
+CREATE TABLE t_fv{{ fv }} (x Int) ENGINE = IcebergLocal({CLICKHOUSE_DATABASE:String} || '/t_fv{{ fv }}/', 'Parquet') SETTINGS iceberg_format_version = {{ fv }};
+INSERT INTO t_fv{{ fv }} VALUES (1), (2), (3);
+INSERT INTO t_fv{{ fv }} VALUES (4), (5);
+
+-- The file sizes vary between runs, so they are checked instead of printed.
+SELECT
+    operation,
+    mapFilter((k, v) -> k NOT IN ('added-files-size', 'total-files-size'), summary) AS summary_without_sizes,
+    toUInt64(summary['added-files-size']) > 0 AS added_size_positive,
+    toUInt64(summary['total-files-size'])
+        = toUInt64(summary['added-files-size'])
+        + toUInt64(lagInFrame(summary['total-files-size'], 1, '0') OVER w) AS total_size_accumulates
+FROM system.iceberg_history
+WHERE database = currentDatabase() AND table = 't_fv{{ fv }}'
+-- Two snapshots can share a millisecond; the running total orders appends too.
+WINDOW w AS (ORDER BY made_current_at, toUInt64(summary['total-records']) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+ORDER BY made_current_at, toUInt64(summary['total-records']);
+
+DROP TABLE t_fv{{ fv }};
+
+{% endfor -%}

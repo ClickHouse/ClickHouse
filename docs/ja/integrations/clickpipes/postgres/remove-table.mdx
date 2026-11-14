@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 場合によっては、Postgres ClickPipe から特定のテーブルを除外するのが有効です。たとえば、分析ワークロードで不要なテーブルであれば、スキップすることで ClickHouse のストレージコストやレプリケーションコストを削減できます。
 
 <div id="remove-tables-steps">
@@ -27,7 +25,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
+
+</Frame>
+
+</div>
 
 5. Update をクリックします。
 6. 更新が正常に完了すると、**メトリクス** タブのステータスが **Running** になります。このテーブルは、この ClickPipe では今後レプリケートされません。
