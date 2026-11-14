@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <GPU/CuvsIvf.cuh>
+#include <GPU/IvfQuantization.cuh>
 #include <GPU/GPUDevice.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -23,7 +24,6 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -177,29 +177,6 @@ std::vector<float> rotateCentroids(const std::vector<float> & rotation, const st
     return rotated;
 }
 
-std::array<float, 3> encodeResidual(const float * r, size_t dimensions, char * codes)
-{
-    float lo = r[0];
-    float hi = r[0];
-    for (size_t i = 1; i < dimensions; ++i)
-    {
-        lo = std::min(lo, r[i]);
-        hi = std::max(hi, r[i]);
-    }
-    const float step = hi > lo ? (hi - lo) / 15 : 1.0f;
-    std::fill(codes, codes + GPU::ivfCodeBytes(dimensions), 0);
-    float norm2 = 0;
-    for (size_t i = 0; i < dimensions; ++i)
-    {
-        const int code = std::clamp(static_cast<int>(std::lround((r[i] - lo) / step)), 0, 15);
-        const float decoded = lo + static_cast<float>(code) * step;
-        norm2 += decoded * decoded;
-        const size_t nibble = i % 8;
-        codes[(i / 32) * 16 + ((i % 32) / 8) * 4 + nibble / 2] |= static_cast<char>(code << (4 * (nibble % 2)));
-    }
-    return {lo, step, norm2};
-}
-
 }
 
 void normalizeIvfVector(float * vector, size_t dimensions)
@@ -230,7 +207,7 @@ size_t MergeTreeIndexGranuleIvf::memoryUsageBytes() const
 
 size_t MergeTreeIndexGranuleIvf::entryBytes() const
 {
-    return GPU::ivfEntryBytes(dimensions);
+    return GPU::IvfQuantization::entryBytes(dimensions);
 }
 
 void MergeTreeIndexGranuleIvf::serializeBinary(WriteBuffer &) const
@@ -260,8 +237,8 @@ void MergeTreeIndexGranuleIvf::serializeBinaryWithMultipleStreams(MergeTreeIndex
     header.write(reinterpret_cast<const char *>(rotation.data()), rotation.size() * sizeof(float));
     header.write(reinterpret_cast<const char *>(list_offsets.data()), list_offsets.size() * sizeof(UInt64));
 
-    const size_t code_bytes = GPU::ivfCodeBytes(dimensions);
-    const size_t params_bytes = 3 * sizeof(float);
+    const size_t code_bytes = GPU::IvfQuantization::codeBytes(dimensions);
+    const size_t params_bytes = sizeof(GPU::IvfQuantization::CodeParams);
     const size_t record_bytes = 2 * sizeof(UInt32) + params_bytes + code_bytes;
     const size_t entry_bytes = entryBytes();
     std::vector<char> records;
@@ -539,7 +516,7 @@ void MergeTreeIndexGranuleIvf::searchBatch(const std::vector<float> & queries, s
             for (size_t i = 0; i < select; ++i)
             {
                 const UInt32 row = found_rows[q * select + i];
-                if (row == invalid_neighbour)
+                if (row == invalid_neighbour || !std::isfinite(found_distances[q * select + i]))
                     break;
                 const size_t offset = vectors_byte_begin + row * vector_bytes;
                 if (vectors_read_at)
@@ -649,8 +626,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
     granule->rotation = makeRotation(dimensions, /*seed=*/ 42);
     granule->rotated_centroids = rotateCentroids(granule->rotation, granule->centroids, lists, dimensions);
 
-    const size_t code_bytes = GPU::ivfCodeBytes(dimensions);
-    const size_t record_bytes = 2 * sizeof(UInt32) + 3 * sizeof(float) + code_bytes;
+    const size_t code_bytes = GPU::IvfQuantization::codeBytes(dimensions);
+    const size_t record_bytes = 2 * sizeof(UInt32) + sizeof(GPU::IvfQuantization::CodeParams) + code_bytes;
     const size_t num_buckets = std::clamp<size_t>((rows * record_bytes + max_bucket_bytes - 1) / max_bucket_bytes, 1, lists);
     std::vector<IvfListBucket> buckets(num_buckets);
     std::vector<UInt32> bucket_of_list(lists);
@@ -665,17 +642,17 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorIvf::getGranuleAndReset()
 
     std::vector<UInt64> counts(lists, 0);
     std::vector<float> residual(dimensions);
-    std::vector<char> codes(code_bytes);
+    std::vector<uint8_t> codes(code_bytes);
     auto write_entry = [&](UInt32 list, UInt32 row, const float * rotated)
     {
         for (size_t i = 0; i < dimensions; ++i)
             residual[i] = rotated[i] - granule->rotated_centroids[list * dimensions + i];
-        const auto code_params = encodeResidual(residual.data(), dimensions, codes.data());
+        const auto code_params = GPU::IvfQuantization::encode(residual.data(), dimensions, codes.data());
         auto & out = *buckets[bucket_of_list[list]].records;
         out.write(reinterpret_cast<const char *>(&list), sizeof(list));
         out.write(reinterpret_cast<const char *>(&row), sizeof(row));
-        out.write(reinterpret_cast<const char *>(code_params.data()), sizeof(code_params));
-        out.write(codes.data(), code_bytes);
+        out.write(reinterpret_cast<const char *>(&code_params), sizeof(code_params));
+        out.write(reinterpret_cast<const char *>(codes.data()), code_bytes);
         ++counts[list];
     };
 

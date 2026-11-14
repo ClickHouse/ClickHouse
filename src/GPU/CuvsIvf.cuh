@@ -7,18 +7,6 @@
 namespace DB::GPU
 {
 
-/// An entry of a list is R (x - c) in 4 bits per component, `lo + code * step`. A list holds the rows (uint32), then lo,
-/// step and |r_hat|^2 (float), then the codes: component i in nibble i % 8 of word (i % 32) / 8 of the 16-byte word i / 32.
-constexpr size_t ivfCodeBytes(size_t dimensions)
-{
-    return (dimensions + 31) / 32 * 16;
-}
-
-constexpr size_t ivfEntryBytes(size_t dimensions)
-{
-    return sizeof(uint32_t) + 3 * sizeof(float) + ivfCodeBytes(dimensions);
-}
-
 class IvfCentroids
 {
 public:

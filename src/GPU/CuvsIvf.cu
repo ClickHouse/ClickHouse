@@ -1,23 +1,24 @@
 #include <GPU/CuvsIvf.cuh>
 #include <GPU/GPUTypes.cuh>
+#include <GPU/IvfQuantization.cuh>
 
 #include <cuvs/cluster/kmeans.hpp>
 #include <cuvs/selection/select_k.hpp>
 #include <raft/core/device_mdspan.hpp>
-#include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/linalg/gemm.cuh>
+#include <raft/linalg/matrix_vector_op.cuh>
+#include <raft/linalg/norm.cuh>
+#include <raft/matrix/detail/select_warpsort.cuh>
+#include <raft/matrix/init.cuh>
 #include <rmm/device_uvector.hpp>
 #include <rmm/error.hpp>
 
-#include <cublas_v2.h>
-
 #include <algorithm>
 #include <cmath>
-#include <functional>
 #include <limits>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -25,13 +26,22 @@ namespace DB::GPU
 {
 namespace
 {
-constexpr int ARGMIN_THREADS = 256;
-
 constexpr size_t SCORES_BYTES = 64 << 20;
 
 constexpr size_t WORKSPACE_BYTES = 256 << 20;
 
 constexpr size_t KMEANS_ROWS_PER_CENTROID = 40;
+
+constexpr uint32_t MISSING_ROW = std::numeric_limits<uint32_t>::max();
+
+constexpr int SCAN_THREADS = 256;
+
+constexpr int MAX_SELECT = 256;
+
+constexpr size_t PARTIAL_RESULTS_BYTES = 256 << 20;
+
+using RowMatrix = raft::device_matrix_view<float, int64_t, raft::row_major>;
+using ConstRowMatrix = raft::device_matrix_view<const float, int64_t, raft::row_major>;
 
 void limitWorkspace(raft::resources & res)
 {
@@ -57,63 +67,35 @@ auto translateErrors(const char * doing, Body && body)
     }
 }
 
-void checkCublas(cublasStatus_t status, const char * message)
-{
-    if (status != CUBLAS_STATUS_SUCCESS)
-        throwGPUError((std::string(message) + ": cuBLAS status " + std::to_string(static_cast<int>(status))).c_str());
-}
-
-__device__ void blockArgmin(float & score, uint32_t & position)
-{
-    __shared__ float scores[ARGMIN_THREADS];
-    __shared__ uint32_t positions[ARGMIN_THREADS];
-    scores[threadIdx.x] = score;
-    positions[threadIdx.x] = position;
-    __syncthreads();
-    for (int step = ARGMIN_THREADS / 2; step > 0; step /= 2)
-    {
-        if (threadIdx.x < step)
-        {
-            const float other = scores[threadIdx.x + step];
-            const uint32_t other_position = positions[threadIdx.x + step];
-            if (other < scores[threadIdx.x] || (other == scores[threadIdx.x] && other_position < positions[threadIdx.x]))
-            {
-                scores[threadIdx.x] = other;
-                positions[threadIdx.x] = other_position;
-            }
-        }
-        __syncthreads();
-    }
-    score = scores[0];
-    position = positions[0];
-}
-
-__global__ void argminPrimary(const float * dots, const float * sq_norms, size_t num_centroids, uint32_t * primary)
-{
-    const float * row_dots = dots + blockIdx.x * num_centroids;
-    float best = INFINITY;
-    uint32_t best_position = UINT32_MAX;
-    for (uint32_t c = threadIdx.x; c < num_centroids; c += ARGMIN_THREADS)
-    {
-        const float score = sq_norms[c] - 2.0f * row_dots[c];
-        if (score < best)
-        {
-            best = score;
-            best_position = c;
-        }
-    }
-    blockArgmin(best, best_position);
-    if (threadIdx.x == 0)
-        primary[blockIdx.x] = best_position;
-}
-
-}
-
-namespace
-{
 cuda::stream_ref streamOf(raft::resources & res)
 {
     return raft::resource::get_cuda_stream(res);
+}
+
+raft::resources & searchResources()
+{
+    thread_local raft::resources resources = []
+    {
+        raft::resources res;
+        limitWorkspace(res);
+        return res;
+    }();
+    return resources;
+}
+
+/// Rows `x` (n x d) times R^T, that is R x of each row, into `out`. `rotation` is R, row-major, read as R^T column-major.
+void rotateRows(raft::resources & res, float * x, size_t n, float * rotation, size_t d, float * out)
+{
+    raft::linalg::gemm(res,
+        raft::make_device_matrix_view<float, int64_t, raft::row_major>(x, int64_t(n), int64_t(d)),
+        raft::make_device_matrix_view<float, int64_t, raft::col_major>(rotation, int64_t(d), int64_t(d)),
+        raft::make_device_matrix_view<float, int64_t, raft::row_major>(out, int64_t(n), int64_t(d)));
+}
+
+void fillMissing(raft::resources & res, float * distances, uint32_t * rows, size_t size)
+{
+    raft::matrix::fill(res, raft::make_device_vector_view<float, int64_t>(distances, int64_t(size)), std::numeric_limits<float>::infinity());
+    raft::matrix::fill(res, raft::make_device_vector_view<uint32_t, int64_t>(rows, int64_t(size)), MISSING_ROW);
 }
 
 }
@@ -122,10 +104,9 @@ struct IvfCentroids::State
 {
     size_t num_centroids;
     size_t dimensions;
-    mutable std::mutex mutex;
     mutable raft::resources resources;
     rmm::device_uvector<float> centroids;
-    rmm::device_uvector<float> sq_norms;
+    rmm::device_uvector<float> centroid_squared_lengths;
 
     static raft::resources & limited(raft::resources & res)
     {
@@ -137,21 +118,13 @@ struct IvfCentroids::State
         : num_centroids(num_centroids_)
         , dimensions(dimensions_)
         , centroids(num_centroids_ * dimensions_, streamOf(limited(resources)))
-        , sq_norms(num_centroids_, streamOf(resources))
+        , centroid_squared_lengths(num_centroids_, streamOf(resources))
     {
-        std::vector<float> host_sq_norms(num_centroids);
-        for (size_t c = 0; c < num_centroids; ++c)
-        {
-            double sum = 0;
-            for (size_t i = 0; i < dimensions; ++i)
-                sum += double(host_centroids[c * dimensions + i]) * host_centroids[c * dimensions + i];
-            host_sq_norms[c] = float(sum);
-        }
-        const cudaStream_t stream = streamOf(resources).get();
-        checkCuda(cudaMemcpyAsync(centroids.data(), host_centroids, centroids.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
-            "copying IVF centroids to the device");
-        checkCuda(cudaMemcpyAsync(sq_norms.data(), host_sq_norms.data(), sq_norms.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
-            "copying IVF centroid norms to the device");
+        checkCuda(cudaMemcpyAsync(centroids.data(), host_centroids, centroids.size() * sizeof(float), cudaMemcpyHostToDevice,
+            streamOf(resources).get()), "copying IVF centroids to the device");
+        raft::linalg::norm<raft::linalg::L2Norm, raft::Apply::ALONG_ROWS>(resources,
+            ConstRowMatrix(centroids.data(), int64_t(num_centroids), int64_t(dimensions)),
+            raft::make_device_vector_view<float, int64_t>(centroid_squared_lengths.data(), int64_t(num_centroids)));
         raft::resource::sync_stream(resources);
     }
 };
@@ -168,26 +141,22 @@ __host__ IvfCentroids::~IvfCentroids()
 
 __host__ size_t IvfCentroids::deviceMemoryBytes() const
 {
-    return (state->centroids.size() + state->sq_norms.size()) * sizeof(float);
+    return (state->centroids.size() + state->centroid_squared_lengths.size()) * sizeof(float);
 }
 
 __host__ void IvfCentroids::assign(const float * vectors, size_t rows, uint32_t * positions, const float * rotation, float * rotated) const
 {
     translateErrors("assigning vectors to IVF centroids", [&]
     {
-        std::lock_guard lock(state->mutex);
         auto & res = state->resources;
         const auto stream_view = streamOf(res);
         const cudaStream_t stream = stream_view.get();
-        cublasHandle_t blas = raft::resource::get_cublas_handle(res);
-        checkCublas(cublasSetStream(blas, stream), "setting the stream of cuBLAS");
 
         const size_t k = state->num_centroids;
         const size_t d = state->dimensions;
-        const size_t chunk = std::clamp<size_t>(SCORES_BYTES / (k * sizeof(float)), 1, rows);
+        const size_t chunk = std::clamp<size_t>(SCORES_BYTES / (d * sizeof(float)), 1, rows);
 
         rmm::device_uvector<float> device_vectors(chunk * d, stream_view);
-        rmm::device_uvector<float> dots(chunk * k, stream_view);
         rmm::device_uvector<uint32_t> device_primary(chunk, stream_view);
         rmm::device_uvector<float> device_rotation(rotated ? d * d : 0, stream_view);
         rmm::device_uvector<float> device_rotated(rotated ? chunk * d : 0, stream_view);
@@ -195,23 +164,20 @@ __host__ void IvfCentroids::assign(const float * vectors, size_t rows, uint32_t 
             checkCuda(cudaMemcpyAsync(device_rotation.data(), rotation, d * d * sizeof(float), cudaMemcpyHostToDevice, stream),
                 "copying the rotation to the device");
 
-        const float one = 1;
-        const float zero = 0;
+        const auto device_centroids = ConstRowMatrix(state->centroids.data(), int64_t(k), int64_t(d));
+        const cuvs::cluster::kmeans::balanced_params params;
         for (size_t begin = 0; begin < rows; begin += chunk)
         {
             const size_t n = std::min(chunk, rows - begin);
             checkCuda(cudaMemcpyAsync(device_vectors.data(), vectors + begin * d, n * d * sizeof(float), cudaMemcpyHostToDevice, stream),
                 "copying vectors to the device");
-            checkCublas(cublasSgemm(blas, CUBLAS_OP_T, CUBLAS_OP_N, int(k), int(n), int(d), &one, state->centroids.data(), int(d),
-                device_vectors.data(), int(d), &zero, dots.data(), int(k)), "scoring vectors against centroids");
-            argminPrimary<<<n, ARGMIN_THREADS, 0, stream>>>(dots.data(), state->sq_norms.data(), k, device_primary.data());
-            checkCuda(cudaGetLastError(), "launching the assignment");
+            cuvs::cluster::kmeans::predict(res, params, ConstRowMatrix(device_vectors.data(), int64_t(n), int64_t(d)), device_centroids,
+                raft::make_device_vector_view<uint32_t, int64_t>(device_primary.data(), int64_t(n)));
             checkCuda(cudaMemcpyAsync(positions + begin, device_primary.data(), n * sizeof(uint32_t), cudaMemcpyDeviceToHost, stream),
                 "copying the assignment to the host");
             if (rotated)
             {
-                checkCublas(cublasSgemm(blas, CUBLAS_OP_T, CUBLAS_OP_N, int(d), int(n), int(d), &one, device_rotation.data(), int(d),
-                    device_vectors.data(), int(d), &zero, device_rotated.data(), int(d)), "rotating vectors");
+                rotateRows(res, device_vectors.data(), n, device_rotation.data(), d, device_rotated.data());
                 checkCuda(cudaMemcpyAsync(rotated + begin * d, device_rotated.data(), n * d * sizeof(float), cudaMemcpyDeviceToHost, stream),
                     "copying the rotated vectors to the host");
             }
@@ -222,84 +188,42 @@ __host__ void IvfCentroids::assign(const float * vectors, size_t rows, uint32_t 
 
 namespace
 {
-constexpr uint32_t MISSING_ROW = std::numeric_limits<uint32_t>::max();
 
-constexpr int SCAN_THREADS = 256;
-
-constexpr size_t SCAN_SHARED_ENTRIES = 4096;
-
-constexpr size_t PARTIAL_RESULTS_BYTES = 256 << 20;
-
-raft::resources & searchResources()
+/// u = R q - R c of the query `q` and the list `list` into `u`, with its squared length and sum. Called by the whole block.
+__device__ IvfQuantization::QueryResidual computeQueryResidual(const float * rotated_queries, const float * rotated_centroids, size_t q,
+    uint32_t list, size_t dimensions, float * u)
 {
-    thread_local raft::resources resources = []
+    __shared__ float squared_length;
+    __shared__ float sum;
+    for (size_t i = threadIdx.x; i < IvfQuantization::codeWords(dimensions) * 32; i += blockDim.x)
+        u[i] = i < dimensions ? rotated_queries[q * dimensions + i] - rotated_centroids[size_t(list) * dimensions + i] : 0.0f;
+    __syncthreads();
+    if (threadIdx.x == 0)
     {
-        raft::resources res;
-        limitWorkspace(res);
-        return res;
-    }();
-    return resources;
-}
-
-__global__ void coarseScores(float * scores, const float * sq_norms, size_t num_lists, size_t total)
-{
-    const size_t i = blockIdx.x * size_t(blockDim.x) + threadIdx.x;
-    if (i < total)
-        scores[i] = sq_norms[i % num_lists] - 2.0f * scores[i];
-}
-
-__global__ void fillMissing(float * distances, uint32_t * rows, size_t total)
-{
-    const size_t i = blockIdx.x * size_t(blockDim.x) + threadIdx.x;
-    if (i < total)
-    {
-        distances[i] = INFINITY;
-        rows[i] = MISSING_ROW;
-    }
-}
-
-__device__ void sortPairs(float * distances, uint32_t * rows, size_t size)
-{
-    for (size_t k = 2; k <= size; k <<= 1)
-    {
-        for (size_t j = k >> 1; j > 0; j >>= 1)
+        float s = 0;
+        float l = 0;
+        for (size_t i = 0; i < dimensions; ++i)
         {
-            for (size_t i = threadIdx.x; i < size; i += blockDim.x)
-            {
-                const size_t other = i ^ j;
-                if (other > i)
-                {
-                    const bool ascending = (i & k) == 0;
-                    if ((distances[i] > distances[other]) == ascending)
-                    {
-                        const float d = distances[i];
-                        distances[i] = distances[other];
-                        distances[other] = d;
-                        const uint32_t r = rows[i];
-                        rows[i] = rows[other];
-                        rows[other] = r;
-                    }
-                }
-            }
-            __syncthreads();
+            l += u[i] * u[i];
+            s += u[i];
         }
+        squared_length = l;
+        sum = s;
     }
+    __syncthreads();
+    return {u, squared_length, sum};
 }
 
-/// |q - x_hat|^2 = |u|^2 - 2 (lo sum(u) + step dot(u, code)) + |r_hat|^2 with u = R q - R c.
+/// Block `b` keeps the best `select` rows of the lists `query_lists[block_first[b] .. block_last[b])` for the query `block_query[b]`,
+/// starting from `in` if it is set, and writes them to `out + out_offsets[b]`.
+template <int Capacity>
 __global__ void scanChunk(const char * chunk, const uint64_t * list_begins, const uint32_t * list_sizes, const float * rotated_centroids,
     const uint32_t * block_query, const uint32_t * block_first, const uint32_t * block_last, const uint32_t * query_lists,
-    const float * rotated_queries, size_t dimensions, size_t select, size_t size,
+    const float * rotated_queries, size_t dimensions, size_t select, size_t queue_bytes,
     const float * in_distances, const uint32_t * in_rows, const uint64_t * out_offsets, float * out_distances, uint32_t * out_rows)
 {
-    extern __shared__ char shared[];
-    float * distances = reinterpret_cast<float *>(shared);
-    uint32_t * rows = reinterpret_cast<uint32_t *>(distances + size);
-    float * u = reinterpret_cast<float *>(rows + size);
-    __shared__ unsigned count;
-    __shared__ float threshold;
-    __shared__ float u_norm2;
-    __shared__ float u_sum;
+    extern __shared__ __align__(256) uint8_t shared[];
+    float * u = reinterpret_cast<float *>(shared + queue_bytes);
 
     const size_t q = block_query[blockIdx.x];
     const uint32_t first = block_first[blockIdx.x];
@@ -307,190 +231,59 @@ __global__ void scanChunk(const char * chunk, const uint64_t * list_begins, cons
     if (first == last)
         return;
 
-    const size_t code_bytes = ivfCodeBytes(dimensions);
-    const size_t words = code_bytes / 16;
-    for (size_t i = threadIdx.x; i < size; i += blockDim.x)
-    {
-        distances[i] = i < select && in_distances ? in_distances[q * select + i] : INFINITY;
-        rows[i] = i < select && in_rows ? in_rows[q * select + i] : MISSING_ROW;
-    }
-    if (threadIdx.x == 0)
-    {
-        count = 0;
-        threshold = in_distances ? in_distances[q * select + select - 1] : INFINITY;
-    }
-    __syncthreads();
+    raft::matrix::detail::select::warpsort::block_sort<raft::matrix::detail::select::warpsort::warp_sort_filtered, Capacity, true,
+        float, uint32_t> queue(static_cast<int>(select));
 
-    const size_t room = size - select;
-    auto merge = [&]
-    {
-        if (count == 0)
-            return;
-        for (size_t i = select + count + threadIdx.x; i < size; i += blockDim.x)
-        {
-            distances[i] = INFINITY;
-            rows[i] = MISSING_ROW;
-        }
-        __syncthreads();
-        sortPairs(distances, rows, size);
-        if (threadIdx.x == 0)
-        {
-            count = 0;
-            threshold = distances[select - 1];
-        }
-        __syncthreads();
-    };
+    /// `add` is called by every thread of a warp together, so the loops run to a multiple of the block.
+    if (in_distances)
+        for (size_t i = threadIdx.x; i < (select + blockDim.x - 1) / blockDim.x * blockDim.x; i += blockDim.x)
+            queue.add(i < select ? in_distances[q * select + i] : INFINITY, i < select ? in_rows[q * select + i] : MISSING_ROW);
 
+    const size_t words = IvfQuantization::codeWords(dimensions);
     for (uint32_t p = first; p < last; ++p)
     {
-        const uint32_t list = query_lists[p];
-        for (size_t i = threadIdx.x; i < words * 32; i += blockDim.x)
-            u[i] = i < dimensions ? rotated_queries[q * dimensions + i] - rotated_centroids[size_t(list) * dimensions + i] : 0.0f;
-        __syncthreads();
-        if (threadIdx.x == 0)
+        const uint32_t list_number = query_lists[p];
+        const auto query = computeQueryResidual(rotated_queries, rotated_centroids, q, list_number, dimensions, u);
+        const IvfQuantization::ListView list(chunk + list_begins[list_number], list_sizes[list_number]);
+        for (uint32_t start = 0; start < list.size; start += blockDim.x)
         {
-            float norm2 = 0;
-            float sum = 0;
-            for (size_t i = 0; i < dimensions; ++i)
-            {
-                norm2 += u[i] * u[i];
-                sum += u[i];
-            }
-            u_norm2 = norm2;
-            u_sum = sum;
-        }
-        __syncthreads();
-
-        const char * begin = chunk + list_begins[list];
-        const uint32_t entries = list_sizes[list];
-        const uint32_t * entry_rows = reinterpret_cast<const uint32_t *>(begin);
-        const float * entry_params = reinterpret_cast<const float *>(begin + size_t(entries) * sizeof(uint32_t));
-        const uint4 * entry_codes = reinterpret_cast<const uint4 *>(begin + size_t(entries) * (sizeof(uint32_t) + 3 * sizeof(float)));
-        for (uint32_t start = 0; start < entries; start += blockDim.x)
-        {
-            if (count + blockDim.x > room)
-                merge();
-
             const uint32_t i = start + threadIdx.x;
-            if (i < entries)
-            {
-                const uint4 * codes = entry_codes + size_t(i) * words;
-                float dot = 0;
-                for (size_t w = 0; w < words; ++w)
-                {
-                    const uint4 word = codes[w];
-                    const uint32_t parts[4] = {word.x, word.y, word.z, word.w};
-#pragma unroll
-                    for (int b = 0; b < 4; ++b)
-#pragma unroll
-                        for (int n = 0; n < 8; ++n)
-                            dot += u[w * 32 + b * 8 + n] * float((parts[b] >> (4 * n)) & 15u);
-                }
-                const float lo = entry_params[size_t(i) * 3];
-                const float step = entry_params[size_t(i) * 3 + 1];
-                const float r_norm2 = entry_params[size_t(i) * 3 + 2];
-                const float distance = u_norm2 - 2.0f * (lo * u_sum + step * dot) + r_norm2;
-                if (distance < threshold)
-                {
-                    const unsigned slot = atomicAdd(&count, 1u);
-                    distances[select + slot] = distance;
-                    rows[select + slot] = entry_rows[i];
-                }
-            }
-            __syncthreads();
-        }
-    }
-    merge();
-
-    const uint64_t out = out_offsets[blockIdx.x];
-    for (size_t i = threadIdx.x; i < select; i += blockDim.x)
-    {
-        out_distances[out + i] = distances[i];
-        out_rows[out + i] = rows[i];
-    }
-}
-
-__global__ void copyBestToPartial(const float * best_distances, const uint32_t * best_rows, size_t select, size_t width,
-    size_t total, float * partial_distances, uint32_t * partial_rows)
-{
-    const size_t i = blockIdx.x * size_t(blockDim.x) + threadIdx.x;
-    if (i < total)
-    {
-        const size_t q = i / select;
-        partial_distances[q * width + i % select] = best_distances[i];
-        partial_rows[q * width + i % select] = best_rows[i];
-    }
-}
-
-__global__ void mergePartial(const float * partial_distances, const uint32_t * partial_rows, size_t width, size_t select, size_t size,
-    float * best_distances, uint32_t * best_rows)
-{
-    extern __shared__ char shared[];
-    float * distances = reinterpret_cast<float *>(shared);
-    uint32_t * rows = reinterpret_cast<uint32_t *>(distances + size);
-    __shared__ unsigned count;
-    __shared__ float threshold;
-    const size_t q = blockIdx.x;
-    for (size_t i = threadIdx.x; i < size; i += blockDim.x)
-    {
-        distances[i] = INFINITY;
-        rows[i] = MISSING_ROW;
-    }
-    if (threadIdx.x == 0)
-    {
-        count = 0;
-        threshold = INFINITY;
-    }
-    __syncthreads();
-    auto merge = [&]
-    {
-        if (count == 0)
-            return;
-        for (size_t i = select + count + threadIdx.x; i < size; i += blockDim.x)
-        {
-            distances[i] = INFINITY;
-            rows[i] = MISSING_ROW;
-        }
-        __syncthreads();
-        sortPairs(distances, rows, size);
-        if (threadIdx.x == 0)
-        {
-            count = 0;
-            threshold = distances[select - 1];
-        }
-        __syncthreads();
-    };
-    for (size_t start = 0; start < width; start += blockDim.x)
-    {
-        if (count + blockDim.x > size - select)
-            merge();
-        const size_t i = start + threadIdx.x;
-        if (i < width)
-        {
-            const float distance = partial_distances[q * width + i];
-            if (distance < threshold)
-            {
-                const unsigned slot = atomicAdd(&count, 1u);
-                distances[select + slot] = distance;
-                rows[select + slot] = partial_rows[q * width + i];
-            }
+            if (i < list.size)
+                queue.add(IvfQuantization::estimateDistance(query, list.params[i], IvfQuantization::dotWithCodes(u, list.codes + i * words, words)),
+                    list.rows[i]);
+            else
+                queue.add(INFINITY, MISSING_ROW);
         }
         __syncthreads();
     }
-    merge();
-    for (size_t i = threadIdx.x; i < select; i += blockDim.x)
-    {
-        best_distances[q * select + i] = distances[i];
-        best_rows[q * select + i] = rows[i];
-    }
+
+    queue.done(shared);
+    queue.store(out_distances + out_offsets[blockIdx.x], out_rows + out_offsets[blockIdx.x]);
 }
 
-size_t scanSharedEntries(size_t select)
+template <int Capacity>
+void launchScan(size_t blocks, size_t dimensions, size_t select, cudaStream_t stream, const char * chunk, const uint64_t * list_begins,
+    const uint32_t * list_sizes, const float * rotated_centroids, const uint32_t * block_query, const uint32_t * block_first,
+    const uint32_t * block_last, const uint32_t * query_lists, const float * rotated_queries, const float * in_distances,
+    const uint32_t * in_rows, const uint64_t * out_offsets, float * out_distances, uint32_t * out_rows)
 {
-    size_t size = 1;
-    while (size < select + SCAN_THREADS)
-        size <<= 1;
-    return size;
+    if constexpr (Capacity < MAX_SELECT)
+    {
+        if (select > size_t(Capacity))
+            return launchScan<Capacity * 2>(blocks, dimensions, select, stream, chunk, list_begins, list_sizes, rotated_centroids,
+                block_query, block_first, block_last, query_lists, rotated_queries, in_distances, in_rows, out_offsets, out_distances,
+                out_rows);
+    }
+    const size_t queue_bytes = (raft::matrix::detail::select::warpsort::calc_smem_size_for_block_wide<float, uint32_t>(
+        SCAN_THREADS / 32, int(select)) + 255) / 256 * 256;
+    const size_t shared_bytes = queue_bytes + IvfQuantization::codeWords(dimensions) * 32 * sizeof(float);
+    if (shared_bytes > 48 * 1024)
+        checkCuda(cudaFuncSetAttribute(scanChunk<Capacity>, cudaFuncAttributeMaxDynamicSharedMemorySize, int(shared_bytes)),
+            "allowing the shared memory of the scan of IVF lists");
+    scanChunk<Capacity><<<blocks, SCAN_THREADS, shared_bytes, stream>>>(chunk, list_begins, list_sizes, rotated_centroids, block_query,
+        block_first, block_last, query_lists, rotated_queries, dimensions, select, queue_bytes, in_distances, in_rows, out_offsets,
+        out_distances, out_rows);
+    checkCuda(cudaGetLastError(), "launching the scan of IVF lists");
 }
 
 }
@@ -517,9 +310,8 @@ __host__ void trainIvfCentroids(const float * vectors, size_t rows, size_t dimen
             "copying the k-means sample to the device");
 
         cuvs::cluster::kmeans::balanced_params params;
-        cuvs::cluster::kmeans::fit(res, params,
-            raft::make_device_matrix_view<const float, int64_t>(device_sample.data(), int64_t(sample), int64_t(dimensions)),
-            raft::make_device_matrix_view<float, int64_t>(device_centroids.data(), int64_t(num_centroids), int64_t(dimensions)));
+        cuvs::cluster::kmeans::fit(res, params, ConstRowMatrix(device_sample.data(), int64_t(sample), int64_t(dimensions)),
+            RowMatrix(device_centroids.data(), int64_t(num_centroids), int64_t(dimensions)));
 
         checkCuda(cudaMemcpyAsync(centroids, device_centroids.data(), device_centroids.size() * sizeof(float), cudaMemcpyDeviceToHost, stream),
             "copying the IVF centroids to the host");
@@ -534,8 +326,6 @@ __host__ void IvfCentroids::nearestLists(const float * queries, size_t num_queri
         auto & res = searchResources();
         const auto stream_view = streamOf(res);
         const cudaStream_t stream = stream_view.get();
-        cublasHandle_t blas = raft::resource::get_cublas_handle(res);
-        checkCublas(cublasSetStream(blas, stream), "setting the stream of cuBLAS");
 
         const size_t k = state->num_centroids;
         const size_t d = state->dimensions;
@@ -547,22 +337,23 @@ __host__ void IvfCentroids::nearestLists(const float * queries, size_t num_queri
         rmm::device_uvector<float> scores(chunk * k, stream_view);
         rmm::device_uvector<float> probe_scores(chunk * probes, stream_view);
         rmm::device_uvector<uint32_t> probe_lists(chunk * probes, stream_view);
+        float minus_two = -2;
 
-        const float one = 1;
-        const float zero = 0;
         for (size_t begin = 0; begin < num_queries; begin += chunk)
         {
             const size_t n = std::min(chunk, num_queries - begin);
             checkCuda(cudaMemcpyAsync(device_queries.data(), queries + begin * d, n * d * sizeof(float), cudaMemcpyHostToDevice, stream),
                 "copying queries to the device");
-            checkCublas(cublasSgemm(blas, CUBLAS_OP_T, CUBLAS_OP_N, int(k), int(n), int(d), &one, state->centroids.data(), int(d),
-                device_queries.data(), int(d), &zero, scores.data(), int(k)), "scoring queries against centroids");
-            coarseScores<<<(n * k + 255) / 256, 256, 0, stream>>>(scores.data(), state->sq_norms.data(), k, n * k);
-            checkCuda(cudaGetLastError(), "launching the scores of the lists");
-            cuvs::selection::select_k(res,
-                raft::make_device_matrix_view<const float, int64_t>(scores.data(), int64_t(n), int64_t(k)),
+            const auto scores_view = RowMatrix(scores.data(), int64_t(n), int64_t(k));
+            raft::linalg::gemm(res, RowMatrix(device_queries.data(), int64_t(n), int64_t(d)),
+                raft::make_device_matrix_view<float, int64_t, raft::col_major>(state->centroids.data(), int64_t(d), int64_t(k)), scores_view,
+                std::make_optional(raft::make_host_scalar_view<float, uint32_t>(&minus_two)));
+            raft::linalg::matrix_vector_op<raft::Apply::ALONG_ROWS>(res, raft::make_const_mdspan(scores_view),
+                raft::make_device_vector_view<const float, int64_t>(state->centroid_squared_lengths.data(), int64_t(k)), scores_view,
+                raft::add_op{});
+            cuvs::selection::select_k(res, raft::make_const_mdspan(scores_view),
                 std::optional<raft::device_matrix_view<const uint32_t, int64_t, raft::row_major>>{},
-                raft::make_device_matrix_view<float, int64_t>(probe_scores.data(), int64_t(n), int64_t(probes)),
+                RowMatrix(probe_scores.data(), int64_t(n), int64_t(probes)),
                 raft::make_device_matrix_view<uint32_t, int64_t>(probe_lists.data(), int64_t(n), int64_t(probes)),
                 /*select_min=*/ true, /*sorted=*/ true);
             checkCuda(cudaMemcpyAsync(lists + begin * probes, probe_lists.data(), n * probes * sizeof(uint32_t), cudaMemcpyDeviceToHost, stream),
@@ -577,7 +368,6 @@ struct IvfListScan::State
     size_t num_queries;
     size_t dimensions;
     size_t select;
-    size_t shared_entries;
     raft::resources & res;
     rmm::device_uvector<float> rotated_queries;
     rmm::device_uvector<float> best_distances;
@@ -587,7 +377,6 @@ struct IvfListScan::State
         : num_queries(num_queries_)
         , dimensions(dimensions_)
         , select(select_)
-        , shared_entries(scanSharedEntries(select_))
         , res(searchResources())
         , rotated_queries(num_queries_ * dimensions_, streamOf(res))
         , best_distances(num_queries_ * select_, streamOf(res))
@@ -595,28 +384,21 @@ struct IvfListScan::State
     {
         const auto stream_view = streamOf(res);
         const cudaStream_t stream = stream_view.get();
-        cublasHandle_t blas = raft::resource::get_cublas_handle(res);
-        checkCublas(cublasSetStream(blas, stream), "setting the stream of cuBLAS");
         rmm::device_uvector<float> queries(num_queries * dimensions, stream_view);
         rmm::device_uvector<float> device_rotation(dimensions * dimensions, stream_view);
         checkCuda(cudaMemcpyAsync(queries.data(), host_queries, queries.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
             "copying queries to the device");
         checkCuda(cudaMemcpyAsync(device_rotation.data(), rotation, device_rotation.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
             "copying the rotation to the device");
-        const float one = 1;
-        const float zero = 0;
-        checkCublas(cublasSgemm(blas, CUBLAS_OP_T, CUBLAS_OP_N, int(dimensions), int(num_queries), int(dimensions), &one,
-            device_rotation.data(), int(dimensions), queries.data(), int(dimensions), &zero, rotated_queries.data(), int(dimensions)),
-            "rotating queries");
-        fillMissing<<<(best_rows.size() + 255) / 256, 256, 0, stream>>>(best_distances.data(), best_rows.data(), best_rows.size());
-        checkCuda(cudaGetLastError(), "launching the initialization of the nearest rows");
+        rotateRows(res, queries.data(), num_queries, device_rotation.data(), dimensions, rotated_queries.data());
+        fillMissing(res, best_distances.data(), best_rows.data(), best_rows.size());
         raft::resource::sync_stream(res);
     }
 };
 
 __host__ size_t IvfListScan::maxSelect()
 {
-    return SCAN_SHARED_ENTRIES - SCAN_THREADS;
+    return MAX_SELECT;
 }
 
 __host__ IvfListScan::IvfListScan(const float * queries, size_t num_queries, size_t dimensions, size_t select, const float * rotation)
@@ -640,6 +422,7 @@ __host__ void IvfListScan::scan(const char * chunk, size_t chunk_bytes, const ui
         const auto stream_view = streamOf(res);
         const cudaStream_t stream = stream_view.get();
         const size_t nq = state->num_queries;
+        const size_t select = state->select;
         const size_t pairs = query_list_offsets[nq];
         if (pairs == 0)
             return;
@@ -647,7 +430,7 @@ __host__ void IvfListScan::scan(const char * chunk, size_t chunk_bytes, const ui
         size_t max_lists_of_query = 0;
         for (size_t q = 0; q < nq; ++q)
             max_lists_of_query = std::max<size_t>(max_lists_of_query, query_list_offsets[q + 1] - query_list_offsets[q]);
-        const size_t partial_width = state->select * (1 + max_lists_of_query);
+        const size_t partial_width = select * (1 + max_lists_of_query);
         const bool per_list = nq * partial_width * (sizeof(float) + sizeof(uint32_t)) <= PARTIAL_RESULTS_BYTES;
 
         std::vector<uint32_t> block_query;
@@ -663,7 +446,7 @@ __host__ void IvfListScan::scan(const char * chunk, size_t chunk_bytes, const ui
                     block_query.push_back(uint32_t(q));
                     block_first.push_back(p);
                     block_last.push_back(p + 1);
-                    out_offsets.push_back(q * partial_width + (1 + p - query_list_offsets[q]) * state->select);
+                    out_offsets.push_back(q * partial_width + (1 + p - query_list_offsets[q]) * select);
                 }
             }
             else
@@ -671,7 +454,7 @@ __host__ void IvfListScan::scan(const char * chunk, size_t chunk_bytes, const ui
                 block_query.push_back(uint32_t(q));
                 block_first.push_back(query_list_offsets[q]);
                 block_last.push_back(query_list_offsets[q + 1]);
-                out_offsets.push_back(q * state->select);
+                out_offsets.push_back(q * select);
             }
         }
         const size_t blocks = block_query.size();
@@ -699,37 +482,36 @@ __host__ void IvfListScan::scan(const char * chunk, size_t chunk_bytes, const ui
         upload(device_block_last.data(), block_last.data(), blocks * sizeof(uint32_t));
         upload(device_out_offsets.data(), out_offsets.data(), blocks * sizeof(uint64_t));
 
-        const size_t shared_bytes = state->shared_entries * (sizeof(float) + sizeof(uint32_t)) + ivfCodeBytes(state->dimensions) * 2 * sizeof(float);
-        if (shared_bytes > 48 * 1024)
-            checkCuda(cudaFuncSetAttribute(scanChunk, cudaFuncAttributeMaxDynamicSharedMemorySize, int(shared_bytes)),
-                "allowing the shared memory of the scan of IVF lists");
-
-        if (per_list)
+        auto scan_into = [&](const float * in_distances, const uint32_t * in_rows, float * out_distances, uint32_t * out_rows)
         {
-            rmm::device_uvector<float> partial_distances(nq * partial_width, stream_view);
-            rmm::device_uvector<uint32_t> partial_rows(nq * partial_width, stream_view);
-            fillMissing<<<(partial_rows.size() + 255) / 256, 256, 0, stream>>>(partial_distances.data(), partial_rows.data(), partial_rows.size());
-            copyBestToPartial<<<(nq * state->select + 255) / 256, 256, 0, stream>>>(state->best_distances.data(), state->best_rows.data(),
-                state->select, partial_width, nq * state->select, partial_distances.data(), partial_rows.data());
-            scanChunk<<<blocks, SCAN_THREADS, shared_bytes, stream>>>(device_chunk.data(), device_begins.data(), device_sizes.data(),
+            launchScan<32>(blocks, state->dimensions, select, stream, device_chunk.data(), device_begins.data(), device_sizes.data(),
                 device_rotated_centroids.data(), device_block_query.data(), device_block_first.data(), device_block_last.data(),
-                device_lists.data(), state->rotated_queries.data(), state->dimensions, state->select, state->shared_entries, nullptr, nullptr,
-                device_out_offsets.data(), partial_distances.data(), partial_rows.data());
-            checkCuda(cudaGetLastError(), "launching the scan of IVF lists");
-            mergePartial<<<nq, SCAN_THREADS, state->shared_entries * (sizeof(float) + sizeof(uint32_t)), stream>>>(
-                partial_distances.data(), partial_rows.data(), partial_width, state->select, state->shared_entries,
-                state->best_distances.data(), state->best_rows.data());
-            checkCuda(cudaGetLastError(), "launching the merge of the partial results of IVF lists");
+                device_lists.data(), state->rotated_queries.data(), in_distances, in_rows, device_out_offsets.data(), out_distances, out_rows);
+        };
+
+        if (!per_list)
+        {
+            scan_into(state->best_distances.data(), state->best_rows.data(), state->best_distances.data(), state->best_rows.data());
             raft::resource::sync_stream(res);
             return;
         }
 
-        scanChunk<<<blocks, SCAN_THREADS, shared_bytes, stream>>>(device_chunk.data(), device_begins.data(), device_sizes.data(),
-            device_rotated_centroids.data(), device_block_query.data(), device_block_first.data(), device_block_last.data(),
-            device_lists.data(), state->rotated_queries.data(), state->dimensions, state->select, state->shared_entries,
-            state->best_distances.data(), state->best_rows.data(), device_out_offsets.data(), state->best_distances.data(),
-            state->best_rows.data());
-        checkCuda(cudaGetLastError(), "launching the scan of IVF lists");
+        /// A row per query: the best so far, then the best of each of its lists, merged by `select_k`.
+        rmm::device_uvector<float> partial_distances(nq * partial_width, stream_view);
+        rmm::device_uvector<uint32_t> partial_rows(nq * partial_width, stream_view);
+        fillMissing(res, partial_distances.data(), partial_rows.data(), partial_rows.size());
+        checkCuda(cudaMemcpy2DAsync(partial_distances.data(), partial_width * sizeof(float), state->best_distances.data(),
+            select * sizeof(float), select * sizeof(float), nq, cudaMemcpyDeviceToDevice, stream), "copying the nearest rows");
+        checkCuda(cudaMemcpy2DAsync(partial_rows.data(), partial_width * sizeof(uint32_t), state->best_rows.data(),
+            select * sizeof(uint32_t), select * sizeof(uint32_t), nq, cudaMemcpyDeviceToDevice, stream), "copying the nearest rows");
+        scan_into(nullptr, nullptr, partial_distances.data(), partial_rows.data());
+        cuvs::selection::select_k(res,
+            ConstRowMatrix(partial_distances.data(), int64_t(nq), int64_t(partial_width)),
+            std::make_optional(raft::make_device_matrix_view<const uint32_t, int64_t, raft::row_major>(
+                partial_rows.data(), int64_t(nq), int64_t(partial_width))),
+            RowMatrix(state->best_distances.data(), int64_t(nq), int64_t(select)),
+            raft::make_device_matrix_view<uint32_t, int64_t>(state->best_rows.data(), int64_t(nq), int64_t(select)),
+            /*select_min=*/ true, /*sorted=*/ true);
         raft::resource::sync_stream(res);
     });
 }
