@@ -5,6 +5,8 @@
 
 #include <Poco/URI.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -21,6 +23,15 @@ namespace
         readStringUntilEquals(field, buf);
         assertChar('=', buf);
         return field;
+    }
+
+    /// In application/x-www-form-urlencoded data '+' encodes a space. Replace it before
+    /// percent-decoding so that "%2B" still decodes to a literal '+'. Poco::URI::decode with
+    /// plusAsSpace = true is not enough: it only handles '+' after a '?' in the input.
+    void decodeFormValue(String & encoded, String & decoded)
+    {
+        std::ranges::replace(encoded, '+', ' ');
+        Poco::URI::decode(encoded, decoded);
     }
 }
 
@@ -57,7 +68,7 @@ void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
     if (!in->eof())
         assertChar('&', *in);
 
-    Poco::URI::decode(encoded_str, decoded_str);
+    decodeFormValue(encoded_str, decoded_str);
     ReadBufferFromString buf(decoded_str);
     serialization->deserializeWholeText(*columns[index], buf, format_settings);
 }
@@ -141,7 +152,7 @@ static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & i
     {
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
-        Poco::URI::decode(value, decoded_value);
+        decodeFormValue(value, decoded_value);
         auto type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
         names_and_types.emplace_back(name, type);
     }
