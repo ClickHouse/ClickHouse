@@ -2180,6 +2180,49 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             });
         }
 
+        /// On the schema-changed path the reader was given the file's full schema instead of
+        /// `format_header`, so it yields whole top-level columns, while `format_header` and the
+        /// filters built against it may name a tuple element as a flat column (`s.a`, see
+        /// `filterTupleColumnsToRead`). Produce those elements from their parents right here:
+        /// after the schema transform, so that the parents carry their current-schema names and
+        /// types (also after `RENAME COLUMN` or a type promotion), and before the fallback
+        /// `FilterTransform`s below, which take the same flat names as inputs. The inputs of the
+        /// stripped filters are added explicitly because `requested_columns` is post-`PREWHERE`
+        /// and omits the columns consumed by a filter only. The same read of the full schema
+        /// also happens for a current-schema file with equality deletes, which gets no schema
+        /// transform, so this does not belong to the transform itself.
+        if (schema_changed)
+        {
+            Names names_to_extract;
+            NameSet seen_names;
+            auto add_name = [&](const String & name)
+            {
+                if (seen_names.insert(name).second)
+                    names_to_extract.push_back(name);
+            };
+            for (const auto & column : read_from_format_info.requested_columns)
+                add_name(column.getNameInStorage());
+            auto add_filter_inputs = [&](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                    add_name(required.name);
+            };
+            if (stripped_row_level_filter)
+                add_filter_inputs(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_filter_inputs(stripped_prewhere_info->prewhere_actions);
+
+            auto extract_dag = createSubcolumnsExtractionActions(builder.getHeader(), names_to_extract, context_);
+            if (!extract_dag.getNodes().empty())
+            {
+                auto extract_actions = std::make_shared<ExpressionActions>(std::move(extract_dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, extract_actions);
+                });
+            }
+        }
+
         /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s
         /// when the file format doesn't support `PREWHERE`. For mixed-format data lake
         /// tables (e.g. Iceberg with Parquet + ORC files), table-level `PREWHERE` support
@@ -2278,25 +2321,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
-        }
-
-        /// A file read under its own names yields whole columns, while a tuple element can be requested as a flat
-        /// column (see `filterTupleColumnsToRead`).
-        if (reads_file_under_own_names)
-        {
-            NameSet names_in_storage;
-            for (const auto & column : read_from_format_info.requested_columns)
-                names_in_storage.insert(column.getNameInStorage());
-            auto extract_dag = createSubcolumnsExtractionActions(
-                builder.getHeader(), Names(names_in_storage.begin(), names_in_storage.end()), context_);
-            if (!extract_dag.getNodes().empty())
-            {
-                auto extract_actions = std::make_shared<ExpressionActions>(std::move(extract_dag));
-                builder.addSimpleTransform([&](const SharedHeader & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, extract_actions);
-                });
-            }
         }
 
         source = input_format;
