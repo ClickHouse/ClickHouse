@@ -634,9 +634,7 @@ struct PlainBooleanDecoder : public PageDecoder
         bool direct = converter->isTrivial();
         if (direct)
         {
-            size_t pass_count = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                pass_count += filter[filter_offset + i];
+            size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
             auto to_span = col.insertRawUninitialized(pass_count);
             to = to_span.data();
         }
@@ -736,11 +734,7 @@ struct PlainStringDecoder : public PageDecoder
         {
             /// Fast path for directly appending to ColumnString.
             auto & col_str = assert_cast<ColumnString &>(col);
-            size_t to_reserve = filter ? 0 : num_values;
-            for (size_t i = 0; filter && i < num_values; ++i)
-                to_reserve += filter[filter_offset + i];
-            if (!filter)
-                to_reserve = num_values;
+            size_t to_reserve = filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values;
             col_str.reserve(col_str.size() + to_reserve);
 
             const StringValueFilter * active_value_filter = value_filter && value_filter->isEnabled() ? value_filter : nullptr;
@@ -798,9 +792,7 @@ struct PlainStringDecoder : public PageDecoder
             if (filter)
             {
                 PaddedPODArray<char> chars_buf;
-                size_t num_pass = 0;
-                for (size_t i = 0; i < num_values; ++i)
-                    num_pass += filter[filter_offset + i];
+                size_t num_pass = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
                 if (num_pass == 0)
                 {
                     for (size_t i = 0; i < num_values; ++i)
@@ -1023,9 +1015,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             return;
         }
         size_t value_size = converter->input_size;
-        size_t pass_count = 0;
-        for (size_t i = 0; i < num_values; ++i)
-            pass_count += filter[filter_offset + i];
+        size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
         if (pass_count == 0)
         {
             skip(num_values);
@@ -1244,9 +1234,7 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
         {
             PaddedPODArray<char> chars_buf;
             IColumn::Offsets out_offsets;
-            size_t num_pass = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                num_pass += filter[filter_offset + i];
+            size_t num_pass = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
             if (num_pass == 0)
             {
                 idx += num_values;
@@ -1328,9 +1316,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
             size_t pass_count = num_values;
             if (filter)
             {
-                pass_count = 0;
-                for (size_t i = 0; i < num_values; ++i)
-                    pass_count += filter[filter_offset + i];
+                pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
                 if (pass_count == 0)
                 {
                     decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
@@ -1384,9 +1370,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                     string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, num_values, col);
                 return;
             }
-            size_t pass_count = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                pass_count += filter[filter_offset + i];
+            size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
             if (pass_count == 0)
             {
                 decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
@@ -1523,9 +1507,7 @@ struct ByteStreamSplitDecoder : public PageDecoder
             decodeNoFilter(num_values, col, num_streams);
             return;
         }
-        size_t pass_count = 0;
-        for (size_t i = 0; i < num_values; ++i)
-            pass_count += filter[filter_offset + i];
+        size_t pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
         if (pass_count == 0)
         {
             skip(num_values);
