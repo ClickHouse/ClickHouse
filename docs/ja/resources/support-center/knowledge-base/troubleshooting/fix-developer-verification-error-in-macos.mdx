@@ -6,8 +6,6 @@ tags: ['エラーと例外']
 keywords: ['開発元検証', 'macOS']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ## macOS での開発元検証エラーを解決する {#fix-the-developer-verification-error-in-macos}
 
 macOS はデフォルトでは、インターネットからダウンロードしたアプリケーションやツールのうち、確認済みの開発元による署名と Apple による公証がないものは実行しません。
@@ -24,7 +22,15 @@ macOS はデフォルトでは、インターネットからダウンロード�
 
 隔離された `clickhouse` バイナリを実行しようとすると、次のようなエラーが表示されることがあります。
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS の開発元検証エラーダイアログ" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![MacOS の開発元検証エラーダイアログ](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</Frame>
+
+</div>
 
 署名済みのビルドに切り替えられない場合は、システム設定または端末で、バイナリの隔離を解除してください。
 
@@ -36,13 +42,29 @@ macOS はデフォルトでは、インターネットからダウンロード�
 
 3. **プライバシーとセキュリティ**に移動します。
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="macOSのプライバシーとセキュリティ設定のデフォルト表示" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![macOSのプライバシーとセキュリティ設定のデフォルト表示](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </Frame>
+
+   </div>
 
 4. **セキュリティ**セクションまでスクロールし、*「clickhouse-macos-aarch64」は、識別された開発元のものではないため、使用がブロックされました* というメッセージを探します。
 
 5. **このまま開く**をクリックします (最近の macOS バージョンでは **Open Anyway** に相当するボタンです) 。
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="このまま開くボタンが表示されたmacOSのプライバシーとセキュリティ設定" border />
+   <div className="ch-image-md">
+
+   <Frame>
+
+   ![このまま開くボタンが表示されたmacOSのプライバシーとセキュリティ設定](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </Frame>
+
+   </div>
 
 6. macOS のユーザーパスワードを入力します。
 

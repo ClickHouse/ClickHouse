@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
@@ -42,17 +41,49 @@ postgres=> SHOW rds.logical_replication ;
 1. 必要な設定を含む、Aurora PostgreSQL のバージョンに対応した新しいパラメータグループを作成します。
    * `rds.logical_replication` を 1 に設定します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Aurora でパラメータグループを見つける場所" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="rds.logical_replication の変更" size="lg" border />
+<Frame>
+
+![Aurora でパラメータグループを見つける場所](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![rds.logical_replication の変更](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
+
+</Frame>
+
+</div>
 
 2. 新しいパラメータグループを Aurora PostgreSQL クラスターに適用します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="新しいパラメータグループを使用するように Aurora PostgreSQL を変更" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![新しいパラメータグループを使用するように Aurora PostgreSQL を変更](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
+
+</Frame>
+
+</div>
 
 3. 変更を反映するため、Aurora クラスターを再起動します
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Aurora PostgreSQL を再起動" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Aurora PostgreSQL を再起動](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</Frame>
+
+</div>
 
 <div id="configure-database-user">
   ## データベースユーザーを設定する
@@ -120,9 +151,25 @@ postgres=> SHOW rds.logical_replication ;
 
 Aurora クラスターへのトラフィックを制限する場合は、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を Aurora のセキュリティグループの `Inbound rules` に追加してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Aurora PostgreSQL でセキュリティグループの場所を確認する" size="lg" border />
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="上記のセキュリティグループのインバウンドルールを編集する" size="lg" border />
+<Frame>
+
+![Aurora PostgreSQL でセキュリティグループの場所を確認する](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![上記のセキュリティグループのインバウンドルールを編集する](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</Frame>
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink 経由のプライベートアクセス

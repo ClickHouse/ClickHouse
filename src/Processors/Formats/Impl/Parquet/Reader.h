@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/StringValueFilter.h>
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -211,6 +212,10 @@ struct Reader
         /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
         UInt8 max_array_def = 0;
 
+        /// If nonzero, the column is read only for the sizes of its `levels_only_arrays` outermost
+        /// arrays, and its values are not used. See SchemaConverter::addLevelsOnlyPrimitive.
+        UInt8 levels_only_arrays = 0;
+
         bool use_bloom_filter = false;
 
         /// A single-column `KeyCondition` used for page-level pruning through the column index.
@@ -224,6 +229,9 @@ struct Reader
             /// only under the same four-column zero-nulls guarantee the row-group path requires
             /// (see `spatialBboxStatsHaveNoNulls`).
             size_t spatial_key_condition_idx = SIZE_MAX;
+
+            /// The condition is a conjunct of `join_runtime_filter_key_condition`.
+            bool from_join_runtime_filter = false;
         };
 
         /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
@@ -276,6 +284,8 @@ struct Reader
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
+        bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
@@ -665,6 +675,10 @@ struct Reader
     /// See FormatFilterInfo::join_runtime_filter_predicate.
     std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition;
     size_t row_groups_pruned_by_join_runtime_filter = 0;
+    /// Per-column conditions extracted from `join_runtime_filter_key_condition`, referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> join_runtime_filter_column_conditions;
+    std::atomic<size_t> pages_pruned_by_join_runtime_filter {0};
 
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).

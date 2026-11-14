@@ -371,7 +371,8 @@ struct BitPackedRLEDecoder : public PageDecoder
         {
             /// Bit-packed run.
             size_t groups = len >> 1;
-            run_bytes = groups * bit_width;
+            if (common::mulOverflow(groups, bit_width, run_bytes))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too long bit-packed run: {} groups of bit width {}", groups, bit_width);
             requireRemainingBytes(run_bytes);
             run_is_rle = false;
             run_length = groups << 3;
@@ -882,7 +883,9 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     /// which holds the values that pass the filter until they are converted.
     UInt64 skipped_value = 0;
 
-    DeltaBinaryPackedDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_) : PageDecoder(data_), converter(std::move(converter_))
+    /// `max_values` is the number of values in the page; the number of encoded values can't be greater.
+    DeltaBinaryPackedDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_, size_t max_values)
+        : PageDecoder(data_), converter(std::move(converter_))
     {
         /// From https://parquet.apache.org/docs/file-format/data-pages/encodings/ :
         ///
@@ -904,13 +907,21 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         data = readVarUInt(current_value, data, end - data);
         current_value = UInt64(decodeZigZag(current_value));
 
-        if (values_per_block == 0 || values_per_block % 128 != 0 || miniblocks_per_block == 0 || values_per_block % miniblocks_per_block != 0 || values_per_block / miniblocks_per_block % 32 != 0)
+        /// The block size and the number of miniblocks are 32-bit in other implementations, and larger values would
+        /// overflow the size calculations below.
+        if (values_per_block == 0 || values_per_block > std::numeric_limits<UInt32>::max() || values_per_block % 128 != 0
+            || miniblocks_per_block == 0 || values_per_block % miniblocks_per_block != 0 || values_per_block / miniblocks_per_block % 32 != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED header");
 
         /// The size of a miniblock in bits is computed as the number of values times the bit width
         /// (at most 64). Bounding the block size keeps it from overflowing on corrupted data.
         if (values_per_block > UInt64(std::numeric_limits<Int32>::max()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED block size: {}", values_per_block);
+
+        /// The byte array decoders allocate memory for all values in advance, and the check below is not enough:
+        /// with zero bit widths, a few bytes can encode a huge number of values.
+        if (total_values_remaining > max_values)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED header claims {} values, but the page has only {} values", total_values_remaining, max_values);
 
         /// Sanity-check total_values_remaining to avoid huge memory allocations from corrupted data.
         /// Each block requires at least miniblocks_per_block bytes (for the bit-width array) plus
@@ -919,12 +930,11 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         size_t remaining_bytes = end - data;
         size_t min_bytes_per_block = miniblocks_per_block + 1;
         size_t max_blocks = remaining_bytes / min_bytes_per_block;
-        /// A corrupted header can declare a huge block size, then there is no bound to check against.
-        size_t max_values = 0;
-        if (common::mulOverflow(max_blocks, size_t(values_per_block), max_values) || common::addOverflow(max_values, size_t(1), max_values))
-            max_values = std::numeric_limits<size_t>::max();
-        if (total_values_remaining > max_values)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED header claims {} values but data can contain at most {}", total_values_remaining, max_values);
+        size_t max_encoded_values = 0;
+        if (common::mulOverflow(max_blocks, values_per_block, max_encoded_values) || common::addOverflow(max_encoded_values, size_t(1), max_encoded_values))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED header: too large block size {}", values_per_block);
+        if (total_values_remaining > max_encoded_values)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED header claims {} values but data can contain at most {}", total_values_remaining, max_encoded_values);
     }
 
     void nextBlock()
@@ -1141,11 +1151,12 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
     PaddedPODArray<UInt64> offsets;
     size_t idx = 0;
 
-    DeltaLengthByteArrayDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> converter_, const StringValueFilter * value_filter_)
+    DeltaLengthByteArrayDecoder(
+        std::span<const char> data_, size_t max_values, std::shared_ptr<StringConverter> converter_, const StringValueFilter * value_filter_)
         : PageDecoder(data_), converter(std::move(converter_)), value_filter(value_filter_)
     {
         /// Decode all lengths in advance because otherwise there's no way to tell where chars start.
-        DeltaBinaryPackedDecoder lengths_decoder(data_, nullptr);
+        DeltaBinaryPackedDecoder lengths_decoder(data_, nullptr, max_values);
         offsets.resize(lengths_decoder.total_values_remaining);
         UInt64 last_offset = 0;
         lengths_decoder.decodeImpl<UInt64>(
@@ -1281,6 +1292,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
 
     DeltaByteArrayDecoder(
         std::span<const char> data_,
+        size_t max_values,
         std::shared_ptr<StringConverter> string_converter_,
         std::shared_ptr<FixedSizeConverter> fixed_size_converter_,
         const StringValueFilter * value_filter_)
@@ -1291,7 +1303,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
     {
         for (auto * lengths : {&prefixes, &suffixes})
         {
-            DeltaBinaryPackedDecoder decoder(std::span(data, end - data), nullptr);
+            DeltaBinaryPackedDecoder decoder(std::span(data, end - data), nullptr, max_values);
             lengths->resize(decoder.total_values_remaining);
             decoder.decodeImpl<UInt64>(
                 decoder.total_values_remaining, reinterpret_cast<char *>(lengths->data()),
@@ -1625,7 +1637,7 @@ bool PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
-    parq::Encoding::type encoding, std::span<const char> data, const StringValueFilter * string_value_filter) const
+    parq::Encoding::type encoding, std::span<const char> data, size_t num_values, const StringValueFilter * string_value_filter) const
 {
     switch (encoding)
     {
@@ -1660,7 +1672,7 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             {
                 case parq::Type::INT32:
                 case parq::Type::INT64:
-                    return std::make_unique<DeltaBinaryPackedDecoder>(data, fixed_size_converter);
+                    return std::make_unique<DeltaBinaryPackedDecoder>(data, fixed_size_converter, num_values);
                 default: break;
             }
             break;
@@ -1668,7 +1680,7 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             switch (physical_type)
             {
                 case parq::Type::BYTE_ARRAY:
-                    return std::make_unique<DeltaLengthByteArrayDecoder>(data, string_converter, string_value_filter);
+                    return std::make_unique<DeltaLengthByteArrayDecoder>(data, num_values, string_converter, string_value_filter);
                 default: break;
             }
             break;
@@ -1678,7 +1690,7 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
                 case parq::Type::BYTE_ARRAY:
                 case parq::Type::FIXED_LEN_BYTE_ARRAY:
                     return std::make_unique<DeltaByteArrayDecoder>(
-                        data, string_converter, fixed_size_converter, physical_type == parq::Type::BYTE_ARRAY ? string_value_filter : nullptr);
+                        data, num_values, string_converter, fixed_size_converter, physical_type == parq::Type::BYTE_ARRAY ? string_value_filter : nullptr);
                 default: break;
             }
             break;
@@ -1820,7 +1832,7 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
 
     if (decode_generic)
     {
-        auto decoder = info.makeDecoder(encoding, data_);
+        auto decoder = info.makeDecoder(encoding, data_, num_values);
         auto c = raw_decoded_type.createColumn();
         c->reserve(num_values);
         decoder->decode(num_values, *c, nullptr, 0);

@@ -67,6 +67,7 @@
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -1493,7 +1494,7 @@ QueryPipeline makeMergeTaskPipeline(
     ExchangeConnectionsPtr connections,
     LoopbackExchange & child_exchange,
     const ExchangeStreamId & child,
-    std::vector<MergeRuntimeFiltersStep::Output> outputs)
+    VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output> outputs)
 {
     ExchangeStreamSources sources;
     sources.stream_hosts[child.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = child_exchange.server.port()};
@@ -1520,7 +1521,7 @@ TEST(RuntimeFilterMergeTask, TakesThePartialWhileNoReceiverConnects)
 {
     MainThreadStatus::getInstance();
 
-    const std::vector<std::pair<const char *, std::vector<MergeRuntimeFiltersStep::Output>>> shapes = {
+    const std::vector<std::pair<const char *, VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output>>> shapes = {
         {"a root with one receiver", {{"exchange_2", {"0"}}}},
         {"a root with two receivers", {{"exchange_2", {"0", "1"}}}},
     };

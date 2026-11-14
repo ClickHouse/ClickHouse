@@ -632,9 +632,7 @@ ALWAYS_INLINE inline uint64_t divmod_1e18(UInt256 & value)
     {
         unsigned __int128 current
             = (static_cast<unsigned __int128>(remainder) << 64) | value.items[UInt256::_impl::little(i - 1)];
-        value.items[UInt256::_impl::little(i - 1)]
-            = static_cast<uint64_t>(current / max_multiple_of_hundred_that_fits_in_64_bits);
-        remainder = static_cast<uint64_t>(current % max_multiple_of_hundred_that_fits_in_64_bits);
+        value.items[UInt256::_impl::little(i - 1)] = static_cast<uint64_t>(divmod_1e18(current, remainder));
     }
     return remainder;
 }
