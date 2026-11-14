@@ -63,3 +63,18 @@ FROM
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 4194304, join_algorithm = 'hash';
 
 DROP TABLE t_05058_right;
+
+-- Two right keys copied from the same left key, which is not in the output: the output block holds
+-- both copies, so the byte budget must count both of them.
+SELECT max(bs * b) <= 65536, count()
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.k1, r.k2) AS b
+    FROM (SELECT rightPad(toString(number % 2), 1024, 'x') AS k FROM numbers(4096)) AS l
+    INNER JOIN
+    (
+        SELECT rightPad(toString(number % 2), 1024, 'x') AS k1, rightPad(toString(number % 2), 1024, 'x') AS k2
+        FROM numbers(8)
+    ) AS r ON l.k = r.k1 AND l.k = r.k2
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536, join_algorithm = 'hash';

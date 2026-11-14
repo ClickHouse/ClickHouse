@@ -418,7 +418,7 @@ static size_t getCopiedRightKeysBytesPerRow(const Block & block, const HashJoinR
     if (properties.required_right_keys.columns() == 0 || block.rows() == 0)
         return 0;
 
-    const std::set<size_t> left_columns_to_erase = getLeftColumnsToErase(block, table_join);
+    std::set<size_t> left_columns_to_erase = getLeftColumnsToErase(block, table_join);
     const bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
     size_t bytes_per_row = 0;
     for (size_t i = 0; i < properties.required_right_keys.columns(); ++i)
@@ -445,7 +445,7 @@ static size_t getCopiedRightKeysBytesPerRow(const Block & block, const HashJoinR
         if (right_key.type->isNullable() && !source.type->isNullable())
             copy_bytes_per_row += 1;
 
-        if (!left_columns_to_erase.contains(source_position))
+        if (!left_columns_to_erase.erase(source_position))
             bytes_per_row += copy_bytes_per_row;
         else if (copy_bytes_per_row > source_bytes_per_row)
             bytes_per_row += copy_bytes_per_row - source_bytes_per_row;
