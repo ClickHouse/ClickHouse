@@ -1,4 +1,4 @@
 JOIN-ENGINE result	1000	12475000
-JOIN-ENGINE steps:	Aggregating FilledJoin Union ReadFromMergeTree ReadFromParallelReplicas
+JOIN-ENGINE steps:	Aggregating FilledJoin Union ReadFromMergeTree ReadFromParallelReplicas ReadFromMergeTree
 MERGETREE result	1000	12475000
-MERGETREE steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+MERGETREE steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas Aggregating ReadFromMergeTree ReadFromMergeTree
