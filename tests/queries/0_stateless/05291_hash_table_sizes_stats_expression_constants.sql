@@ -9,6 +9,8 @@
 -- group counts stay above the 500e3 lower bound under which `getSizeHint` does not preallocate.
 
 SET max_threads = 1;
+-- The adaptive aggregator also takes one thread and records no table sizes in the statistics.
+SET enable_adaptive_aggregator = 0;
 -- Checks the aggregation of this node; with parallel replicas it would run on the replicas.
 SET enable_parallel_replicas = 0;
 SET collect_hash_table_stats_during_aggregation = 1;
