@@ -25,7 +25,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -87,6 +87,8 @@ namespace ProfileEvents
     extern const Event ParquetPagesDecompressedToSkipRows;
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
+    extern const Event ParquetRuntimeFilterPrunedRowGroups;
+    extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
 }
 
@@ -520,9 +522,9 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
     {
-        if (!column_info.used_by_key_condition)
-            continue;
-        if (only_spatial_bbox && !column_info.is_spatial_bbox_column)
+        const bool used_by_static_condition
+            = column_info.used_by_key_condition && (!only_spatial_bbox || column_info.is_spatial_bbox_column);
+        if (!used_by_static_condition && !column_info.used_by_join_runtime_filter)
             continue;
         if (!column_info.decoder.allow_stats)
             continue;
@@ -586,6 +588,13 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
             /// "input_format_parquet_filter_push_down=0" would not even disable this path.
             if (column_info.is_spatial_bbox_column && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 continue;
+            /// Only the JOIN runtime filter reads this column: reset its range, which the failed parse may have half-set,
+            /// and skip pruning by it instead of failing the query.
+            if (!column_info.used_by_key_condition && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            {
+                hyperrectangle[column_info.idx_in_output_block] = Range::createWholeUniverse();
+                continue;
+            }
             e.addMessage("in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore", column_info.name);
             throw;
         }
@@ -622,12 +631,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
         /// for NaN values, min and max should be ignored"), while `ORDER BY` sorts `nan` together
         /// with the NULLs. So, exactly like a chunk that may contain nulls, a floating-point chunk
         /// that may contain a `nan` is not bounded by its statistics and cannot be skipped by them.
-        /// (`tryTopKForFormatSource` keeps floating-point sort keys off this path entirely for now,
-        /// because the per-row filter is not `nan`-aware either - see
-        /// https://github.com/ClickHouse/ClickHouse/issues/116705 - but the statistics shortcut is
-        /// unsound on its own and stays unsound after that is fixed.)
-        bool can_contain_float = anyInTypeTree(*output_block_type_ptr, [](const IDataType & node) { return isFloat(node); });
-        if (can_contain_float)
+        if (hasTypeThatCanContainFloat(output_block_type_ptr))
             return std::nullopt;
 
         /// Parquet orders `UUID` statistics bytewise (parquet.thrift gives the `UUID` logical type
@@ -1259,6 +1263,24 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         }
     }
 
+    if (format_filter_info->join_runtime_filter_predicate && options.format.parquet.filter_push_down)
+    {
+        auto condition = format_filter_info->tryGetJoinRuntimeFilterKeyCondition(*sample_block);
+        if (condition && *condition && !(*condition)->alwaysUnknownOrTrue())
+        {
+            join_runtime_filter_key_condition = *condition;
+            for (size_t idx_in_output_block : join_runtime_filter_key_condition->getUsedColumns())
+            {
+                const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+                if (!output_idx.has_value())
+                    continue;
+                const OutputColumnInfo & output_info = output_columns[output_idx.value()];
+                if (output_info.is_primitive)
+                    primitive_columns[output_info.primitive_start].used_by_join_runtime_filter = true;
+            }
+        }
+    }
+
     const auto & rows_to_read = format_filter_info->rows_to_read;
     if (rows_to_read && !std::is_sorted(rows_to_read->begin(), rows_to_read->end()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows to read are not sorted");
@@ -1449,7 +1471,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if ((options.format.parquet.filter_push_down && format_filter_info->key_condition)
-            || !spatial_key_conditions.empty())
+            || !spatial_key_conditions.empty() || join_runtime_filter_key_condition)
         {
             /// When filter_push_down is disabled, only read bbox column stats to preserve the
             /// escape hatch for malformed non-spatial stats: spatial pruning builds its own
@@ -1485,6 +1507,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             if (!format_filter_info->key_condition->checkInHyperrectangle(
                     hyperrectangle, extended_sample_block_data_types).can_be_true)
                 continue;
+        }
+
+        if (join_runtime_filter_key_condition
+            && !join_runtime_filter_key_condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
+        {
+            ++row_groups_pruned_by_join_runtime_filter;
+            continue;
         }
 
         /// Check spatial KeyConditions (covering.bbox column stats via hyperrectangle).
@@ -1528,6 +1557,7 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     }
 
     key_condition_column_ranges_complete = record_key_condition_ranges;
+    ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedRowGroups, row_groups_pruned_by_join_runtime_filter);
 
     /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
     /// threshold, so that it tightens early. Any order is correct when the output order is free.
@@ -1616,10 +1646,10 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
+    /// `column_index_conditions` points into `conditions`, which must live as long as the reader.
+    auto add_column_index_conditions = [&](const decltype(column_conditions) & conditions, bool from_join_runtime_filter)
     {
-        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
-        for (const auto & [idx_in_output_block, key_condition] : column_conditions)
+        for (const auto & [idx_in_output_block, key_condition] : conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
             /// No file-readable column for this key-condition column: it has no page-index
@@ -1630,8 +1660,15 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
                 continue;
-            primitive_columns[output_info.primitive_start].column_index_conditions.push_back({key_condition.get(), SIZE_MAX});
+            primitive_columns[output_info.primitive_start].column_index_conditions.push_back(
+                {.condition = key_condition.get(), .spatial_key_condition_idx = SIZE_MAX, .from_join_runtime_filter = from_join_runtime_filter});
         }
+    };
+
+    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
+    {
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
+        add_column_index_conditions(column_conditions, /*from_join_runtime_filter=*/ false);
     }
 
     /// Page-level pruning for spatial bbox columns: extract per-column conditions from each
@@ -1661,6 +1698,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                 }
             }
         }
+    }
+
+    /// Added last: `applyColumnIndex` counts a page as pruned by the runtime filter only if no other condition ruled it out.
+    if (options.format.parquet.page_filter_push_down && join_runtime_filter_key_condition)
+    {
+        join_runtime_filter_key_condition->extractSingleColumnConditions(join_runtime_filter_column_conditions, nullptr);
+        add_column_index_conditions(join_runtime_filter_column_conditions, /*from_join_runtime_filter=*/ true);
     }
 
     initColumnsCache();
@@ -3027,6 +3071,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
         size_t pruned_pages = 0;
+        size_t pruned_pages_by_join_runtime_filter = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -3056,8 +3101,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
             /// the same bbox column) must agree the page can match; any one of them ruling it out
             /// is enough to prune, so an unproductive later `checkInHyperrectangle` call is skipped.
-            bool passes_filter = std::all_of(
-                column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
+            const auto first_failed = std::ranges::find_if_not(
+                column_info.column_index_conditions,
                 [&](const PrimitiveColumnInfo::ColumnIndexCondition & c)
                 {
                     /// A `covering.bbox` predicate may only prune when the full bbox is known for
@@ -3076,7 +3121,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
                 });
 
-            if (!passes_filter)
+            if (first_failed != column_info.column_index_conditions.end())
             {
                 size_t start_row = column.offset_index.page_locations[page_idx].first_row_index;
                 size_t end_row = page_idx + 1 < num_pages ? column.offset_index.page_locations[page_idx + 1].first_row_index : row_group.meta->num_rows;
@@ -3085,6 +3130,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
                 ++pruned_pages;
+                if (first_failed->from_join_runtime_filter)
+                    ++pruned_pages_by_join_runtime_filter;
             }
         }
 
@@ -3093,19 +3140,29 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         if (pruned_pages)
             ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pruned_pages);
+        if (pruned_pages_by_join_runtime_filter)
+        {
+            pages_pruned_by_join_runtime_filter += pruned_pages_by_join_runtime_filter;
+            ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedPages, pruned_pages_by_join_runtime_filter);
+        }
     }
     catch (Exception & e)
     {
         /// A `covering.bbox` column that only carries spatial conditions was injected for this
         /// optimization alone: it is neither an output column nor part of the query's own filter.
-        /// Malformed page statistics for it must fail closed (no page pruning for this column)
-        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A bbox column the
-        /// query itself reads or filters on has non-spatial conditions too and keeps throwing.
+        /// The column index of a column that only JOIN runtime filter conditions use is read for them alone too.
+        /// Malformed page statistics for them must fail closed (no page pruning for this column)
+        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A column the
+        /// query itself filters on has static conditions too and keeps throwing.
         /// Running out of memory is not malformed statistics and keeps throwing too.
-        const bool only_spatial_conditions = std::all_of(
-            column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
-            [](const PrimitiveColumnInfo::ColumnIndexCondition & c) { return c.spatial_key_condition_idx != SIZE_MAX; });
-        if (column_info.is_spatial_bbox_column && only_spatial_conditions && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        const bool only_optional_conditions = std::ranges::all_of(
+            column_info.column_index_conditions,
+            [](const PrimitiveColumnInfo::ColumnIndexCondition & c)
+            { return c.spatial_key_condition_idx != SIZE_MAX || c.from_join_runtime_filter; });
+        const bool only_join_runtime_filter_conditions = std::ranges::all_of(
+            column_info.column_index_conditions, &PrimitiveColumnInfo::ColumnIndexCondition::from_join_runtime_filter);
+        if (only_optional_conditions && (column_info.is_spatial_bbox_column || only_join_runtime_filter_conditions)
+            && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
         {
             column.row_ranges_after_column_index.clear();
             if (row_group.meta->num_rows > 0)
@@ -3778,6 +3835,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     chassert(subchunk.column->getDataType() == column_info.output_type->getColumnType());
 
+    if (column_info.levels_only_arrays)
+    {
+        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        subchunk.column.reset();
+        subchunk.null_map.reset();
+        subchunk.arrays_offsets.resize(column_info.levels_only_arrays);
+    }
+
     OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
     chassert(!state.column);
     size_t prev_count = state.primitive_columns_remaining.fetch_sub(1);
@@ -4195,7 +4260,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, page.num_values, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.
@@ -4649,6 +4714,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
+    if (output_info.report_as_missing && output_info.idx_in_output_block.has_value()
+        && *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns())
+        row_subgroup.block_missing_values.setBits(*output_info.idx_in_output_block, num_rows);
+
     /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
     /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
     /// the group null map. Every leaf shares the same def-level null map (the subtree is
@@ -4950,7 +5019,7 @@ void Reader::initColumnsCache()
         if (!output_idx.has_value())
             continue;
         const OutputColumnInfo & info = output_columns.at(*output_idx);
-        if (info.is_missing_column || info.primitive_start == info.primitive_end)
+        if (info.is_missing_column || info.report_as_missing || info.primitive_start == info.primitive_end)
             continue;
 
         SipHash hash;
@@ -4970,6 +5039,7 @@ void Reader::initColumnsCache()
             hash.update(primitive.output_type->getName());
             hash.update(primitive.output_nullable);
             hash.update(primitive.group_nullable);
+            hash.update(primitive.levels_only_arrays);
         }
         if (!decoded)
             continue;

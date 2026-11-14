@@ -7,8 +7,6 @@ description: 'Deploy ClickHouse on your own cloud infrastructure'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## What is standard onboarding? {#what-is-standard-onboarding}
 
 **Standard onboarding** is the default, guided workflow for deploying ClickHouse in your own cloud account using BYOC. In this approach, ClickHouse Cloud provisions all of the core cloud resources required for your deployment—such as the VPC/VNet, subnets, security groups, Kubernetes (EKS/GKE/AKS) cluster, and supporting IAM roles/service accounts/service principals—within your AWS account, GCP project, or Azure subscription. This ensures consistent, secure configuration, and minimizes the manual steps required from your team.
@@ -35,7 +33,15 @@ Prepare a fresh AWS account, GCP project, or Azure subscription under your organ
 
 <Steps>
 <Step title="Choose a Cloud Provider" id="choose-cloud-provider">
-<Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background='black'/>
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC choose CSP](/images/cloud/reference/byoc-onboarding-1.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Account/project/subscription setup" id="account-setup">
 The initial BYOC setup can be performed using a [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml), a [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp), or a [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). It creates a highly privileged identity (IAM role/service account/service principal), enabling BYOC controllers from ClickHouse Cloud to manage your infrastructure.
@@ -44,7 +50,15 @@ The initial BYOC setup can be performed using a [CloudFormation template (AWS)](
 **Apply the onboarding artifacts exactly as provided.** Do not change anything in the CloudFormation template or Terraform module — including renaming resources or adding parameters such as a `PermissionsBoundary` — without ClickHouse's explicit approval. ClickHouse automation depends on the exact resources these artifacts create; supported customizations are exposed as parameters. In particular, on AWS the IAM role must keep its default name `ClickHouseManagementRole` — no prefix or suffix — unless ClickHouse has explicitly agreed to a different name beforehand. The Terraform module technically exposes a `role_name` input, but ClickHouse's automation must be configured to match, so changing it without coordination (or renaming the role in the CloudFormation template, which has no such parameter) produces a stack that applies successfully while infrastructure provisioning fails, because ClickHouse cannot assume the expected role.
 </Warning>
 
-<Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background='black'/>
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC initialize account](/images/cloud/reference/byoc-onboarding-2.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 Storage buckets, VPC/VNet, Kubernetes cluster, and compute resources required for running ClickHouse aren't included in this initial setup. They will be provisioned in the next step.
@@ -92,7 +106,15 @@ You will be prompted to set up the infrastructure, including object storage buck
 
 - **Availability Zones**: If you plan to use VPC peering, aligning availability zones between the source and BYOC accounts can help reduce cross-AZ traffic costs. For example, in AWS, availability zone suffixes (`a`, `b`, `c`) may represent different physical zone IDs across accounts. See the [AWS guide](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) for details.
 
-<Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background='black'/>
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC set up infrastructure](/images/cloud/reference/byoc-onboarding-3.webp)
+
+</Frame>
+
+</div>
 
 #### Pre-flight validation {#preflight-validation}
 
@@ -108,7 +130,15 @@ The checks confirm that:
 
 When checks fail, each one is listed with the action it maps to and the reason it failed (for example, `iam:CreateRole · explicitDeny`). Expand **Show passed checks** to review everything that succeeded.
 
-<Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="BYOC pre-flight validation reporting failed cloud-setup checks" background='black'/>
+<div className="ch-image-lg ch-image-background-black">
+
+<Frame>
+
+![BYOC pre-flight validation reporting failed cloud-setup checks](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+
+</Frame>
+
+</div>
 
 To resolve the failures, re-run the latest ClickHouse CloudFormation or Terraform stack — or grant the reported actions to the management identity (IAM role / service account / service principal) — then choose one of:
 
@@ -134,7 +164,15 @@ Use the table below to resolve common failures.
 
 After your BYOC infrastructure has been provisioned, you're ready to launch your initial ClickHouse service. Open the ClickHouse Cloud console, select your BYOC environment, and follow the prompts to create a new service.
 
-<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC create new service"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![BYOC create new service](/images/cloud/reference/byoc-new-service-1.webp)
+
+</Frame>
+
+</div>
 
 During service creation, you'll configure the following options:
 

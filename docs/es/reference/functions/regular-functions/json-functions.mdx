@@ -1255,6 +1255,48 @@ SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 └───────────────────────┘
 ```
 
+## JSONRemove {#JSONRemove}
+
+Introducido en: v26.10.0
+
+Elimina uno o más miembros de objeto o elementos de array de una cadena JSON mediante JSONPath.
+Cada ruta debe resolverse en un único nombre de miembro de objeto o en una única posición del array. Las rutas se aplican de izquierda a derecha.
+Un rango de JSONPath que se resuelve en una única posición del array, como `$[1 to 2]`, se trata como dicha posición y equivale a `$[1]`.
+Los pasos de miembro de objeto recorren todos los miembros cuyo nombre coincide, incluidos los duplicados.
+Si el último paso es de miembro de objeto, se eliminan todos los miembros coincidentes. Las rutas inexistentes no eliminan ningún valor.
+El resultado se devuelve compactado. Un JSON no válido provoca una excepción.
+
+**Sintaxis**
+
+```sql
+JSONRemove(json, path[, path ...])
+```
+
+**alias**: `JSON_REMOVE`
+
+**Argumentos**
+
+* `json` — Una cadena que contiene JSON válido. [`String`](/es/reference/data-types/string)
+* `path[, path ...]` — Una o más cadenas constantes que contienen expresiones JSONPath. Cada ruta debe resolverse en un único nombre de miembro de objeto o en una única posición de array. Un rango que se resuelva en una única posición de array, como $[1 to 2], se acepta como $[1]. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve el documento JSON como una cadena compacta. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT JSONRemove('{"a":1,"b":2}', '$.a');
+SELECT JSON_REMOVE('[0,1,2]', '$[0]', '$[1]');
+```
+
+```response title=Response
+{"b":2}
+[1]
+```
+
 ## JSONSharedDataPaths {#JSONSharedDataPaths}
 
 Introducido en: v24.8.0

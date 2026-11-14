@@ -2172,6 +2172,27 @@ requests and not return Ok during status check.
 Minimal absolute delay to close, stop serving requests and not
 return Ok during status check.
 )", 0) \
+    DECLARE(Bool, enable_merge_checkpoints, false, R"(
+Save checkpoints of eligible merges, so that an interrupted merge continues from them instead of starting over.
+Only vertical merges into `Wide` parts of at least `merge_checkpoints_min_bytes` are checkpointed for now.
+The first checkpoint is saved once the key columns are merged, the next ones after completed columns,
+at most once per `merge_checkpoints_min_interval_seconds`.
+A checkpoint is removed when a current part covers its result part,
+or when no merge saves it for `temporary_directories_lifetime`.
+Merges with TTL, projections, secondary indexes, patch parts, or non-adaptive marks (`index_granularity_bytes = 0`) are not checkpointed.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting for durable merge checkpoints"}) \
+    DECLARE(UInt64, merge_checkpoints_min_bytes, 10_GiB, R"(
+The minimum total size of the source parts of a merge, in bytes, to checkpoint it with `enable_merge_checkpoints`.
+Smaller merges are not checkpointed: they are cheap to repeat.
+)", EXPERIMENTAL, \
+        {"26.11", 10_GiB, 10_GiB, "New setting for durable merge checkpoints"}) \
+    DECLARE(Seconds, merge_checkpoints_min_interval_seconds, 60, R"(
+The minimum time between two checkpoints of a merge with `enable_merge_checkpoints`.
+A vertical merge always checkpoints once its key columns are merged. After that, it checkpoints after a completed column
+only when this much time has passed since its previous checkpoint.
+)", EXPERIMENTAL, \
+        {"26.11", 60, 60, "New setting for durable merge checkpoints"}) \
     DECLARE(UInt64, enable_vertical_merge_algorithm, 1, R"(
 Allows eligible background merges to use the vertical merge algorithm. Vertical merges process columns separately to reduce peak memory usage for wide tables, potentially at the cost of merge speed. Setting this to `0` forces horizontal merges; a non-zero value only permits vertical merges—the part format, table engine, `TTL` operation, and `vertical_merge_algorithm_min_*` thresholds still determine whether it is selected.
 )", 0) \
