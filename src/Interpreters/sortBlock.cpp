@@ -10,9 +10,21 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
+#include <base/sort.h>
 #include <Common/BitHelpers.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/PODArray.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 #include <Common/iota.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric SortBlockInParallelThreads;
+    extern const Metric SortBlockInParallelThreadsActive;
+    extern const Metric SortBlockInParallelThreadsScheduled;
+}
 
 namespace DB
 {
@@ -124,6 +136,49 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     return result;
 }
 
+/// Sorts each of `ranges` of `permutation` by the columns in order; `ranges` keeps the rows that are still equal.
+void updatePermutationByColumns(
+    const ColumnsWithSortDescriptions & columns_with_sort_descriptions,
+    IColumn::PermutationSortStability stability,
+    UInt64 limit,
+    IColumn::Permutation & permutation,
+    EqualRanges & ranges)
+{
+    for (const auto & column_with_sort_description : columns_with_sort_descriptions)
+    {
+        while (!ranges.empty() && limit && limit <= ranges.back().from)
+            ranges.pop_back();
+
+        if (ranges.empty())
+            break;
+
+        if (column_with_sort_description.column_const)
+            continue;
+
+        bool is_collation_required = isCollationRequired(column_with_sort_description.description);
+        IColumn::PermutationSortDirection direction = column_with_sort_description.description.direction == -1 ? IColumn::PermutationSortDirection::Descending : IColumn::PermutationSortDirection::Ascending;
+        int nan_direction_hint = column_with_sort_description.description.nulls_direction;
+        const auto & column = column_with_sort_description.column;
+
+        if (is_collation_required)
+        {
+            column->updatePermutationWithCollation(
+                *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation, ranges);
+        }
+        else
+        {
+            column->updatePermutation(direction, stability, limit, nan_direction_hint, permutation, ranges);
+        }
+
+#ifndef NDEBUG
+        /// updatePermutation must keep `equal_ranges` sorted in ascending order of `from`; the limit
+        /// shortcuts above (and IColumn::updatePermutationImpl) rely on it. Catch violators early.
+        chassert(std::ranges::is_sorted(ranges, {}, &EqualRange::from),
+            "updatePermutation returned equal_ranges not sorted by `from`");
+#endif
+    }
+}
+
 /// `equal_ranges`, when requested, receives the ranges (of two or more positions of the permutation) whose
 /// rows compare equal on the whole description; only supported for a full sort (no limit).
 void getBlockSortPermutationImpl(
@@ -200,39 +255,7 @@ void getBlockSortPermutationImpl(
         EqualRanges ranges;
         ranges.emplace_back(0, permutation.size());
 
-        for (const auto & column_with_sort_description : columns_with_sort_descriptions)
-        {
-            while (!ranges.empty() && limit && limit <= ranges.back().from)
-                ranges.pop_back();
-
-            if (ranges.empty())
-                break;
-
-            if (column_with_sort_description.column_const)
-                continue;
-
-            bool is_collation_required = isCollationRequired(column_with_sort_description.description);
-            IColumn::PermutationSortDirection direction = column_with_sort_description.description.direction == -1 ? IColumn::PermutationSortDirection::Descending : IColumn::PermutationSortDirection::Ascending;
-            int nan_direction_hint = column_with_sort_description.description.nulls_direction;
-            const auto & column = column_with_sort_description.column;
-
-            if (is_collation_required)
-            {
-                column->updatePermutationWithCollation(
-                    *column_with_sort_description.description.collator, direction, stability, limit, nan_direction_hint, permutation, ranges);
-            }
-            else
-            {
-                column->updatePermutation(direction, stability, limit, nan_direction_hint, permutation, ranges);
-            }
-
-#ifndef NDEBUG
-            /// updatePermutation must keep `equal_ranges` sorted in ascending order of `from`; the limit
-            /// shortcuts above (and IColumn::updatePermutationImpl) rely on it. Catch violators early.
-            chassert(std::ranges::is_sorted(ranges, {}, &EqualRange::from),
-                "updatePermutation returned equal_ranges not sorted by `from`");
-#endif
-        }
+        updatePermutationByColumns(columns_with_sort_descriptions, stability, limit, permutation, ranges);
 
         if (equal_ranges)
             *equal_ranges = std::move(ranges);
@@ -381,6 +404,26 @@ size_t estimateSortingWorkspace(size_t rows)
     return 5 * permutation_bytes + (8 << 10);
 }
 
+namespace
+{
+
+/// Reorders the rows of `block` by a non-empty sorting `permutation`, keeping the first `limit` rows if `limit` != 0.
+void applySortPermutation(Block & block, const IColumn::Permutation & permutation, UInt64 limit)
+{
+    bool is_identity_permutation = isIdentityPermutation(permutation, limit);
+    if (is_identity_permutation && limit == 0)
+        return;
+
+    size_t output_rows = limit ? std::min(static_cast<size_t>(limit), permutation.size()) : permutation.size();
+    Columns columns = block.getColumns();
+    transformColumnsWithSharedIndex(
+        columns,
+        [&](const ColumnPtr & col) { return is_identity_permutation ? col->cut(0, output_rows) : col->permute(permutation, limit); });
+    block.setColumns(columns);
+}
+
+}
+
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::PermutationSortStability stability)
 {
     IColumn::Permutation permutation;
@@ -397,16 +440,125 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
     if (permutation.empty())
         return;
 
-    bool is_identity_permutation = isIdentityPermutation(permutation, limit);
-    if (is_identity_permutation && limit == 0)
+    applySortPermutation(block, permutation, limit);
+}
+
+void sortBlockInParallel(Block & block, const SortDescription & description, size_t max_threads)
+{
+    static constexpr size_t min_rows_per_range = 65536;
+    static constexpr size_t samples_per_range = 32;
+
+    const size_t rows = block.rows();
+    const size_t num_ranges = std::min(max_threads, rows / min_rows_per_range);
+    if (num_ranges < 2)
+    {
+        sortBlock(block, description);
+        return;
+    }
+
+#ifndef NDEBUG
+    block.checkNumberOfRows();
+#endif
+
+    const ColumnsWithSortDescriptions columns = getColumnsWithSortDescription(block, description);
+    if (std::ranges::all_of(columns, &ColumnWithSortDescription::column_const))
         return;
 
-    size_t output_rows = limit ? std::min(static_cast<size_t>(limit), permutation.size()) : permutation.size();
-    Columns columns = block.getColumns();
-    transformColumnsWithSharedIndex(
-        columns,
-        [&](const ColumnPtr & col) { return is_identity_permutation ? col->cut(0, output_rows) : col->permute(permutation, limit); });
-    block.setColumns(columns);
+    const PartialSortingLessWithCollation less(columns);
+
+    /// A sample sort: range `r` gets the rows not less than splitter `r - 1` and less than splitter `r`,
+    /// so equal rows share a range and the sorted ranges, concatenated, are the sorted block.
+    std::vector<size_t> samples(samples_per_range * num_ranges);
+    for (size_t i = 0; i < samples.size(); ++i)
+        samples[i] = i * rows / samples.size();
+    ::sort(samples.begin(), samples.end(), less);
+
+    std::vector<size_t> splitters(num_ranges - 1);
+    for (size_t range = 0; range + 1 < num_ranges; ++range)
+        splitters[range] = samples[(range + 1) * samples_per_range - 1];
+
+    /// Rows are classified and scattered in `num_ranges` contiguous chunks. `offsets[chunk * num_ranges + range]`
+    /// counts the rows of `chunk` in `range`, then holds the position where the next of them goes.
+    PaddedPODArray<UInt32> range_of_row(rows);
+    std::vector<size_t> offsets(num_ranges * num_ranges);
+    std::vector<size_t> range_begin(num_ranges + 1);
+    IColumn::Permutation permutation(rows);
+
+    auto chunk_begin = [&](size_t chunk) { return chunk * rows / num_ranges; };
+
+    auto classify_chunk = [&](size_t chunk)
+    {
+        size_t * counts = &offsets[chunk * num_ranges];
+        for (size_t row = chunk_begin(chunk); row < chunk_begin(chunk + 1); ++row)
+        {
+            const size_t range = std::upper_bound(splitters.begin(), splitters.end(), row, less) - splitters.begin();
+            range_of_row[row] = static_cast<UInt32>(range);
+            ++counts[range];
+        }
+    };
+
+    auto scatter_chunk = [&](size_t chunk)
+    {
+        size_t * next_position = &offsets[chunk * num_ranges];
+        for (size_t row = chunk_begin(chunk); row < chunk_begin(chunk + 1); ++row)
+            permutation[next_position[range_of_row[row]]++] = row;
+    };
+
+    auto sort_range = [&](size_t range)
+    {
+        if (range_begin[range + 1] - range_begin[range] < 2)
+            return;
+
+        EqualRanges equal_ranges;
+        equal_ranges.emplace_back(range_begin[range], range_begin[range + 1]);
+        updatePermutationByColumns(columns, IColumn::PermutationSortStability::Unstable, /*limit=*/ 0, permutation, equal_ranges);
+    };
+
+    /// Declared after everything its jobs use: its destructor joins the jobs that are still running when scheduling throws.
+    ThreadPool pool(
+        CurrentMetrics::SortBlockInParallelThreads,
+        CurrentMetrics::SortBlockInParallelThreadsActive,
+        CurrentMetrics::SortBlockInParallelThreadsScheduled,
+        num_ranges);
+
+    auto run_in_parallel = [&](const auto & job)
+    {
+        for (size_t i = 0; i < num_ranges; ++i)
+        {
+            pool.scheduleOrThrowOnError(
+                [&job, i, thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::SORT_BLOCK);
+                    job(i);
+                });
+        }
+        pool.wait();
+    };
+
+    run_in_parallel(classify_chunk);
+
+    size_t position = 0;
+    for (size_t range = 0; range < num_ranges; ++range)
+    {
+        range_begin[range] = position;
+        for (size_t chunk = 0; chunk < num_ranges; ++chunk)
+        {
+            size_t & offset = offsets[chunk * num_ranges + range];
+            const size_t count = offset;
+            offset = position;
+            position += count;
+        }
+    }
+    range_begin[num_ranges] = position;
+
+    run_in_parallel(scatter_chunk);
+    run_in_parallel(sort_range);
+
+#ifndef NDEBUG
+    checkSortedWithPermutation(block, description, /*limit=*/ 0, permutation);
+#endif
+
+    applySortPermutation(block, permutation, /*limit=*/ 0);
 }
 
 void sortBlockAndDeduplicate(Block & block, const SortDescription & description, IColumn::PermutationSortStability stability)

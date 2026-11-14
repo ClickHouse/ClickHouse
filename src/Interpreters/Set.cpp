@@ -1113,7 +1113,8 @@ static std::optional<BoolMask> checkInRangeSingleColumn(
     }
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(
+    const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, size_t max_threads)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
     , instance_id(getNextMergeTreeSetIndexId())
@@ -1150,7 +1151,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         sort_description.emplace_back(column_name, 1, 1);
     }
 
-    sortBlock(block_to_sort, sort_description);
+    sortBlockInParallel(block_to_sort, sort_description, max_threads);
 
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = block_to_sort.getByPosition(i).column;
