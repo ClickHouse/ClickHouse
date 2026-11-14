@@ -56,6 +56,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -3390,6 +3391,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         }
         catch (...)
         {
+            /// The query was cancelled, so another try would only meet the same cancellation.
+            if (isPrefixReadCancelled(std::current_exception()))
+                throw;
+
             if (isRetryableException(std::current_exception()) || isIOErrorException(std::current_exception()))
                 handle_exception(std::current_exception(),try_no);
             else
@@ -11022,7 +11027,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
                       part_name);
         }
 
-        if (!retryable || (try_no + 1 == loading_parts_max_tries))
+        /// A cancelled query would only meet the same cancellation on another try.
+        if (!retryable || isPrefixReadCancelled(error) || (try_no + 1 == loading_parts_max_tries))
         {
             try
             {

@@ -440,3 +440,132 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
 
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
     node1.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_check_cancelled_in_json_prefix_read_keeps_part(started_cluster):
+    # A Wide part without columns_substreams.txt (written before that file existed) is checked by
+    # reading its JSON structure prefix, where a cancelled query interrupts the check. That says nothing
+    # about the data, so CHECK TABLE must fail without detaching the part and fetching it again.
+    table_name = "replicated_json_check_cancelled"
+    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node1.query(
+        f"""
+        CREATE TABLE {table_name} (id UInt64, j JSON)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table_name}', '{node1.name}') ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+        """
+    )
+    node1.query(
+        f"INSERT INTO {table_name} SELECT number, toJSONString(map(concat('key_', toString(number)), number))::JSON FROM numbers(1000)"
+    )
+    part_path = node1.query(
+        f"SELECT path FROM system.parts WHERE table = '{table_name}' AND active"
+    ).strip()
+    node1.query(f"DETACH TABLE {table_name}")
+    node1.exec_in_container(
+        ["bash", "-c", f"rm {part_path}/columns_substreams.txt"], privileged=True
+    )
+    node1.query(f"ATTACH TABLE {table_name}")
+
+    # The failpoint sleeps for a random time under a second before the part check. The timeout leaves the
+    # check time to start and usually cancels the query during the sleep, so the check meets the
+    # cancellation at its first cancellable point, the structure prefix read. A short sleep lets it finish.
+    node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
+    try:
+        for _ in range(10):
+            answer, error = node1.query_and_get_answer_with_error(
+                f"CHECK TABLE {table_name}",
+                settings={
+                    "max_threads": 1,
+                    "max_execution_time": 0.1,
+                    "check_query_single_value_result": 1,
+                },
+            )
+            assert ("TIMEOUT_EXCEEDED" in error) if error else answer == "1\n", (
+                answer,
+                error,
+            )
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+
+    assert (
+        node1.query(f"SELECT count() FROM system.detached_parts WHERE table = '{table_name}'")
+        == "0\n"
+    )
+    assert node1.query(f"SELECT count() FROM {table_name}") == "1000\n"
+
+    # Without a check that was interrupted before reaching a verdict, the assertions above hold on any build.
+    logger = f"{table_name} (ReplicatedMergeTreePartCheckThread)"
+    started = int(node1.count_in_log(f"{logger}: Checking data of part all_0_0_0"))
+    finished = int(node1.count_in_log(f"{logger}: Part all_0_0_0 looks"))
+    assert started > finished, (started, finished)
+
+    node1.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_cancelled_size_calculation_keeps_part_sizes(started_cluster):
+    # The column sizes of a Wide part without columns_substreams.txt are calculated on first use by reading
+    # each JSON structure prefix, where a cancelled query interrupts the calculation. A later calculation
+    # must not count the columns read before the interruption twice.
+    #
+    # The failpoint sleeps before each part of a t_slowdown_system_parts* table, so the query is cancelled
+    # before that part's sizes are calculated. The other table is read first in the same query because a
+    # prefix read polls for cancellation only some time after the thread's first one.
+    tables = ["json_sizes_first", "t_slowdown_system_parts_json_sizes"]
+    for table, rows in zip(tables, [1, 1000]):
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node1.query(
+            f"""
+            CREATE TABLE {table} (k String, j JSON) ENGINE = MergeTree ORDER BY k
+            SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+            """
+        )
+        node1.query(
+            f"INSERT INTO {table} SELECT toString(number), toJSONString(map(concat('key_', toString(number)), number))::JSON FROM numbers({rows})"
+        )
+        part_path = node1.query(
+            f"SELECT path FROM system.parts WHERE table = '{table}' AND active"
+        ).strip()
+        node1.query(f"DETACH TABLE {table}")
+        node1.exec_in_container(
+            ["bash", "-c", f"rm {part_path}/columns_substreams.txt"], privileged=True
+        )
+        node1.query(f"ATTACH TABLE {table}")
+
+    where = "WHERE database = currentDatabase() AND active AND table IN ({})"
+    in_tables = where.format(", ".join(f"'{table}'" for table in tables))
+    totals = f"SELECT table, data_compressed_bytes, data_uncompressed_bytes, marks_bytes FROM system.parts {in_tables} ORDER BY table"
+    sleeps = "SELECT sum(value) FROM system.events WHERE event = 'SystemPartsEnumerationSlowdownSleeps'"
+    sleeps_before = int(node1.query(sleeps))
+    node1.query("SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumeration")
+    try:
+        for _ in range(3):
+            # Reattaching makes the sizes of the first table uncalculated again.
+            node1.query(f"DETACH TABLE {tables[0]}")
+            node1.query(f"ATTACH TABLE {tables[0]}")
+            error = node1.query_and_get_error(
+                totals, settings={"max_execution_time": 0.2}
+            )
+            assert "TIMEOUT_EXCEEDED" in error, error
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT slowdown_system_parts_enumeration")
+
+    # A query reached the sleep before the second table's part, and that part's sizes still had to be
+    # calculated afterwards, so the calculation was interrupted rather than skipped or completed.
+    assert int(node1.query(sleeps)) > sleeps_before
+    query_id = uuid.uuid4().hex
+    node1.query(
+        f"SELECT data_compressed_bytes FROM system.parts {where.format(repr(tables[1]))}",
+        query_id=query_id,
+    )
+    node1.query("SYSTEM FLUSH LOGS query_log")
+    file_opens = node1.query(
+        f"SELECT ProfileEvents['FileOpen'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    )
+    assert int(file_opens) > 0
+
+    per_column = f"SELECT table, sum(column_data_compressed_bytes), sum(column_data_uncompressed_bytes), sum(column_marks_bytes) FROM system.parts_columns {in_tables} GROUP BY table ORDER BY table"
+    assert node1.query(totals) == node1.query(per_column)
+
+    for table in tables:
+        node1.query(f"DROP TABLE {table} SYNC")
