@@ -122,6 +122,7 @@ public:
     ASTViewTargets * targets = nullptr;
     IAST * comment = nullptr;
     IAST * sql_security = nullptr;
+    IAST * insert_select = nullptr;
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
@@ -131,6 +132,11 @@ public:
     String as_database;
     String as_table;
     String attach_from_path;
+    String insert_format;
+
+    /// Data for AS/AND INSERT
+    const char * insert_data = nullptr;
+    const char * insert_data_end = nullptr;
 
     /// Optional bool (3 states)
     std::optional<bool> attach_as_replicated = std::nullopt;
@@ -161,6 +167,8 @@ public:
     bool replace_table : 1 = false;
     bool create_or_replace : 1 = false;
     bool has_attach_from_path : 1 = false; /// Whether attach_from_path is set
+    bool has_and_insert : 1 = false;
+    bool has_as_insert : 1 = false;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override;
@@ -209,6 +217,9 @@ public:
 
     bool isCreateQueryWithImmediateInsertSelect() const;
 
+    /// Try to find table function input() in SELECT part
+    void tryFindInputFunction(ASTPtr & input_function) const;
+
 protected:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
@@ -228,6 +239,7 @@ protected:
         f(reinterpret_cast<IAST **>(&table_overrides), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary_attributes_list), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary), nullptr);
+        f(&insert_select, nullptr);
     }
 };
 

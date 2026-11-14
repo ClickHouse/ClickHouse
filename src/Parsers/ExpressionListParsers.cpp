@@ -4201,6 +4201,8 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         }
     }
 
+    if (ParserKeyword(Keyword::AND_INSERT).checkWithoutMoving(pos, stub))
+        return Action::NONE;
     /// Try to find operators from 'operators_table'
     auto saved_pos = pos;
     auto cur_op = operators_table.begin();
