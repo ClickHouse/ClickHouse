@@ -1147,7 +1147,6 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             field->set(Iceberg::f_type, "list");
             field->set(Iceberg::f_element_id, ++iter);
             auto child_type = getIcebergType(type_array->getNestedType(), iter);
-            field->set(Iceberg::f_required, false);
             field->set(Iceberg::f_element, child_type.first);
             field->set(Iceberg::f_element_required, child_type.second);
             return {field, true};
