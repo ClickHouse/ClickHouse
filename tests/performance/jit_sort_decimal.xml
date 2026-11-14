@@ -1,0 +1,25 @@
+<test>
+    <settings>
+        <compile_sort_description>1</compile_sort_description>
+    </settings>
+
+    <create_query>CREATE TABLE jit_sort_decimal (id UInt64, id_hash UInt64, ts DateTime64(3), d Decimal64(4), value Float64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>
+        INSERT INTO jit_sort_decimal
+        SELECT
+            number % 10000 AS id,
+            sipHash64(number % 10000) AS id_hash,
+            toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 10000) * 15000 + sipHash64(number) % 1000) AS ts,
+            toDecimal64(intDiv(number, 10000), 4) / 100 - 50 AS d,
+            (number % 997) / 7.0 AS value
+        FROM numbers(10000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE jit_sort_decimal FINAL</fill_query>
+
+    <query>SELECT id, ts, value FROM jit_sort_decimal ORDER BY id, ts FORMAT Null</query>
+    <query>SELECT id_hash, ts, value FROM jit_sort_decimal ORDER BY id_hash, ts FORMAT Null</query>
+    <query>SELECT id, ts, value FROM jit_sort_decimal ORDER BY id DESC, ts DESC FORMAT Null</query>
+    <query>SELECT id, d, value FROM jit_sort_decimal ORDER BY id, d FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_sort_decimal</drop_query>
+</test>
