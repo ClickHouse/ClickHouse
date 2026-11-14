@@ -1,0 +1,10 @@
+a state read as a type with a lower lg_k and another storage type is written back unchanged
+1
+the same for the default parameters
+1
+the estimate of the imported state is the estimate of the sketch
+1
+merging brings it down to the declared resolution
+1
+an empty imported state merges to nothing
+3

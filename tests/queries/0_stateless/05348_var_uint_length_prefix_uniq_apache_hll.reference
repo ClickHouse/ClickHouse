@@ -1,0 +1,11 @@
+it can be read after the length is added
+5
+merged without a state column
+5
+a state gives the bytes of its sketch
+0301070B05080009
+a sketch that is read and written back is the same sketch
+1
+a big sketch needs a longer length
+1	1
+a state that is not a length and bytes is rejected
