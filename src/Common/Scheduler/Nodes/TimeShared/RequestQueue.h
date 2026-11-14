@@ -563,8 +563,8 @@ public:
 
         if (max_queued >= 0 && total_requests >= static_cast<size_t>(max_queued))
         {
-            rejected_requests++;
-            rejected_cost += request->cost;
+            incrementCounter(rejected_requests);
+            incrementCounter(rejected_cost, request->cost);
             throw Exception(ErrorCodes::SERVER_OVERLOADED,
                 "Workload limit `max_waiting_queries` has been reached: {} of {}", total_requests, max_queued);
         }
@@ -596,7 +596,7 @@ public:
         total_requests--;
         if (total_requests == 0)
         {
-            busy_periods++;
+            incrementCounter(busy_periods);
             cancelActivation();
         }
         incrementDequeued(request->cost, total_requests > 0);
@@ -614,11 +614,11 @@ public:
         queue_cost -= request->cost;
         chassert(total_requests > 0);
         total_requests--;
-        canceled_requests++;
-        canceled_cost += request->cost;
+        incrementCounter(canceled_requests);
+        incrementCounter(canceled_cost, request->cost);
         if (total_requests == 0)
         {
-            busy_periods++;
+            incrementCounter(busy_periods);
             cancelActivation();
         }
         return true;
@@ -663,13 +663,13 @@ public:
                 chassert(request);
                 queue_cost -= request->cost;
                 total_requests--;
-                rejected_requests++;
-                rejected_cost += request->cost;
+                incrementCounter(rejected_requests);
+                incrementCounter(rejected_cost, request->cost);
                 requests_to_fail.push_back(*request);
             }
             if (total_requests == 0)
             {
-                busy_periods++;
+                incrementCounter(busy_periods);
                 cancelActivation();
             }
         }
