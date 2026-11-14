@@ -424,8 +424,25 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     auto & values_column = column_sparse.getValuesPtr();
 
     settings.path.push_back(Substream::SparseElements);
-    nested->deserializeBinaryBulkWithMultipleStreams(
-        column_sparse.getValuesColumn(), num_read_offsets, settings, state_sparse->nested, cache);
+    /// A range without values reads nothing from the streams of the values, so in a wide part they are only positioned at a new mark.
+    if (num_read_offsets == 0 && settings.data_part_type == MergeTreeDataPartType::Wide && settings.seek_stream_to_current_mark_callback
+        && !getElementFromSubstreamsCache(cache, settings.path))
+    {
+        if (!settings.continuous_reading)
+        {
+            EnumerateStreamsSettings enumerate_settings;
+            enumerate_settings.path = settings.path;
+            nested->enumerateStreams(
+                enumerate_settings,
+                [&](const SubstreamPath & substream_path) { settings.seek_stream_to_current_mark_callback(substream_path); },
+                SubstreamData(nested));
+        }
+    }
+    else
+    {
+        nested->deserializeBinaryBulkWithMultipleStreams(
+            column_sparse.getValuesColumn(), num_read_offsets, settings, state_sparse->nested, cache);
+    }
     settings.path.pop_back();
 
     if (offsets_column.size() + 1 != values_column->size())

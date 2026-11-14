@@ -60,6 +60,7 @@ public:
     ReadBuffer * getDataBuffer();
 
     size_t getFileSize() const { return file_size; }
+    bool isInitialized() const { return initialized; }
 
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
@@ -93,6 +94,8 @@ private:
 
     bool initialized = false;
     std::optional<size_t> last_right_offset;
+    /// (row_index, column_position) of a seek requested before the buffer exists, performed at the first data access.
+    std::optional<std::pair<size_t, size_t>> deferred_seek;
 
 protected:
     void init();
