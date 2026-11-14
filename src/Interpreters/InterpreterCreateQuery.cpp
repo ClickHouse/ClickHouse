@@ -1076,7 +1076,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
-        normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
+        normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup, generate_time_series_inner_tables);
 
     TableProperties properties;
     TableLockHolder as_storage_lock;

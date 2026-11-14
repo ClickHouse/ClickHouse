@@ -459,19 +459,34 @@ StorageMaterializedView::StorageMaterializedView(
 
         if (to_table_engine)
         {
-            manual_create_query->set(manual_create_query->storage, to_table_engine);
+            const bool is_time_series_table = to_table_engine->engine && (to_table_engine->engine->name == "TimeSeries");
+            if (is_time_series_table && is_restore_from_backup)
+            {
+                /// The view stores only the `ENGINE = TimeSeries` clause, without the definitions of the inner tables
+                /// of the `TimeSeries` table. They are not in the backup, so `normalizeTimeSeriesDefinition` generates
+                /// them again for the inner table. Clone the clause, because those generated definitions must not
+                /// change the view's own definition: it must stay identical to the one in the backup.
+                manual_create_query->set(manual_create_query->storage,
+                    boost::static_pointer_cast<ASTStorage>(to_table_engine->clone()));
+            }
+            else
+            {
+                manual_create_query->set(manual_create_query->storage, to_table_engine);
+            }
+
             /// We need to set this flag for consistency with the parser.
-            if (to_table_engine->engine && (to_table_engine->engine->name == "TimeSeries"))
+            if (is_time_series_table)
                 manual_create_query->is_time_series_table = true;
         }
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
         /// The inner table comes from the backup too, so it must not get a definition other than the backup's.
-        /// An inner `TimeSeries` table is an exception: the view stores only the `ENGINE = TimeSeries` clause,
-        /// without the definitions of the inner tables of the `TimeSeries` table, which `normalizeTimeSeriesDefinition`
-        /// generates only for a new table. They are not in the backup, so they must be generated again.
-        create_interpreter.setIsRestoreFromBackup(is_restore_from_backup && !manual_create_query->is_time_series_table);
+        /// An inner `TimeSeries` table is an exception: its generated inner tables are not in the backup, and
+        /// `normalizeTimeSeriesDefinition` must generate them again (see `setGenerateTimeSeriesInnerTables`).
+        create_interpreter.setIsRestoreFromBackup(is_restore_from_backup);
+        if (is_restore_from_backup && manual_create_query->is_time_series_table)
+            create_interpreter.setGenerateTimeSeriesInnerTables(true);
         create_interpreter.execute();
 
         if (fixed_uuid)

@@ -1,4 +1,5 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
+#include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Settings.h>
@@ -2535,12 +2536,17 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
 {
     chassert(create_query.is_time_series_table);
 
+    const auto mode = getTimeSeriesDefinitionMode(params.mode, params.is_restore_from_backup, params.generate_inner_tables);
+
     /// Whether we're creating a new table.
-    bool is_new_table = params.isNewTable();
+    bool is_new_table = mode.is_new_table;
 
     /// Whether the create query may come from an older version, so it can be converted to the current form.
     /// The initial CREATE query is excluded: it must be written in the current form already.
-    bool can_convert = (params.mode != LoadingStrictnessLevel::CREATE) || params.is_restore_from_backup;
+    bool can_convert = mode.can_convert;
+
+    /// Whether the definitions of the inner target tables must be generated.
+    bool generate_inner_tables = mode.generate_inner_tables;
 
     /// Convert the create_query if it was created before the `version` setting was introduced.
     if (can_convert && !hasExplicitTimeSeriesVersion(create_query))
@@ -2598,11 +2604,12 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     }
 
     /// Resolve types timestamp_type, value_type, id_type.
-    /// The columns of the external target tables are passed for a new table only: on ATTACH they may not be loaded yet.
+    /// The columns of the external target tables are passed only when the inner tables are generated:
+    /// on ATTACH they may not be loaded yet.
     ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(
         create_query,
         params.external_target_columns,
-        /* need_inner_engine_family = */ is_new_table,
+        /* need_inner_engine_family = */ generate_inner_tables,
         old_types ? &*old_types : nullptr);
 
     /// Apply the clause `AS <other_table>` if any.
@@ -2611,21 +2618,23 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     if (old_create_query)
         applyASClause(create_query, resolved_types, *old_create_query, *old_types);
 
-    /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
-    if (is_new_table)
+    /// Per-kind, check external tables or normalize the inner table's columns and assign its engine.
+    /// This is done for a new table, and also for an existing definition whose inner tables must be generated
+    /// (e.g. the inner table of a materialized view restored from a backup, see `generate_inner_tables`).
+    if (generate_inner_tables)
     {
         if (!params.query_settings)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The query settings are required to normalize the definition of a new TimeSeries table");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The query settings are required to generate the inner tables of a TimeSeries table");
 
         StorageID table_id{create_query.getDatabase(), create_query.getTable()};
 
-        /// The columns of every external target table must be passed for a new table.
+        /// The columns of every external target table must be passed when the inner tables are generated.
         auto get_external_target_columns = [&](ViewTarget::Kind kind) -> const ColumnsDescription &
         {
             auto it = params.external_target_columns.find(kind);
             if (it == params.external_target_columns.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "{}: The columns of the external {} table {} are required to normalize the definition of a new TimeSeries table",
+                    "{}: The columns of the external {} table {} are required to generate the inner tables of a TimeSeries table",
                     table_id.getNameForLogs(), kind, create_query.getTargetTableID(kind).getNameForLogs());
             return it->second;
         };
@@ -2638,7 +2647,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         checkTimeSeriesSettings(settings);
 
         /// Pin `version`, so that the table keeps its version if a future server bumps the latest one.
-        /// Converted queries have a version at this point (see above), so a missing version here means a fresh CREATE.
+        /// Converted queries have a version at this point (see above), so a missing version here means a fresh CREATE
+        /// (a definition with `generate_inner_tables` comes from an existing table and has been converted already).
         if (!settings[TimeSeriesSetting::version].isChanged() && create_query.storage)
         {
             setEngineSettings(*create_query.storage, "version",
