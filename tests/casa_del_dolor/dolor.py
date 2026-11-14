@@ -211,7 +211,7 @@ parser.add_argument(
     "--without-minio",
     action="store_false",
     dest="with_minio",
-    help="Without MinIO integration",
+    help="Without the S3 server",
 )
 parser.add_argument(
     "--with-azurite", action="store_true", help="With Azure integration"
@@ -631,6 +631,8 @@ cluster = ClickHouseCluster(
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
     with_dolor=True,
+    # Spark and the Iceberg REST, Glue and Hive catalog services are set up against MinIO (`minio1`)
+    s3_server="minio" if args.with_spark or args.with_rest or args.with_glue or args.with_hms else "seaweedfs",
 )
 
 # Set environment variables such as locales and timezones
@@ -963,7 +965,7 @@ while all_running and (not reached_limit):
         choosen_instances = []
         available_options = {
             "zookeeper": list(ZOOKEEPER_CONTAINERS),
-            "minio": ["minio1"],
+            "minio": [cluster.minio_host],
             "nginx": ["nginx"],
             "azurite": ["azurite1"],
             "postgres": ["postgres1"],

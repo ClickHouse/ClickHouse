@@ -1,0 +1,31 @@
+services:
+  seaweedfs1:
+    # The version `ci/jobs/scripts/functional_tests/setup_seaweedfs.sh` runs in stateless CI
+    image: chrislusf/seaweedfs:4.48
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mkdir -p /etc/seaweedfs
+        cat > /etc/seaweedfs/s3.json <<'EOF'
+        {
+          "identities": [
+            {
+              "name": "minio",
+              "credentials": [{"accessKey": "minio", "secretKey": "ClickHouse_Minio_P@ssw0rd"}],
+              "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+            }
+          ]
+        }
+        EOF
+        exec weed -logtostderr=true server -dir=/data -volume.max=0 -master.volumeSizeLimitMB=1024 -volume.preStopSeconds=1 -s3 -s3.port=${MINIO_PORT:-9001} -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - seaweedfs-data:/data
+    expose:
+      - ${MINIO_PORT:-9001}
+    # The filer waits up to 15 s for its open gRPC streams before it stops
+    stop_grace_period: 30s
+    cpus: 3
+
+volumes:
+  seaweedfs-data:
