@@ -42,10 +42,13 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
-/// Whether a conversion from `from` to `to` can be skipped. It is `from.equals(to)`, which compares only the representation
-/// that `Bool` shares with `UInt8`, except where `to` has `Bool` and `from` another type, as that conversion maps nonzero to 1.
-/// This holds at any nesting level (`Array(UInt8)` to `Array(Bool)`) except inside a `JSON` typed path, a `Variant`
-/// alternative or the arguments of an `AggregateFunction` or `SimpleAggregateFunction`.
+/// Whether `to` has `Bool` where `from` has another type, so that the conversion maps nonzero to 1. This holds at any nesting
+/// level (`Array(UInt8)` to `Array(Bool)`) except inside a `JSON` typed path, a `Variant` alternative or the arguments of an
+/// `AggregateFunction` or `SimpleAggregateFunction`.
+bool convertsToBool(const IDataType & from, const IDataType & to);
+
+/// Whether a conversion from `from` to `to` can be skipped: `from.equals(to)`, which compares only the representation
+/// that `Bool` shares with `UInt8`, and not `convertsToBool(from, to)`.
 bool isIdentityConversion(const IDataType & from, const IDataType & to);
 
 /// The same for headers: `blocksHaveEqualStructure(from, to)` and an identity conversion at every position.

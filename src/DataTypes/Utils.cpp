@@ -398,6 +398,8 @@ bool isBoolNode(const IDataType & type)
     return custom_name && custom_name->getName() == "Bool";
 }
 
+}
+
 bool convertsToBool(const IDataType & from, const IDataType & to)
 {
     if (isBoolNode(to))
@@ -405,6 +407,22 @@ bool convertsToBool(const IDataType & from, const IDataType & to)
     /// `CAST` copies a `JSON` typed path as is and matches `Variant` alternatives by name, so their children do not count.
     if (to.getTypeId() == TypeIndex::Object || to.getTypeId() == TypeIndex::Variant)
         return false;
+    /// `CAST` matches the elements of named tuples by name when they share one.
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(&from);
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(&to);
+    if (from_tuple && to_tuple && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+    {
+        bool has_common_name = false;
+        for (size_t i = 0; i < to_tuple->getElements().size(); ++i)
+        {
+            const auto from_position = from_tuple->tryGetPositionByName(to_tuple->getElementNames()[i]);
+            has_common_name |= from_position.has_value();
+            if (from_position && convertsToBool(*from_tuple->getElement(*from_position), *to_tuple->getElement(i)))
+                return true;
+        }
+        if (has_common_name)
+            return false;
+    }
     const size_t num_children = to.getNumberOfChildren();
     if (num_children != from.getNumberOfChildren())
         return false;
@@ -412,8 +430,6 @@ bool convertsToBool(const IDataType & from, const IDataType & to)
         if (convertsToBool(*from.getChild(i), *to.getChild(i)))
             return true;
     return false;
-}
-
 }
 
 bool isIdentityConversion(const IDataType & from, const IDataType & to)

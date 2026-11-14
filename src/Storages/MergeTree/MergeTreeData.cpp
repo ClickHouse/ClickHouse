@@ -5930,13 +5930,14 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     auto which_new_type = WhichDataType(new_type);
     auto which_old_type = WhichDataType(old_type);
 
-    /// Check alter to different sign or float -> int and so on
+    /// Check alter to different sign, float -> int, UInt8 -> Bool and so on
     if ((which_old_type.isInt() && !which_new_type.isInt())
         || (which_old_type.isUInt() && !which_new_type.isUInt())
         || (which_old_type.isDate() && !which_new_type.isDate())
         || (which_old_type.isDate32() && !which_new_type.isDate32())
         || (which_old_type.isDateTime() && !which_new_type.isDateTime())
-        || (which_old_type.isFloat() && !which_new_type.isFloat()))
+        || (which_old_type.isFloat() && !which_new_type.isFloat())
+        || convertsToBool(*old_type, *new_type))
     {
         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot alter version column {} from type {} to type {} "
                         "because new type will change sort order of version column. "
@@ -6920,8 +6921,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type)
             {
                 const auto old_type = old_types.find(command.column_name);
-                if (old_type != old_types.end() && old_type->second->equals(*command.data_type)
-                    && !isIdentityConversion(*old_type->second, *command.data_type))
+                if (old_type != old_types.end() && convertsToBool(*old_type->second, *command.data_type))
                 {
                     auto reads_column = [&](const Names & names)
                     {
@@ -6950,6 +6950,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                 old_type->second->getName(),
                                 command.data_type->getName(),
                                 backQuoteIfNeed(projection.name));
+                    }
+
+                    /// The mutation rebuilds a skip index over the column itself, but not one over its subcolumns.
+                    for (const auto & index : old_metadata.getSecondaryIndices())
+                    {
+                        const auto & index_columns = index.expression->getRequiredColumns();
+                        if (new_metadata.getSecondaryIndices().has(index.name)
+                            && std::ranges::find(index_columns, command.column_name) == index_columns.end()
+                            && reads_column(index_columns))
+                            throw Exception(
+                                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "ALTER of column {} from {} to {} is forbidden because skip index {} is computed from its values",
+                                backQuoteIfNeed(command.column_name),
+                                old_type->second->getName(),
+                                command.data_type->getName(),
+                                backQuoteIfNeed(index.name));
                     }
                 }
             }

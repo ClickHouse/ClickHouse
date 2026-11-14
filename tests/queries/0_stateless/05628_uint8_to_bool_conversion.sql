@@ -89,6 +89,12 @@ CREATE TABLE keyed (k UInt8) ENGINE = MergeTree ORDER BY k;
 ALTER TABLE keyed MODIFY COLUMN k Bool; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 CREATE TABLE pkeyed (k UInt8) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
 ALTER TABLE pkeyed MODIFY COLUMN k Bool; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE ver (k UInt32, v UInt8) ENGINE = ReplacingMergeTree(v) ORDER BY k;
+ALTER TABLE ver MODIFY COLUMN v Bool; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE ver_sub (k UInt32, t Tuple(v UInt8)) ENGINE = ReplacingMergeTree(t.v) ORDER BY k;
+ALTER TABLE ver_sub MODIFY COLUMN t Tuple(v Bool); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE ver_vc (k UInt32, s Int8, v UInt8) ENGINE = VersionedCollapsingMergeTree(s, v) ORDER BY k;
+ALTER TABLE ver_vc MODIFY COLUMN v Bool; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 CREATE TABLE back (id UInt32, active Bool) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE back MODIFY COLUMN active UInt8 SETTINGS mutations_sync = 2;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'back';
@@ -120,6 +126,11 @@ ALTER TABLE proj DROP PROJECTION p, MODIFY COLUMN active Bool SETTINGS mutations
 CREATE TABLE proj_sub (id UInt32, t Tuple(x UInt8), m Map(String, UInt8), PROJECTION pt (SELECT sum(t.x)), PROJECTION pm (SELECT sum(arraySum(m.values)))) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE proj_sub MODIFY COLUMN t Tuple(x Bool); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE proj_sub MODIFY COLUMN m Map(String, Bool); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE proj_outer (id UInt32, m Map(String, Array(UInt8)), PROJECTION p (SELECT sum(arraySum(arrayFlatten(mapValues(m)))))) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE proj_outer MODIFY COLUMN m Map(FixedString(1), Array(Bool)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE proj_sub MODIFY COLUMN t Tuple(x Bool, y String) SETTINGS allow_metadata_only_named_tuple_alter = 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE idx_sub (id UInt32, p Tuple(x UInt8), INDEX ix toString(p.x) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE idx_sub MODIFY COLUMN p Tuple(x Bool); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 CREATE TABLE proj_key (id UInt32, active UInt8, PROJECTION p (SELECT active, count() GROUP BY active)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO proj_key VALUES (1, 2), (2, 255), (3, 1);
 ALTER TABLE proj_key MODIFY COLUMN active Bool SETTINGS mutations_sync = 2;
