@@ -130,7 +130,12 @@ public:
     }
 
     /// Can `nested` merge the states of `argument_func`, which `-Merge` reads as its argument?
-    static bool canMergeStatesOf(const IAggregateFunction & nested, const IAggregateFunction & argument_func);
+    static bool canMergeStatesOf(const IAggregateFunction & nested, const IAggregateFunction & argument_func)
+    {
+        if (nested.haveSameStateRepresentation(argument_func))
+            return true;
+        return argument_func.getName() == nested.getName() && nested.canMergeStateFromDifferentVariant(argument_func);
+    }
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
