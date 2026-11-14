@@ -25,6 +25,16 @@ namespace DiskFromAST
     /// so its credentials markers are kept as they are: they keep the identity of the disk, and are not honored unless `attach`.
     std::string createCustomDisk(
         const ASTPtr & disk_function, ContextPtr context, bool attach, bool for_system_database = false, bool stored_definition = false);
+
+    /// Create the disk described by a disk function without registering it in the context: the disk
+    /// lives only as long as the returned pointer, so it does not grow the global disk map. The same
+    /// validation as `createCustomDisk` is applied. Used by queries that need a disk only for their
+    /// own lifetime, such as the `mergeTreeParts` table function.
+    DiskPtr createTransientDisk(const ASTPtr & disk_function, ContextPtr context);
+
+    /// Run the validation of `createTransientDisk` without creating the disk, for queries that only
+    /// need to know that the disk could be created, such as `DESCRIBE`.
+    void validateTransientDisk(const ASTPtr & disk_function, ContextPtr context);
 }
 
 }

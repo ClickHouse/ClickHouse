@@ -1,0 +1,22 @@
+Compact
+0	0	0	[0,1]	\N	0	\N	UInt64
+1	1	1	[1,2]	\N	\N	s1	String
+2	2	2	[2,3]	\N	2	\N	UInt64
+3	3	3	[3,4]	\N	\N	s3	String
+4	4	4	[4,5]	\N	4	\N	UInt64
+5	5	5	[5,6]	\N	\N	s5	String
+6	6	6	[6,7]	\N	6	\N	UInt64
+7	7	7	[7,8]	\N	\N	s7	String
+8	8	8	[8,9]	\N	8	\N	UInt64
+9	9	9	[9,10]	\N	\N	s9	String
+Wide
+0	0	0	[0,1]	\N	0	\N	UInt64
+1	1	1	[1,2]	\N	\N	s1	String
+2	2	2	[2,3]	\N	2	\N	UInt64
+3	3	3	[3,4]	\N	\N	s3	String
+4	4	4	[4,5]	\N	4	\N	UInt64
+5	5	5	[5,6]	\N	\N	s5	String
+6	6	6	[6,7]	\N	6	\N	UInt64
+7	7	7	[7,8]	\N	\N	s7	String
+8	8	8	[8,9]	\N	8	\N	UInt64
+9	9	9	[9,10]	\N	\N	s9	String

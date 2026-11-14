@@ -1,0 +1,11 @@
+--- matching descriptions
+1000
+900
+--- a wide part described as compact
+BAD_ARGUMENTS
+--- wrong marks_count
+BAD_ARGUMENTS
+--- the mask exists, but the description says it does not
+BAD_ARGUMENTS
+--- the description says the mask exists, but it does not
+BAD_ARGUMENTS
