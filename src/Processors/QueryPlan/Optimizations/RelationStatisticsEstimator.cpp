@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -35,6 +36,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -235,9 +237,9 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 }
 
 /// The conditions on the rows of a read: the filter above it and the `PREWHERE`, as MergeTree estimates them, and the row policy.
-std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter)
+std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `ConditionSelectivityEstimator::estimateRelationProfile` takes std::vector
 {
-    std::vector<RPNBuilderTreeNode> conditions;
+    std::vector<RPNBuilderTreeNode> conditions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- returned to `estimateRelationProfile`, which takes std::vector
     auto add_condition = [&](const ActionsDAG::Node * condition)
     {
         if (condition && !prunesNothingAtPlanTime(condition))

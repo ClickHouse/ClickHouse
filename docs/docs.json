@@ -66,40 +66,64 @@
           {
             "menu": [
               {
-                "$ref": "./get-started/navigation.json"
+                "href": "#",
+                "icon": "/images/icons/icon-clickhouse.svg",
+                "item": "ClickHouse"
               },
               {
-                "$ref": "./concepts/navigation.json"
+                "$ref": "./get-started/navigation.json"
               },
               {
                 "$ref": "./guides/navigation.json"
               },
               {
+                "$ref": "./concepts/navigation.json"
+              },
+              {
                 "$ref": "./reference/navigation.json"
+              },
+              {
+                "$ref": "./products/managed-postgres/navigation.json"
               }
             ],
-            "tab": "Database"
+            "tab": "Databases"
           },
           {
             "menu": [
               {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
-                "item": "ClickHouse Cloud"
+                "item": "Deployments"
               },
               {
                 "$ref": "./products/cloud/navigation.json"
               },
               {
+                "item": "BYOC",
+                "pages": [
+                  "products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                ]
+              },
+              {
+                "href": "#",
+                "icon": "/images/icons/section-header.svg",
+                "item": "Applications"
+              },
+              {
                 "$ref": "./clickstack/navigation.json"
               },
               {
-                "$ref": "./products/managed-postgres/navigation.json"
+                "$ref": "./agents/navigation.json"
               },
               {
                 "href": "https://langfuse.com/docs",
                 "icon": "/images/icons/logo-langfuse.svg",
-                "item": "Langfuse"
+                "item": "AI Engineering"
+              },
+              {
+                "href": "https://docs.runreveal.com/",
+                "icon": "/images/integrations/logos/runreveal.webp",
+                "item": "Security"
               },
               {
                 "href": "#",
@@ -107,16 +131,23 @@
                 "item": "Open source"
               },
               {
-                "$ref": "./products/agentic-data-stack/navigation.json"
+                "item": "ClickStack",
+                "pages": [
+                  "clickstack"
+                ]
               },
               {
                 "$ref": "./chdb/navigation.json"
               },
               {
                 "$ref": "./products/kubernetes-operator/navigation.json"
+              },
+              {
+                "href": "https://www.librechat.ai/docs",
+                "item": "LibreChat"
               }
             ],
-            "tab": "Solutions"
+            "tab": "Products"
           },
           {
             "menu": [

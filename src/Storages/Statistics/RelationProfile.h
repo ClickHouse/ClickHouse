@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Storages/Statistics/ColumnStatsProvenance.h>
 #include <base/types.h>
 
@@ -48,7 +49,7 @@ struct ColumnStats
 struct RelationProfile
 {
     UInt64 rows = 0;
-    std::unordered_map<String, ColumnStats> column_stats = {};
+    UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
 };
 
 }

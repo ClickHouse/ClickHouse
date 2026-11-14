@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <unordered_map>
 
 #include <Core/Joins.h>
@@ -17,7 +18,7 @@ struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
     std::optional<Float64> avg_row_bytes = {};
-    std::unordered_map<String, ColumnStats> column_stats = {};
+    UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
 
     String table_name;
     bool imprecise_estimate = false;
@@ -63,7 +64,7 @@ void keepOnlyEnclosingValueRanges(std::unordered_map<String, ColumnStats> & colu
 /// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
 /// single-argument function of it (which cannot increase the distinct count). A function that may
 /// change values records `NDVBoundExpression` and loses the value range, see `keepOnlyEnclosingValueRange`.
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions);
 
 /// The statistics of a direct grouping key of GROUP BY over `input_relation`, which preserves its distinct
 /// set and value range. The distinct count is clamped to the input row count. The input NULL fraction is not

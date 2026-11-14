@@ -2053,6 +2053,16 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                       ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
                       String npath;
 
+                      /// A `SHARED` typed path is stored with the other shared paths in a constant number of files
+                      if (rg.nextSmallNumber() < 4)
+                      {
+                          if (tp)
+                          {
+                              jpt->set_shared(true);
+                          }
+                          desc += "SHARED ";
+                      }
+
                       for (uint32_t j = 0; j < ncols; j++)
                       {
                           String nbuf;
