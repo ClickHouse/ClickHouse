@@ -253,8 +253,6 @@ private:
         }
     }
 
-    /// One pass of LSD radix sort: moves the elements from `reader` to `writer` by the PASS-th digit,
-    /// using the accumulated histogram of that digit. The digit number is a compile-time constant in each pass.
     template <size_t PASS, bool SOFTWARE_PREFETCH>
     static ALWAYS_INLINE void radixSortLSDPass(Element * reader, Element * writer, size_t size, CountType * histograms)
     {
@@ -314,7 +312,6 @@ private:
         }
     }
 
-    /// The last pass of LSD radix sort, by the PASS-th digit, that writes the result parts of the elements to the destination.
     template <size_t PASS, bool SOFTWARE_PREFETCH>
     static ALWAYS_INLINE void radixSortLSDPassToDestination(Element * reader, Result * writer, size_t size, bool reverse, CountType * histograms)
     {
@@ -392,9 +389,7 @@ private:
                 ++histograms[pass * HISTOGRAM_SIZE + static_cast<size_t>(extractPart(pass, arr[i]))];
         }
 
-        /// A pass that puts every element into the same bucket would not move anything, so it is skipped.
-        /// Keys of a narrow range, such as timestamps of one block or small ids, have constant high digits.
-        /// The last pass is kept if it also does the reverse transformation of the keys.
+        /// A pass that puts every element into one bucket moves nothing and is skipped, unless it transforms the keys back.
         size_t passes[NUM_PASSES];
         size_t num_passes = 0;
         for (size_t pass = 0; pass < NUM_PASSES; ++pass)
@@ -420,7 +415,6 @@ private:
         }
 
         /// Move the elements in the order starting from the least bit piece, one pass per digit that is not constant.
-        /// The passes alternate between the array and the temporary buffer.
         const size_t num_moving_passes = DIRECT_WRITE_TO_DESTINATION && num_passes ? num_passes - 1 : num_passes;
         for (size_t step = 0; step < num_moving_passes; ++step)
         {
