@@ -6,17 +6,21 @@ DROP TABLE IF EXISTS t_final_minmax_collapsing;
 DROP TABLE IF EXISTS t_final_minmax_dnm;
 DROP TABLE IF EXISTS t_final_float_partition;
 DROP TABLE IF EXISTS t_final_name_collision;
+DROP TABLE IF EXISTS t_final_lambda;
 
 CREATE TABLE t_final_minmax_replacing (k UInt64, d Date, ver UInt64)
 ENGINE = ReplacingMergeTree(ver) PARTITION BY toYYYYMM(d) ORDER BY (toYYYYMM(d), k);
 SYSTEM STOP MERGES t_final_minmax_replacing;
 INSERT INTO t_final_minmax_replacing VALUES (1, '2026-01-01', 1);
 INSERT INTO t_final_minmax_replacing VALUES (1, '2026-01-02', 2);
+INSERT INTO t_final_minmax_replacing VALUES (2, '2026-02-01', 1);
 
 SELECT 'replacing';
 SELECT * FROM t_final_minmax_replacing FINAL WHERE d = '2026-01-01';
 SELECT * FROM t_final_minmax_replacing FINAL WHERE d = '2026-01-02';
 SELECT count() FROM t_final_minmax_replacing FINAL WHERE d < '2026-01-02';
+-- The partition expression is in the sorting key, so pruning by partition value still skips the other month.
+SELECT match(explain, '"Type": "Partition",[^}]*"Selected Parts": 2,') FROM (EXPLAIN indexes = 1, json = 1 SELECT * FROM t_final_minmax_replacing FINAL WHERE d = '2026-01-01');
 
 CREATE TABLE t_final_minmax_collapsing (k UInt64, d Date, sign Int8)
 ENGINE = CollapsingMergeTree(sign) PARTITION BY toYYYYMM(d) ORDER BY (toYYYYMM(d), k);
@@ -61,8 +65,20 @@ SELECT 'column named like the partition expression';
 SELECT * FROM t_final_name_collision FINAL WHERE d = '2026-01-01';
 SELECT * FROM t_final_name_collision FINAL WHERE d = '2026-02-01';
 
+-- Nor when the sorting key has a lambda of the same signature with another body.
+CREATE TABLE t_final_lambda (a Array(UInt64), b UInt64, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY arrayMap(x -> x + b, a) ORDER BY arrayMap(x -> x % b, a);
+SYSTEM STOP MERGES t_final_lambda;
+INSERT INTO t_final_lambda VALUES ([1], 2, 1);
+INSERT INTO t_final_lambda VALUES ([3], 2, 2);
+
+SELECT 'lambda with another body';
+SELECT * FROM t_final_lambda FINAL WHERE arrayMap(x -> x + b, a) = [3];
+SELECT * FROM t_final_lambda FINAL WHERE arrayMap(x -> x + b, a) = [5];
+
 DROP TABLE t_final_minmax_replacing;
 DROP TABLE t_final_minmax_collapsing;
 DROP TABLE t_final_minmax_dnm;
 DROP TABLE t_final_float_partition;
 DROP TABLE t_final_name_collision;
+DROP TABLE t_final_lambda;

@@ -3628,13 +3628,15 @@ ReadFromMergeTree::FinalPartitionPruning ReadFromMergeTree::getFinalPartitionPru
         if (const auto * node = sorting_key_dag.tryFindInOutputs(column_name))
             sorting_key_nodes.insert(node);
 
-    /// Matched by structure, not by name: a column named `toYYYYMM(d)` is not the expression `toYYYYMM(d)`.
+    /// Matched by structure and by name: a column named `toYYYYMM(d)` is not the expression `toYYYYMM(d)`,
+    /// and `matchTrees` does not compare lambda bodies, which only the name spells out.
     const auto & partition_key_dag = partition_key.expression->getActionsDAG();
     const auto matches = matchTrees({sorting_key_nodes.begin(), sorting_key_nodes.end()}, partition_key_dag, /*check_monotonicity=*/ false);
     auto is_sorting_key_node = [&](const ActionsDAG::Node * node)
     {
         auto it = matches.find(node);
-        return it != matches.end() && it->second.node && sorting_key_nodes.contains(it->second.node);
+        return it != matches.end() && it->second.node && sorting_key_nodes.contains(it->second.node)
+            && it->second.node->result_name == node->result_name;
     };
 
     bool exprs_match = std::ranges::all_of(partition_key_dag.findInOutputs(partition_key.column_names), is_sorting_key_node);
