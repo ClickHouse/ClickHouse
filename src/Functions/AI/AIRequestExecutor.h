@@ -38,4 +38,9 @@ std::future<std::optional<AIResponse>> submitAIRequest(
 std::future<std::optional<AIEmbeddingResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIEmbeddingRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
 
+/// The same, for one batch of documents sent to a reranking endpoint. The document views must
+/// remain valid until the returned future is ready.
+std::future<std::optional<AIRerankResponse>> submitAIRequest(
+    std::shared_ptr<IAIProvider> provider, AIRerankRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
+
 }

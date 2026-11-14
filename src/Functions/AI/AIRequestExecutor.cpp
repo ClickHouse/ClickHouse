@@ -25,6 +25,7 @@ namespace ProfileEvents
     extern const Event AIOutputTokens;
     extern const Event AICacheReadTokens;
     extern const Event AICacheWriteTokens;
+    extern const Event AISearchUnits;
     extern const Event AIRequestMicroseconds;
     extern const Event AIRetryBackoffMicroseconds;
     extern const Event AIAPICalls;
@@ -207,6 +208,11 @@ void runAttempt(IAIProvider & provider, const AIEmbeddingRequest & request, cons
     provider.embed(request, timeouts, response);
 }
 
+void runAttempt(IAIProvider & provider, const AIRerankRequest & request, const ConnectionTimeouts & timeouts, AIRerankResponse & response)
+{
+    provider.rerank(request, timeouts, response);
+}
+
 template <typename Response, typename Request>
 std::future<std::optional<Response>> submit(
     std::shared_ptr<IAIProvider> provider, Request request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
@@ -231,6 +237,8 @@ std::future<std::optional<Response>> submit(
                     ProfileEvents::increment(ProfileEvents::AICacheReadTokens, response.cache_read_tokens);
                     ProfileEvents::increment(ProfileEvents::AICacheWriteTokens, response.cache_write_tokens);
                 }
+                else if constexpr (std::is_same_v<Response, AIRerankResponse>)
+                    ProfileEvents::increment(ProfileEvents::AISearchUnits, response.search_units);
             });
 
             ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::AIRequestMicroseconds);
@@ -278,6 +286,12 @@ std::future<std::optional<AIEmbeddingResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIEmbeddingRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
     return submit<AIEmbeddingResponse>(std::move(provider), std::move(request), std::move(policy), std::move(quota));
+}
+
+std::future<std::optional<AIRerankResponse>> submitAIRequest(
+    std::shared_ptr<IAIProvider> provider, AIRerankRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
+{
+    return submit<AIRerankResponse>(std::move(provider), std::move(request), std::move(policy), std::move(quota));
 }
 
 }

@@ -1974,6 +1974,7 @@ The server successfully detected this situation and will download merged part fr
     M(AICacheReadTokens, "Prompt tokens read from the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
     M(AICacheWriteTokens, "Prompt tokens written to the provider cache, as reported by AI chat providers. Included in AIInputTokens.", ValueType::Number) \
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
+    M(AISearchUnits, "Total search units billed for reranking across all AI function calls in the query.", ValueType::Number) \
     M(AIAPICallsRetried, "Number of AI provider requests retried after a transient failure.", ValueType::Number) \
     M(AIAPICallsFailed, "Number of AI provider requests that failed after all retries.", ValueType::Number) \
     M(AIAPICallsThrottled, "Number of AI provider requests rejected with HTTP 429 (Too Many Requests).", ValueType::Number) \
