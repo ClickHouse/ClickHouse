@@ -1,0 +1,14 @@
+-- A subquery limit is enforced without Cascades
+-- A top-level limit is enforced under Cascades
+-- A subquery limit is enforced under Cascades while the enclosing query is permissive
+-- Limits on both levels are enforced under Cascades
+-- A subquery raising the limit above the enclosing query succeeds under Cascades
+0
+-- Same query without Cascades
+0
+-- A subquery relaxing only the overflow mode returns rather than throwing under Cascades
+0
+-- Same relaxed-mode query without Cascades
+0
+-- An out-of-range spill ratio is still rejected only where a sort is planned
+1
