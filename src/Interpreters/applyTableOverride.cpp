@@ -62,6 +62,26 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                     dest_children[exists - dest_children.begin()] = override_index_ast;
             }
         }
+        if (columns->lookup_indices)
+        {
+            for (const auto & override_index_ast : columns->lookup_indices->children)
+            {
+                auto * override_index = override_index_ast->as<ASTIndexDeclaration>();
+                if (!override_index)
+                    continue;
+                if (!create_query->columns_list->lookup_indices)
+                    create_query->columns_list->set(create_query->columns_list->lookup_indices, make_intrusive<ASTExpressionList>());
+                auto & dest_children = create_query->columns_list->lookup_indices->children;
+                auto exists = std::find_if(
+                    dest_children.begin(),
+                    dest_children.end(),
+                    [&](ASTPtr node) -> bool { return node->as<ASTIndexDeclaration>()->name == override_index->name; });
+                if (exists == dest_children.end())
+                    dest_children.emplace_back(override_index_ast);
+                else
+                    dest_children[exists - dest_children.begin()] = override_index_ast;
+            }
+        }
         if (columns->constraints)
         {
             for (const auto & override_constraint_ast : columns->constraints->children)
