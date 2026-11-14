@@ -338,7 +338,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1099,7 +1100,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1160,7 +1162,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1221,7 +1224,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1282,7 +1286,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1343,7 +1348,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1404,7 +1410,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1465,7 +1472,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1526,7 +1534,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1587,7 +1596,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1648,7 +1658,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1709,7 +1720,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1770,7 +1782,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -1831,7 +1844,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2115,7 +2129,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2176,7 +2191,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2237,7 +2253,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2298,7 +2315,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2359,7 +2377,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2420,7 +2439,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2481,7 +2501,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2542,7 +2563,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2603,7 +2625,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2664,7 +2687,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -2725,7 +2749,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3146,7 +3171,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3207,7 +3233,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3268,7 +3295,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3329,7 +3357,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3390,7 +3419,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3452,7 +3482,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3514,7 +3545,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3576,7 +3608,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3638,7 +3671,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3700,7 +3734,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3762,7 +3797,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3824,7 +3860,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3886,7 +3923,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -3948,7 +3986,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4010,7 +4049,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4072,7 +4112,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4178,7 +4219,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4239,7 +4281,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4300,7 +4343,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4385,7 +4429,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, parallel)' --workflow "PR" --ci --timestamp
 
-  stateless_tests_arm_binary_sequential:
+  stateless_tests_arm_binary_sequential_1_2:
     runs-on: [self-hosted, pr-arm-small]
     needs:
     - build_arm_binary
@@ -4399,8 +4443,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzZXF1ZW50aWFsKQ==') }}
-    name: "Stateless tests (arm_binary, sequential)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzZXF1ZW50aWFsLCAxLzIp') }}
+    name: "Stateless tests (arm_binary, sequential, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4428,7 +4472,52 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential, 1/2)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_arm_binary_sequential_2_2:
+    runs-on: [self-hosted, pr-arm-small]
+    needs:
+    - build_arm_binary
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBzZXF1ZW50aWFsLCAyLzIp') }}
+    name: "Stateless tests (arm_binary, sequential, 2/2)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential, 2/2)' --workflow "PR" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted:
     runs-on: [self-hosted, pr-amd-large]
@@ -4496,7 +4585,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4558,7 +4648,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4620,7 +4711,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4682,7 +4774,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4743,7 +4836,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4804,7 +4898,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4865,7 +4960,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4926,7 +5022,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -4987,7 +5084,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5048,7 +5146,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5109,7 +5208,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5170,7 +5270,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5231,7 +5332,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5292,7 +5394,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5353,7 +5456,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5415,7 +5519,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5477,7 +5582,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5539,7 +5645,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5601,7 +5708,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5663,7 +5771,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5725,7 +5834,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5787,7 +5897,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5849,7 +5960,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5911,7 +6023,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -5973,7 +6086,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6035,7 +6149,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6097,7 +6212,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6159,7 +6275,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6536,7 +6653,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6604,7 +6722,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6672,7 +6791,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6739,7 +6859,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6806,7 +6927,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6873,7 +6995,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -6940,7 +7063,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7007,7 +7131,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7074,7 +7199,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7141,7 +7267,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7208,7 +7335,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7269,7 +7397,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7330,7 +7459,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7391,7 +7521,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7452,7 +7583,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7519,7 +7651,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7581,7 +7714,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7643,7 +7777,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7705,7 +7840,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7767,7 +7903,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7829,7 +7966,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7896,7 +8034,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -7957,7 +8096,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8019,7 +8159,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8080,7 +8221,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8141,7 +8283,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8208,7 +8351,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8269,7 +8413,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8331,7 +8476,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8392,7 +8538,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8453,7 +8600,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8520,7 +8668,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8593,7 +8742,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8666,7 +8816,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8739,7 +8890,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8812,7 +8964,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8885,7 +9038,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -8958,7 +9112,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9031,7 +9186,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9104,7 +9260,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9177,7 +9334,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9250,7 +9408,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9323,7 +9482,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9396,7 +9556,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9469,7 +9630,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9542,7 +9704,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9615,7 +9778,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9688,7 +9852,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9761,7 +9926,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9834,7 +10000,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9907,7 +10074,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -9980,7 +10148,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10053,7 +10222,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10126,7 +10296,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10199,7 +10370,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10272,7 +10444,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10345,7 +10518,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10418,7 +10592,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10491,7 +10666,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10564,7 +10740,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10631,7 +10808,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10698,7 +10876,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10765,7 +10944,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10832,7 +11012,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -10899,7 +11080,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -11076,7 +11258,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -11143,7 +11326,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -11227,7 +11411,8 @@ jobs:
     - stateless_tests_amd_llvm_coverage_s3_storage_dbreplicated_sequential_1_2
     - stateless_tests_amd_llvm_coverage_s3_storage_dbreplicated_sequential_2_2
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_amd_llvm_coverage
@@ -11307,7 +11492,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -11429,7 +11615,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -11496,7 +11683,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -11563,7 +11751,8 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
     - stateless_tests_amd_debug_parallel
     - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - style_check
     - unit_tests_amd_debug
     - unit_tests_asan_ubsan
@@ -11905,7 +12094,8 @@ jobs:
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_1_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_2_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_sequential
-    - stateless_tests_arm_binary_sequential
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
     - storage_memory_check
     - stress_test_amd_asan_ubsan
     - stress_test_amd_debug

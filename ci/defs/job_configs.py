@@ -1193,11 +1193,18 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
-        Job.ParamSet(
-            parameter="arm_binary, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_BINARY],
-        ),
+        # The sequential tests take about 48 minutes in total, so a single job ended about 25
+        # minutes after the rest of `CORE_BLOCKING_JOB_NAMES` in `ci/workflows/pull_request.py`
+        # and delayed every job gated by it. Two hash batches take about 24 minutes each.
+        *[
+            Job.ParamSet(
+                parameter=f"arm_binary, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_SMALL,
+                requires=[ArtifactNames.CH_ARM_BINARY],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
     )
     # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
     # optimized release binary instead of the plain `binary` build that PRs use (the
