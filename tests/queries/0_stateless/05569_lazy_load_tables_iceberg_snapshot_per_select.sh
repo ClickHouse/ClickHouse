@@ -18,6 +18,7 @@ CREATE DATABASE ${DB_LAZY} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 CREATE TABLE ${DB_LAZY}.t (id Int64) ENGINE = IcebergLocal('${DIR}', 'Parquet');
 INSERT INTO ${DB_LAZY}.t VALUES (100);
 INSERT INTO ${DB_LAZY}.t VALUES (7);
+CREATE TABLE ${DB_LAZY}.tf (id Int64) AS icebergLocal('${DIR}', 'Parquet');
 "
 
 S1=$($CLICKHOUSE_CLIENT -q "SELECT snapshot_id FROM system.iceberg_history WHERE database = '${DB_LAZY}' AND table = 't' ORDER BY made_current_at LIMIT 1")
@@ -46,6 +47,23 @@ ORDER BY 1;
 
 SELECT 'old', count() FROM ${DB_LAZY}.t SETTINGS iceberg_snapshot_id = ${S1};
 SELECT 'new', count() FROM ${DB_LAZY}.t SETTINGS iceberg_snapshot_id = ${S2};
+
+SELECT 'table function';
+SELECT * FROM
+(
+    (SELECT 'old', sum(id) FROM ${DB_LAZY}.tf SETTINGS iceberg_snapshot_id = ${S1})
+    UNION ALL
+    (SELECT 'new', sum(id) FROM ${DB_LAZY}.tf SETTINGS iceberg_snapshot_id = ${S2})
+)
+ORDER BY 1;
+
+SELECT * FROM
+(
+    (SELECT 'new', sum(id) FROM ${DB_LAZY}.tf SETTINGS iceberg_snapshot_id = ${S2})
+    UNION ALL
+    (SELECT 'old', sum(id) FROM ${DB_LAZY}.tf SETTINGS iceberg_snapshot_id = ${S1})
+)
+ORDER BY 1;
 
 DROP DATABASE ${DB_LAZY};
 "

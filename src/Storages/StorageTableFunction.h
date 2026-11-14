@@ -217,12 +217,33 @@ public:
             proxy_columns.modify(nested_column.name, copy_default);
         }
 
-        if (changed)
+        /// A data lake pins the table state selected for the query (e.g. by `iceberg_snapshot_id`) in its metadata here.
+        /// Carry it in the metadata of the proxy, which the query is analyzed with, so that `read` passes it back to
+        /// the nested storage: two `SELECT`s of one query can pin different states.
+        const bool has_state = nested_metadata->datalake_table_state || proxy_metadata->datalake_table_state;
+
+        if (changed || has_state)
         {
             StorageInMemoryMetadata updated_metadata = *proxy_metadata;
-            updated_metadata.setColumns(std::move(proxy_columns));
+            if (changed)
+                updated_metadata.setColumns(std::move(proxy_columns));
+            updated_metadata.datalake_table_state = nested_metadata->datalake_table_state;
             setInMemoryMetadata(updated_metadata);
         }
+    }
+
+    /// The metadata of the proxy is the cached column contract rather than the metadata of `nested`,
+    /// so only the data lake state pinned during analysis is taken from it.
+    StorageSnapshotPtr getNestedSnapshot(const StoragePtr & storage, const StorageSnapshotPtr & proxy_snapshot, ContextPtr context) const override
+    {
+        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        if (proxy_snapshot && proxy_snapshot->metadata && proxy_snapshot->metadata->datalake_table_state)
+        {
+            auto pinned_metadata = std::make_shared<StorageInMemoryMetadata>(*nested_metadata);
+            pinned_metadata->setDataLakeTableState(*proxy_snapshot->metadata->datalake_table_state);
+            return storage->getStorageSnapshot(pinned_metadata, context);
+        }
+        return storage->getStorageSnapshot(nested_metadata, context);
     }
 
     void drop() override
@@ -282,9 +303,7 @@ public:
             size_t num_streams) override
     {
         auto storage = getNested();
-        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
-        auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
-        storage->read(query_plan, column_names, nested_snapshot, query_info, context,
+        storage->read(query_plan, column_names, getNestedSnapshot(storage, storage_snapshot, context), query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
         {

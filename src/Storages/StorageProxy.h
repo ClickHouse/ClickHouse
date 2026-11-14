@@ -41,7 +41,8 @@ public:
     /// state selected for the query (e.g. by `iceberg_snapshot_id`) in the metadata during analysis, and two
     /// `SELECT`s of one query can pin different states, so the current metadata of `nested` would read another
     /// state. Other metadata of the proxy may be the stub from the `CREATE` query, so it is not used.
-    static StorageSnapshotPtr getNestedSnapshot(const StoragePtr & nested, const StorageSnapshotPtr & proxy_snapshot, ContextPtr context)
+    /// This default is for a proxy that reports the metadata of `nested` as its own.
+    virtual StorageSnapshotPtr getNestedSnapshot(const StoragePtr & nested, const StorageSnapshotPtr & proxy_snapshot, ContextPtr context) const
     {
         if (proxy_snapshot && proxy_snapshot->metadata && proxy_snapshot->metadata->datalake_table_state)
             return nested->getStorageSnapshot(proxy_snapshot->metadata, context);
