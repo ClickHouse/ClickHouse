@@ -1,0 +1,5 @@
+summing	1	2
+summing key	1	2
+aggregating	1	5	7
+aggregating plain	1	5
+coalescing	1	5	7

@@ -19,6 +19,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -3199,6 +3200,39 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
     return true;
 }
 
+/// Columns whose `FINAL` value is the value of one of the merged rows; nullopt for the engines that need no restriction here
+std::optional<NameSet> getColumnsFinalTakesFromOneRow(const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+{
+    NameSet columns;
+    switch (data.merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Ordinary:
+        case MergeTreeData::MergingParams::Replacing:
+        case MergeTreeData::MergingParams::Collapsing:
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+        case MergeTreeData::MergingParams::Graphite:
+            return std::nullopt;
+        case MergeTreeData::MergingParams::Summing:
+        case MergeTreeData::MergingParams::Coalescing:
+            columns.insert_range(metadata.getPartitionKey().expression->getRequiredColumns());
+            columns.insert_range(metadata.getSortingKey().expression->getRequiredColumns());
+            return columns;
+        case MergeTreeData::MergingParams::Aggregating:
+            columns.insert_range(metadata.getSortingKey().column_names);
+            for (const auto & column : metadata.getColumns().getAllPhysical())
+            {
+                bool is_aggregated = anyInTypeTree(*column.type, [](const IDataType & node)
+                {
+                    return WhichDataType(node).isAggregateFunction()
+                        || typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(node.getCustomName());
+                });
+                if (!is_aggregated)
+                    columns.insert(column.name);
+            }
+            return columns;
+    }
+}
+
 }
 
 /// Whether a JOIN runtime filter on `_part_starting_offset + _part_offset` can prune granules: the global row indexes
@@ -3405,11 +3439,20 @@ void ReadFromMergeTree::buildIndexes(
         ignored_index_names = parseIdentifiersOrStringLiteralsToSet(indices, settings);
     }
 
+    std::optional<NameSet> final_one_row_columns;
+    if (query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        final_one_row_columns = getColumnsFinalTakesFromOneRow(data, *metadata_snapshot);
+
     UsefulSkipIndexes skip_indexes;
 
     for (const auto & index : all_indexes)
     {
         if (ignored_index_names.contains(index.name))
+            continue;
+
+        /// The index may reject every row a combined value is merged from, so exact mode would not read that key
+        if (final_one_row_columns
+            && std::ranges::any_of(index.expression->getRequiredColumns(), [&](const String & column) { return !final_one_row_columns->contains(column); }))
             continue;
 
         auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data.getSettings());
