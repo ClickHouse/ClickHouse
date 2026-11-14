@@ -25,6 +25,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/NestedElementsValidationTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -797,6 +798,88 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
+static std::optional<String> getNestedGroupOfMember(const ColumnsDescription & columns, const String & name)
+{
+    auto column = columns.tryGetPhysical(name);
+    if (!column || !isArray(column->type))
+        return {};
+
+    auto [group, member] = Nested::splitName(name);
+    if (member.empty())
+        return {};
+
+    return group;
+}
+
+/// Prefer a member's `size0` subcolumn (it reads only the offsets), unless a table column of that name would be read instead.
+static String chooseNestedSizesReference(const Names & members, const ColumnsDescription & columns)
+{
+    for (const auto & member : members)
+    {
+        auto sizes = member + ".size0";
+        if (!columns.has(sizes))
+            return sizes;
+    }
+
+    return members.front();
+}
+
+bool MutationsInterpreter::isStoredAsArrayInSourcePart(const String & name) const
+{
+    const auto & part = source.getMergeTreeDataPart();
+    if (!part)
+        return false;
+
+    const auto & alter_conversions = source.getAlterConversions();
+    String name_in_part = name;
+    if (alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
+        name_in_part = alter_conversions->getColumnOldName(name_in_part);
+
+    auto column_in_part = part->getColumnsDescription().tryGetPhysical(name_in_part);
+    if (!column_in_part || !isArray(column_in_part->type))
+        return false;
+
+    bool share_nested = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::share_nested_offsets];
+    return !(alter_conversions && alter_conversions->isColumnDropped(name_in_part, share_nested));
+}
+
+/// `Nested` members share array sizes on disk only with `share_nested_offsets`; mutations applied on the fly write nothing.
+bool MutationsInterpreter::checksNestedSizesOnWrite() const
+{
+    const auto * data = source.getMergeTreeData();
+    return data && (*data->getSettings())[MergeTreeSetting::share_nested_offsets] && source.isMutatingDataPart()
+        && !settings.apply_on_fly_for_read;
+}
+
+Names MutationsInterpreter::getStoredNestedMembers(const String & group, const NameSet & excluded) const
+{
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    Names members;
+    for (const auto & column : columns_desc.getAllPhysical())
+    {
+        if (!excluded.contains(column.name) && getNestedGroupOfMember(columns_desc, column.name) == group
+            && isStoredAsArrayInSourcePart(column.name))
+            members.push_back(column.name);
+    }
+
+    return members;
+}
+
+/// A stored member written by an `UPDATE` is already compared with its old value by `validateNestedArraySizes`.
+std::set<String> MutationsInterpreter::getNestedGroupsToCheck(const NameSet & written) const
+{
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    std::set<String> groups;
+    for (const auto & name : written)
+    {
+        auto group = getNestedGroupOfMember(columns_desc, name);
+        if (group && (!isStoredAsArrayInSourcePart(name) || nested_written_without_size_check.contains(name)))
+            groups.insert(*group);
+    }
+
+    return groups;
+}
+
 void MutationsInterpreter::prepare(bool dry_run)
 {
     auto component_guard = Coordination::setCurrentComponent("MutationsInterpreter");
@@ -854,7 +937,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// The _row_exists mask is handled by APPLY_DELETED_MASK, not as a data column.
         if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch
             && command.column_name != RowExistsColumn::name)
+        {
             patch_updated_columns.insert(command.column_name);
+            /// A patch may carry a `MATERIALIZED` member recomputed without a size check.
+            if (getNestedGroupOfMember(columns_desc, command.column_name))
+                nested_written_without_size_check.insert(command.column_name);
+        }
 
         auto alter = command.ast();
         if (alter && alter->update_assignments)
@@ -1046,6 +1134,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     type_literal);
 
                 stages.back().column_to_updated.emplace(column.name, materialized_column);
+                if (getNestedGroupOfMember(columns_desc, column.name))
+                    nested_written_without_size_check.insert(column.name);
             }
         }
     };
@@ -1246,10 +1336,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                     auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, column_to_update);
                     if (!nested_update_exprs)
                     {
+                        /// The old value of a member not stored as an array is its DEFAULT or a conversion,
+                        /// whose sizes may differ from the stored members'.
+                        String sizes_reference = column_name;
+                        if (!isStoredAsArrayInSourcePart(column_name))
+                        {
+                            auto stored_members = getStoredNestedMembers(Nested::splitName(column_name).first, {});
+                            if (!stored_members.empty())
+                                sizes_reference = stored_members.front();
+                        }
+
                         function = makeASTFunction("validateNestedArraySizes",
                             validation_condition,
                             update_expr->clone(),
-                            make_intrusive<ASTIdentifier>(column_name));
+                            make_intrusive<ASTIdentifier>(sizes_reference));
                     }
                     else if (nested_update_exprs->size() > 1)
                     {
@@ -1329,6 +1429,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
+            if (getNestedGroupOfMember(columns_desc, column.name))
+                nested_written_without_size_check.insert(column.name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -1899,6 +2001,27 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & [column_name, _] : stage.column_to_updated)
             columns_written_by_stages.insert(column_name);
+    }
+
+    /// Read the array sizes of an unwritten stored member for `getNestedSizesChecks`.
+    if (checksNestedSizesOnWrite())
+    {
+        Stage * sizes_stage = nullptr;
+        for (const auto & group : getNestedGroupsToCheck(columns_written_by_stages))
+        {
+            auto unwritten_members = getStoredNestedMembers(group, columns_written_by_stages);
+            if (unwritten_members.empty())
+                continue;
+
+            if (!sizes_stage)
+            {
+                sizes_stage = &stages.emplace_back(context);
+                sizes_stage->is_readonly = true;
+            }
+
+            auto reference = chooseNestedSizesReference(unwritten_members, columns_desc);
+            sizes_stage->column_to_updated.emplace(reference, make_intrusive<ASTIdentifier>(reference));
+        }
     }
 
     for (const auto & column : metadata_snapshot->getColumns())
@@ -2921,6 +3044,43 @@ Block MutationsInterpreter::getUpdatedHeader() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "getUpdatedHeader called before execute. It is a bug");
 
     return *updated_header;
+}
+
+VectorWithMemoryTracking<NestedSizesCheck> MutationsInterpreter::getNestedSizesChecks(const Names & written, const Block & header) const
+{
+    if (!checksNestedSizesOnWrite())
+        return {};
+
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    NameSet written_set(written.begin(), written.end());
+
+    VectorWithMemoryTracking<NestedSizesCheck> checks;
+    for (const auto & group : getNestedGroupsToCheck(written_set))
+    {
+        NestedSizesCheck check;
+        for (const auto & column : columns_desc.getAllPhysical())
+        {
+            if (written_set.contains(column.name) && getNestedGroupOfMember(columns_desc, column.name) == group)
+                check.columns.push_back(column.name);
+        }
+
+        auto unwritten_members = getStoredNestedMembers(group, written_set);
+        if (!unwritten_members.empty())
+        {
+            check.reference = chooseNestedSizesReference(unwritten_members, columns_desc);
+            if (!header.has(*check.reference))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Column {} with the array sizes of Nested '{}' is not read by the mutation", *check.reference, group);
+        }
+        else if (check.columns.size() < 2)
+        {
+            continue;
+        }
+
+        checks.push_back(std::move(check));
+    }
+
+    return checks;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
