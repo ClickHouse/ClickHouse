@@ -108,6 +108,7 @@ private:
 
     void buildVolumeIndices();
     void checkVolumesAreReadOnly() const;
+    void validateDisksHaveDistinctStorageNamespaces() const;
 
     LoggerPtr log;
 };

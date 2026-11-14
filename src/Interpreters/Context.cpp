@@ -77,6 +77,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskSelector.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
@@ -658,6 +659,16 @@ struct ContextSharedPart : boost::noncopyable
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
+    /// Serializes the reloads of the storage configuration with each other and with the checks of the data paths of the tables
+    /// against the storage policies. Locked before `storage_policies_mutex`.
+    mutable std::mutex storage_configuration_update_mutex;
+    /// The data paths of the tables, which a reload of the storage configuration checks against the reloaded storage policies.
+    struct TableDataPaths
+    {
+        String storage_policy_name;
+        std::set<String> relative_data_paths;
+    };
+    mutable std::unordered_map<const void *, TableDataPaths> table_data_paths TSA_GUARDED_BY(storage_configuration_update_mutex);
     /// Protects the ZooKeeper client and its connection attempt. Not held while connecting, except by config reload.
     mutable std::timed_mutex zookeeper_mutex;
 
@@ -8804,33 +8815,116 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::
 }
 
 
+std::unique_lock<std::mutex> Context::lockStorageConfigurationUpdates() const
+{
+    return std::unique_lock(shared->storage_configuration_update_mutex);
+}
+
+void Context::addTableDataPath(
+    const void * table, const String & relative_data_path, const String & storage_policy_name, const std::unique_lock<std::mutex> & lock) const
+    TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    chassert(lock.owns_lock() && lock.mutex() == &shared->storage_configuration_update_mutex);
+    auto & paths = shared->table_data_paths[table];
+    paths.storage_policy_name = storage_policy_name;
+    paths.relative_data_paths.insert(relative_data_path);
+}
+
+void Context::removeTableDataPath(const void * table, const std::optional<String> & relative_data_path) const
+{
+    std::lock_guard lock(shared->storage_configuration_update_mutex);
+    auto it = shared->table_data_paths.find(table);
+    if (it == shared->table_data_paths.end())
+        return;
+
+    if (relative_data_path)
+        it->second.relative_data_paths.erase(*relative_data_path);
+
+    if (!relative_data_path || it->second.relative_data_paths.empty())
+        shared->table_data_paths.erase(it);
+}
+
+void Context::checkTableDataPathsWithStoragePolicies(const StoragePolicySelector & new_policies) const
+    TSA_NO_THREAD_SAFETY_ANALYSIS /// Called under `storage_configuration_update_mutex`, locked by `updateStorageConfiguration`.
+{
+    for (const auto & [table, paths] : shared->table_data_paths)
+    {
+        /// The temporary storage policies of tables with the `disk` setting are carried over unchanged.
+        const auto new_policy = new_policies.tryGet(paths.storage_policy_name);
+        if (!new_policy)
+            continue;
+
+        for (const auto & relative_data_path : paths.relative_data_paths)
+            checkDisksHaveDistinctStorageForPath(new_policy->getDisks(), relative_data_path, new_policy->getName());
+    }
+}
+
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     {
-        std::lock_guard lock(shared->storage_policies_mutex);
-        Strings disks_to_reinit;
-        if (shared->merge_tree_disk_selector)
-            shared->merge_tree_disk_selector
-                = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+        /// Serializes reloads, so that the storage policies validated below are still the latest ones when they are published.
+        std::lock_guard update_lock(shared->storage_configuration_update_mutex);
 
-        if (shared->merge_tree_storage_policy_selector)
+        StoragePolicySelectorPtr old_policy_selector;
+        StoragePolicySelectorPtr new_policy_selector;
+        Strings disks_to_reinit;
         {
+            std::lock_guard lock(shared->storage_policies_mutex);
+            if (shared->merge_tree_disk_selector)
+                shared->merge_tree_disk_selector
+                    = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+
+            if (shared->merge_tree_storage_policy_selector)
+            {
+                old_policy_selector = shared->merge_tree_storage_policy_selector;
+                try
+                {
+                    new_policy_selector = old_policy_selector->updateFromConfig(
+                        config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
+                }
+                catch (Exception & e)
+                {
+                    LOG_ERROR(
+                        shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+                }
+            }
+        }
+
+        if (new_policy_selector)
+        {
+            /// A table keeps using the published storage policies, so a rejected configuration must not be published.
+            /// A table that is being attached concurrently either has recorded its data path already, or checks it
+            /// against the published policies after they are published, because both happen under `update_lock`.
             try
             {
-                shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
-                    config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
+                checkTableDataPathsWithStoragePolicies(*new_policy_selector);
             }
             catch (Exception & e)
             {
                 LOG_ERROR(
                     shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+                new_policy_selector.reset();
             }
         }
 
-        if (!disks_to_reinit.empty())
+        if (new_policy_selector)
         {
-            LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
-            DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
+            std::lock_guard lock(shared->storage_policies_mutex);
+            chassert(shared->merge_tree_storage_policy_selector == old_policy_selector);
+
+            /// The temporary storage policies of tables with the `disk` setting are added to the published selector in place,
+            /// so one may have been added since the reloaded policies were made from it.
+            for (const auto & [name, policy] : old_policy_selector->getPoliciesMap())
+                if (!new_policy_selector->tryGet(name))
+                    const_cast<StoragePolicySelector *>(new_policy_selector.get())->add(policy);
+
+            shared->merge_tree_storage_policy_selector = new_policy_selector;
+
+            if (!disks_to_reinit.empty())
+            {
+                LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
+                DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
+            }
         }
     }
 

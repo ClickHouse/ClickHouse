@@ -2053,6 +2053,20 @@ public:
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
+    /// A reload of the storage configuration checks the data paths of the tables against the reloaded storage policies
+    /// (see `checkDisksHaveDistinctStorageForPath`) before it publishes them, and keeps the previous policies if a check fails.
+    /// A table checks its data path against the published storage policy and records it with `addTableDataPath` under the lock
+    /// returned by `lockStorageConfigurationUpdates`, which a reload holds from its checks to the publication. So every table is
+    /// checked either by the reload, against the reloaded policy, or by itself, against the published one, even while it is
+    /// being attached. The paths are recorded rather than read from the tables, so the reload takes no locks of the tables.
+    [[nodiscard]] std::unique_lock<std::mutex> lockStorageConfigurationUpdates() const;
+    /// Records `relative_data_path` as a data path of `table`, which uses the storage policy `storage_policy_name` for all of its
+    /// data paths. Requires the lock returned by `lockStorageConfigurationUpdates`.
+    void addTableDataPath(
+        const void * table, const String & relative_data_path, const String & storage_policy_name, const std::unique_lock<std::mutex> & lock) const;
+    /// Forgets one data path of `table`, or all of them if `relative_data_path` is not set.
+    void removeTableDataPath(const void * table, const std::optional<String> & relative_data_path = {}) const;
+
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
     /// Returns `nullptr` instead of throwing when the policy is not configured.
@@ -2334,6 +2348,10 @@ private:
     bool canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const;
 
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
+
+    /// Throws if a recorded data path of a table cannot be used with the storage policy of the same name in `new_policies`.
+    /// Called by `updateStorageConfiguration` under the lock of `lockStorageConfigurationUpdates`.
+    void checkTableDataPathsWithStoragePolicies(const StoragePolicySelector & new_policies) const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
