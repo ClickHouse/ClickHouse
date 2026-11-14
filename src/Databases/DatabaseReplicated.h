@@ -282,7 +282,7 @@ private:
     /// so it is safe to call from the callbacks of DDL queries executed by the worker.
     bool isDDLWorkerCurrentlyActive() const;
 
-    void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
+    void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper, ContextPtr publication_context);
     void reinitializeDDLWorker();
 
     static BlockIO getQueryStatus(

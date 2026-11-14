@@ -46,6 +46,7 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/StorageProxy.h>
 #include <base/chrono_io.h>
@@ -1250,11 +1251,9 @@ bool DatabaseReplicated::isDDLWorkerCurrentlyActive() const
     return worker && worker->isCurrentlyActive();
 }
 
-void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper)
+void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper, ContextPtr publication_context)
 {
     auto local_context = getContext();
-
-    zookeeper->createAncestors(zookeeper_path);
 
     Coordination::Requests ops;
     auto add_ops = [&ops](Coordination::Requests && others)
@@ -1275,6 +1274,10 @@ void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zooke
             LOG_TEST(log, "Restoring metadata in Keeper of table {}", table_name);
 
             const String statement = readMetadataFile(table_name);
+            if (hasProjectionColumnCodecs(*parseQueryFromMetadata(
+                    local_context, getDatabaseName(), table_name, statement, "local replicated database metadata")))
+                checkProjectionColumnCodecPublication(publication_context, /*queued_ddl=*/ false);
+
             const String table_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
             add_ops({zkutil::makeCreateRequest(table_metadata_zk_path, statement, zkutil::CreateMode::Persistent)});
 
@@ -1283,6 +1286,8 @@ void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zooke
 
         tables_metadata_digest = digest;
     }
+
+    zookeeper->createAncestors(zookeeper_path);
     Coordination::Responses responses;
     auto code = zookeeper->tryMulti(ops, responses);
 
@@ -1655,6 +1660,8 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
     checkQueryValid(query, query_context);
+    if (hasProjectionColumnCodecs(*query))
+        checkProjectionColumnCodecPublication(query_context, /*queued_ddl=*/ true);
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
     DDLLogEntry entry;
@@ -2553,7 +2560,7 @@ void DatabaseReplicated::dropReplica(
     }
 }
 
-void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
+void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr publication_context)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::restoreDatabaseMetadataInKeeper");
     waitDatabaseStarted();
@@ -2617,7 +2624,7 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
 
     try
     {
-        restoreDatabaseNodesInKeeper(zookeeper);
+        restoreDatabaseNodesInKeeper(zookeeper, publication_context);
     }
     catch (const zkutil::KeeperMultiException & e)
     {
