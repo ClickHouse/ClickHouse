@@ -54,6 +54,15 @@ public:
     /// While it is not allowed, reading the prepared pipe throws.
     void setPreparedPipeReadAllowed(bool value) { prepared_pipe_read_allowed = value; }
 
+    /// `SELECT` on the table this storage stands for was checked by whoever reads it, and only `columns` may be read.
+    void setAccessChecked(NameSet columns)
+    {
+        access_checked = true;
+        columns_allowed_to_select = std::move(columns);
+    }
+    bool isAccessChecked() const { return access_checked; }
+    const NameSet & getColumnsAllowedToSelect() const { return columns_allowed_to_select; }
+
 private:
     Block res_block;
     Pipe prepared_pipe;
@@ -61,6 +70,8 @@ private:
     bool has_prepared_pipe = false;
     bool prepared_pipe_was_read = false;
     bool prepared_pipe_read_allowed = true;
+    bool access_checked = false;
+    NameSet columns_allowed_to_select;
 };
 
 }

@@ -21,6 +21,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -45,6 +46,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Storages/buildQueryTreeForShard.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <Columns/IColumn.h>
@@ -601,23 +603,26 @@ void StorageBuffer::read(
         }
     }
 
-    Pipe pipe_from_buffers;
+    auto make_pipe_from_buffers = [&]
     {
         Pipes pipes_from_buffers;
         pipes_from_buffers.reserve(num_shards);
         for (auto & buf : buffers)
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot, getStorageID()));
 
-        pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
+        Pipe pipe = Pipe::unitePipes(std::move(pipes_from_buffers));
         if (query_info.input_order_info)
         {
             /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
-            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
+            pipe.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<PartialSortingTransform>(header, query_info.input_order_info->sort_description_for_merging, 0);
             });
         }
-    }
+        return pipe;
+    };
+
+    Pipe pipe_from_buffers = make_pipe_from_buffers();
 
     if (pipe_from_buffers.empty())
         return;
@@ -630,24 +635,56 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        /// The buffers plan is united with the table plan in the same process, where nothing
-        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
-        auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
-        buffers_select_query_options.is_local_plan_for_distributed_query = true;
-        buffers_select_query_options.view_source_in_subqueries
-            = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
+        auto plan_buffers = [&](const ASTPtr & query, Pipe pipe, bool is_shipped_query)
+        {
+            /// The buffers plan is united with the table plan in the same process, where nothing
+            /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+            auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
+            buffers_select_query_options.is_local_plan_for_distributed_query = true;
+            buffers_select_query_options.view_source_in_subqueries
+                = query_info.planner_context && query_info.planner_context->isViewSourceInSubqueries();
+            /// A shipped query is analyzed as the local shard of `Distributed` analyzes it, so both name its columns alike.
+            buffers_select_query_options.ignoreASTOptimizations(is_shipped_query);
 
-        /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
-        auto storage = std::make_shared<StorageValues>(
-                getStorageID(),
-                storage_snapshot->metadata->getColumns(),
-                std::move(pipe_from_buffers),
-                storage_snapshot->metadata->virtuals);
+            /// Column kinds must match this table, so the query below requests only the columns the buffers provide.
+            auto storage = std::make_shared<StorageValues>(
+                    getStorageID(),
+                    storage_snapshot->metadata->getColumns(),
+                    std::move(pipe),
+                    storage_snapshot->metadata->virtuals);
+            /// The shipped query names the ALIAS's base columns; the caller checked access on the ALIAS names.
+            if (is_shipped_query)
+                storage->setAccessChecked(NameSet(column_names.begin(), column_names.end()));
 
-        auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
-        interpreter.addStorageLimits(*query_info.storage_limits);
-        buffers_plan = std::move(interpreter).extractQueryPlan();
+            auto interpreter = InterpreterSelectQueryAnalyzer(query, local_context, buffers_select_query_options, storage);
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            return std::move(interpreter).extractQueryPlan();
+        };
+
+        buffers_plan = plan_buffers(query_info.query, std::move(pipe_from_buffers), /*is_shipped_query=*/ false);
+
+        /// `Distributed` plans the query it ships, with `ALIAS` columns inlined and long constants replaced by scalars,
+        /// so its header may lack the buffers' columns.
+        if (query_plan.isInitialized())
+        {
+            auto has_columns_of = [&](const QueryPlan & plan)
+            {
+                const auto & destination_header = *query_plan.getCurrentHeader();
+                return std::ranges::all_of(*plan.getCurrentHeader(),
+                    [&](const auto & column) { return destination_header.has(column.name); });
+            };
+
+            if (!has_columns_of(buffers_plan))
+            {
+                auto shipped_query_tree = query_info.query_tree->clone();
+                inlineAliasColumns(shipped_query_tree);
+                replaceLongConstantsWithScalars(shipped_query_tree, local_context);
+                auto shipped_buffers_plan = plan_buffers(
+                    queryNodeToSelectQuery(shipped_query_tree), make_pipe_from_buffers(), /*is_shipped_query=*/ true);
+                if (has_columns_of(shipped_buffers_plan))
+                    buffers_plan = std::move(shipped_buffers_plan);
+            }
+        }
     }
     else
     {

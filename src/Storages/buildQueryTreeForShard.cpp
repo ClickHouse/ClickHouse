@@ -962,6 +962,16 @@ void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
     inlineAliasColumnsImpl(query_tree_to_modify);
 }
 
+void replaceLongConstantsWithScalars(QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    const auto max_const_name_size = context->getSettingsRef()[Setting::optimize_const_name_size];
+    if (max_const_name_size < 0)
+        return;
+
+    ReplaceLongConstWithScalarVisitor scalar_visitor(context, max_const_name_size);
+    scalar_visitor.visit(query_tree);
+}
+
 bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
 {
     /// Fixed rather than a parameter: this predicts the parallel-replicas path, and both of its
@@ -1153,12 +1163,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         }
     }
 
-    auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
-    if (max_const_name_size >= 0)
-    {
-        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context->getQueryContext(), max_const_name_size);
-        scalar_visitor.visit(query_tree_to_modify);
-    }
+    replaceLongConstantsWithScalars(query_tree_to_modify, planner_context->getQueryContext());
 
     return query_tree_to_modify;
 }

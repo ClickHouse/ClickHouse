@@ -46,6 +46,10 @@ bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, co
   */
 void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify);
 
+/// Replace every constant whose name is longer than `optimize_const_name_size` with `__getScalar('<hash>')` and register
+/// its value as a scalar of the query context. Does nothing when the setting is negative.
+void replaceLongConstantsWithScalars(QueryTreeNodePtr & query_tree, const ContextPtr & context);
+
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 
 /** When a Distributed/parallel-replicas query is executed up to `WithMergeableState`, the shard's query tree has its
