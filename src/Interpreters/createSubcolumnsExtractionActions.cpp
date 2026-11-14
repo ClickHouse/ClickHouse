@@ -5,11 +5,13 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
-ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, const Names & required_columns, const ContextPtr & context)
+ActionsDAG createSubcolumnsExtractionActions(
+    const Block & available_columns, const Names & required_columns, const ContextPtr & context, const ColumnsDescription * storage_columns)
 {
     /// Create a new ActionsDAG that only extracts all subcolumns that are not presented in the available_columns.
     ActionsDAG extract_subcolumns_dag;
@@ -22,7 +24,14 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
         if (available_columns.has(required_column))
             continue;
 
-        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column))
+        std::vector<std::pair<String, String>> candidates;
+        if (auto subcolumn = storage_columns ? storage_columns->tryGetSubcolumn(required_column, GetColumnsOptions::AllPhysical) : std::nullopt)
+            candidates.emplace_back(subcolumn->getNameInStorage(), subcolumn->getSubcolumnName());
+        else
+            for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column))
+                candidates.emplace_back(column_name, subcolumn_name);
+
+        for (const auto & [column_name, subcolumn_name] : candidates)
         {
             const auto * column = available_columns.findByName(column_name);
             if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))

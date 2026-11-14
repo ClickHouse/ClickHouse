@@ -111,7 +111,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         for (const auto & column : header)
             if (storage_columns.hasPhysical(column.name))
                 header_of_stored_columns.insert(column);
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, sorting_key_dag.getRequiredColumnsNames(), context);
+        auto extracting_subcolumns_dag
+            = createSubcolumnsExtractionActions(header_of_stored_columns, sorting_key_dag.getRequiredColumnsNames(), context, &storage_columns);
         if (!extracting_subcolumns_dag.getNodes().empty())
             sorting_key_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_dag));
 
