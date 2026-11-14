@@ -6,8 +6,6 @@ keywords: ['vues matérialisées', 'backfill de données historiques', 'insertio
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Que vous découvriez ClickHouse ou que vous soyez responsable d’un déploiement existant, vous aurez inévitablement besoin d’effectuer un backfill de tables avec des données historiques. Dans certains cas, l’opération est relativement simple, mais elle peut se compliquer lorsqu’il faut alimenter des vues matérialisées. Ce guide présente plusieurs méthodes pour effectuer cette tâche, que vous pourrez adapter à votre cas d’utilisation.
 
 <Note>
@@ -478,7 +476,15 @@ Le [moteur de table Null](/fr/reference/engines/table-engines/special/null) four
 
 Point important : toutes les vues matérialisées attachées au moteur de table s’exécutent toujours sur des blocs de données au moment de l’insertion et envoient leurs résultats vers une table cible. La taille de ces blocs est configurable. Si des blocs plus volumineux peuvent être plus efficaces (et plus rapides à traiter), ils consomment aussi davantage de ressources, principalement de la mémoire. L’utilisation de ce moteur de table permet donc de construire la vue matérialisée de manière incrémentielle, c’est-à-dire bloc par bloc, sans devoir conserver toute l’agrégation en mémoire.
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="Dénormalisation dans ClickHouse" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Dénormalisation dans ClickHouse](/images/data-modeling/null_table_mv.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

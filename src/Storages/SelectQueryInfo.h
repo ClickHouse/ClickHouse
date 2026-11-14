@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
@@ -236,6 +238,6 @@ struct SelectQueryInfo
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

@@ -1,1 +1,10 @@
-1	1	1	1	1	1	1	1
+Row 1:
+──────
+made_source_requests:                   1
+read_bytes_from_source:                 1
+delivered_every_source_byte:            1
+recorded_work_time:                     1
+modeled_cost_at_least_30ms_per_request: 1
+no_cache_gets:                          1
+no_cache_populates:                     1
+no_dropped_connections:                 1

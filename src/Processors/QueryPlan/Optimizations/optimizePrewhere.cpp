@@ -1,4 +1,8 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
@@ -91,8 +95,8 @@ ActionsDAG splitAndFillPrewhereInfo(
     bool remove_prewhere_column,
     ActionsDAG filter_expression,
     const String & filter_column_name,
-    const std::unordered_set<const ActionsDAG::Node *> & prewhere_nodes,
-    const std::list<const ActionsDAG::Node *> & prewhere_nodes_list)
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes,
+    const ListWithMemoryTracking<const ActionsDAG::Node *> & prewhere_nodes_list)
 {
     prewhere_info->need_filter = true;
     prewhere_info->remove_prewhere_column = remove_prewhere_column;
@@ -122,7 +126,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     ///
     /// So, here we restore removed inputs for PREWHERE actions
     {
-        std::unordered_set<const ActionsDAG::Node *> first_outputs(
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> first_outputs(
             split_result.first.getOutputs().begin(), split_result.first.getOutputs().end());
         for (const auto * input : split_result.first.getInputs())
         {
@@ -247,7 +251,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         return;
 
     /// Extract column compressed sizes
-    std::unordered_map<std::string, UInt64> column_compressed_sizes;
+    UnorderedMapWithMemoryTracking<std::string, UInt64> column_compressed_sizes;
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
 

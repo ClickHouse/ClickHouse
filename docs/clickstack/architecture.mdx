@@ -7,11 +7,18 @@ doc_type: 'reference'
 keywords: ['ClickStack architecture', 'observability architecture', 'ClickStack UI', 'OpenTelemetry collector', 'MongoDB', 'system design']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 The ClickStack Open Source architecture is built around three core components: **ClickHouse**, **ClickStack UI**, and a **OpenTelemetry (OTel) collector**. A **MongoDB** instance provides storage for the application state. Together, they provide a high-performance, open-source observability stack optimized for logs, metrics, and traces.
 
-<Image img="/images/use-cases/observability/clickstack-oss-architecture.svg" alt="Architecture" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Architecture](/images/use-cases/observability/clickstack-oss-architecture.svg)
+
+</Frame>
+
+</div>
 
 ### ClickHouse: the database engine {#clickhouse}
 
