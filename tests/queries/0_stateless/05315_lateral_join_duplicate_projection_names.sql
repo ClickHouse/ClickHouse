@@ -1,6 +1,6 @@
 -- A `LATERAL` subquery can project two different columns with the same name: here an inner `number`
 -- and the correlated outer `o.number`. Like for any other subquery in `FROM`, the first column
--- of that name is the one bound to `s.number` (and to both columns of `s.*`).
+-- of that name is the one bound to `s.number`, and `s.*` returns both columns.
 
 SET allow_experimental_lateral_join = 1;
 

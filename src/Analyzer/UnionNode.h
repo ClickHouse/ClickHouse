@@ -226,6 +226,18 @@ public:
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 
+    /// Display names parallel to `computeProjectionColumns()` when the first branch's duplicate names were
+    /// made internally unique. Empty otherwise.
+    const Names & getProjectionColumnDisplayNames() const
+    {
+        return projection_column_display_names;
+    }
+
+    void setProjectionColumnDisplayNames(Names display_names)
+    {
+        projection_column_display_names = std::move(display_names);
+    }
+
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
 
@@ -274,6 +286,7 @@ private:
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
+    Names projection_column_display_names;
     ContextMutablePtr context;
     SelectUnionMode union_mode;
     SettingsChanges settings_changes;
