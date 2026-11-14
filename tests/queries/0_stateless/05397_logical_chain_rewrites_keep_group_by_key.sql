@@ -40,6 +40,7 @@ SELECT toUInt8((x < y) AND (y < 5)) AS e, count() FROM (SELECT number % 4 AS x, 
 SELECT 'still rewritten';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x = 1) OR (x = 2) OR (x = 3), count() FROM (SELECT number % 4 AS x, number % 3 AS y FROM numbers(12)) GROUP BY x, y = 0) WHERE explain ILIKE '%function_name: in,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x = 1) OR (x = 2) OR (x = 3) OR (x = 4), count() FROM (SELECT number % 6 AS x FROM numbers(12)) GROUP BY ROLLUP(x, x = 1)) WHERE explain ILIKE '%function_name: in,%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x = 1) OR (x = 2) OR (x = 3) OR (x = 4), count() FROM (SELECT number % 6 AS x FROM numbers(12)) GROUP BY ROLLUP(x, x = 1) SETTINGS group_by_use_nulls = 1) WHERE explain ILIKE '%function_name: in,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x != 1) AND (x != 2) AND (x != 3), count() FROM (SELECT number % 4 AS x FROM numbers(8)) GROUP BY x) WHERE explain ILIKE '%function_name: notIn,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (x > 1.5) AND (x < 3.5), count() FROM (SELECT number % 6 AS x FROM numbers(12)) GROUP BY x) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (t1.a = t2.b) AND (t2.b = 4), count() FROM (SELECT number % 7 AS a, number % 3 AS k FROM numbers(21)) AS t1 JOIN (SELECT number % 5 AS b, number % 3 AS k FROM numbers(15)) AS t2 ON t1.k = t2.k GROUP BY t1.a, t2.b) WHERE explain ILIKE '%function_name: equals,%';
