@@ -22,7 +22,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -132,10 +132,13 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
     return {};
 }
 
-void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+std::optional<std::string> AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
-    if (auto path = getCgroupsV2PathContainingFile(filename))
+    out.reset();
+    auto path = getCgroupsV2PathContainingFile(filename);
+    if (path)
         openFileIfExists((path.value() + "/" + filename).c_str(), out);
+    return out ? path : std::nullopt;
 };
 
 #endif
@@ -163,7 +166,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
-    openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -184,7 +187,10 @@ AsynchronousMetrics::AsynchronousMetrics(
             "Will use cgroup reader from '{}' (cgroups version: {})",
             cgroup_path,
             (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
-        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+        if (version == ICgroupsReader::CgroupsVersion::V2)
+            openCgroupv2MemoryFiles(cgroup_path);
+        else
+            cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
     }
     catch (...)
     {
@@ -218,6 +224,33 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
+void AsynchronousMetrics::openCgroupv2MemoryFiles(const std::optional<std::string> & dir) TSA_REQUIRES(data_mutex)
+{
+    cgroupmem_limit_in_bytes.reset();
+    cgroupmem_reader.reset();
+    cgroupmem_dir.reset();
+    if (!dir)
+        return;
+
+    openFileIfExists((*dir + "/memory.max").c_str(), cgroupmem_limit_in_bytes);
+    try
+    {
+        cgroupmem_reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
+    }
+    catch (...)
+    {
+        if (cgroupmem_failed_dir != dir)
+            tryLogCurrentException(log, "cgroups are not available");
+        cgroupmem_failed_dir = dir;
+    }
+
+    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
+    {
+        cgroupmem_dir = dir;
+        cgroupmem_failed_dir.reset();
+    }
+}
+
 void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
@@ -1737,6 +1770,19 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     Float64 max_cpu_cgroups = 0;
+    /// `cpu.max` exists only while the `cpu` controller is enabled in the parent cgroup, so the nearest one can
+    /// move at runtime, and a descriptor to a removed one fails with ENODEV.
+    try
+    {
+        if (getCgroupsV2PathContainingFile("cpu.max") != cgroupcpu_max_dir)
+            cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        cgroupcpu_max.reset();
+        cgroupcpu_max_dir.reset();
+    }
     if (cgroupcpu_max)
     {
         try
@@ -1769,6 +1815,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            cgroupcpu_max.reset();
+            cgroupcpu_max_dir.reset();
         }
     }
     else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
@@ -1993,6 +2041,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// The nearest `memory.max` and `memory.stat` move when the parent toggles the `memory` controller; removed ones give ENODEV.
+    try
+    {
+        if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
+            openCgroupv2MemoryFiles(dir);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (cgroupmem_dir)
+            openCgroupv2MemoryFiles({});
+    }
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
@@ -2044,6 +2104,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (cgroupmem_dir)
+                openCgroupv2MemoryFiles({});
         }
     }
     if (meminfo)

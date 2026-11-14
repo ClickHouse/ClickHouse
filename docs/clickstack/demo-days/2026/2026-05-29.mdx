@@ -55,7 +55,7 @@ Several MCP improvements shipped this week: better event pattern bucketing and s
 <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </Frame>
 
-Elizabet worked on unifying the data visualization color palette across HyperDX and ClickStack themes, in support of Alex's color picker work. The two themes had separate palettes with exception rules for each, which made reasoning about colors unnecessarily complicated. The goal was a single palette that works for both.
+Elizabet worked on unifying the data visualization color palette across ClickStack UI and ClickStack themes, in support of Alex's color picker work. The two themes had separate palettes with exception rules for each, which made reasoning about colors unnecessarily complicated. The goal was a single palette that works for both.
 
 She tested against industry-standard palettes (Tableau, Observable, IBM) using a color vision simulation tool to check contrast and accessibility. The ClickHouse palette performed poorly — the green doesn't have sufficient contrast on a white background. Tableau and Observable both fail on at least one check each; IBM's palette passes everything but only has five colors, which isn't enough. Observable's palette came closest overall, with a small blue tweak, and will now be shared across both themes.
 

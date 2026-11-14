@@ -79,6 +79,10 @@ public:
     /// to know whether the archive must be rebuilt/excluded from hardlinks.
     bool hasSkipIndicesPackedArchive() const;
 
+    /// True iff skp_idx.packed has a newer format version than this server reads. Its skip indices
+    /// are not used and cannot be kept up to date, so a mutated part must not inherit the archive.
+    bool hasUnsupportedSkipIndicesPackedArchive() const;
+
     /// Copy the named virtual files from this storage's skp_idx.packed archive into @target so
     /// the writer can ship a complete archive after also writing fresh recalc'd entries. Used by
     /// mutations to preserve surviving in-archive indices that aren't being recomputed when the
@@ -197,6 +201,10 @@ protected:
     /// so the disk-probe default always misses.
     virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
 
+    /// Reads the index of a skp_idx.packed archive. Returns nullopt for an archive written in a newer
+    /// format version: its skip indices are not used, while the part itself stays readable.
+    static std::optional<PackedFilesIO::Index> readSkipIndicesPackedIndex(ReadBuffer & in, const String & archive_path);
+
     /// Cheap pre-filtered lookup for the file-read overlay: returns the archive reader only when
     /// @name is a "skp_idx_..." substream that the archive actually contains, else nullptr. The
     /// prefix gate keeps unrelated files (checksums.txt, count.txt, columns.txt, ...) from loading
@@ -245,6 +253,8 @@ protected:
     mutable std::mutex skip_indices_packed_mutex;
     mutable bool skip_indices_packed_probed TSA_GUARDED_BY(skip_indices_packed_mutex) = false;
     mutable std::shared_ptr<const PackedFilesReader> skip_indices_packed_reader TSA_GUARDED_BY(skip_indices_packed_mutex);
+    /// The archive exists but has an unsupported format version; the reader then has an empty index.
+    mutable bool skip_indices_packed_unsupported TSA_GUARDED_BY(skip_indices_packed_mutex) = false;
 
     template <typename Op>
     void executeWriteOperation(Op && op)

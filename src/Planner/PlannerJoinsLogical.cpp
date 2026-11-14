@@ -1,4 +1,6 @@
 #include <Planner/PlannerJoinsLogical.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Planner/PlannerJoins.h>
 
@@ -192,7 +194,7 @@ struct JoinCondition
     }
 };
 
-static std::unordered_map<String, const ActionsDAG::Node *>
+static UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>
 buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context)
 {
     JoinActionRef::AddFunction operator_function(JoinConditionOperator::Equals);
@@ -204,7 +206,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     auto & join_operator = builder_context.join_operator;
 
-    std::unordered_map<String, const ActionsDAG::Node *> changed_types;
+    UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> changed_types;
 
     /** When a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides one side of the JOIN, only the
       * preserved side is part of the result, so its key column must keep its own type there instead of
@@ -227,7 +229,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
         auto & using_column_node = using_nodes[i]->as<ColumnNode &>();
         auto & inner_columns_list = using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
-        std::vector<JoinActionRef> args;
+        VectorWithMemoryTracking<JoinActionRef> args;
         const auto & inner_columns = inner_columns_list.getNodes();
         if (inner_columns.size() < 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -359,6 +361,29 @@ static bool hasEquiConditions(const JoinCondition & condition)
     return false;
 }
 
+static bool hasPreJoinCondition(const JoinCondition & condition, const JoinExpressionActions & expression_actions)
+{
+    return std::ranges::any_of(condition.conjuncts, [&](const ActionsDAG::Node * conjunct)
+    {
+        JoinActionRef action(conjunct, expression_actions);
+        return action.fromLeft() || action.fromRight() || action.fromNone();
+    });
+}
+
+/// An equality between an expression over the left table and an expression over the right table, which a join
+/// algorithm matches on. Unlike `hasEquiConditions`, an equality with a constant or within one table does not count.
+static bool hasJoinKeyCondition(const JoinCondition & condition, const JoinExpressionActions & expression_actions)
+{
+    return std::ranges::any_of(condition.conjuncts, [&](const ActionsDAG::Node * conjunct)
+    {
+        JoinActionRef action(conjunct, expression_actions);
+        auto [op, lhs, rhs] = action.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            return false;
+        return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+    });
+}
+
 
 static JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
 {
@@ -381,15 +406,18 @@ static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinConditi
 }
 
 
-static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_expression, JoinOperatorBuildContext & builder_context)
+static std::vector<JoinCondition> buildJoinConditionsGeneral(
+    const QueryTreeNodePtr & join_expression,
+    JoinOperatorBuildContext & builder_context,
+    bool inner_join_keeps_or_as_single_clause,
+    bool & or_kept_as_single_clause_in_inner_join)
 {
     using JoinConditions = std::vector<JoinCondition>;
     if (join_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
     {
         std::vector<JoinCondition> join_conditions;
         buildJoinCondition(join_expression, builder_context, join_conditions.emplace_back());
-        addConditionsToJoinOperator(builder_context, std::move(join_conditions));
-        return;
+        return join_conditions;
     }
 
     std::unordered_map<const IQueryTreeNode *, JoinConditions> built_clauses;
@@ -443,7 +471,31 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
                 // TODO(antaljanosbenjamin/vdimir): Analyze the expressions first, so join clauses are not built unnecessarily.
                 size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
-                if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
+                bool plan_as_single_clause = with_key_expression != 0 && with_key_expression < result.size();
+                /// Without key expressions a clause narrows the candidate pairs only by the conditions evaluated before
+                /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
+                /// An ALL INNER join is not split: the `OR` is evaluated after matching on the keys of the enclosing `AND`, while splitting hides these keys inside one `or` predicate from join reordering.
+                /// An outer join is split if every clause has a condition evaluated before matching, because a single clause with a condition on both tables requires the `hash` or `grace_hash` algorithm.
+                /// `hasEquiConditions` also counts an equality with a constant, such as `t1.a = 1 OR t2.b = 2`, which is not a join key, so the rules below look for a join key between the two tables.
+                if (!plan_as_single_clause && builder_context.join_operator.strictness == JoinStrictness::All
+                    && std::ranges::none_of(result, [&](const JoinCondition & clause)
+                    {
+                        return hasJoinKeyCondition(clause, builder_context.expression_actions);
+                    }))
+                {
+                    if (inner_join_keeps_or_as_single_clause && builder_context.join_operator.kind == JoinKind::Inner)
+                    {
+                        plan_as_single_clause = true;
+                        or_kept_as_single_clause_in_inner_join = true;
+                    }
+                    else
+                        plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
+                        {
+                            return hasPreJoinCondition(clause, builder_context.expression_actions);
+                        });
+                }
+
+                if (result.size() > 1 && plan_as_single_clause)
                 {
                     result.clear();
                     buildJoinCondition(node, builder_context, result.emplace_back());
@@ -478,7 +530,22 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
         }
     }
 
-    addConditionsToJoinOperator(builder_context, std::move(built_clauses.at(join_expression.get())));
+    return std::move(built_clauses.at(join_expression.get()));
+}
+
+static void buildDisjunctiveJoinConditionsGeneral(
+    const QueryTreeNodePtr & join_expression, JoinOperatorBuildContext & builder_context, const std::vector<JoinAlgorithm> & join_algorithms)
+{
+    bool or_kept_as_single_clause_in_inner_join = false;
+    auto join_conditions = buildJoinConditionsGeneral(
+        join_expression, builder_context, /* inner_join_keeps_or_as_single_clause= */ true, or_kept_as_single_clause_in_inner_join);
+    /// Within one of several clauses such an `OR` is evaluated during matching, which only `hash` and `grace_hash` support.
+    if (join_conditions.size() > 1 && or_kept_as_single_clause_in_inner_join
+        && !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        && !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH))
+        join_conditions = buildJoinConditionsGeneral(
+            join_expression, builder_context, /* inner_join_keeps_or_as_single_clause= */ false, or_kept_as_single_clause_in_inner_join);
+    addConditionsToJoinOperator(builder_context, std::move(join_conditions));
 }
 
 String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases)
@@ -532,7 +599,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
     const auto & join_algorithms = query_settings[Setting::join_algorithm];
 
-    std::unordered_map<String, const ActionsDAG::Node *> changed_types;
+    UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> changed_types;
     /// CROSS/PASTE JOIN: doesn't have expression
     if (join_expression_node == nullptr)
     {
@@ -556,7 +623,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO)) && query_settings[Setting::allow_general_join_planning];
 
         if (use_general_join_planning)
-            buildDisjunctiveJoinConditionsGeneral(join_expression_node, build_context);
+            buildDisjunctiveJoinConditionsGeneral(join_expression_node, build_context, join_algorithms);
         else
             buildDisjunctiveJoinConditions(join_expression_node, build_context);
     }
@@ -617,7 +684,10 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
 
     PreparedJoinStorage result;
     const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-    result.column_mapping = table_expression_data.getColumnIdentifierToColumnName();
+    /// `TableExpressionData` owns this mapping as a plain `std::unordered_map`, so copy the entries
+    /// across allocators. The assignment copied them anyway.
+    const auto & column_identifier_to_column_name = table_expression_data.getColumnIdentifierToColumnName();
+    result.column_mapping.insert(column_identifier_to_column_name.begin(), column_identifier_to_column_name.end());
 
     result.storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
     if (result.storage_join)

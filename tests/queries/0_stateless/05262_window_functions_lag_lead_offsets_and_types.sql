@@ -9,9 +9,13 @@ SELECT lead(number, '1') OVER (ORDER BY number) FROM numbers(3); -- { serverErro
 SELECT lag(number, -1) OVER (ORDER BY number) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT lead(number, -1) OVER (ORDER BY number) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 
-SELECT '-- lag and lead do not accept an explicit frame; lagInFrame and leadInFrame do';
-SELECT lag(number) OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT lead(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
+SELECT '-- lag and lead read the whole partition whatever the frame; lagInFrame and leadInFrame read the frame';
+SELECT number,
+    lag(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS lag_whole_partition,
+    lead(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS lead_whole_partition,
+    lagInFrame(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS lag_in_frame,
+    leadInFrame(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS lead_in_frame
+FROM numbers(3) ORDER BY number;
 SELECT number,
     lagInFrame(number) OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS lag_in_frame,
     leadInFrame(number) OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS lead_in_frame

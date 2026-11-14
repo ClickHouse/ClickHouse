@@ -1,0 +1,7 @@
+-- the rows written by a materialized view on the remote server are charged
+2
+4
+-- the rows read through remote by a materialized view on the remote server are charged once
+1	10
+2	20
+108	1

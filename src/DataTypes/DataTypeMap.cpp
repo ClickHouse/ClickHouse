@@ -1,4 +1,5 @@
 #include <Common/StringUtils.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -136,7 +137,7 @@ SerializationPtr DataTypeMap::doGetSerialization(const SerializationInfoSettings
     /// Instead, reuse already created serializations for keys and values.
     auto key_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(key_serialization, "keys", SubstreamType::TupleElement));
     auto value_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(value_serialization, "values", SubstreamType::TupleElement));
-    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
+    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, DataTypes{key_type, value_type}, true));
     return SerializationMap::create(key_serialization, value_serialization, nested_serialization, settings.map_serialization_version);
 }
 
@@ -397,6 +398,8 @@ When a data part is written with `with_buckets` serialization:
 
 When a query reads a specific key (`m['key']`), the optimizer rewrites the expression to a key subcolumn (`m.key_<serialized_key>`).
 The serialization layer computes which bucket the requested key belongs to and reads only that single bucket from disk.
+This rewrite happens only for tables that use `with_buckets` serialization: with `basic` serialization reading a key subcolumn
+reads the whole `Map` anyway.
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
 
