@@ -9,7 +9,6 @@ keywords: ['MongoDB', 'logs', 'OTEL', 'ClickHouse Observability', 'database moni
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Collect MongoDB server logs with the OpenTelemetry `filelog` receiver and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without a MongoDB deployment.
@@ -29,7 +28,15 @@ Collect MongoDB server logs with the OpenTelemetry `filelog` receiver and send t
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 For the OTLP exporter examples below, set these variables in the terminal where you will run the collector:
 
@@ -298,7 +305,15 @@ Leave the terminal open while verifying ingestion. Stop with **Ctrl+C** when fin
 
 Open **Search**, select **Logs**, filter for `ServiceName:mongodb-demo`, and select **Last 2 days**.
 
-<Image img="/images/clickstack/observability-mongodb-demo-logs.png" alt="MongoDB demo logs with parsed messages and severity in ClickHouse Observability Search"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![MongoDB demo logs with parsed messages and severity in ClickHouse Observability Search](/images/clickstack/observability-mongodb-demo-logs.png)
+
+</Frame>
+
+</div>
 
 
 </Step>
@@ -314,14 +329,30 @@ Open **Search**, select **Logs**, filter for `ServiceName:mongodb-demo`, and sel
 2. Upload `mongodb-logs-dashboard.json`.
 3. Map the charts to your **Logs** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
 
 For the sample, optionally filter for `ServiceName:mongodb-demo` and select **Last 2 days**. For your own logs, use `ServiceName:mongodb-service` and a time range covering your records.
 
-<Image img="/images/clickstack/observability-mongodb-logs-dashboard.png" alt="MongoDB logs dashboard in ClickHouse Observability showing log volume, severity, components, slow queries, and connection events"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![MongoDB logs dashboard in ClickHouse Observability showing log volume, severity, components, slow queries, and connection events](/images/clickstack/observability-mongodb-logs-dashboard.png)
+
+</Frame>
+
+</div>
 
 
 </Step>

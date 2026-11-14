@@ -46,6 +46,12 @@ La fusión durante la lectura no está implementada, por lo que **no se pueden l
 archivos de datos de la instantánea, que aún contiene versiones de filas sustituidas por operaciones posteriores de inserción o actualización. Por tanto, leer una tabla cuyo esquema
 declara `primary-key` genera una excepción.
 
+Los vectores de eliminación no se aplican, por lo que **no se pueden leer instantáneas con vectores de eliminación**: el resultado seguiría
+conteniendo las filas eliminadas por sentencias `DELETE` y `UPDATE` posteriores. Por tanto, leer una instantánea cuyo manifiesto de índices incluye
+vectores de eliminación genera una excepción, incluso después de desactivar `deletion-vectors.enabled`.
+Una compactación completa en Paimon (`compact_strategy => 'full'`) aplica los vectores de eliminación, y las instantáneas creadas a partir
+de ese momento pueden volver a leerse.
+
 ## Definir una colección con nombre {#defining-a-named-collection}
 
 A continuación se muestra un ejemplo de cómo configurar una colección con nombre para almacenar la URL y las credenciales:
