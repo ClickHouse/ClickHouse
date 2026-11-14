@@ -48,5 +48,12 @@ INSERT INTO t_coalescing SELECT number, 2, if(number % 2 = 1, number::Variant(Da
 SELECT 'coalescing', variantType(v), count(), sum(s), countIf(toString(v) = if(k % 2 = 1, toString(k), toString(toDate(k))))
 FROM t_coalescing FINAL GROUP BY ALL ORDER BY ALL;
 
+-- A nested map with a composite key is merged by `mergeMap`; its `Float64` values are kept as a row of the source column.
+CREATE TABLE t_map (k UInt64, FirstMap Nested(k1 UInt32, k2ID Int8, s Float64)) ENGINE = SummingMergeTree ORDER BY k;
+INSERT INTO t_map VALUES (1, [1], [1], [100]), (2, [1], [1], [1]);
+INSERT INTO t_map VALUES (0, [1], [1], [1000]), (2, [1], [1], [2]), (2, [2], [1], [4]);
+SELECT 'map', k, FirstMap.k1, FirstMap.k2ID, FirstMap.s FROM t_map FINAL ORDER BY k;
+
 DROP TABLE t_summing;
 DROP TABLE t_coalescing;
+DROP TABLE t_map;

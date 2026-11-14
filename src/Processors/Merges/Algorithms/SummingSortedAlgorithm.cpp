@@ -143,7 +143,8 @@ static bool isColumnOrAncestorInNames(
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
-                     Row & row, Columns & row_columns, const ColumnRawPtrs & raw_columns, size_t row_number)
+                     Row & row, Columns & row_columns, VectorWithMemoryTracking<size_t> & row_column_rows,
+                     const ColumnRawPtrs & raw_columns, size_t row_number)
 {
     /// Strongly non-optimal.
     Row & left = row;
@@ -152,14 +153,14 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     for (size_t col_num : desc.key_col_nums)
     {
         if (row_columns[col_num])
-            left[col_num] = (*row_columns[col_num])[0];
+            left[col_num] = (*row_columns[col_num])[row_column_rows[col_num]];
         right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
     }
 
     for (size_t col_num : desc.val_col_nums)
     {
         if (row_columns[col_num])
-            left[col_num] = (*row_columns[col_num])[0];
+            left[col_num] = (*row_columns[col_num])[row_column_rows[col_num]];
         right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
     }
 
@@ -240,6 +241,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
             new_column->reserve(1);
             new_column->insert(value);
             row_columns[col_num] = std::move(new_column);
+            row_column_rows[col_num] = 0;
         }
     };
 
@@ -655,6 +657,7 @@ static void postprocessChunk(
 static void setRow(
     Row & row,
     Columns & row_columns,
+    VectorWithMemoryTracking<size_t> & row_column_rows,
     const ColumnRawPtrs & raw_columns,
     size_t row_num,
     const Names & column_names,
@@ -679,7 +682,7 @@ static void setRow(
         {
             if (raw_columns[i]->hasDynamicStructure() || columns_need_exact_copy[i])
             {
-                /// Store a column-level copy to preserve exact bit patterns.
+                /// Keep the value in a column, not in a `Field`, to preserve exact bit patterns.
                 /// - For `Dynamic`/`JSON` types: `Field` roundtrip doesn't work correctly.
                 /// - For any type that contains `Float32`/`Float64` (direct, or wrapped in
                 ///   `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`): the `Field` roundtrip
@@ -688,14 +691,23 @@ static void setRow(
                 ///   When the sort key is a hash of such a column (e.g. `ORDER BY gccMurmurHash(c1)`),
                 ///   this silently changes the hash value and breaks sort order during merges.
                 /// - For any type that contains `Variant`: a `Field` loses the alternative.
-                auto column = raw_columns[i]->cloneEmpty();
-                column->reserve(1);
-                column->insertFrom(*raw_columns[i], row_num);
-                row_columns[i] = std::move(column);
+                if (raw_columns[i]->hasDynamicStructure())
+                {
+                    /// The structure `insertFrom` gives a `Dynamic`/`JSON` column depends on the whole source column, so copy the row.
+                    auto column = raw_columns[i]->cloneEmpty();
+                    column->reserve(1);
+                    column->insertFrom(*raw_columns[i], row_num);
+                    row_columns[i] = std::move(column);
+                    row_column_rows[i] = 0;
+                }
+                else
+                {
+                    row_columns[i] = raw_columns[i]->getPtr();
+                    row_column_rows[i] = row_num;
 
-                /// Also store the Field representation for mergeMap() backward compatibility.
-                if (!raw_columns[i]->hasDynamicStructure())
+                    /// Also store the Field representation for mergeMap() backward compatibility.
                     raw_columns[i]->get(row_num, row[i]);
+                }
             }
             else
             {
@@ -725,6 +737,7 @@ static void setRow(
 SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_, ColumnsDefinition & def_)
     : MergedData(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , def(def_), current_row(def.column_names.size()), current_row_columns(def.column_names.size())
+    , current_row_column_rows(def.column_names.size())
 {
 }
 
@@ -781,6 +794,7 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
     setRow(
         current_row,
         current_row_columns,
+        current_row_column_rows,
         raw_columns,
         row,
         def.column_names,
@@ -877,7 +891,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
     for (auto column_number : def.column_numbers_not_to_aggregate)
     {
         if (current_row_columns[column_number])
-            columns[next_column]->insertFrom(*current_row_columns[column_number], 0);
+            columns[next_column]->insertFrom(*current_row_columns[column_number], current_row_column_rows[column_number]);
         else
             columns[next_column]->insert(current_row[column_number]);
         ++next_column;
@@ -892,7 +906,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRow(ColumnRawPtrs & raw_colum
 {
     // Merge maps only for same rows
     for (const auto & desc : def.maps_to_sum)
-        if (mergeMap(desc, current_row, current_row_columns, raw_columns, row))
+        if (mergeMap(desc, current_row, current_row_columns, current_row_column_rows, raw_columns, row))
             current_row_is_zero = false;
 
     addRowImpl(raw_columns, row);
