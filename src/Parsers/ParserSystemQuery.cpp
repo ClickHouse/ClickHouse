@@ -1423,7 +1423,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM RESTART DISK {#restart-disk}
 
-Introduced in: v21.7.0
+Introduced in: v21.6.0
 
 Reloads the metadata of the disk `disk_name`. For a `MergeTree` table whose disks are all read-only, it also reloads the list of the table's data parts, so that the parts written to the same storage by another writer become visible without re-attaching the table. The MergeTree setting [`refresh_parts_interval`](/reference/settings/merge-tree-settings/refresh#refresh_parts_interval) does the same periodically.
 
@@ -1661,7 +1661,7 @@ Requires the `SYSTEM RECONNECT ZOOKEEPER` privilege.
 
 Introduced in: v26.2.0
 
-Resets the worker that executes [distributed DDL](/reference/statements/distributed-ddl) (`ON CLUSTER`) queries on this server to its state at server startup: it forgets the queue entries it has processed or skipped and reads the DDL queue in ZooKeeper again. The entries already executed on this server are not executed again.
+Requests a reset of the worker that executes [distributed DDL](/reference/statements/distributed-ddl) (`ON CLUSTER`) queries on this server to its state at server startup: it forgets the queue entries it has processed or skipped and reads the DDL queue in ZooKeeper again. The statement returns at once; the worker resets in the background, before it processes the queue again. The entries already executed on this server are not executed again.
 
 ```sql
 SYSTEM RESET DDL WORKER [ON CLUSTER cluster_name]
@@ -1689,7 +1689,7 @@ Makes the `jemalloc` memory allocator return the unused memory it keeps to the o
 SYSTEM JEMALLOC PURGE [ON CLUSTER cluster_name]
 ```
 
-Requires the `SYSTEM JEMALLOC` privilege, like `SYSTEM JEMALLOC FLUSH PROFILE`. In a build without `jemalloc` both statements fail with `SUPPORT_IS_DISABLED`.
+Requires the `SYSTEM JEMALLOC` privilege. In a build without `jemalloc` it fails with `SUPPORT_IS_DISABLED`.
 
 ## SYSTEM JEMALLOC FLUSH PROFILE {#jemalloc-flush-profile}
 
@@ -1700,6 +1700,8 @@ Writes the current `jemalloc` heap profile to a file in `/tmp` on the server and
 ```sql
 SYSTEM JEMALLOC FLUSH PROFILE [ON CLUSTER cluster_name]
 ```
+
+Requires the `SYSTEM JEMALLOC` privilege. In a build without `jemalloc` it fails with `SUPPORT_IS_DISABLED`.
 
 **Example**
 
@@ -1911,7 +1913,7 @@ Introduced in: v26.5.0
 
 <ExperimentalBadge/>
 
-Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another.
+Schedules a merge of the given data parts of the table. The merge runs in the background. A part that an earlier scheduled merge will produce can be named too, so several merges can be scheduled one after another. The parts must be adjacent parts of one partition, listed in their order. A merge whose parts are not is never performed, and the merges scheduled after it wait for it.
 
 <Note>
 This is an experimental feature. `SYSTEM SCHEDULE MERGE` and `SYSTEM SYNC MERGES` work only for a table of the MergeTree family whose experimental MergeTree setting [`merge_selector_algorithm`](/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm) is `'Manual'`, and fail with `BAD_ARGUMENTS` for other tables. The background merges of such a table merge only the scheduled parts (`OPTIMIZE TABLE ... FINAL` still merges all parts).
@@ -2075,6 +2077,8 @@ Removes from ClickHouse Keeper all the locks of the snapshot `snapshot_id`, a li
 ```sql
 SYSTEM UNLOCK SNAPSHOT 'snapshot_id' [FROM backup_destination]
 ```
+
+Requires the `SYSTEM UNLOCK SNAPSHOT` privilege.
 
 ### SYSTEM WAIT LOADING PARTS {#wait-loading-parts}
 
