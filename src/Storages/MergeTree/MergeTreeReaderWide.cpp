@@ -386,10 +386,16 @@ void MergeTreeReaderWide::setSelectedRows(const PaddedPODArray<UInt64> & rows)
     /// The layouts of the columns that can be read only for the selected rows. These checks read nothing from disk.
     std::vector<std::optional<OneRowPerBlockLayout>> layouts(columns_to_read.size());
     NameSet columns_with_placeholders;
-    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    auto requested_column = getColumns().begin();
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
     {
         const auto & column = columns_to_read[pos];
         if (column.isSubcolumn() || isColumnSkipped(pos) || isColumnAbsentFromPart(pos))
+            continue;
+
+        /// A column with another type in the part than requested, during a pending `MODIFY COLUMN`, is converted
+        /// before the filter, and the conversion could fail on the placeholder values.
+        if (!column.type->equals(*requested_column->type))
             continue;
 
         layouts[pos] = tryGetOneRowPerBlockLayout(*part, column, metadata);

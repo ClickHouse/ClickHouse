@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_readded;
 DROP TABLE IF EXISTS tab_renamed;
 DROP TABLE IF EXISTS tab_prefetch;
+DROP TABLE IF EXISTS tab_conversion;
 
 -- 64 `Float32` elements are 256 bytes, so every row is one block.
 CREATE TABLE tab
@@ -151,15 +152,42 @@ SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_m
     filesystem_prefetch_step_marks = 1, filesystem_prefetches_limit = 2, merge_tree_min_rows_for_concurrent_read = 1,
     merge_tree_min_bytes_for_concurrent_read = 0, use_reader_executor = 1;
 
+-- A column with a pending conversion to another type is converted before the candidates are filtered, and the
+-- conversion would fail on the placeholder values, so it is read as usual.
+CREATE TABLE tab_conversion
+(
+    id UInt32,
+    vec Array(Float32) CODEC(NONE),
+    payload Array(Float32) CODEC(NONE) SETTINGS (min_compress_block_size = 256, max_compress_block_size = 256),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 64, 'b1', 64, 128)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 128;
+
+SYSTEM STOP MERGES tab_conversion;
+INSERT INTO tab_conversion SELECT id, vec, arrayMap(j -> toFloat32(id + j), range(64)) FROM tab;
+ALTER TABLE tab_conversion MODIFY COLUMN payload QBit(Float32, 64) SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'pending conversion, setting on';
+WITH (SELECT vec FROM tab_conversion WHERE id = 123) AS ref
+SELECT id, toString(payload) FROM tab_conversion ORDER BY cosineDistance(vec, ref) LIMIT 3
+SETTINGS merge_tree_use_one_row_per_block_layout = 1, query_plan_optimize_lazy_materialization = 0, log_comment = '05618_conversion_on';
+
+SELECT 'pending conversion, setting off';
+WITH (SELECT vec FROM tab_conversion WHERE id = 123) AS ref
+SELECT id, toString(payload) FROM tab_conversion ORDER BY cosineDistance(vec, ref) LIMIT 3
+SETTINGS merge_tree_use_one_row_per_block_layout = 0, query_plan_optimize_lazy_materialization = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Only the candidates of the index are read this way, and none with the setting off.
 SELECT log_comment, ProfileEvents['MergeTreeOneRowPerBlockReadRows'] > 0 AS read_by_blocks
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05618_on', '05618_off', '05618_default_on', '05618_readded_on', '05618_renamed_on', '05618_other_default_on', '05618_conversion_on')
 ORDER BY log_comment;
 
 DROP TABLE tab;
 DROP TABLE tab_readded;
 DROP TABLE tab_renamed;
 DROP TABLE tab_prefetch;
+DROP TABLE tab_conversion;
