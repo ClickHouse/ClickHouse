@@ -31,6 +31,8 @@ public:
         bool use_columns_cache = false;
         bool do_not_steal_tasks = false;
         bool use_const_size_tasks_for_remote_reading = false;
+        /// Upper bound for `min_marks_per_task`, 0 means no bound.
+        size_t max_min_marks_per_task = 0;
 
         // Not the same as the similar field in `ParallelReadingExtension`. Accounts for `max_parallel_replicas`.
         const size_t total_query_nodes{};

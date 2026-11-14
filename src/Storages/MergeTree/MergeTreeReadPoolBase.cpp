@@ -405,6 +405,9 @@ calculateMinMarksPerTask(
         }
     }
 
+    if (pool_settings.max_min_marks_per_task)
+        min_marks_per_task = std::min(min_marks_per_task, pool_settings.max_min_marks_per_task);
+
     LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
     return {min_marks_per_task, avg_mark_bytes};
 }
