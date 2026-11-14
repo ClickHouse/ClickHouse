@@ -94,6 +94,9 @@ struct MaterializedCTE
     /// parallel to `is_materialization_planned`, but for the optimize
     /// stage rather than the claim/move stage.
     std::atomic_bool is_plan_optimized{false};
+    /// `optimize_plan` for `plan`, whatever the plan that materializes the CTE uses: `MutationsInterpreter`
+    /// keeps the shape of its own plan, but a CTE that its set subqueries read is an ordinary read.
+    std::optional<bool> optimize_plan_on_build = {};
     /// True once `MaterializingCTETransform::generate` has finished writing
     /// to `storage` and called `MemorySink::onFinish`. Set with
     /// `memory_order_release` by the writer; readers in

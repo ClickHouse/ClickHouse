@@ -50,11 +50,13 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -2181,15 +2183,13 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 ? actions_chain.getLastStepAvailableOutputColumns()
                 : input_columns;
 
-            /// Build a combined expression list for all update expressions.
-            auto update_expr_list = make_intrusive<ASTExpressionList>();
-            for (const auto & kv : stage.column_to_updated)
-                update_expr_list->children.push_back(kv.second);
-
-            auto update_tree = buildQueryTree(update_expr_list, execution_context);
-            QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
-            update_analyzer.resolve(update_tree, table_node, execution_context);
-            collectSetsAndSourceColumns(update_tree, planner_context, true);
+            /// Reuse the resolved expressions whose sets were collected above. Resolving the ASTs
+            /// again produces unaliased subqueries with different set keys, registering and building
+            /// a second copy of each set. The update expressions follow the filters in `expression`.
+            const auto & expression_nodes = expression->getChildren();
+            auto updates_begin = expression_nodes.begin() + num_filters;
+            auto update_tree = std::make_shared<ListNode>(QueryTreeNodes(
+                updates_begin, updates_begin + stage.column_to_updated.size()));
 
             auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
             update_actions->dag = ActionsDAG(available_columns_for_step);
@@ -2388,6 +2388,16 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         /// The set source is kept aside, so its contexts must follow this plan's distributed-plan decision.
         query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        /// The mutation plan keeps the shape of its stages with `optimize_plan = false`. A set subquery is an
+        /// ordinary read and needs the full optimization, e.g. to move its filter to `PREWHERE`. So do the
+        /// materialized CTEs it reads, which the mutation plan materializes.
+        const bool optimize_plan = QueryPlanOptimizationSettings(context_).optimize_plan;
+        subquery->setOptimizePlanOnBuild(optimize_plan);
+        for (const auto & level : materialized_ctes_per_subquery.back())
+            for (const auto & node : level)
+                if (const auto * table_node = node->as<TableNode>())
+                    if (auto cte = table_node->getMaterializedCTE())
+                        cte->optimize_plan_on_build = optimize_plan;
     }
 
     const auto & settings = context_->getSettingsRef();

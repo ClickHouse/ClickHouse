@@ -9,14 +9,27 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/misc.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
+#include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageMerge.h>
+
+#include <unordered_set>
 
 
 namespace DB::ErrorCodes
@@ -148,6 +161,210 @@ static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
     return false;
 }
 
+/// What the source of the set created by the conversion needs before it can run on its own.
+/// Index analysis may build that set synchronously, before the outer plan materializes its CTEs
+/// and builds its sets, so the source has to declare these and build them first.
+struct SetSourcePrerequisites
+{
+    /// Unbuilt materialized CTEs read anywhere below the source, each after the CTEs its own plan reads.
+    std::vector<MaterializedCTEPtr> ctes;
+    std::unordered_set<const MaterializedCTE *> seen_ctes;
+    /// Unbuilt sets that the right side or its keys read and do not own; they are built for the outer plan.
+    PreparedSets::Subqueries sets;
+    std::unordered_set<const FutureSetFromSubquery *> seen_sets;
+    /// A dependency that the source cannot build itself: a `GLOBAL IN` set, a CTE that another plan has
+    /// claimed but not run yet, a set whose source has moved. The new set could then only be built by
+    /// the deferred build, but some readers evaluate the new filter while planning (`ReadFromMerge`
+    /// selecting tables, `system.tables` filtering databases), so the join has to stay.
+    bool unsatisfiable = false;
+
+    void addCTE(MaterializedCTEPtr cte)
+    {
+        if (!cte || cte->isBuilt() || !seen_ctes.insert(cte.get()).second)
+            return;
+
+        /// Another plan has claimed the CTE but not run it yet: a synchronous build here could
+        /// neither materialize it nor wait for it.
+        if (cte->is_materialization_planned.load())
+        {
+            unsatisfiable = true;
+            return;
+        }
+
+        /// A CTE can read other CTEs. Its plan relies on an outer gate for them, the same way as
+        /// the source does, so collect them first: `addTo` puts their steps outside of this one.
+        if (cte->plan && cte->plan->getRootNode())
+            collectFromPlan(*cte->plan->getRootNode());
+
+        ctes.push_back(std::move(cte));
+    }
+
+    /// Collect the CTEs read below `root`, following set sources held outside the node tree.
+    void collectFromPlan(const QueryPlan::Node & root)
+    {
+        std::vector<const QueryPlan::Node *> stack{&root};
+        std::unordered_set<const QueryPlan::Node *> visited;
+        const auto add_plan = [&](const QueryPlan * plan)
+        {
+            if (plan && plan->getRootNode())
+                stack.push_back(plan->getRootNode());
+        };
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+
+            if (!visited.insert(node).second)
+                continue;
+
+            /// `ReadFromMerge` creates its child plans when asked for them, so read the CTEs from
+            /// the query tree it plans them from; its child plans leave these CTEs to the outer gate.
+            if (const auto * merge = typeid_cast<const ReadFromMerge *>(node->step.get()))
+            {
+                for (const auto & cte : collectMaterializedCTEsFromQueryTree(merge->getQueryInfo().query_tree))
+                    addCTE(cte);
+            }
+            else if (const auto * read = typeid_cast<const ReadFromMemoryStorageStep *>(node->step.get()))
+            {
+                if (const auto * storage = typeid_cast<const StorageMemory *>(read->getStorage().get()))
+                    addCTE(storage->getMaterializedCTE());
+            }
+
+            /// A deferred set can itself read a CTE. Its source is held outside the node tree;
+            /// a set that is already built no longer needs that source or its dependencies.
+            if (const auto * creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+            {
+                for (const auto & set : creating_sets->getSets())
+                    if (!set->get())
+                        add_plan(set->getQueryPlan());
+            }
+            else if (const auto * local = typeid_cast<const ReadFromLocalParallelReplicaStep *>(node->step.get()))
+                add_plan(local->getQueryPlan());
+
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+        }
+    }
+
+    /// Sets owned by a `DelayedCreatingSetsStep` inside the source are built by the source itself.
+    std::unordered_set<const FutureSet *> owned_sets;
+
+    /// Collect the unbuilt sets that `dag` reads and the source does not own: an `IN` subquery in an
+    /// `ON` key, or an outer filter pushed into the right side. They are built for the outer plan.
+    void collectFromDAG(const ActionsDAG & dag)
+    {
+        /// A `GLOBAL IN` set gets its external table attached by `ReadFromRemote` later, so it must not
+        /// be built in place (see `VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn`).
+        std::unordered_set<const ActionsDAG::Node *> global_in_sets;
+        for (const auto & node : dag.getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+                && functionIsGlobalInOperator(node.function_base->getName()) && node.children.size() >= 2)
+                global_in_sets.insert(node.children[1]);
+
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+                continue;
+
+            const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            if (!column_set)
+                continue;
+
+            auto future_set = column_set->getData();
+            if (!future_set || future_set->get() || owned_sets.contains(future_set.get()))
+                continue;
+
+            auto subquery_set = std::dynamic_pointer_cast<FutureSetFromSubquery>(future_set);
+            /// Without a source plan the set is built elsewhere and cannot be built from here.
+            if (global_in_sets.contains(&node) || !subquery_set || !subquery_set->getQueryPlan())
+            {
+                unsatisfiable = true;
+                continue;
+            }
+
+            if (seen_sets.insert(subquery_set.get()).second)
+            {
+                collectFromPlan(*subquery_set->getQueryPlan()->getRootNode());
+                sets.push_back(std::move(subquery_set));
+            }
+        }
+    }
+
+    /// Collect the unbuilt sets read by the steps below `root`. Sets reach a plan only through the
+    /// expressions of these steps; the sources of nested sets are plans of their own, which own theirs.
+    /// These are all the steps that hold an `ActionsDAG` at this point: the physical join steps that
+    /// carry expressions too are made by `optimizeJoinLogical` in the second pass, after this one.
+    void collectFromSteps(const QueryPlan::Node & root)
+    {
+        std::vector<const ActionsDAG *> dags;
+        std::vector<const QueryPlan::Node *> stack{&root};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            const auto * step = node->step.get();
+
+            if (const auto * creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(step))
+                for (const auto & set : creating_sets->getSets())
+                    owned_sets.insert(set.get());
+            else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+                dags.push_back(&expression->getExpression());
+            else if (const auto * filter = typeid_cast<const FilterStep *>(step))
+                dags.push_back(&filter->getExpression());
+            else if (const auto * join = typeid_cast<const JoinStepLogical *>(step))
+                dags.push_back(&join->getActionsDAG());
+            else if (const auto * having = typeid_cast<const TotalsHavingStep *>(step))
+                dags.push_back(having->getActions());
+            else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
+                dags.push_back(array_join->getElementFilter() ? &*array_join->getElementFilter() : nullptr);
+            else if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(step))
+                dags.push_back(&limit_range->getConditions());
+            else if (const auto * object_filter = typeid_cast<const ObjectFilterStep *>(step))
+                dags.push_back(&object_filter->getExpression());
+            else if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(step))
+            {
+                dags.push_back(source->getFilterActionsDAG().get());
+                if (const auto & prewhere = source->getPrewhereInfo())
+                    dags.push_back(&prewhere->prewhere_actions);
+                if (const auto & row_level = source->getRowLevelFilter())
+                    dags.push_back(&row_level->actions);
+            }
+
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+        }
+
+        /// After the walk, when all the sets that the source owns are known.
+        for (const auto * dag : dags)
+            if (dag)
+                collectFromDAG(*dag);
+    }
+
+    /// Declare the prerequisites on the extracted source. Both steps stay only on a synchronous
+    /// build of the new set: `makePlansForSets` strips them on the deferred path, where the outer
+    /// plan's gates own the CTE and set writers.
+    void addTo(QueryPlan & source, const SizeLimits & network_transfer_limits)
+    {
+        if (!sets.empty())
+        {
+            auto step = std::make_unique<DelayedCreatingSetsStep>(
+                source.getCurrentHeader(), std::move(sets), network_transfer_limits, nullptr);
+            step->setInplaceBuildOnly();
+            step->setStepDescription("Build sets read by JOIN right side");
+            source.addStep(std::move(step));
+        }
+
+        /// One step per CTE, a dependency outside of the CTEs that read it, so that its gate also
+        /// holds back their writers. This is the order in which `Planner` stacks the levels.
+        for (auto it = ctes.rbegin(); it != ctes.rend(); ++it)
+        {
+            auto step = std::make_unique<DelayedMaterializingCTEsStep>(source.getCurrentHeader(), VectorWithMemoryTracking<MaterializedCTEPtr>{*it});
+            step->setStepDescription("Materialize CTE read by JOIN right side");
+            source.addStep(std::move(step));
+        }
+        ctes.clear();
+    }
+};
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -238,6 +455,17 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
 
+    /// The right side and keys move into the source of the new set, which index analysis may build
+    /// synchronously, before the outer plan materializes the CTEs and builds the sets they read.
+    /// Unlike a set planned by `Planner`, this source carries no such prerequisites yet.
+    SetSourcePrerequisites prerequisites;
+    const auto & right_root = *parent_node->children.at(1);
+    prerequisites.collectFromPlan(right_root);
+    prerequisites.collectFromSteps(right_root);
+    prerequisites.collectFromDAG(right_pre_join_actions);
+    if (prerequisites.unsatisfiable)
+        return 0;
+
     /// Decline the conversion if the rewritten plan could not resolve some
     /// input of `join_output_actions`: `mergeInplace` with
     /// `remove_dangling_inputs = true` would drop the unmatched INPUT (e.g.
@@ -285,10 +513,13 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     set_settings.transform_null_in = false;
     set_settings.size_limits = settings.network_transfer_limits;
 
+    auto in_source = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes));
+    prerequisites.addTo(*in_source, settings.network_transfer_limits);
+
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
-        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
+        std::move(in_source),
         std::move(set_settings));
 
     {

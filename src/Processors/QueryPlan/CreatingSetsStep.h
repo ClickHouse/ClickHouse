@@ -88,8 +88,17 @@ public:
     /// then claim the same single-use set source.
     QueryPlanStepPtr clone() const override
     {
-        return std::make_unique<DelayedCreatingSetsStep>(getInputHeaders().front(), subqueries, network_transfer_limits, prepared_sets_cache);
+        auto step = std::make_unique<DelayedCreatingSetsStep>(getInputHeaders().front(), subqueries, network_transfer_limits, prepared_sets_cache);
+        step->inplace_build_only = inplace_build_only;
+        return step;
     }
+
+    /// The step declares sets that a set source reads but does not own: they are built for an outer
+    /// plan. A synchronous build of that source (`buildSetInplace` / `buildOrderedSetInplace`) runs
+    /// before the outer plan, so it must build them first. A deferred build runs under the outer
+    /// plan's gate, which owns the writers, so `makePlansForSets` strips such a step.
+    void setInplaceBuildOnly() { inplace_build_only = true; }
+    bool isInplaceBuildOnly() const { return inplace_build_only; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
@@ -112,6 +121,7 @@ private:
     PreparedSets::Subqueries subqueries;
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
+    bool inplace_build_only = false;
 };
 
 /// Visit every `FutureSetFromSubquery` reachable from `root` (which may be null). Sets do not live

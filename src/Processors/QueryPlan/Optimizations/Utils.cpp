@@ -627,5 +627,39 @@ bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     return true;
 }
 
+
+void removeSingleChildStepsIf(QueryPlan & plan, const std::function<bool(IQueryPlanStep &)> & predicate)
+{
+    auto matches = [&](QueryPlan::Node & node)
+    {
+        if (!predicate(*node.step))
+            return false;
+        if (node.children.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} to have exactly one child, got {}", node.step->getName(), node.children.size());
+        return true;
+    };
+
+    /// The root is replaced through the plan; nodes below it through their parent's child pointer. A spliced
+    /// node stays in the plan's node list, unreachable. Steps can be stacked, hence the loops.
+    while (plan.getRootNode() && matches(*plan.getRootNode()))
+        plan.replaceRootNode(plan.getRootNode()->children.front());
+
+    if (!plan.getRootNode())
+        return;
+
+    std::vector<QueryPlan::Node *> stack{plan.getRootNode()};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto & child : node->children)
+        {
+            while (matches(*child))
+                child = child->children.front();
+            stack.push_back(child);
+        }
+    }
+}
+
 }
 }

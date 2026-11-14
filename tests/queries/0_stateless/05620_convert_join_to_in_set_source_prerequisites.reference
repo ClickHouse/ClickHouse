@@ -1,0 +1,56 @@
+two-level CTE
+0
+1
+0
+1
+0
+CTE behind a MergeTree read
+0
+1
+0
+1
+0
+1
+IN in the key, reading a CTE
+1
+2
+3
+1
+2
+3
+0
+IN filter in ON
+0
+1
+0
+1
+0
+1
+0
+IN in the key, shared
+1
+2
+3
+10
+11
+1
+2
+3
+10
+11
+1
+3
+1
+3
+mutations
+[0,1,1,1]
+[1,1,0,0]
+[1,1,0,0]
+GLOBAL IN pushed into the right side
+1
+1
+GLOBAL IN in the key, planning-time readers
+1
+1
+1
+1
