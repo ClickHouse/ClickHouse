@@ -73,6 +73,7 @@ def clone_submodules():
         "contrib/heks",
         "contrib/sql-console",
         "contrib/optimized-routines",
+        "contrib/str",
         # Parquet: the native reader and writer need the Thrift-generated structures from Arrow's
         # source tree and the Thrift runtime; the Arrow formats need FlatBuffers. Snappy (with crc32c,
         # which it requires) is the default compression of Parquet files written by other tools.
