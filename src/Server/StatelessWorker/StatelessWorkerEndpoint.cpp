@@ -50,7 +50,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
     const auto & task = task_description.task;
 
     writeStringBinary(task.task_id, out);
-    writeStringBinary(task_description.serialized_query_plan, out);
+    writeStringBinary(*task_description.serialized_query_plan, out);
 
     writeVarUInt(task.parameters.parameters.size(), out);
     for (const auto & [name, field] : task.parameters.parameters)
@@ -138,7 +138,9 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     auto & task = task_description.task;
 
     readStringBinary(task.task_id, in);
-    readStringBinary(task_description.serialized_query_plan, in);
+    String serialized_query_plan;
+    readStringBinary(serialized_query_plan, in);
+    task_description.serialized_query_plan = std::make_shared<const String>(std::move(serialized_query_plan));
 
     size_t parameters_size = 0;
     readVarUInt(parameters_size, in);
