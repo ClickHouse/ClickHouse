@@ -32,6 +32,8 @@
 
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
+#include <filesystem>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/Context.h>
 
@@ -71,6 +73,7 @@ namespace ErrorCodes
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const StorageID & table_id_,
     LoadingStrictnessLevel mode,
+    bool is_fresh_definition,
     const String & remote_database_name,
     const String & remote_table_name_,
     const postgres::ConnectionInfo & connection_info,
@@ -102,8 +105,17 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             connection_info,
             getContext(),
             is_attach,
+            is_fresh_definition,
             *replication_settings,
             /* is_materialized_postgresql_database */false);
+
+    /// Records whether the initial snapshot of this table is being loaded, so that a nested table left by an interrupted
+    /// snapshot is not resumed. A dot-prefixed file is not taken for table metadata, and is removed with the metadata
+    /// directory by `DROP DATABASE`.
+    auto database = DatabaseCatalog::instance().getDatabase(table_id_.database_name);
+    replication_handler->setSnapshotPositionsFile(
+        database->getDisk(),
+        (std::filesystem::path(database->getMetadataPath()) / (".materialized_postgresql_snapshot_" + toString(table_id_.uuid))).string());
 
     replication_handler->addStorage(remote_table_name, this);
     replication_handler->startup(/* delayed */is_attach);
@@ -202,8 +214,11 @@ String StorageMaterializedPostgreSQL::getNestedTableName() const
 
 StorageID StorageMaterializedPostgreSQL::getNestedStorageID() const
 {
-    if (nested_table_id.has_value())
-        return nested_table_id.value();
+    {
+        std::lock_guard lock(nested_table_id_mutex);
+        if (nested_table_id.has_value())
+            return nested_table_id.value();
+    }
 
     auto table_id = getStorageID();
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -229,6 +244,7 @@ void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructur
 
         auto nested_storage = DatabaseCatalog::instance().getTable(tmp_nested_table_id, nested_context);
         /// Save storage_id with correct uuid.
+        std::lock_guard lock(nested_table_id_mutex);
         nested_table_id = nested_storage->getStorageID();
     }
     catch (...)
@@ -249,7 +265,10 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 
 void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
-    nested_table_id = nested_storage->getStorageID();
+    {
+        std::lock_guard lock(nested_table_id_mutex);
+        nested_table_id = nested_storage->getStorageID();
+    }
     auto nested_metadata = nested_storage->getInMemoryMetadataPtr(getContext(), false);
     setInMemoryMetadata(*nested_metadata);
     has_nested.store(true);
@@ -274,6 +293,7 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
         return;
 
     replication_handler->shutdownFinal();
+    replication_handler->clearSnapshotPositions();
     replication_handler.reset();
 
     auto nested_table = tryGetNested() != nullptr;
@@ -793,7 +813,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
                             "Declare the desired `Date`/`DateTime` or `Date32`/`DateTime64` types directly in the table definition.");
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.mode, configuration.database, configuration.table_or_query.getTableName(), connection_info,
+                args.table_id, args.mode, isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
+                configuration.database, configuration.table_or_query.getTableName(), connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };

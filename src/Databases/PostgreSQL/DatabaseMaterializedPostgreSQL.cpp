@@ -39,6 +39,12 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <base/scope_guard.h>
+
+#include <filesystem>
+
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 namespace DB
 {
@@ -50,12 +56,15 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema_list;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_unmaterialized_tables_list;
 }
 
 namespace FailPoints
 {
     extern const char database_materialized_postgresql_pause_before_table_drop[];
+    extern const char materialized_postgresql_pause_after_attach_table_nested_created[];
+    extern const char materialized_postgresql_pause_before_detach_table_drop[];
 }
 
 namespace ErrorCodes
@@ -121,8 +130,15 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             connection_info,
             getContext(),
             is_attach,
+            /* is_fresh_definition = */ !is_attach,
             *settings,
             /* is_materialized_postgresql_database = */ true);
+
+    /// A dot-prefixed file is not taken for table metadata, and is removed with the metadata directory by `DROP DATABASE`.
+    replication_handler->setSnapshotPositionsFile(
+        getDisk(), (std::filesystem::path(getMetadataPath()) / ".materialized_postgresql_snapshot_positions").string());
+    replication_handler->setDetachingTablesFile(
+        (std::filesystem::path(getMetadataPath()) / ".materialized_postgresql_detaching_tables").string());
 
     std::set<String> tables_to_replicate;
     std::set<String> new_unmaterialized_published_tables;
@@ -184,6 +200,15 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     replication_handler->startup(/* delayed */false);
+    synchronization_started = true;
+
+    /// Do not keep wrappers of the tables that the replication handler excluded from replication.
+    if (const auto & skipped_tables = replication_handler->getTablesSkippedOnAttach(); !skipped_tables.empty())
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        for (const auto & table_name : skipped_tables)
+            materialized_tables.erase(table_name);
+    }
 }
 
 
@@ -378,10 +403,28 @@ void DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange(SettingsC
 }
 
 
+void DatabaseMaterializedPostgreSQL::checkSynchronizationStarted(const String & table_name) const
+{
+    if (!synchronization_started)
+        throw Exception(
+            ErrorCodes::QUERY_NOT_ALLOWED,
+            "Cannot change the replication of table `{}` in MaterializedPostgreSQL database `{}`: the replication has not "
+            "started yet (it is starting, or its start failed and is retried in the background). Retry the query later",
+            table_name, getDatabaseName());
+}
+
 ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
     if (!local_context->hasQueryContext())
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
+
+    /// `ATTACH TABLE` calls this method while it holds the DDL guard of the table.
+    if (!synchronization_started)
+    {
+        if (throw_on_error)
+            checkSynchronizationStarted(table_name);
+        return nullptr;
+    }
 
     /// Use the table's actual (stable) UUID rather than a freshly generated one. Otherwise every
     /// call to this method returns a slightly different definition, which breaks operations that
@@ -456,13 +499,49 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
 
+    checkSynchronizationStarted(table_name);
+
+    /// The nested table is persisted below, before its snapshot is loaded. Mark its snapshot incomplete first: otherwise,
+    /// after a restart in between, a table discovered from `materialized_postgresql_schema_list` would be resumed with
+    /// an empty nested table. An existing table is not marked: the creation below fails for it. A leftover record of
+    /// a detach whose nested table is dropped already is removed, so that the next attach does not detach this table.
+    bool marked_snapshot_incomplete = false;
+    if (!DatabaseAtomic::tryGetTable(table_name, getContext()))
+    {
+        std::lock_guard lock(handler_mutex);
+        replication_handler->removeDetachingTable(table_name);
+        replication_handler->markSnapshotIncomplete(table_name);
+        marked_snapshot_incomplete = true;
+    }
+
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();
     auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
     create_query->attach = false;
     create_query->attach_short_syntax = false;
     DatabaseCatalog::instance().addUUIDMapping(create->uuid);
-    DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
+    try
+    {
+        DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
+    }
+    catch (...)
+    {
+        if (marked_snapshot_incomplete)
+        {
+            try
+            {
+                std::lock_guard lock(handler_mutex);
+                replication_handler->removeSnapshotPosition(table_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove the snapshot position after a failed ATTACH TABLE");
+            }
+        }
+        throw;
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_after_attach_table_nested_created);
 
     /// Attach MaterializedPostgreSQL table.
     attachTable(local_context, table_name, table, {});
@@ -482,45 +561,93 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
         chassert(nested_table != nullptr);
 
+        bool added_to_replication = false;
+        bool publication_added = false;
         try
         {
-            SettingsChanges new_settings;
+            /// With `materialized_postgresql_schema_list` the attached table is not persisted in the database definition,
+            /// and after restart only the tables of the listed schemas are discovered. So a table from another schema
+            /// would silently stop being replicated.
+            if (const String & schema_list = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value;
+                !schema_list.empty())
             {
-                std::lock_guard tables_lock(tables_mutex);
-                auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
-                if (tables_to_replicate.empty())
-                    tables_to_replicate = getFormattedTablesList();
+                Strings schemas;
+                boost::split(schemas, schema_list, [](char c){ return c == ','; });
+                for (auto & schema : schemas)
+                    boost::trim(schema);
 
-                /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-                new_settings.emplace_back("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
-                addUnmaterializedTablesListChange(new_settings, table_name);
+                const auto pos = table_name.find('.');
+                const bool has_listed_schema = pos == std::string::npos
+                    ? schemas.size() == 1
+                    : std::find(schemas.begin(), schemas.end(), table_name.substr(0, pos)) != schemas.end();
+                if (!has_listed_schema)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot attach table `{}` to MaterializedPostgreSQL database `{}`: it is not in the schemas of "
+                        "`materialized_postgresql_schema_list` ({}). With several schemas, the table name must be "
+                        "`schema.table`",
+                        table_name, getDatabaseName(), schema_list);
             }
-            auto alter_query = createAlterSettingsQuery(new_settings);
-
-            /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
-            /// `handler_mutex`, and the two mutexes must always be taken in that order.
-            InterpreterAlterQuery(alter_query, current_context).execute();
 
             auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+
+            /// Set up the PostgreSQL side first, so that a failed snapshot leaves neither the persisted
+            /// table list nor the wrapper behind.
+            {
+                std::lock_guard lock(handler_mutex);
+                publication_added = replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            }
+            added_to_replication = true;
+
+            /// For a database with `materialized_postgresql_schema_list` the table list is not persisted, otherwise
+            /// the stored definition would have both settings, and the next startup would fail with "Cannot have
+            /// schema list and tables list at the same time". The attached table is replicated after restart anyway,
+            /// because it is in the replicated schemas.
+            if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
+            {
+                SettingsChanges new_settings;
+                {
+                    std::lock_guard tables_lock(tables_mutex);
+                    auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+                    if (tables_to_replicate.empty())
+                        tables_to_replicate = getFormattedTablesList();
+
+                    /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+                    new_settings.emplace_back("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+                    addUnmaterializedTablesListChange(new_settings, table_name);
+                }
+                auto alter_query = createAlterSettingsQuery(new_settings);
+
+                /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
+                /// `handler_mutex`, and the two mutexes must always be taken in that order.
+                InterpreterAlterQuery(alter_query, current_context).execute();
+            }
+
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
-            }
 
-            {
-                std::lock_guard lock(handler_mutex);
-                replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
-            }
-
-            /// Only after the replication of the table is set up: if it fails, the nested table is dropped below,
-            /// and `getTablesForBackup` must keep refusing to omit the table.
-            {
-                std::lock_guard tables_lock(tables_mutex);
+                /// Only after the replication of the table is set up: if it fails, the nested table is dropped below,
+                /// and `getTablesForBackup` must keep refusing to omit the table.
                 unmaterialized_published_tables.erase(table_name);
             }
         }
         catch (...)
         {
+            /// Roll back the replication of the table, but keep a publication entry that this query did not create.
+            if (added_to_replication)
+            {
+                try
+                {
+                    std::lock_guard lock(handler_mutex);
+                    replication_handler->removeTableFromReplication(table_name, publication_added);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to roll back MaterializedPostgreSQL replication after ATTACH TABLE failure");
+                }
+            }
+
             /// This is a failed attach table. Remove already created nested table.
             DatabaseAtomic::dropTable(current_context, table_name, true);
             throw;
@@ -537,37 +664,108 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
 }
 
+void DatabaseMaterializedPostgreSQL::checkCanDetachTablePermanently(const String & table_name) const
+{
+    /// Look the table up instead of using `materialized_tables[table_name]`: the latter inserts
+    /// an empty entry for an unknown name, and that null `StoragePtr` stayed in the map after
+    /// the exception below, so a later `tryGetTable` would dereference it.
+    auto it = materialized_tables.find(table_name);
+    if (it == materialized_tables.end() || !it->second)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
+
+    /// A database without materialized tables cannot start again: on the next startup, nothing would distinguish
+    /// it from a database that did not finish its initial synchronization, so the detached tables
+    /// would be loaded from a new snapshot again. A wrapper without a nested table (for example, the first snapshot
+    /// of its table failed) does not count, because on startup it is not distinguished from an unfinished one either.
+    bool has_other_tables = false;
+    for (const auto & [name, storage] : materialized_tables)
+    {
+        if (name != table_name && !tables_detaching_permanently.contains(name)
+            && storage->as<StorageMaterializedPostgreSQL>()->hasNested())
+        {
+            has_other_tables = true;
+            break;
+        }
+    }
+    if (!has_other_tables)
+        throw Exception(
+            ErrorCodes::QUERY_NOT_ALLOWED,
+            "Cannot detach table `{}` permanently: it is the only table replicated by MaterializedPostgreSQL "
+            "database `{}`, apart from the tables being detached and the tables that are not materialized yet. "
+            "Use `DROP DATABASE {}` to stop replication",
+            table_name, getDatabaseName(), backQuoteIfNeed(getDatabaseName()));
+}
+
+void DatabaseMaterializedPostgreSQL::checkTableCanBeDetachedPermanently(ContextPtr, const String & table_name)
+{
+    checkSynchronizationStarted(table_name);
+
+    std::lock_guard tables_lock(tables_mutex);
+    checkCanDetachTablePermanently(table_name);
+    tables_detaching_permanently.insert(table_name);
+}
+
 void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
     /// If there is query context then we need to detach materialized storage.
     /// If there is no query context then we need to detach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        SCOPE_EXIT({
+            std::lock_guard tables_lock(tables_mutex);
+            tables_detaching_permanently.erase(table_name);
+        });
+
+        checkSynchronizationStarted(table_name);
+
         StoragePtr table_to_delete;
         SettingsChanges new_settings;
         {
             std::lock_guard tables_lock(tables_mutex);
-
-            /// Look the table up instead of using `materialized_tables[table_name]`: the latter inserts
-            /// an empty entry for an unknown name, and that null `StoragePtr` stayed in the map after
-            /// the exception below, so a later `tryGetTable` would dereference it.
-            auto it = materialized_tables.find(table_name);
-            if (it == materialized_tables.end() || !it->second)
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
-
-            table_to_delete = it->second;
+            checkCanDetachTablePermanently(table_name);
+            table_to_delete = materialized_tables.at(table_name);
 
             /// The list of tables can be empty if postgres database had no tables when this database was created.
             new_settings.emplace_back("materialized_postgresql_tables_list", getFormattedTablesList(table_name));
             addUnmaterializedTablesListChange(new_settings, table_name);
         }
 
-        auto alter_query = createAlterSettingsQuery(new_settings);
-
+        /// If the server is terminated from now on until the nested table is dropped, the next attach finishes the
+        /// detach (see `PostgreSQLReplicationHandler::finishInterruptedDetaches`). Otherwise the nested table would be
+        /// left behind: with `materialized_postgresql_schema_list` the table would be discovered from it and required
+        /// in the publication, which would stop the replication of all tables, and with a table list it would hide the
+        /// table from a later `ATTACH TABLE`.
         {
-            auto current_context = Context::createCopy(getContext()->getGlobalContext());
-            current_context->setInternalQuery(true);
-            InterpreterAlterQuery(alter_query, current_context).execute();
+            std::lock_guard lock(handler_mutex);
+            replication_handler->markTableDetaching(table_name);
+        }
+
+        /// See the comment in attachTable about `materialized_postgresql_schema_list`.
+        if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
+        {
+            try
+            {
+                auto alter_query = createAlterSettingsQuery(new_settings);
+
+                auto current_context = Context::createCopy(getContext()->getGlobalContext());
+                current_context->setInternalQuery(true);
+                InterpreterAlterQuery(alter_query, current_context).execute();
+            }
+            catch (...)
+            {
+                /// The table is still replicated. If the record cannot be removed, the next attach does it, because
+                /// the table is still in the persisted table list.
+                try
+                {
+                    std::lock_guard lock(handler_mutex);
+                    replication_handler->removeDetachingTable(table_name);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to remove the detach record after a failed DETACH TABLE PERMANENTLY");
+                }
+                throw;
+            }
         }
 
         auto nested = table_to_delete->as<StorageMaterializedPostgreSQL>()->getNested();
@@ -575,7 +773,9 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
 
         std::lock_guard lock(handler_mutex);
-        replication_handler->removeTableFromReplication(table_name);
+        replication_handler->removeTableFromReplication(table_name, /* remove_from_publication */ true);
+
+        FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_detach_table_drop);
 
         try
         {
@@ -585,12 +785,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         }
         catch (Exception & e)
         {
-            /// We already removed this table from replication and adding it back will be an overkill..
-            /// TODO: this is bad, we leave a table lying somewhere not dropped, and if user will want
-            /// to move it back into replication, he will fail to do so because there is undropped nested with the same name.
-            /// This can also happen if we crash after removing table from replication and before dropping nested.
-            /// As a solution, we could drop a table if it already exists and add a fresh one instead for these two cases.
-            /// TODO: sounds good.
+            /// We already removed this table from replication and adding it back will be an overkill. The record of the
+            /// detach is kept, so that the next attach drops the nested table that is left behind.
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables.erase(table_name);
@@ -604,6 +800,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             std::lock_guard tables_lock(tables_mutex);
             materialized_tables.erase(table_name);
         }
+
+        replication_handler->removeDetachingTable(table_name);
     }
 }
 
@@ -984,6 +1182,12 @@ It is possible to remove specific tables from replication:
 ```sql
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
+
+The last replicated table cannot be removed this way. Use `DROP DATABASE` to stop replication entirely.
+
+## Restarting replication {#restarting-replication}
+
+On server restart, replication resumes from the existing replication slot through the existing publication. If the PostgreSQL side was changed in a way that makes resuming lose changes silently, replication does not start, and an exception is logged and retried in the background. This happens if the replication slot or the publication was removed while the database already holds data, if a replicated table was removed from the publication, or if the publication definition was altered (for example, with a row filter or `publish = 'insert'`). To recover, recreate the database, which loads a fresh snapshot.
 
 ## PostgreSQL schema {#schema}
 
