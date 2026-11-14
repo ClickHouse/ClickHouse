@@ -159,6 +159,27 @@ function configure()
     # for clickhouse-client
     export ASAN_OPTIONS='malloc_context_size=10 allocator_release_to_os_interval_ms=10000'
 
+    # TSan never gives back its shadow and meta memory, and its allocator keeps freed chunks per
+    # size class, so the RSS of a TSan server only grows. `max_server_memory_usage_to_ram_ratio`
+    # (see `configure_limits`) is enforced on the RSS, so the server ends up pinned at the limit
+    # with little tracked memory and rejects every query, including the hung check.
+    # `memory_limit_mb` makes TSan flush its shadow memory once the process RSS exceeds it,
+    # so it has to be below the server limit (80%). Same 65% as in `clickhouse_proc.py`.
+    # The server inherits it from this shell (`clickhouse start` does not read /etc/environment).
+    if [[ "${TSAN_OPTIONS:-}" != *memory_limit_mb=* ]]; then
+        local tsan_total_mem tsan_cgroup_mem
+        # Multiply in Bash: `mawk` prints large products in scientific notation, which Bash rejects.
+        tsan_total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
+        tsan_total_mem=$(( tsan_total_mem * 1024 )) # bytes
+        tsan_cgroup_mem=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo max)
+        if [[ "$tsan_cgroup_mem" =~ ^[0-9]+$ ]] && (( tsan_cgroup_mem < tsan_total_mem )); then
+            tsan_total_mem=$tsan_cgroup_mem
+        fi
+        export TSAN_OPTIONS="${TSAN_OPTIONS:+$TSAN_OPTIONS }memory_limit_mb=$(( tsan_total_mem * 65 / 100 / 1024 / 1024 ))"
+        echo "TSAN_OPTIONS='${TSAN_OPTIONS}'" >> /etc/environment
+        echo "Setting TSAN_OPTIONS=${TSAN_OPTIONS}"
+    fi
+
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
 
