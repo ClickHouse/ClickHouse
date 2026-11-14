@@ -7402,14 +7402,37 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    if (!dropped_columns.empty())
+    /// Converting a physical column to `EPHEMERAL` or `ALIAS` also removes its stored data on rewrite.
+    /// Missing default columns must be materialized before the last stored physical column is removed.
+    auto name_after_alter = [&](String name)
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::RENAME_COLUMN && command.column_name == name)
+                name = command.rename_to;
+        }
+        return name;
+    };
+    bool makes_columns_nonphysical = false;
+    for (const auto & column : old_metadata.columns.getAllPhysical())
+    {
+        const auto name = name_after_alter(column.name);
+        if (new_metadata.columns.has(name) && !new_metadata.columns.hasPhysical(name))
+        {
+            makes_columns_nonphysical = true;
+            break;
+        }
+    }
+
+    if (!dropped_columns.empty() || makes_columns_nonphysical)
     {
         auto parts = getDataPartsVectorForInternalUsage();
         auto parts_info = getPartsSnapshotInfo(parts);
 
         /// A part can carry a column under a name the table does not know, because a rename this part
         /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
-        /// pending rename is not mistaken for a column the table has lost.
+        /// pending rename is not mistaken for a column the table has lost. Pending `CLEAR COLUMN`
+        /// and `DROP COLUMN` also determine which stored columns survive.
         IMutationsSnapshot::Params params
         {
             .metadata_version = old_metadata.getMetadataVersion(),
@@ -7433,6 +7456,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 );
 
             bool at_least_one_column_rest = false;
+            bool at_least_one_physical_column_rest = false;
             for (const auto & column : part->getColumns())
             {
                 auto name_in_table = alter_conversions->columnHasNewName(column.name)
@@ -7452,7 +7476,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
                 {
                     at_least_one_column_rest = true;
-                    break;
+                }
+
+                if (!dropped_columns.contains(name_in_table)
+                    && !alter_conversions->isColumnDropped(column.name, share_nested_offsets)
+                    && (new_metadata.columns.hasPhysical(name_after_alter(name_in_table)) || old_metadata.virtuals.has(name_in_table)))
+                {
+                    at_least_one_physical_column_rest = true;
                 }
             }
 
@@ -7466,6 +7496,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                 "in part '{}' will be removed from disk. Empty parts are not allowed",
                                 postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
             }
+
+            /// Local parts may differ between replicas, so they must not prevent replay of a committed `ALTER`.
+            if (!is_secondary_replay && !at_least_one_physical_column_rest)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot alter table because part '{}' would have no stored physical columns. "
+                    "Materialize a remaining physical column first using "
+                    "ALTER TABLE ... MATERIALIZE COLUMN ... SETTINGS mutations_sync = 2",
+                    part->name);
         }
     }
 }

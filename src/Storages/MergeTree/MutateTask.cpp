@@ -1014,12 +1014,15 @@ static void splitAndModifyMutationCommands(
         {
             if (part_columns.has(rename_from))
             {
-                /// Actual rename
-                for_interpreter.push_back(
+                /// A formerly stored column may now be `EPHEMERAL` or `ALIAS`.
+                if (table_columns.hasPhysical(rename_to))
                 {
-                    .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = rename_to,
-                });
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::Type::READ_COLUMN,
+                        .column_name = rename_to,
+                    });
+                }
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
                 /// set of columns for new part and their serializations
@@ -1100,6 +1103,10 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
+                /// Historical part columns that became `EPHEMERAL` or `ALIAS` are omitted from the rewrite.
+                if (table_columns.has(column.name) && !table_columns.hasPhysical(column.name))
+                    continue;
+
                 if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
