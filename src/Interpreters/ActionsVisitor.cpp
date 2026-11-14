@@ -62,6 +62,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
@@ -1007,6 +1008,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "lambda")
         throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
+
+    /// `FunctionFactory` checks the grant for the functions it creates, but user defined functions do not come
+    /// from it, and neither do the functions which the branches below build themselves (`indexHint`, ...).
+    checkFunctionAccess(data.getContext(), node.name);
 
     /// Function arrayJoin.
     if (node.name == "arrayJoin")

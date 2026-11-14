@@ -414,6 +414,10 @@ namespace
         AccessRightsElements elements_to_grant;
         AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
+        /// This is the path of `ATTACH GRANT` when an entity is loaded from a storage or restored from a backup,
+        /// which may have been written by another server. A `GRANT` statement resolves the names in `execute`.
+        AccessControl::canonicalizeFunctionNames(elements_to_grant);
+        AccessControl::canonicalizeFunctionNames(elements_to_revoke);
 
         std::vector<UUID> roles_to_grant;
         RolesOrUsersSet roles_to_revoke;
@@ -451,6 +455,10 @@ BlockIO InterpreterGrantQuery::execute()
             (void)StorageFactory::instance().getStorageFeatures(element.parameter);
         }
     }
+
+    /// `GRANT FUNCTION ON HEX` must match the check for `hex`, and an alias must match its function.
+    /// Done before replication, so every host of `ON CLUSTER` stores the same name.
+    AccessControl::canonicalizeFunctionNames(query.access_rights_elements);
 
     /// The parser does not compile the pattern of `GRANT READ ON S3('s3://foo/.*')` - that would
     /// put a regex engine in it - so it is validated here, and on every other path that turns an

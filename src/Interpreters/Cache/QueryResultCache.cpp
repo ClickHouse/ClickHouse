@@ -109,7 +109,7 @@ struct HasNonDeterministicFunctionsMatcher
                 data.has_non_deterministic_functions = true;
                 return;
             }
-            if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
+            if (const auto func = FunctionFactory::instance().tryGetWithoutAccessCheck(function->name, data.context))
             {
                 if (!func->isDeterministic())
                     data.has_non_deterministic_functions = true;

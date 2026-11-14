@@ -43,6 +43,7 @@
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -139,7 +140,7 @@ struct RegisteredFunctionArity
   */
 std::optional<RegisteredFunctionArity> tryGetRegisteredFunctionArity(const String & function_name, const ContextPtr & context)
 {
-    auto resolver = FunctionFactory::instance().tryGet(function_name, context);
+    auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(function_name, context);
     if (!resolver && UserDefinedExecutableFunctionFactory::has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
     {
         /// `has` first: `tryGet` instantiates `UserDefinedFunction` with empty parameters,
@@ -295,7 +296,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
         if (function->getFunctionName() == "throwIf")
             return true;
 
-        auto resolver = FunctionFactory::instance().tryGet(function->getFunctionName(), context);
+        auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(function->getFunctionName(), context);
         if (!resolver)
         {
             /// An aggregate count is only safe inside a scalar subquery that has already passed
@@ -1476,6 +1477,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
+    /// Once no lambda in scope shadows the name, it is a call of the function with this name. `FunctionFactory`
+    /// checks the grant for the functions it creates, but user defined functions do not come from it, and the
+    /// special cases below can replace a call before its function is created.
+    if (!lambda_expression_untyped)
+        checkFunctionAccess(scope.context, function_name);
+
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
       * user-defined function with the same name.
@@ -2247,7 +2254,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// Check the parent first. This avoids probing UDF registries (which take
                     /// the external UDF loader mutex) on every ordinary call like `plus(a, b)`
                     /// where the first argument happens to be an identifier.
-                    auto parent_resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+                    auto parent_resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(function_name, scope.context);
 
                     if (parent_resolver && parent_resolver->isHigherOrderFunction())
                     {
@@ -2330,7 +2337,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         IsHigherOrderFunction is_higher_order_function = [&](const String & name)
         {
-            auto resolver = FunctionFactory::instance().tryGet(name, scope.context);
+            auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(name, scope.context);
             return resolver && resolver->isHigherOrderFunction();
         };
 

@@ -22,22 +22,32 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/resolveEffectiveSettings.h>
 #include <Access/resolveSetting.h>
+#include <Access/Common/AccessRightsElement.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Common/MultiVersion.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/re2.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <algorithm>
+#include <atomic>
 #include <filesystem>
+#include <memory>
 #include <mutex>
+#include <unordered_set>
 
 
 namespace DB
@@ -67,6 +77,80 @@ extern const char access_control_pause_after_feature_tier_check[];
 
 namespace
 {
+    /// `access_control_improvements.functions_requiring_grant`, by the names the functions are registered under.
+    using FunctionsRequiringGrant = std::unordered_set<String>;
+
+    /// Process-wide, so that `checkFunctionAccess` can skip the whole check with one relaxed
+    /// atomic load on the default empty list: reaching the `AccessControl` instance would mean
+    /// `Context::getAccessControl`, which takes a shared lock on the global context mutex, on
+    /// every function resolution. There is one `AccessControl` per server process.
+    std::atomic<bool> functions_requiring_grant_enabled{false};
+    MultiVersion<FunctionsRequiringGrant> functions_requiring_grant{std::make_unique<const FunctionsRequiringGrant>()};
+
+    Strings parseFunctionsRequiringGrant(const Poco::Util::AbstractConfiguration & config)
+    {
+        const String prefix = "access_control_improvements.functions_requiring_grant";
+        Strings names;
+        if (!config.has(prefix))
+            return names;
+
+        /// Repeated elements are enumerated as `function`, `function[1]`, `function[2]`, ...
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(prefix, keys);
+
+        if (keys.empty())
+        {
+            /// A bare list such as `<functions_requiring_grant>hex, decrypt</functions_requiring_grant>`
+            /// protects nothing. Say so instead of starting up with an empty list.
+            const String section_text = config.getString(prefix, "");
+            const std::string_view text = trimWhitespace(section_text);
+            if (!text.empty())
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "Function names in {} must be listed as <function> elements, got the text '{}'",
+                    prefix,
+                    text);
+            return names;
+        }
+
+        auto count_non_whitespace = [](const String & text)
+        {
+            return static_cast<size_t>(std::ranges::count_if(text, [](char c) { return !isWhitespaceASCII(c); }));
+        };
+
+        /// Text of the <function> elements, to compare with the text of the whole section below.
+        size_t function_elements_text_size = 0;
+
+        for (const auto & key : keys)
+        {
+            if (key != "function" && !key.starts_with("function["))
+                throw Exception(
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                    "Unknown element '{}' in {}: only <function> is allowed there",
+                    key,
+                    prefix);
+
+            function_elements_text_size += count_non_whitespace(config.getRawString(prefix + "." + key, ""));
+
+            const String element_text = config.getString(prefix + "." + key);
+            const std::string_view name = trimWhitespace(element_text);
+            if (!name.empty())
+                names.emplace_back(name);
+        }
+
+        /// `keys` lists only child elements, so a name written as bare text next to them, as in
+        /// `hex <function>decrypt</function>`, would be dropped and `hex` left unprotected. The text
+        /// of an element includes the text of all its children, so any text that is not accounted
+        /// for by the <function> elements sits directly in the section.
+        if (count_non_whitespace(config.getRawString(prefix, "")) != function_elements_text_size)
+            throw Exception(
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                "Function names in {} must be listed as <function> elements, found text outside of them",
+                prefix);
+
+        return names;
+    }
+
     void checkForUsersNotInMainConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_path,
@@ -372,6 +456,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     /// The default values of the following improvements are false because we need to be compatible with earlier access configurations
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
+    setFunctionsRequiringGrantFromConfig(config_);
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
     setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
     setReadonlyRestrictsSetRole(config_.getBool("access_control_improvements.readonly_restricts_set_role", false));
@@ -1145,6 +1230,100 @@ void AccessControl::setEnableReadWriteGrants(bool enable_read_write_grants_)
 bool AccessControl::isEnabledReadWriteGrants() const
 {
     return enable_read_write_grants;
+}
+
+bool AccessControl::hasFunctionsRequiringGrant() noexcept
+{
+    return functions_requiring_grant_enabled.load(std::memory_order_relaxed);
+}
+
+void AccessControl::setFunctionsRequiringGrantFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    setFunctionsRequiringGrant(parseFunctionsRequiringGrant(config));
+}
+
+void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
+{
+    auto names = std::make_unique<FunctionsRequiringGrant>();
+    for (const auto & name : function_names)
+    {
+        if (name.empty())
+            continue;
+
+        const auto & function_factory = FunctionFactory::instance();
+        const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
+
+        /// Resolve before the lookup: `hasNameOrAlias` matches only the registered spelling, so
+        /// `HEX` itself is not found, while `hex` is.
+        String registered_name = function_factory.resolveNameOrAlias(name);
+        if (registered_name == "arrayJoin")
+        {
+            /// The `ARRAY JOIN` clause performs the same expansion without calling the function, so
+            /// listing `arrayJoin` would protect only one of two equivalent spellings. Reject it like
+            /// an aggregate function instead of leaving a restriction that is trivial to bypass.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' cannot be listed in access_control_improvements.functions_requiring_grant: "
+                "the ARRAY JOIN clause does the same without calling it",
+                name);
+        }
+
+        if (function_factory.hasNameOrAlias(registered_name))
+        {
+            /// Store the registered name, so that `<function>isValidASCII</function>` also covers
+            /// the `isASCII` alias and `<function>HEX</function>` covers `hex`.
+            names->emplace(std::move(registered_name));
+        }
+        else if (aggregate_function_factory.isAggregateFunctionName(name))
+        {
+            /// Aggregate and window functions are resolved through `AggregateFunctionFactory`, which this
+            /// privilege does not cover. Accepting such a name would silently protect nothing, so reject it
+            /// here instead of leaving the administrator with a false sense of security.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function '{}' cannot be listed in access_control_improvements.functions_requiring_grant: "
+                "only ordinary and user defined functions are supported",
+                name);
+        }
+        else
+        {
+            /// Not a no-op: a user defined function with this name may be created later.
+            LOG_WARNING(
+                getLogger(),
+                "Function '{}' listed in access_control_improvements.functions_requiring_grant is neither an ordinary nor an "
+                "aggregate function. It will require GRANT FUNCTION only if a user defined function with this name exists.",
+                name);
+            names->emplace(name);
+        }
+    }
+
+    const bool enabled = !names->empty();
+    functions_requiring_grant.set(std::move(names));
+    functions_requiring_grant_enabled.store(enabled, std::memory_order_release);
+}
+
+void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
+{
+    for (auto & element : elements)
+    {
+        /// A wildcard (`FUNCTION ON he*`) is a prefix of registered names, not a name: resolving `LCASE*` to `lower*`
+        /// would grant other functions.
+        if (element.isGlobalWithParameter() && !element.anyParameter() && !element.wildcard
+            && element.access_flags.getParameterType() == AccessFlags::FUNCTION)
+        {
+            element.parameter = FunctionFactory::instance().resolveNameOrAlias(element.parameter);
+        }
+    }
+}
+
+bool AccessControl::functionRequiresGrant(const String & function_name)
+{
+    if (!functions_requiring_grant_enabled.load(std::memory_order_acquire))
+        return false;
+
+    /// Both sides are registered names: the list is resolved in `setFunctionsRequiringGrant`, and
+    /// `checkFunctionAccess` resolves the name of the call.
+    return functions_requiring_grant.get()->contains(function_name);
 }
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const

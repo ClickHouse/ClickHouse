@@ -351,7 +351,7 @@ bool isOracleUnsafeFunctionName(String name)
 /// or to a user-defined function that is not deterministic.
 bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
 {
-    if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
+    if (const auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(name, context))
         if (!resolver->isDeterministic()
             || nonDeterministicFunctionsLower().contains(Poco::toLower(name))
             || nonDeterministicFunctionsLower().contains(Poco::toLower(resolver->getName())))

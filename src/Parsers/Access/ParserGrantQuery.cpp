@@ -562,6 +562,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM VIRTUAL PARTS UPDATE`
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)
+  - [`FUNCTION`](#function)
   - [`TRUNCATE`](#truncate)
   - `UNDROP TABLE`
 - [`NONE`](#none)
@@ -1055,6 +1056,75 @@ Some table engines with external sources may require `READ`/`WRITE` permissions 
 For example, for the AzureBlobStorage table engine, following grant may be required.
 
 - `GRANT READ, WRITE ON AZURE TO john`
+
+### FUNCTION {#function}
+
+Allows executing a specified SQL function. Applies to ordinary functions and user-defined functions
+(SQL, executable, and WebAssembly) listed in the
+`functions_requiring_grant` list of the
+[`access_control_improvements`](/reference/settings/server-settings/settings/access-control#access_control_improvements)
+server setting. By default the list is empty and any user can call any function.
+
+Aggregate functions, window functions and table functions are out of scope: they are resolved through
+other factories that this privilege does not cover. Listing an aggregate name is rejected when the
+configuration is loaded, so it never looks protected while it is not.
+
+The grant is required to create a listed function for a query, whatever part of the server creates it, so
+it is checked for the function which is executed. A SQL user-defined function that calls a listed function
+requires the grant for that inner function. When a setting makes a call execute another function, the grant
+is required for that one: under `use_legacy_to_time` a call of `toTime` executes `toTimeWithFixedDate`. To
+restrict some functionality, list every function that provides it.
+
+This includes the functions which the server adds to a query itself, for example `if` around the expressions
+of `INSERT ... VALUES` and of `ALTER TABLE ... UPDATE`. So do not list basic functions such as `if`, `in`,
+`tuple` or `equals`: ordinary queries would require their grants.
+
+`system.functions` and `SHOW FUNCTIONS` show the listed functions to users without the grant, and a lambda
+alias that shadows a listed name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is unaffected.
+
+As with the other privileges, revoking the grant does not remove the results which the user already has in the
+[query cache](/concepts/features/performance/caches/query-cache): they are returned until they expire.
+
+An `ON CLUSTER` query is analyzed by the hosts that execute it, so the grant is checked there, like the other
+privileges checked during the analysis of an expression. With the
+[`distributed_ddl_use_initial_user_and_roles`](/reference/settings/server-settings/settings/distributed-ddl#distributed_ddl_use_initial_user_and_roles)
+server setting disabled, which is the default, the hosts execute such queries with their own rights; enable it to
+check the grant of the user who submitted the query.
+
+Names are matched after resolving aliases, so listing `hex` covers `HEX`, and listing either
+`isValidASCII` or its `isASCII` alias covers both spellings. The name in `GRANT FUNCTION ON <name>`
+is resolved the same way and stored as the registered name: `GRANT FUNCTION ON HEX` grants `hex`,
+`GRANT FUNCTION ON isASCII` grants `isValidASCII`, and `SHOW GRANTS` shows the registered name.
+The same applies to the `GRANTS` clause of an authentication method in `CREATE USER` and `CREATE TOKEN`.
+A wildcard, `GRANT FUNCTION ON he*`, is a prefix of the registered names and is kept as written.
+
+The setting is read when the server starts. Like the other `access_control_improvements` settings,
+it is not re-read by `SYSTEM RELOAD CONFIG`, so changing the list requires a restart.
+
+Aliases: `EXECUTE FUNCTION`, `USE FUNCTION`.
+
+**Examples**
+
+- `GRANT FUNCTION ON decrypt TO john`
+- `GRANT FUNCTION ON * TO john`
+- `REVOKE FUNCTION ON decrypt FROM john`
+
+<Note>
+By default, for backward compatibility, calling a function does not require a grant.
+To restrict selected functions, list their names (as in `system.functions`) in
+`access_control_improvements.functions_requiring_grant` in config.xml:
+
+```xml
+<functions_requiring_grant>
+    <function>decrypt</function>
+    <function>tryDecrypt</function>
+    <function>aes_decrypt_mysql</function>
+</functions_requiring_grant>
+```
+
+After that, `decrypt` requires `GRANT FUNCTION ON decrypt`. Users with `GRANT ALL` keep access because `ALL` includes `FUNCTION ON *`.
+Functions not listed in the setting stay unrestricted.
+</Note>
 
 ### ALL {#all}
 

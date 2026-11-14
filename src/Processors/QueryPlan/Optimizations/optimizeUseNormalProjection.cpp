@@ -188,7 +188,7 @@ static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr co
         /// This automatically covers all current and future non-deterministic functions.
         /// IFunctionOverloadResolver provides isDeterministic() and isDeterministicInScopeOfQuery()
         /// without needing to resolve argument types.
-        auto resolver = FunctionFactory::instance().tryGet(func->name, context);
+        auto resolver = FunctionFactory::instance().tryGetWithoutAccessCheck(func->name, context);
         if (resolver)
         {
             if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
