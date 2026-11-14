@@ -26,6 +26,8 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     , inner_read_until_position(read_until_position)
 {
     cache_key.offset = 0;
+    /// The working buffer is a page cache cell, an exact-size allocation: nothing past its end is readable.
+    padded = false;
 }
 
 String CachedInMemoryReadBufferFromFile::getFileName() const

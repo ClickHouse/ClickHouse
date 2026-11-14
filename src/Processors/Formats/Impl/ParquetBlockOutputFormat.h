@@ -28,6 +28,9 @@ namespace DB
 
 class CHColumnToArrowColumn;
 
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
 class ParquetBlockOutputFormat : public IOutputFormat
 {
 public:
@@ -118,8 +121,9 @@ private:
     void writeRowGroupInOneThread(Chunk chunk);
     void writeRowGroupInParallel(std::vector<Chunk> chunks);
 
-    void threadFunction();
+    void threadFunction(ThreadGroupPtr & thread_group);
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
+    void stopThreads();
 
     /// Called in single-threaded fashion. Writes to the file.
     void reapCompletedRowGroups(std::unique_lock<std::mutex> & lock);
@@ -140,13 +144,15 @@ private:
     size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;
-    std::condition_variable condvar; // wakes up consume()
-    std::unique_ptr<ThreadPool> pool;
+    std::condition_variable condvar; // wakes up consume() and stopThreads()
+    /// Shared by all Parquet writers of the process (`getParquetEncoderThreadPool`).
+    ThreadPool * pool = nullptr;
 
     std::atomic_bool is_stopped{false};
     std::exception_ptr background_exception = nullptr;
 
     /// Invariant: if there's at least one task then there's at least one thread.
+    /// Counts the jobs scheduled on `pool` until they exit, queued ones included.
     size_t threads_running = 0;
     std::atomic<size_t> bytes_in_flight{0};
 

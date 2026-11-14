@@ -4,6 +4,7 @@
 #if USE_ARROW || USE_PARQUET
 
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
 
 #include <arrow/table.h>
@@ -33,6 +34,8 @@ public:
         bool use_64_bit_indexes_for_dictionary = false;
         /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
         bool output_date_as_uint16 = false;
+        /// Upper bound on one record batch; a chunk holding more is written as several.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
     };
 
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);

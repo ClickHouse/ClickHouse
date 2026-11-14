@@ -1409,6 +1409,13 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
+    DECLARE(UInt64, output_format_arrow_max_record_batch_size_bytes, 2147483646, R"(
+Upper bound on the `Utf8`, `Binary` and `List` buffers of a single record batch in the `Arrow` and `ArrowStream` output formats. A block whose strings, binary values or list elements exceed this is written as several record batches.
+
+This is a limit that splits large blocks. The default is the largest value Arrow can address, because it offsets those buffers with 32-bit integers; a larger value has no effect.
+
+Only the buffers named above are bounded: a column of a fixed-width type has no offsets to overflow and stays in one batch. A single row never splits either, so a row above the limit still produces a batch that exceeds it.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns

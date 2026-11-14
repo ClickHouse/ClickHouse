@@ -2,13 +2,68 @@
 
 #include <Common/re2.h>
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
+#include <utility>
 
 
 namespace DB
 {
+
+/** Hides the secrets of an Azure connection string as the Azure SDK reads it (`Azure::Storage::_internal::ParseConnectionString`,
+  * `contrib/azure/sdk/storage/azure-storage-common/src/storage_credential.cpp`): a key runs to '=' and its value to ';', keys
+  * match exactly, and the last copy of a repeated key wins. Splitting at every ';' first can only hide more than the SDK reads.
+  *   - secret keys:   `AccountName=a;AccountKey=K;SharedAccessSignature=S` -> `AccountName=a;AccountKey=[HIDDEN];SharedAccessSignature=[HIDDEN]`
+  *   - repeated keys: `AccountKey=K1;AccountKey=K2` -> `AccountKey=[HIDDEN];AccountKey=[HIDDEN]`
+  *   - an endpoint is a url, so a query in it is a SAS: `BlobEndpoint=https://h/?sig=S` or `BlobEndpoint=https://u@h/` -> `BlobEndpoint=[HIDDEN]`
+  *   - the whole string is hidden when a '?', '#' or '@' is still shown, or when it has one and holds a url outside the pair
+  *     values (':' or '/' in a key or in a part without '='; no key has them): `https://h/?sig=S` or `https://u:p=s@h/` -> `[HIDDEN]`
+  * Returns whether anything was hidden.
+  */
+inline bool maskAzureConnectionStringSecrets(std::string & str)
+{
+    static constexpr std::array<std::string_view, 2> secret_keys = {"AccountKey", "SharedAccessSignature"};
+    auto is_secret_key = [](std::string_view key) { return std::ranges::find(secret_keys, key) != secret_keys.end(); };
+
+    const bool has_url_delimiters = str.find_first_of("?#@") != std::string::npos;
+    bool url_outside_values = false;
+    std::string result;
+    size_t copied = 0;
+    bool masked = false;
+    for (size_t part_begin = 0; part_begin <= str.length();)
+    {
+        const size_t part_end = std::min(str.find(';', part_begin), str.length());
+        const std::string_view part = std::string_view(str).substr(part_begin, part_end - part_begin);
+        const size_t equals = part.find('=');
+        if (part.substr(0, equals).find_first_of(":/") != std::string_view::npos)
+            url_outside_values = true;
+        if (equals != std::string_view::npos
+            && (is_secret_key(part.substr(0, equals)) || part.substr(equals + 1).find_first_of("?@") != std::string_view::npos))
+        {
+            const size_t value_begin = part_begin + equals + 1;
+            result.append(str, copied, value_begin - copied);
+            result.append("[HIDDEN]");
+            copied = part_end;
+            masked = true;
+        }
+        part_begin = part_end + 1;
+    }
+
+    if (masked)
+    {
+        result.append(str, copied, std::string::npos);
+        str = std::move(result);
+    }
+
+    if (str.find_first_of("?#@") != std::string::npos || (url_outside_values && has_url_delimiters))
+    {
+        str = "[HIDDEN]";
+        return true;
+    }
+    return masked;
+}
 
 inline bool maskURIPassword(std::string * uri)
 {
