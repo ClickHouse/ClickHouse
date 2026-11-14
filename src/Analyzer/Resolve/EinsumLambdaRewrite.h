@@ -26,10 +26,12 @@ namespace DB
   *
   * `is_scoped_function` returns the lambda function bound to a name of a function in the scope of the query, or nullptr,
   * like `WITH (x, y) -> x + y AS multiply`: then a call of `multiply` in the expression is not a product.
-  * The names in such lambda functions are not used for the generated parameters, because their expressions are resolved
-  * where they are called.
+  * `get_called_lambda` returns the lambda function that a call of the name refers to: like `is_scoped_function`,
+  * or a SQL user defined function. The names in such lambda functions are not used for the generated parameters,
+  * because their expressions are resolved where they are called.
   */
 using ScopedFunctionLookup = std::function<QueryTreeNodePtr(const String &)>;
-QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const ScopedFunctionLookup & is_scoped_function);
+QueryTreeNodePtr rewriteEinsumLambda(
+    const FunctionNode & function_node, const ScopedFunctionLookup & is_scoped_function, const ScopedFunctionLookup & get_called_lambda);
 
 }

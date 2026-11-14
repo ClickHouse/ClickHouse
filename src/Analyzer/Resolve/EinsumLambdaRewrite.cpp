@@ -98,12 +98,12 @@ const FunctionNode * asArrayElement(const IQueryTreeNode & node)
     return nullptr;
 }
 
-/// Collects the names in the lambda functions bound in the query outside of the lambda function of einsum that are called
-/// in the expression, also transitively: their expressions are resolved where they are called, so a generated parameter
-/// with the same name as a free name in them would capture it.
+/// Collects the names in the lambda functions bound in the query outside of the lambda function of einsum, and in the SQL user
+/// defined functions, that are called in the expression, also transitively: their expressions are resolved where they are called,
+/// so a generated parameter with the same name as a free name in them would capture it.
 void collectNamesOfCalledFunctions(
     const IQueryTreeNode & node,
-    const ScopedFunctionLookup & is_scoped_function,
+    const ScopedFunctionLookup & get_called_lambda,
     std::unordered_set<String> & names,
     std::unordered_set<String> & visited_functions)
 {
@@ -111,16 +111,16 @@ void collectNamesOfCalledFunctions(
 
     if (const auto * function = node.as<FunctionNode>(); function && visited_functions.insert(function->getFunctionName()).second)
     {
-        if (auto scoped_function = is_scoped_function(function->getFunctionName()))
+        if (auto called_lambda = get_called_lambda(function->getFunctionName()))
         {
-            collectIdentifierNames(*scoped_function, names);
-            collectNamesOfCalledFunctions(*scoped_function, is_scoped_function, names, visited_functions);
+            collectIdentifierNames(*called_lambda, names);
+            collectNamesOfCalledFunctions(*called_lambda, get_called_lambda, names, visited_functions);
         }
     }
 
     for (const auto & child : node.getChildren())
         if (child)
-            collectNamesOfCalledFunctions(*child, is_scoped_function, names, visited_functions);
+            collectNamesOfCalledFunctions(*child, get_called_lambda, names, visited_functions);
 }
 
 QueryTreeNodePtr makeFunction(const String & name, QueryTreeNodes arguments)
@@ -415,8 +415,10 @@ String findLocalName(
 class EinsumLambdaRewriter
 {
 public:
-    EinsumLambdaRewriter(const LambdaNode & lambda_, const ScopedFunctionLookup & is_scoped_function_)
+    EinsumLambdaRewriter(
+        const LambdaNode & lambda_, const ScopedFunctionLookup & is_scoped_function_, const ScopedFunctionLookup & get_called_lambda_)
         : lambda(lambda_), indices(lambda.getArguments().getNames()), is_scoped_function(is_scoped_function_)
+        , get_called_lambda(get_called_lambda_)
     {
         if (indices.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lambda function of einsum must have at least one index as an argument");
@@ -437,7 +439,7 @@ public:
         collectIdentifierNames(*body, used_names);
         {
             std::unordered_set<String> visited_functions;
-            collectNamesOfCalledFunctions(*body, is_scoped_function, used_names, visited_functions);
+            collectNamesOfCalledFunctions(*body, get_called_lambda, used_names, visited_functions);
         }
         value_prefix = "x";
         while (std::any_of(used_names.begin(), used_names.end(), [&](const String & name) { return isValueName(name); }))
@@ -543,6 +545,8 @@ private:
     const Names & indices;
     /// Whether the name is bound to a lambda function in the query outside of the lambda function of einsum.
     const ScopedFunctionLookup & is_scoped_function;
+    /// The lambda function that is called by the name: bound in the query or a SQL user defined function.
+    const ScopedFunctionLookup & get_called_lambda;
 
     std::vector<TensorElement> elements;
     /// The arrays of the elements, before the subscripts that are not indices are applied.
@@ -863,13 +867,14 @@ private:
 
 }
 
-QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const ScopedFunctionLookup & is_scoped_function)
+QueryTreeNodePtr rewriteEinsumLambda(
+    const FunctionNode & function_node, const ScopedFunctionLookup & is_scoped_function, const ScopedFunctionLookup & get_called_lambda)
 {
     const auto & arguments = function_node.getArguments().getNodes();
     const auto & lambda = arguments.at(0)->as<const LambdaNode &>();
 
     QueryTreeNodes extra_arguments(arguments.begin() + 1, arguments.end());
-    auto res = EinsumLambdaRewriter(lambda, is_scoped_function).rewrite(extra_arguments);
+    auto res = EinsumLambdaRewriter(lambda, is_scoped_function, get_called_lambda).rewrite(extra_arguments);
     res->setAlias(function_node.getAlias());
     res->setOriginalAST(function_node.getOriginalAST());
     return res;

@@ -1436,7 +1436,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// A lambda function bound to the name `einsum` in the query, like `WITH f -> ... AS einsum`, is called as usual.
         if (!is_scoped_function(function_name))
         {
-            node = rewriteEinsumLambda(*function_node_ptr, is_scoped_function);
+            /// The same order of lookup as for a call below: a lambda function in the scope, then a SQL user defined function.
+            ScopedFunctionLookup get_called_lambda = [&](const String & name) -> QueryTreeNodePtr
+            {
+                if (auto scoped_function = is_scoped_function(name))
+                    return scoped_function;
+                if (auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(name))
+                    return tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
+                return nullptr;
+            };
+            node = rewriteEinsumLambda(*function_node_ptr, is_scoped_function, get_called_lambda);
             return resolveFunction(node, scope, allow_niladic_functions);
         }
     }
