@@ -263,8 +263,9 @@ private:
     }
 
     /// The configurations matching a pattern, each processed on its own, as `ExternalLoaderXMLConfigRepository`
-    /// does for the definitions of dictionaries and executable functions. For a pattern with wildcards, the directory
-    /// up to the first wildcard as well, for the files added later, if `with_directory`.
+    /// does for the definitions of dictionaries and executable functions. If `with_directory`, the directory of each
+    /// file, and for a pattern with wildcards the directory up to the first wildcard as well, for the files added
+    /// later; otherwise only the existing files themselves.
     void addIndependentConfigPattern(const fs::path & pattern, const std::string & source, bool with_directory = true)
     {
         fs::path prefix;
@@ -278,20 +279,24 @@ private:
                 Poco::Glob::glob(pattern.string(), files, 0);
                 for (const auto & file : files)
                     if (!ConfigProcessor::isPreprocessedFile(file))
-                        addDefinitionConfigFile(file, fmt::format("{} matching {}", file, source));
+                        addDefinitionConfigFile(file, fmt::format("{} matching {}", file, source), with_directory);
                 return;
             }
             prefix /= component;
         }
-        addDefinitionConfigFile(pattern, source);
+        /// A file name without wildcards matches only an existing file, as `Poco::Glob` does in the loader.
+        std::error_code error;
+        if (!with_directory && !fs::exists(pattern, error))
+            return;
+        addDefinitionConfigFile(pattern, source, with_directory);
     }
 
     /// A file with definitions of dictionaries or executable functions. `ExternalLoader` logs a file it cannot load
     /// and goes on with the others, so such a file does not prevent the server from starting here either: its own
     /// substitutions file is not known then, and the loader reports the error later, as it does without the isolation.
-    void addDefinitionConfigFile(const fs::path & file, const std::string & source)
+    void addDefinitionConfigFile(const fs::path & file, const std::string & source, bool with_directory = true)
     {
-        addConfigFileWithMergeFiles(file, source);
+        addConfigFileWithMergeFiles(file, source, with_directory);
         try
         {
             addIncludeFrom(file, source);
@@ -341,9 +346,12 @@ private:
     /// A configuration file and the files merged into it from `<name>.d` and `conf.d`, with the targets of the
     /// symbolic links among them, which can be outside the directory of the configuration file. They are read again
     /// when the configuration is reloaded.
-    void addConfigFileWithMergeFiles(const fs::path & file, const std::string & source)
+    void addConfigFileWithMergeFiles(const fs::path & file, const std::string & source, bool with_directory = true)
     {
-        addLocation(file, Access::ReadOnly, source);
+        if (with_directory)
+            addLocation(file, Access::ReadOnly, source);
+        else
+            add(file, Access::ReadOnly, source);
         for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(file.string()))
             addLocation(merge_file, Access::ReadOnly, fmt::format("merged into {}", source));
     }

@@ -5,7 +5,7 @@
 # A server with `filesystem_isolation` started in `/`, as systemd starts it, with the default `dictionaries_config`
 # pattern of the packages, `*_dictionary.*ml`, which matches nothing next to the configuration, starts: the pattern is
 # looked up in the working directory as well, but only the matching files are kept visible, not the directory, which
-# would be the root.
+# would be the root. The same for a file name without wildcards that exists nowhere.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,6 +34,7 @@ cat > "$DIR/conf/config.xml" <<EOF
     </logger>
     <path>$DIR/data/</path>
     <dictionaries_config>*_dictionary.*ml</dictionaries_config>
+    <user_defined_executable_functions_config>optional_function.xml</user_defined_executable_functions_config>
     <!-- Any free port: nothing connects to this server. -->
     <tcp_port>0</tcp_port>
     <filesystem_isolation>enforce</filesystem_isolation>
