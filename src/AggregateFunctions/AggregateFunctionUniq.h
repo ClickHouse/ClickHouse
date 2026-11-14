@@ -330,37 +330,11 @@ struct AggregateFunctionUniqTraits
         }
     }
 
-    /// Whether `hashExactChunk` exists; it gives the hashes of `hashExact`, several values at a time.
     static constexpr bool has_batched_hash_exact = std::is_same_v<T, std::string_view> || std::is_same_v<T, IPv6>;
 
-    /// keys[k] = hashExact(value(column, begin + rows[k])), for k in [0, num_rows). `rows` is increasing and below
-    /// `chunk_rows` <= 256; it is not read when `num_rows == chunk_rows`.
-    static void hashExactChunk(const IColumn & column, size_t begin, size_t chunk_rows, const UInt32 * rows, size_t num_rows, UInt128 * keys)
-        requires has_batched_hash_exact
-    {
-        /// A group of `SipHashStrings::hashGroup` is 8 values; fewer are cheaper one at a time.
-        if (num_rows < 8)
-        {
-            for (size_t k = 0; k < num_rows; ++k)
-                keys[k] = hashExact(value(column, begin + (num_rows == chunk_rows ? k : rows[k])));
-        }
-        else if (num_rows == chunk_rows)
-        {
-            hashExactRange(column, begin, num_rows, keys);
-        }
-        else
-        {
-            std::array<UInt128, 256> row_hashes; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the hashes of `rows` are read
-            chassert(chunk_rows <= row_hashes.size());
-            hashExactRows(column, begin, rows, num_rows, row_hashes.data());
-            for (size_t k = 0; k < num_rows; ++k)
-                keys[k] = row_hashes[rows[k]];
-        }
-    }
-
-private:
-    /// hashes[i] = hashExact(value(column, begin + i)), for i in [0, num_rows).
+    /// hashes[i] = hashExact(value(column, begin + i)), for i in [0, num_rows), several values at a time.
     static void hashExactRange(const IColumn & column, size_t begin, size_t num_rows, UInt128 * hashes)
+        requires has_batched_hash_exact
     {
         const auto & typed_column = assert_cast<const ColumnType &>(column);
         if constexpr (std::is_same_v<ColumnType, ColumnString>)
@@ -368,40 +342,38 @@ private:
             sipHash128PaddedStrings(
                 reinterpret_cast<const char *>(typed_column.getChars().data()), typed_column.getOffsets().data() + begin, num_rows, hashes);
         }
+        else if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
+        {
+            const size_t n = typed_column.getN();
+            sipHash128PaddedFixedStrings(reinterpret_cast<const char *>(typed_column.getChars().data()) + begin * n, n, num_rows, hashes);
+        }
         else
         {
-            const auto [chars, n] = fixedSizeValues(typed_column);
-            sipHash128PaddedFixedStrings(chars + begin * n, n, num_rows, hashes);
+            /// `hashExact` of an `IPv6` is the SipHash of its 16 bytes, as for a `FixedString(16)`.
+            sipHash128PaddedFixedStrings(reinterpret_cast<const char *>(typed_column.getData().data() + begin), sizeof(IPv6), num_rows, hashes);
         }
     }
 
-    /// hashes[rows[i]] = hashExact(value(column, begin + rows[i])), for i in [0, num_rows).
+    /// hashes[rows[i]] = hashExact(value(column, begin + rows[i])), for i in [0, num_rows), several values at a time.
     static void hashExactRows(const IColumn & column, size_t begin, const UInt32 * rows, size_t num_rows, UInt128 * hashes)
+        requires has_batched_hash_exact
     {
         const auto & typed_column = assert_cast<const ColumnType &>(column);
         if constexpr (std::is_same_v<ColumnType, ColumnString>)
         {
             sipHash128PaddedStringRows(
-                reinterpret_cast<const char *>(typed_column.getChars().data()),
-                typed_column.getOffsets().data() + begin,
-                rows,
-                num_rows,
-                hashes);
+                reinterpret_cast<const char *>(typed_column.getChars().data()), typed_column.getOffsets().data() + begin, rows, num_rows, hashes);
+        }
+        else if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
+        {
+            const size_t n = typed_column.getN();
+            sipHash128PaddedFixedStringRows(reinterpret_cast<const char *>(typed_column.getChars().data()) + begin * n, n, rows, num_rows, hashes);
         }
         else
         {
-            const auto [chars, n] = fixedSizeValues(typed_column);
-            sipHash128PaddedFixedStringRows(chars + begin * n, n, rows, num_rows, hashes);
+            sipHash128PaddedFixedStringRows(
+                reinterpret_cast<const char *>(typed_column.getData().data() + begin), sizeof(IPv6), rows, num_rows, hashes);
         }
-    }
-
-    /// The bytes of a `FixedString` column, or of an `IPv6` column, which `hashExact` hashes as `FixedString(16)`.
-    static std::pair<const char *, size_t> fixedSizeValues(const ColumnType & column)
-    {
-        if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
-            return {reinterpret_cast<const char *>(column.getChars().data()), column.getN()};
-        else
-            return {reinterpret_cast<const char *>(column.getData().data()), sizeof(IPv6)};
     }
 };
 
@@ -464,7 +436,6 @@ private:
 
     /// The batched path applies to non-variadic functions whose sets support insertion of whole chunks of keys.
     static constexpr bool is_batchable = is_uniques_hash_set || is_hll || is_uniq_exact;
-    static constexpr bool is_batched_hash = is_uniq_exact && AggregateFunctionUniqTraits<T, ColumnType>::has_batched_hash_exact;
     static constexpr size_t hash_chunk_size = 256;
 
     /// Returns the key inserted into the set:
@@ -535,7 +506,6 @@ private:
 
         using Key = decltype(getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_begin)));
         std::array<Key, hash_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are written before read
-        std::array<UInt32, is_batched_hash ? hash_chunk_size : 0> key_rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
         size_t row = row_begin;
 
@@ -552,10 +522,7 @@ private:
             if (use_last_value_cache)
             {
                 last_value = AggregateFunctionUniqTraits<T, ColumnType>::value(column, row);
-                if constexpr (is_batched_hash)
-                    key_rows[num_keys++] = 0;
-                else
-                    keys[num_keys++] = getKey(last_value);
+                keys[num_keys++] = getKey(last_value);
 
                 for (size_t i = 1; i < chunk_size; ++i)
                 {
@@ -564,13 +531,8 @@ private:
                         continue;
 
                     last_value = value;
-                    if constexpr (is_batched_hash)
-                        key_rows[num_keys++] = static_cast<UInt32>(i);
-                    else
-                        keys[num_keys++] = getKey(value);
+                    keys[num_keys++] = getKey(value);
                 }
-                if constexpr (is_batched_hash)
-                    AggregateFunctionUniqTraits<T, ColumnType>::hashExactChunk(column, row, chunk_size, key_rows.data(), num_keys, keys.data());
 
                 /// Disable the cache for the rest of the batch when consecutive duplicates are rare.
                 cache_hits += chunk_size - num_keys;
@@ -583,9 +545,9 @@ private:
             {
                 num_keys = chunk_size;
 
-                if constexpr (is_batched_hash && std::is_same_v<T, std::string_view>)
+                if constexpr (is_uniq_exact && std::is_same_v<T, std::string_view>)
                 {
-                    AggregateFunctionUniqTraits<T, ColumnType>::hashExactChunk(column, row, chunk_size, nullptr, chunk_size, keys.data());
+                    AggregateFunctionUniqTraits<T, ColumnType>::hashExactRange(column, row, chunk_size, keys.data());
                 }
                 else
                 {
@@ -599,27 +561,6 @@ private:
         }
     }
 
-    /// `addManyImpl` with `flags` or `null_map` for `is_batched_hash`: the rows that pass in a chunk are hashed together.
-    template <SetLevelHint hint>
-    static void addManyFiltered(Data & data, const IColumn & column, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
-        requires is_batched_hash
-    {
-        std::array<UInt128, hash_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
-        std::array<UInt32, hash_chunk_size> key_rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-        for (size_t row = row_begin; row < row_end; row += hash_chunk_size)
-        {
-            const size_t chunk_size = std::min(hash_chunk_size, row_end - row);
-            size_t num_keys = 0;
-            for (size_t i = 0; i < chunk_size; ++i)
-            {
-                key_rows[num_keys] = static_cast<UInt32>(i);
-                num_keys += (!null_map || !null_map[row + i]) & (!flags || flags[row + i]);
-            }
-            AggregateFunctionUniqTraits<T, ColumnType>::hashExactChunk(column, row, chunk_size, key_rows.data(), num_keys, keys.data());
-            insertManyKeys<hint>(data, keys.data(), num_keys);
-        }
-    }
-
     template <SetLevelHint hint>
     static void addManyImpl(
         Data & data,
@@ -630,15 +571,6 @@ private:
         const char8_t * flags,
         const UInt8 * null_map)
     {
-        if constexpr (is_batched_hash)
-        {
-            if (flags || null_map)
-            {
-                addManyFiltered<hint>(data, *columns[0], row_begin, row_end, flags, null_map);
-                return;
-            }
-        }
-
         if (flags && null_map)
         {
             for (size_t row = row_begin; row < row_end; ++row)
@@ -684,6 +616,7 @@ private:
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<DataSet>::value;
     static constexpr bool is_uniq_exact_set = detail::IsUniqExactSet<DataSet>::value;
+    static constexpr size_t chunk_size = 256;
 
     /// `uniqExact` with GROUP BY: a row whose place and value equal those of the previous row is not inserted,
     /// because inserting a key that a set already contains never changes it.
@@ -694,10 +627,7 @@ private:
         using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
         using Key = typename DataSet::value_type;
         static constexpr auto hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
-        static constexpr bool is_batched_hash = Traits::has_batched_hash_exact;
-        /// The values of the other types are their keys.
-        static_assert(is_batched_hash || std::is_same_v<std::decay_t<decltype(Traits::hashExact(T{}))>, T>);
-        static constexpr size_t chunk_size = 256;
+        static constexpr bool value_is_key = std::is_same_v<std::decay_t<decltype(Traits::hashExact(T{}))>, T>;
 
         const char8_t * flags = nullptr;
         if (if_argument_pos >= 0)
@@ -705,9 +635,7 @@ private:
         const IColumn & column = *columns[0];
 
         std::array<Key, chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `count` entries are read
-        std::array<UInt32, is_batched_hash ? chunk_size : 0> rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         std::array<DataSet *, chunk_size> sets; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-        bool skip_repeats = true;
         AggregateDataPtr last_place = nullptr;
         T last_value{};
         size_t considered = 0;
@@ -716,7 +644,6 @@ private:
         size_t row = row_begin;
         while (row < row_end)
         {
-            const size_t chunk_begin = row;
             const size_t chunk_end = row + std::min(chunk_size, row_end - row);
             size_t count = 0;
             size_t chunk_considered = 0;
@@ -730,62 +657,86 @@ private:
                 if (flags && !flags[row])
                     continue;
 
+                ++chunk_considered;
                 AggregateDataPtr place = places[row] + place_offset;
-                if constexpr (is_batched_hash)
+                const auto value = Traits::value(column, row);
+                if constexpr (value_is_key)
                 {
-                    if (skip_repeats)
-                    {
-                        ++chunk_considered;
-                        const auto value = Traits::value(column, row);
-                        if (place == last_place && bitEquals(value, last_value))
-                            continue;
-                        last_place = place;
-                        last_value = value;
-                    }
-                    rows[count] = static_cast<UInt32>(row - chunk_begin);
-                    sets[count++] = &this->data(place).set;
-                }
-                else
-                {
-                    ++chunk_considered;
-                    const auto value = Traits::value(column, row);
                     /// Branch-free: on short runs a skip branch mispredicts more than a skipped insert saves.
                     const bool repeated = (place == last_place) & bitEquals(value, last_value);
                     keys[count] = value;
                     sets[count] = &this->data(place).set;
                     count += !repeated;
-                    last_place = place;
-                    last_value = value;
                 }
+                else
+                {
+                    if (place == last_place && bitEquals(value, last_value))
+                        continue;
+                    keys[count] = Traits::hashExact(value);
+                    sets[count++] = &this->data(place).set;
+                }
+                last_place = place;
+                last_value = value;
             }
 
-            if constexpr (is_batched_hash)
-                Traits::hashExactChunk(column, chunk_begin, chunk_end - chunk_begin, rows.data(), count, keys.data());
             for (size_t i = 0; i < count; ++i)
                 sets[i]->template insert<const Key &, hint>(keys[i]);
 
-            if (!skip_repeats)
-                continue;
-
-            /// Repeats are rare: stop looking for them, and for the types without `hashExactChunk` use the per-row loop
-            /// for the rest of the batch.
+            /// Repeats are rare: for the rest of the batch, hash a chunk of values at once if most rows have a place, or add one
+            /// row at a time.
             considered += chunk_considered;
             repeats += chunk_considered - count;
             if (repeats * 2 <= considered)
             {
-                if constexpr (is_batched_hash)
+                if constexpr (Traits::has_batched_hash_exact)
                 {
-                    skip_repeats = false;
+                    if (!flags && considered * 2 >= row - row_begin)
+                    {
+                        addBatchHashed<check_places>(row, row_end, places, place_offset, column);
+                        return;
+                    }
                 }
+                using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>;
+                if constexpr (check_places)
+                    Base::addBatch(row, row_end, places, place_offset, columns, arena, if_argument_pos);
                 else
+                    Base::addBatchWithNonNullPlaces(row, row_end, places, place_offset, columns, arena, if_argument_pos);
+                return;
+            }
+        }
+    }
+
+    /// GROUP BY without `-If`: hashes the values of a chunk of rows at once, then inserts them in row order. With `check_places`,
+    /// only the rows with a place are hashed.
+    template <bool check_places>
+    void addBatchHashed(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn & column) const
+    {
+        using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
+        using Key = typename DataSet::value_type;
+        static constexpr auto hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
+
+        std::array<Key, chunk_size> hashes; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the entries of hashed rows are read
+        for (size_t begin = row_begin; begin < row_end; begin += chunk_size)
+        {
+            const size_t num_rows = std::min(chunk_size, row_end - begin);
+            if constexpr (check_places)
+            {
+                std::array<UInt32, chunk_size> rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `count` entries are read
+                size_t count = 0;
+                for (size_t i = 0; i < num_rows; ++i)
                 {
-                    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>;
-                    if constexpr (check_places)
-                        Base::addBatch(row, row_end, places, place_offset, columns, arena, if_argument_pos);
-                    else
-                        Base::addBatchWithNonNullPlaces(row, row_end, places, place_offset, columns, arena, if_argument_pos);
-                    return;
+                    rows[count] = static_cast<UInt32>(i);
+                    count += places[begin + i] != nullptr;
                 }
+                Traits::hashExactRows(column, begin, rows.data(), count, hashes.data());
+                for (size_t j = 0; j < count; ++j)
+                    this->data(places[begin + rows[j]] + place_offset).set.template insert<const Key &, hint>(hashes[rows[j]]);
+            }
+            else
+            {
+                Traits::hashExactRange(column, begin, num_rows, hashes.data());
+                for (size_t i = 0; i < num_rows; ++i)
+                    this->data(places[begin + i] + place_offset).set.template insert<const Key &, hint>(hashes[i]);
             }
         }
     }
