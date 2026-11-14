@@ -76,6 +76,7 @@ public:
     size_t getRows() const { return accumulated.getRows() + pending.getRows(); }
     void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }
     const SharedHeader & getHeader() const { return header; }
+    void setMinBlockSizeRows(size_t rows) { min_block_size_rows = rows; }
 
 private:
 
@@ -142,7 +143,7 @@ private:
     PendingQueue  pending;
     SharedHeader header;
 
-    const size_t min_block_size_rows;
+    size_t min_block_size_rows;
     const size_t min_block_size_bytes;
     const size_t max_block_size_rows;
     const size_t max_block_size_bytes;

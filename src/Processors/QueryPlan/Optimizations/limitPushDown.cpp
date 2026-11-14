@@ -1,6 +1,10 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Interpreters/IJoin.h>
+#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -209,6 +213,45 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
         return;
 
     sort->updateLimitByHint(limit_by->getColumns(), length + offset, limit_by->alwaysReadTillEnd());
+}
+
+void pushLimitIntoJoin(QueryPlan::Node & node)
+{
+    if (node.children.size() != 1)
+        return;
+
+    const auto * limit = typeid_cast<const LimitStep *>(node.step.get());
+    if (!limit || limit->withTies() || limit->alwaysReadTillEnd() || limit->getLimitForSorting() == 0)
+        return;
+
+    /// Every join down the probe side (through expressions, filters and other joins' probe inputs) is marked.
+    QueryPlan::Node * child = node.children.front();
+    while (true)
+    {
+        IQueryPlanStep * step = child->step.get();
+        if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
+        {
+            if (child->children.size() != 1)
+                return;
+            child = child->children.front();
+        }
+        else if (auto * join = typeid_cast<JoinStep *>(step))
+        {
+            join->setLimitAbove();
+            if (child->children.size() != 2 || join->getJoin()->pipelineType() != JoinPipelineType::FillRightFirst)
+                return;
+            child = child->children[join->swap_streams ? 1 : 0];
+        }
+        else if (auto * nested_loop_join = typeid_cast<BlockNestedLoopJoinStep *>(step))
+        {
+            nested_loop_join->setLimitAbove();
+            if (child->children.size() != 2)
+                return;
+            child = child->children.front();
+        }
+        else
+            return;
+    }
 }
 
 }

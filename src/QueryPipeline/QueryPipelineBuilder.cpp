@@ -629,6 +629,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t max_block_size,
     size_t min_block_size_rows,
     size_t min_block_size_bytes,
+    bool grow_left_squashing,
     size_t max_streams,
     IQueryPlanStep * join_step,
     bool keep_left_pipeline_layout,
@@ -800,7 +801,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         OutputPort * left_port = *lit;
         if (min_block_size_rows > 0 || min_block_size_bytes > 0)
         {
-            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
+            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(
+                left->getSharedHeader(), min_block_size_rows, min_block_size_bytes, 0, 0, grow_left_squashing);
             connect(*left_port, squashing->getInputs().front());
             left_port = &squashing->getOutputPort();
             add_to_left_pipe(std::move(squashing));

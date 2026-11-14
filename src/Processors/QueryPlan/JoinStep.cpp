@@ -188,6 +188,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 max_block_size,
                 min_block_size_rows,
                 min_block_size_bytes,
+                limit_above,
                 max_streams,
                 this,
                 left_pipeline_order != LeftPipelineOrder::None,
@@ -243,7 +244,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
             [&](const SharedHeader & header)
             {
                 return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(
-                    header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes));
+                    header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes, limit_above));
             });
     }
 
