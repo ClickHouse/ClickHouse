@@ -175,7 +175,9 @@ public:
 
         if (need_confidence_interval)
         {
-            auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
+            auto [ci_low, ci_high] = isNaN(t_statistic)
+                ? std::pair{std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()}
+                : data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
             auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
             auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
             column_ci_low.getData().push_back(ci_low);
