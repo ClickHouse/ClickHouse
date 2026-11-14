@@ -12,6 +12,7 @@
 #endif
 
 #include <chrono>
+#include <map>
 #include <optional>
 #include <set>
 #include <vector>
@@ -46,6 +47,28 @@ public:
         : public SearchParams
     {
         String prefix;
+
+        /// If set, every value returned by the search is treated as a DN (for example an Active Directory
+        /// `memberOf` value) and replaced by the value of its first RDN whose attribute type equals
+        /// `rdn_attribute` case-insensitively. Values that are not DNs or have no such RDN are ignored.
+        String rdn_attribute;
+
+        /// Optional allow-list of groups, as configured. An entry containing `=` is a group DN and is
+        /// compared (normalized by `normalizeDN`) against the raw search result before `rdn_attribute`
+        /// extraction; the role name is then derived from the `rdn_attribute` value of the configured DN.
+        /// Any other entry is a plain group name compared ASCII-case-insensitively against the value after
+        /// extraction; the configured spelling wins. When the list is non-empty, values matching no entry
+        /// are ignored. `prefix` is stripped afterwards in both cases, so every entry must start with it.
+        /// Kept as configured for `updateHash` and `system.user_directories`; the lookups use the maps below.
+        std::vector<String> groups;
+
+        /// Lookup maps derived from `groups` by `parseLDAPRoleSearchParams`, the only producer of this struct.
+        /// ASCII-lower-cased plain group name -> the name as configured.
+        std::map<String, String> plain_groups;
+        /// Normalized group DN (`LDAPClient::normalizeDN`) -> the `rdn_attribute` value as spelled in the configured DN.
+        std::map<String, String> dn_groups;
+
+        static bool isGroupDN(const String & group) { return group.contains('='); }
 
         void updateHash(SipHash & hash) const;
     };
@@ -113,6 +136,14 @@ public:
         String user;
         String password;
 
+        /// Optional service-account credentials used for lookups that do not have the user's
+        /// password available (e.g. resolving an LDAP-backed name on `EXECUTE AS` before the
+        /// user has authenticated). When `bind_dn` and `password` are empty the service-bind
+        /// path is disabled and `IAccessStorage::find(..., force_external_lookup=true)` is a
+        /// no-op for this server.
+        String lookup_bind_dn;
+        String lookup_password;
+
         std::optional<SearchParams> user_dn_detection;
 
         std::chrono::seconds verification_cooldown{0};
@@ -130,16 +161,41 @@ public:
     explicit LDAPClient(const Params & params_);
     ~LDAPClient();
 
+    /// Parses `dn` as an LDAPv3 string representation of a distinguished name (RFC 4514) and returns the
+    /// unescaped value of the first RDN (the most specific one) whose attribute type equals `rdn_attribute`
+    /// case-insensitively. Returns `std::nullopt` if `dn` is not a valid non-empty DN or has no such RDN.
+    static std::optional<String> extractRDNValue(const String & dn, const String & rdn_attribute);
+
+    /// Returns a canonical, ASCII-lower-cased LDAPv3 string representation of `dn` intended for equality
+    /// comparison only (differences in whitespace, escaping and letter case disappear), or `std::nullopt`
+    /// if `dn` is not a valid non-empty DN.
+    static std::optional<String> normalizeDN(const String & dn);
+
     LDAPClient(const LDAPClient &) = delete;
     LDAPClient(LDAPClient &&) = delete;
     LDAPClient & operator= (const LDAPClient &) = delete;
     LDAPClient & operator= (LDAPClient &&) = delete;
 
+    enum class BindMode : uint8_t
+    {
+        /// Bind as the user being authenticated (the existing behavior).
+        User,
+        /// Bind with the service account (`params.lookup_bind_dn`, `params.lookup_password`)
+        /// and use `user_dn_detection` to confirm the target user exists. Used when looking
+        /// up a user without their password.
+        Service,
+    };
+
 protected:
     MAYBE_NORETURN void handleError(int result_code, String text = "");
-    MAYBE_NORETURN bool openConnection();
+    MAYBE_NORETURN bool openConnection(BindMode mode = BindMode::User);
     void closeConnection() noexcept;
-    SearchResults search(const SearchParams & search_params);
+    /// When `tolerate_no_such_object` is set, an `LDAP_NO_SUCH_OBJECT` (rc=32) reply from the
+    /// directory is converted into an empty `SearchResults` instead of an `LDAP_ERROR`. Used
+    /// by the service-bind `user_dn_detection` lookup so a missing user (whose substituted
+    /// `base_dn` does not exist in the directory) collapses to the canonical `UNKNOWN_USER`
+    /// path rather than surfacing a low-level LDAP error to the caller.
+    SearchResults search(const SearchParams & search_params, bool tolerate_no_such_object = false);
 
     const Params params;
 #if USE_LDAP
@@ -156,6 +212,14 @@ class LDAPSimpleAuthClient
 public:
     using LDAPClient::LDAPClient;
     bool authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
+
+    /// Looks up a user in LDAP using the service-account credentials configured in
+    /// `params.lookup_bind_dn` / `params.lookup_password`. The user's existence is
+    /// verified via `params.user_dn_detection`, which must also be configured.
+    /// Returns true if the user was found. Optionally fills `role_search_results`.
+    /// Returns false (without throwing) if the user does not exist, if the service-bind
+    /// credentials are not configured, or if `user_dn_detection` is not configured.
+    bool find(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
 };
 
 }
