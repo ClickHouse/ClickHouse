@@ -98,6 +98,12 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "shape-not-stamped-before-run",
         "dirty-startup-format",
         "format-connection-change",
+        "run-link-implicit-user",
+        "run-link-delayed-probe",
+        "download-snapshot",
+        "probe-admission",
+        "probe-admission-cancel",
+        "popstate-implicit-account-database",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out
