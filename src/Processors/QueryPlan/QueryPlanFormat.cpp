@@ -599,7 +599,7 @@ namespace QueryPlanFormat
         const ActionsDAG::Node * node,
         const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names,
         const UnorderedMapWithMemoryTracking<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
+        UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names,
         int parent_precedence)
     {
         LengthBudget budget;
@@ -645,9 +645,9 @@ namespace QueryPlanFormat
     static PrettyColumnName formatFilterPretty(
         const ActionsDAG & dag,
         const String & column_name,
-        const std::unordered_map<String, PrettyColumnName> & pretty_names,
-        const std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+        const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names,
+        const UnorderedMapWithMemoryTracking<String, RuntimeFilterInfo> & runtime_filter_names,
+        UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
     {
         const auto * root = dag.tryFindInOutputs(column_name);
         if (!root)
