@@ -6727,7 +6727,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
-    std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
@@ -6852,6 +6851,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     backQuoteIfNeed(command.column_name),
                     it->second);
             }
+
+            checkAlterKeepsDependentViews(commands, command, local_context, share_nested_offsets);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -6861,15 +6862,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// or projections get dropped, it will be checked later in AlterCommands::apply. This
                 /// allows projections with * to drop columns. One example can be found in
                 /// 02691_drop_column_with_projections_replicated.sql.
-                if (!name_deps)
-                    name_deps = getDependentViewsByColumn(local_context);
-                const auto & deps_mv = name_deps.value()[command.column_name];
-                if (!deps_mv.empty())
-                {
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                        backQuoteIfNeed(command.column_name), toString(deps_mv));
-                }
+                checkAlterKeepsDependentViews(commands, command, local_context, share_nested_offsets);
             }
             else
             {

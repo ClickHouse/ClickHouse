@@ -415,6 +415,10 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
     }
 
     getTargetTable()->checkAlterIsPossible(commands, local_context);
+
+    /// Views reading from the alias depend on the alias, not on the target, so the target's check does not see them.
+    for (const auto & command : commands)
+        checkAlterKeepsDependentViews(commands, command, local_context);
 }
 
 void StorageAlias::alter(
