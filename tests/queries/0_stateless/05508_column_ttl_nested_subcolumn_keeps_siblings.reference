@@ -1,0 +1,10 @@
+wide	1	[NULL,NULL]	['x','y']
+rows	1	['','']	['x','y']
+rows	2	['c']	['z']
+compact	1	['','']	['x','y']
+enum	1	['ok','ok']	['x','y']
+enum	2	['other']	['z']
+dependent	['','']	['b','b']	['x','y']	2
+dependent	['','']	['b','b']	['x','y']	2
+single	['','']	['','']	2	2
+added	['a','b']	['x','y']	['','']	['e','e']
