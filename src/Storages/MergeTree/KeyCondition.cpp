@@ -54,6 +54,7 @@
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -81,7 +82,9 @@ namespace Setting
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
 
@@ -100,6 +103,18 @@ extern const int TOO_SLOW;
 
 namespace
 {
+
+size_t getMaxThreadsForIndexAnalysis(const Settings & settings)
+{
+    /// With constant folding, a condition is built for each partition on the threads that already analyze parts in parallel.
+    if (settings[Setting::use_constant_folding_in_index_analysis])
+        return 1;
+
+    size_t max_threads = getEffectiveMaxThreads(settings);
+    if (settings[Setting::max_threads_for_indexes])
+        max_threads = std::min<size_t>(max_threads, settings[Setting::max_threads_for_indexes]);
+    return max_threads;
+}
 
 /// A strict comparison does not survive a relaxed constant: after the constant has been
 /// transformed by a non-injective monotonic key function, only the non-strict bound is
@@ -1717,6 +1732,7 @@ KeyCondition::KeyCondition(
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
     , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+    , max_threads_for_set_index(getMaxThreadsForIndexAnalysis(context->getSettingsRef()))
     , multiple_key_columns_per_condition(context->getSettingsRef()[Setting::analyze_index_with_multiple_key_columns_per_condition])
 {
     size_t key_index = 0;
@@ -4054,7 +4070,8 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     const DataTypes & set_types,
     SetAtomCandidate candidate,
     bool allow_relaxed_pruning,
-    const DataTypePtr & has_element_type)
+    const DataTypePtr & has_element_type,
+    size_t max_threads)
 {
     chassert(set_types.size() == set_columns.size());
     if (candidate.column_mappings.empty())
@@ -4127,7 +4144,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     indexes_mapping.reserve(candidate.column_mappings.size());
     for (auto & mapping : candidate.column_mappings)
         indexes_mapping.push_back(std::move(mapping.index_mapping));
-    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping));
+    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping), max_threads);
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
     const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
@@ -4164,12 +4181,14 @@ void KeyCondition::appendSetAtoms(
     /// Component and packed-tuple mappings can coexist even when they constrain the same key column.
     /// Key coverage only limits the additional wrapped-set candidates below.
     if (auto atom = tryPrepareSetAtom(
-            set_columns, set_types, std::move(analysis.componentwise_candidate), allow_relaxed_pruning, has_element_type))
+            set_columns, set_types, std::move(analysis.componentwise_candidate), allow_relaxed_pruning, has_element_type,
+            max_threads_for_set_index))
         group.atoms.emplace_back(std::move(*atom));
 
     if (analysis.packed_tuple_candidate)
         if (auto atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), allow_relaxed_pruning, has_element_type))
+                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), allow_relaxed_pruning, has_element_type,
+                max_threads_for_set_index))
             group.atoms.emplace_back(std::move(*atom));
 
     /// Atoms for the predicate's components and whole tuple take priority over additional
@@ -4217,7 +4236,7 @@ void KeyCondition::appendSetAtoms(
             set_candidate.is_relaxed = !is_injective;
 
             auto candidate_atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(set_candidate), allow_relaxed_pruning, has_element_type);
+                set_columns, set_types, std::move(set_candidate), allow_relaxed_pruning, has_element_type, max_threads_for_set_index);
 
             /// Additional atoms for complement predicates must be exact. `tryPrepareSetAtom` can relax
             /// even an injective transform when its mapping covers only some tuple components.

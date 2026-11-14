@@ -295,7 +295,7 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
         bool use_radix_sort = (sort_is_stable && ascending) || !sort_is_stable;
         size_t size = end - begin;
 
-        if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+        if (size >= 256 && data.size() <= std::numeric_limits<UInt32>::max() && use_radix_sort)
         {
             /// `trySort` can reorder equal values even when it returns false.
             /// Stable radix sorting must preserve the incoming order within equal ranges.
