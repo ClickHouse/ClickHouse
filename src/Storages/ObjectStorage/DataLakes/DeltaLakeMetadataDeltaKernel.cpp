@@ -316,14 +316,18 @@ std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTable
 }
 
 std::unique_ptr<StorageInMemoryMetadata> DeltaLakeMetadataDeltaKernel::buildStorageMetadataFromState(
-    const DataLakeTableStateSnapshot & state, ContextPtr) const
+    const DataLakeTableStateSnapshot & state, ContextPtr context) const
 {
     chassert(std::holds_alternative<DeltaLake::TableStateSnapshot>(state));
     const auto & delta_state = std::get<DeltaLake::TableStateSnapshot>(state);
-    auto snapshot = getTableSnapshot(static_cast<SnapshotVersion>(delta_state.version));
+    const auto snapshot_version = static_cast<SnapshotVersion>(delta_state.version);
 
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(ColumnsDescription{snapshot->getTableSchema()});
+    /// The change data feed has its own columns (`_change_type`, ...), as in `getTableSchema`.
+    if (auto version_range = getChangeDataFeedVersionRange(context->getSettingsRef(), snapshot_version))
+        result->setColumns(ColumnsDescription{getTableChanges(*version_range)->getSchema()});
+    else
+        result->setColumns(ColumnsDescription{getTableSnapshot(snapshot_version)->getTableSchema()});
     result->setDataLakeTableState(state);
     return result;
 }
