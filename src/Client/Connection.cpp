@@ -192,12 +192,14 @@ void Connection::adoptSocket(Poco::Net::StreamSocket connected_socket)
 
     socket->setBlocking(true);
     current_resolved_address = adopted_address;
+    dns_addresses_change_counter = DNSResolver::instance().getAddressesChangeCounter();
     have_more_addresses_to_connect = false;
 }
 
 
 void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
 {
+    dns_addresses_change_counter = DNSResolver::instance().getAddressesChangeCounter();
     auto addresses = DNSResolver::instance().resolveAddressList(host, port);
     const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
 
@@ -849,6 +851,46 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
         ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
         LOG_TRACE(log_wrapper.get(), "Connection was closed by the server or is out of sync, will reconnect.");
         connect(timeouts);
+        return;
+    }
+
+    /// After a restart a server can get a new address while its old one is given to another
+    /// server. A connection opened to the old address would keep reaching the other server, so it
+    /// is reopened once the DNS cache no longer lists its address for the host.
+    if (isResolvedAddressOutdated())
+    {
+        ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
+        LOG_TRACE(log_wrapper.get(), "Host {} no longer resolves to {}, will reconnect.", host, current_resolved_address->host().toString());
+        connect(timeouts);
+    }
+}
+
+bool Connection::isResolvedAddressOutdated()
+{
+    if (!current_resolved_address)
+        return false;
+
+    /// One atomic load in the common case: the addresses are compared only after the DNS cache
+    /// changed since this connection was last checked.
+    auto & resolver = DNSResolver::instance();
+    const UInt64 counter = resolver.getAddressesChangeCounter();
+    if (counter == dns_addresses_change_counter)
+        return false;
+
+    try
+    {
+        const auto addresses = resolver.resolveHostAll(host);
+        /// Remember the counter only after the address was checked, so that a failed lookup is
+        /// retried on the next use of the connection.
+        dns_addresses_change_counter = counter;
+        return std::find(addresses.begin(), addresses.end(), current_resolved_address->host()) == addresses.end();
+    }
+    catch (...)
+    {
+        /// Keep the connection while the host cannot be resolved: failing every query during a DNS
+        /// outage would be worse. The check is repeated on the next use.
+        tryLogCurrentException(log_wrapper.get(), "Cannot resolve host to check the address of a pooled connection");
+        return false;
     }
 }
 

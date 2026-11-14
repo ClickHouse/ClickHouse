@@ -253,8 +253,10 @@ private:
     std::optional<UInt64> nonce;
 
     /// Address is resolved during the first connection (or the following reconnects)
-    /// Use it only for logging purposes
     std::optional<Poco::Net::SocketAddress> current_resolved_address;
+
+    /// `DNSResolver::getAddressesChangeCounter` when `current_resolved_address` was last checked.
+    UInt64 dns_addresses_change_counter = 0;
 
     /// See setPreferredAddress.
     std::optional<Poco::Net::SocketAddress> preferred_address;
@@ -378,6 +380,9 @@ private:
 
     /// Whether the connection can no longer serve a request, checked without a round trip.
     bool isStale();
+
+    /// Whether the host no longer resolves to the address this connection is connected to.
+    bool isResolvedAddressOutdated();
 
     Block receiveData();
     Block receiveLogData();
