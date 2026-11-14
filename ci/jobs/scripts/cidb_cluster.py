@@ -6,6 +6,7 @@ import traceback
 
 import requests
 
+from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
 from ci.praktika.settings import Settings
 from ci.settings.settings import SECRET_CI_DB_CONNECTION
@@ -280,6 +281,6 @@ class CIDBCluster:
 
 if __name__ == "__main__":
     CIDBCluster = CIDBCluster(
-        url="https://play.clickhouse.com?user=play", user="", pwd=""
+        url=f"{CIDB.get_read_url(Info())}?user={Settings.CI_DB_READ_USER}", user="", pwd=""
     )
     assert CIDBCluster.is_ready()

@@ -16,6 +16,7 @@ page_cache_max_size: 134217728
 $CLICKHOUSE_LOCAL --config-file "${CONFIG_FILE}" \
     --use_page_cache_for_local_disks 1 \
     --local_filesystem_read_method pread \
+    --use_statistics_for_sum_avg_aggregation 0 \
     --multiquery "
 CREATE DATABASE d ENGINE = Atomic;
 CREATE TABLE d.t (x UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0;
