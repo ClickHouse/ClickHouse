@@ -20,11 +20,13 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/indexHint.h>
@@ -4927,6 +4929,59 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     return query_info.getSampleSizeRatio().has_value();
 }
 
+/// Adds the subcolumns `subcolumns` to the result of a `FINAL` merge that read their columns whole. Runs before the
+/// filters deferred after `FINAL`, which may use the subcolumns, so `out_projection` of the merge is applied first.
+static void extractSubcolumnsAfterFinal(
+    Pipe & pipe, const NamesAndTypesList & subcolumns, std::optional<ActionsDAG> & out_projection, const ContextPtr & context)
+{
+    if (out_projection)
+    {
+        auto projection = std::make_shared<ExpressionActions>(std::move(*out_projection));
+        out_projection.reset();
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, projection); });
+    }
+
+    /// A `PREWHERE` that is not deferred after `FINAL` reads its subcolumns before the merge and may keep them in the
+    /// result. They hold the values of the rows before the merge, so they are replaced.
+    NameSet subcolumn_names;
+    for (const auto & subcolumn : subcolumns)
+        subcolumn_names.insert(subcolumn.name);
+
+    ActionsDAG extract_subcolumns_dag;
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto & column : pipe.getHeader())
+    {
+        const auto & input = extract_subcolumns_dag.addInput(column);
+        if (!subcolumn_names.contains(column.name))
+        {
+            extract_subcolumns_dag.getOutputs().push_back(&input);
+            inputs.emplace(column.name, &input);
+        }
+    }
+
+    /// The subcolumn is extracted from the column it was resolved to in storage. Its name does not tell it: `j.v.null`
+    /// may be `null` of a column `j.v` or `v.null` of a `JSON` column `j`.
+    auto get_subcolumn = FunctionFactory::instance().get("getSubcolumn", context);
+    for (const auto & subcolumn : subcolumns)
+    {
+        auto parent = inputs.find(subcolumn.getNameInStorage());
+        if (parent == inputs.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of subcolumn {} is not in the result of the FINAL merge",
+                subcolumn.getNameInStorage(), subcolumn.name);
+
+        auto subcolumn_name_type = std::make_shared<DataTypeString>();
+        auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn.getSubcolumnName());
+        const auto & subcolumn_name_node = extract_subcolumns_dag.addColumn(
+            std::move(subcolumn_name_column), std::move(subcolumn_name_type), subcolumn.getSubcolumnName());
+        const auto & function_node = extract_subcolumns_dag.addFunction(
+            get_subcolumn, {parent->second, &subcolumn_name_node}, {});
+        extract_subcolumns_dag.getOutputs().push_back(&extract_subcolumns_dag.addAlias(function_node, subcolumn.name));
+    }
+
+    auto extract_subcolumns = std::make_shared<ExpressionActions>(std::move(extract_subcolumns_dag));
+    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, extract_subcolumns); });
+}
+
 Pipe ReadFromMergeTree::spreadMarkRanges(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -4962,6 +5017,67 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         if (output_each_partition_through_separate_port)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimization isn't supposed to be used for queries with final");
 
+        /// These engines combine the values of each column by its type, so a subcolumn read alone would be
+        /// combined on its own and not as a part of its column: `x.null` of a `Nullable` column would be taken
+        /// from the last row instead of following the coalesced `x`, an element of a tuple would be summed while
+        /// the tuple is not, an element of a `SimpleAggregateFunction` column would lose its function. So read the
+        /// whole column and extract the subcolumn after the merge. Only a subcolumn that is itself a column of the sorting
+        /// key, such as `t.a` of `ORDER BY t.a`, is read as it is: a subcolumn of a key column read alone is not a key
+        /// column for the merge, so `SummingMergeTree` would sum it. A column only used by an expression of the key is not
+        /// equal in the merged rows either.
+        NamesAndTypesList subcolumns_to_extract;
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing
+            || data.merging_params.mode == MergeTreeData::MergingParams::Aggregating
+            || data.merging_params.mode == MergeTreeData::MergingParams::Coalescing)
+        {
+            const auto sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+            const NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
+            const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+
+            /// `PREWHERE` and the row policy that are not deferred after `FINAL` are evaluated while reading, before
+            /// the merge, so the subcolumns they use are read as well.
+            NameSet columns_for_filters_before_merge;
+            if (query_info.prewhere_info)
+                for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                    columns_for_filters_before_merge.insert(column_name);
+            if (query_info.row_level_filter)
+                for (const auto & column_name : query_info.row_level_filter->actions.getRequiredColumnsNames())
+                    columns_for_filters_before_merge.insert(column_name);
+
+            Names columns_with_parents;
+            NameSet columns_with_parents_set;
+            for (const auto & column_name : column_names_to_read)
+            {
+                auto column = storage_snapshot->tryGetColumn(options, column_name);
+                if (column && column->isSubcolumn() && !sorting_key_columns_set.contains(column_name))
+                {
+                    subcolumns_to_extract.push_back(*column);
+                    if (columns_with_parents_set.emplace(column->getNameInStorage()).second)
+                        columns_with_parents.push_back(column->getNameInStorage());
+                    if (columns_for_filters_before_merge.contains(column_name) && columns_with_parents_set.emplace(column_name).second)
+                        columns_with_parents.push_back(column_name);
+                }
+                else if (columns_with_parents_set.emplace(column_name).second)
+                {
+                    columns_with_parents.push_back(column_name);
+                }
+            }
+
+            if (!subcolumns_to_extract.empty())
+            {
+                /// A filter before the merge drops the inputs that only it uses, such as `v` of `PREWHERE v`, so the parents
+                /// that replace the subcolumns are kept, as the sorting key is for the merge.
+                NameSet parents;
+                for (const auto & subcolumn : subcolumns_to_extract)
+                    parents.insert(subcolumn.getNameInStorage());
+                if (query_info.prewhere_info || query_info.row_level_filter)
+                    restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), parents);
+
+                column_names_to_read = std::move(columns_with_parents);
+                names = std::move(columns_with_parents_set);
+            }
+        }
+
         auto original_column_names = column_names_to_read;
 
         /// Add columns needed to calculate the sorting expression and the columns the merging transform reads.
@@ -4977,13 +5093,18 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
                 column_names_to_read.push_back(column);
         }
 
-        return spreadMarkRangesAmongStreamsFinal(
+        auto pipe = spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),
             index_build_context,
             num_streams,
             original_column_names,
             column_names_to_read,
             result_projection);
+
+        if (!subcolumns_to_extract.empty() && !pipe.empty())
+            extractSubcolumnsAfterFinal(pipe, subcolumns_to_extract, result_projection, context);
+
+        return pipe;
     }
 
     /// `split_parts` is a static pre-split of the parts into primary-key layers made by
