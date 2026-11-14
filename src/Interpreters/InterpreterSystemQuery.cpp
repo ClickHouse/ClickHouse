@@ -557,6 +557,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Paimon");
 #endif
+        case Type::CLEAR_DELTA_LAKE_METADATA_CACHE:
+#if USE_DELTA_KERNEL_RS
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_DELTA_LAKE_METADATA_CACHE);
+            system_context->clearDeltaLakeMetadataCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Delta Lake");
+#endif
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
 #if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);
@@ -3089,6 +3097,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_PAIMON_METADATA_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE);
+            break;
+        case Type::CLEAR_DELTA_LAKE_METADATA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_DELTA_LAKE_METADATA_CACHE);
             break;
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);

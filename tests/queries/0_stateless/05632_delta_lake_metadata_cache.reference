@@ -1,0 +1,13 @@
+without cache	35	1015
+first	35	1015
+second	35	1015
+missing rows	0
+unexpected rows	0
+partition	5	115
+expected partition	5	115
+after clear	35	1015
+without cache	0	0
+first	0	1
+second	1	0
+cached reads	1	0
+after clear	0	1

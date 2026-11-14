@@ -317,6 +317,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
             {"DROP PAIMON METADATA CACHE", Type::CLEAR_PAIMON_METADATA_CACHE},
+            {"DROP DELTA LAKE METADATA CACHE", Type::CLEAR_DELTA_LAKE_METADATA_CACHE},
             {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
             {"DROP POINT IN POLYGON CACHE", Type::CLEAR_POINT_IN_POLYGON_CACHE},
             {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
@@ -1342,6 +1343,10 @@ Clears the parquet metadata cache.
 ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
 
 Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
+
+## SYSTEM CLEAR|DROP DELTA LAKE METADATA CACHE {#drop-delta-lake-metadata-cache}
+
+Clears the Delta Lake metadata cache, which keeps the list of data files of each version of a `DeltaLake` table (see the setting `use_delta_lake_metadata_cache`).
 ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
 
 Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.

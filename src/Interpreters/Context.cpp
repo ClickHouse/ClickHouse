@@ -66,6 +66,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeMetadataCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -795,6 +796,9 @@ struct ContextSharedPart : boost::noncopyable
 #if USE_AVRO
     mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
     mutable PaimonMetadataFilesCachePtr paimon_metadata_files_cache TSA_GUARDED_BY(mutex);     /// Cache of deserialized paimon metadata files.
+#endif
+#if USE_DELTA_KERNEL_RS
+    mutable DeltaLakeMetadataCachePtr delta_lake_metadata_cache TSA_GUARDED_BY(mutex);
 #endif
 #if USE_PARQUET
     mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
@@ -6174,6 +6178,49 @@ void Context::clearPaimonMetadataFilesCache() const
     auto cache = getPaimonMetadataFilesCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+#endif
+
+#if USE_DELTA_KERNEL_RS
+void Context::setDeltaLakeMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->delta_lake_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delta Lake metadata cache has been already created.");
+
+    shared->delta_lake_metadata_cache = std::make_shared<DeltaLakeMetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateDeltaLakeMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->delta_lake_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delta Lake metadata cache was not created yet.");
+
+    size_t size = config.getUInt64("delta_lake_metadata_cache_size", DEFAULT_DELTA_LAKE_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("delta_lake_metadata_cache_max_entries", DEFAULT_DELTA_LAKE_METADATA_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered Delta Lake metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->delta_lake_metadata_cache->setMaxSizeInBytes(size);
+    shared->delta_lake_metadata_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<DeltaLakeMetadataCache> Context::getDeltaLakeMetadataCache() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->delta_lake_metadata_cache;
+}
+
+void Context::clearDeltaLakeMetadataCache() const
+{
+    auto cache = getDeltaLakeMetadataCache();
     if (cache)
         cache->clear();
 }
