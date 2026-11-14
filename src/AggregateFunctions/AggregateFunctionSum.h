@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <type_traits>
@@ -91,6 +92,87 @@ struct AggregateFunctionSumData
         Impl::add(sum, toAccumulateResult(value));
     }
 
+    /// On AArch64 clang-23 does not turn a sum of 8- or 16-bit integers into a 64-bit accumulator into a partial
+    /// reduction (`udot`/`sdot` + `uadalp`) any more, and widens every element to 64 bits instead, which is twice as
+    /// slow (https://github.com/llvm/llvm-project/pull/226226). Summing into a 32-bit accumulator over chunks short
+    /// enough not to overflow it is vectorized with `udot`/`sdot` by every compiler, so the result is the same.
+    template <typename Value>
+    static constexpr bool use_narrow_accumulator =
+#if defined(__aarch64__)
+        is_integer<Value> && sizeof(Value) <= 2 && is_integer<T> && sizeof(AccumulateResult) == 8;
+#else
+        false;
+#endif
+
+    template <typename Value>
+    using NarrowAccumulator = std::conditional_t<is_signed_v<Value>, Int32, UInt32>;
+
+    /// The absolute value of a chunk sum stays below 2^31.
+    template <typename Value>
+    static constexpr size_t narrow_accumulator_chunk_size = 1ULL << (31 - 8 * sizeof(Value));
+
+    /// `sum` and `sumIf` over Decimal32 and Decimal64 accumulate into Decimal128, and sumWithOverflow over them into the
+    /// same type. The generic loop widens each row to the total's type and adds it as one value. Instead, sum the raw
+    /// integers in 64-bit arithmetic, which vectorizes, and add the total once. The total is exact, or wraps modulo 2^N,
+    /// so the result is the same bit for bit, including on overflow.
+    template <typename Value>
+    static constexpr bool sum_narrow_decimals = (std::is_same_v<Value, Decimal32> || std::is_same_v<Value, Decimal64>)
+        && (std::is_same_v<T, Value> || std::is_same_v<T, Decimal128>);
+
+    /// A row counts when `bool(condition)` differs from `add_if_zero`, as in the generic loop. Null maps may hold any
+    /// nonzero byte for a NULL, so the byte must be converted to `bool` before the comparison.
+    template <typename Value, bool conditional, bool add_if_zero>
+    static ALWAYS_INLINE NativeType<T> sumNarrowDecimals(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+    {
+        using Native = NativeType<Value>;
+        /// Unsigned arithmetic wraps modulo 2^N without undefined behaviour.
+        using Total = make_unsigned_t<NativeType<T>>;
+        /// At most 2^31 rows per chunk keeps the 64-bit partial sums below 2^63.
+        constexpr size_t max_chunk = size_t(1) << 31;
+
+        Total total = 0;
+        while (count > 0)
+        {
+            const size_t chunk = std::min(count, max_chunk);
+            if constexpr (sizeof(Native) == 4 || std::is_same_v<T, Value>)
+            {
+                /// Decimal32 aggregated into Decimal128. |value| <= 2^31, so a chunk sums to at most 2^62.
+                /// Or Decimal32 or Decimal64 aggregated into a total of its own type, where the sum may wrap.
+                using Partial = std::conditional_t<std::is_same_v<T, Value>, make_unsigned_t<Native>, Int64>;
+                Partial partial = 0;
+                for (size_t i = 0; i < chunk; ++i)
+                {
+                    Partial value = static_cast<Partial>(ptr[i].value);
+                    if constexpr (conditional)
+                        value &= -static_cast<Partial>(static_cast<bool>(condition_map[i]) != add_if_zero);
+                    partial += value;
+                }
+                total += static_cast<Total>(partial);
+            }
+            else
+            {
+                /// Decimal64 aggregated into Decimal128. A chunk sums to at most 2^62 in `high` and below 2^63 in `low`.
+                Int64 high = 0;
+                UInt64 low = 0;
+                for (size_t i = 0; i < chunk; ++i)
+                {
+                    Int64 value = ptr[i].value;
+                    if constexpr (conditional)
+                        value &= -static_cast<Int64>(static_cast<bool>(condition_map[i]) != add_if_zero);
+                    high += value >> 32;
+                    low += static_cast<UInt64>(value) & 0xFFFFFFFF;
+                }
+                total += (static_cast<Total>(high) << 32) + static_cast<Total>(low);
+            }
+
+            ptr += chunk;
+            count -= chunk;
+            if constexpr (conditional)
+                condition_map += chunk;
+        }
+        return static_cast<NativeType<T>>(total);
+    }
+
     /// Vectorized version
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
@@ -102,7 +184,27 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr (is_floating_point<T>)
+        if constexpr (sum_narrow_decimals<Value>)
+        {
+            Impl::add(sum, T(sumNarrowDecimals<Value, false, false>(ptr, nullptr, count)));
+            return;
+        }
+
+        if constexpr (use_narrow_accumulator<Value>)
+        {
+            AccumulateResult local_sum{};
+            while (ptr < end_ptr)
+            {
+                const auto * chunk_end = ptr + std::min<size_t>(end_ptr - ptr, narrow_accumulator_chunk_size<Value>);
+                NarrowAccumulator<Value> chunk_sum = 0;
+                for (; ptr < chunk_end; ++ptr)
+                    chunk_sum += *ptr;
+                local_sum += chunk_sum;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+        else if constexpr (is_floating_point<T>)
         {
             /// Compiler cannot unroll this loop, do it manually.
             /// (at least for floats, most likely due to the lack of -fassociative-math)
@@ -161,7 +263,27 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
+        if constexpr (sum_narrow_decimals<Value>)
+        {
+            Impl::add(sum, T(sumNarrowDecimals<Value, true, add_if_zero>(ptr, condition_map, count)));
+            return;
+        }
+
+        if constexpr (use_narrow_accumulator<Value>)
+        {
+            AccumulateResult local_sum{};
+            while (ptr < end_ptr)
+            {
+                const auto * chunk_end = ptr + std::min<size_t>(end_ptr - ptr, narrow_accumulator_chunk_size<Value>);
+                NarrowAccumulator<Value> chunk_sum = 0;
+                for (; ptr < chunk_end; ++ptr, ++condition_map)
+                    chunk_sum += static_cast<NarrowAccumulator<Value>>(*ptr) * static_cast<NarrowAccumulator<Value>>(!*condition_map == add_if_zero);
+                local_sum += chunk_sum;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+        else if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
@@ -608,6 +730,14 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf);
+    }
+
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 /*count*/) const override
+    {
+        if constexpr (is_decimal<TResult>)
+            this->data(place).add(sum.safeGet<DecimalField<TResult>>().getValue());
+        else
+            this->data(place).add(static_cast<TResult>(sum.safeGet<NearestFieldType<TResult>>()));
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

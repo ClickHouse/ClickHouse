@@ -17,7 +17,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # few groups with thousands of distinct values and almost every bin is bounded far below them. Every cell compares the
 # top with the one of the feature off: the distinct counts as a multiset, which ties cannot reorder, and every returned
 # row against the row of its key in the full aggregation, which catches a group whose count lost records or source
-# cells. The last two columns say whether the merge skipped units and records; an ascending order must not prune.
+# cells. The last two columns say whether the merge skipped units and records. An ascending order prunes
+# once it is settled: each unique key of the tail has one distinct value, the least that `uniqExact` of a
+# non-`Nullable` argument gives a group, so the first converted unit already outputs ten of them, and the
+# merge skips the units left.
 # `optimize_injective_functions_in_group_by = 0` keeps `toString(k)` a string key. Each cell runs in its own
 # clickhouse-local process, so the counters in `system.events` belong to it alone.
 

@@ -6,6 +6,7 @@
 -- addition of `b` and keep the stale cache entries for the old `a`.
 
 SET use_columns_cache = 1;
+SET use_statistics_for_sum_avg_aggregation = 0;
 SYSTEM DROP COLUMNS CACHE;
 
 DROP TABLE IF EXISTS t_columns_cache_rename_after;

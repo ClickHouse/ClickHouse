@@ -3,7 +3,7 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Common/LoggingFormatStringHelpers.h>
 
@@ -14,7 +14,6 @@
 #include <arrow/memory_pool.h>
 #include <arrow/status.h>
 
-#define ORC_MAGIC_BYTES "ORC"
 #define PARQUET_MAGIC_BYTES "PAR1"
 #define ARROW_MAGIC_BYTES "ARROW1"
 
