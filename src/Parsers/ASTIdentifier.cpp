@@ -11,6 +11,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -196,6 +198,19 @@ void ASTIdentifier::setShortName(const String & new_name)
 
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// `getID` (hashed by the base class) contains only `full_name`, which joins the components with
+    /// dots, so it cannot tell ``db.`inner.t` `` from `` `db.inner`.t`` - different objects. The
+    /// boundaries are ambiguous only when a component itself contains a dot; otherwise they follow from
+    /// `full_name`, so the hash of an ordinary identifier stays the same.
+    if (std::ranges::any_of(name_parts, [](const String & part) { return part.contains('.'); }))
+    {
+        hash_state.update(name_parts.size());
+        for (const auto & part : name_parts)
+        {
+            hash_state.update(part.size());
+            hash_state.update(part);
+        }
+    }
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

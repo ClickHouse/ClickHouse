@@ -1,0 +1,16 @@
+1	1	1
+1	2	2
+1	3	3
+1	3	3
+1	1	1
+1	2	2
+1	3	3
+t_apply_lambda_src_04693	sum(b)
+t_apply_lambda_src_04693	sum(c)
+t_apply_params_src_04693	quantile(ABS(-0.9))(b)
+t_apply_params_src_04693	quantile(ABS(-0.9))(c)
+t_apply_src_04693	sum(b)
+t_apply_src_04693	sum(c)
+1	0
+1	0
+1	0
