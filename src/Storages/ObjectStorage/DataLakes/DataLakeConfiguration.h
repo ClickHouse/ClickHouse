@@ -224,6 +224,11 @@ public:
         return getMetadata()->supportsParallelInsert();
     }
 
+    bool supportsInsertCommitSink() const override
+    {
+        return getMetadata()->supportsInsertCommitSink();
+    }
+
     void mutate(const MutationCommands & commands,
         ContextPtr context,
         StoragePtr storage_ptr,
@@ -430,6 +435,17 @@ public:
             format_settings.has_value() ? *format_settings : getFormatSettings(context),
             context,
             catalog);
+    }
+
+    ProcessorPtr createInsertCommitSink(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        return getMetadata()->createInsertCommitSink(sample_block, table_id, object_storage, shared_from_this(), context, catalog);
     }
 
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override

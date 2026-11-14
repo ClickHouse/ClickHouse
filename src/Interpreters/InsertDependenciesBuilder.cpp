@@ -1112,9 +1112,14 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
             || any_dependent_target_forwards_to_separate_context);
 
+    /// A table with a commit sink commits the insert at once. Parallel sinks do it through
+    /// `IStorage::createInsertCommitSink`, which is not used with dependent views.
+    const bool commit_sink_with_views_single_stream = isViewsInvolved() && init_storage->supportsInsertCommitSink();
+
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        && !mv_dedup_single_stream)
+        && !mv_dedup_single_stream
+        && !commit_sink_with_views_single_stream)
         sink_stream_size = max_insert_threads;
 }
 

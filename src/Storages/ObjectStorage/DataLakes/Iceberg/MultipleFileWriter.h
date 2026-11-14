@@ -22,7 +22,7 @@ public:
         UInt64 max_data_file_num_bytes_,
         Poco::JSON::Array::Ptr schema,
         FileNamesGenerator & filename_generator_,
-        const Iceberg::IcebergPathResolver & path_resolver_,
+        std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
@@ -80,7 +80,8 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
-    const Iceberg::IcebergPathResolver & path_resolver;
+    /// Shared: `clearAllDataFiles` may run after the sink is destroyed, see `IcebergPartitionFiles`.
+    std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
     ObjectStoragePtr object_storage;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;

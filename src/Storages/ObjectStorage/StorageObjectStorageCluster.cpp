@@ -259,11 +259,23 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
 }
 
+ProcessorPtr StorageObjectStorageCluster::createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+{
+    return StorageObjectStorage::createInsertCommitSink(configuration, object_storage, getStorageID(), catalog, metadata_snapshot, local_context);
+}
+
 bool StorageObjectStorageCluster::supportsParallelInsert() const
 {
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsParallelInsert();
+}
+
+bool StorageObjectStorageCluster::supportsInsertCommitSink() const
+{
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsInsertCommitSink();
 }
 
 bool StorageObjectStorageCluster::supportsDelete() const

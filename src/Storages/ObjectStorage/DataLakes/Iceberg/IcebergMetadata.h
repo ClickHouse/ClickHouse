@@ -122,6 +122,7 @@ public:
 
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
+    bool supportsInsertCommitSink() const override { return true; }
 
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
@@ -158,6 +159,14 @@ public:
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr /*configuration*/,
         const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
+
+    ProcessorPtr createInsertCommitSink(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 

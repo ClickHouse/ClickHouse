@@ -128,6 +128,8 @@ public:
 
     virtual bool supportsWrites() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
+    /// See `IStorage::supportsInsertCommitSink`.
+    virtual bool supportsInsertCommitSink() const { return false; }
 
     /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
     /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.
@@ -181,6 +183,18 @@ public:
         std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {
         throwNotImplemented("write");
+    }
+
+    /// See `IStorage::createInsertCommitSink`.
+    virtual ProcessorPtr createInsertCommitSink(
+        SharedHeader /*sample_block*/,
+        const StorageID & /*table_id*/,
+        ObjectStoragePtr /*object_storage*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
+        ContextPtr /*context*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+    {
+        return nullptr;
     }
 
     virtual bool optimize(

@@ -211,6 +211,7 @@ public:
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
+    virtual bool supportsInsertCommitSink() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
     virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
@@ -259,6 +260,16 @@ public:
         std::shared_ptr<DataLake::ICatalog> /* catalog */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual ProcessorPtr createInsertCommitSink(
+        SharedHeader /* sample_block */,
+        const StorageID & /* table_id */,
+        ObjectStoragePtr /* object_storage */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    {
+        return nullptr;
     }
 
     virtual bool supportsDelete() const { return false; }

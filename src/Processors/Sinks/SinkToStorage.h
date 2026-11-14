@@ -23,6 +23,9 @@ public:
 
     virtual void setHasDependentMaterializedViews(bool /*has_dependent_views*/) {}
 
+    /// The insert is finished by the sink from `IStorage::createInsertCommitSink`: send it what was written instead of finishing.
+    virtual void setFinishedByCommitSink();
+
 protected:
     virtual void consume(Chunk & chunk) = 0;
 

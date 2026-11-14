@@ -546,6 +546,16 @@ public:
         ContextPtr /*context*/,
         bool /*async_insert*/);
 
+    /** Returns a sink which receives the output of all the parallel sinks returned by `write` for one `INSERT`
+      * and finishes the insert, e.g. commits everything the sinks wrote at once. If it is used, the sinks
+      * are told so with `SinkToStorage::setFinishedByCommitSink`.
+      * nullptr if each sink finishes its part of the insert itself.
+      */
+    virtual ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) { return nullptr; }
+
+    /// Whether `createInsertCommitSink` returns a sink, so the parallel sinks of an `INSERT` need it to finish the insert at once.
+    virtual bool supportsInsertCommitSink() const { return false; }
+
     /** Checks on the initiator that the current user is allowed to insert into this table, in
       * addition to the `INSERT` privilege on the table name checked by the interpreter.
       *
