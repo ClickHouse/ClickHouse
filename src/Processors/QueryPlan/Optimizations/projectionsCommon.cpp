@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
+#include <Storages/MergeTree/projectionPartCanFillDefault.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -349,8 +350,7 @@ size_t filterPartsByProjection(
 ///       parent TABLE column at all (a drifted alias-derived or aggregate-state column):
 ///       drift, read from the parent instead.
 ///   (4) the projection part lacks it, the parent part lacks it too, and it is a parent TABLE column:
-///       legitimate, the column was added after the part was written, so the default fill is correct
-///       and identical on either read path (see 04412).
+///       a late-added column, usable only if its default can be filled from the projection part.
 static bool projectionPartHasRequiredColumns(
     const IMergeTreeDataPart & projection_part,
     const IMergeTreeDataPart & parent_part,
@@ -376,7 +376,9 @@ static bool projectionPartHasRequiredColumns(
             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return false;
 
-        /// (4) Legitimate late-added table column, missing from both parts; the default fill matches.
+        /// (4) Late-added table column, missing from both parts.
+        if (!projectionPartCanFillDefault(projection_part, parent_part, projection, parent_table_columns, name))
+            return false;
     }
 
     return true;
