@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -357,7 +356,7 @@ public:
                 && (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_type)
                     || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(key_type));
             check_numeric_probe_exactness = isNumber(left_type) && isNumber(key_type)
-                && !tryGetLeastSupertype(DataTypes{left_type, key_type});
+                && !left_type->equals(*key_type);
             if (mixed_temporal_types)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
