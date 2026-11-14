@@ -148,8 +148,8 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 S
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM test_win_sort_limits LIMIT 100 BY a) SETTINGS allow_limit_by_partitions_independently = 1, allow_window_partitions_independently = 1, force_window_partitions_independently = 1, max_rows_to_sort = 1000000) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 DROP TABLE test_win_sort_limits;
 
--- NEGATIVE: reading in order for the window (the sorting becomes FinishSorting, which merges to a single
--- stream; there is no scatter to skip and per-partition reading is not requested)
+-- Reading in order for the window is possible too, but processing every table partition by its own window
+-- needs neither the merge of the streams read in order nor a scatter, so it wins.
 DROP TABLE IF EXISTS test_win_read_in_order;
 CREATE TABLE test_win_read_in_order (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY a % 8;
 INSERT INTO test_win_read_in_order SELECT number % 64, number FROM numbers_mt(400);

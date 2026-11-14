@@ -211,6 +211,7 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         auto [child_group_id, _] = addGroup(*node.children.front());
         ExpressionProperties stripped_props;
         stripped_props.sorting = sorting_step->getSortDescription();
+        stripped_props.sorting_for_window = sorting_step->isWindowSorting();
         /// The stream layout the sort produced is part of the requirement: a plain sort
         /// merges each node's streams into one, a partitioned sort (the planner builds them
         /// for windows) keeps streams disjoint on the partition keys. A partitioned sort

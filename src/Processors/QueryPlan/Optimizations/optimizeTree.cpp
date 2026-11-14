@@ -696,8 +696,8 @@ void optimizeTreeSecondPass(
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
-            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges to a single stream and
-            /// must not request per-partition reading.
+            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges the streams read in order
+            /// and must not request per-partition reading.
             if (optimization_settings.window_partitions_independently)
                 optimizeWindowPerPartition(frame_node, nodes, optimization_settings);
 
@@ -999,6 +999,10 @@ void optimizeTreeSecondPass(
             optimization_settings.force_projection_name,
             it != projection_reject_reasons.end() ? it->second : "the projection was not considered by any read");
     }
+
+    /// Before `applyOrder`: a window sorting read by layers keeps one stream per layer, which it may advertise.
+    if (optimization_settings.read_in_order && !make_distributed_plan)
+        optimizeWindowByLayers(root);
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);

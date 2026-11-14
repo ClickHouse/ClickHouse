@@ -1420,13 +1420,38 @@ InputOrderInfoPtr buildInputOrderInfo(
     if (!reading_node)
         return nullptr;
 
-    const auto & description = sorting.getSortDescription();
+    SortDescription description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
     const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
+
+    /// A function of the query is matched with a function of the sorting key by its name, arguments and type, which
+    /// does not compare the settings captured by the function: `formatDateTime(dt, '%M')` is a month name or minutes
+    /// depending on `formatdatetime_parsedatetime_m_is_month_name`, so the stored key could be another calculation.
+    /// A window sorting matches only the columns of the table: the description stops at the first column computed by the
+    /// query, and only columns of the table fixed by the filter are taken into account.
+    if ((sorting.isWindowSorting() || sorting.hasPartitions()) && dag)
+    {
+        auto is_table_column = [](const ActionsDAG::Node * column_node)
+        {
+            while (column_node && column_node->type == ActionsDAG::ActionType::ALIAS)
+                column_node = column_node->children.front();
+            return column_node && column_node->type == ActionsDAG::ActionType::INPUT;
+        };
+
+        size_t table_columns_prefix = 0;
+        while (table_columns_prefix < description.size()
+               && is_table_column(dag->tryFindInOutputs(description[table_columns_prefix].column_name)))
+            ++table_columns_prefix;
+        description.resize(table_columns_prefix);
+        if (description.empty())
+            return nullptr;
+
+        std::erase_if(fixed_columns, [](const ActionsDAG::Node * fixed_node) { return fixed_node->type != ActionsDAG::ActionType::INPUT; });
+    }
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1971,6 +1996,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
 
+    /// Processing every table partition by its own window needs neither a scatter nor a merge, which is
+    /// cheaper than merging the streams read in order and scattering them again.
+    if (sorting->hasPartitions() && optimization_settings.window_partitions_independently && canOptimizeWindowPerPartition(node))
+        return;
+
     bool apply_virtual_row = true;
     ReadFromMergeTree * virtual_row_reader = nullptr;
 
@@ -2045,6 +2075,10 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
             if (additional_sorting)
             {
+                /// The helper sorting feeds the window sorting, so it is read in order with the same restrictions.
+                if (sorting->isWindowSorting() || sorting->hasPartitions())
+                    typeid_cast<SortingStep &>(*additional_sorting).setWindowSorting();
+
                 auto & sort_node = nodes.emplace_back();
                 sort_node.step = std::move(additional_sorting);
                 sort_node.children.push_back(child);

@@ -2105,6 +2105,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 0 /*limit*/,
                 sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
+            sorting_step->setWindowSorting();
             query_plan.addStep(std::move(sorting_step));
         }
 

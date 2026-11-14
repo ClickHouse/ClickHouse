@@ -3238,6 +3238,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 0 /* LIMIT */,
                 sort_settings);
             sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
+            sorting_step->setWindowSorting();
             query_plan.addStep(std::move(sorting_step));
         }
 

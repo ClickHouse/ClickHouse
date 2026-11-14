@@ -669,6 +669,19 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
 
+        /// A window sorting that reuses the storage order (`query_plan_reuse_storage_ordering_for_window_functions`)
+        /// has just merged the streams read in order into a single stream sorted by the prefix. Scatter it by the
+        /// hash of the `PARTITION BY` columns, so that every window partition lands in one stream and the suffix
+        /// sorting and the window functions run in parallel. Each output of a single scatter is a subsequence of
+        /// its sorted input, so it stays sorted by the prefix without a merge after the scatter. Scattering the
+        /// streams before the merge instead would need an order-preserving merge per shard, and such merges pull
+        /// from their inputs selectively, which deadlocks against a scatter that must push to all its outputs.
+        if (hasPartitions() && limit == 0)
+        {
+            scatterByPartitionIfNeeded(pipeline);
+            scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
+        }
+
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 
@@ -815,8 +828,9 @@ void SortingStep::serialize(Serialization & ctx) const
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
     /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
-    /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
-    /// bit is set), so a plain full sort always writes a plain 0.
+    /// The bits 2 and 4 are meaningful only for `FinishSorting` (the reader applies them only when the finish
+    /// bit is set). The bit 8 marks a window sorting (`isWindowSorting`): the worker that optimizes the deserialized
+    /// fragment again must apply the same restrictions of reading in order. A reader that does not know it ignores it.
     UInt8 flags = 0;
     if (type == Type::FinishSorting)
     {
@@ -826,6 +840,8 @@ void SortingStep::serialize(Serialization & ctx) const
         if (apply_virtual_row_conversions)
             flags |= 4;
     }
+    if (is_window_sorting)
+        flags |= 8;
     writeIntBinary(flags, ctx.out);
 
     if (type == Type::FinishSorting)
@@ -867,6 +883,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     bool finish_sorting = flags & 1;
     bool use_buffering = flags & 2;
     bool apply_virtual_row_conversions = flags & 4;
+    bool is_window_sorting = flags & 8;
 
     SortDescription prefix_description;
     if (finish_sorting)
@@ -887,6 +904,9 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     if (finish_sorting)
         step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
+
+    if (is_window_sorting)
+        step->setWindowSorting();
 
     return step;
 }
@@ -910,6 +930,7 @@ QueryPlanStepPtr SortingStep::clone() const
             input_headers.front(), result_description, partition_by_description, limit, sort_settings);
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
+    cloned->is_window_sorting = is_window_sorting;
     cloned->use_buffering = use_buffering;
     cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
     cloned->threshold_tracker = threshold_tracker;
@@ -956,6 +977,7 @@ void SortingStep::describePipeline(FormatSettings & settings) const
     else if (type == Type::FinishSorting)
     {
         IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(scatter_stage, settings);
         IQueryPlanStep::describePipeline(merge_streams, settings);
     }
     else if (type == Type::PartitionedFinishSorting)
