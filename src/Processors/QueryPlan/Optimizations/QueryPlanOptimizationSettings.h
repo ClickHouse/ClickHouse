@@ -54,8 +54,7 @@ struct QueryPlanOptimizationSettings
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         ExpressionActionsSettings actions_settings_,
-        PreparedSetsCachePtr prepared_sets_cache_,
-        bool is_parallel_replicas_initiator_with_projection_support_);
+        PreparedSetsCachePtr prepared_sets_cache_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -226,10 +225,6 @@ struct QueryPlanOptimizationSettings
     /// comparison for IN-clause sets entirely (projection match never succeeds for nodes
     /// containing such sets).
     size_t max_set_size_for_projection_match = 0;
-
-    /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
-    /// This parameter is used to distinguish between the initiator and the remote replicas.
-    bool is_parallel_replicas_initiator_with_projection_support = false;
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
