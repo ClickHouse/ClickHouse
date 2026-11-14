@@ -66,6 +66,11 @@ public:
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
+    /// Set before `parseArguments` when the arguments come from a table definition the server stored
+    /// itself (`CREATE TABLE ... AS f(...)` loaded back from metadata), see `isReplayedTableDefinition`.
+    /// Such a definition has to load even if a newer version validates the arguments more strictly.
+    void setReplayedDefinition(bool value) { arguments_from_stored_definition = value; }
+
     /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.
       * Each replica resolves the call itself, so the call must denote the same logical source on every
       * replica, and evaluating it must have no effect beyond looking that source up. The identity names the
@@ -210,6 +215,9 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
+
+protected:
+    bool arguments_from_stored_definition = false;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

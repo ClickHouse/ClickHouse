@@ -1123,19 +1123,31 @@ struct DatabaseRemoteClusters
 /// self-connection; this matches the well-tested behavior of the `remote` table function and the
 /// `Remote` storage engine and, as for them, means the stored credentials are honored only for
 /// genuinely remote shards.
-static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, const String & password, bool secure, ContextPtr context)
+/// `limit_total_addresses` is unset when the server loads a definition it stored itself: it has to load
+/// even if it was accepted by an older version, see `parseRemoteDescriptionWithFailover`.
+static DatabaseRemoteClusters buildClusters(
+    const String & cluster_description,
+    const String & username,
+    const String & password,
+    bool secure,
+    bool limit_total_addresses,
+    ContextPtr context)
 {
     size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-    Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+    const RemoteDescriptionCaller caller{
+        secure ? "Database engine 'RemoteSecure'" : "Database engine 'Remote'",
+        TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
+        /*listing_alternative=*/ {}};
+    /// The limit applies to the total number of addresses, over both the shards and their replicas.
+    auto shards = parseRemoteDescriptionWithFailover(cluster_description, max_addresses, caller, limit_total_addresses);
 
     HostsByShard names;
     names.reserve(shards.size());
-    for (const auto & shard : shards)
+    for (auto & shard : shards)
     {
-        auto replicas = parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses);
-        if (replicas.empty())
+        if (shard.replicas.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
-        names.push_back(std::move(replicas));
+        names.push_back(std::move(shard.replicas));
     }
 
     if (names.empty())
@@ -1247,7 +1259,10 @@ void registerDatabaseRemote(DatabaseFactory & factory)
                 password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
-        auto clusters = buildClusters(addresses_expr, username, password, secure, args.context);
+        /// A short `ATTACH DATABASE` reads the definition the server stored itself, like loading on startup.
+        const bool is_stored_definition = args.isLoadingFromExistingMetadata() || args.create_query.attach_short_syntax;
+        auto clusters = buildClusters(
+            addresses_expr, username, password, secure, /* limit_total_addresses = */ !is_stored_definition, args.context);
 
         auto database = std::make_shared<DatabaseRemote>(
             args.context,

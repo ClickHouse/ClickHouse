@@ -120,6 +120,11 @@ protected:
     /// Whether the structure is a `NOT OVERRIDABLE` "auto" of a named collection, so it cannot be sent to the nodes of a cluster.
     bool is_structure_not_overridable = false;
 
+    /// How the surface the user invoked is named when a glob in the URL generates more addresses
+    /// than allowed. `urlCluster` overrides it so that the shared code paths (schema inference,
+    /// the `StorageURL` constructed for a secondary query on a worker) report `urlCluster`.
+    virtual RemoteDescriptionCaller globCaller() const { return tableFunctionURLCaller(); }
+
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate
     /// table function (`file`, `s3`, `azureBlobStorage`, `hdfs`) from the already-parsed arguments.
