@@ -270,9 +270,6 @@ void StoragePostgreSQL::readImpl(
     for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
-        WhichDataType which(column_data.type);
-        if (which.isEnum())
-            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -543,7 +540,7 @@ private:
 
         void insert(const Row & row) override
         {
-            stream.write_values(row);
+            stream.write_row(row);
         }
     };
 
@@ -901,17 +898,21 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        /// Seed the connection-pool parameters from the query-level `postgresql_*` settings (preserving
-        /// the historical behaviour); a named collection may override them, and an explicit SETTINGS
-        /// clause on the table takes the final precedence.
+        /// Precedence: the SETTINGS clause, the named collection, the session; a new table stores the values from the session
+        /// that differ from the server's.
         PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(
             args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
 
-        if (args.storage_def)
-            postgresql_settings.loadFromQuery(*args.storage_def);
+        postgresql_settings.loadFromQuery(*args.storage_def);
+
+        /// Unlike `isFreshTableDefinition`, also on the other replicas of a `Replicated` database, which run the original query
+        /// with the initiator's settings. Not on `RESTORE`, which rejects a definition that differs from the backup.
+        bool is_new_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !args.is_restore_from_backup;
+        postgresql_settings.loadFromQueryContext(
+            *args.getLocalContext(), args.storage_def->settings, is_new_definition ? args.storage_def : nullptr);
 
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
@@ -1043,7 +1044,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## Settings {#settings}
 
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table, except one restored from a backup, adds the values it takes this way that differ from the server's values, e.g. set with `SET` or a settings profile of the user, to its `SETTINGS`, so that it keeps them after a server restart. A value equal to the server's is not stored, so such a table follows the server's value if it changes later. A setting that a named collection sets is not taken from the query-level setting, so nothing is stored for it. A stored value is a part of the `SETTINGS` of the table, so it overrides the same key added to the named collection later, and if that key is `NOT OVERRIDABLE`, the table fails to load with `Override not allowed`. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
@@ -1094,7 +1095,7 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
-All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+All joins, aggregations, sorting, and `IN [ array ]` conditions are executed in ClickHouse after the query to PostgreSQL finishes. The `LIMIT` sampling constraint is pushed to PostgreSQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## Passing a query instead of a table name {#passing-a-query}
 

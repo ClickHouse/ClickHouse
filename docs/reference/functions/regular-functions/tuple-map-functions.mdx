@@ -143,7 +143,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**Aliases**: `mapFromString`, `str_to_map`
+**Aliases**: `str_to_map`, `mapFromString`
 
 **Arguments**
 
@@ -824,15 +824,17 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Introduced in: v21.2.0
 
 Returns the keys of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
-With the setting enabled, the function only reads the `keys` subcolumn instead of the entire map.
+When the map isn't used anywhere else in the query, the function can read only the `keys` subcolumn instead of the entire map.
 The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM table`.
+This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 
 **Syntax**
 
 ```sql
 mapKeys(map)
 ```
+
+**Aliases**: `map_keys`
 
 **Arguments**
 
@@ -949,7 +951,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **Returned value**
 
-Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys. [`Map(K, V)`](/reference/data-types/map) or [`Tuple(Array(UInt*), Array(Any))`](/reference/data-types/tuple)
+Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys. [`Map(K, V)`](/reference/data-types/map) or [`Tuple(Array(UInt*), Array)`](/reference/data-types/tuple)
 
 **Examples**
 
@@ -1156,15 +1158,17 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Introduced in: v21.2.0
 
 Returns the values of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
-With the setting enabled, the function only reads the `values` subcolumn instead of the entire map.
+When the map isn't used anywhere else in the query, the function can read only the `values` subcolumn instead of the entire map.
 The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
+This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 
 **Syntax**
 
 ```sql
 mapValues(map)
 ```
+
+**Aliases**: `map_values`
 
 **Arguments**
 

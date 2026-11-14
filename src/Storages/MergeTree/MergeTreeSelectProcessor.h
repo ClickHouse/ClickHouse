@@ -7,6 +7,10 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/Chunk.h>
+#include <Interpreters/SetSpillable.h>
+
+#include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -43,7 +47,8 @@ public:
         CoordinationMode mode,
         RangesInDataPartsDescription description,
         size_t mark_segment_size,
-        size_t min_marks_per_request) const;
+        size_t min_marks_per_request,
+        bool wants_analyzed_ranges) const;
 
     std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
 
@@ -71,7 +76,7 @@ struct SkipIndexReadInput
     size_t part_starting_offset_in_query = 0;
 };
 using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
-using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 
@@ -87,7 +92,16 @@ using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
 struct MergeTreeIndexBuildContext
 {
     /// For each part, stores all ranges need to be read.
-    const RangesByIndex read_ranges;
+    RangesByIndex read_ranges;
+
+    /// Set on a parallel replicas follower that skipped its own index analysis and has a read-time skip-index reader
+    /// (`use_skip_indexes_on_data_read`, the join runtime filter or the top-K primary key pruning): the reader would
+    /// evaluate over `read_ranges`, which are whole parts until `addAnalyzedReadRanges` replaces them with the ranges
+    /// analyzed on the initiator.
+    bool needs_analyzed_ranges = false;
+
+    /// Parts whose `read_ranges` were replaced by `addAnalyzedReadRanges`.
+    std::unordered_set<size_t> parts_with_analyzed_ranges;
 
     /// For each part, stores a set of read ranges grouped by projection.
     const ProjectionRangesByIndex projection_read_ranges;
@@ -106,6 +120,11 @@ struct MergeTreeIndexBuildContext
         PartRemainingMarks part_remaining_marks_);
 
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+
+    /// Replaces the whole-part ranges the skip indexes of a part are evaluated over with the analyzed ones. Later calls
+    /// for the same part extend them: an in-order read splits a part between streams that share this context, and each
+    /// stream receives only its own ranges. Must be called before the first read task exists.
+    void addAnalyzedReadRanges(size_t part_index, const MarkRanges & ranges);
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
@@ -126,10 +145,10 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
-        const ColumnsDescription * columns_ = nullptr);
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
+    std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
 
     static Block transformHeader(
         Block block,
@@ -157,8 +176,7 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
-        bool read_ahead_prewhere_columns,
-        const ColumnsDescription * columns = nullptr);
+        bool read_ahead_prewhere_columns);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
@@ -179,6 +197,7 @@ private:
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
+    SetSpillables set_spillables;
 
     const LazilyReadInfoPtr lazily_read_info;
 
@@ -188,6 +207,14 @@ private:
     /// Whether the PREWHERE holds the top-K `__topKFilter` as a conjunct and its query condition cache entry is
     /// salted with the top-K plan, see `MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere`.
     const bool prewhere_filters_by_top_k_threshold;
+
+    /// Cache key and human-readable condition under which granules fully filtered out by PREWHERE
+    /// are recorded in the query condition cache. Computed once at construction from the hash of
+    /// the PREWHERE condition if it is deterministic (or only contains `__topKFilter` of a TopK read
+    /// with a TopK salt), or the hash of the deterministic condition derived from it when it involves
+    /// the current time (issue #115504), salted the same way as the consult side. Empty when none
+    /// applies; then PREWHERE results are not cached.
+    std::optional<std::pair<UInt64, String>> prewhere_condition_for_query_condition_cache;
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;

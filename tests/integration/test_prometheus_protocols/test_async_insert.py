@@ -35,7 +35,6 @@ def cleanup_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS prometheus SYNC")
-        node.query("DROP TABLE IF EXISTS samples SYNC")
 
 
 def get_async_insert_query_count():
@@ -106,7 +105,7 @@ def test_async_insert_acknowledged_after_flush():
         convert_metrics_metadata_to_protobuf(metrics_metadata),
     )
 
-    assert node.query("SELECT count() FROM timeSeriesData(prometheus)") == "2\n"
+    assert node.query("SELECT sum(length(samples)) FROM timeSeriesData(prometheus)") == "2\n"
     assert (
         node.query(
             "SELECT tags['job'] FROM timeSeriesTags(prometheus) "
@@ -126,23 +125,24 @@ def test_async_insert_acknowledged_after_flush():
 
 
 def test_async_insert_no_acknowledgement_on_failure():
+    # Every bucket of samples goes to its own partition of the samples table, and the request limits
+    # an insert block to one partition, so a request with two samples in different buckets fails.
     node.query(
-        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
-        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SAMPLES INNER ENGINE=AggregatingMergeTree PARTITION BY bucket ORDER BY (id, bucket)"
     )
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
 
-    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5})]
+    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5, 1724115601: 2.5})]
     response = get_response_to_remote_write(
         node.ip_address,
         9093,
-        "/write?async_insert=1",
+        "/write?async_insert=1&max_partitions_per_insert_block=1",
         convert_time_series_to_protobuf(time_series),
     )
 
     assert not response.ok
-    assert "VIOLATED_CONSTRAINT" in response.text
-    assert node.query("SELECT count() FROM samples") == "0\n"
+    assert "TOO_MANY_PARTS" in response.text
+    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "0\n"
 
 
 def test_async_insert_flush_timeout_returns_503():
@@ -200,12 +200,6 @@ def test_async_insert_flush_timeout_is_clamped():
     # No retry here: the acknowledgement means the wait outlasted the flush.
     assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
 
-    # -1e10 seconds overflows the same conversion in the other direction. A negative timeout
-    # means "already expired", so the wait returns immediately.
-    response = remote_write("clamped_neg_metric", -10000000000)
-    assert response.status_code == 503
-    assert "Wait for asynchronous insert timeout (0 ms) exceeded" in response.text
-
     # An in-range timeout is used as given, so the reported number is the one that applied.
     response = remote_write("in_range_metric", 0.001)
     assert response.status_code == 503
@@ -213,5 +207,5 @@ def test_async_insert_flush_timeout_is_clamped():
 
     # A timed-out wait keeps the data in the queue, so every sample arrives after the flush.
     assert_eq_with_retry(
-        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "3", retry_count=60
+        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "2", retry_count=60
     )

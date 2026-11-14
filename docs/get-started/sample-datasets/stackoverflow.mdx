@@ -8,15 +8,21 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This dataset contains every `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory`, and `PostLinks` that has occurred on Stack Overflow.
 
 You can either download pre-prepared Parquet versions of the data, containing every post up to April 2024, or download the latest data in XML format and load this. Stack Overflow provide updates to this data periodically - historically every 3 months.
 
 The following diagram shows the schema for the available tables assuming Parquet format.
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Stack Overflow schema" size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Stack Overflow schema](/images/getting-started/example-datasets/stackoverflow.webp)
+
+</Frame>
+
+</div>
 
 A description of the schema of this data can be found [here](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 
@@ -35,22 +41,22 @@ The following timings are for a 96 GiB, 24 vCPU ClickHouse Cloud cluster located
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-    `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+    `Id` Int32 CODEC(Delta, Default),
     `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
     `AcceptedAnswerId` UInt32,
     `CreationDate` DateTime64(3, 'UTC'),
     `Score` Int32,
-    `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+    `ViewCount` UInt32 CODEC(Delta, Default),
     `Body` String,
     `OwnerUserId` Int32,
     `OwnerDisplayName` String,
     `LastEditorUserId` Int32,
     `LastEditorDisplayName` String,
-    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `LastActivityDate` DateTime64(3, 'UTC'),
     `Title` String,
     `Tags` String,
-    `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+    `AnswerCount` UInt16 CODEC(Delta, Default),
     `CommentCount` UInt8,
     `FavoriteCount` UInt8,
     `ContentLicense` LowCardinality(String),
@@ -60,7 +66,7 @@ CREATE TABLE stackoverflow.posts
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
-ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate);
 
 INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
@@ -84,7 +90,7 @@ CREATE TABLE stackoverflow.votes
     `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
+ORDER BY (VoteTypeId, CreationDate, PostId, UserId);
 
 INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
@@ -109,7 +115,7 @@ CREATE TABLE stackoverflow.comments
     `UserDisplayName` LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY CreationDate
+ORDER BY CreationDate;
 
 INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet', NOSIGN)
 ```
@@ -127,7 +133,7 @@ CREATE TABLE stackoverflow.users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -139,7 +145,7 @@ CREATE TABLE stackoverflow.users
     `AccountId` Int32
 )
 ENGINE = MergeTree
-ORDER BY (Id, CreationDate)
+ORDER BY (Id, CreationDate);
 
 INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
@@ -161,7 +167,7 @@ CREATE TABLE stackoverflow.badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId
+ORDER BY UserId;
 
 INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
@@ -182,7 +188,7 @@ CREATE TABLE stackoverflow.postlinks
     `LinkTypeId` Enum8('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId)
+ORDER BY (PostId, RelatedPostId);
 
 INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
@@ -208,7 +214,7 @@ CREATE TABLE stackoverflow.posthistory
     `UserDisplayName` String
 )
 ENGINE = MergeTree
-ORDER BY (CreationDate, PostId)
+ORDER BY (CreationDate, PostId);
 
 INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet', NOSIGN)
 ```

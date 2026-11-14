@@ -5,17 +5,22 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/dataTypeToAST.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -29,11 +34,16 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
@@ -61,14 +71,17 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool allow_statistics;
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsBool use_legacy_to_time;
+    extern const SettingsBool data_type_default_nullable;
 }
 
 namespace ServerSetting
@@ -78,6 +91,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
@@ -86,10 +100,77 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
 {
+
+/// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
+/// not reach this: it is refused unless its hosts run as the initiating user.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+{
+    StorageMetadataHandle metadata;
+    if (table)
+        metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+
+    bool adds_transform = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+            continue;
+
+        if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+            if (hasTextIndexPreOrPostProcessor(*declaration))
+                adds_transform = true;
+    }
+
+    /// Against the schema the whole statement produces: a command of the same statement can change what
+    /// an alias in a transform expands to. Transforms only, so other statements get no extra analysis.
+    if (!adds_transform || !metadata)
+        return;
+
+    AlterCommands commands;
+    /// Runs of consecutive metadata commands; `runCommandSegments` commits each run on its own.
+    size_t metadata_segments = 0;
+    bool previous_is_metadata = false;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command_ast = child->as<ASTAlterCommand>();
+        std::optional<AlterCommand> command;
+        if (command_ast->type != ASTAlterCommand::EXECUTE_COMMAND)
+            command = AlterCommand::parse(command_ast);
+
+        if (command)
+        {
+            if (!previous_is_metadata)
+                ++metadata_segments;
+            commands.emplace_back(std::move(*command));
+        }
+        previous_is_metadata = command.has_value();
+    }
+
+    /// Applying every command at once would reject statements the executor, which commits segment by
+    /// segment, accepts. `AlterCommands::apply` authorizes each segment as the user anyway.
+    if (metadata_segments > 1)
+        return;
+
+    /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it.
+    commands.validate(table, context);
+
+    bool share_nested = true;
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    StorageInMemoryMetadata metadata_copy = *metadata;
+    commands.prepare(metadata_copy, share_nested);
+    table->checkAlterIsPossible(commands, context);
+    /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
+    removeImplicitStatistics(metadata_copy.columns);
+    commands.apply(metadata_copy, context, share_nested);
+
+}
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
@@ -117,6 +198,28 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
             if (payload)
                 replaceLegacyToTime(*payload);
         }
+    }
+}
+
+/// The resolved type is spelled out in the query, so the hosts that replay it do not depend on the setting.
+void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command = child->as<ASTAlterCommand>();
+        const bool is_add = command->type == ASTAlterCommand::ADD_COLUMN;
+        if (!is_add && command->type != ASTAlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto & col_decl = command->col_decl->as<ASTColumnDeclaration &>();
+        if (!col_decl.getType() || col_decl.null_modifier)
+            continue;
+
+        /// Like `AlterCommand::parse`, only `ADD COLUMN` pins the current aggregate function state version.
+        DataTypePtr type = is_add
+            ? InterpreterCreateQuery::getColumnType(col_decl, /*make_columns_nullable=*/ true, /*pin_current_state_version=*/ true)
+            : makeNullable(DataTypeFactory::instance().get(col_decl.getType()));
+        col_decl.setType(dataTypeToAST(type));
     }
 }
 
@@ -348,6 +451,27 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
+/// `allow_statistics` gates the statistics DDL - whether statistics may be declared on a table -
+/// so only the submitting session's value is meaningful for it, and the gate must be applied
+/// exactly once, here at submission time.
+///
+/// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` carries an `AlterCommand` and is gated by
+/// `AlterCommands::validate`, but `MATERIALIZE STATISTICS` parses into a `MutationCommands`
+/// segment only, so it is checked here, next to the other submission-time mutation validation.
+/// `MutationsInterpreter` does not check it: it also runs in the background with a context that
+/// reads the server-default profile instead of the submitting session.
+void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const Settings & settings)
+{
+    if (settings[Setting::allow_statistics])
+        return;
+
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::MATERIALIZE_STATISTICS || command.type == MutationCommand::DROP_STATISTICS)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+    }
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
@@ -369,10 +493,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
             /// then all repopulate from the metadata committed as of holding the lock.
             if (auto metadata_cache = context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
+                metadata_cache->clear();
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
@@ -382,21 +503,32 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
+            context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
+            /// The following segments must see the metadata this ALTER committed.
+            if (auto metadata_cache = context->getQueryMetadataCache())
+                metadata_cache->clear();
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
                 auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                /// Before the snapshot: on a lazily loaded table this loads the nested storage, and only
+                /// then does the snapshot carry the sorting key, partition key and projections that
+                /// `MutationsInterpreter` validates against, instead of the stand-in's columns-only metadata.
                 table->checkMutationIsPossible(*mutation_commands, settings);
+                checkStatisticsMutationsAreAllowed(*mutation_commands, settings);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
-                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                auto validation_context = Context::createCopy(context);
+                validation_context->setAnalyzingBackgroundExpressions(true);
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
+                context->onQueryExecutionStarted();
                 table->mutate(*mutation_commands, context);
             }
         }
@@ -405,6 +537,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
+            context->onQueryExecutionStarted();
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())
                 res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
@@ -412,6 +545,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+            context->onQueryExecutionStarted();
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
@@ -423,6 +557,31 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     }
 
     return res;
+}
+
+/// A setting that sends the table's data elsewhere copies the data as it is stored, so nothing can filter the rows
+/// that a row policy hides (as `StorageSet::checkNoRowPolicy`). It reads only the query and the access entities,
+/// not the table, so it runs on the initiator.
+void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & database, const ContextPtr & context)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::MODIFY_SETTING || !command.settings_changes)
+            continue;
+
+        const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+        if (StorageFactory::instance().getExportAccessOfAnyEngine(changes).empty())
+            continue;
+
+        auto row_policy_filter = context->getRowPolicyFilter(database, alter.getTable(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot change the settings of table {}.{} that send its data elsewhere because a row policy applies to it. "
+                "The data is copied as it is stored, so its rows cannot be filtered",
+                backQuoteIfNeed(database), backQuoteIfNeed(alter.getTable()));
+    }
 }
 
 }
@@ -470,6 +629,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
 
+    if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
+        && !getContext()->getClientInfo().is_shared_catalog_internal)
+        applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>());
+
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
@@ -509,6 +672,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
+
         params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
@@ -519,12 +683,29 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
                     checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
+
+            /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
+            checkNoRowPolicyForExport(captured_alter, default_database, context);
+
+            /// `throw_if_unresolved` means the hosts do not run the query as this user.
+            if (throw_if_unresolved)
+                for (const auto & child : captured_alter.command_list->children)
+                {
+                    const auto & command = child->as<const ASTAlterCommand &>();
+                    if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+                        continue;
+                    if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+                        rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+                }
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     if (!skip_access_check)
+    {
         getContext()->checkAccess(getRequiredAccess(table));
+        checkNoRowPolicyForExport(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
+    }
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
@@ -540,6 +721,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
         }
     }
+
+    checkAddedIndexPermissions(alter, table, getContext());
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
@@ -579,10 +762,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
+    /// The query of `MODIFY QUERY` and the expressions of all mutation commands share one budget, so
+    /// `max_expanded_ast_elements` bounds the whole query rather than each of them separately.
+    ExpandedASTBudget expansion_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
+
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query, expansion_budget);
     }
 
     /// The same for the expressions of the mutation commands, as `InterpreterUpdateQuery` does: the
@@ -599,7 +786,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             if (!expression)
                 continue;
             ASTPtr expression_ptr = expression->ptr();
-            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext());
+            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext(), expansion_budget);
         }
     }
 
@@ -975,6 +1162,20 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
+
+            /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
+            /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
+            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
+            /// of `ON CLUSTER` can check them without the table.
+            if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
+            {
+                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                if (!export_access.empty())
+                {
+                    required_access.append_range(std::move(export_access));
+                    required_access.emplace_back(AccessType::SELECT, database, table);
+                }
+            }
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:

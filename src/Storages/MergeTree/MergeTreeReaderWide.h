@@ -7,6 +7,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/StreamWithSizeHint.h>
 
 
 namespace DB
@@ -42,16 +43,24 @@ public:
         size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        MutableColumns & res_columns) override;
+        MutableColumns & res_columns, Columns & shared_columns) override;
 
     bool canReadIncompleteGranules() const override { return true; }
+
+    size_t getColumnsCacheStripeMarks() const override
+    {
+        return columns_cache_reads_possible || columns_cache_writes_possible ? stripes.stripe_marks : 0;
+    }
+
+    bool canReadWholeColumnsCacheStripe(size_t mark) override;
 
     void prefetchBeginOfRange(Priority priority) override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
-    /// Return map (column to read) -> (list of all streams required to read this column).
-    std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
+    /// Return map (requested column name) -> (list of all streams required to read this column, each stream once; the
+    /// size hints of a stream reported several times are summed).
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
@@ -104,9 +113,16 @@ private:
         bool deserialize_prefixes,
         const ColumnReadSelector & selector);
 
+    struct ColumnKind;
+
+    /// Open the streams of a column that is read, and classify it in `kind`.
     void addStreams(
         const NameAndTypePair & name_and_type,
-        const SerializationPtr & serialization);
+        const SerializationPtr & serialization,
+        ColumnKind & kind);
+
+    /// Only the part's own serialization tells a stream it lacks by design from a subcolumn its type lacks.
+    bool isReadWithTypeInPart(const NameAndTypePair & name_and_type) const;
 
     ReadBuffer * getStream(
         bool seek_to_start,
@@ -155,11 +171,13 @@ private:
 
     /// Read up to `max_rows_to_read` rows of the selected columns from the part, appending them to
     /// `res_columns`, and return how many rows were read (zero if no selected column is in the part).
+    /// A column in `shared_columns` is moved to `res_columns` as a copy first.
     /// `sizes_before_reading`, if given, receives the number of rows every column held before.
     size_t readSegmentFromDisk(
         size_t from_mark,
         size_t max_rows_to_read,
         MutableColumns & res_columns,
+        Columns & shared_columns,
         const ColumnReadSelector & selector,
         std::vector<size_t> * sizes_before_reading = nullptr);
 
@@ -172,27 +190,12 @@ private:
     bool read_without_marks = false;
     LoggerPtr log;
 
-    /// Names of the result columns as the query requests them, position by position with
-    /// `columns_to_read`, which holds the names in the part: for a column renamed after the part
-    /// was written, the part still knows it by its old name. Cache entries are identified by the
-    /// requested name, so `system.columns_cache` and its access checks see the column as the
-    /// current schema names it. The renames themselves invalidate the table's entries, so a
-    /// name never refers to two columns within one schema identity.
-    Names requested_column_names;
-
-    /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
-    /// Filled by `addStreams`.
-    NameSet columns_absent_from_part;
-
-    /// Columns whose rows are not a function of the row range they are read for, so an entry
-    /// written by one read would be wrong for another: the distinct-paths subcolumn of a `JSON`
-    /// column (`ObjectDistinctPaths`) emits the path names of the part once per reader and the
-    /// shared data paths per call, rather than a value per row. Such a column is read from the
-    /// part by every read, like a partially read column. Filled by `addStreams`.
-    NameSet columns_not_cacheable;
-
     /// Whether the column at `pos` is read from the part even when the rest of the granule is
-    /// served from the cache: a partially read column or a column that is not cacheable.
+    /// served from the cache: a partially read column - only some of its streams are in the part,
+    /// in practice a `Nested` member added by an `ALTER`, whose offsets are read from the shared
+    /// stream of its group while its elements stay empty; `fillMissingColumns` takes those offsets
+    /// to size every re-added member of the group - or a column that is not cacheable, see
+    /// `isColumnNotCacheable`.
     bool isColumnReadOnlyFromPart(size_t pos) const;
     bool hasColumnsReadOnlyFromPart() const;
 
@@ -208,16 +211,23 @@ private:
     /// and both paths leave it null for `fillMissingColumns`.
     bool isColumnAbsentFromPart(size_t pos) const;
 
-    /// Only some of the streams of the column at `pos` are in the part - in practice a `Nested`
-    /// member added by an `ALTER`, whose offsets are read from the shared stream of its group
-    /// while its elements stay empty. Reading it does produce data: `fillMissingColumns`
-    /// discards its values but takes those offsets to size every re-added member of the group,
-    /// so it has to be read from the part even when the rest of the granule is served from cache.
-    bool isColumnPartiallyRead(size_t pos) const;
-
     /// The column at `pos` is not read at all: dropped by a pending mutation, or an invalidated
     /// system column. Both paths leave it null.
     bool isColumnSkipped(size_t pos) const;
+
+    /// The answers of the predicates above per result column, computed once by the constructor:
+    /// the columns cache path asks them for every granule.
+    struct ColumnKind
+    {
+        bool skipped = false;
+        bool absent_from_part = false;
+        bool read_only_from_part = false;
+        /// Read from the part and cacheable: none of the above.
+        bool regular = false;
+    };
+    std::vector<ColumnKind> column_kinds;
+    size_t num_regular_columns = 0;
+    bool has_columns_read_only_from_part = false;
 
     /// The columns cache.
     ///
@@ -225,31 +235,15 @@ private:
     /// and `ColumnsCacheStripes`), covering a contiguous run of the granules of the stripe, and a
     /// read goes granule by granule and column by column: a column whose entry covers the granule
     /// is served from it, the others are read from the part, whatever the ranges of the read task
-    /// are. The rows read from the part are copied into an entry of their own, which is written
-    /// once the run of granules has been read to its end - so the cache never shares column data
-    /// with a read still in progress, and a granule that is not read in full (skipped by `PREWHERE`,
-    /// or cut short by `LIMIT` or a cancelled query) is not cached.
+    /// are. A block that is a whole stripe is served from its entry, and written to it, without a
+    /// copy: the result column and the entry are the same column, immutable from then on. The rows
+    /// of other blocks are copied, out of an entry or into one, which is written once the run of
+    /// granules has been read to its end, so a granule that is not read in full (skipped by
+    /// `PREWHERE`, or cut short by `LIMIT` or a cancelled query) is not cached.
     ///
     /// Serving a granule from the cache does not move the file streams, so before the next
     /// granule is read from the part its streams are positioned at that granule again. Streams
     /// can only be positioned at marks, which is why the unit is a granule.
-
-    /// Whether this reader can use the cache at all: the cache is on, and the part is a wide part
-    /// of a table with a UUID (the key of the cache) and not a projection part - projection parts
-    /// share the projection name as their part name, which is not unique across parent parts.
-    bool columns_cache_reads_possible = false;
-    bool columns_cache_writes_possible = false;
-
-    /// How the marks of the part are cut into stripes, and the identity of every result column
-    /// for the cache. See `ColumnsCacheKey`.
-    ColumnsCacheStripes stripes;
-    std::vector<UInt128> column_identities;
-
-    /// Invalidation generation captured once when the reader was created, not per mark range.
-    /// Passed to ColumnsCache::setMany so a deferred write is dropped if the table was
-    /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
-    /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
-    UInt64 cache_table_generation = 0;
 
     /// Whether `startColumnsCacheRange` has begun a range of this reader already.
     bool columns_cache_range_started = false;
@@ -271,9 +265,9 @@ private:
     bool partial_columns_started = false;
 
     /// The entries of the range, per result column, per stripe of the range (nullptr when the
-    /// stripe has no entry), and per granule whether every regular column of it is cached.
+    /// stripe has no entry), and per granule how many regular columns of it are cached.
     std::vector<std::vector<ColumnsCache::MappedPtr>> cached_entries;
-    std::vector<bool> granule_served_from_cache;
+    std::vector<UInt32> granule_cached_columns;
 
     const ColumnsCache::MappedPtr & cachedEntryFor(size_t pos, size_t mark) const;
     bool isGranuleColumnCached(size_t pos, size_t mark) const;
@@ -291,18 +285,18 @@ private:
     std::vector<bool> accumulated_from_disk;
     MutableColumns accumulated_columns;
 
-    /// Entries ready to be written, written together at the end of the call.
-    std::vector<ColumnsCache::MappedPtr> pending_entries;
-
-    /// Begin a new contiguous mark range at `from_mark`: write what the previous range left,
-    /// look the stripes of the new one up in the cache and reset the state.
+    /// Begin a new contiguous mark range at `from_mark`, or re-enter the current one there: write
+    /// what was read so far, look the stripes of a new range up in the cache and reset the cursor.
     void startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns);
 
     /// Look the granules [first_mark, end_mark) up in the cache for every regular column. Returns
-    /// the entries per column and per stripe, and per granule whether it can be served as a whole.
+    /// the entries per column and per stripe, and per granule how many regular columns are cached.
     void lookupColumnsCache(
         size_t first_mark, size_t end_mark, size_t num_columns,
-        std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<bool> & servable);
+        std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<UInt32> & cached_columns);
+
+    /// Whether the granules [begin, end) of a lookup can be served from the cache as a whole.
+    bool allGranulesServed(const std::vector<UInt32> & cached_columns, size_t begin, size_t end) const;
 
     /// Whether the first mark range of this reader can be served from the cache as a whole
     /// *without touching a single stream of it*, and so need not be prefetched.
@@ -310,27 +304,31 @@ private:
     bool canServeFirstRangeFromCache();
 
     /// Read up to `max_rows_to_read` rows granule by granule, from the cache or from the part.
-    size_t readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns);
+    size_t readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns);
 
     /// Append the `rows` rows starting at row `row_begin` of the part - which lie in the stripe of
-    /// granule `first_mark` - to the regular result columns whose entry covers them.
-    void serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns);
+    /// granule `first_mark` - to the regular result columns whose entry covers them. Rows that are
+    /// a whole entry of an empty result column are not copied: the entry's column goes to
+    /// `shared_columns`.
+    void serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns);
 
-    /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
-    bool canWriteToColumnsCache() const;
+    /// Whether every regular column of the stripe is served from the cache.
+    bool isColumnsCacheStripeServed(size_t stripe);
 
     void resetAccumulation();
 
     /// Copy the rows [offset, offset + rows) of granule `mark`, just read from the part, for the
     /// cache: they are at `sizes_before_reading[pos] + row_in_run` of every result column read
-    /// from the part (`from_disk`). A run of granules read to their end becomes an entry when
-    /// its stripe ends, when the range ends, or when the run is broken.
+    /// from the part (`from_disk`), followed by `rows_left_in_run - rows` more rows of the run read
+    /// from the part by this call. A run of granules read to their end becomes an entry when its
+    /// stripe ends, when the range ends, or when the run is broken.
     void accumulateRowsForColumnsCache(
         size_t mark,
         size_t offset,
         size_t rows,
         size_t granule_rows,
         size_t row_in_run,
+        size_t rows_left_in_run,
         const std::vector<bool> & from_disk,
         const std::vector<size_t> & sizes_before_reading,
         const MutableColumns & res_columns);
@@ -338,11 +336,18 @@ private:
     /// Turn the granules of the accumulated run that were read to their end into entries.
     void finishAccumulatedGranules();
 
-    /// Queue an entry for the granules [first_mark, end_mark) of the result column at `pos`.
-    void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, MutableColumnPtr column);
-
-    /// Write the pending entries to the cache.
-    void flushPendingColumnsCacheWrites();
+    /// The granules [first_mark, end_mark), all `rows` of them, were just read from the part into
+    /// empty result columns. If they are a whole stripe, or the beginning of one where the range
+    /// ends, queue the result columns themselves as entries, move them to `shared_columns`, and
+    /// return true; also true when the cache does not admit them, so they are not copied either.
+    bool writeStripeToColumnsCache(
+        size_t first_mark,
+        size_t end_mark,
+        size_t rows,
+        const std::vector<bool> & from_disk,
+        const std::vector<size_t> & sizes_before_reading,
+        MutableColumns & res_columns,
+        Columns & shared_columns);
 };
 
 }

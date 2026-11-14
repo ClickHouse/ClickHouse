@@ -11,9 +11,11 @@
 #include <Common/checkStackSize.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <sstream>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Databases/DataLake/UnityCatalogUtils.h>
 #include <fmt/ranges.h>
@@ -83,7 +85,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
     return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
-std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
+std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const
 {
     const auto & context = getContext();
     /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
@@ -144,7 +146,11 @@ Poco::JSON::Object::Ptr UnityCatalog::requestCredentials(const String & table_id
     request_body.set("table_id", table_id);
     request_body.set("operation", operation);
 
-    auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    std::ostringstream request_body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    request_body_str.exceptions(std::ios::failbit);
+    request_body.stringify(request_body_str);
+
+    auto callback = [body = request_body_str.str()](DB::WriteBuffer & out) { DB::writeString(body, out); };
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     return json.extract<Poco::JSON::Object::Ptr>();
 }
@@ -239,7 +245,7 @@ bool UnityCatalog::tryGetTableMetadata(
             {
                 result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has unsupported data_source_format '{}'. " \
                     "It means that it's unreadable with Unity catalog in ClickHouse, readable tables must have data_source_format == '{}'",
-                    full_table_name, object->get("securable_kind").extract<String>(), READABLE_DATA_SOURCE_FORMAT));
+                    full_table_name, object->get("data_source_format").extract<String>(), READABLE_DATA_SOURCE_FORMAT));
             }
 
             if (!has_data_source_format && !has_securable_kind)
@@ -247,6 +253,12 @@ bool UnityCatalog::tryGetTableMetadata(
                 result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has no information about data_source_format or securable_kind. " \
                     "It means that it's unreadable with Unity catalog in ClickHouse", full_table_name));
             }
+
+#if !USE_DELTA_KERNEL_RS
+            if (result.isDefaultReadableTable())
+                result.setTableIsNotReadable(fmt::format(
+                    "Cannot read Delta Lake table `{}` because the server is built without delta-kernel-rs", full_table_name));
+#endif
 
             LOG_DEBUG(log, "Processing table {} is default readable {}", table_name, result.isDefaultReadableTable());
 
@@ -262,21 +274,20 @@ bool UnityCatalog::tryGetTableMetadata(
                         const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                         std::string name = column_json->getValue<String>("name");
                         auto is_nullable = column_json->getValue<bool>("nullable");
-                        auto type_json_str = column_json->get("type_json").extract<String>();
+                        const auto type_json_str = column_json->get("type_json").extract<String>();
                         DB::DataTypePtr data_type;
                         /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
                         if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                         {
-                            type_json_str.pop_back();
-                            String type_name = type_json_str.substr(1);
-                            auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                            String type_name = type_json_str.substr(1, type_json_str.size() - 2);
+                            auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                             data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                         }
                         else
                         {
                             Poco::JSON::Parser parser;
                             auto parsed_json_type = parser.parse(type_json_str);
-                            data_type = DB::DeltaLakeMetadata::getFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                            data_type = DB::getDeltaLakeFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                         }
                         schema.push_back({name, data_type});
                     }
@@ -336,11 +347,15 @@ void UnityCatalog::createTable(
 
     LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
 
+    std::ostringstream body_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    body_str.exceptions(std::ios::failbit);
+    body->stringify(body_str);
+
     try
     {
         auto response = postJSONRequest(
             TABLES_ENDPOINT,
-            [&](std::ostream & os) { body->stringify(os); });
+            [body_serialized = body_str.str()](DB::WriteBuffer & out) { DB::writeString(body_serialized, out); });
         LOG_TEST(log, "Unity createTable response: {}", response.second);
     }
     catch (...)

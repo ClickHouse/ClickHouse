@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/StackWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <stack>
@@ -107,6 +108,7 @@ private:
 
     char * getMemoryData() { return use_stack_memory ? stack_memory : memory.data(); }
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
+    void setOwnMemoryBuffer(size_t size, size_t offset);
 
     size_t offsetFromCheckpointInOwnMemory() const;
 
@@ -123,7 +125,7 @@ private:
     char stack_memory[PADDING_FOR_SIMD]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - scratch buffer, written before read
     bool use_stack_memory = true;
 
-    std::stack<size_t> recursive_checkpoints_offsets;
+    StackWithMemoryTracking<size_t> recursive_checkpoints_offsets;
 };
 
 

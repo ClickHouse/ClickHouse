@@ -13,6 +13,20 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static std::optional<UInt64> getMostStrictAvailableMemory(MemoryTracker * memory_tracker)
+{
+    std::optional<UInt64> available;
+    for (; memory_tracker; memory_tracker = memory_tracker->getParent())
+    {
+        if (Int64 tracker_limit = memory_tracker->getHardLimit(); tracker_limit > 0)
+        {
+            UInt64 tracker_available = static_cast<UInt64>(std::max<Int64>(tracker_limit - memory_tracker->get(), 0));
+            available = available ? std::min(*available, tracker_available) : tracker_available;
+        }
+    }
+    return available;
+}
+
 std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
     MemoryTracker * query_memory_tracker = nullptr;
@@ -22,21 +36,7 @@ std::optional<UInt64> getMostStrictAvailableSystemMemory()
     if (query_memory_tracker = query_memory_tracker->getParent(); !query_memory_tracker)
         return {};
 
-    Int64 available = std::numeric_limits<Int64>::max();
-    MemoryTracker * system_memory_tracker = query_memory_tracker->getParent();
-    while (system_memory_tracker)
-    {
-        if (Int64 tracker_limit = system_memory_tracker->getHardLimit(); tracker_limit > 0)
-        {
-            Int64 tracker_used = system_memory_tracker->get();
-            Int64 tracker_available = std::clamp<Int64>(tracker_limit - tracker_used, 0, std::numeric_limits<Int64>::max());
-            available = std::min(available, tracker_available);
-        }
-        system_memory_tracker = system_memory_tracker->getParent();
-    }
-    if (available == std::numeric_limits<Int64>::max())
-        return {};
-    return available;
+    return getMostStrictAvailableMemory(query_memory_tracker->getParent());
 }
 
 size_t getMaxBytesBeforeExternalProcessing(size_t max_bytes, double max_bytes_ratio, std::string_view ratio_setting_name)
@@ -93,6 +93,11 @@ std::optional<UInt64> getCurrentQueryHardLimit()
     return hard_limit;
 }
 
+std::optional<UInt64> getCurrentQueryAvailableMemory()
+{
+    return getMostStrictAvailableMemory(DB::CurrentThread::getMemoryTracker());
+}
+
 
 Int64 getCurrentQueryMemoryUsage()
 {
@@ -112,6 +117,15 @@ void setCurrentQueryMemoryDriftExpected()
 {
     if (auto * tracker = DB::CurrentThread::getMemoryTracker())
         tracker->setDriftExpected();
+}
+
+
+void handOverCurrentQueryMemoryToServer(Int64 size)
+{
+    /// The trackers have to hold what the thread allocated so far before it is taken off them.
+    DB::CurrentThread::flushUntrackedMemory();
+    if (auto * tracker = DB::CurrentThread::getMemoryTracker())
+        tracker->handOverToServer(size);
 }
 
 

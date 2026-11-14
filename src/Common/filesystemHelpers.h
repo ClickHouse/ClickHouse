@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <Poco/TemporaryFile.h>
 
@@ -91,6 +92,12 @@ catch (const fs::filesystem_error & e)
 /// Get inode number for a file path.
 /// Will not work correctly if filesystem does not support inodes.
 Int64 getINodeNumberFromPath(const String & path);
+
+/// Version token of a local file: modification time with nanoseconds, inode number and size.
+String computeFileCacheVersionToken(const struct stat & file_stat);
+
+/// Whether the last modification is far enough in the past that any later write changes the token.
+bool isFileCacheVersionTokenSettled(const struct stat & file_stat);
 
 }
 

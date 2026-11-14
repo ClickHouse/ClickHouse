@@ -6,8 +6,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 -- The contract: a constant right-hand side is evaluated as a `Set`. The row-wise results below have
 -- to match it.
 SELECT [1] IN ([1], [2]), [1] IN ([2], [3]), [1] IN (tuple([1], [2])), map('a', 1) IN (map('a', 1), map('b', 1)), map('a', 1) IN (map('b', 1)), [CAST(NULL, 'Nullable(UInt64)')] IN ([CAST(NULL, 'Nullable(UInt64)')], [1]);
