@@ -21,6 +21,7 @@
 
 #include <Disks/IVolume.h>
 
+#include <Storages/Distributed/DistributedBucketMap.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
@@ -169,6 +170,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsBool allow_experimental_distributed_bucket_map;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
@@ -205,6 +207,8 @@ namespace DistributedSetting
     extern const DistributedSettingsMilliseconds background_insert_max_sleep_time_ms;
     extern const DistributedSettingsMilliseconds background_insert_sleep_time_ms;
     extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
+    extern const DistributedSettingsUInt64 bucket_map_buckets;
+    extern const DistributedSettingsString bucket_map_zookeeper_path;
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
     extern const DistributedSettingsUInt64 bytes_to_throw_insert;
     extern const DistributedSettingsBool flush_on_detach;
@@ -232,6 +236,7 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -663,6 +668,19 @@ StorageDistributed::StorageDistributed(
             throw Exception(ErrorCodes::INFINITE_LOOP, "Distributed table {} looks at itself", id_.table_name);
     }
 
+    if (const String & bucket_map_path = (*distributed_settings)[DistributedSetting::bucket_map_zookeeper_path].value; !bucket_map_path.empty())
+    {
+        if (is_fresh_definition && !sharding_key_)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `bucket_map_zookeeper_path` requires a sharding key");
+
+        bucket_map_watcher = std::make_unique<DistributedBucketMapWatcher>(getContext(), id_, bucket_map_path);
+
+        /// The map is created by the query that creates the table, and not on server startup, to not depend on ZooKeeper there.
+        if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
+            bucket_map_watcher->createIfNotExists(
+                (*distributed_settings)[DistributedSetting::bucket_map_buckets], getCluster()->getShardsInfo().size());
+    }
+
     initializeFromDisk();
 }
 
@@ -919,6 +937,14 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
         && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+
+    /// The rows of a bucket with previous shards are on several shards, so no shard has all rows of a value of the sharding key.
+    /// Without a loaded map the optimization is off, so a query that does not skip shards never loads the map.
+    if (optimize_sharding_key_aggregation && bucket_map_watcher)
+    {
+        auto bucket_map = query_info.bucket_map ? query_info.bucket_map : bucket_map_watcher->getStatus().map;
+        optimize_sharding_key_aggregation = bucket_map && !bucket_map->has_previous_shards;
+    }
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -1842,8 +1868,17 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
+void StorageDistributed::startup()
+{
+    if (bucket_map_watcher)
+        bucket_map_watcher->startup();
+}
+
 void StorageDistributed::shutdown(bool)
 {
+    if (bucket_map_watcher)
+        bucket_map_watcher->shutdown();
+
     auto holder = async_insert_blocker.cancel();
 
     std::lock_guard lock(cluster_nodes_mutex);
@@ -2166,10 +2201,32 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
+std::shared_ptr<const Cluster::SlotToShard> StorageDistributed::getSlotToShard(const ClusterPtr & cluster) const
+{
+    if (auto map = getBucketMap(cluster))
+        return std::shared_ptr<const Cluster::SlotToShard>(map, &map->slot_to_shard);
+    return std::shared_ptr<const Cluster::SlotToShard>(cluster, &cluster->getSlotToShard());
+}
+
+DistributedBucketMapPtr StorageDistributed::getBucketMap(const ClusterPtr & cluster) const
+{
+    if (!bucket_map_watcher)
+        return nullptr;
+
+    auto map = bucket_map_watcher->get();
+    size_t num_shards = cluster->getShardsInfo().size();
+    if (map->max_shard_num > num_shards)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Version {} of bucket map {} assigns buckets to shard {}, but cluster {} has {} shards",
+            map->version, bucket_map_watcher->getFullZooKeeperPath(), map->max_shard_num, getClusterName(), num_shards);
+
+    return map;
+}
+
 ClusterPtr StorageDistributed::getOptimizedCluster(
     ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & query_info) const
+    SelectQueryInfo & query_info) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -2205,9 +2262,8 @@ void StorageDistributed::checkShardingKeySetsAreBuilt() const
             "Sharding expression cannot contain IN with a subquery or a non-Set table, because its set is never built");
 }
 
-IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
+IColumn::Selector StorageDistributed::createSelector(const Cluster::SlotToShard & slot_to_shard, const ColumnWithTypeAndName & result)
 {
-    const auto & slot_to_shard = cluster->getSlotToShard();
     const IColumn * column = result.column.get();
 
 /// NOLINTBEGIN(readability-else-after-return)
@@ -2236,7 +2292,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 
 ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     ClusterPtr cluster,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
@@ -2263,14 +2319,29 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     if (!variants)
         return nullptr;
 
+    /// Taken only now, so a table with a bucket map does not need it for queries that cannot skip shards anyway.
+    auto bucket_map = getBucketMap(cluster);
+    auto slot_to_shard = bucket_map
+        ? std::shared_ptr<const Cluster::SlotToShard>(bucket_map, &bucket_map->slot_to_shard)
+        : std::shared_ptr<const Cluster::SlotToShard>(cluster, &cluster->getSlotToShard());
+
     std::set<int> shards;
 
     for (const auto & variant : *variants)
     {
-        const auto selector = createSelector(cluster, variant.at(0));
+        const auto selector = createSelector(*slot_to_shard, variant.at(0));
         shards.insert(selector.begin(), selector.end());
+
+        /// The rows inserted before a bucket was assigned to its shard stay on its previous shards.
+        if (bucket_map && bucket_map->has_previous_shards)
+            for (const auto range_index : createSelector(bucket_map->slot_to_range, variant.at(0)))
+                for (const auto previous_shard_num : bucket_map->ranges[range_index].previous_shard_nums)
+                    shards.insert(static_cast<int>(previous_shard_num - 1));
     }
 
+    /// The `IN` rewrite for every shard must use the same slots as the choice of the shards.
+    query_info.slot_to_shard = std::move(slot_to_shard);
+    query_info.bucket_map = std::move(bucket_map);
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
 }
 
@@ -2481,6 +2552,16 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
             = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
 }
 
+/// Both the `Distributed` and the `Remote`/`RemoteSecure` engines accept the experimental settings, so both must check them.
+static void checkExperimentalDistributedSettings(const DistributedSettings & distributed_settings, const StorageFactory::Arguments & args)
+{
+    if (!distributed_settings[DistributedSetting::bucket_map_zookeeper_path].value.empty()
+        && isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+        && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_distributed_bucket_map])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The bucket map of `Distributed` tables is experimental. Set `allow_experimental_distributed_bucket_map` to enable it");
+}
+
 namespace
 {
 
@@ -2646,6 +2727,8 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
+        checkExperimentalDistributedSettings(distributed_settings, args);
+
         /// Infer an omitted structure here, so a fresh definition resolves under the user's context
         /// and the local-shard `SHOW_COLUMNS` check applies to them. A definition restored from
         /// metadata (including a short `ATTACH`) has no user, so it keeps the global context.
@@ -2778,6 +2861,8 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
 | `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
+| `bucket_map_zookeeper_path`                | Experimental. Path in ZooKeeper of the bucket map that assigns the buckets of the table to shards instead of the shard weights. See [Bucket map](#distributed-bucket-map).                                                            | `''`          |
+| `bucket_map_buckets`                       | Number of buckets of a bucket map created together with the table. `0` - use the existing map. See [Bucket map](#distributed-bucket-map).                                                                                            | `0`           |
 
 <Note>
 **Durability settings** (`fsync_...`):
@@ -2926,6 +3011,39 @@ Data is written in background. When inserted in the table, the data block is jus
 
 If the server ceased to exist or had a rough restart (for example, due to a hardware failure) after an `INSERT` to a `Distributed` table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the `broken` subdirectory and no longer used.
 
+### Bucket map {#distributed-bucket-map}
+
+<Note>
+This is an experimental feature. Enable it with the [`allow_experimental_distributed_bucket_map`](/reference/settings/session-settings/allow-experimental#allow_experimental_distributed_bucket_map) setting.
+</Note>
+
+With the `bucket_map_zookeeper_path` setting, the table selects shards with a bucket map stored in ZooKeeper instead of the shard weights. A row goes to the bucket `sharding_key % buckets`, and then to the shard the bucket is assigned to. The number of buckets is fixed, so assigning a bucket to another shard does not change the shard of the rows of the other buckets. The map is shared by all `Distributed` tables with the same path, for example by the tables of the same name on all servers of the cluster.
+
+When the table is created and the map does not exist, the map is created with `bucket_map_buckets` buckets split into ranges of almost equal size, one range for every shard of the cluster. The map is a text node:
+
+```text
+format version: 1
+buckets: 4
+0 1 1
+2 3 2
+```
+
+Every line after the header assigns an inclusive range of buckets to a shard number, as `shard_num` in [system.clusters](/reference/system-tables/clusters). The ranges go in order and cover all buckets. The table watches the node and uses a new version of the map as soon as it is written, for example with `INSERT INTO system.zookeeper`. A new version changes the shard only of the rows inserted after it: the existing rows stay where they are, so the shards of the moved buckets no longer match the map for them, as after a change of the shard weights. The loaded maps are shown in [system.distributed_bucket_maps](/reference/system-tables/distributed_bucket_maps).
+
+`optimize_skip_unused_shards` and `optimize_skip_unused_shards_rewrite_in` use the bucket map as well. `DROP TABLE` does not remove the map from ZooKeeper.
+
+To keep these settings correct when buckets are assigned to another shard, list the shards that keep their rows after `previous`. For example, to assign bucket 3 of the map above to a new shard 3:
+
+```text
+format version: 1
+buckets: 4
+0 1 1
+2 2 2
+3 3 3 previous 2
+```
+
+New rows of bucket 3 go only to shard 3, and a query that skips shards reads bucket 3 from shards 3 and 2. While any bucket has previous shards, `optimize_distributed_group_by_sharding_key` is not applied to the table, because the rows of a value of the sharding key can be on several shards. Remove a previous shard when it has no rows of the bucket left, for example after they expire by TTL. A server reads the new shard of a bucket only after it loads the new version, so a query that skips shards can miss for a moment the rows inserted through a server that loaded it earlier.
+
 ## Reading data {#distributed-reading-data}
 
 When querying a `Distributed` table, `SELECT` queries are sent to all shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you do not have to transfer old data into it. Instead, you can write new data to it by using a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
@@ -2985,6 +3103,7 @@ void registerStorageRemote(StorageFactory & factory)
             distributed_settings.loadFromQuery(*args.storage_def);
 
         finalizeDistributedSettings(distributed_settings, args.getContext());
+        checkExperimentalDistributedSettings(distributed_settings, args);
 
         bool has_local_shard = false;
         for (const auto & shard_info : parsed.cluster->getShardsInfo())

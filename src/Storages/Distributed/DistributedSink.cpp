@@ -205,6 +205,7 @@ DistributedSink::DistributedSink(
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
     , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
+    , slot_to_shard(storage.getSlotToShard(cluster))
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
     , insert_timeout(insert_timeout_)
@@ -777,7 +778,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(cluster, key_column);
+    return StorageDistributed::createSelector(*slot_to_shard, key_column);
 }
 
 
