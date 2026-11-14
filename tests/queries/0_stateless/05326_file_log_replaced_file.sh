@@ -2,7 +2,7 @@
 # A FileLog table reads a file that replaced another one under the same name (moved over it, created again after the
 # old file was renamed by a rotation, a symlink moved over it, or the target of a symlink replaced) once and from its
 # start, and the rotated file from its own offset, also when the replacement happens before the table learns about it.
-# Symlinks whose targets are rotated read each file once, also when the rotation happens before the first read.
+# Symlinks whose targets are rotated or swapped read each file once, also when this happens before the first read.
 # A single-file table reads a replaced file from its start, or from an offset set after the replacement, also after the
 # table is attached again. A reset of a name that leads to a file read under another name fails.
 
@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 base=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${base:?}"
 # `outside` is not watched and is on the same file system, so `mv` from there is an atomic rename with a new inode.
-mkdir -p "${base}/replace" "${base}/rotate" "${base}/single" "${base}/outside" "${base}/link" "${base}/target" "${base}/rotated"
+mkdir -p "${base}/replace" "${base}/rotate" "${base}/single" "${base}/outside" "${base}/link" "${base}/target" "${base}/rotated" "${base}/swapped"
 
 settings="poll_directory_watch_events_backoff_init = 100, poll_directory_watch_events_backoff_max = 500"
 
@@ -153,6 +153,32 @@ function symlink_targets_rotated()
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_rotated"
 }
 
+function symlink_targets_swapped()
+{
+    echo '-- symlink targets swapped'
+    echo 100 > "${base}/outside/q1"
+    echo 200 > "${base}/outside/q2"
+    ln -s "${base}/outside/q1" "${base}/swapped/a.csv"
+    ln -s "${base}/outside/q2" "${base}/swapped/b.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_swapped (a UInt64) ENGINE = FileLog('${base}/swapped/', 'CSV') SETTINGS ${settings}"
+    wait_watched file_log_swapped "${base}/swapped"
+    function swap_targets()
+    {
+        mv "${base}/outside/q1" "${base}/outside/q"
+        mv "${base}/outside/q2" "${base}/outside/q1"
+        mv "${base}/outside/q" "${base}/outside/q2"
+        wait_watched file_log_swapped "${base}/swapped" "v$1_"
+    }
+    swap_targets 1
+    for _ in 1 2; do
+        ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_swapped"
+    done | sort -n | xargs
+    swap_targets 2
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_swapped"
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_swapped ORDER BY a)"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_swapped"
+}
+
 function single_file()
 {
     echo '-- single file'
@@ -177,7 +203,7 @@ function single_file()
 }
 
 # The cases are independent, so they run at the same time to keep the test short.
-cases="moved_over rotated symlink_moved_over symlink_target_replaced symlink_targets_rotated single_file"
+cases="moved_over rotated symlink_moved_over symlink_target_replaced symlink_targets_rotated symlink_targets_swapped single_file"
 for c in $cases; do
     "$c" > "${base}/$c.out" &
 done

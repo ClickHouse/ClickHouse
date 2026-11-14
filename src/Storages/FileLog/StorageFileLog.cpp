@@ -613,15 +613,45 @@ std::optional<UInt64> StorageFileLog::getInodeToRead(const String & file_name, c
             || (!watcher_reports_replaced_targets && lstat(file_path.c_str(), &entry_stat) == 0 && S_ISLNK(entry_stat.st_mode)
                 && entry_stat.st_ino == file_ctx.entry_inode)))
     {
-        if (file_infos.meta_by_inode.contains(file_stat.st_ino))
+        if (isReadUnderOtherName(file_name, file_stat.st_ino))
             return std::nullopt;
         return file_stat.st_ino;
     }
     return file_ctx.inode;
 }
 
+void StorageFileLog::takeOverFile(const String & file_name, FileContext & file_ctx, UInt64 inode)
+{
+    auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+    auto & other_meta = findInMap(file_infos.meta_by_inode, inode);
+    const String meta_path = getFullMetaPath(file_name);
+    const String other_meta_path = getFullMetaPath(other_meta.file_name);
+    const bool has_meta_file = disk->existsFile(meta_path);
+    if (has_meta_file)
+        disk->replaceFile(meta_path, meta_path + TMP_SUFFIX);
+    if (disk->existsFile(other_meta_path))
+        disk->replaceFile(other_meta_path, meta_path);
+    if (has_meta_file)
+        disk->replaceFile(meta_path + TMP_SUFFIX, other_meta_path);
+
+    findInMap(file_infos.context_by_name, other_meta.file_name).inode = file_ctx.inode;
+    std::swap(meta.file_name, other_meta.file_name);
+    file_ctx.inode = inode;
+}
+
 void StorageFileLog::openFilesAndSetPos()
 {
+    /// Take-overs come first: re-keying a name to a new file drops the offset of the file it leaves, which another name may lead to.
+    for (const auto & file : file_infos.file_names)
+    {
+        auto & file_ctx = findInMap(file_infos.context_by_name, file);
+        if (file_ctx.status == FileStatus::NO_CHANGE && !file_ctx.open_failed)
+            continue;
+        if (const auto inode = getInodeToRead(file, file_ctx);
+            inode && *inode != file_ctx.inode && file_infos.meta_by_inode.contains(*inode))
+            takeOverFile(file, file_ctx, *inode);
+    }
+
     bool any_open_failed = false;
     for (const auto & file : file_infos.file_names)
     {
@@ -646,7 +676,9 @@ void StorageFileLog::openFilesAndSetPos()
                 skip_file();
                 continue;
             }
-            if (*inode_to_read != file_ctx.inode)
+            if (*inode_to_read != file_ctx.inode && file_infos.meta_by_inode.contains(*inode_to_read))
+                takeOverFile(file, file_ctx, *inode_to_read);
+            else if (*inode_to_read != file_ctx.inode)
             {
                 disk->removeFileIfExists(getFullMetaPath(file));
                 file_infos.meta_by_inode.erase(file_ctx.inode);
@@ -1525,6 +1557,12 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
         auto add_target = [&](const String & name, FileContext & file_ctx, UInt64 new_offset)
         {
             const auto inode = getInodeToRead(name, file_ctx);
+            if (inode && *inode != file_ctx.inode && file_infos.meta_by_inode.contains(*inode))
+            {
+                if (std::ranges::any_of(targets, [&](const Target & target) { return target.inode == *inode; }))
+                    return false;
+                takeOverFile(name, file_ctx, *inode);
+            }
             const bool rekey = inode && *inode != file_ctx.inode;
             if (!inode || (rekey && !rekeyed_inodes.insert(*inode).second))
                 return false;

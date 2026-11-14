@@ -10,6 +10,9 @@ BAD_ARGUMENTS
 -- symlink targets rotated
 200 300
 [300,400]
+-- symlink targets swapped
+100 200
+[100,200]
 -- single file
 [1,2,3]
 [10,20,30,40]
