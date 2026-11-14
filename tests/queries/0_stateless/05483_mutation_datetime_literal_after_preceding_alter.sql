@@ -4,12 +4,8 @@
 -- With `session_timezone`, a string literal compared with a `DateTime` column in a mutation gets the time zone of the session
 -- explicitly (05459). The mutation is rewritten against the columns of the table when it is submitted, after the preceding
 -- commands of the statement are committed, so it sees a column that the statement adds.
--- `enable_shared_storage_snapshot_in_query = 0`: with the default, the validation of the mutation does not see a column that
--- a preceding segment adds, also on master and without `session_timezone`, since the shared snapshot of the query is not
--- refreshed between the segments of the statement.
 
 SET session_timezone = 'Asia/Tokyo';
-SET enable_shared_storage_snapshot_in_query = 0;
 SET mutations_sync = 2;
 
 SELECT '--- an alias of a column that the statement adds';
