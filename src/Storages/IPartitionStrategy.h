@@ -116,7 +116,8 @@ struct HiveStylePartitionStrategy : IPartitionStrategy
         ContextPtr context_,
         const std::string & file_format_,
         bool partition_columns_in_data_file_,
-        const std::string & compression_method_);
+        const std::string & compression_method_,
+        bool strict_read_glob_);
 
     PartitionExpressionActionsAndColumnName getPartitionKeyActions() const override;
     std::string getPathForRead(const std::string & prefix) override;
@@ -129,6 +130,9 @@ private:
     const std::string file_format;
     const bool partition_columns_in_data_file;
     const std::string compression_method;
+    /// Read only paths laid out exactly as the strategy writes them
+    /// (`key1=*/.../keyN=*/<file>`) instead of using a recursive glob.
+    const bool strict_read_glob;
     std::unordered_set<std::string> partition_columns_name_set;
     Block block_without_partition_columns;
 };
