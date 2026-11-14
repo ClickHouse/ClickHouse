@@ -2060,12 +2060,35 @@ void LocalServer::processConfig()
             /// their metadata would be lost at exit, and on the next run the data directories left behind would not let
             /// them be created again. So, when system logs are enabled, make the `system` database persistent, like in
             /// the server.
-            const bool persistent_system_database = attach_system_tables
+            const bool has_system_database_metadata = fs::exists(fs::path(path) / "metadata" / "system.sql");
+            bool persistent_system_database = attach_system_tables
                 && !getClientConfiguration().has("only-system-tables")
                 && hasAnySystemLogConfigured(config());
 
-            if (attach_system_tables
-                && (persistent_system_database || fs::exists(std::filesystem::path(path) / "metadata" / "system.sql")))
+            /// A directory used before with a `system` database of the `Memory` engine may hold the data of system log
+            /// tables as real directories in `data/system`. The `Atomic` engine refuses to load such a directory (it
+            /// expects symbolic links there), so keep the `Memory` engine for it rather than fail to start.
+            if (persistent_system_database && !has_system_database_metadata)
+            {
+                const fs::path system_data_path = fs::path(path) / "data" / DatabaseCatalog::SYSTEM_DATABASE;
+                if (fs::is_directory(system_data_path))
+                {
+                    for (const auto & entry : fs::directory_iterator(system_data_path))
+                    {
+                        if (!entry.is_symlink())
+                        {
+                            LOG_WARNING(log,
+                                "The system log tables are not kept between runs, because {} was left by an older version "
+                                "with a non-persistent `system` database. Move it away to keep the system log tables",
+                                entry.path().string());
+                            persistent_system_database = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (attach_system_tables && (persistent_system_database || has_system_database_metadata))
             {
                 LoadTaskPtrs load_system_metadata_tasks
                     = loadMetadataSystem(global_context, /* async_load_system_database */ false, persistent_system_database);

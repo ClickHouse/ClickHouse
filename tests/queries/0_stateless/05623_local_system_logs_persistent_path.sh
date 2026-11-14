@@ -20,4 +20,13 @@ for run in 1 2; do
     "
 done
 
+# A directory used by an older version, with the data of a system log table in `data/system` but without
+# `metadata/system.sql`, keeps the `Memory` engine for the `system` database instead of failing to start.
+rm -rf "${dir}"
+$CLICKHOUSE_LOCAL --path "${dir}" -q "SELECT 1 FORMAT Null"
+mkdir -p "${dir}/data/system/query_log"
+for run in 1 2; do
+    $CLICKHOUSE_LOCAL --config-file "${config}" --path "${dir}" -q "SELECT engine FROM system.databases WHERE name = 'system'"
+done
+
 rm -rf "${dir}" "${config}"
