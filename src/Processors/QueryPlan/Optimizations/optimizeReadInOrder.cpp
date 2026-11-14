@@ -1727,6 +1727,10 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return {};
 
+        /// Reading in order turns vertical `FINAL` off, which costs more than the in-order `DISTINCT` saves.
+        if (reading->getEnableVerticalFinal())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
