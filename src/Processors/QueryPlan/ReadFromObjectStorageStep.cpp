@@ -609,7 +609,7 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
 
 #if USE_AWS_S3
     /// A URL with `versionId` makes every read fetch that version of the object, bypassing the check of
-    /// the listed `ETag`, while the metadata of the object (and so its `ETag` in the key of the file)
+    /// the listed `ETag`, while the metadata of a listed object (and so its `ETag` in the key of the file)
     /// describes the latest version. An `ALTER NAMED COLLECTION` followed by a `DETACH` / `ATTACH` may
     /// select another version, keeping the UUID of the table, the paths and the `ETag`s.
     if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(object_storage.get()))

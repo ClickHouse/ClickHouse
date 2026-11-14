@@ -24,6 +24,7 @@ from helpers.test_tools import exec_query_with_retry
 from helpers.s3_queue_common import generate_random_string
 
 from minio.commonconfig import Tags
+from minio.versioningconfig import ENABLED, VersioningConfig
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -3070,6 +3071,85 @@ def test_cache_key_includes_storage(started_cluster):
                     f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
                 )
             )
+
+
+def test_read_object_version(started_cluster):
+    # A URL with `versionId` must read that version with its own size and `ETag`, not the latest version's,
+    # both for the read itself and for the caches keyed on them.
+    instance = started_cluster.instances["dummy"]
+    minio_client = started_cluster.minio_client
+    bucket = "versioned"
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+    minio_client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    prefix = f"test_read_object_version-{uuid.uuid4()}"
+    host = f"{started_cluster.minio_host}:{started_cluster.minio_port}"
+    auth = f"'minio', '{minio_secret_key}'"
+
+    def s3(key, format, structure, version_id=None):
+        url = f"http://{host}/{bucket}/{prefix}-{key}"
+        if version_id is not None:
+            url += f"?versionId={version_id}"
+        return f"s3('{url}', {auth}, '{format}', '{structure}')"
+
+    def put_version(key, format, structure, query, settings=""):
+        instance.query(
+            f"INSERT INTO FUNCTION {s3(key, format, structure)} {query} SETTINGS s3_truncate_on_insert = 1{settings}"
+        )
+        info = minio_client.stat_object(bucket, f"{prefix}-{key}")
+        return info.version_id, info.size
+
+    # The latest version is smaller than the version that is read.
+    old, old_size = put_version("size.parquet", "Parquet", "id UInt64", "SELECT number FROM numbers(100000)")
+    put_version("size.parquet", "Parquet", "id UInt64", "SELECT number FROM numbers(10)")
+    assert f"100000\t99999\t{old_size}\n" == instance.query(
+        f"SELECT count(), max(id), any(_size) FROM {s3('size.parquet', 'Parquet', 'id UInt64', old)}"
+    )
+    # With `s3_ignore_file_doesnt_exist` the metadata comes from `tryGetObjectMetadata`: the old version is read with
+    # its own size, and a version that does not exist is skipped like a missing key.
+    for version_id, expected in [(old, "100000\t99999\n"), (str(uuid.uuid4()), "0\t0\n")]:
+        assert expected == instance.query(
+            f"SELECT count(), max(id) FROM {s3('size.parquet', 'Parquet', 'id UInt64', version_id)} "
+            "SETTINGS s3_ignore_file_doesnt_exist = 1"
+        )
+
+    # Versions of equal size (page checksums would make them differ): the footer of the latest version,
+    # cached by the first query, does not describe the old one.
+    parquet_settings = (
+        ", output_format_parquet_row_group_size = 10000, output_format_parquet_compression_method = 'none'"
+        ", output_format_parquet_write_checksums = 0"
+    )
+    old, old_size = put_version(
+        "footer.parquet", "Parquet", "id UInt64", "SELECT number FROM numbers(100000)", parquet_settings
+    )
+    _, new_size = put_version(
+        "footer.parquet", "Parquet", "id UInt64", "SELECT number + 1 FROM numbers(100000)", parquet_settings
+    )
+    assert old_size == new_size
+    for version_id, expected in [(None, "0\n"), (old, "1\n")]:
+        assert expected == instance.query(
+            f"SELECT count() FROM {s3('footer.parquet', 'Parquet', 'id UInt64', version_id)} WHERE id = 0 "
+            "SETTINGS use_parquet_metadata_cache = 1"
+        )
+
+    # Versions of equal size: the bytes of the latest version, cached by the first query, are not the old one's.
+    for i, settings in enumerate(
+        ["filesystem_cache_name = 'cache1', enable_filesystem_cache = 1", "use_page_cache_for_object_storage = 1"]
+    ):
+        key = f"bytes-{i}.tsv"
+        old, _ = put_version(key, "TSV", "x UInt8", "SELECT 0 FROM numbers(100)")
+        put_version(key, "TSV", "x UInt8", "SELECT 1 FROM numbers(100)")
+        for version_id, expected in [(None, "100\n"), (old, "0\n")]:
+            assert expected == instance.query(
+                f"SELECT sum(x) FROM {s3(key, 'TSV', 'x UInt8', version_id)} SETTINGS {settings}"
+            )
+
+    # `versionId=null` names the only version of an object in an unversioned bucket.
+    url = f"http://{host}/{started_cluster.minio_bucket}/{prefix}-null.tsv"
+    instance.query(
+        f"INSERT INTO FUNCTION s3('{url}', {auth}, 'TSV', 'x UInt8') SELECT 7 FROM numbers(3) SETTINGS s3_truncate_on_insert = 1"
+    )
+    assert "21\n" == instance.query(f"SELECT sum(x) FROM s3('{url}?versionId=null', {auth}, 'TSV', 'x UInt8')")
 
 
 def test_archive(started_cluster):
