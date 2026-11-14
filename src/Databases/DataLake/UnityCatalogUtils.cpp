@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <sstream>
+#include <unordered_set>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
@@ -114,6 +115,18 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     body->set("columns", columns);
     body->set("properties", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
     return body;
+}
+
+bool isStreamingTableOrMaterializedView(const String & table_type)
+{
+    static const std::unordered_set<std::string> types = {"STREAMING_TABLE", "MATERIALIZED_VIEW"};
+    return types.contains(table_type);
+}
+
+bool isStreamingTableOrMaterializedView(const Poco::JSON::Object::Ptr & table)
+{
+    return table->has("table_type") && !table->isNull("table_type")
+        && isStreamingTableOrMaterializedView(table->get("table_type").extract<String>());
 }
 
 }

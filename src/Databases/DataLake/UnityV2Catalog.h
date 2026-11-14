@@ -144,6 +144,10 @@ private:
         const std::string & route,
         const Poco::URI::QueryParameters & params = {}) const;
 
+    /// The description of a streaming table or a materialized view as a managed table.
+    /// If Databricks does not expose the table to external engines, the description is null and the string is the Databricks error.
+    std::pair<Poco::JSON::Object::Ptr, std::string> tryGetManagedTableJSON(const std::string & full_table_name) const;
+
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(
         const std::string & route,
         std::function<void(DB::WriteBuffer &)> out_stream_callback) const;

@@ -29,6 +29,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
 }
@@ -83,8 +84,8 @@ static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "D
 /// Formats handled by the Iceberg reader (via the Iceberg REST catalog endpoint).
 static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
 
-/// Other table types (views, materialized views, streaming tables, foreign tables, shallow clones)
-/// do not support direct reads of their storage.
+/// Other table types (views, foreign tables, shallow clones) do not support direct reads of their storage.
+/// A streaming table or a materialized view is readable in its managed form, see `READ_AS_MANAGED_PARAMS`.
 static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
 
 /// An absent `table_type` does not reject the table; the format checks handle that case.
@@ -264,6 +265,26 @@ std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::getJSONRequest(
         return makeHTTPRequestAndReadJSON(
             base_url / route, getContext(), /* bearer_token = */ "", params, getAuthHeaders(force_refresh));
     });
+}
+
+std::pair<Poco::JSON::Object::Ptr, std::string> UnityV2Catalog::tryGetManagedTableJSON(const std::string & full_table_name) const
+{
+    try
+    {
+        auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name, READ_AS_MANAGED_PARAMS).first;
+        return {json.extract<Poco::JSON::Object::Ptr>(), ""};
+    }
+    catch (const DB::HTTPException & e)
+    {
+        /// Databricks answers 400 when the table cannot be read as a managed table.
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST)
+        {
+            LOG_DEBUG(log, "Unity does not expose table {} as a managed table: {}", full_table_name, e.message());
+            return {nullptr, e.message()};
+        }
+
+        throw;
+    }
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnityV2Catalog::postJSONRequest(
@@ -471,6 +492,14 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
     /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
     /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
     const auto table_type = getTableType(full_table_name);
+
+    /// A Databricks pipeline owns a streaming table or a materialized view, and a drop purges its managed storage.
+    if (isStreamingTableOrMaterializedView(table_type))
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Table {}.{} has table_type {} in Unity catalog. ClickHouse does not drop tables of this type, drop it in Databricks",
+            namespace_name, table_name, table_type);
+
     const bool data_will_be_deleted = table_type == "MANAGED";
     if (data_will_be_deleted != delete_data)
         throw DB::Exception(
@@ -576,10 +605,22 @@ bool UnityV2Catalog::tryGetTableMetadata(
         LOG_DEBUG(log, "Unity table {} does not exist", full_table_name);
         return false;
     }
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
 
     if (!hasValueAndItsNotNone("name", object) || object->get("name").extract<String>() != table_name)
         return false;
+
+    if (isStreamingTableOrMaterializedView(object))
+    {
+        /// Without the managed description, the default one still gives the columns.
+        auto [managed_object, databricks_error] = tryGetManagedTableJSON(full_table_name);
+        if (managed_object)
+            object = managed_object;
+        else
+            result.setTableIsNotReadable(fmt::format(
+                "Cannot read table `{}` because it has table_type '{}' and Databricks does not describe it as a managed table: {}",
+                full_table_name, object->get("table_type").extract<String>(), databricks_error));
+    }
 
     auto table_format = detectTableFormat(object);
     result.setTableFormat(table_format);
@@ -926,9 +967,16 @@ CatalogTables UnityV2Catalog::getTablesForSchema(const std::string & schema, siz
 
                 for (size_t i = 0; i < tables_object->size(); ++i)
                 {
-                    const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+                    auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                     const auto table_name = current_table_json->get("name").extract<String>();
                     auto qualified_name = fmt::format("{}.{}", schema, table_name);
+
+                    /// These table types need a second request with additional query parameters.
+                    if (isStreamingTableOrMaterializedView(current_table_json))
+                    {
+                        if (auto managed_json = tryGetManagedTableJSON(fmt::format("{}.{}", warehouse, qualified_name)).first)
+                            current_table_json = managed_json;
+                    }
 
                     const auto table_format = detectTableFormat(current_table_json);
                     /// Delta needs `storage_location` from this response, while an Iceberg table
