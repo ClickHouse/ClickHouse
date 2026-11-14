@@ -245,6 +245,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
+            /// Authorize before classifying the table below: for a lazily loaded table that loads it, which must not be
+            /// possible for a user without the right to drop it.
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
+
             ast_drop_query.sync = false;
             /// A real DROP of an object storage, table function or non-truncatable table does not delete its data, so do not TRUNCATE it.
             /// The proxy is checked first: its `supportsTruncate` resolves the table function.
