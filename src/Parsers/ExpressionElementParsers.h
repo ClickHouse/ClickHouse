@@ -586,6 +586,9 @@ struct LiteralAsText
     bool all_non_negative = true;
     /// It holds a `NULL`, which only a `Nullable` target reads back.
     bool has_null = false;
+    /// A number in it written in hexadecimal, binary or with digit separators is held as a plain decimal
+    /// numeral, which not every type reads as that number: `255` is not an `IPv4` the way `0xFF` is.
+    bool rewritten = false;
 };
 
 /** Reads a literal - a number, or an array or a tuple of numbers, strings and `NULL`s - as text, leaving
@@ -594,11 +597,11 @@ struct LiteralAsText
   * it on the way to the `Decimal`.
   *
   * Returns false, leaving `pos` where it was, if there is no such literal ahead, or if it holds a
-  * number written in a form that no type reads back - see `isPlainDecimalNumeral`.
+  * number written in a form that no type reads back - see `rewriteAsPlainDecimalNumeral`.
   */
 bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal);
 
-/** The text of a literal that was not written as one `parseLiteralAsText` reads - `(0.1)`, `0xFF`,
+/** The text of a literal that was not written as one `parseLiteralAsText` reads - `(0.1)`, `(0xFF)`,
   * `+1` - taken from the literal as it is formatted, which is how it is written back into a query:
   * `255` for `0xFF`. Nothing if the formatted literal is not something `parseLiteralAsText` reads,
   * such as a string or a `Bool`. `outer_pos` only lends its recursion limits.

@@ -206,7 +206,7 @@ Numeric literals are parsed as follows:
 - The numeric literal is first parsed as a 64-bit unsigned integer, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
   - If the value is prefixed with `0b` or `0x`/`0X`, the number is parsed as binary or hexadecimal, respectively.
   - If the value is negative and the absolute magnitude is greater than 2<sup>63</sup>, an error is returned.
-- If unsuccessful, the value is next parsed as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
+- If unsuccessful, the value is next parsed as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function. A binary value is converted the same way as the equal hexadecimal value.
 - Otherwise, an error is returned.
 
 Literal values are cast to the smallest type that the value fits in.
@@ -227,6 +227,7 @@ Integer values wider than 64-bit (`UInt128`, `Int128`, `UInt256`, `Int256`) must
 ```
 
 This bypasses the above algorithm and parses the integer with a routine that supports arbitrary precision.
+The same holds for an integer written in hexadecimal or binary, or with underscores, such as `-0x8000000000000001::Int128`.
 
 Otherwise, the literal will be parsed as a floating-point number and thus subject to loss of precision due to truncation.
 </Info>

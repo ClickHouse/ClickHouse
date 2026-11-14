@@ -4362,7 +4362,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
             return Action::NONE;
 
         /// Nothing binds tighter than `::`, so its operand is complete: when it is a literal the
-        /// type reads more precisely as text - `(0.1)::Decimal256(76)`, `0xFF::UInt128` - it goes
+        /// type reads more precisely as text - `(0.1)::Decimal256(76)`, `(0xFF)::UInt128` - it goes
         /// as text, the way `ParserCastOperator` sends a literal written plainly.
         ASTPtr argument;
         if (!layers.back()->popOperand(argument))
