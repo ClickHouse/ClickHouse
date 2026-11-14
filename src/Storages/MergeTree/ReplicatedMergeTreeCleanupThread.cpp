@@ -44,6 +44,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
     size_t cleaned_other = 0;
     size_t cleaned_part_like = 0;
     size_t cleaned_parts = storage.clearOldPartsAndRemoveFromZK();
+    cleaned_parts += storage.removeStrandedPartsFromZooKeeper();
 
     auto storage_settings = storage.getSettings();
 
