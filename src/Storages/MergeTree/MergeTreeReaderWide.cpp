@@ -937,6 +937,11 @@ void MergeTreeReaderWide::accumulateRowsForColumnsCache(
         if (!accumulated)
         {
             accumulated = column->cloneEmpty();
+            /// The copy must own its data: otherwise `insertRangeFrom` lets a `ColumnAggregateFunction`
+            /// (also nested in a `Tuple`, `Array`, ...) share the states of the column being read by
+            /// keeping a reference to it, which keeps the whole column alive in the cache and makes it
+            /// shared while the following granules are read into it.
+            accumulated->ensureOwnership();
             /// The rows this read is going to append to the copy - the rest of the run, up to the
             /// end of the stripe - not the whole stripe: after `PREWHERE` filtered granules out, a
             /// run is often a single granule, and reserving a stripe for each of them would
