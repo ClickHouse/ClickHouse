@@ -140,6 +140,8 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
     result.max_value = std::move(estimate.estimated_max);
     if (estimate.estimated_null_count && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    if (auto avg_string_bytes = stats->getAvgStringBytes())
+        result.avg_bytes = *avg_string_bytes;
     return result;
 }
 
@@ -232,6 +234,12 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         final_rows = 0;
     else if (final_rows > static_cast<Float64>(total_rows))
         final_rows = static_cast<Float64>(total_rows);
+    /// Round instead of truncating, and keep at least one row while the selectivity is positive: an equality
+    /// on a column with as many distinct values as rows gives `rows * (1 / rows)`, a hair below 1 in floating
+    /// point, and an estimate of 0 rows tells the join order optimizer that the relation is empty. Every join
+    /// with it then looks free, and the order of the rest of the joins is decided by ties.
+    if (final_rows > 0)
+        final_rows = std::max(1.0, std::round(final_rows));
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
@@ -306,6 +314,28 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     /// atom we then discard is exactly the work this reuse is meant to avoid.
     SetPtr set_for_ranges;
     DataTypePtr column_type;
+
+    /// A constant conjunct, e.g. `x IS NOT NULL` folded to `1` for a non-`Nullable` column, passes every row or none.
+    /// Left as an unknown condition, it would scale the estimate by `default_unknown_cond_factor`. NULL stays undecided,
+    /// as below.
+    if (!node.isFunction() && node.tryGetConstant(const_value, const_type) && const_type->canBeUsedInBooleanContext())
+    {
+        std::optional<bool> value;
+        switch (const_value.getType())
+        {
+            case Field::Types::UInt64: value = const_value.safeGet<UInt64>() != 0; break;
+            case Field::Types::Int64: value = const_value.safeGet<Int64>() != 0; break;
+            case Field::Types::Float64: value = const_value.safeGet<Float64>() != 0.0; break;
+            case Field::Types::Bool: value = const_value.safeGet<bool>(); break;
+            default: break;
+        }
+        if (value)
+        {
+            out.function = *value ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+        return false;
+    }
 
     if (node.isFunction())
     {

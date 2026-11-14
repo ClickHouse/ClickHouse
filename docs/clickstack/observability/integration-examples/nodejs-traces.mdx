@@ -9,7 +9,6 @@ keywords: ['Node.js', 'traces', 'OTEL', 'ClickHouse Observability', 'distributed
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Capture traces from your Node.js application with OpenTelemetry automatic instrumentation and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without instrumenting an application.
@@ -29,7 +28,15 @@ Capture traces from your Node.js application with OpenTelemetry automatic instru
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
 
 Set these connection variables in the terminal where you will run your application or demo collector:
 
@@ -208,7 +215,15 @@ An empty success response such as `{}` or `{"partialSuccess":{}}` indicates the 
 
 Open **Search**, select **Traces**, filter for `ServiceName:nodejs-demo-api`, and select **Last 2 days** to include the full shifted dataset. Open a trace to inspect the HTTP attributes.
 
-<Image img="/images/clickstack/observability-nodejs-demo-traces.png" alt="Node.js demo traces in ClickHouse Observability Search"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Node.js demo traces in ClickHouse Observability Search](/images/clickstack/observability-nodejs-demo-traces.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 
@@ -222,7 +237,15 @@ Open **Search**, select **Traces**, filter for `ServiceName:nodejs-demo-api`, an
 2. Upload `nodejs-traces-dashboard.json`.
 3. Map the charts to your **Traces** source and click **Finish Import**.
 
-<Image img="/images/clickstack/observability-import-dashboard.png" alt="Dashboards page with the Import button highlighted"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Dashboards page with the Import button highlighted](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
 
 </Step>
 <Step title="View the dashboard" id="view-dashboard">
@@ -231,7 +254,15 @@ For the sample, select **Last 2 days** and optionally filter for `ServiceName:no
 
 The dashboard uses the sample's HTTP span attributes. Instrumentation versions can use different attribute names; adjust chart fields if your application's spans differ.
 
-<Image img="/images/clickstack/observability-nodejs-traces-dashboard.png" alt="Node.js traces dashboard showing requests, latency, endpoints, HTTP status codes, methods, and database queries"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Node.js traces dashboard showing requests, latency, endpoints, HTTP status codes, methods, and database queries](/images/clickstack/observability-nodejs-traces-dashboard.png)
+
+</Frame>
+
+</div>
 </Step>
 </Steps>
 

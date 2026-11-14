@@ -905,7 +905,12 @@ class LakeDataGenerator:
         if isinstance(dtype, BooleanType):
             return "true" if self._rand_bool() else "false"
         if isinstance(dtype, (ByteType, ShortType, IntegerType, LongType)):
-            return str(self._rand_int(-100, 100))
+            # Stay inside the declared ClickHouse type, e.g. no negative value for a `UInt8` column (see CH_INT_LIMITS)
+            low, high = -100, 100
+            ch_limits = LakeDataGenerator.CH_INT_LIMITS.get(self._ch_hint_strip(ch_type))
+            if ch_limits is not None:
+                low, high = max(low, ch_limits[0]), min(high, ch_limits[1])
+            return str(self._rand_int(low, high))
         if isinstance(dtype, FloatType):
             return self._float_literal(float(self._rand_float(-1e5, 1e5)), "FLOAT")
         if isinstance(dtype, DoubleType):
