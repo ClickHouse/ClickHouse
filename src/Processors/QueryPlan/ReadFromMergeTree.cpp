@@ -3996,6 +3996,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(parts, mutations_snapshot))
         reader_settings.use_query_condition_cache = false;
 
+    /// A masking policy rewrites, for this user only, the values the cached verdicts were computed on.
+    if (data.hasEnabledMaskingPolicies(context_))
+        reader_settings.use_query_condition_cache = false;
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -4595,6 +4599,54 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         prewhere_info_value));
 
     updateSortDescription();
+}
+
+void ReadFromMergeTree::applyPrewhereQueryConditionCache()
+{
+    /// A TopK PREWHERE key also hashes the WHERE condition, which is dropped from the lookup below.
+    if (!analyzed_result_ptr || !indexes || !query_info.prewhere_info || !allow_query_condition_cache || top_k_filter_info
+        || !context->getSettingsRef()[Setting::use_query_condition_cache]
+        || (is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
+        || storage_snapshot->metadata->hasUniqueKey()
+        || filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
+        return;
+
+    /// The analysis has already looked up the WHERE condition.
+    SelectQueryInfo prewhere_query_info = query_info;
+    prewhere_query_info.filter_actions_dag = nullptr;
+
+    auto updated = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
+    MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+        updated->parts_with_ranges,
+        prewhere_query_info,
+        vector_search_parameters,
+        top_k_filter_info,
+        allow_top_k_prewhere_query_condition_cache,
+        updated->sampling.use_sampling,
+        mutations_snapshot,
+        *indexes,
+        context,
+        log);
+
+    UInt64 ranges = 0;
+    UInt64 marks = 0;
+    UInt64 rows = 0;
+    for (const auto & part : updated->parts_with_ranges)
+    {
+        ranges += part.ranges.size();
+        marks += part.getMarksCount();
+        rows += part.getRowsCount();
+    }
+
+    if (marks == analyzed_result_ptr->selected_marks)
+        return;
+
+    updated->selected_parts = updated->parts_with_ranges.size();
+    updated->selected_ranges = ranges;
+    updated->selected_marks = marks;
+    updated->selected_rows = rows;
+    updated->has_exact_ranges = updated->selected_parts == 0 || analyzed_result_ptr->has_exact_ranges;
+    analyzed_result_ptr = std::move(updated);
 }
 
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
@@ -5785,6 +5837,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// See the same gate in `selectRangesToRead`.
     if (MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(result.parts_with_ranges, mutations_snapshot))
+        reader_settings.use_query_condition_cache = false;
+
+    /// A masking policy rewrites, for this user only, the values the cached verdicts are computed on.
+    if (data.hasEnabledMaskingPolicies(context))
         reader_settings.use_query_condition_cache = false;
 
     /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part

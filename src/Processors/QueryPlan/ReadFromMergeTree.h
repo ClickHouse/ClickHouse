@@ -452,6 +452,8 @@ public:
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    /// Narrows the memoized analysis by the query condition cache verdict for the current PREWHERE.
+    void applyPrewhereQueryConditionCache();
     bool isQueryWithSampling() const;
 
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column

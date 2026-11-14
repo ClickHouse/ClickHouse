@@ -1,0 +1,10 @@
+-- parallel replicas sized by a row estimate must prune the second run
+7
+7
+0	2	1
+1	1	1	1	1
+-- control: parallel replicas without a row estimate
+7
+7
+0	2	1
+1	1	1	1	1

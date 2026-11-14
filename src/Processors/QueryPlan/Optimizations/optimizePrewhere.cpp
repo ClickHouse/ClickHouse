@@ -428,6 +428,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
+    /// An analysis memoized before the move (e.g. for join order or parallel replicas estimates) looked the query
+    /// condition cache up for the WHERE condition only, while the read records its verdict under the PREWHERE.
+    if (read_from_merge_tree_step)
+        read_from_merge_tree_step->applyPrewhereQueryConditionCache();
+
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
