@@ -51,6 +51,25 @@ static struct InitFiu
     REGULAR(deduplication_log_fail_durable_drop_sync) \
     REGULAR(parallel_sync_paths_interrupt_fsync) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(materialized_postgresql_fail_teardown_after_shutdown) \
+    REGULAR(materialized_postgresql_fail_final_teardown_of_non_last_replica) \
+    REGULAR(materialized_postgresql_fail_leader_release_at_shutdown) \
+    REGULAR(materialized_postgresql_fail_load_from_snapshot) \
+    REGULAR(materialized_postgresql_fail_nested_table_drop) \
+    REGULAR(materialized_postgresql_fail_nested_drop_on_detach) \
+    REGULAR(materialized_postgresql_fail_persist_reload_marker) \
+    REGULAR(materialized_postgresql_fail_nested_drop_on_attach) \
+    REGULAR(materialized_postgresql_fail_database_startup) \
+    REGULAR(materialized_postgresql_fail_add_table_to_replication) \
+    REGULAR(materialized_postgresql_fail_after_publication_removal) \
+    REGULAR(materialized_postgresql_fail_temporary_leader_release) \
+    PAUSEABLE(materialized_postgresql_pause_after_stop_replication) \
+    PAUSEABLE(materialized_postgresql_pause_before_register_replica) \
+    PAUSEABLE(materialized_postgresql_pause_before_leaked_publication_drop) \
+    PAUSEABLE(materialized_postgresql_pause_in_load_from_snapshot) \
+    PAUSEABLE(materialized_postgresql_pause_before_marking_snapshot_completed) \
+    PAUSEABLE(materialized_postgresql_pause_before_redo_snapshot_truncate) \
+    PAUSEABLE(materialized_postgresql_pause_in_non_last_teardown) \
     REGULAR(smt_blobs_list_split_file_writes) \
     REGULAR(smt_blobs_list_split_file_writes_small) \
     REGULAR(smt_blobs_list_zero_byte_append) \
