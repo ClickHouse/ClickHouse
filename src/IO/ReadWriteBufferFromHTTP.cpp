@@ -49,6 +49,8 @@ std::string maskedURI(const Poco::URI & uri)
 {
     std::string masked = uri.toString();
     DB::maskURICredentials(masked);
+    /// Query parameters can carry arbitrary credentials (e.g. a license key), not only presigned ones.
+    DB::maskURIQueryValues(masked);
     return masked;
 }
 }
@@ -121,6 +123,8 @@ size_t ReadWriteBufferFromHTTP::getOffset() const
 
 void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const
 {
+    const bool same_origin = current_uri.getScheme() == initial_uri.getScheme() && current_uri.getHost() == initial_uri.getHost()
+        && current_uri.getPort() == initial_uri.getPort();
     if (current_uri.getPort())
         request.setHost(current_uri.getHost(), current_uri.getPort());
     else
@@ -137,7 +141,12 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.setContentLength(0);    /// No callback - no body
 
     for (const auto & [header, value] : http_header_entries)
+    {
+        /// As with other HTTP clients, do not forward origin credentials to a redirect target.
+        if (!same_origin && (Poco::icompare(header, "Authorization") == 0 || Poco::icompare(header, "Cookie") == 0))
+            continue;
         request.set(header, value);
+    }
 
     if (range)
     {
@@ -149,7 +158,7 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.set("Range", range_header_value);
     }
 
-    if (!credentials.getUsername().empty())
+    if (same_origin && !credentials.getUsername().empty())
         credentials.authenticate(request);
 }
 
@@ -258,6 +267,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
+    , hide_body(hasUnscrubbableCredentialHeaders(http_header_entries))
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
     , cancellation(std::move(cancellation_))
@@ -326,7 +336,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     /// buffer needs none of its own.
     auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
-    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects, requestCredentialSecrets(request));
+    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects, requestCredentialSecrets(request), hide_body);
 
     return response_body;
 }
@@ -667,7 +677,8 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation,
-                    headerCredentialSecrets(http_header_entries));
+                    headerCredentialSecrets(http_header_entries),
+                    hide_body);
             }
             throw Exception(
                 ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
@@ -796,7 +807,8 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation,
-                    headerCredentialSecrets(http_header_entries));
+                    headerCredentialSecrets(http_header_entries),
+                    hide_body);
             }
 
             copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);

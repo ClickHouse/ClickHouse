@@ -301,6 +301,54 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
+/** Mask the value of every query parameter, so that `...?license_key=abc&x=1` becomes
+  * `...?license_key=[HIDDEN]&x=[HIDDEN]`. Query parameters can carry arbitrary credentials (a license or API key),
+  * not only the presigned ones that `maskPresignedURLParameters` recognizes by name. Parameter names are kept, so a
+  * masked URI still shows which parameters were sent; a parameter without `=` is masked as a whole. The fragment is
+  * left as is. Returns whether anything was masked.
+  */
+inline bool maskURIQueryValues(std::string & url)
+{
+    const size_t query_begin = url.find('?');
+    if (query_begin == std::string::npos)
+        return false;
+    const size_t fragment_begin = url.find('#', query_begin);
+    const size_t query_end = fragment_begin == std::string::npos ? url.size() : fragment_begin;
+
+    std::string masked;
+    masked.reserve(url.size());
+    masked.append(url, 0, query_begin + 1);
+
+    bool changed = false;
+    size_t parameter_begin = query_begin + 1;
+    while (parameter_begin < query_end)
+    {
+        size_t parameter_end = url.find('&', parameter_begin);
+        if (parameter_end == std::string::npos || parameter_end > query_end)
+            parameter_end = query_end;
+
+        const std::string_view parameter(url.data() + parameter_begin, parameter_end - parameter_begin);
+        const size_t equals = parameter.find('=');
+        const std::string_view name = equals == std::string_view::npos ? std::string_view{} : parameter.substr(0, equals + 1);
+        const std::string_view value = equals == std::string_view::npos ? parameter : parameter.substr(equals + 1);
+
+        masked.append(name);
+        if (!value.empty())
+        {
+            masked.append(HIDDEN_SECRET);
+            changed |= value != HIDDEN_SECRET;
+        }
+
+        if (parameter_end < query_end)
+            masked.push_back('&');
+        parameter_begin = parameter_end + 1;
+    }
+
+    masked.append(url, query_end, std::string::npos);
+    url = std::move(masked);
+    return changed;
+}
+
 /// Mask the values of the query parameters that carry credentials in a presigned URL, so that
 /// `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`, and of the
 /// `connection_string` parameter of an ODBC/JDBC bridge request. Every occurrence is masked.

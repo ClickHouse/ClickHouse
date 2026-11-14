@@ -1,0 +1,82 @@
+ip	IPv4					
+version	String					
+country	Tuple(names Tuple(en String, fr Nullable(String)), iso_code Nullable(String))					
+location	Tuple(latitude Float64, longitude Nullable(Float64))					
+array	Array(UInt32)					
+nested	Array(Tuple(value Int32))					
+widened	Int64					
+wide_mixed	Int128					
+bool	Bool					
+bytes	String					
+float	Float32					
+uint16	UInt16					
+uint32	UInt32					
+uint64	UInt64					
+uint128	UInt128					
+int32	Int32					
+promoted	Float64					
+empty	Tuple()					
+optional	Nullable(Tuple(label String))					
+8.8.8.8	A	FR	France	2.25	[1,70000]	[-7]	true	00FF	1.5	42	70000	1152921504606846976	1329227995784915872903807060280344593	-123	20	()
+1.1.1.1	\N	\N	\N	[]	false	1.5
+8.8.8.8	FR	France	2.25	[1,70000]	true	20
+8.8.8.9	FR	France	2.25	[1,70000]	true	20
+8.8.9.9	\N	\N	\N	[]	false	1.5
+Nullable(String)	Array(UInt32)	Bool	Float64
+1.1.1.1	\N	4000000000	9223372036854775809	Nullable(Tuple(label String))	Int64	Int128
+8.8.8.8	present	-2	-3	Nullable(Tuple(label String))	Int64	Int128
+FR	France	2.25
+::8.8.8.8	FR	true
+::ffff:8.8.8.8	FR	true
+2001:db8::1	FR	true
+2001:db8:1::1	\N	false
+8.8.8.8	A
+8.8.8.8	A
+9.9.9.9	
+8.8.8.8	A
+\N	\N
+3	2	1
+Error 36
+Error 36
+Error 36
+Error 36
+Error 36
+Error 36
+Error 400
+Error 117
+Error 53
+Error 53
+Error 386
+Error 36
+Error 291
+Error 291
+Error 291
+Error 36
+Duration 5m
+Duration 10m
+Duration 20h
+Generation B
+Pinned join generation A
+B
+Generation A
+Generation B
+A
+ip	IPv4					
+version	String					
+country	Tuple(names Tuple(en String, fr Nullable(String)), iso_code Nullable(String))					
+location	Tuple(latitude Float64, longitude Nullable(Float64))					
+array	Array(UInt32)					
+nested	Array(Tuple(value Int32))					
+widened	Int64					
+wide_mixed	Int128					
+bool	Bool					
+bytes	String					
+float	Float32					
+uint16	UInt16					
+uint32	UInt32					
+uint64	UInt64					
+uint128	UInt128					
+int32	Int32					
+promoted	Float64					
+empty	Tuple()					
+optional	Nullable(Tuple(label String))					

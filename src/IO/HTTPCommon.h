@@ -15,6 +15,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTP/HTTPClientIO.h>
+#include <IO/HTTPHeaderEntries.h>
 
 
 namespace DB
@@ -31,9 +32,9 @@ public:
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
         const std::string & body,
-        const Strings & response_secrets = {}
-    )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body, response_secrets))
+        const Strings & response_secrets = {},
+        bool hide_body = false)
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body, response_secrets, hide_body))
         , http_status(http_status_)
         , response_body(body)
     {}
@@ -55,7 +56,8 @@ private:
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
         const std::string & body,
-        const Strings & response_secrets);
+        const Strings & response_secrets,
+        bool hide_body);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
@@ -92,6 +94,12 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
 /// is not scrubbed. Empty when there is no bearer token.
 Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request);
 
+/// Whether user-supplied request headers carry a credential that `requestCredentialSecrets` cannot recover, so that a
+/// remote error reflecting it can only be hidden as a whole: any header other than an `Authorization` bearer token
+/// (a cookie, an API key header, a `Basic` or a custom `Authorization` scheme), except the headers ClickHouse adds
+/// itself (`User-Agent`, `traceparent`, `tracestate`).
+bool hasUnscrubbableCredentialHeaders(const HTTPHeaderEntries & entries);
+
 /// Replaces the credentials of a request, the presigned-URL ones carried by `uri` and `request_secrets`, with `[HIDDEN]`
 /// in a text its server sent back, as `HTTPException` does with the reason phrase and the body.
 std::string scrubRequestCredentials(std::string_view text, const std::string & uri, const Strings & request_secrets);
@@ -100,6 +108,6 @@ std::string scrubRequestCredentials(std::string_view text, const std::string & u
 /// `requestCredentialSecrets`): a remote error response can echo the request's own credentials.
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, bool allow_redirects = false,
-    const Strings & response_secrets = {});
+    const Strings & response_secrets = {}, bool hide_body = false);
 
 }

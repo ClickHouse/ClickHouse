@@ -93,7 +93,10 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
     auto body = receiveHTTPResponse(session, response);
-    assertResponseIsOk(request.getURI(), response, *body, allow_redirects, requestCredentialSecrets(request));
+    const auto secrets = requestCredentialSecrets(request);
+    /// A cookie, or an `Authorization` header other than a bearer token, cannot be scrubbed from a reflected body.
+    const bool hide_body = request.has("Cookie") || (request.has("Authorization") && secrets.empty());
+    assertResponseIsOk(request.getURI(), response, *body, allow_redirects, secrets, hide_body);
     return body;
 }
 
@@ -120,9 +123,29 @@ Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
     return {};
 }
 
+bool hasUnscrubbableCredentialHeaders(const HTTPHeaderEntries & entries)
+{
+    for (const auto & [header, value] : entries)
+    {
+        /// Headers that ClickHouse adds itself carry no credential.
+        if (Poco::icompare(header, "User-Agent") == 0 || Poco::icompare(header, "traceparent") == 0
+            || Poco::icompare(header, "tracestate") == 0)
+            continue;
+
+        if (Poco::icompare(header, "Authorization") != 0)
+            return true;
+
+        Poco::Net::HTTPRequest request;
+        request.set(header, value);
+        if (requestCredentialSecrets(request).empty())
+            return true;
+    }
+    return false;
+}
+
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects,
-    const Strings & response_secrets)
+    const Strings & response_secrets, const bool hide_body)
 {
     auto status = response.getStatus();
 
@@ -140,7 +163,7 @@ void assertResponseIsOk(
         std::string body_text;
         readStringUntilEOF(body_text, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body_text, response_secrets);
+        throw HTTPException(code, uri, status, response.getReason(), body_text, response_secrets, hide_body);
     }
 }
 
@@ -194,21 +217,31 @@ Exception HTTPException::makeExceptionMessage(
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body,
-    const Strings & response_secrets)
+    const Strings & response_secrets,
+    bool hide_body)
 {
     std::string masked_uri = uri;
     maskURICredentials(masked_uri);
+    /// Query parameters can carry arbitrary credentials (e.g. a license key), not only presigned ones.
+    maskURIQueryValues(masked_uri);
 
     /// The reason phrase and the body are remote content that can reflect the request's own credentials back (e.g. an
     /// auth error naming the token). Scrub those exact credential strings, keeping the rest - a useful diagnostic that
     /// does not carry a credential. `uri` arrives unmasked, so that the credentials it carries are scrubbed here too.
+    /// When the request carried credentials that cannot be enumerated (`hide_body`: a cookie, a custom header, an
+    /// `Authorization` header other than a bearer token), the reason and the body are omitted from the diagnostic
+    /// altogether; the body itself is still preserved in `response_body` for structured error handling.
     const Strings secrets = collectRequestCredentials(uri, response_secrets);
 
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        masked_uri, static_cast<int>(http_status), scrubSecrets(reason, secrets), body.length(), scrubSecrets(body, secrets));
+        masked_uri,
+        static_cast<int>(http_status),
+        hide_body ? std::string(HIDDEN_SECRET) : scrubSecrets(reason, secrets),
+        body.length(),
+        hide_body ? std::string(HIDDEN_SECRET) : scrubSecrets(body, secrets));
 }
 
 }

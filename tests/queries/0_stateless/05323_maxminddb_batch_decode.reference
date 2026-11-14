@@ -1,0 +1,7 @@
+10000	3334	426752	13336	6668	6666
+IPv4 payloads match across blocks and threads
+IPv4 subcolumns match across blocks and threads
+10000	3334	426752	13336	6668	6666
+IPv6 payloads match across blocks and threads
+IPv6 subcolumns match across blocks and threads
+1000	1000	4000	2000
