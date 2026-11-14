@@ -1,5 +1,6 @@
 <test requires_s3="1" requires_s3_read_dataset="1">
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
     </settings>
     <!-- Shared read workload over the immutable tpch_ice10_s3 dataset. -->

@@ -1,4 +1,7 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
     <!--
         Many independent small reads against the same part. Deserializing a `LowCardinality`
         prefix checks whether the part has a single shared dictionary by looking at the part's

@@ -2,6 +2,7 @@
     <!-- Reading subcolumns of a `JSON` column with many typed paths from many parts.
          Resolving a subcolumn by name visits the streams of the type for every part. -->
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <max_threads>1</max_threads>
     </settings>
 

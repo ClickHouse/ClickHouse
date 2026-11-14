@@ -1,4 +1,7 @@
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
     <substitutions>
         <substitution>
             <name>serialization</name>
