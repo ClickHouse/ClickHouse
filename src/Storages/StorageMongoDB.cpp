@@ -453,6 +453,26 @@ static Array listMembers(const Field & value)
     return members;
 }
 
+/// The type of the member `index` of an `IN` list of type `list_type`, or nothing if the list type does not tell it.
+static DataTypePtr listMemberType(const DataTypePtr & list_type, size_t index)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(list_type.get()))
+        return index < tuple_type->getElements().size() ? tuple_type->getElements()[index] : nullptr;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(list_type.get()))
+        return array_type->getNestedType();
+    return list_type;
+}
+
+/// The set of `IN` reads a member of type `Bool` as `true` or `false`, although the member, e.g. from `reinterpret`, may hold
+/// another byte. A number member keeps its value.
+static Field setMemberValue(const Field & member, const DataTypePtr & member_type)
+{
+    if (member_type && isBool(removeLowCardinalityAndNullable(member_type))
+        && (member.getType() == Field::Types::UInt64 || member.getType() == Field::Types::Bool))
+        return Field(member.safeGet<UInt64>() != 0);
+    return member;
+}
+
 /// Whether `value`, read from a BSON bool, satisfies the comparison with a constant, or nothing if that is not known.
 static std::optional<bool> boolSatisfies(bool value, const std::string & func_name, const Field & bound)
 {
@@ -488,16 +508,17 @@ static std::optional<bool> boolSatisfies(bool value, const std::string & func_na
 }
 
 /// Whether `value`, read from a BSON bool, satisfies a comparison or a membership, or nothing if that is not known.
-static std::optional<bool> boolMatches(bool value, const std::string & func_name, const Field & const_value)
+static std::optional<bool> boolMatches(bool value, const std::string & func_name, const Field & const_value, const DataTypePtr & const_type)
 {
     if (func_name != "$in" && func_name != "$nin")
         return boolSatisfies(value, func_name, const_value);
 
     /// A member equal to the value decides the membership; a member that is not known to differ keeps the value.
     bool has_unknown_member = false;
-    for (const auto & member : listMembers(const_value))
+    const Array members = listMembers(const_value);
+    for (size_t i = 0; i < members.size(); ++i)
     {
-        auto is_equal = boolSatisfies(value, "$eq", member);
+        auto is_equal = boolSatisfies(value, "$eq", setMemberValue(members[i], listMemberType(const_type, i)));
         if (!is_equal.has_value())
             has_unknown_member = true;
         else if (*is_equal)
@@ -510,12 +531,12 @@ static std::optional<bool> boolMatches(bool value, const std::string & func_name
 
 /// The BSON bools that cannot satisfy a comparison of a `Bool` column. The reader takes any other BSON value too, and
 /// converts it in ways that a MongoDB comparison cannot express, so the filter keeps every other document.
-static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, const Field & const_value)
+static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, const Field & const_value, const DataTypePtr & const_type)
 {
     auto bools = bsoncxx::builder::basic::array{};
     for (bool value : {false, true})
     {
-        auto matches = boolMatches(value, func_name, const_value);
+        auto matches = boolMatches(value, func_name, const_value, const_type);
         if (matches.has_value() && !*matches)
             bools.append(value);
     }
@@ -738,7 +759,8 @@ static std::optional<bsoncxx::document::value> numberColumnFilter(
     bool default_matches = false;
     for (bool value : {false, true})
     {
-        auto matches = boolMatches(value, func_name, const_value);
+        /// The members are already converted to the column's type.
+        auto matches = boolMatches(value, func_name, const_value, nullptr);
         if (matches.has_value() && !*matches)
             continue;
         bools.append(value);
@@ -830,7 +852,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     if (isBool(removeNullable(column_type)))
     {
         is_superset = true;
-        return make_document(kvp(column_node->getColumnName(), make_document(kvp("$nin", unsatisfiableBools(func_name, const_value)))));
+        return make_document(kvp(column_node->getColumnName(), make_document(kvp("$nin", unsatisfiableBools(func_name, const_value, const_type)))));
     }
 
     bool is_const_number = WhichDataType(const_type).isNumber() && !isBool(const_type);
@@ -846,21 +868,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         /// A member converts as `IN` converts it, strictly but to the column's type; a member the type cannot
         /// hold matches nothing. A member whose conversion loses part of the value is refused like a lossy
         /// bound; `$nin` only returns more rows, which the `WHERE` drops, so it keeps the member.
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
-        const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
         /// `fieldAsBSONValue` writes no wide integer, so the members of a wide integer column are written as `Int64`s.
         const DataTypePtr member_type = isWideInteger(column_type) ? std::make_shared<DataTypeInt64>() : column_type;
         Array converted_elements;
         converted_elements.reserve(elements.size());
         for (size_t i = 0; i < elements.size(); ++i)
         {
-            DataTypePtr element_type;
-            if (tuple_type && i < tuple_type->getElements().size())
-                element_type = tuple_type->getElements()[i];
-            else if (array_type)
-                element_type = array_type->getNestedType();
-            else if (!tuple_type)
-                element_type = const_type;
+            const DataTypePtr element_type = listMemberType(const_type, i);
+            elements[i] = setMemberValue(elements[i], element_type);
 
             /// Every element is converted: the list is written with the column's type, so a `Float64`
             /// element under an integer column would be read back as an integer.
@@ -976,16 +991,30 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
             return {};
 
         // Only these function can have exactly one argument and be passed to MongoDB.
-        if (func->getFunctionName() == "isNull")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$eq", bsoncxx::types::b_null{}))));
-        if (func->getFunctionName() == "isNotNull")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$ne", bsoncxx::types::b_null{}))));
-        if (func->getFunctionName() == "empty")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$in", make_array(bsoncxx::types::b_null{}, "")))));
-        if (func->getFunctionName() == "notEmpty")
-            return make_document(kvp(column->getColumnName(), make_document(kvp("$nin", make_array(bsoncxx::types::b_null{}, "")))));
+        const auto & function_name = func->getFunctionName();
+        if (function_name != "isNull" && function_name != "isNotNull" && function_name != "empty" && function_name != "notEmpty")
+            return {};
 
-        return {};
+        /// The reader reads any BSON value into a `String`: `null`, a missing field, `""` and an empty binary as an empty string
+        /// (or `NULL`), the others as non-empty strings. The emptiness of other types, e.g. of an empty array, has no filter.
+        if ((function_name == "empty" || function_name == "notEmpty") && !isString(removeNullable(column->getResultType())))
+            return {};
+
+        /// A `null` also matches an array with a `null` element, which the reader takes as a non-`NULL`, non-empty string, so the
+        /// filters below keep every array, and the `WHERE` decides the documents they match.
+        is_superset = true;
+        const auto & column_name = column->getColumnName();
+        if (function_name == "isNull")
+            return make_document(kvp(column_name, make_document(kvp("$eq", bsoncxx::types::b_null{}))));
+        if (function_name == "empty")
+            return make_document(kvp("$or", make_array(
+                make_document(kvp(column_name, make_document(kvp("$in", make_array(bsoncxx::types::b_null{}, ""))))),
+                make_document(kvp(column_name, make_document(kvp("$type", "binData")))))));
+
+        auto excluded = function_name == "isNotNull" ? make_array(bsoncxx::types::b_null{}) : make_array(bsoncxx::types::b_null{}, "");
+        return make_document(kvp("$or", make_array(
+            make_document(kvp(column_name, make_document(kvp("$nin", std::move(excluded))))),
+            make_document(kvp(column_name, make_document(kvp("$type", "array")))))));
     }
 
     if (argumnet_nodes.size() == 2)

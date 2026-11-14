@@ -1063,6 +1063,8 @@ def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
                 "flag NOT IN (0, toFloat32(2))": "2\n",
                 "n IN (true)": "2\n",
                 "n NOT IN (true)": "2\n",
+                "n IN (reinterpret(char(2), 'Bool'))": "2\n",
+                "n NOT IN (reinterpret(char(2), 'Bool'), 0)": "1\n",
             }
             actual = {
                 predicate: node.query(
@@ -1518,6 +1520,9 @@ def test_where_bool_default_settings(started_cluster, bool_type):
             "flag IN (1, 2.0)",
             "flag NOT IN (true)",
             "flag NOT IN (0, 2)",
+            "flag IN (reinterpret(char(2), 'Bool'))",
+            "flag IN (reinterpret(char(2), 'Bool'), 2)",
+            "flag NOT IN (reinterpret(char(2), 'Bool'))",
             "flag = true OR id = 8",
             "flag = true AND id > 7",
         ]
@@ -1708,6 +1713,68 @@ def test_where_numeric_reader_values(started_cluster, column_type):
                             )
                             == expected
                         ), (query, source)
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
+def test_where_unary_predicates(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "unary_predicates"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    # An empty binary is read as '', the arrays in `v` and `w` as non-empty strings, and `[None]` in `a` as `[0]`.
+    collection.insert_many(
+        [
+            {"id": 1, "s": "a", "v": bson.Binary(b""), "w": [None], "a": []},
+            {"id": 2, "s": "b", "v": "x", "w": "x", "a": [None]},
+            {"id": 3, "s": "c", "v": [""], "w": None, "a": [1]},
+            {"id": 4, "s": "d", "v": ""},
+        ]
+    )
+
+    node = started_cluster.instances["node"]
+    structure = "id Int32, s String, v String, w Nullable(String), a Array(Int32)"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            for predicate, expected in (
+                ("empty(v)", "1\n4\n"),
+                ("notEmpty(v)", "2\n3\n"),
+                ("isNull(w)", "3\n4\n"),
+                ("isNotNull(w)", "1\n2\n"),
+                ("empty(a)", "1\n4\n"),
+                ("notEmpty(a)", "2\n3\n"),
+            ):
+                for suffix, result in (
+                    ("ORDER BY id", expected),
+                    ("ORDER BY s LIMIT 1", expected.split("\n")[0] + "\n"),
+                ):
+                    query = f"SELECT id FROM {{}} WHERE {predicate} {suffix}"
+                    assert node.query(query.format(reference)) == result
+                    assert (
+                        node.query(
+                            query.format(source),
+                            settings={"mongodb_throw_on_unsupported_query": 0},
+                        )
+                        == result
+                    ), (query, source)
+            # The emptiness of an array has no filter.
+            with pytest.raises(QueryRuntimeException):
+                node.query(f"SELECT id FROM {source} WHERE notEmpty(a)")
     finally:
         node.query(f"DROP TABLE IF EXISTS {reference}")
         node.query(f"DROP TABLE {collection_name}")
