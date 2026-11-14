@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <vector>
 #include <Interpreters/JoinOperator.h>
 #include <Core/ProtocolDefines.h>
@@ -87,6 +89,7 @@ namespace Setting
 
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
+    extern const SettingsBool enable_robin_hood_hash_for_joins;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
     extern const SettingsBool enable_packed_string_keys_in_hash_join;
     extern const SettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
@@ -149,6 +152,7 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
     extern const QueryPlanSerializationSettingsBool enable_join_key_only_hash_tables;
+    extern const QueryPlanSerializationSettingsBool enable_robin_hood_hash_for_joins;
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_hash_join;
     extern const QueryPlanSerializationSettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
@@ -224,6 +228,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = query_settings[Setting::enable_join_key_only_hash_tables];
+    enable_robin_hood_hash_for_joins = query_settings[Setting::enable_robin_hood_hash_for_joins];
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
     enable_packed_string_keys_in_hash_join = query_settings[Setting::enable_packed_string_keys_in_hash_join];
     min_rows_for_packed_string_keys_in_hash_join = query_settings[Setting::min_rows_for_packed_string_keys_in_hash_join];
@@ -297,6 +302,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
+    enable_robin_hood_hash_for_joins = settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
     enable_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join];
     min_rows_for_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join];
@@ -563,6 +569,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables] = enable_join_key_only_hash_tables;
+    settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins] = enable_robin_hood_hash_for_joins;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join] = enable_packed_string_keys_in_hash_join;
     settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join] = min_rows_for_packed_string_keys_in_hash_join;
@@ -628,7 +635,7 @@ String toString(const JoinActionRef & node)
     return out.str();
 }
 
-static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id, const std::vector<JoinActionRef> & nodes)
+static void serializeNodeList(WriteBuffer & out, const UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> & node_to_id, const VectorWithMemoryTracking<JoinActionRef> & nodes)
 {
     writeVarUInt(nodes.size(), out);
     for (const auto & action : nodes)
@@ -652,14 +659,14 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     serializeJoinLocality(locality, out);
 }
 
-static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
+static VectorWithMemoryTracking<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
 {
     size_t num_nodes = 0;
     readVarUInt(num_nodes, in);
 
     size_t max_node_id = id_to_node.size();
 
-    std::vector<JoinActionRef> result;
+    VectorWithMemoryTracking<JoinActionRef> result;
     result.reserve(num_nodes);
 
     for (size_t i = 0; i < num_nodes; ++i)
