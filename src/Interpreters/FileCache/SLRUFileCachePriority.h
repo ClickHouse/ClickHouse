@@ -44,14 +44,13 @@ public:
 
     double getSLRUSizeRatio() const override { return size_ratio; }
 
-    EvictionInfoPtr collectEvictionInfo( /// NOLINT
+    EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin_info,
-        const CacheStateGuard::Lock &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
+        const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
@@ -84,7 +83,7 @@ public:
         protected_queue.sealStructure();
     }
 
-    bool collectCandidatesForEviction( /// NOLINT
+    bool collectCandidatesForEviction(
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -93,8 +92,7 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &,
-        QueueEntryType reservee_queue_type = QueueEntryType::None) override;
+        CacheStateGuard &) override;
 
     void iterate(IterateFunc func, FileCacheReserveStat & stat) override;
 

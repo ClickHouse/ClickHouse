@@ -2,6 +2,10 @@
 -- A table has the same name as the database it is in. A fully qualified column name
 -- `db.table.column` must be resolved even though its first part also matches the table name.
 
+-- These queries already work with the old infrastructure (`enable_analyzer = 0`); the fix is analyzer-only,
+-- so force the analyzer to make sure the test actually exercises the resolver change.
+SET enable_analyzer = 1;
+
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier} (id Int32, t Tuple(x Int32)) ENGINE = MergeTree ORDER BY ();
 INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier} VALUES (42, (7));
 

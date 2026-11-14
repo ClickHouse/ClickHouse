@@ -28,8 +28,8 @@ namespace
 constexpr std::string_view extra_credentials_visible_keys[] = {"role_arn"};
 
 constexpr std::string_view s3_secret_keys[]
-    = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",
-       "external_id", "role_session_name"};
+    = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id",
+       "role_session_name"};
 
 /// Single source of truth for reading an S3-style argument list the way the S3 parsers do:
 /// `headers(..)` / `extra_credentials(..)` can appear at any position and are stripped before
@@ -73,7 +73,7 @@ std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, 
                         String url;
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
-                            if (maskURICredentials(url))
+                            if (maskS3URICredentials(url))
                                 finder.result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
@@ -190,7 +190,7 @@ void maskS3PositionalsFrom(FunctionSecretArgumentsFinder & finder, const std::ve
 
 /// The S3 URL itself can carry credentials: a userinfo part and presigned-URL query parameters.
 /// If the url positional does, replace it with a partially masked copy that keeps the host and
-/// path visible.
+/// path visible. The field set mirrors `BackupInfo::removeCredentialsFromS3URL`.
 void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector<size_t> & positional, size_t url_slot)
 {
     if (url_slot >= positional.size())
@@ -204,7 +204,7 @@ void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector
         finder.markSecretArgument(positional[url_slot]);
         return;
     }
-    if (maskURICredentials(url))
+    if (maskS3URICredentials(url))
         finder.result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 
@@ -327,6 +327,16 @@ bool isNonSecretExtraCredentialsKey(std::string_view key)
 bool isS3SecretKey(std::string_view key)
 {
     return std::find(std::begin(s3_secret_keys), std::end(s3_secret_keys), key) != std::end(s3_secret_keys);
+}
+
+bool maskS3URICredentials(String & url)
+{
+    /// The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL` (which strips the same fields from
+    /// persisted backup metadata). Both scans live in `Common/maskURIPassword.h` and are checked against the
+    /// regular expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
+    bool changed = maskURIUserinfo(url);
+    changed |= maskPresignedURLParameters(url);
+    return changed;
 }
 
 SecretArgumentsSpec s3TableFunctionSecretArguments(bool is_cluster_function)

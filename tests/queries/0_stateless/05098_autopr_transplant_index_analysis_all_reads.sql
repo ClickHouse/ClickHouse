@@ -27,6 +27,7 @@ INSERT INTO t_transplant_right SELECT number, number FROM numbers(300000);
 OPTIMIZE TABLE t_transplant_left FINAL;
 OPTIMIZE TABLE t_transplant_right FINAL;
 
+SET enable_analyzer = 1;
 -- The right-hand read has to be pruned by its own key condition - that is what the transplant must
 -- carry over - and not by a filter built from the left side at runtime.
 SET enable_join_runtime_filters = 0;
@@ -35,8 +36,6 @@ SET enable_join_runtime_filters = 0;
 -- analysis. The two then disagree on which side to build, and the optimization gives up because it
 -- can no longer match one plan against the other.
 SET query_plan_join_swap_table = 'false';
--- The plan for parallel replicas is built with real statistics, so randomized ones may choose another join algorithm.
-SET query_plan_optimize_join_order_randomize = 0;
 -- With a single reading thread the cost model sees replicas as a win on a table of this size, which
 -- is what makes the optimization actually apply rather than decline.
 SET max_threads = 1;

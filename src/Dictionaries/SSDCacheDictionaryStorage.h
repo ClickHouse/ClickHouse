@@ -1408,8 +1408,8 @@ private:
                         auto key_to_update = keys_to_update[i];
                         auto * it = index.find(key_to_update);
 
-                        /// Skip absent keys and keys whose live cell is not in this partition's buffer
-                        if (!it || it->getMapped().state != Cell::in_memory || it->getMapped().in_memory_partition_index != current_partition_index)
+                        /// If there are no key to update or key to update not in memory
+                        if (!it || it->getMapped().state != Cell::in_memory)
                             continue;
 
                         /// If there were duplicated keys in memory buffer partition

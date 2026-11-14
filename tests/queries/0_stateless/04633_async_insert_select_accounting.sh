@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, long, no-msan
+# Tags: no-parallel-replicas, long
 # Checks write accounting (query_log, asynchronous_insert_log, X-ClickHouse-Summary, quotas) for
 # INSERT ... SELECT routed through the async insert queue, versus the synchronous route.
 # no-parallel-replicas: cases key off query_id and quota name, a concurrent run could shift them.

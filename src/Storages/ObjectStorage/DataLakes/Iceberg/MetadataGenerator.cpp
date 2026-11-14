@@ -30,6 +30,16 @@ namespace DB
 namespace
 {
 
+Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    obj->stringify(oss);
+
+    Poco::JSON::Parser parser;
+    auto result = parser.parse(oss.str());
+    return result.extract<Poco::JSON::Object::Ptr>();
+}
+
 /// Only the incremental refreshable-MV append supplies a new cursor; every other snapshot must carry the parent's forward, else the next refresh re-appends already-materialized rows.
 void carryForwardRefreshCursor(
     Poco::JSON::Object::Ptr summary, Poco::JSON::Object::Ptr parent_snapshot, const std::optional<String> & new_cursor)
@@ -90,15 +100,12 @@ void setSnapshotTotals(
         }
         summary->set(field_name, std::to_string(*parent_value + added));
     };
-    /// Delete-family totals: a counter the parent omits is unknown, not "no deletes", so it stays absent.
+    /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe;
+    /// with that reading a removal can only take the counter down to none, never below it.
     auto set_delete_total = [&](const char * field_name, Int64 added)
     {
-        std::optional<Int64> parent_value = 0;
-        if (parent_snapshot)
-            parent_value = readParentTotal(parent_snapshot, field_name);
-        if (!parent_value.has_value())
-            return;
-        summary->set(field_name, std::to_string(std::max<Int64>(0, *parent_value + added)));
+        const Int64 parent_value = readParentTotal(parent_snapshot, field_name).value_or(0);
+        summary->set(field_name, std::to_string(std::max<Int64>(0, parent_value + added)));
     };
     set_data_total(Iceberg::f_total_records, added_records);
     set_data_total(Iceberg::f_total_files_size, added_files_size);
@@ -305,8 +312,9 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
             ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
             : 0;
-        /// `added-rows` and the table's `next-row-id` are set by `generateManifestList`, which assigns the row ids.
         new_snapshot->set(Iceberg::f_first_row_id, next_row_id);
+        new_snapshot->set(Iceberg::f_added_rows, added_records);
+        metadata_object->set(Iceberg::f_next_row_id, next_row_id + added_records);
     }
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
@@ -352,7 +360,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         properties->set("write.merge.mode", "merge-on-read");
         properties->set("write.update.mode", "merge-on-read");
     }
-    Iceberg::setFormatVersion1SchemaAndPartitionSpec(metadata_object);
     return {new_snapshot, manifest_list_path};
 }
 
@@ -477,7 +484,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
 
     auto fields = current_schema->getArray(Iceberg::f_fields);
     UInt32 index_to_drop = static_cast<UInt32>(fields->size());
@@ -516,7 +523,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
 
     auto existing_fields = current_schema->getArray(Iceberg::f_fields);
     for (UInt32 i = 0; i < existing_fields->size(); ++i)
@@ -563,7 +570,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
@@ -578,7 +585,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
             if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
 
-            auto old_type = Iceberg::deepCopy(current_field);
+            auto old_type = deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
             if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
@@ -613,7 +620,7 @@ void MetadataGenerator::generateRenameColumnMetadata(const String & column_name,
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = Iceberg::deepCopy(current_schema);
+    current_schema = deepCopy(current_schema);
 
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 

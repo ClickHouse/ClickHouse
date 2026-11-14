@@ -42,20 +42,24 @@ SELECT *
 FROM
 (
     EXPLAIN PLAN indexes=1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id SETTINGS enable_parallel_replicas = 0
+    SELECT * FROM tokenbf_tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  enable_analyzer = 1;
 
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes=1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id SETTINGS enable_parallel_replicas = 0
+    SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  enable_analyzer = 1;
 
 
 SELECT '---';
@@ -73,20 +77,24 @@ SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id SETTINGS enable_parallel_replicas = 0
+    SELECT * FROM tokenbf_tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  enable_analyzer = 1;
 
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id SETTINGS enable_parallel_replicas = 0
+    SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  enable_analyzer = 1;
 
 SELECT '---';
 
@@ -102,20 +110,24 @@ SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id SETTINGS enable_parallel_replicas = 0
+    SELECT * FROM tokenbf_tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  enable_analyzer = 1;
 
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id SETTINGS enable_parallel_replicas = 0
+    SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  enable_analyzer = 1;
 
 DROP TABLE tokenbf_tab;
 DROP TABLE ngrambf_tab;

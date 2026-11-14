@@ -15,35 +15,16 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 ## サポートされているデータソース {#supported-data-sources}
 
-| 名前                                      | ロゴ                                                                                                  | Type    | ステータス       | 説明                                                                            |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------- | ------- | ----------- | ----------------------------------------------------------------------------- |
-| Apache Kafka                            | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka ロゴ" width="32" />                 | ストリーミング | 安定版         | ClickPipes を設定し、Apache Kafka から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。     |
-| Confluent Cloud                         | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud ロゴ" width="32" />          | ストリーミング | 安定版         | 直接インテグレーションにより、Confluent と ClickHouse Cloud の連携を最大限に活用できます。                   |
-| Redpanda                                | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" width="32" />            | ストリーミング | 安定版         | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。         |
-| AWS MSK                                 | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK ロゴ" width="32" />                        | ストリーミング | 安定版         | ClickPipes を設定し、AWS MSK から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。          |
-| Google Managed Service for Apache Kafka | <img src="/images/icons/cloud-providers/google-cloud-color.svg" alt="Google Cloud ロゴ" width="32" /> | ストリーミング | プライベートプレビュー | GCP の Workload Identity を使用して Google Managed Kafka に接続します。                    |
-| Azure Event Hubs                        | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs ロゴ" width="32" />  | ストリーミング | 安定版         | ClickPipes を設定し、Azure Event Hubs から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。 |
-| WarpStream                              | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream ロゴ" width="32" />              | ストリーミング | 安定版         | ClickPipes を設定し、WarpStream から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。       |
+| 名前               | ロゴ                                                                                                 | Type    | ステータス | 説明                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------- | ------- | ----- | ----------------------------------------------------------------------------- |
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka ロゴ" width="32" />                | ストリーミング | 安定版   | ClickPipes を設定し、Apache Kafka から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud ロゴ" width="32" />         | ストリーミング | 安定版   | 直接インテグレーションにより、Confluent と ClickHouse Cloud の連携を最大限に活用できます。                   |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" width="32" />           | ストリーミング | 安定版   | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。         |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK ロゴ" width="32" />                       | ストリーミング | 安定版   | ClickPipes を設定し、AWS MSK から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs ロゴ" width="32" /> | ストリーミング | 安定版   | ClickPipes を設定し、Azure Event Hubs から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。 |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream ロゴ" width="32" />             | ストリーミング | 安定版   | ClickPipes を設定し、WarpStream から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。       |
 
-## GCP Workload Identity {#gcp-workload-identity}
-
-<Note>
-  Google Managed Kafka および GCP Workload Identity 認証は現在プライベートプレビュー段階です。[GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)の手順に従って、ClickPipes が管理する service account を取得し、承認してください。
-</Note>
-
-Managed Kafka クラスターが存在するプロジェクトで、ClickPipes の service account に `roles/managedkafka.client` を付与します。これにより、ブローカーへの接続時に SASL 認証に必要な `managedkafka.clusters.connect` アクセス許可が付与されます。ただし、Kafka のアクセス制御リストの代わりになるものではありません。
-
-選択したリソースに対してクラスターでアクセス制御リストが設定されている場合は、service account のプリンシパル (`User:<service-account-email>`) に次の操作を許可してください。
-
-| Kafka リソース             | 操作                 |
-| ---------------------- | ------------------ |
-| 選択したトピック               | `READ`, `DESCRIBE` |
-| ClickPipes のコンシューマグループ | `READ`, `DESCRIBE` |
-
-コンシューマグループのアクセス制御リストは、スコープを `clickpipes-` プレフィックスに限定できます。Workload Identity には TLS が必要で、Google Managed Kafka のソースの種類 (`gcmk`) でのみサポートされています。
-
-<a id="isolation-level" />
-## 分離レベル
+## 分離レベル {#isolation-level}
 
 Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザクションでコミットされたメッセージのみを読み取り、挿入するかどうかを決定します。`kafka_read_committed` 設定を有効にすると、`read_committed` が使用され、中断されたKafkaトランザクションのメッセージはスキップされます。無効にすると、`read_uncommitted` が使用され、すべてのメッセージが読み取られます。この設定は、**詳細設定** で構成できます。
 
@@ -86,8 +67,7 @@ Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザ�
 * 要素に上記のいずれかの型を使用する Tuple と Array (Nullable を含む、深さは 1 レベルのみ)
 * SimpleAggregateFunction 型 (AggregatingMergeTree または SummingMergeTree の宛先向け)
 
-<a id="variant-type-support" />
-### Variant 型のサポート
+### Variant 型のサポート {#variant-type-support}
 
 ClickPipes は、次の条件で Variant 型をサポートします。
 
@@ -111,8 +91,7 @@ fixed パスや skipped パスを含め、宛先カラムは目的の JSON 型�
   ### Avro
 </div>
 
-<a id="supported-avro-data-types" />
-#### サポートされる Avro データ型
+#### サポートされる Avro データ型 {#supported-avro-data-types}
 
 ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/interfaces/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
 
@@ -131,8 +110,7 @@ Avro の Nullable 型は、T を基本の Avro 型として、`(T, null)` また
   ### Protobuf
 </div>
 
-<a id="supported-protobuf-data-types" />
-#### サポートされている Protobuf データ型
+#### サポートされている Protobuf データ型 {#supported-protobuf-data-types}
 
 ClickPipes は、長らく非推奨となっている proto 2 の `group` 型を除き、Protobuf 2 および 3 のすべての型をサポートしています。基本的な型変換には、以下のマッピングが使用されます。
 
@@ -173,8 +151,7 @@ ClickPipes は、長らく非推奨となっている proto 2 の `group` 型を
 | `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
-<a id="protobuf-one-ofs" />
-#### Protobuf `oneof`
+#### Protobuf `oneof` {#protobuf-one-ofs}
 
 スキーマ推論では、Protobuf の `oneof` フィールドはデフォルトで名前付き `Tuple` にマッピングされ、非デフォルト値を持つフィールドは最大でも 1 つだけです。これらのフィールドは、設定されている構成フィールドの型をアクティブな値が取る `Variant` カラムに自動的にマッピングすることもできます。あるいは、各構成フィールドをそれぞれ個別の ClickHouse カラムに手動でマッピングすることもできます。`oneof` フィールドは相互排他的であるため、各レコードで値が入るカラムは 1 つだけです。
 
@@ -184,8 +161,7 @@ ClickPipes は、長らく非推奨となっている proto 2 の `group` 型を
 
 ClickPipe 用に定義された最上位の Protobuf スキーマに、それ自体が protobuf の Message である単一の `repeated` フィールドが含まれている場合、スキーマ推論とカラムマッピングは、その「内包された」Message フィールドに基づいて行われます。Kafka メッセージはそのようなメッセージのリストとして処理され、1 つの Kafka メッセージが複数の ClickHouse の行に展開されます。
 
-<a id="kafka-virtual-columns" />
-## Kafka 仮想カラム
+## Kafka 仮想カラム {#kafka-virtual-columns}
 
 以下の仮想カラムは、Kafka 互換のストリーミングデータソースでサポートされています。新しい宛先を作成する際は、`Add Column` ボタンを使用して仮想カラムをターゲットテーブルに追加できます。
 
@@ -208,8 +184,7 @@ JSON 文字列だけが必要なユースケースでは (たとえば、ClickHo
 `_is_deleted` カラムは、トゥームストーンの処理をソフトデリートに設定した場合に使用できます。
 Kafka のトゥームストーンでは `true`、通常のメッセージでは `false` になります。
 
-<a id="structured-message-keys" />
-### 構造化メッセージキー
+### 構造化メッセージキー {#structured-message-keys}
 
 `_key` を `String` カラムにマッピングすると、元の Kafka メッセージキーが保存されます。このマッピングでは、キーのデコードやスキーマのルックアップは行われません。構造化キーからフィールドを抽出するには、`_key.` で始まるソースフィールドをマッピングします。たとえば、JSON キー `{"customer":{"id":42}}` の場合、`_key.customer.id` を `customer_id` などの宛先カラムにマッピングします。
 

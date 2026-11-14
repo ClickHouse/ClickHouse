@@ -234,15 +234,13 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
   Pour exécuter cette opération via une connexion SSL sécurisée, utilisez la fonction `remoteSecure`.
 </Note>
 
-### Exporter des données {#exporting-data}
+<div id="exporting-data">
+  ### Exporter des données
+</div>
 
 Vous pouvez écrire des fichiers dans S3 à l’aide de la `fonction de table` `s3`. Cela nécessite les autorisations appropriées. Nous transmettons les identifiants nécessaires dans la requête, mais consultez la page [Gestion des identifiants](#managing-credentials) pour voir d’autres options.
 
-<Warning>
-  Lors d’une exportation depuis ClickHouse Cloud vers Amazon S3, utilisez le point de terminaison S3 régional du bucket, par exemple `https://my-bucket.s3.eu-west-1.amazonaws.com/...`, plutôt que l’endpoint global `https://s3.amazonaws.com/...`. L’utilisation de l’endpoint global peut entraîner des frais de transfert de données supplémentaires.
-</Warning>
-
-Dans l’exemple simple ci-dessous, nous utilisons la `fonction de table` comme destination plutôt que comme source. Ici, nous envoyons 10 000 lignes de la table `trips` vers un bucket, en spécifiant la compression `lz4` et le format de sortie `CSV` :
+Dans l’exemple simple ci-dessous, nous utilisons la `fonction de table` comme destination plutôt que comme source. Ici, nous envoyons 10 000 lignes de la table `trips` vers un bucket, en spécifiant la compression `lz4` et le format de sortie `CSV` :
 
 ```sql
 INSERT INTO FUNCTION
@@ -257,7 +255,7 @@ FROM trips
 LIMIT 10000;
 ```
 
-Notez ici que le format du fichier est inféré de l’extension. Nous n’avons pas non plus besoin de préciser les colonnes dans la fonction `s3` : elles peuvent être inférées du `SELECT`.
+Notez ici que le format du fichier est déduit de l’extension. Nous n’avons pas non plus besoin de préciser les colonnes dans la fonction `s3` : elles peuvent être déduites du `SELECT`.
 
 <div id="splitting-large-files">
   ### Fractionnement des fichiers volumineux
@@ -702,8 +700,7 @@ Ici, nous réutilisons le volume principal dans notre nouvelle politique s3&#95;
 
 La réplication avec des disques S3 peut être assurée à l’aide du moteur de table `ReplicatedMergeTree`. Consultez le guide [Réplication d’un shard unique sur deux régions AWS à l’aide du stockage objet S3](#s3-multi-region) pour plus de détails.
 
-<a id="read--writes" />
-### Lectures et écritures
+### Lectures et écritures {#read--writes}
 
 Les notes suivantes portent sur l’implémentation des interactions entre S3 et ClickHouse. Bien qu’elles soient généralement fournies à titre informatif, elles peuvent aider les lecteurs lors de l’[optimisation des performances](#s3-optimizing-performance) :
 
@@ -784,8 +781,7 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-<a id="testing" />
-### Test
+### Test {#testing}
 
 1. Connectez-vous à l’aide du client ClickHouse, par exemple comme suit
 
@@ -1170,8 +1166,7 @@ Sur chacun des serveurs ClickHouse, exécutez
 sudo service clickhouse-server start
 ```
 
-<a id="verify-clickhouse-server" />
-#### Vérifier le serveur ClickHouse
+#### Vérifier le serveur ClickHouse {#verify-clickhouse-server}
 
 Lorsque vous avez ajouté la [configuration du cluster](#define-a-cluster), un shard unique répliqué sur les deux nœuds ClickHouse a été défini. Dans cette étape de vérification, vous allez confirmer que le cluster a bien été créé au démarrage de ClickHouse, puis créer une table répliquée à l’aide de ce cluster.
 
@@ -1242,8 +1237,7 @@ Lorsque vous avez ajouté la [configuration du cluster](#define-a-cluster), un s
   Vous pouvez personnaliser le chemin ZooKeeper `'clickhouse/tables/{uuid}/{shard}` affiché ci-dessus en définissant `default_replica_path` et `default_replica_name`. La documentation est disponible [ici](/fr/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
-<a id="testing-1" />
-### test
+### test {#testing-1}
 
 Ces tests permettront de vérifier que les données sont bien répliquées entre les deux serveurs et qu&#39;elles sont stockées dans les buckets S3, et non sur le disque local.
 

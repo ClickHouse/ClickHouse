@@ -12,7 +12,7 @@ rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
-local_query() { ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --allow_expire_snapshots=1 -q "$1" -- --user_files_path="${WORK_DIR}"; }
+local_query() { ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --allow_experimental_expire_snapshots=1 -q "$1" -- --user_files_path="${WORK_DIR}"; }
 
 # $1: table name, $2: statements run after CREATE in the first process, $3: statement run right before expire_snapshots.
 expire()

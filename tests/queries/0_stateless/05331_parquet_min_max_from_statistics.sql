@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+-- no-fasttest: needs Parquet
 -- Random settings limits: optimize_arithmetic_operations_in_aggregate_functions=(1, None)
 
 -- `min` / `max` answered from Parquet column chunk statistics (`ParquetReadMinMaxFromStatistics` = 1) must return

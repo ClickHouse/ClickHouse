@@ -179,8 +179,6 @@ node .claude/tools/fetch_ci_report.js "<a praktika.html?REF=gh-readonly-queue/..
 
 The per-job JSON is also directly at `https://s3.amazonaws.com/clickhouse-test-reports/REFs/gh-readonly-queue/<base>/pr-<N>-<base-sha>/$MQ_SHA/mergequeueci/result_<job>.json` (gzip-compressed). Do not construct artifact URLs such as log paths by hand: Praktika stores attached files under normalized sub-result directories (e.g. `.../mergequeueci/build_amd_binary/build_clickhouse/build_clickhouse.log`), so guessed paths return `AccessDenied`. Follow the `links` of the failed results in that JSON instead, as printed by `fetch_ci_report.js` (also with `--links`), or use `--download-logs`. To fix the rejection, merge the latest base branch (step 3) even if the PR is otherwise current, reproduce the failure on the merged tree, and fix it in the PR - adapt the code to the changed API, or update a newly added test when the PR intentionally changes the behaviour it pins (say so in the commit message and the PR comment). Do not re-add the PR to the merge queue yourself, and do not dismiss a merge-queue failure as flaky without the same evidence as for any other failure.
 
-If the PR comes from a fork and its workflow runs wait for a maintainer's approval, go through step 4a first: without approval there are no CI results to analyze.
-
 Then fetch the PR's own CI reports:
 
 ```bash
@@ -210,54 +208,6 @@ For each CI failure:
    🕵 @<reviewer>, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
-
-### 4a. Re-approve workflows for fork PRs
-
-Workflow runs of a PR from a fork wait in the `action_required` state until a maintainer clicks "Approve and run workflows" (`$REPO` requires approval for all external contributors). If a maintainer already approved CI for an earlier commit of this PR, and every commit added since then is provably from the current user, approve the waiting runs instead of leaving the PR without CI. Do this both here, before analyzing CI, and after every push in step 7 — a push to a fork PR creates new runs that wait for approval again. Every check below fails closed: if any of them cannot be established, do not approve; report why and leave the approval to a human.
-
-Skip this step for PRs from branches of `$REPO` itself (`headRepositoryOwner` is the owner of `$REPO`): their workflows never wait for approval.
-
-1. Find the runs waiting for approval on the current head commit:
-   ```bash
-   mkdir -p tmp
-   ME=$(gh api user --jq .login)
-   HEAD_REPO=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRepositoryOwner,headRepository --jq '"\(.headRepositoryOwner.login)/\(.headRepository.name)"')
-   HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
-   gh api "repos/$REPO/actions/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=100" \
-       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .conclusion == \"action_required\") | .id" > tmp/continue-pr-$PR_NUMBER-waiting-runs
-   ```
-   If the list is empty, there is nothing to approve.
-
-2. Find the newest earlier commit of this PR whose CI was approved. A conclusion other than `action_required` is not enough: GitHub marks runs that waited for approval for more than 30 days as `failure` without running anything. A run counts as approved only if at least one of its jobs was created — jobs are created only after approval:
-   ```bash
-   gh api "repos/$REPO/actions/runs?event=pull_request&branch=$HEAD_BRANCH&per_page=100" --paginate \
-       --jq ".workflow_runs[] | select(.head_repository.full_name == \"$HEAD_REPO\" and .head_sha != \"$HEAD_SHA\" and .conclusion != \"action_required\") | \"\(.created_at) \(.id) \(.head_sha)\"" \
-       | sort -r > tmp/continue-pr-$PR_NUMBER-candidate-runs
-   while read -r _ RUN_ID SHA; do
-       JOBS=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=1" --jq .total_count)
-       echo "$RUN_ID $SHA $JOBS"
-   done < tmp/continue-pr-$PR_NUMBER-candidate-runs
-   ```
-   Take the newest run with a nonzero job count whose SHA is an ancestor of the current head (the compare API in the next step reports `"status": "ahead"` for it); its SHA is `$APPROVED_SHA`. If there is none, CI was never approved for this PR — do not approve; report that a maintainer has to review and approve it.
-
-3. Verify that every commit added since the approved commit is from the current user. The `author` and `committer` logins that GitHub shows are derived from the e-mail addresses in the commit header, which anyone can forge, so they prove nothing. Accept a commit only by one of these:
-   - it is already in the base branch (`git merge-base --is-ancestor <sha> "origin/$BASE_BRANCH"` succeeds) — such commits arrive with merges of the base branch;
-   - its exact SHA is in the ledger of commits that this skill created itself and pushed (see step 7): `grep -qx <sha> "$PUSHED_LEDGER"`;
-   - it has a verified signature and `committer.login` is `$ME` — the signing key then belongs to the current user's account. Commits signed by `web-flow` do not count: they can be created through the API with an arbitrary author.
-   ```bash
-   PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
-   gh api "repos/$REPO/compare/$APPROVED_SHA...$HEAD_SHA" --paginate \
-       --jq '.status, (.commits[] | "\(.sha) \(.commit.verification.verified) \(.committer.login // "-")")'
-   ```
-   The `status` must be `ahead`. If any remaining commit fails all three checks, do not approve: it may contain code that no maintainer has seen. Report the offending commits and leave the approval to a human. Commits that the current user pushed outside of this skill without signing cannot be told apart from forged ones; they also need a human.
-
-4. Approve every waiting run:
-   ```bash
-   while read -r RUN_ID; do
-       gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/approve"
-   done < tmp/continue-pr-$PR_NUMBER-waiting-runs
-   ```
-   Report which runs were approved, the approved base commit, and the commits that were checked.
 
 ### 5. Address reviewer feedback
 
@@ -410,25 +360,11 @@ Before every commit and push, run this safety gate. It is a hard stop:
    ```
    Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
 
-Step 4a trusts only commits that this skill created itself. Immediately after every `git commit` or `git merge` that creates a commit in this workflow (fixes, conflict resolutions, merges of the base or the remote PR branch), record it. Always merge with `git merge --no-ff`: a fast-forward creates no commit, and `HEAD` would then be someone else's commit.
+After the gate succeeds, push with:
 
 ```bash
-git rev-parse HEAD >> "tmp/continue-pr-$PR_NUMBER-created"
-```
-
-Never record commits obtained any other way — checked out, fetched, or brought in by a merge — even if they look like yours: the remote branch can be rewritten at any time, so "not on the remote yet" does not mean "created here". A commit that was forgotten in this file is merely not trusted, and step 4a then leaves the approval to a human.
-
-After the gate succeeds, move the recorded commits that are part of this push into the ledger used by step 4a (it lives outside the repository, so it survives worktree removal), then push:
-
-```bash
-PUSHED_LEDGER="$HOME/.local/state/continue-pr/$REPO/pr-$PR_NUMBER.pushed"
-mkdir -p "$(dirname "$PUSHED_LEDGER")"
-touch "tmp/continue-pr-$PR_NUMBER-created"
-git rev-list "$REMOTE_HEAD..HEAD" | grep -Fxf "tmp/continue-pr-$PR_NUMBER-created" >> "$PUSHED_LEDGER"
 git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
 ```
-
-If the PR comes from a fork, the push creates workflow runs that wait for approval: go through step 4a again for the new head commit.
 
 Report the result and provide the PR URL.
 

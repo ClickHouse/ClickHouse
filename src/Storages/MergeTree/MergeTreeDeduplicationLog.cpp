@@ -16,7 +16,6 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -25,12 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int CANNOT_FSYNC;
-}
-
-namespace FailPoints
-{
-    extern const char deduplication_log_fail_durable_drop_sync[];
 }
 
 namespace
@@ -208,7 +201,6 @@ void MergeTreeDeduplicationLog::rotate()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost records: " + DB::toString(existing_logs[current_log_number].entries_count));
             current_writer->cancel();
-            records_may_be_lost = true;
         }
     }
 
@@ -293,12 +285,7 @@ void MergeTreeDeduplicationLog::prepareToWrite()
     /// A failed flush cancels the writer, and a canceled buffer rejects every later write, so a dead
     /// writer must be replaced. `rotate` also works on a disk that cannot append.
     if (current_writer && (current_writer->isCanceled() || current_writer->isFinalized()))
-    {
-        /// A canceled writer has failed to flush, so the records written to it may be lost.
-        if (current_writer->isCanceled())
-            records_may_be_lost = true;
         rotate();
-    }
     else if (!current_writer)
     {
         /// There is no writer for an unfinished log until the first record is written to it, so open
@@ -381,7 +368,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     return {};
 }
 
-void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk)
+void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
 {
     MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
     ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -398,17 +385,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     {
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
-
-    /// A previous durable removal failed after removing its records from memory, so this call would not write them again,
-    /// and a later successful sync of the log does not make the earlier records durable.
-    if (sync_to_disk && durable_drop_failed)
-        throw Exception(ErrorCodes::CANNOT_FSYNC,
-            "Cannot durably remove part {} from the deduplication log, because a previous durable removal failed",
-            drop_part_info.getPartNameForLogs());
-
-    /// Reset only after everything is synced, so it remains set if anything below throws.
-    if (sync_to_disk)
-        durable_drop_failed = true;
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -434,7 +410,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Remove block_id from in-memory table
             deduplication_map.erase(record.block_id);
 
-            /// A rotation syncs the log it finalizes, and a failure to sync it sets `records_may_be_lost`, which is checked below.
             rotateAndDropIfNeededAfterWrite();
         }
         else
@@ -442,31 +417,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             ++itr;
         }
     }
-
-    if (!sync_to_disk)
-        return;
-
-    /// Everything written so far is synced, even if there were no records to remove. The records of the part may have been
-    /// evicted from the window by newer records rather than removed, and if those newer records were lost after a power loss,
-    /// the old records would be restored on load, although the part is detached.
-    if (records_may_be_lost || (current_writer && current_writer->isCanceled()))
-        throw Exception(ErrorCodes::CANNOT_FSYNC,
-            "Cannot durably remove part {} from the deduplication log, because some records of the log may be lost",
-            drop_part_info.getPartNameForLogs());
-
-    fiu_do_on(FailPoints::deduplication_log_fail_durable_drop_sync,
-    {
-        throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected failure to sync the deduplication log");
-    });
-
-    if (current_writer && !current_writer->isFinalized())
-        current_writer->sync();
-
-    /// The records may be in a log that was created just now, so its directory entry must be durable too.
-    if (auto guard = disk->getDirectorySyncGuard(logs_dir))
-        guard->sync();
-
-    durable_drop_failed = false;
 }
 
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)

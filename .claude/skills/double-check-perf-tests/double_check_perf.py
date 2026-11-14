@@ -978,12 +978,6 @@ WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
     AND workflow_name = 'MasterCI'
-    AND new_sha IN (
-        SELECT new_sha FROM perf_test_times_v1
-        WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
-                AND toDate('{day}') - INTERVAL 1 WEEK + INTERVAL 1 DAY
-            AND pr_number = 0
-            AND workflow_name = 'MasterCI')
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100
 FORMAT JSONEachRow"""
@@ -1066,7 +1060,7 @@ def fetch_run_day(pr_number: int, pr_sha: str, perf_arch: str) -> Optional[str]:
     out = play_query(
         "SELECT toString(toDate(max(event_time))) FROM query_metrics_v2 "
         f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
-        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') FORMAT TSV",
+        f"AND pr_number = {pr_number} FORMAT TSV",
         "find the run date",
     )
     if not out:
@@ -1112,7 +1106,7 @@ def fetch_reference_sha(
         # another run (a master-track run uses pr_number = 0) would otherwise
         # be eligible, and "newest row wins" would then hand back a baseline
         # from a different comparison than the report being checked.
-        f"AND pr_number = {pr_number} AND workflow_name IN ('PR', 'MasterCI') "
+        f"AND pr_number = {pr_number} "
         "GROUP BY old_sha ORDER BY max(event_time) DESC FORMAT TSV"
     )
     try:

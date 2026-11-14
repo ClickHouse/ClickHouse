@@ -35,7 +35,7 @@ TEST(CascadesOperatorCost, BroadcastJoinBuildsFullTablePerNode)
         .input_stats = {&left, &right},
         .parallelism = 4.0,
         .node_count = 4.0,
-        .input_physical_rows = {},
+        .exchange_rows_override = {},
         .config = config,
     };
 

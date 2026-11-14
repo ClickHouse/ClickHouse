@@ -95,7 +95,7 @@ O Tailscale fornece uma rede privada segura, com modelo zero trust, entre o Clic
 * **Monitoramento contínuo**: engenheiros do ClickHouse podem acessar a stack de monitoramento Prometheus implantada na sua VPC BYOC para acompanhar a saúde e o desempenho do serviço
 * **Manutenção proativa**: engenheiros podem realizar manutenção de rotina, upgrades e operações de solução de problemas
 * **Suporte de emergência**: em caso de problemas no serviço, engenheiros podem acessar rapidamente seu ambiente para diagnosticar e resolver falhas
-* **Gerenciamento de infraestrutura**: quando um endpoint privado da API do Kubernetes está habilitado, os serviços de gerenciamento acessam a API do Kubernetes por meio dessa conexão, e não pelo endpoint público dela. No GCP, apenas as ferramentas de implantação e o monitoramento usam essa conexão; já os serviços de gerenciamento usam o endpoint baseado em DNS com autorização via IAM — consulte [Exposição do servidor de API do Kubernetes](/pt-BR/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)
+* **Gerenciamento de infraestrutura**: quando um endpoint privado da API do Kubernetes está habilitado, os serviços de gerenciamento acessam a API do Kubernetes por meio dessa conexão, e não pelo endpoint público dela
 
 Os agentes Tailscale no seu cluster estabelecem conexões **apenas de saída**: não é necessária nenhuma regra de entrada em security group, firewall ou network security group para o próprio Tailscale, o que reduz sua exposição. Todo acesso é:
 

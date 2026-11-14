@@ -64,25 +64,9 @@ public:
 
     virtual bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) = 0;
 
-    /// Called for the query parameters inherited from the session (`SET param_<name> = ...` in a named session),
-    /// before the parameters of the request are applied. Removes those that the handler must bind only from the
-    /// current request.
-    virtual void customizeInheritedQueryParams(NameToNameMap & /* query_parameters */) {}
-
-    /// Whether the value of this decoded URL parameter becomes part of the query: the query text or a bound query parameter.
-    virtual bool isQueryTextParameter(const std::string & name) const = 0;
-
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
-
-    /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
-    /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
-    virtual bool allowMutatingIdempotentMethods(
-        const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
-    {
-        return false;
-    }
 
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
@@ -102,19 +86,16 @@ protected:
     void setHasServerOwnedQuery() { has_server_owned_query = true; }
 
     /// Set by SQL-defined handlers, whose query is fully known in advance, so it is known whether it can consume
-    /// the request body at all, and whether the body is the data of the query, to be appended to its text
-    /// (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may be the rest of the
-    /// query text or the data of an `INSERT`, so they have to assume that it is consumed and appended.
-    void setRequestBodyContract(bool consumes, bool feeds_to_query)
+    /// the request body at all (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may
+    /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+    void setConsumesRequestBody(bool value)
     {
         body_contract_known = true;
-        consumes_request_body = consumes;
-        feeds_request_body_to_query = feeds_to_query;
+        consumes_request_body = value;
+        feeds_request_body_to_query = value;
     }
 
 private:
-    String getURIForLogging(const HTTPServerRequest & request) const;
-
     String introspection_handler_name;
 
     bool has_server_owned_query = false;
@@ -262,8 +243,6 @@ class DynamicQueryHandler : public HTTPHandler
 private:
     std::string param_name;
     bool parse_http_path;
-    /// Only the built-in catch-all handler enables the path-table upload mutation exception.
-    bool allow_path_table_uploads = false;
 
 public:
     explicit DynamicQueryHandler(
@@ -273,21 +252,16 @@ public:
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
         HTTPPathHintsPtr path_hints_ = nullptr,
-        bool parse_http_path_ = true,
-        bool allow_path_table_uploads_ = false);
+        bool parse_http_path_ = true);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
-    bool isQueryTextParameter(const std::string & name) const override;
-
     /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
     /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
     /// and nothing at all when it has none.
     bool parsesHTTPPath() const override { return parse_http_path; }
-
-    bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -297,13 +271,6 @@ private:
     std::string predefined_query;
     CompiledRegexPtr url_regexp;
     std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regexp;
-    /// Whether the query uses the special `_request_body` parameter. Usually it is in `receive_params`, but a
-    /// SQL-defined handler binding it from a capture of its `URL REGEXP` drops it from there (see `SQLDefinedHandler`).
-    /// Such a query must not receive `_request_body` from the URL query string.
-    bool uses_request_body_param;
-
-protected:
-    void setUsesRequestBodyParam(bool value) { uses_request_body_param = value; }
 
 public:
     PredefinedQueryHandler(
@@ -320,10 +287,6 @@ public:
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) override;
-
-    void customizeInheritedQueryParams(NameToNameMap & query_parameters) override;
-
-    bool isQueryTextParameter(const std::string & name) const override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like

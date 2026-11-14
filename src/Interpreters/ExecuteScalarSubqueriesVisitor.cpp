@@ -9,10 +9,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
-#include <Access/EnabledQuota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/misc.h>
@@ -252,18 +250,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            /// A scalar subquery is executed during the analysis of the query, before the quotas of the query are checked,
-            /// so an exhausted quota over profile events is checked here, before the subquery consumes any resources.
-            /// The query is then charged with what the subquery consumes even if it is exempt itself (see
-            /// `QueryStatus::executed_non_exempt_scalar_subquery`).
-            if (!interpreter->ignoreQuota())
-            {
-                if (auto quota = data.getContext()->getQuota())
-                    quota->checkExceededProfileEvents(data.getContext()->getNormalizedQueryHash());
-                if (auto process_list_elem = data.getContext()->getProcessListElement())
-                    process_list_elem->markNonExemptScalarSubqueryExecuted();
-            }
-
             auto io = interpreter->execute();
 
             PullingAsyncPipelineExecutor executor(io.pipeline);

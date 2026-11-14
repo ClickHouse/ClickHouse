@@ -101,7 +101,7 @@ function manage_clickhouse_directories() {
 }
 
 function manage_clickhouse_user() {
-    # Check if the `default` user is changed through any mounted file. It will mean that user took care of it already
+    # Check if the `defaul` user is changed through any mounted file. It will mean that user took care of it already
     # First, extract the users_xml.path and check it's relative or absolute
     local USERS_XML USERS_CONFIG
     USERS_XML=$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='user_directories.users_xml.path')

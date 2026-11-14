@@ -1670,29 +1670,6 @@ def test_create_new_files_on_insert(started_cluster):
     instance.query("drop table test_multiple_inserts")
 
 
-def test_create_new_files_on_insert_multipart_gcs(started_cluster):
-    instance = started_cluster.instances["dummy"]
-    # The S3 client deduces the GCS provider from the endpoint, so reach MinIO under the GCS host name.
-    instance.exec_in_container(
-        ["bash", "-c", f"echo '{started_cluster.minio_ip} storage.googleapis.com' >> /etc/hosts"],
-        privileged=True,
-        user="root",
-    )
-    bucket = started_cluster.minio_bucket
-    name = f"gcs_new_file_{generate_random_string()}"
-    url = f"http://storage.googleapis.com:{started_cluster.minio_port}/{bucket}/{name}"
-    settings = {"s3_max_single_part_upload_size": 1048576}
-    for path, partition_by in [(f"{url}.csv", ""), (f"{url}_{{_partition_id}}.csv", "PARTITION BY 'p'")]:
-        insert = f"INSERT INTO FUNCTION s3('{path}', 'minio', '{minio_secret_key}', 'CSV', 's String') {partition_by} SELECT repeat('a', 1000) FROM numbers(2000)"
-        instance.query(insert, settings=settings)
-        instance.query(insert, settings={**settings, "s3_create_new_file_on_insert": 1})
-
-    result = instance.query(
-        f"SELECT _file, count() FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{name}*.csv', 'minio', '{minio_secret_key}', 'CSV', 's String') GROUP BY _file ORDER BY _file"
-    )
-    assert result == f"{name}.1.csv\t2000\n{name}.csv\t2000\n{name}_p.1.csv\t2000\n{name}_p.csv\t2000\n"
-
-
 def test_format_detection(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
@@ -3737,6 +3714,7 @@ def test_query_condition_cache(started_cluster):
     select_query = f"SELECT * FROM {table_name} WHERE id < 100 ORDER BY id"
     settings = {
         "use_query_condition_cache": 1,
+        "allow_experimental_analyzer": 1,
     }
 
     query_id_first = f"qcc_s3_first_{generate_random_string()}"
@@ -3840,6 +3818,7 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     select_query = f"SELECT DISTINCT val FROM {table_name} WHERE id < 100"
     settings = {
         "use_query_condition_cache": 1,
+        "allow_experimental_analyzer": 1,
     }
 
     def profile_event(query_id, event):

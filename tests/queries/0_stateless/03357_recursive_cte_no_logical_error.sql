@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 
 CREATE TABLE department__fuzz_0
 (

@@ -3,7 +3,7 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 
-#if USE_ARROW_LIBRARY
+#if USE_ARROW || USE_PARQUET
 
 #include <Common/LoggingFormatStringHelpers.h>
 

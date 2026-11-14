@@ -9,7 +9,6 @@
 
 #include <queue>
 #include <memory>
-#include <mutex>
 
 namespace DB
 {
@@ -46,7 +45,6 @@ public:
     void cancelReading() override;
     void setReadProgressCallback(ReadProgressCallbackPtr callback) override;
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
-    void setExceptionCallback(std::function<void()> callback) override;
 
 private:
     /// Outlives graph registrations, including when construction fails.
@@ -75,10 +73,6 @@ private:
 
     ReadProgressCallbackPtr read_progress_callback;
     StepProfilerPtr step_profiler;
-    std::function<void()> exception_callback;
-    /// The exception that cancelled the execution, rethrown once the threads are joined.
-    std::once_flag cancel_exception_once;
-    std::exception_ptr cancel_exception;
 
     /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
     /// allocator that throws instead of overcommitting.
@@ -93,8 +87,6 @@ private:
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
     void detachSpillables();
-    void cancelWithException(std::exception_ptr cause);
-    void logAndRethrowException();
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);

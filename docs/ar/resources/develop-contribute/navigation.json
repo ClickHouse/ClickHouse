@@ -57,6 +57,7 @@
       ]
     }
   ],
+  "icon": "/images/icons/icon-contribute.svg",
   "item": "التطوير والمساهمة",
   "root": "ar/resources/develop-contribute/index"
 }

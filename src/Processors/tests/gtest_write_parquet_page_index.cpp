@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <config.h>
-#if USE_ARROW_LIBRARY
+#if USE_PARQUET
 
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypesNumber.h>

@@ -184,9 +184,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-def has_delta_kernel(node):
+def skip_if_no_delta_kernel(node):
     # The Delta kernel (Rust) is not built under Memory Sanitizer, so the DeltaLake engine is absent.
-    return (
+    has_delta_lake = (
         int(
             node.query(
                 "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
@@ -194,16 +194,8 @@ def has_delta_kernel(node):
         )
         > 0
     )
-
-
-def skip_if_no_delta_kernel(node):
-    if not has_delta_kernel(node):
+    if not has_delta_lake:
         pytest.skip("Build does not support DeltaLake (Delta kernel is unavailable)")
-
-
-def probe_table(node):
-    """A seeded table to read: the Delta one, or its UniForm copy (read as Iceberg) without the Delta kernel."""
-    return DELTA_TABLE if has_delta_kernel(node) else UNIFORM_TABLE
 
 
 def unique_name(prefix):
@@ -341,7 +333,6 @@ def test_alter_switches_implementation(started_cluster):
 def test_list_and_read_delta_tables(started_cluster):
     """On an all-Delta catalog the new implementation must match the legacy one."""
     node = started_cluster.instances["node1"]
-    skip_if_no_delta_kernel(node)
     db_name = unique_name("v2_delta")
     create_database(node, db_name)
 
@@ -425,11 +416,7 @@ def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
     direct = node.query(f"SHOW CREATE TABLE {direct_db}.`{UNIFORM_TABLE}`")
 
     assert "Iceberg" in proxied
-    # Without the Delta kernel the Delta arm marks the table unreadable (`ENGINE = Other`),
-    # but it still must not be routed to Iceberg.
-    assert "Iceberg" not in direct
-    if has_delta_kernel(node):
-        assert "DeltaLake" in direct
+    assert "DeltaLake" in direct
 
 
 def test_iceberg_table_is_listed_and_readable(started_cluster):
@@ -452,7 +439,6 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
 def test_mixed_formats_in_one_database(started_cluster):
     """One database serving both formats, which is the point of the engine."""
     node = started_cluster.instances["node1"]
-    skip_if_no_delta_kernel(node)
     db_name = unique_name("v2_mixed")
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
 
@@ -587,48 +573,14 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = {use_v2
         uc_api_delete(node, f"schemas/{CATALOG}.{schema_name}")
 
 
-def test_drop_table(started_cluster):
-    """`DROP TABLE` removes the table from Unity, not only from ClickHouse."""
-    node = started_cluster.instances["node1"]
-    skip_if_no_delta_kernel(node)
-    schema_name = unique_name("v2_drop")
-    table = f"{schema_name}.dropped"
-    db_name = unique_name("v2_drop_db")
-
-    uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
-    create_database(node, db_name)
-
-    node.query(
-        f"CREATE TABLE {db_name}.`{table}` (id Int32)"
-        f" ENGINE = DeltaLakeLocal('/var/lib/clickhouse/user_files/tmp/{table}')",
-        settings=DELTA_WRITE_SETTINGS,
-    )
-    assert show_tables(node, db_name, f"{schema_name}%") == [table]
-
-    # The table is external, so Databricks keeps its data. Asking to delete it is refused.
-    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
-        f"DROP TABLE {db_name}.`{table}`",
-        settings={"iceberg_delete_data_on_drop": 1},
-    )
-    assert show_tables(node, db_name, f"{schema_name}%") == [table]
-
-    node.query(f"DROP TABLE {db_name}.`{table}`")
-
-    assert show_tables(node, db_name, f"{schema_name}%") == []
-    assert "UNKNOWN_TABLE" in node.query_and_get_error(
-        f"SELECT * FROM {db_name}.`{table}`"
-    )
-
-
 def test_pat_token_authentication(started_cluster):
     node = started_cluster.instances["node1"]
-    table = probe_table(node)
     db_name = unique_name("v2_pat")
 
     # Succeeds with correct token.
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
-    assert table in show_tables(node, db_name, "default%")
-    assert_seeded_rows(node, db_name, table)
+    assert DELTA_TABLE in show_tables(node, db_name, "default%")
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
 
     # Fails with incorrect token.
     bad_db = unique_name("v2_pat_bad")
@@ -640,17 +592,16 @@ def test_pat_token_authentication(started_cluster):
 def test_oauth_token_refresh(started_cluster):
     # Create DB with client ID and secret.
     node = started_cluster.instances["node1"]
-    table = probe_table(node)
     db_name = unique_name("v2_oauth")
     create_database(node, db_name, PROXY_URL, f"{CLIENT_ID}:{CLIENT_SECRET}")
-    assert_seeded_rows(node, db_name, table)
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
 
     # Expire the token.
     proxy_control(node, "expire")
 
     # Verify refresh.
     assert_seeded_rows(node, db_name, UNIFORM_TABLE)
-    assert_seeded_rows(node, db_name, table)
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
 
     # Verify failure with wrong secret.
     bad_db = unique_name("v2_oauth_bad")
@@ -661,10 +612,9 @@ def test_oauth_token_refresh(started_cluster):
 
 def test_static_token_expiry(started_cluster):
     node = started_cluster.instances["node1"]
-    table = probe_table(node)
     db_name = unique_name("v2_pat_expired")
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
-    assert_seeded_rows(node, db_name, table)
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
 
     try:
         proxy_control(node, "revoke_pat")
@@ -685,13 +635,12 @@ def test_static_token_expiry(started_cluster):
     finally:
         proxy_control(node, "restore_pat")
 
-    assert_seeded_rows(node, db_name, table)
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
 
 
 def test_iceberg_rest_denied_keeps_database_usable(started_cluster):
     """No Iceberg REST access: the table is unreadable, the database still works."""
     node = started_cluster.instances["node1"]
-    skip_if_no_delta_kernel(node)
     db_name = unique_name("v2_iceberg_rest_denied")
     create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
 

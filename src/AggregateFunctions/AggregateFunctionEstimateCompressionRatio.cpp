@@ -1,5 +1,4 @@
 #include <cstdio>
-#include <Formats/FormatSettings.h>
 #include <cstdlib>
 #include <memory>
 #include <optional>

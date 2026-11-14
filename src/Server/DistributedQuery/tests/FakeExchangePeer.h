@@ -2,19 +2,8 @@
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
-#include <chrono>
 #include <functional>
 #include <thread>
-
-#include <poll.h>
-#if defined(OS_LINUX)
-#include <linux/sockios.h>
-#include <sys/ioctl.h>
-#else
-#include <sys/socket.h>
-#endif
-
-#include <gtest/gtest.h>
 
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -22,7 +11,6 @@
 
 #include <IO/WriteBufferFromString.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
-#include <base/errnoToString.h>
 #include <base/types.h>
 
 namespace DB::ExchangeTest
@@ -90,43 +78,6 @@ inline void completeSinkHandshake(Poco::Net::StreamSocket & socket)
     PacketHeader reply_header{.packet_type = PacketType::SinkHello, .bytes_size = reply_body.str().size()};
     sendAll(socket, reinterpret_cast<const char *>(&reply_header), sizeof(reply_header), "SinkHello header");
     sendAll(socket, reply_body.str().data(), reply_body.str().size(), "SinkHello body");
-}
-
-/// Bytes sent on `socket` that the other end has not acknowledged yet.
-inline int unacknowledgedBytes(const Poco::Net::StreamSocket & socket)
-{
-    int bytes = 0;
-#if defined(OS_LINUX)
-    const int result = ::ioctl(socket.sockfd(), SIOCOUTQ, &bytes);
-#else
-    socklen_t size = sizeof(bytes);
-    const int result = ::getsockopt(socket.sockfd(), SOL_SOCKET, SO_NWRITE, &bytes, &size);
-#endif
-    if (result != 0)
-    {
-        ADD_FAILURE() << "Cannot read the unacknowledged byte count: " << errnoToString();
-        return 0;
-    }
-    return bytes;
-}
-
-/// Resets the connection once the source acknowledged everything sent to it: a reset discards the
-/// bytes the kernel has not sent yet, which could cut the `SinkHello` short.
-inline void resetAfterDelivery(Poco::Net::StreamSocket & socket)
-{
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    pollfd descriptor{.fd = socket.sockfd(), .events = 0, .revents = 0};
-    /// Each poll waits 1 ms; an error or a hang-up means the source is gone and acknowledges nothing more.
-    while (unacknowledgedBytes(socket) > 0 && ::poll(&descriptor, 1, 1) <= 0)
-    {
-        if (std::chrono::steady_clock::now() > deadline)
-        {
-            ADD_FAILURE() << "The source did not acknowledge the bytes of the peer within 5 s";
-            break;
-        }
-    }
-    socket.setLinger(true, 0);
-    socket.close();
 }
 
 }
