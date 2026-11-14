@@ -48,7 +48,10 @@ SETTINGS join_algorithm = 'parallel_hash';
 
 SELECT 'JOIN with and without the Robin Hood mode';
 -- `enable_robin_hood_hash_for_joins` lets the buckets of the two-level map switch to the Robin Hood mode, which halves them.
-SET join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+-- `hash_join_layout = 'parallel'` keeps the two-level map: with `auto`, an estimate of the right side below
+-- `parallel_hash_join_threshold` (from the plan or from the hash table statistics of earlier joins) picks the one-level map,
+-- which has no Robin Hood mode and uses more memory than either.
+SET join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', query_plan_join_swap_table = 0, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SELECT count(), sum(r) FROM numbers(1000000) AS l
 INNER JOIN (SELECT number * 2 AS k, number AS r FROM numbers(9000000)) AS rt ON l.number = rt.k
 SETTINGS enable_robin_hood_hash_for_joins = 1, log_comment = '05345_join_robin_hood';

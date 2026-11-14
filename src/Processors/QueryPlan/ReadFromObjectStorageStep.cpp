@@ -32,6 +32,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/CompressionMethod.h>
@@ -243,7 +244,7 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
         std::optional<UInt64> max_dictionary_values = {};
         bool has_statistics = false;
     };
-    std::vector<Target> targets;
+    VectorWithMemoryTracking<Target> targets;
     Names target_names;
     for (const auto & name : requiredSourceColumns())
     {
@@ -408,7 +409,7 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
     /// Never collapse to one port: the sorting step installs no merge above a single port, so a
     /// single group would leave the concatenation unmerged.
     const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
-    std::vector<Pipes> grouped(num_groups);
+    VectorWithMemoryTracking<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
         grouped[i % num_groups].emplace_back(std::move(pipes[i]));
 
