@@ -101,41 +101,27 @@ void Client::processError(std::string_view query) const
     if (stdout_is_broken)
         return;
 
+    /// The report is printed with a single printErrorReport call, which keeps it from hanging the
+    /// client on a stuck terminal after a Ctrl+C.
+    const String suffix = is_interactive ? "\n" : fmt::format("(query: {})\n", query);
+
     if (server_exception)
     {
-        fmt::print(
-            stderr,
-            "Received exception from server (version {}):\n{}\n",
+        printErrorReport(fmt::format(
+            "Received exception from server (version {}):\n{}\n{}",
             server_version,
-            getExceptionMessageForLogging(*server_exception, print_stack_trace, true));
+            getExceptionMessageForLogging(*server_exception, print_stack_trace, true),
+            server_exception->code() == ErrorCodes::USER_EXPIRED ? "" : suffix));
 
         if (server_exception->code() == ErrorCodes::USER_EXPIRED)
         {
             server_exception->rethrow();
         }
-
-        if (is_interactive)
-        {
-            fmt::print(stderr, "\n");
-        }
-        else
-        {
-            fmt::print(stderr, "(query: {})\n", query);
-        }
     }
 
     if (client_exception)
     {
-        fmt::print(stderr, "Error on processing query: {}\n", client_exception->message());
-
-        if (is_interactive)
-        {
-            fmt::print(stderr, "\n");
-        }
-        else
-        {
-            fmt::print(stderr, "(query: {})\n", query);
-        }
+        printErrorReport(fmt::format("Error on processing query: {}\n{}", client_exception->message(), suffix));
     }
 
     // A debug check -- at least some exception must be set, if the error
