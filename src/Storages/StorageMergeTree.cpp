@@ -1197,6 +1197,7 @@ void CurrentlyMergingPartsTagger::finalize()
         storage.currently_mutating_part_future_versions.erase(part);
     }
 
+    ++storage.finished_background_operations;
     storage.currently_processing_in_background_condition.notify_all();
 }
 
@@ -2212,6 +2213,16 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
+        /// Nothing wakes the waits below when the query is cancelled, so they check its status between slices and when they end.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+        const auto check_query_status = [&]
+        {
+            if (query_status)
+                query_status->checkTimeLimit(OverflowMode::THROW);
+        };
+
         while (true)
         {
             auto timeout = saturatedMilliseconds((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds());
@@ -2224,6 +2235,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 bool ok = false;
                 for (Int64 i = 0; i < attempts; ++i)
                 {
+                    check_query_status();
                     std::this_thread::sleep_for(poll_interval);
                     if (memory_check = is_background_memory_usage_ok(); memory_check.has_value())
                     {
@@ -2231,6 +2243,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                         break;
                     }
                 }
+                check_query_status();
                 if (!ok)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
@@ -2268,7 +2281,23 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     if (on_wait_for_running_merges)
                         on_wait_for_running_merges();
 
-                    if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
+                    constexpr auto check_period = std::chrono::milliseconds(1000);
+                    const UInt64 finished_before = finished_background_operations;
+                    const auto merge_finished = [&] { return finished_background_operations != finished_before; };
+                    bool notified = false;
+                    Stopwatch watch;
+                    while (!notified)
+                    {
+                        check_query_status();
+                        const auto elapsed = std::chrono::milliseconds(static_cast<Int64>(watch.elapsedMilliseconds()));
+                        if (elapsed >= timeout)
+                            break;
+                        notified = currently_processing_in_background_condition.wait_for(
+                            lock, std::min(timeout - elapsed, check_period), merge_finished);
+                    }
+                    check_query_status();
+
+                    if (!notified)
                         return std::unexpected(SelectMergeFailure{
                             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                             .explanation = PreformattedMessage::create("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL.", timeout_ms),
