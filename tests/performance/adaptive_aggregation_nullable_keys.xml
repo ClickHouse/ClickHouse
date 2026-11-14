@@ -5,4 +5,13 @@
     <query>SELECT toNullable(UserID) AS u, toNullable(SearchPhrase) AS s, count() FROM hits_100m_single GROUP BY u, s FORMAT Null</query>
     <!-- Three Nullable keys holding real NULLs (nullable_keys256). -->
     <query>SELECT if(WatchID % 5 = 0, NULL, WatchID) AS k1, if(UserID % 11 = 0, NULL, UserID) AS k2, if(CounterID % 2 = 0, NULL, CounterID) AS k3, count() FROM hits_100m_single GROUP BY k1, k2, k3 FORMAT Null</query>
+    <!-- A single Nullable number key (nullable_key64), which keeps the NULL key in a slot of its own. -->
+    <query>SELECT toNullable(UserID) AS u, count() AS c FROM hits_100m_single GROUP BY u ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <!-- A single Nullable string key (nullable_key_string) whose empty values are NULL, 87% of the rows. -->
+    <query>SELECT nullIf(SearchPhrase, '') AS p, count() AS c FROM hits_100m_single GROUP BY p ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <!-- A single Nullable string key with an aggregate function that takes an argument. -->
+    <query>SELECT toNullable(SearchPhrase) AS p, count(DISTINCT UserID) AS u FROM hits_100m_single WHERE SearchPhrase != '' GROUP BY p ORDER BY u DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT toNullable(SearchPhrase) AS p, count() AS c FROM hits_100m_single WHERE SearchPhrase != '' GROUP BY p ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <!-- A single long Nullable string key. -->
+    <query>SELECT toNullable(URL) AS url, count() AS c FROM hits_100m_single GROUP BY url ORDER BY c DESC LIMIT 10 FORMAT Null</query>
 </test>
