@@ -53,6 +53,10 @@ struct HostID
 
     static HostID fromString(const String & host_port_str);
 
+    /// Returns the host in the form that the cluster of a `Replicated` database uses for it: a bare IPv6 literal
+    /// is wrapped in brackets, any other host is returned as is.
+    static String bracketIPv6Host(const String & host);
+
     String toString() const
     {
         return Cluster::Address::toString(host_name, port);

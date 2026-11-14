@@ -587,3 +587,52 @@ def test_host_id_migration_rejected_for_foreign_active_replica(started_cluster):
         node1.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
     finally:
         node1.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def test_ipv6_interserver_host_marked_active(started_cluster):
+    """Test that the generic `DDLWorker` claims the bracketed form of a bare IPv6 interserver host.
+
+    Without `replica_host`, a Replicated database advertises the interserver host, and its
+    automatically generated cluster lists a bare IPv6 literal in the bracketed form, so distributed
+    DDL is queued for `[<ipv6>]:<port>`. The `DDLWorker` must mark that host ID active right at
+    startup, not only the unbracketed interserver host, otherwise the first `ON CLUSTER` query
+    with a `*_only_active` output mode can treat this running replica as inactive.
+    """
+    replicas_dir = "/clickhouse/task_queue/replicas"
+    # `escapeForFileName("[::1]") + ':' + port`, as host IDs are stored in Keeper.
+    bracketed_host_id = "%5B%3A%3A1%5D:9000"
+    config_path = "/etc/clickhouse-server/config.d/ipv6_interserver_host.xml"
+
+    node3.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"echo '<clickhouse><interserver_http_host>::1</interserver_http_host></clickhouse>' > {config_path}",
+        ],
+        user="root",
+    )
+
+    try:
+        node3.restart_clickhouse()
+
+        # The bracketed host ID must be claimed at startup, before any distributed DDL mentions it.
+        node3.query_with_retry(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{replicas_dir}/{bracketed_host_id}' AND name = 'active'",
+            check_callback=lambda result: result.strip() == "1",
+        )
+
+        # ... and it is the host the automatically generated cluster lists this replica under.
+        db = "test_ipv6_interserver_host"
+        node3.query(
+            f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'node3')"
+        )
+        try:
+            host_name = node3.query(
+                f"SELECT host_name FROM system.clusters WHERE cluster = '{db}' AND database_replica_name = 'node3'"
+            ).strip()
+            assert host_name == "[::1]", f"Expected the bracketed interserver host, got: '{host_name}'"
+        finally:
+            node3.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    finally:
+        node3.exec_in_container(["rm", "-f", config_path], user="root")
+        node3.restart_clickhouse()

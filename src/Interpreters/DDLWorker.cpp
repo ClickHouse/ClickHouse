@@ -1413,15 +1413,16 @@ void DDLWorker::markReplicasActive(bool reinitialized)
     auto all_host_ids = getAllHostIDsFromClusters();
 
     // Add interserver IO host IDs for Replicated DBs
+    String interserver_host;
     try
     {
-        auto host_port = context->getInterserverIOAddress();
-        HostID interserver_io_host_id = {host_port.first, port};
+        interserver_host = context->getInterserverIOAddress().first;
+        HostID interserver_io_host_id = {interserver_host, port};
         all_host_ids.emplace(interserver_io_host_id.toString());
         LOG_INFO(log, "Add interserver IO host ID {}", interserver_io_host_id.toString());
         if (maybe_secure_port)
         {
-            HostID interserver_io_secure_host_id = {host_port.first, *maybe_secure_port};
+            HostID interserver_io_secure_host_id = {interserver_host, *maybe_secure_port};
             all_host_ids.emplace(interserver_io_secure_host_id.toString());
             LOG_INFO(log, "Add interserver IO secure host ID {}", interserver_io_secure_host_id.toString());
         }
@@ -1431,24 +1432,24 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         LOG_INFO(log, "Unable to get interserver IO address, error {}", e.what());
     }
 
-    /// `replica_host` replaces the interserver IO host in the host IDs that Replicated DBs publish,
-    /// so claim it too: otherwise the first `ON CLUSTER` query may see this replica as inactive.
+    /// The cluster of a Replicated DB lists this server under its advertised host: `replica_host` if it is set,
+    /// otherwise the interserver IO host, with a bare IPv6 literal in brackets. Claim that host ID too,
+    /// otherwise the first `ON CLUSTER` query may see this replica as inactive.
     String replica_host;
     if (context->hasReplicaHost())
-    {
-        /// Use the same form as the cluster of a Replicated DB, which publishes IPv6 literals in brackets.
-        replica_host = context->getReplicaHost();
-        if (replica_host.contains(':') && !replica_host.starts_with('['))
-            replica_host = '[' + replica_host + ']';
+        replica_host = HostID::bracketIPv6Host(context->getReplicaHost());
 
-        HostID replica_host_id = {replica_host, port};
-        all_host_ids.emplace(replica_host_id.toString());
-        LOG_INFO(log, "Add replica host ID {}", replica_host_id.toString());
+    const String advertised_host = context->hasReplicaHost() ? replica_host : HostID::bracketIPv6Host(interserver_host);
+    if (!advertised_host.empty() && advertised_host != interserver_host)
+    {
+        HostID advertised_host_id = {advertised_host, port};
+        all_host_ids.emplace(advertised_host_id.toString());
+        LOG_INFO(log, "Add advertised replica host ID {}", advertised_host_id.toString());
         if (maybe_secure_port)
         {
-            HostID replica_secure_host_id = {replica_host, *maybe_secure_port};
-            all_host_ids.emplace(replica_secure_host_id.toString());
-            LOG_INFO(log, "Add replica secure host ID {}", replica_secure_host_id.toString());
+            HostID advertised_secure_host_id = {advertised_host, *maybe_secure_port};
+            all_host_ids.emplace(advertised_secure_host_id.toString());
+            LOG_INFO(log, "Add advertised replica secure host ID {}", advertised_secure_host_id.toString());
         }
     }
 

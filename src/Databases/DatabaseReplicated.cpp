@@ -615,9 +615,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
         /// `parseAddress` cannot split back into host and port. Parse the parts separately and
         /// re-assemble the address in the unambiguous bracketed form instead.
         auto [host, port] = Cluster::Address::fromString(host_port);
-        if (host.contains(':') && !host.starts_with('['))
-            host = '[' + host + ']';
-        String hostname = host + ':' + toString(port);
+        String hostname = HostID::bracketIPv6Host(host) + ':' + toString(port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}, std::move(host_groups[i])});
     }
 
