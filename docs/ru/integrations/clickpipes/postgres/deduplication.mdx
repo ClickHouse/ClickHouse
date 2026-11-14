@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Обновления и удаления, реплицируемые из Postgres в ClickHouse, приводят к появлению дублирующихся строк в ClickHouse из-за особенностей его структуры хранения данных и процесса репликации. На этой странице объясняется, почему это происходит, и какие стратегии в ClickHouse можно использовать для работы с дубликатами.
 
 <div id="how-does-data-get-replicated">
@@ -64,7 +62,15 @@ ORDER BY id;
 
 На иллюстрации ниже показан базовый пример синхронизации таблицы `users` между PostgreSQL и ClickHouse с помощью ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="Начальная загрузка ClickPipes" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Начальная загрузка ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+
+</Frame>
+
+</div>
 
 **Шаг 1** показывает исходный снимок 2 строк в PostgreSQL и то, как ClickPipes выполняет начальную загрузку этих 2 строк в ClickHouse. Как видно, обе строки копируются в ClickHouse без изменений.
 

@@ -1,5 +1,6 @@
 -- Tags: no-parallel, no-fasttest
 -- A fail point armed here fires for every query on the server, so this test must run alone.
+-- Random settings limits: allow_reorder_prewhere_conditions=(1, 1)
 
 -- Disable force_primary_key_reverse_order: the test checks `Read type: InOrder`, which becomes `InReverseOrder` with a reversed sorting key
 SET force_primary_key_reverse_order = 0;
