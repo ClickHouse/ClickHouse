@@ -28,6 +28,15 @@ k: 3000 [null 0]
 n: 300 [null 0.5]
 s: 300 [null 0]
 sid: 300 [null 0]
+--- T1 at the default settings
+Expect T1: use_datalake_metadata_statistics and use_iceberg_table_statistics_ndv are on by default.
+d: 11 [null 0]
+dec: 6 [null 0]
+g: 91 [null 0]
+k: 3000 [null 0]
+n: 7 [null 0.5]
+s: 50 [null 0]
+sid: 3000 [null 0]
 --- T5: dec = -5
 Expect ~500: dec has 6 values, so 3000 / 6; off ~30, the default 1% (true 500).
 Join: t[no_stats~500] ⋈ dim[10]

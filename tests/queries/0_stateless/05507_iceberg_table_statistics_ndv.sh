@@ -95,6 +95,10 @@ echo '--- T2: T1 with the setting off'
 echo 'Expect 300, 10% of the 3000 rows, for d, dec, n, s, sid; g 91 and k 3000 as in T1.'
 ndv t "${T_COLUMNS}" "" ${OFF}
 
+echo '--- T1 at the default settings'
+echo 'Expect T1: use_datalake_metadata_statistics and use_iceberg_table_statistics_ndv are on by default.'
+PINS=${PINS/--use_datalake_metadata_statistics=1/} ndv t "${T_COLUMNS}" ""
+
 echo '--- T5: dec = -5'
 echo 'Expect ~500: dec has 6 values, so 3000 / 6; off ~30, the default 1% (true 500).'
 labels "SELECT count() FROM t JOIN dim ON t.k = dim.k WHERE t.dec = -5" ${ON} | grep 'Join: '

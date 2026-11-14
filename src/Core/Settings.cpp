@@ -9866,14 +9866,14 @@ Skip Iceberg data files, and the Parquet row groups and pages of the files that 
 Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), pages that and [input_format_parquet_page_filter_push_down](#input_format_parquet_page_filter_push_down).
 )", 0, \
         {"26.11", false, true, "New setting to prune Iceberg data files, Parquet row groups and pages by JOIN runtime filters."}) \
-    DECLARE(Bool, use_datalake_metadata_statistics, false, R"(
+    DECLARE(Bool, use_datalake_metadata_statistics, true, R"(
 With [`use_statistics`](#use_statistics) enabled, estimate a data lake read for join reordering from the table metadata, without reading data. Only Iceberg is supported: the estimate comes from the manifest files of its data files left after partition and min-max pruning by the query filter, the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
-        {"26.11", false, false, "New setting to estimate the rows and column statistics of data lake reads (Iceberg for now) for join reordering from the table metadata."}) \
-    DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
+        {"26.11", false, true, "New setting to estimate the rows and column statistics of data lake reads (Iceberg for now) for join reordering from the table metadata."}) \
+    DECLARE(Bool, use_iceberg_table_statistics_ndv, true, R"(
 With [`use_datalake_metadata_statistics`](#use_datalake_metadata_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
 )", 0, \
-        {"26.11", false, false, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
+        {"26.11", false, true, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
