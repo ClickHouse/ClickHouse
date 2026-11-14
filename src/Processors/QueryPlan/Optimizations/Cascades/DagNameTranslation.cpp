@@ -58,9 +58,9 @@ bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> &
     return true;
 }
 
-std::unordered_map<String, Names> identityOutputNames(const ActionsDAG & actions)
+UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions)
 {
-    std::unordered_map<String, Names> input_to_outputs;
+    UnorderedMapWithMemoryTracking<String, Names> input_to_outputs;
     for (const auto * output : actions.getOutputs())
     {
         const auto * node = output;

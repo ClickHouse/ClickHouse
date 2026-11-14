@@ -72,13 +72,26 @@ MergeTreeReadPool::MergeTreeReadPool(
     columns_cache_stripe_marks.assign(parts_ranges.size(), 0);
     if (owned_columns_cache && (reader_settings.enable_columns_cache_reads || reader_settings.enable_columns_cache_writes))
     {
+        /// An aligned cut moves to the nearest end of a stripe, so a stripe larger than the share of a thread
+        /// gives whole stripes to the first threads and nothing to the others: a table with wide rows has a
+        /// few rows per granule and stripes of up to `ColumnsCacheStripes::MAX_STRIPE_MARKS` granules, and a
+        /// small read has few marks to share. Such parts are cut without alignment: the cache still holds what
+        /// is read, as runs of granules of a stripe, which is less efficient than whole stripes but keeps the
+        /// read parallel.
+        const size_t threads = std::max<size_t>(1, pool_settings.threads);
+        const size_t marks_per_thread = (pool_settings.sum_marks + threads - 1) / threads;
+
         for (size_t i = 0; i < parts_ranges.size(); ++i)
         {
             /// Only the parts the reader caches, see `IMergeTreeReader::initColumnsCache`: for the others an aligned
             /// cut only moves the boundaries of the tasks.
             const auto & part = parts_ranges[i].data_part;
-            if (canUseColumnsCacheForPart(part->storage.getStorageID().uuid))
-                columns_cache_stripe_marks[i] = ColumnsCacheStripes::forPart(*part->index_granularity).stripe_marks;
+            if (!canUseColumnsCacheForPart(part->storage.getStorageID().uuid))
+                continue;
+
+            const size_t stripe_marks = ColumnsCacheStripes::forPart(*part->index_granularity).stripe_marks;
+            if (stripe_marks <= marks_per_thread)
+                columns_cache_stripe_marks[i] = stripe_marks;
         }
     }
 

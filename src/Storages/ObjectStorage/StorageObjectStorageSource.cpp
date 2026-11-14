@@ -1250,7 +1250,7 @@ Chunk StorageObjectStorageSource::generate()
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
         /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read (unless statistics-only) not populate the cache at all.
-        /// The same holds for the row groups a JOIN runtime filter skipped.
+        /// The same holds for the row groups or pages a JOIN runtime filter skipped.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
             && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows
                 && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
@@ -2032,6 +2032,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        std::optional<FormatSettings> ordered_format_settings;
+#if USE_AVRO
+        if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+            iceberg_object && iceberg_object->usesStreamingPositionDeletes(context_))
+        {
+            ordered_format_settings = format_settings ? *format_settings : getFormatSettings(context_);
+            ordered_format_settings->parquet.preserve_order = true;
+        }
+#endif
+        const auto & object_format_settings = ordered_format_settings ? ordered_format_settings : format_settings;
+
         InputFormatPtr input_format;
         /// The metadata of the object identifies its version for the Parquet metadata cache and
         /// for the columns cache.
@@ -2057,7 +2068,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 context_,
                 max_block_size,
                 object_with_metadata,
-                format_settings,
+                object_format_settings,
                 parser_shared_resources,
                 filter_info,
                 true /* is_remote_fs */,
@@ -2075,7 +2086,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header,
             context_,
             max_block_size,
-            format_settings,
+            object_format_settings,
             parser_shared_resources,
             filter_info,
             true /* is_remote_fs */,
@@ -2106,7 +2117,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
         }
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+        configuration->addDeleteTransformers(object_info, builder, object_format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
-#include <unordered_map>
 
 namespace DB
 {
@@ -33,6 +33,6 @@ bool translateSortDescription(const ActionsDAG & dag, SortDescription & sort_des
 
 /// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
 /// Value equality between renamed columns survives; a computed expression changes the values.
-std::unordered_map<String, Names> identityOutputNames(const ActionsDAG & actions);
+UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions);
 
 }
