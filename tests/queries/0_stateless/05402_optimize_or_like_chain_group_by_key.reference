@@ -1,0 +1,109 @@
+substring keys
+0	4
+1	2
+1	2
+1	2
+1	2
+case-insensitive keys
+0	4
+1	2
+1	2
+1	2
+1	2
+prefix keys
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	8
+HAVING
+2
+2
+2
+2
+chain with another branch
+0	4
+1	2
+1	2
+1	2
+1	2
+aliases
+0	0	0	0	0	4
+0	0	0	1	1	2
+0	0	1	0	1	2
+0	1	0	0	1	2
+1	0	0	0	1	2
+0	0	0	0	0	4
+0	0	0	1	1	2
+0	0	1	0	1	2
+0	1	0	0	1	2
+1	0	0	0	1	2
+Nullable and LowCardinality columns
+0	3
+1	2
+1	2
+1	2
+1	2
+\N	1
+0	4
+1	2
+1	2
+1	2
+1	2
+CUBE
+32	192	48
+GROUPING SETS
+0	8
+0	8
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+\N	8
+\N	8
+ROLLUP, rolled-up key with its column
+7	13
+ROLLUP, group_by_use_nulls
+19	31
+0	4
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+\N	6
+\N	8
+\N	10
+\N	12
+key whose argument has its own chain
+1	1	2
+1	1	2
+2
+key inside the argument of a rewritten chain
+0	4
+1	2
+1	2
+1	2
+1	2
+7	13
+still rewritten
+9	13
+1
+1
+1
+1
+1
