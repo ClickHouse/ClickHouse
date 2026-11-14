@@ -381,7 +381,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
-    format_settings.arrow.output_variant_as_string = settings[Setting::output_format_arrow_variant_as_string];
+    format_settings.arrow.output_variant_as_json_string = settings[Setting::output_format_arrow_variant_as_json_string];
     format_settings.arrow.output_uuid_as_fixed_byte_array = settings[Setting::output_format_arrow_uuid_as_fixed_byte_array];
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];

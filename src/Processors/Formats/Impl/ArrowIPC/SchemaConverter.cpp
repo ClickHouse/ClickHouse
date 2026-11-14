@@ -587,7 +587,7 @@ buildMapEntriesField(
     /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
     VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> kv;
     const DataTypePtr key_type = removeNullable(map_type.getKeyType());
-    if (isVariant(key_type) && settings.arrow.output_variant_as_string)
+    if (isVariant(key_type) && settings.arrow.output_variant_as_json_string)
     {
         /// The key must not be nullable: `RecordBatchEncoder` writes a NULL `Variant` key as the JSON text `null`.
         kv.push_back(flatbuf::CreateField(
@@ -803,7 +803,7 @@ buildField(
             case TypeIndex::Variant:
             {
                 /// `RecordBatchEncoder::encodeVariantAsJSONText` writes the JSON text of each value, and NULL as an Arrow null.
-                if (settings.arrow.output_variant_as_string)
+                if (settings.arrow.output_variant_as_json_string)
                 {
                     nullable = true;
                     type_type = flatbuf::Type_Utf8;

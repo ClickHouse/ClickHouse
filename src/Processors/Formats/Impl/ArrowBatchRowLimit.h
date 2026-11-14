@@ -24,7 +24,7 @@ namespace DB
 /// A type with no Arrow equivalent is not covered either, since only serializing its values reveals their
 /// encoded size. Both uncovered shapes are rejected by the writer instead of being split.
 ///
-/// With `variant_json_settings`, a `Variant` is measured as written with `output_format_arrow_variant_as_string`:
+/// With `variant_json_settings`, a `Variant` is measured as written with `output_format_arrow_variant_as_json_string`:
 /// the JSON text of each value, serialized with these settings. This serializes the values once more.
 size_t maxRowsFittingOneArrowBatch(
     const IColumn & column,

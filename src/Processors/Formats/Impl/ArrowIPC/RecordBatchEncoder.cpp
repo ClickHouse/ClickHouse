@@ -543,7 +543,7 @@ void RecordBatchEncoder::encodeValues(
             appendEmptyBuffer();
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
             /// An Arrow map key must not be nullable, so a `Variant` key written as text writes NULL as JSON `null`.
-            if (isVariant(map_type.getKeyType()) && settings.arrow.output_variant_as_string)
+            if (isVariant(map_type.getKeyType()) && settings.arrow.output_variant_as_json_string)
                 encodeVariantAsJSONText(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end, /*nullable=*/ false);
             else
                 encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
@@ -654,7 +654,7 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         return;
     }
 
-    if (isVariant(type) && settings.arrow.output_variant_as_string)
+    if (isVariant(type) && settings.arrow.output_variant_as_json_string)
     {
         encodeVariantAsJSONText(column, type, begin, end, /*nullable=*/ true);
         return;

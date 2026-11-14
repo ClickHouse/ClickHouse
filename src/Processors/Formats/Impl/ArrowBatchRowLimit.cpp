@@ -154,7 +154,7 @@ size_t maxRowsForVariant(
     return num_rows;
 }
 
-/// A `Variant` written with `output_format_arrow_variant_as_string` is one `Utf8` column with the JSON text of
+/// A `Variant` written with `output_format_arrow_variant_as_json_string` is one `Utf8` column with the JSON text of
 /// each value, made valid UTF-8, as `RecordBatchEncoder::encodeVariantAsJSONText` writes it. Measure the same text.
 /// A NULL value is counted as the text `null`, which only overestimates when it is written as an Arrow null.
 size_t maxRowsForVariantAsJSONText(
