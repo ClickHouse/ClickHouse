@@ -78,6 +78,9 @@ namespace CurrentMetrics
     extern const Metric TaskTrackerThreads;
     extern const Metric TaskTrackerThreadsActive;
     extern const Metric TaskTrackerThreadsScheduled;
+    extern const Metric DistributedPlanTaskDispatchThreads;
+    extern const Metric DistributedPlanTaskDispatchThreadsActive;
+    extern const Metric DistributedPlanTaskDispatchThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -97,6 +100,7 @@ static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangePro
 
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_plan_task_dispatch_threads;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
@@ -1483,6 +1487,9 @@ public:
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
         chassert(task_to_host_map);
+        if (const UInt64 dispatch_threads = context->getSettingsRef()[Setting::distributed_plan_task_dispatch_threads])
+            task_senders.emplace(CurrentMetrics::DistributedPlanTaskDispatchThreads, CurrentMetrics::DistributedPlanTaskDispatchThreadsActive,
+                CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, dispatch_threads, dispatch_threads, /*queue_size=*/ 0);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
@@ -1550,17 +1557,32 @@ protected:
         void addTask(const String & stage_name, RunningTaskInfo task_info)
         {
             auto task_name = task_info.task_id;
+            registerTask(stage_name, std::move(task_info));
+            startPolling(stage_name, task_name);
+        }
 
+        /// Tracks a task whose start is still to be sent: `waitForStage` counts it and `cancel` cancels it, nothing polls it.
+        /// Never runs after `cancel`: `start` and `cleanup` both hold the source's `executor_mutex`.
+        void registerTask(const String & stage_name, RunningTaskInfo task_info)
+        {
+            auto task_name = task_info.task_id;
+            std::lock_guard g(lock);
+            stage_tasks[stage_name][task_name] = std::move(task_info);
+
+            /// Create stage info if this stage was not known before
+            if (!all_stages.contains(stage_name))
+                all_stages[stage_name] = std::make_shared<StageInfo>(stage_name);
+            all_stages[stage_name]->started_tasks++;
+        }
+
+        /// Polls a registered task once its worker has replied to the start: before that the worker answers `Unknown task`.
+        void startPolling(const String & stage_name, const String & task_name)
+        {
             {
                 std::lock_guard g(lock);
-                stage_tasks[stage_name][task_name] = std::move(task_info);
-
-                /// Create stage info if this stage was not known before
-                if (!all_stages.contains(stage_name))
-                    all_stages[stage_name] = std::make_shared<StageInfo>(stage_name);
-                all_stages[stage_name]->started_tasks++;
+                if (cancel_started)
+                    return;
             }
-
             addTaskToCheckQueue(stage_name, task_name);
             enqueueGetStatus();
         }
@@ -1604,9 +1626,12 @@ protected:
             return stage_finished;
         }
 
-        /// Cancel all unfinished tasks. Collects task info under lock, then
-        /// sends HTTP cancel requests without holding lock so that
-        /// `checkStatusFunc` threads can observe the cancellation and exit.
+        /// Cancels the tasks still tracked when the query ends, once: `cleanup` calls this once, and the tasks leave
+        /// `stage_tasks` here, so a second call finds none. Collects them under the lock and sends the requests without
+        /// it, so that `checkStatusFunc` threads can observe the cancellation and exit.
+        /// This can run on a thread of the killed query itself (whichever thread takes the source's `executor_mutex`
+        /// first runs the teardown). An HTTP request from such a thread is stopped before it is sent, so the worker
+        /// client sends `cancel`, `forget` and the cleanup polls with `withoutQueryCancellationCheck`.
         void cancel()
         {
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
@@ -2030,9 +2055,9 @@ protected:
         InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
-    RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
+    RunningTaskInfo buildTaskInfo(const String & task_id) const
     {
-        const auto & worker = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
+        const auto & worker = task_to_host_map->getTaskHosts().at(task_id);
         String stateless_worker_endpoint_uri;
         {
             String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
@@ -2046,7 +2071,7 @@ protected:
             stateless_worker_endpoint_uri = stateless_worker_uri.toString();
         }
 
-        String unique_task_id = toString(unique_query_id) + "::" + task_description.task.task_id;
+        String unique_task_id = toString(unique_query_id) + "::" + task_id;
         return {stateless_worker_endpoint_uri, unique_task_id};
     }
 
@@ -2065,40 +2090,32 @@ protected:
 
         const String unique_temp_file_path = toString(unique_query_id);
 
+        /// TODO move to the function
+        /// With `task_senders` the tasks of the stage are sent from the pool, without waiting for each reply.
+        if (task_senders)
+        {
+            /// Shared by the jobs that send the tasks, so the plan is not copied per task.
+            const auto stage_description = std::make_shared<const DistributedQueryTaskDescription>(std::move(task_description));
+            for (const auto & task : stage.tasks)
+            {
+                checkBeforeStartingTask();
+                queueTask(stage_name, buildTaskInfo(task.task_id), stage_description, task, getExchangeStreamSources(task),
+                    unique_temp_file_path, collectors);
+            }
+            return;
+        }
+
         for (const auto & task : stage.tasks)
         {
-            /// Reproduce the ordering a failing worker task creates: a task fails and records its
-            /// exception while this loop is still dispatching the rest of the stage, so the next
-            /// `checkCancelled` observes the cancellation. It must report the recorded failure.
-            fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
-            {
-                try
-                {
-                    throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected task failure while starting tasks");
-                }
-                catch (...)
-                {
-                    /// `recordCurrentException` stores it as the query's first failure. Ok.
-                    cancellation->recordCurrentException();
-                }
-            });
-
-            checkCancelled();
+            checkBeforeStartingTask();
 
             task_description.task = task;
-
-            /// Add exchange destinations for output streams
-            task_description.exchange_stream_sources = {};
-            for (const auto & input_stream : task.input_exchange_streams)
-            {
-                String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
-            }
+            task_description.exchange_stream_sources = getExchangeStreamSources(task);
+            auto task_info = buildTaskInfo(task.task_id);
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
             /// On send failure clean up directly in case the worker did accept the start;
             /// cancel/forget tolerate UnknownTaskId.
-            auto task_info = buildTaskInfo(task_description);
             LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
             try
             {
@@ -2114,6 +2131,87 @@ protected:
         }
     }
 
+    void checkBeforeStartingTask()
+    {
+        /// Reproduce the ordering a failing worker task creates: a task fails and records its
+        /// exception while this loop is still dispatching the rest of the stage, so the next
+        /// `checkCancelled` observes the cancellation. It must report the recorded failure.
+        fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
+        {
+            try
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected task failure while starting tasks");
+            }
+            catch (...)
+            {
+                /// `recordCurrentException` stores it as the query's first failure. Ok.
+                cancellation->recordCurrentException();
+            }
+        });
+
+        checkCancelled();
+    }
+
+    /// The hosts that serve the input streams of `task`.
+    ExchangeStreamSources getExchangeStreamSources(const DistributedQueryTask & task) const
+    {
+        ExchangeStreamSources exchange_stream_sources;
+        for (const auto & input_stream : task.input_exchange_streams)
+        {
+            String input_stream_name = input_stream.toString();
+            exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
+        }
+        return exchange_stream_sources;
+    }
+
+    /// Tracks the task and has `task_senders` send its start, so the next task does not wait for the reply.
+    void queueTask(
+        const String & stage_name,
+        const RunningTaskInfo & task_info,
+        const std::shared_ptr<const DistributedQueryTaskDescription> & stage_description,
+        const DistributedQueryTask & task,
+        ExchangeStreamSources stream_sources,
+        const String & unique_temp_file_path,
+        const TaskCollectors & collectors)
+    {
+        LOG_DEBUG(logger, "Queueing task {} for {}", task_info.task_id, task_info.endpoint_uri);
+        /// Before the send, so the teardown cancels a task whose start is in flight.
+        running_tasks.registerTask(stage_name, task_info);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+
+        try
+        {
+            /// `this` for `running_tasks`: `task_senders` is declared after it, so its jobs are joined first.
+            task_senders->scheduleOrThrow(
+                [this, stage_name, task_info, stage_description, task, sources = std::move(stream_sources), unique_temp_file_path,
+                 collectors, query_context = context, query_cancellation = cancellation, task_logger = logger,
+                 thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                    try
+                    {
+                        /// A cancelled query needs no more tasks; the teardown cancels this one on its worker.
+                        if (query_cancellation->isCancelled())
+                            return;
+                        sendTask(task_info.endpoint_uri, task_info.task_id, *stage_description, task, sources, unique_temp_file_path,
+                            collectors, query_context);
+                        running_tasks.startPolling(stage_name, task_info.task_id);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(task_logger, fmt::format("Cannot send task {} to {}", task_info.task_id, task_info.endpoint_uri));
+                        query_cancellation->recordCurrentException();
+                    }
+                });
+        }
+        catch (...)
+        {
+            /// The task is tracked, so the teardown cancels it on its worker.
+            cancellation->recordCurrentException();
+            throw;
+        }
+    }
+
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
     {
         return running_tasks.waitForStage(stage_name, timeout_ms);
@@ -2121,6 +2219,9 @@ protected:
 
     TaskToHostMapPtr task_to_host_map;
     TaskTracker running_tasks;
+    /// Sends the starts of queued tasks; set when `distributed_plan_task_dispatch_threads` is positive. Declared last,
+    /// so its jobs are joined before the other members are destroyed.
+    std::optional<ThreadPool> task_senders;
 };
 
 

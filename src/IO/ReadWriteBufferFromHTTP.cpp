@@ -60,8 +60,11 @@ namespace DB
 namespace
 {
 
-bool isQueryTimeLimitReached()
+bool isQueryTimeLimitReached(bool check_query_cancellation)
 {
+    if (!check_query_cancellation)
+        return false;
+
     CurrentThread::checkIfNotCancelled();
 
     if (auto query_context = CurrentThread::tryGetQueryContext())
@@ -238,6 +241,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     HTTPHeaderEntries http_header_entries_,
     RedirectCallback redirect_callback_,
     bool delay_initialization,
+    bool check_query_cancellation_,
     std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
     , connection_group(connection_group_)
@@ -253,6 +257,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , enable_url_encoding(enable_url_encoding_)
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
+    , check_query_cancellation(check_query_cancellation_)
     , out_stream_callback(std::move(out_stream_callback_))
     , out_stream_fixed_content_length(out_stream_fixed_content_length_)
     , redirect_callback(std::move(redirect_callback_))
@@ -397,7 +402,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         /// data does not issue a request, and it may reveal an error that must not be masked by a
         /// soft cancellation.
         FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_request_attempt);
-        const bool soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
+        const bool soft_time_limit_reached = isQueryTimeLimitReached(check_query_cancellation) && cancellation;
         if (soft_time_limit_reached && cancellation)
             cancellation->cancel(true);
 
@@ -409,7 +414,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (attempt > 1)
         {
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
-            const bool retry_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
+            const bool retry_soft_time_limit_reached = isQueryTimeLimitReached(check_query_cancellation) && cancellation;
             if (retry_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
@@ -484,7 +489,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             /// cancellation error could mask the failure that tore the pipeline down. Marking the
             /// error lets that reader tell it from a failure the cancellation has nothing to do
             /// with, which it must not discard.
-            const bool final_attempt_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
+            const bool final_attempt_soft_time_limit_reached = isQueryTimeLimitReached(check_query_cancellation) && cancellation;
             if (final_attempt_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
@@ -514,7 +519,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             /// One exit for all the attempts: a killed or timed out query is reported as a cancellation
             /// instead of the network error we happen to have at hand, the same way as it is done for S3.
-            const bool retry_wait_soft_time_limit_reached = isQueryTimeLimitReached() && cancellation;
+            const bool retry_wait_soft_time_limit_reached = isQueryTimeLimitReached(check_query_cancellation) && cancellation;
             if (retry_wait_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
@@ -606,7 +611,7 @@ bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
             milliseconds -= interval;
 
             /// Throws for `KILL QUERY` and for a time limit with the `throw` overflow mode.
-            if (isQueryTimeLimitReached())
+            if (isQueryTimeLimitReached(check_query_cancellation))
             {
                 cancellation->cancel(/*softly=*/ true);
                 return true;
@@ -630,7 +635,7 @@ bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
         /// Throws for `KILL QUERY` and for a time limit with the `throw` overflow mode. Its `false`
         /// answer - a soft timeout with the `break` overflow mode - is deliberately ignored: with no
         /// cancellation token there is no owner to decide whether a partial result is safe here.
-        std::ignore = isQueryTimeLimitReached();
+        std::ignore = isQueryTimeLimitReached(check_query_cancellation);
     }
 
     return false;
@@ -1121,6 +1126,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         header_entries,
         redirect_callback,
         delay_initialization,
+        check_query_cancellation,
         /*file_info_=*/ std::nullopt));
     return ptr;
 }

@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -22,6 +23,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char stateless_worker_pause_before_start_task[];
 }
 
 StatelessWorkerEndpoint::StatelessWorkerEndpoint(size_t max_threads, size_t max_free_threads, size_t queue_size)
@@ -43,11 +49,15 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
 
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
+    serializeTask(task_description, task_description.task, task_description.exchange_stream_sources, out);
+}
+
+void serializeTask(const DistributedQueryTaskDescription & task_description, const DistributedQueryTask & task,
+    const ExchangeStreamSources & stream_sources, WriteBuffer & out)
+{
     writeVarUInt(task_description.serialization_version, out);
 
     writeStringBinary(task_description.initial_query_id, out);
-
-    const auto & task = task_description.task;
 
     writeStringBinary(task.task_id, out);
     writeStringBinary(task_description.serialized_query_plan, out);
@@ -85,8 +95,8 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeVarUInt(exchange.destination_bucket_count, out);
     }
 
-    writeVarUInt(task_description.exchange_stream_sources.stream_hosts.size(), out);
-    for (const auto & [stream, address] : task_description.exchange_stream_sources.stream_hosts)
+    writeVarUInt(stream_sources.stream_hosts.size(), out);
+    for (const auto & [stream, address] : stream_sources.stream_hosts)
     {
         writeStringBinary(stream, out);
         writeStringBinary(address.host, out);
@@ -263,14 +273,19 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
             collectors = TaskCollectors::parse(params.get("collect"));
 
         /// Deserialize task fields from the request body
+        /// This could have been moved to a thread, but it would still require a copy of an object
+        /// and for now it is not expensive part
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
         /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();
 
+        /// Holds a start that is on the wire, so a cancel can overtake it.
+        FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_before_start_task);
+
         /// Pass it to the runner to start execution
-        task_runner->startTask(task_id, task_description, unique_temp_file_path, collectors);
+        task_runner->startTask(task_id, std::move(task_description), unique_temp_file_path, collectors);
     }
     else if (operation == "get_status")
     {
