@@ -15,7 +15,9 @@
 #include <Analyzer/WindowNode.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
@@ -1136,6 +1138,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     const auto & function_node = node->as<FunctionNode &>();
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
+    const bool use_null_as_unknown = function_node.useNullAsUnknownSemanticsForIn()
+        || function_node.getFunctionOrThrow()->useNullAsUnknownSemanticsForIn();
 
     DataTypes set_element_types;
 
@@ -1155,15 +1159,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
 
     if (!subquery_or_table)
     {
-        set_element_types = {in_first_argument->getResultType()};
+        auto set_element_type = in_first_argument->getResultType();
+        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+        if (use_null_as_unknown)
+            set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
+
+        set_element_types = {std::move(set_element_type)};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
 
         /// Do not unpack if empty tuple or single element tuple
         if (left_tuple_type && left_tuple_type->getElements().size() > 1)
             set_element_types = left_tuple_type->getElements();
 
-        set_element_types
-            = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
+        set_element_types = Set::getElementTypes(
+            std::move(set_element_types), settings[Setting::transform_null_in] || use_null_as_unknown);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else

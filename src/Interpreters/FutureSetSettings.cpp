@@ -9,6 +9,7 @@ namespace Setting
 {
     extern const SettingsBool make_distributed_plan;
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsUInt64 max_bytes_before_external_set;
     extern const SettingsUInt64 max_bytes_for_external_set_bloom_filter;
     extern const SettingsUInt64 max_bytes_for_external_set_cache;
@@ -25,7 +26,8 @@ namespace Setting
 
 FutureSetSettings::FutureSetSettings(const Settings & settings)
     : size_limits(settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode])
-    , transform_null_in(settings[Setting::transform_null_in])
+    , transform_null_in(settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown])
+    , in_null_as_unknown(settings[Setting::in_null_as_unknown])
     , max_bytes_before_external_set(settings[Setting::max_bytes_before_external_set])
     , max_bytes_ratio_before_external_set(settings[Setting::max_bytes_ratio_before_external_set])
     , max_bytes_for_external_set_bloom_filter(settings[Setting::max_bytes_for_external_set_bloom_filter])

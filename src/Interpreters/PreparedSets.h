@@ -133,7 +133,14 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
+    FutureSetFromTuple(
+        Hash hash_,
+        ASTPtr ast_,
+        ColumnsWithTypeAndName block,
+        bool transform_null_in,
+        SizeLimits size_limits,
+        std::optional<bool> source_is_empty_ = std::nullopt,
+        bool source_has_null_ = false);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
@@ -158,6 +165,8 @@ public:
     /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
     /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
     size_t getInputRowCount() const;
+    bool isSourceEmpty() const { return source_is_empty; }
+    bool sourceHasNull() const { return source_has_null; }
 private:
     void fillSetElementsOnce() const;
     Columns getUniqueKeyColumns() const;
@@ -167,6 +176,8 @@ private:
     mutable Hash content_hash{};
     ASTPtr ast;
     SetPtr set;
+    bool source_is_empty;
+    bool source_has_null;
     mutable SetKeyColumns set_key_columns;
     mutable OnceFlag fill_set_elements_once;
     mutable OnceFlag content_hash_once;
@@ -246,6 +257,7 @@ public:
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
+    bool sourceStateRequired() const { return set_settings.in_null_as_unknown; }
 
     /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
     /// set that fills that table or through the table stored next to the set itself.
@@ -305,7 +317,13 @@ public:
     /// The set lives in a table (`ENGINE = Set`, or `SharedSet` in ClickHouse Cloud), so it is mutable:
     /// both hand over the table's own `Set` object, which an `INSERT` writes into in place.
     FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
+    FutureSetFromTuplePtr addFromTuple(
+        const Hash & key,
+        ASTPtr ast,
+        ColumnsWithTypeAndName block,
+        const Settings & settings,
+        std::optional<bool> source_is_empty = std::nullopt,
+        bool source_has_null = false);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,

@@ -942,6 +942,7 @@ Block ProjectionDescription::calculateByQuery(
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
+    mut_context->setSetting("in_null_as_unknown", Field(0));
     /// The projection is calculated locally from the block, see `getProjectionFromAST`.
     mut_context->setSetting("enable_parallel_replicas", Field(0));
     /// Building the metadata analyzes `query_ast` in place, which already replaces its positional arguments,

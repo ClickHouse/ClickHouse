@@ -212,6 +212,11 @@ public:
     /// Whether `convertToNullable` was called, also when the result type cannot be `Nullable` and did not change.
     bool isConvertedToNullable() const { return wrap_with_nullable; }
 
+    /// Preserve the setting used while the analyzer resolved this `IN` node. The planner may
+    /// later run with a copied context whose settings differ from the query's analysis context.
+    void setUseNullAsUnknownSemanticsForIn(bool value) { use_null_as_unknown_semantics_for_in = value; }
+    bool useNullAsUnknownSemanticsForIn() const { return use_null_as_unknown_semantics_for_in; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -229,6 +234,7 @@ private:
     NullsAction nulls_action = NullsAction::EMPTY;
     IResolvedFunctionPtr function;
     bool wrap_with_nullable = false;
+    bool use_null_as_unknown_semantics_for_in = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
 

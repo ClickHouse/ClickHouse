@@ -138,14 +138,21 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 
 FutureSetFromTuple::FutureSetFromTuple(
     Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block,
-    bool transform_null_in, SizeLimits size_limits)
-    : hash(hash_), ast(std::move(ast_))
+    bool transform_null_in, SizeLimits size_limits, std::optional<bool> source_is_empty_, bool source_has_null_)
+    : hash(hash_)
+    , ast(std::move(ast_))
+    , source_is_empty(source_is_empty_.value_or(block.empty() || block.front().column->empty()))
+    , source_has_null(source_has_null_)
 {
     ColumnsWithTypeAndName header = block;
     for (auto & elem : header)
         elem.column = elem.column->cloneEmpty();
 
     set = std::make_shared<Set>(size_limits, 0, transform_null_in);
+    if (!source_is_empty)
+        set->markSourceNonempty();
+    if (source_has_null)
+        set->markContainsNull();
 
     set->setHeader(header);
     Columns columns;
@@ -161,6 +168,7 @@ FutureSetFromTuple::FutureSetFromTuple(
 
     set->insertFromColumns(columns, set_key_columns);
     set->finishInsert();
+    source_has_null = source_has_null || set->hasNull();
 
     for (const auto & type : set->getElementsTypes())
     {
@@ -242,6 +250,8 @@ FutureSet::Hash FutureSetFromTuple::computeContentHash() const
     }
 
     SipHash siphasher;
+    siphasher.update(source_is_empty);
+    siphasher.update(source_has_null);
     for (size_t i = 0; i < normalized.size(); ++i)
     {
         const auto type_name = element_types[i]->getName();
@@ -784,12 +794,18 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(
+    const Hash & key,
+    ASTPtr ast,
+    ColumnsWithTypeAndName block,
+    const Settings & settings,
+    std::optional<bool> source_is_empty,
+    bool source_has_null)
 {
     const FutureSetSettings set_settings(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
         key, std::move(ast), std::move(block),
-        set_settings.transform_null_in, set_settings.size_limits);
+        set_settings.transform_null_in, set_settings.size_limits, source_is_empty, source_has_null);
 
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];

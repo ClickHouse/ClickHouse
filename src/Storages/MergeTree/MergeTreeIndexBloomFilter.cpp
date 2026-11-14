@@ -44,6 +44,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsBool in_null_as_unknown;
 }
 
 namespace ErrorCodes
@@ -659,6 +660,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , index_nodes(std::move(index_nodes_))
     , json_index_columns(collectJSONIndexColumns(header, index_nodes))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+    , in_null_as_unknown(context_->getSettingsRef()[Setting::in_null_as_unknown])
 {
     if (!predicate)
     {
@@ -966,6 +968,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t position = *key_position;
         const DataTypePtr & index_type = header.getByPosition(position).type;
 
+        /// `in_null_as_unknown` probes both signed-zero representations for floating-point
+        /// membership. A bloom filter hashes only one representation and could prune a match.
+        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(index_type)))
+            return false;
+
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
         if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
@@ -1059,6 +1066,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
     if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
     {
+        /// The map lookup can return a default floating-point zero for a missing key.
+        /// The set treats both signs of zero as equal, while the bloom index hashes
+        /// their different bit patterns. Decline pruning for this predicate.
+        if (in_null_as_unknown && isFloat(removeLowCardinalityAndNullable(type)))
+            return false;
+
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
           *

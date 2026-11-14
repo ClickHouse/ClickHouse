@@ -73,6 +73,7 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { function->updateHash(hash); }
+    bool useNullAsUnknownSemanticsForIn() const override { return function->useNullAsUnknownSemanticsForIn(); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
