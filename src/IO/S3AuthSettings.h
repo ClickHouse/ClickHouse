@@ -59,6 +59,8 @@ struct S3AuthSettings
     void updateIfChanged(const S3AuthSettings & settings);
     bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
     NormalizedHTTPHeaderEntries getHeaders() const;
+    /// The `x-amz-request-payer` header for `request_payer`; empty when it is not set.
+    HTTPHeaderEntries getRequestPayerHeaders() const;
 
     /// Clear request-auth material that may have been merged in from the server `<s3>`/endpoint config (generic
     /// headers, per-request access headers, and the SSE-C key / SSE-KMS config), so a credential-restricted

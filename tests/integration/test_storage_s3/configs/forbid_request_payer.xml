@@ -1,0 +1,5 @@
+<clickhouse>
+    <http_forbid_headers>
+        <header>x-amz-request-payer</header>
+    </http_forbid_headers>
+</clickhouse>

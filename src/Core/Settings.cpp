@@ -722,6 +722,12 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(String, s3_request_payer, "", R"(
+Set to `requester` to access a requester-pays `S3` bucket: every request then carries the header `x-amz-request-payer: requester`, so the requester pays for the request and the data transfer. By default the value is empty and the header is not sent. `requester` is the only supported value.
+
+It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk or an `S3` table with its own credentials. For those, use the `request_payer` key of an endpoint section of the `<s3>` server configuration or of the disk definition, which also takes precedence over this setting.
+)", 0, \
+        {"26.11", "", "", "New setting to access requester-pays S3 buckets."}) \
     DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all azure requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.

@@ -169,6 +169,11 @@ private:
             headers.clear();
         }
 
+        /// `s3_request_payer` can come from the query, so its header must obey the HTTP header filter.
+        auto request_payer_headers = settings.auth_settings.getRequestPayerHeaders();
+        context->getHTTPHeaderFilter().checkHeaders(request_payer_headers);
+        headers.append(request_payer_headers);
+
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
         const Settings & local_settings = context->getSettingsRef();
