@@ -3,127 +3,34 @@
 #include <base/defines.h>
 #include <base/extended_types.h>
 
-#include <bit>
-
-/// The `heks` AVX/AVX2 entry points are needed both by the runtime-dispatched `x86_64_v3`
-/// target - which only exists under `USE_X86_64_MULTITARGET_CODE` - and by builds whose own baseline
-/// already guarantees those instruction sets. The latter matters for `-DX86_ARCH_LEVEL=4`,
-/// for which `src/CMakeLists.txt` deliberately turns multi-target dispatch off: without the
-/// `__AVX__` / `__AVX2__` arms below `fast_hex_inline.hpp` would not even compile the vector
-/// entry points, and such a build would silently fall back to the scalar loops.
-#if USE_X86_64_MULTITARGET_CODE || defined(__AVX__)
-#define FAST_HEX_AVX 1
-#endif
-#if USE_X86_64_MULTITARGET_CODE || defined(__AVX2__)
-#define FAST_HEX_AVX2 1
-#endif
-#if defined(__aarch64__)
-#define FAST_HEX_NEON 1
-#endif
-#define FAST_HEX_USE_NAMESPACE 1
-#include <fast_hex/fast_hex_inline.hpp>
+/// Each ISA header is empty where the compiler can't target that ISA. The AVX2, AVX-512 and SVE functions carry
+/// their own target attributes, so they are available whatever the build flags; calling one is only valid in code
+/// that requires the ISA, either through the build's baseline or through the runtime dispatch below.
+#include <fast_hex/fast_hex.hpp>
+#include <fast_hex/fast_hex_arm_neon.hpp>
+#include <fast_hex/fast_hex_arm_sve.hpp>
+#include <fast_hex/fast_hex_x86_64_icelake.hpp>
+#include <fast_hex/fast_hex_x86_64_v4.hpp>
 
 
-#if defined(__aarch64__)
-
-DECLARE_DEFAULT_CODE(
-
-template <typename Case>
-static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes, Case c)
+/// `encodeHex16LE*` take the in-memory representation of `CityHash_v1_0_2::uint128`: `low64`, then `high64`, each
+/// a native integer. As one 128-bit integer it is encoded `high64` first on any byte order.
+static inline unsigned __int128 cityHash128AsInteger(const uint8_t * src)
 {
-    if constexpr (std::endian::native == std::endian::big)
-    {
-        /// The NEON paths below reverse the native byte representation. This is only
-        /// equivalent to encoding the integer value on little-endian architectures.
-        switch (num_bytes)
-        {
-            case 8:
-            {
-                UInt64 v;
-                memcpy(&v, value, 8);
-                heks::encode_integral_naive(dst, v, c);
-                return;
-            }
-            case 16:
-            {
-                UInt128 v;
-                memcpy(&v, value, 16);
-                heks::encode_integral_naive(dst, v, c);
-                return;
-            }
-            case 32:
-            {
-                UInt256 v;
-                memcpy(&v, value, 32);
-                heks::encode_integral_naive(dst, v, c);
-                return;
-            }
-            default:
-                UNREACHABLE();
-        }
-    }
-
-    switch (num_bytes)
-    {
-        case 8:
-        {
-            UInt64 v;
-            memcpy(&v, value, 8);
-            heks::encode_integral8(dst, v, c);
-            return;
-        }
-        case 16:
-        {
-            UInt128 v;
-            memcpy(&v, value, 16);
-            heks::encode_integral16(dst, v, c);
-            return;
-        }
-        case 32:
-        {
-            constexpr auto case_type = Case::value;
-            const auto * src = static_cast<const uint8_t *>(value);
-            heks::heks_detail::encodeHexNeon16_impl<case_type, heks::heks_detail::Reverse::Yes128>(dst, src + 16);
-            heks::heks_detail::encodeHexNeon16_impl<case_type, heks::heks_detail::Reverse::Yes128>(dst + 32, src);
-            return;
-        }
-        default:
-            UNREACHABLE();
-    }
+    UInt64 low;
+    UInt64 high;
+    memcpy(&low, src, 8);
+    memcpy(&high, src + 8, 8);
+    return static_cast<unsigned __int128>(high) << 64 | low;
 }
 
-template <typename Case>
-static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case)
-{
-    constexpr auto case_type = Case::value;
-    heks::heks_detail::encodeHexNeon_impl<case_type>(dst, src, heks::RawLength{size});
-}
-
-static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
-{
-    heks::decodeHexLUT(dst, src, heks::RawLength{size});
-}
-
-template <typename Case>
-static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case)
-{
-    if constexpr (std::endian::native == std::endian::big)
-    {
-        UInt64 high;
-        UInt64 low;
-        memcpy(&high, src + 8, 8);
-        memcpy(&low, src, 8);
-        heks::encode_integral_naive(dst, high, Case{});
-        heks::encode_integral_naive(dst + 16, low, Case{});
-        return;
-    }
-
-    constexpr auto case_type = Case::value;
-    heks::heks_detail::encodeHexNeon16_impl<case_type, heks::heks_detail::Reverse::Yes128>(dst, src);
-}
-
-template <bool = true>
-static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
+/// The per-row loop of `decodeHexStrings` around the `decodeHexStringImpl` of one target. Each target's
+/// `decodeHexStringsImpl` inlines it, so that `decode` is called under that target's attributes. `decode` is forced
+/// inline, and so is the `heks` decoder it calls: by size, clang keeps them out of line, and the call per row then made
+/// the AVX-512 loop slower than the AVX2 one for 8-byte rows.
+template <auto decode>
+ALWAYS_INLINE static inline void
+decodeHexStringsLoop(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
 {
     UInt64 src_prev = 0;
     UInt64 dst_pos = 0;
@@ -139,21 +46,16 @@ static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt6
             --hex_len;
         }
         size_t raw_size = hex_len / 2;
-        decodeHexStringImpl(dst + dst_pos, src + src_prev, raw_size);
+        [[clang::always_inline]] decode(dst + dst_pos, src + src_prev, raw_size);
         dst_pos += raw_size;
         dst_offsets[i] = dst_pos;
         src_prev = src_end;
     }
 }
 
-) // DECLARE_DEFAULT_CODE
 
-#elif defined(__AVX2__)
+#if defined(FAST_HEX_NEON)
 
-/// The baseline of this build already guarantees AVX2 (`-DX86_ARCH_LEVEL=3` or higher), so the
-/// default code can use the vector paths directly. This is what keeps the accelerated backend
-/// on `-DX86_ARCH_LEVEL=4` builds, where `src/CMakeLists.txt` disables multi-target dispatch and
-/// the `x86_64_v3` specialization below is therefore not compiled at all.
 DECLARE_DEFAULT_CODE(
 
 template <typename Case>
@@ -165,22 +67,21 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
         {
             UInt64 v;
             memcpy(&v, value, 8);
-            heks::encode_integral8(dst, v, c);
+            heks::encodeHexIntNeon(dst, v, c);
             return;
         }
         case 16:
         {
             UInt128 v;
             memcpy(&v, value, 16);
-            heks::encode_integral16(dst, v, c);
+            heks::encodeHexIntNeon(dst, v, c);
             return;
         }
         case 32:
         {
-            constexpr auto case_type = Case::value;
-            const auto * src = static_cast<const uint8_t *>(value);
-            heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst, src + 16);
-            heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst + 32, src);
+            UInt256 v;
+            memcpy(&v, value, 32);
+            heks::encodeHexIntNeon(dst, v, c);
             return;
         }
         default:
@@ -189,28 +90,117 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
 }
 
 template <typename Case>
-static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case)
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
 {
-    constexpr auto case_type = Case::value;
-    heks::heks_detail::encodeHexVecImpl<case_type>(dst, src, heks::RawLength{size});
+    heks::encodeHexNeon(dst, src, heks::RawLength{size}, c);
+}
+
+/// Below 4 bytes `decodeHexNeon` is scalar too, and the table is the faster scalar decoder.
+static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
+{
+    if (size < 4)
+        heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    else
+        heks::decodeHexNeon(dst, src, heks::RawLength{size});
+}
+
+template <typename Case>
+static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case c)
+{
+    heks::encodeHexIntNeon(dst, cityHash128AsInteger(src), c);
+}
+
+) // DECLARE_DEFAULT_CODE
+
+#elif defined(__AVX2__)
+
+/// The baseline of this build already guarantees AVX2 (`-DX86_ARCH_LEVEL=3` or higher), so the
+/// default code can use the vector paths directly. This is what keeps the accelerated backend
+/// on `-DX86_ARCH_LEVEL=4` builds, where `src/CMakeLists.txt` disables multi-target dispatch and
+/// the target-specific code below is therefore not compiled at all.
+DECLARE_DEFAULT_CODE(
+
+template <typename Case>
+static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes, Case c)
+{
+    switch (num_bytes)
+    {
+        case 8:
+        {
+            UInt64 v;
+            memcpy(&v, value, 8);
+            heks::encodeHexIntAvx2(dst, v, c);
+            return;
+        }
+        case 16:
+        {
+            UInt128 v;
+            memcpy(&v, value, 16);
+            heks::encodeHexIntAvx2(dst, v, c);
+            return;
+        }
+        case 32:
+        {
+            UInt256 v;
+            memcpy(&v, value, 32);
+            heks::encodeHexIntAvx2(dst, v, c);
+            return;
+        }
+        default:
+            UNREACHABLE();
+    }
+}
+
+template <typename Case>
+static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case c)
+{
+    heks::encodeHexIntAvx2(dst, cityHash128AsInteger(src), c);
+}
+
+) // DECLARE_DEFAULT_CODE
+
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512CD__) && defined(__AVX512DQ__) && defined(__AVX512VL__)
+
+/// `-DX86_ARCH_LEVEL=4`: the baseline has everything `encodeHexAvx512` and `decodeHexAvx512` need.
+DECLARE_DEFAULT_CODE(
+
+template <typename Case>
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+{
+    heks::encodeHexAvx512(dst, src, heks::RawLength{size}, c);
 }
 
 static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
 {
-    if (size >= 32)
-        heks::decodeHexVec(dst, src, heks::RawLength{size});
-    else
+    if (size < 8)
         heks::decodeHexLUT4(dst, src, heks::RawLength{size});
-}
-
-template <typename Case>
-static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case)
-{
-    constexpr auto case_type = Case::value;
-    heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst, src);
+    else
+        [[clang::always_inline]] heks::decodeHexAvx512(dst, src, heks::RawLength{size});
 }
 
 ) // DECLARE_DEFAULT_CODE
+
+#else
+
+DECLARE_DEFAULT_CODE(
+
+template <typename Case>
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+{
+    heks::encodeHexAvx2(dst, src, heks::RawLength{size}, c);
+}
+
+static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
+{
+    if (size < 8)
+        heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    else
+        [[clang::always_inline]] heks::decodeHexAvx2(dst, src, heks::RawLength{size});
+}
+
+) // DECLARE_DEFAULT_CODE
+
+#endif
 
 #else
 
@@ -225,21 +215,21 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
         {
             UInt64 v;
             memcpy(&v, value, 8);
-            heks::encode_integral_naive(dst, v, c);
+            heks::encodeHexInt(dst, v, c);
             return;
         }
         case 16:
         {
             UInt128 v;
             memcpy(&v, value, 16);
-            heks::encode_integral_naive(dst, v, c);
+            heks::encodeHexInt(dst, v, c);
             return;
         }
         case 32:
         {
             UInt256 v;
             memcpy(&v, value, 32);
-            heks::encode_integral_naive(dst, v, c);
+            heks::encodeHexInt(dst, v, c);
             return;
         }
         default:
@@ -248,65 +238,39 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
 }
 
 template <typename Case>
-static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case)
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
 {
-    constexpr auto case_type = Case::value;
-    heks::heks_detail::encodeHexImpl<case_type>(dst, src, heks::RawLength{size});
+    heks::encodeHex(dst, src, heks::RawLength{size}, c);
 }
 
+/// The compiler vectorizes `decodeHex` for the build's baseline, and the table is faster for short inputs.
 static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
 {
-    heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    if (size < 16)
+        heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    else
+        heks::decodeHex(dst, src, heks::RawLength{size});
 }
 
 template <typename Case>
 static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case c)
 {
-    UInt64 high;
-    UInt64 low;
-    memcpy(&high, src + 8, 8);
-    memcpy(&low, src, 8);
-    heks::encode_integral_naive(dst, high, c);
-    heks::encode_integral_naive(dst + 16, low, c);
+    heks::encodeHexInt(dst, cityHash128AsInteger(src), c);
 }
 
 ) // DECLARE_DEFAULT_CODE
 
 #endif
 
-#if !defined(__aarch64__)
-
-/// Identical for both x86-64 default variants above; it only dispatches through
-/// `decodeHexStringImpl`, which each of them defines in this same namespace.
 DECLARE_DEFAULT_CODE(
 
 template <bool = true>
 static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
 {
-    UInt64 src_prev = 0;
-    UInt64 dst_pos = 0;
-    for (size_t i = 0; i < row_count; ++i)
-    {
-        UInt64 src_end = src_offsets[i];
-        size_t hex_len = src_end - src_prev;
-        if (hex_len & 1)
-        {
-            dst[dst_pos] = impl::unhexDigit(static_cast<char>(src[src_prev]));
-            ++dst_pos;
-            ++src_prev;
-            --hex_len;
-        }
-        size_t raw_size = hex_len / 2;
-        decodeHexStringImpl(dst + dst_pos, src + src_prev, raw_size);
-        dst_pos += raw_size;
-        dst_offsets[i] = dst_pos;
-        src_prev = src_end;
-    }
+    decodeHexStringsLoop<decodeHexStringImpl>(dst, src, src_offsets, dst_offsets, row_count);
 }
 
 ) // DECLARE_DEFAULT_CODE
-
-#endif
 
 
 DECLARE_X86_64_V3_SPECIFIC_CODE(
@@ -320,22 +284,21 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
         {
             UInt64 v;
             memcpy(&v, value, 8);
-            heks::encode_integral8(dst, v, c);
+            heks::encodeHexIntAvx2(dst, v, c);
             return;
         }
         case 16:
         {
             UInt128 v;
             memcpy(&v, value, 16);
-            heks::encode_integral16(dst, v, c);
+            heks::encodeHexIntAvx2(dst, v, c);
             return;
         }
         case 32:
         {
-            constexpr auto case_type = Case::value;
-            const auto * src = static_cast<const uint8_t *>(value);
-            heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst, src + 16);
-            heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst + 32, src);
+            UInt256 v;
+            memcpy(&v, value, 32);
+            heks::encodeHexIntAvx2(dst, v, c);
             return;
         }
         default:
@@ -344,52 +307,110 @@ static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes
 }
 
 template <typename Case>
-static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case)
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
 {
-    constexpr auto case_type = Case::value;
-    heks::heks_detail::encodeHexVecImpl<case_type>(dst, src, heks::RawLength{size});
+    heks::encodeHexAvx2(dst, src, heks::RawLength{size}, c);
 }
 
 static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
 {
-    if (size >= 32)
-        heks::decodeHexVec(dst, src, heks::RawLength{size});
-    else
+    if (size < 8)
         heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    else
+        [[clang::always_inline]] heks::decodeHexAvx2(dst, src, heks::RawLength{size});
 }
 
 template <typename Case>
-static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case)
+static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case c)
 {
-    constexpr auto case_type = Case::value;
-    heks::heks_detail::encodeHex16Fast<case_type, heks::heks_detail::Reverse::Yes128>(dst, src);
+    heks::encodeHexIntAvx2(dst, cityHash128AsInteger(src), c);
 }
 
 template <bool = true>
 static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
 {
-    UInt64 src_prev = 0;
-    UInt64 dst_pos = 0;
-    for (size_t i = 0; i < row_count; ++i)
-    {
-        UInt64 src_end = src_offsets[i];
-        size_t hex_len = src_end - src_prev;
-        if (hex_len & 1)
-        {
-            dst[dst_pos] = impl::unhexDigit(static_cast<char>(src[src_prev]));
-            ++dst_pos;
-            ++src_prev;
-            --hex_len;
-        }
-        size_t raw_size = hex_len / 2;
-        decodeHexStringImpl(dst + dst_pos, src + src_prev, raw_size);
-        dst_pos += raw_size;
-        dst_offsets[i] = dst_pos;
-        src_prev = src_end;
-    }
+    decodeHexStringsLoop<decodeHexStringImpl>(dst, src, src_offsets, dst_offsets, row_count);
 }
 
 ) // DECLARE_X86_64_V3_SPECIFIC_CODE
+
+
+/// Only strings: `heks` has no AVX-512 integer encoders, so integers use the `x86_64_v3` code.
+DECLARE_X86_64_V4_SPECIFIC_CODE(
+
+template <typename Case>
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+{
+    heks::encodeHexAvx512(dst, src, heks::RawLength{size}, c);
+}
+
+static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
+{
+    if (size < 8)
+        heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    else
+        [[clang::always_inline]] heks::decodeHexAvx512(dst, src, heks::RawLength{size});
+}
+
+template <bool = true>
+static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
+{
+    decodeHexStringsLoop<decodeHexStringImpl>(dst, src, src_offsets, dst_offsets, row_count);
+}
+
+) // DECLARE_X86_64_V4_SPECIFIC_CODE
+
+
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(
+
+template <typename Case>
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+{
+    heks::encodeHexAvx512Vbmi(dst, src, heks::RawLength{size}, c);
+}
+
+static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
+{
+    if (size < 8)
+        heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    else
+        [[clang::always_inline]] heks::decodeHexAvx512Vbmi(dst, src, heks::RawLength{size});
+}
+
+template <bool = true>
+static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
+{
+    decodeHexStringsLoop<decodeHexStringImpl>(dst, src, src_offsets, dst_offsets, row_count);
+}
+
+) // DECLARE_X86_ICELAKE_SPECIFIC_CODE
+
+
+/// Only strings: `heks` has no SVE integer encoders, as the NEON ones already take the value in one or two vectors.
+/// Up to 32 bytes the SVE functions run the NEON code, so the thresholds are the default code's.
+DECLARE_ARM_SVE_SPECIFIC_CODE(
+
+template <typename Case>
+static void encodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+{
+    heks::encodeHexSve(dst, src, heks::RawLength{size}, c);
+}
+
+static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
+{
+    if (size < 4)
+        heks::decodeHexLUT4(dst, src, heks::RawLength{size});
+    else
+        [[clang::always_inline]] heks::decodeHexSve(dst, src, heks::RawLength{size});
+}
+
+template <bool = true>
+static void decodeHexStringsImpl(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
+{
+    decodeHexStringsLoop<decodeHexStringImpl>(dst, src, src_offsets, dst_offsets, row_count);
+}
+
+) // DECLARE_ARM_SVE_SPECIFIC_CODE
 
 
 #ifndef HEX_GTEST_UNIT_TEST
@@ -424,9 +445,25 @@ void encodeHexIntLower(uint8_t * dst, const void * value, size_t num_bytes)
 void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size)
 {
 #if USE_X86_64_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_icelake))
+    {
+        ::TargetSpecific::x86_64_icelake::encodeHexStringImpl(dst, src, size, heks::upper);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        ::TargetSpecific::x86_64_v4::encodeHexStringImpl(dst, src, size, heks::upper);
+        return;
+    }
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHexStringImpl(dst, src, size, heks::upper);
+        return;
+    }
+#elif USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+    {
+        ::TargetSpecific::ARM_SVE::encodeHexStringImpl(dst, src, size, heks::upper);
         return;
     }
 #endif
@@ -436,9 +473,25 @@ void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size)
 void encodeHexStringLower(uint8_t * dst, const uint8_t * src, size_t size)
 {
 #if USE_X86_64_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_icelake))
+    {
+        ::TargetSpecific::x86_64_icelake::encodeHexStringImpl(dst, src, size, heks::lower);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        ::TargetSpecific::x86_64_v4::encodeHexStringImpl(dst, src, size, heks::lower);
+        return;
+    }
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHexStringImpl(dst, src, size, heks::lower);
+        return;
+    }
+#elif USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+    {
+        ::TargetSpecific::ARM_SVE::encodeHexStringImpl(dst, src, size, heks::lower);
         return;
     }
 #endif
@@ -448,9 +501,25 @@ void encodeHexStringLower(uint8_t * dst, const uint8_t * src, size_t size)
 void decodeHexString(uint8_t * dst, const uint8_t * src, size_t size)
 {
 #if USE_X86_64_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_icelake))
+    {
+        ::TargetSpecific::x86_64_icelake::decodeHexStringImpl(dst, src, size);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        ::TargetSpecific::x86_64_v4::decodeHexStringImpl(dst, src, size);
+        return;
+    }
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::decodeHexStringImpl(dst, src, size);
+        return;
+    }
+#elif USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+    {
+        ::TargetSpecific::ARM_SVE::decodeHexStringImpl(dst, src, size);
         return;
     }
 #endif
@@ -460,9 +529,25 @@ void decodeHexString(uint8_t * dst, const uint8_t * src, size_t size)
 void decodeHexStrings(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
 {
 #if USE_X86_64_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_icelake))
+    {
+        ::TargetSpecific::x86_64_icelake::decodeHexStringsImpl(dst, src, src_offsets, dst_offsets, row_count);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        ::TargetSpecific::x86_64_v4::decodeHexStringsImpl(dst, src, src_offsets, dst_offsets, row_count);
+        return;
+    }
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::decodeHexStringsImpl(dst, src, src_offsets, dst_offsets, row_count);
+        return;
+    }
+#elif USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+    {
+        ::TargetSpecific::ARM_SVE::decodeHexStringsImpl(dst, src, src_offsets, dst_offsets, row_count);
         return;
     }
 #endif
