@@ -200,6 +200,7 @@ public:
     bool hasDeadBlobsQueue() const override { return false; }
     bool hasMissingBlobsQueue() const override { return false; }
     bool supportsHardLinks() const override { return hard_links_enabled; }
+    bool writesMetadataSnapshot() const override { return isSnapshotWriter(); }
 
     MetadataTransactionPtr createTransaction() override;
 

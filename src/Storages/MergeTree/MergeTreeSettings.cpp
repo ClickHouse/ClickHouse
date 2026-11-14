@@ -2978,7 +2978,9 @@ Requires every disk in the storage policy to be an `S3`
 object storage disk with `metadata_type = plain_rewritable` — the only metadata layout currently
 accepted — so that after a failover the new leader sees the parts written by the previous leader.
 The disks must also have hard links disabled (`enable_hard_links = false`, which is not the default),
-because the link counts of blobs shared between directories are not coordinated between nodes.
+because the link counts of blobs shared between directories are not coordinated between nodes,
+and the metadata snapshot disabled (`metadata_snapshot_enabled = false`, which is not the default either),
+because every node that writes to the disk publishes the snapshot of the whole disk without coordination.
 Tables on disks with any other metadata layout, including the default per-replica
 `metadata_type = local`, are rejected at creation.
 (`Azure` object storage is implemented but not yet test-covered, so it is rejected for now.)

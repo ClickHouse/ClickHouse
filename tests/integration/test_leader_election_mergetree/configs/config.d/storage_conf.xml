@@ -6,6 +6,7 @@
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>plain_rewritable</metadata_type>
                 <enable_hard_links>false</enable_hard_links>
+                <metadata_snapshot_enabled>false</metadata_snapshot_enabled>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
@@ -25,6 +26,7 @@
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>plain_rewritable</metadata_type>
                 <enable_hard_links>false</enable_hard_links>
+                <metadata_snapshot_enabled>false</metadata_snapshot_enabled>
                 <endpoint>http://minio1:9001/root/data_move/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>

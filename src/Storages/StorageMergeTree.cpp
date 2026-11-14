@@ -394,6 +394,23 @@ StorageMergeTree::StorageMergeTree(
                     " between nodes. Disk '{}' supports hard links. Set `enable_hard_links = false` for this disk.",
                     disk->getName());
             }
+
+            /// Every writable `plain_rewritable` disk with `metadata_snapshot_enabled` (the default) publishes the snapshot
+            /// of the whole disk on its own schedule, and a demoted leader keeps doing so: the snapshot writer belongs to the
+            /// disk, not to the table, so the lease of a table cannot fence it. A delayed publication by a former leader can
+            /// then overwrite the snapshot of the current one, and a `read_only` disk that trusts the snapshot instead of
+            /// listing the storage misses committed parts or refers to removed files. The election nodes themselves list
+            /// the storage, which does not repair the snapshot for the readers. Until the publication is coordinated between
+            /// the nodes, the snapshot has to be disabled.
+            if (disk->getMetadataStorage()->writesMetadataSnapshot())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The `leader_election` setting requires every disk in the storage policy to have the metadata snapshot"
+                    " disabled, because the snapshot of the whole disk is published by every node that writes to it, without"
+                    " coordination between the nodes. Disk '{}' writes the metadata snapshot. Set"
+                    " `metadata_snapshot_enabled = false` for this disk.",
+                    disk->getName());
+            }
         }
 
         /// Create the election state before the storage is exposed: `CREATE` / `ATTACH` publish the

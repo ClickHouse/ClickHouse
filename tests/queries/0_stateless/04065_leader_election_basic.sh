@@ -36,6 +36,7 @@ $CLICKHOUSE_CLIENT -q "
             name = '04065_le_${CLICKHOUSE_DATABASE}',
             type = s3_plain_rewritable,
             enable_hard_links = 0,
+            metadata_snapshot_enabled = 0,
             endpoint = 'http://localhost:11111/test/04065_le_${CLICKHOUSE_DATABASE}/',
             access_key_id = clickhouse,
             secret_access_key = clickhouse),
@@ -87,3 +88,20 @@ $CLICKHOUSE_CLIENT -q "
         leader_election = true
 " 2>&1 | grep -o -m1 -F "Set \`enable_hard_links = false\` for this disk"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE test_leader_election_s3_hard_links"
+
+# A disk that publishes the metadata snapshot (`metadata_snapshot_enabled` is on by default) is rejected:
+# every node that writes to the disk publishes the snapshot of the whole disk without coordination.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE test_leader_election_s3_snapshot (x UInt64)
+    ENGINE = MergeTree ORDER BY x
+    SETTINGS
+        disk = disk(
+            name = '04065_le_snap_${CLICKHOUSE_DATABASE}',
+            type = s3_plain_rewritable,
+            enable_hard_links = 0,
+            endpoint = 'http://localhost:11111/test/04065_le_snap_${CLICKHOUSE_DATABASE}/',
+            access_key_id = clickhouse,
+            secret_access_key = clickhouse),
+        leader_election = true
+" 2>&1 | grep -o -m1 -F "Set \`metadata_snapshot_enabled = false\` for this disk"
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE test_leader_election_s3_snapshot"
