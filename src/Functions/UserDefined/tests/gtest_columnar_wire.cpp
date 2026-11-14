@@ -1214,6 +1214,74 @@ TEST(ColumnarWire, CutArrayLowCardinalityTouchesOnlySelectedRows)
         EXPECT_TRUE(std::signbit(cut_data.getFloat64(i))) << "element " << i;
 }
 
+/// One row of `Variant(Array(LowCardinality(Float64)), UInt64)`: the array alternative is sliced to
+/// that row's elements and keeps the source dictionary and `-0.0`.
+TEST(ColumnarWire, CutVariantArrayLowCardinalityTouchesOnlySelectedRows)
+{
+    DataTypePtr array_type = std::make_shared<DataTypeArray>(
+        std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeFloat64>()));
+    DataTypePtr type = std::make_shared<DataTypeVariant>(DataTypes{array_type, std::make_shared<DataTypeUInt64>()});
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+    const auto array_global = variant_type.tryGetVariantDiscriminator(array_type->getName()).value();
+    constexpr size_t rows = 1000;
+    constexpr size_t elements_per_row = 100;
+    ColumnPtr element = makeNegativeZeroLowCardinality(false);
+    const auto & element_lc = assert_cast<const ColumnLowCardinality &>(*element);
+    auto indexes = ColumnUInt8::create(rows * elements_per_row, static_cast<UInt8>(element_lc.getIndexes().getUInt(0)));
+    ColumnPtr data = ColumnLowCardinality::create(element_lc.getDictionaryPtr(), std::move(indexes), /*is_shared=*/false);
+    auto array_offsets = ColumnArray::ColumnOffsets::create(rows);
+    for (size_t i = 0; i < rows; ++i)
+        array_offsets->getData()[i] = (i + 1) * elements_per_row;
+    ColumnPtr array = ColumnArray::create(data, std::move(array_offsets));
+
+    /// Rows alternate: even rows are arrays, odd rows are `UInt64`.
+    auto discriminators = ColumnVariant::ColumnDiscriminators::create(2 * rows);
+    auto offsets = ColumnVariant::ColumnOffsets::create(2 * rows);
+    auto numbers = ColumnUInt64::create(rows);
+    for (size_t i = 0; i < 2 * rows; ++i)
+    {
+        discriminators->getData()[i] = static_cast<ColumnVariant::Discriminator>(i % 2 == 0 ? array_global : 1 - array_global);
+        offsets->getData()[i] = i / 2;
+    }
+    Columns variants(2);
+    variants[array_global] = array;
+    variants[1 - array_global] = std::move(numbers);
+    ColumnPtr column = ColumnVariant::create(std::move(discriminators), std::move(offsets), variants);
+
+    ColumnPtr cut = cutColumnar(column, type, 1000, 2);
+    ASSERT_EQ(cut->size(), 2u);
+    const auto & cut_variant = assert_cast<const ColumnVariant &>(*cut);
+    EXPECT_EQ(cut_variant.globalDiscriminatorAt(0), array_global);
+    const auto & cut_array = assert_cast<const ColumnArray &>(cut_variant.getVariantByGlobalDiscriminator(array_global));
+    ASSERT_EQ(cut_array.size(), 1u);
+    EXPECT_EQ(cut_variant.getVariantByGlobalDiscriminator(1 - array_global).size(), 1u);
+    const auto & cut_data = assert_cast<const ColumnLowCardinality &>(cut_array.getData());
+    ASSERT_EQ(cut_data.size(), elements_per_row);
+    EXPECT_EQ(cut_data.getDictionaryPtr().get(), element_lc.getDictionaryPtr().get());
+    EXPECT_TRUE(std::signbit(cut_data.getFloat64(0)));
+}
+
+/// A nested dictionary over 256 entries has `UInt16` indexes, unlike an empty column of the type.
+TEST(ColumnarWire, ResultMatchesTypeAcceptsWiderLowCardinalityIndexes)
+{
+    DataTypePtr type = std::make_shared<DataTypeArray>(
+        std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>()));
+    auto values = ColumnUInt64::create();
+    for (UInt64 i = 1; i <= 300; ++i)
+        values->insertValue(i);
+    auto offsets = ColumnArray::ColumnOffsets::create(1, 300);
+    ColumnPtr nested = DataTypeLowCardinality(std::make_shared<DataTypeUInt64>()).createColumn();
+    auto lc = IColumn::mutate(std::move(nested));
+    assert_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*values, 0, values->size());
+    ColumnPtr array = ColumnArray::create(std::move(lc), std::move(offsets));
+    const auto & data = assert_cast<const ColumnLowCardinality &>(assert_cast<const ColumnArray &>(*array).getData());
+    ASSERT_FALSE(typeid_cast<const ColumnUInt8 *>(&data.getIndexes()));
+    EXPECT_FALSE(array->structureEquals(*type->createColumn()));
+    EXPECT_TRUE(columnarResultMatchesType(*array, type));
+    EXPECT_FALSE(columnarResultMatchesType(*array, std::make_shared<DataTypeArray>(
+        std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))));
+}
+
 /// `LowCardinality(UInt64)` with the given dictionary keys (slot 0 is the default) and indexes.
 /// `ColumnUnique` does not deduplicate keys passed this way, as a guest-built dictionary would not be.
 static ColumnPtr makeUInt64LowCardinality(const std::vector<UInt64> & keys, const std::vector<UInt8> & indexes)

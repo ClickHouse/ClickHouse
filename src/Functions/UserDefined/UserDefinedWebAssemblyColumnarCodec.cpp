@@ -4,7 +4,6 @@
 #include <cstring>
 #include <span>
 #include <functional>
-#include <numeric>
 #include <utility>
 #include <vector>
 
@@ -568,10 +567,91 @@ ColumnPtr cutColumnar(const ColumnPtr & col, const DataTypePtr & type, size_t st
         return ColumnTuple::create(elements);
     }
 
-    /// `Variant`: `index` keeps the dictionaries, and its scratch is bounded by the selected rows.
-    auto rows = ColumnUInt64::create(length);
-    std::iota(rows->getData().begin(), rows->getData().end(), start);
-    return col->index(*rows, 0);
+    /// `Variant`: the selected rows of each alternative are a contiguous range of it, in row order.
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
+    const auto & variant = assert_cast<const ColumnVariant &>(*col);
+    const auto & src_discriminators = variant.getLocalDiscriminators();
+    const auto & src_offsets = variant.getOffsets();
+    const size_t num_variants = variant.getNumVariants();
+    VectorWithMemoryTracking<UInt64> first(num_variants, 0);
+    VectorWithMemoryTracking<UInt64> count(num_variants, 0);
+    for (size_t i = start; i < start + length; ++i)
+    {
+        const auto local = src_discriminators[i];
+        if (local == ColumnVariant::NULL_DISCRIMINATOR)
+            continue;
+        if (count[local]++ == 0)
+            first[local] = src_offsets[i];
+    }
+    auto offsets = ColumnVariant::ColumnOffsets::create(length);
+    auto & offsets_data = offsets->getData();
+    for (size_t i = 0; i < length; ++i)
+    {
+        const auto local = src_discriminators[start + i];
+        offsets_data[i] = local == ColumnVariant::NULL_DISCRIMINATOR ? 0 : src_offsets[start + i] - first[local];
+    }
+    Columns variants;
+    for (size_t local = 0; local < num_variants; ++local)
+    {
+        const auto global = variant.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
+        variants.push_back(cutColumnar(variant.getVariantPtrByLocalDiscriminator(local), variant_types[global], first[local], count[local]));
+    }
+    return ColumnVariant::create(
+        variant.getLocalDiscriminatorsPtr()->cut(start, length), std::move(offsets), variants,
+        variant.getLocalToGlobalDiscriminatorsMapping());
+}
+
+bool columnarResultMatchesType(const IColumn & col, const DataTypePtr & type)
+{
+    if (!containsLowCardinality(type))
+        return col.structureEquals(*type->createColumn());
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        /// Any index width is valid: a dictionary over 256 entries needs `UInt16` indexes.
+        const auto * lc = typeid_cast<const ColumnLowCardinality *>(&col);
+        return lc && lc->getDictionary().getNestedColumn()->structureEquals(
+            *assert_cast<const ColumnLowCardinality &>(*lc_type->createColumn()).getDictionary().getNestedColumn());
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto * nullable = typeid_cast<const ColumnNullable *>(&col);
+        return nullable && columnarResultMatchesType(nullable->getNestedColumn(), nullable_type->getNestedType());
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto * array = typeid_cast<const ColumnArray *>(&col);
+        return array && columnarResultMatchesType(array->getData(), array_type->getNestedType());
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto * map = typeid_cast<const ColumnMap *>(&col);
+        return map && columnarResultMatchesType(map->getNestedColumn(), map_type->getNestedType());
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto * tuple = typeid_cast<const ColumnTuple *>(&col);
+        const auto & element_types = tuple_type->getElements();
+        if (!tuple || tuple->tupleSize() != element_types.size())
+            return false;
+        for (size_t i = 0; i < element_types.size(); ++i)
+            if (!columnarResultMatchesType(tuple->getColumn(i), element_types[i]))
+                return false;
+        return true;
+    }
+
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
+    const auto * variant = typeid_cast<const ColumnVariant *>(&col);
+    if (!variant || variant->getNumVariants() != variant_types.size())
+        return false;
+    for (size_t global = 0; global < variant_types.size(); ++global)
+        if (!columnarResultMatchesType(variant->getVariantByGlobalDiscriminator(global), variant_types[global]))
+            return false;
+    return true;
 }
 
 ColumnPtr convertToFullColumnarIfConst(const ColumnPtr & col, const DataTypePtr & type)

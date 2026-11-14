@@ -931,7 +931,6 @@ public:
                 checkModuleCanHoldInput(compartment_ptr, input_rows_count);
 
                 auto stop_token = interrupt_source.get_token();
-                auto expected_col = user_defined_function->getResultType()->createColumn();
                 Columns result_parts;
 
                 auto flush_columnar_batch = [&](size_t batch_start, size_t end_idx)
@@ -955,7 +954,7 @@ public:
                     const IColumn * result_for_check = result.get();
                     if (const auto * result_const = typeid_cast<const ColumnConst *>(result_for_check))
                         result_for_check = &result_const->getDataColumn();
-                    if (!result_for_check->structureEquals(*expected_col))
+                    if (!columnarResultMatchesType(*result_for_check, user_defined_function->getResultType()))
                         throw Exception(ErrorCodes::WASM_ERROR,
                             "COLUMNAR_V1: returned column structure {} does not match declared type {}",
                             result->dumpStructure(),

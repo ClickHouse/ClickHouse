@@ -53,6 +53,10 @@ ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type)
 /// scratch are bounded by the selected rows, not by the whole block.
 ColumnPtr cutColumnar(const ColumnPtr & col, const DataTypePtr & type, size_t start, size_t length);
 
+/// Whether a decoded result `col` has the structure of `type`. Like `IColumn::structureEquals`
+/// against `type->createColumn()`, except that nested LowCardinality may use any index width.
+bool columnarResultMatchesType(const IColumn & col, const DataTypePtr & type);
+
 /// `col` with a `Const` expanded to full rows, keeping nested LowCardinality entries byte for byte
 /// for the same reason as `cutColumnar`.
 ColumnPtr convertToFullColumnarIfConst(const ColumnPtr & col, const DataTypePtr & type);
