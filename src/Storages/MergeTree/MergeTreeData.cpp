@@ -98,6 +98,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -11710,6 +11711,15 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
         collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
         collectSets(expression, *planner_context);
+
+        /// The DAG below uses plain column names, so a stored column named like a predicate function (e.g. `toYYYYMM(d)`)
+        /// would be merged into that function node: `KeyCondition` cannot tell them apart, and the build fails if types differ.
+        QueryTreeNodeToName node_to_name;
+        calculateActionNodeName(expression, *planner_context, node_to_name, /*use_column_identifier_as_action_node_name=*/ false);
+        const auto & columns = metadata_snapshot->getColumns();
+        for (const auto & [node, name] : node_to_name)
+            if (node->getNodeType() == QueryTreeNodeType::FUNCTION && columns.has(name))
+                return std::nullopt;
 
         ColumnNodePtrWithHashSet empty_correlated_columns_set;
         /// Use plain column names for the DAG inputs (instead of planner column identifiers
