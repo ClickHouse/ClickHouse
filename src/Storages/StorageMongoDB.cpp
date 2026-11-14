@@ -48,6 +48,8 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -429,14 +431,6 @@ static const IDataType * conversionHint(const DataTypePtr & from, const DataType
     return from.get();
 }
 
-/// The reader takes both BSON bools and BSON numbers for `Bool` and numeric columns (`BSONElementAsNumber`), but a MongoDB
-/// comparison only matches values of its bound's BSON type. A comparison between a `Bool` and a number then has to match
-/// both encodings of the bound.
-static bool isBoolNumberComparison(const DataTypePtr & lhs, const DataTypePtr & rhs)
-{
-    return lhs && boolDiffers(lhs, rhs) && isNativeNumber(removeNullable(lhs)) && isNativeNumber(removeNullable(rhs));
-}
-
 static bool isWideInteger(const DataTypePtr & type)
 {
     WhichDataType which(removeNullable(type));
@@ -493,6 +487,27 @@ static std::optional<bool> boolSatisfies(bool value, const std::string & func_na
     return {};
 }
 
+/// Whether `value`, read from a BSON bool, satisfies a comparison or a membership, or nothing if that is not known.
+static std::optional<bool> boolMatches(bool value, const std::string & func_name, const Field & const_value)
+{
+    if (func_name != "$in" && func_name != "$nin")
+        return boolSatisfies(value, func_name, const_value);
+
+    /// A member equal to the value decides the membership; a member that is not known to differ keeps the value.
+    bool has_unknown_member = false;
+    for (const auto & member : listMembers(const_value))
+    {
+        auto is_equal = boolSatisfies(value, "$eq", member);
+        if (!is_equal.has_value())
+            has_unknown_member = true;
+        else if (*is_equal)
+            return func_name == "$in";
+    }
+    if (has_unknown_member)
+        return {};
+    return func_name == "$nin";
+}
+
 /// The BSON bools that cannot satisfy a comparison of a `Bool` column. The reader takes any other BSON value too, and
 /// converts it in ways that a MongoDB comparison cannot express, so the filter keeps every other document.
 static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, const Field & const_value)
@@ -500,32 +515,246 @@ static bsoncxx::array::value unsatisfiableBools(const std::string & func_name, c
     auto bools = bsoncxx::builder::basic::array{};
     for (bool value : {false, true})
     {
-        std::optional<bool> satisfies;
-        if (func_name == "$in" || func_name == "$nin")
-        {
-            /// A member equal to the value decides the membership; a member that is not known to differ keeps the value.
-            bool has_equal_member = false;
-            bool has_unknown_member = false;
-            for (const auto & member : listMembers(const_value))
-            {
-                auto is_equal = boolSatisfies(value, "$eq", member);
-                if (!is_equal.has_value())
-                    has_unknown_member = true;
-                else if (*is_equal)
-                    has_equal_member = true;
-            }
-            if (has_equal_member)
-                satisfies = func_name == "$in";
-            else if (!has_unknown_member)
-                satisfies = func_name == "$nin";
-        }
-        else
-            satisfies = boolSatisfies(value, func_name, const_value);
-
-        if (satisfies.has_value() && !*satisfies)
+        auto matches = boolMatches(value, func_name, const_value);
+        if (matches.has_value() && !*matches)
             bools.append(value);
     }
     return bools.extract();
+}
+
+static bool isNumberColumn(const DataTypePtr & type)
+{
+    const auto nested_type = removeNullable(type);
+    WhichDataType which(nested_type);
+    return (which.isInteger() || which.isFloat32() || which.isFloat64()) && !isBool(nested_type);
+}
+
+/// `2^exponent` or `-2^exponent` as a BSON number. A power of two is an exact `Double`.
+static bsoncxx::types::bson_value::value powerOfTwo(int exponent, bool negative)
+{
+    if (exponent < 63)
+    {
+        Int64 value = Int64{1} << exponent;
+        return bsoncxx::types::b_int64{negative ? -value : value};
+    }
+    return bsoncxx::types::b_double{std::ldexp(negative ? -1.0 : 1.0, exponent)};
+}
+
+/// An integer as a BSON bound: an `Int64` if it holds it, otherwise a `Double` moved away from the bounded values.
+static bsoncxx::types::bson_value::value integerBound(Int128 value, bool is_upper)
+{
+    if (value >= std::numeric_limits<Int64>::min() && value <= std::numeric_limits<Int64>::max())
+        return bsoncxx::types::b_int64{static_cast<Int64>(value)};
+    const auto rounded = static_cast<Float64>(value);
+    return bsoncxx::types::b_double{std::nextafter(rounded, is_upper ? std::numeric_limits<Float64>::infinity() : -std::numeric_limits<Float64>::infinity())};
+}
+
+/// A number as an exact BSON number, or nothing if neither `Int64` nor `Double` holds it.
+static std::optional<bsoncxx::types::bson_value::value> exactNumber(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::Int64:
+            return bsoncxx::types::b_int64{value.safeGet<Int64>()};
+        case Field::Types::UInt64:
+        {
+            const auto number = value.safeGet<UInt64>();
+            if (number <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                return bsoncxx::types::b_int64{static_cast<Int64>(number)};
+            const auto rounded = static_cast<Float64>(number);
+            if (rounded < 0x1p64 && static_cast<UInt64>(rounded) == number)
+                return bsoncxx::types::b_double{rounded};
+            return {};
+        }
+        case Field::Types::Float64:
+            return bsoncxx::types::b_double{value.safeGet<Float64>()};
+        default:
+            return {};
+    }
+}
+
+/// The reader casts a BSON number to the column's type (`BSONElementAsNumber`). Within the type's range the cast is
+/// monotonic and keeps the type's own values, so the numbers read as satisfying a comparison with `c` lie strictly
+/// between two values of the type around `c`. For each, nothing means that there is no such bound.
+struct NumberNeighbours
+{
+    /// The greatest value of the type that is at most `c`, and the greatest one below `c`.
+    std::optional<bsoncxx::types::bson_value::value> at_most;
+    std::optional<bsoncxx::types::bson_value::value> below;
+    /// The least value of the type that is at least `c`, and the least one above `c`.
+    std::optional<bsoncxx::types::bson_value::value> at_least;
+    std::optional<bsoncxx::types::bson_value::value> above;
+};
+
+template <typename FloatType>
+static NumberNeighbours floatNeighbours(const Field & bound)
+{
+    Float64 value = 0;
+    if (bound.getType() == Field::Types::UInt64)
+        value = static_cast<Float64>(bound.safeGet<UInt64>());
+    else if (bound.getType() == Field::Types::Int64)
+        value = static_cast<Float64>(bound.safeGet<Int64>());
+    else
+        value = bound.safeGet<Float64>();
+
+    constexpr auto infinity = std::numeric_limits<FloatType>::infinity();
+    /// A value beyond the type's range is read as an infinity.
+    FloatType nearest = infinity;
+    if (value < -std::numeric_limits<FloatType>::max())
+        nearest = -infinity;
+    else if (value <= std::numeric_limits<FloatType>::max())
+        nearest = static_cast<FloatType>(value);
+    auto is_below = [&](FloatType number) { return accurateLess(Field(static_cast<Float64>(number)), bound); };
+    auto is_above = [&](FloatType number) { return accurateLess(bound, Field(static_cast<Float64>(number))); };
+    auto as_bound = [](FloatType number) -> std::optional<bsoncxx::types::bson_value::value>
+    { return bsoncxx::types::b_double{static_cast<Float64>(number)}; };
+
+    NumberNeighbours neighbours;
+    const FloatType at_least = is_below(nearest) ? std::nextafter(nearest, infinity) : nearest;
+    const FloatType above = is_above(at_least) ? at_least : std::nextafter(at_least, infinity);
+    const FloatType at_most = is_above(nearest) ? std::nextafter(nearest, -infinity) : nearest;
+    const FloatType below = is_below(at_most) ? at_most : std::nextafter(at_most, -infinity);
+    neighbours.at_least = as_bound(at_least);
+    if (is_above(above))
+        neighbours.above = as_bound(above);
+    neighbours.at_most = as_bound(at_most);
+    if (is_below(below))
+        neighbours.below = as_bound(below);
+    return neighbours;
+}
+
+static std::optional<NumberNeighbours> numberNeighbours(const Field & bound, const DataTypePtr & type)
+{
+    if (bound.getType() != Field::Types::UInt64 && bound.getType() != Field::Types::Int64 && bound.getType() != Field::Types::Float64)
+        return {};
+    if (bound.getType() == Field::Types::Float64 && std::isnan(bound.safeGet<Float64>()))
+        return {};
+
+    WhichDataType which(type);
+    if (which.isFloat32())
+        return floatNeighbours<Float32>(bound);
+    if (which.isFloat64())
+        return floatNeighbours<Float64>(bound);
+
+    /// An integer column truncates a `Double` towards zero.
+    NumberNeighbours neighbours;
+    if (bound.getType() == Field::Types::Float64)
+    {
+        const Float64 value = bound.safeGet<Float64>();
+        const Float64 floor = std::floor(value);
+        const Float64 ceil = std::ceil(value);
+        constexpr auto infinity = std::numeric_limits<Float64>::infinity();
+        const bool is_exact = std::abs(value) < 0x1p53;
+        neighbours.at_most = bsoncxx::types::b_double{floor};
+        neighbours.below = bsoncxx::types::b_double{is_exact ? ceil - 1 : std::nextafter(ceil, -infinity)};
+        neighbours.at_least = bsoncxx::types::b_double{ceil};
+        neighbours.above = bsoncxx::types::b_double{is_exact ? floor + 1 : std::nextafter(floor, infinity)};
+        return neighbours;
+    }
+
+    const Int128 value = bound.getType() == Field::Types::UInt64 ? Int128(bound.safeGet<UInt64>()) : Int128(bound.safeGet<Int64>());
+    neighbours.at_most = integerBound(value, /*is_upper=*/ false);
+    neighbours.below = integerBound(value - 1, /*is_upper=*/ false);
+    neighbours.at_least = integerBound(value, /*is_upper=*/ true);
+    neighbours.above = integerBound(value + 1, /*is_upper=*/ true);
+    return neighbours;
+}
+
+static bsoncxx::document::value numberRange(
+    const std::string & column_name,
+    const std::optional<bsoncxx::types::bson_value::value> & greater_than,
+    const std::optional<bsoncxx::types::bson_value::value> & less_than)
+{
+    auto condition = bsoncxx::builder::basic::document{};
+    if (greater_than)
+        condition.append(kvp("$gt", greater_than->view()));
+    if (less_than)
+        condition.append(kvp("$lt", less_than->view()));
+    if (!greater_than && !less_than)
+        condition.append(kvp("$type", "number"));
+    return make_document(kvp(column_name, condition.extract()));
+}
+
+/// A filter on a numeric column. The reader casts a BSON number to the column's type, wrapping a number out of its range
+/// and truncating a `Double` for an integer type, reads a bool as 0 or 1, parses a string, and reads a missing field or a
+/// `null` as the default (`BSONElementAsNumber`). A MongoDB comparison sees the stored value, so the filter takes every
+/// document that the reader may convert to a matching value, and the `WHERE` decides them.
+static std::optional<bsoncxx::document::value> numberColumnFilter(
+    const std::string & column_name, const std::string & func_name, const Field & const_value, const DataTypePtr & column_type)
+{
+    const auto type = removeNullable(column_type);
+    auto filters = bsoncxx::builder::basic::array{};
+
+    if (func_name == "$ne" || func_name == "$nin")
+    {
+        /// A number equal to an excluded value of the type is read as that value, and `$nin` keeps every other document.
+        auto excluded = bsoncxx::builder::basic::array{};
+        for (const auto & member : listMembers(const_value))
+        {
+            /// `NaN` differs from itself.
+            if (member.getType() == Field::Types::Float64 && std::isnan(member.safeGet<Float64>()))
+                continue;
+            if (tryConvertFieldToTypeExact(member, *type, nullptr).isNull())
+                continue;
+            if (auto value = exactNumber(member))
+                excluded.append(value->view());
+        }
+        return make_document(kvp(column_name, make_document(kvp("$nin", excluded.extract()))));
+    }
+
+    for (const auto & member : (func_name == "$in" ? listMembers(const_value) : Array{const_value}))
+    {
+        auto neighbours = numberNeighbours(member, type);
+        if (!neighbours)
+            return {};
+        if (func_name == "$eq" || func_name == "$in")
+            filters.append(numberRange(column_name, neighbours->below, neighbours->above));
+        else if (func_name == "$lt")
+            filters.append(numberRange(column_name, {}, neighbours->at_least));
+        else if (func_name == "$lte")
+            filters.append(numberRange(column_name, {}, neighbours->above));
+        else if (func_name == "$gt")
+            filters.append(numberRange(column_name, neighbours->at_most, {}));
+        else if (func_name == "$gte")
+            filters.append(numberRange(column_name, neighbours->below, {}));
+        else
+            return {};
+    }
+
+    if (WhichDataType(type).isInteger())
+    {
+        /// A number out of the type's range, or `NaN`, is not cast to a value that the comparison bounds.
+        const int bits = static_cast<int>(type->getSizeOfValueInMemory() * 8);
+        const bool is_signed = WhichDataType(type).isInt();
+        const auto min = is_signed ? powerOfTwo(bits - 1, /*negative=*/ true) : bsoncxx::types::bson_value::value{bsoncxx::types::b_int64{0}};
+        const auto max_after = powerOfTwo(is_signed ? bits - 1 : bits, /*negative=*/ false);
+        filters.append(make_document(kvp(column_name, make_document(kvp("$lt", min.view())))));
+        filters.append(make_document(kvp(column_name, make_document(kvp("$gte", max_after.view())))));
+        filters.append(make_document(kvp(column_name, bsoncxx::types::b_double{std::numeric_limits<Float64>::quiet_NaN()})));
+    }
+
+    auto bools = bsoncxx::builder::basic::array{};
+    bool default_matches = false;
+    for (bool value : {false, true})
+    {
+        auto matches = boolMatches(value, func_name, const_value);
+        if (matches.has_value() && !*matches)
+            continue;
+        bools.append(value);
+        /// A missing field or a `null` is read as 0, like `false`, unless the column is `Nullable`.
+        default_matches |= !value && !column_type->isNullable();
+    }
+    if (!bools.view().empty())
+        filters.append(make_document(kvp(column_name, make_document(kvp("$in", bools.extract())))));
+    /// A string may be parsed to any value.
+    filters.append(make_document(kvp(column_name, make_document(kvp("$type", "string")))));
+    if (default_matches)
+    {
+        filters.append(make_document(kvp(column_name, make_document(kvp("$exists", false)))));
+        filters.append(make_document(kvp(column_name, make_document(kvp("$type", "null")))));
+    }
+
+    return make_document(kvp("$or", filters.extract()));
 }
 
 static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const JoinNode * join_node, const StorageID & storage_id)
@@ -604,11 +833,9 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     }
 
     bool is_const_number = WhichDataType(const_type).isNumber() && !isBool(const_type);
-    bool is_column_number = WhichDataType(column_type).isNumber() && !isBool(column_type);
-
-    /// The bound in the BSON type of the constant, for a `Bool`-number comparison; the filter matches it besides the
-    /// bound converted to the column's type.
-    std::vector<std::pair<Field, DataTypePtr>> other_encodings;
+    bool is_column_number = WhichDataType(removeNullable(column_type)).isNumber() && !isBool(removeNullable(column_type));
+    const bool is_number_column = isNumberColumn(column_type);
+    const DataTypePtr number_column_type = column_type;
 
     if (func_name == "$in" || func_name == "$nin")
     {
@@ -668,8 +895,6 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 }
             }
 
-            if (isBoolNumberComparison(element_type, member_type))
-                other_encodings.emplace_back(elements[i], element_type);
             converted_elements.push_back(std::move(converted));
         }
 
@@ -695,8 +920,6 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
             return {};
         }
 
-        if (isBoolNumberComparison(const_type, bound_type))
-            other_encodings.emplace_back(const_value, const_type);
         const_type = bound_type;
         const_value = std::move(converted_value);
     }
@@ -715,6 +938,15 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
         const_value = std::move(converted_value);
     }
 
+    if (is_number_column)
+    {
+        is_superset = true;
+        auto filter = numberColumnFilter(column_node->getColumnName(), func_name, const_value, number_column_type);
+        if (!filter)
+            LOG_DEBUG(log, "Cannot bound the values read from column type {}", number_column_type->getName());
+        return filter;
+    }
+
     const bool is_oid = configuration.isOidColumn(column_node->getColumnName());
     auto func_value = BSONCXXHelper::fieldAsBSONValue(const_value, const_type, is_oid);
 
@@ -723,33 +955,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     if (func_name == "$nin" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
         func_name = "$ne";
 
-    const auto & column_name = column_node->getColumnName();
-    if (other_encodings.empty())
-        return make_document(kvp(column_name, make_document(kvp(func_name, std::move(func_value)))));
-
-    /// A list matches each member in both BSON types. A range bound only matches values of its own BSON type, so the
-    /// filter takes either bound.
-    if (func_name == "$eq" || func_name == "$ne" || func_name == "$in" || func_name == "$nin")
-    {
-        auto values = bsoncxx::builder::basic::array{};
-        if (func_value.view().type() == bsoncxx::v_noabi::type::k_array)
-        {
-            for (const auto & value : func_value.view().get_array().value)
-                values.append(value.get_value());
-        }
-        else
-            values.append(func_value.view());
-        for (const auto & [value, type] : other_encodings)
-            values.append(BSONCXXHelper::fieldAsBSONValue(value, type, is_oid).view());
-
-        const std::string list_name = (func_name == "$eq" || func_name == "$in") ? "$in" : "$nin";
-        return make_document(kvp(column_name, make_document(kvp(list_name, values.extract()))));
-    }
-
-    auto other_value = BSONCXXHelper::fieldAsBSONValue(other_encodings.front().first, other_encodings.front().second, is_oid);
-    return make_document(kvp("$or", make_array(
-        make_document(kvp(column_name, make_document(kvp(func_name, std::move(func_value))))),
-        make_document(kvp(column_name, make_document(kvp(func_name, std::move(other_value))))))));
+    return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
 }
 
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
