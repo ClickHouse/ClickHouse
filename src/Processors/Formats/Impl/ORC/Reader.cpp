@@ -644,6 +644,14 @@ void RowReader::pickRowGroups()
         }
 
         bool needed = isNeeded(options.search_argument->evaluate(values));
+        if (needed && options.row_group_filter)
+            needed = options.row_group_filter([&](UInt64 column) -> const Proto::ColumnStatistics *
+            {
+                auto it = row_indexes.find(column);
+                if (it == row_indexes.end() || group >= it->second.entry.size() || !it->second.entry[group].statistics)
+                    return nullptr;
+                return &*it->second.entry[group].statistics;
+            });
         if (!needed)
         {
             next_skipped_rows[group] = 0;
