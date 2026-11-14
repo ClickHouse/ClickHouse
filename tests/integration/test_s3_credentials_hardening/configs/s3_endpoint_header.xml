@@ -1,0 +1,14 @@
+<clickhouse>
+    <s3>
+        <use_environment_credentials>0</use_environment_credentials>
+        <access_key_id>minio</access_key_id>
+        <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        <header>x-amz-request-payer: global</header>
+        <requester_pays>
+            <endpoint>http://resolver:8080/root/rp/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            <header>x-amz-request-payer: requester</header>
+        </requester_pays>
+    </s3>
+</clickhouse>
