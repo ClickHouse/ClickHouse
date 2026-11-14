@@ -9912,7 +9912,6 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
 {
     /// Parts with the same columns share one interned set of column positions, so each set is checked once.
     std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
-    /// A part with a pending drop or rename is checked the way the reader resolves its columns.
     std::vector<std::pair<const IMergeTreeDataPart::NameToNumber *, AlterConversionsPtr>> converted_parts;
 
     const bool has_metadata_mutations = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
@@ -9963,7 +9962,6 @@ NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(
         if (!is_stored(name_in_storage))
             continue;
 
-        /// A column that a pending mutation updates is still read from the parts, with the update applied.
         if (changed_on_fly.contains(name_in_storage))
             updated.push_back(column);
         else
