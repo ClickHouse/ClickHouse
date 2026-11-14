@@ -1163,9 +1163,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     {
         auto set_element_type = in_first_argument->getResultType();
         const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-        if (use_null_as_unknown && set_element_type->onlyNull())
-            set_element_type = makeNullable(std::make_shared<DataTypeUInt8>());
-        else if (use_null_as_unknown)
+        if (use_null_as_unknown)
             set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
 
         set_element_types = {std::move(set_element_type)};

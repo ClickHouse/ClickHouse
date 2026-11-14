@@ -523,13 +523,106 @@ ASTPtr makeNumericNonConstantInReplacement(
     return result;
 }
 
+/// Keep a nullable scalar's source `NULL` separate from its conversion to an
+/// `Array` or `Map` candidate. A complex type cannot hold the conversion's `NULL`.
+ASTPtr makeComplexNonConstantInReplacement(
+    const ASTFunction & node,
+    const DataTypePtr & left_operand_type,
+    const DataTypePtr & right_operand_type,
+    const DataTypes & element_types,
+    bool right_operand_tuple_function_is_set)
+{
+    const auto & left_operand = node.arguments->children.at(0);
+    const auto & right_operand = node.arguments->children.at(1);
+    const auto left_bare_type = removeNullable(removeLowCardinality(left_operand_type));
+    ASTs elements;
+    if (const auto * function = right_operand->as<ASTFunction>();
+        function && function->name == "tuple" && right_operand_tuple_function_is_set)
+    {
+        for (const auto & child : function->arguments->children)
+            elements.push_back(child->clone());
+    }
+    else if (right_operand_type && isTuple(removeNullable(right_operand_type)))
+    {
+        for (size_t i = 0; i < element_types.size(); ++i)
+            elements.push_back(makeASTFunction(
+                "tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1))));
+    }
+    else
+    {
+        elements.push_back(right_operand->clone());
+    }
+
+    ASTPtr any_match;
+    ASTPtr source_has_null;
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        const auto & source_type = element_types.at(i);
+        auto source_is_null = makeASTFunction("isNull", elements[i]->clone());
+        source_has_null = source_has_null
+            ? makeASTFunction("or", std::move(source_has_null), source_is_null->clone())
+            : source_is_null->clone();
+        if (source_type->onlyNull())
+            continue;
+
+        const auto source_bare_type = removeNullable(removeLowCardinality(source_type));
+        ASTPtr match;
+        if (isStringOrFixedString(source_bare_type))
+        {
+            if (isMap(left_bare_type))
+            {
+                match = makeASTFunction("__mapStringEqualsForIn", left_operand->clone(), elements[i]->clone());
+            }
+            else
+            {
+                auto safe_string = makeASTFunction(
+                    "ifNull", elements[i]->clone(), make_intrusive<ASTLiteral>("[]"));
+                auto array_value = makeASTFunction(
+                    "CAST", std::move(safe_string), make_intrusive<ASTLiteral>(left_bare_type->getName()));
+                match = makeASTFunction(
+                    "and", makeASTFunction("not", std::move(source_is_null)),
+                    makeASTFunction("has", makeASTFunction("array", std::move(array_value)), left_operand->clone()));
+            }
+        }
+        else if ((isArray(left_bare_type) && isArray(source_bare_type))
+            || (isMap(left_bare_type) && isMap(source_bare_type)))
+        {
+            ASTPtr candidate = elements[i]->clone();
+            if (!tryGetLeastSupertype(DataTypes{left_operand_type, source_type}))
+                candidate = makeASTFunction(
+                    "CAST", std::move(candidate), make_intrusive<ASTLiteral>(left_bare_type->getName()));
+            match = makeASTFunction("has", makeASTFunction("array", std::move(candidate)), left_operand->clone());
+        }
+
+        if (match)
+        {
+            match = makeASTFunction("ifNull", std::move(match), make_intrusive<ASTLiteral>(0u));
+            any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
+        }
+    }
+
+    if (!any_match)
+        any_match = make_intrusive<ASTLiteral>(0u);
+    if (!source_has_null)
+        source_has_null = make_intrusive<ASTLiteral>(0u);
+    ASTPtr result = makeASTFunction(
+        "if", std::move(any_match), make_intrusive<ASTLiteral>(1u),
+        makeASTFunction("if", std::move(source_has_null), make_intrusive<ASTLiteral>(Field{}), make_intrusive<ASTLiteral>(0u)));
+    result = makeASTFunction(
+        "if", makeASTFunction("isNull", left_operand->clone()), make_intrusive<ASTLiteral>(Field{}), std::move(result));
+    if (isNegativeInFunctionName(node.name))
+        result = makeASTFunction("not", std::move(result));
+    return result;
+}
+
 /// Keep array membership in constraints on the same candidate comparison path
 /// as scalar membership. Separate lambda arrays avoid narrowing mixed numeric
 /// types and keep the left value independent of the lambda's identifier scope.
-ASTPtr makeNumericArrayInReplacement(
+ASTPtr makeArrayCandidateInReplacement(
     const ASTFunction & node,
     const DataTypePtr & left_operand_type,
-    const DataTypePtr & element_type)
+    const DataTypePtr & element_type,
+    bool compare_complex)
 {
     const auto & left_operand = node.arguments->children.at(0);
     const auto & right_operand = node.arguments->children.at(1);
@@ -537,8 +630,9 @@ ASTPtr makeNumericArrayInReplacement(
     const String element_name = "__in_array_element";
     auto scalar_in = makeASTFunction(
         "in", make_intrusive<ASTIdentifier>(left_name), make_intrusive<ASTIdentifier>(element_name));
-    auto comparison = makeNumericNonConstantInReplacement(
-        *scalar_in, left_operand_type, element_type, DataTypes{element_type}, false);
+    auto comparison = compare_complex
+        ? makeComplexNonConstantInReplacement(*scalar_in, left_operand_type, element_type, DataTypes{element_type}, false)
+        : makeNumericNonConstantInReplacement(*scalar_in, left_operand_type, element_type, DataTypes{element_type}, false);
     auto lambda = makeASTLambda({left_name, element_name}, std::move(comparison));
     auto left_values = makeASTFunction(
         "arrayWithConstant", makeASTFunction("length", right_operand->clone()), left_operand->clone());
@@ -1535,11 +1629,29 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             return element_type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
                                 || (left_is_calendar_date && (isDateTime(bare_type) || isDateTime64(bare_type)));
                         }();
+                    auto needs_complex_candidate_rewrite = [](const DataTypePtr & type)
+                    {
+                        const auto bare_type = removeNullable(removeLowCardinality(type));
+                        return isStringOrFixedString(bare_type)
+                            || (canContainNull(*type) && !isArray(bare_type) && !isMap(bare_type));
+                    };
+                    const bool left_is_complex = left_bare_type && (isArray(left_bare_type) || isMap(left_bare_type));
+                    const bool compare_complex_sources = use_standard_null_semantics && left_is_complex
+                        && element_types_known && !element_types.empty()
+                        && std::any_of(element_types.begin(), element_types.end(), needs_complex_candidate_rewrite);
+                    const bool compare_complex_array_sources = use_standard_null_semantics && left_is_complex
+                        && right_array_type && needs_complex_candidate_rewrite(right_array_type->getNestedType());
                     if (compare_numeric_array_sources)
-                        replacement = makeNumericArrayInReplacement(
-                            node, left_argument_type, right_array_type->getNestedType());
+                        replacement = makeArrayCandidateInReplacement(
+                            node, left_argument_type, right_array_type->getNestedType(), false);
+                    else if (compare_complex_array_sources)
+                        replacement = makeArrayCandidateInReplacement(
+                            node, left_argument_type, right_array_type->getNestedType(), true);
                     else if (compare_numeric_sources)
                         replacement = makeNumericNonConstantInReplacement(
+                            node, left_argument_type, right_argument_type, element_types, right_argument_tuple_function_is_set);
+                    else if (compare_complex_sources)
+                        replacement = makeComplexNonConstantInReplacement(
                             node, left_argument_type, right_argument_type, element_types, right_argument_tuple_function_is_set);
                     else
                         replacement = makeNonConstantInReplacement(

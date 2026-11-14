@@ -1252,8 +1252,7 @@ static bool isIncompatibleNullableScalarForComplexIn(const DataTypePtr & source_
 {
     const auto bare_type = removeNullable(removeLowCardinality(source_type));
     return canContainNull(*source_type)
-        && (isNumber(bare_type) || isBool(bare_type)
-            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
+        && !isArray(bare_type) && !isMap(bare_type) && !isStringOrFixedString(bare_type);
 }
 
 static QueryTreeNodePtr buildNumericInEquality(

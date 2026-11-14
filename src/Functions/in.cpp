@@ -298,6 +298,15 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
+        if (in_null_as_unknown && arguments[0].type->onlyNull())
+        {
+            if (set->sourceIsEmpty())
+                return createResultColumn(input_rows_count, negative);
+
+            auto unknown = ColumnNullable::create(ColumnUInt8::create(1, UInt8{0}), ColumnUInt8::create(1, UInt8{1}));
+            return ColumnConst::create(std::move(unknown), input_rows_count);
+        }
+
         /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
         /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
         if (set->getTotalRowCount() == 0)

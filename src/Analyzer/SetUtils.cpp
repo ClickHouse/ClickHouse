@@ -683,12 +683,12 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
             });
         }
 
-        auto nested_column = ColumnUInt8::create(members.size(), UInt8{0});
-        auto null_map = ColumnUInt8::create(members.size(), UInt8{0});
-
         ColumnsWithTypeAndName result(1);
-        result[0].type = makeNullable(std::make_shared<DataTypeUInt8>());
-        result[0].column = ColumnNullable::create(std::move(nested_column), std::move(null_map));
+        /// The left operand cannot match any key. Keep its distinct type and an empty
+        /// set; fabricated `UInt8` keys could be reused by another predicate with
+        /// the same RHS. The source cardinality is retained separately above.
+        result[0].type = lhs_expression_type;
+        result[0].column = lhs_expression_type->createColumn();
         return result;
     }
 
