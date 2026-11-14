@@ -1189,6 +1189,8 @@ struct CommonExpressionExtractionResult
     //   Result: new_node = nullptr, common_expressions = {A, B}
     QueryTreeNodePtr new_node;
     QueryTreeNodes common_expressions;
+    // The first `leading_common_expressions` of `common_expressions` start every disjunct, in this order.
+    size_t leading_common_expressions = 0;
 };
 
 /// True if an element of `nodes` absent from `kept` contains `arrayJoin`.
@@ -1413,10 +1415,33 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
 
+    /// The longest sequence of conditions that every disjunct starts with.
+    const auto & first_and_arguments = or_argument_nodes.front()->as<FunctionNode &>().getArguments().getNodes();
+    QueryTreeNodePtrWithHashSet leading_exprs_set;
+    for (size_t i = 0; i < first_and_arguments.size(); ++i)
+    {
+        QueryTreeNodePtrWithHash leading_expr = first_and_arguments[i];
+        bool starts_every_disjunct = std::ranges::all_of(or_argument_nodes, [&](const QueryTreeNodePtr & or_argument)
+        {
+            const auto & and_arguments = or_argument->as<FunctionNode &>().getArguments().getNodes();
+            return i < and_arguments.size() && QueryTreeNodePtrWithHash(and_arguments[i]) == leading_expr;
+        });
+        if (!starts_every_disjunct)
+            break;
+        leading_exprs_set.insert(std::move(leading_expr));
+    }
+
+    auto leading_exprs_end = std::stable_partition(
+        common_exprs.begin(), common_exprs.end(), [&](const QueryTreeNodePtr & expr) { return leading_exprs_set.contains(expr); });
+    size_t leading_common_expressions = leading_exprs_end - common_exprs.begin();
+
     if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, context))
     {
         auto new_disjunction_node = optimized_disjunction->new_node ? optimized_disjunction->new_node : optimized_disjunction->common_expressions[0];
-        return CommonExpressionExtractionResult{ .new_node = std::move(new_disjunction_node), .common_expressions = std::move(common_exprs) };
+        return CommonExpressionExtractionResult{
+            .new_node = std::move(new_disjunction_node),
+            .common_expressions = std::move(common_exprs),
+            .leading_common_expressions = leading_common_expressions};
     }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
@@ -1425,7 +1450,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     resolveOrdinaryFunctionNodeByName(*new_or_node, "or", context);
 
-    return CommonExpressionExtractionResult{new_or_node, common_exprs};
+    return CommonExpressionExtractionResult{new_or_node, common_exprs, leading_common_expressions};
 }
 
 /// Rebuild the root of a logical operator as an `and` over `arguments`, converted to `result_type`.
@@ -1486,10 +1511,13 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
         {
             extracted_something = true;
             auto & result = *maybe_result;
+            auto & common_expressions = result.common_expressions;
+            for (size_t i = 0; i < result.leading_common_expressions; ++i)
+                insert_possible_new_top_level_arg(std::move(common_expressions[i]));
             if (result.new_node != nullptr)
                 insert_possible_new_top_level_arg(std::move(result.new_node));
-            for (auto& common_expr: result.common_expressions)
-                insert_possible_new_top_level_arg(std::move(common_expr));
+            for (size_t i = result.leading_common_expressions; i < common_expressions.size(); ++i)
+                insert_possible_new_top_level_arg(std::move(common_expressions[i]));
         }
         else
         {
