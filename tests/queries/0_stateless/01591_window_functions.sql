@@ -17,7 +17,7 @@ select number, count() over (partition by intDiv(number, 3) order by number rows
 select number, max(number) over (partition by intDiv(number, 3) order by number desc rows unbounded preceding) from numbers(10) settings max_block_size = 2;
 
 -- not a window function
-select number, abs(number) over (partition by toString(intDiv(number, 3)) rows unbounded preceding) from numbers(10); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+select number, abs(number) over (partition by toString(intDiv(number, 3)) rows unbounded preceding) from numbers(10); -- { serverError UNKNOWN_FUNCTION, UNKNOWN_AGGREGATE_FUNCTION }
 
 -- no partition by
 select number, avg(number) over (order by number rows unbounded preceding) from numbers(10);
