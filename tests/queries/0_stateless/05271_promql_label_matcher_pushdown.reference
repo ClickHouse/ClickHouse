@@ -51,13 +51,13 @@ rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])
 lim i1
 req i1
 rate(req{instance="i1"}[30s]) / on(instance) rate(lim[30s])
-lim
+lim i1
 req i1
 req{job="api"} / on(job, instance) lim{instance="i2"}
-lim i2
+lim i2 api
 req api i2
 req{job="api"} / ignoring(team) lim{team="t1"}
-lim t1
+lim t1 api
 req api
 sum by (job) (rate(req{job="api"}[30s])) / on(job) sum by (job) (rate(lim[30s]))
 lim api
