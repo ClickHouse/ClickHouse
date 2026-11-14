@@ -535,6 +535,13 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         metadata_object->getArray(f_statistics));
 }
 
+std::optional<UUID> IcebergMetadata::getTableUUID() const
+{
+    if (!persistent_components.table_uuid)
+        return std::nullopt;
+    return parseFromString<UUID>(*persistent_components.table_uuid);
+}
+
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
 {
     auto state = getRelevantState(local_context);
