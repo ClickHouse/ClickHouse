@@ -38,6 +38,10 @@ public:
 
 private:
     bool setIncrease(IncreaseRequest * new_increase, bool reapply_constraint);
+
+    /// Returns the requester itself if its own reservation exceeds `limit`, so no eviction can make it fit.
+    static ResourceAllocation * selectSelfKill(IncreaseRequest & killer, ResourceCost limit, String & details);
+    void kill(IncreaseRequest & killer, ResourceAllocation & victim, const String & details);
     bool setDecrease(DecreaseRequest * new_decrease);
 
     /// Must run without a queue mutex held. Pending decreases defer evaluation until their approval.
@@ -49,6 +53,8 @@ private:
 
     /// Allocation that is being killed (if any)
     ResourceAllocation * allocation_to_kill = nullptr;
+    /// A requester failed for its own increase while `allocation_to_kill` was in flight. Only compared, never dereferenced.
+    ResourceAllocation * self_killed = nullptr;
 
     SpaceSharedNodePtr child;
 };

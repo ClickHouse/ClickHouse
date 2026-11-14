@@ -11,8 +11,10 @@
 
 #include <barrier>
 #include <cstdlib>
+#include <functional>
 #include <future>
 #include <initializer_list>
+#include <iostream>
 #include <thread>
 #include <utility>
 
@@ -170,8 +172,8 @@ struct SpaceSharedResourceHolder
 /// Lock ordering: `AllocationQueue::mutex` -> `SpillableAllocation::mutex`.
 struct SpillableAllocation : public ResourceAllocation
 {
-    SpillableAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
-        : ResourceAllocation(*queue_, name_)
+    SpillableAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int32 eviction_score_ = 0)
+        : ResourceAllocation(*queue_, name_, eviction_score_)
     {
         real_size = initial_size;
         if (initial_size > 0)
@@ -746,17 +748,17 @@ TEST(SchedulerSpaceShared, KillDuringPendingIncrease)
 }
 
 
-/// Regression test for a deadlock where a never-admitted allocation that self-kills leaves
-/// `AllocationLimit::allocation_to_kill` dangling, so the next over-limit allocation blocks forever
+/// Regression test for a deadlock where a self-killing allocation left
+/// `AllocationLimit::allocation_to_kill` dangling, so the next over-limit allocation blocked forever
 /// instead of being killed (observed as a 600s timeout in
 /// `test_scheduler_memory::test_max_memory_limit`).
 ///
-/// A reservation created with `reserved_size == 0` is never admitted: its first increase (driven by
-/// the memory tracker) is the one that hits the limit, so it selects itself as the victim. It is then
-/// removed via the local path in `AllocationQueue::processActivation`, which does NOT drive a
-/// `removing_allocation` decrease up to `AllocationLimit::approveDecrease` — the only place (besides
-/// subtree detach) that used to clear `allocation_to_kill`. The fix clears the pointer in
-/// `setIncrease` once there is no increase request left to satisfy.
+/// A reservation created with `reserved_size == 0` is admitted at zero size; its first increase (driven
+/// by the memory tracker) is the one that hits the limit, so `AllocationLimit` selects the reservation
+/// itself as the victim (an impossible grow: its own `fair_key` exceeds the limit). The reservation is
+/// killed and removed. `allocation_to_kill` is cleared both by the normal removing decrease reaching
+/// `AllocationLimit::approveDecrease` and defensively by `setIncrease` once no increase request is left
+/// to satisfy — either path must leave the next over-limit allocation free to be killed.
 TEST(SchedulerSpaceShared, SelfKillDoesNotBlockNextAllocation)
 {
     SpaceSharedTest t;
@@ -769,12 +771,12 @@ TEST(SchedulerSpaceShared, SelfKillDoesNotBlockNextAllocation)
     ResourceLink link;
     link.allocation_queue = queue;
 
-    // Drives a never-admitted reservation over the limit; it must kill itself and throw.
+    // Drives a zero-size reservation over the limit; admitted at zero size, it self-kills on its first increase.
     auto run_over_limit = [&](const String & id)
     {
         MemoryTracker tracker;
         tracker.adjustWithUntrackedMemory(20000); // 20KB > 10KB limit
-        MemoryReservation res(link, id, 0, 1); // reserved_size == 0 -> never admitted
+        MemoryReservation res(link, id, 0, 1); // reserved_size == 0: admitted at zero size, grows on syncWithMemoryTracker
         res.syncWithMemoryTracker(&tracker);
         tracker.adjustWithUntrackedMemory(-20000);
     };
@@ -1866,8 +1868,8 @@ TEST(SchedulerSpaceShared, ReclaimablePerfChurnByDepth)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
-        : ResourceAllocation(*queue_, name_)
+    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int32 eviction_score_ = 0)
+        : ResourceAllocation(*queue_, name_, eviction_score_)
     {
         if (initial_size > 0)
             increase_enqueued = true;
@@ -1934,11 +1936,20 @@ struct ManualAllocation : public ResourceAllocation
         return allocated_size;
     }
 
+    /// Whether any increase was ever approved. An allocation that fails its own grow (self-kills) before it is
+    /// served never sees one, which distinguishes "served last" from "grew then evicted".
+    bool everIncreased()
+    {
+        std::unique_lock lock(mutex);
+        return increased_ever;
+    }
+
 private: // interaction with the scheduler thread
     void increaseApproved(const IncreaseRequest & increase) override
     {
         std::unique_lock lock(mutex);
         allocated_size += increase.size;
+        increased_ever = true;
         increase_enqueued = false;
         cv.notify_all();
     }
@@ -1977,6 +1988,7 @@ private: // interaction with the scheduler thread
     bool increase_enqueued = false;
     bool decrease_enqueued = false;
     bool removed = false;
+    bool increased_ever = false;
     size_t kills = 0;
     ResourceCost allocated_size = 0;
 };
@@ -2020,4 +2032,597 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
     ASSERT_EQ(b.killCount(), 0u);
     EXPECT_EQ(a.size(), 9000);
     EXPECT_EQ(b.size(), 0);
+}
+
+
+/// Approving a decrease can change which increase is processed next. The update that publishes the new
+/// increase must also carry the next queued decrease: while the approval descends, every ancestor has
+/// already cleared its decrease, so without it the limit evaluates the new increase as if no release were
+/// pending. Here approving `b`'s decrease makes `b`'s grow the next increase (its key drops below `a`'s);
+/// that grow overflows the limit until `d`'s queued decrease is applied, after which every grow fits.
+TEST(SchedulerSpaceShared, NoKillWhenDecreaseApprovalReselectsIncrease)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation a(queue, "a", 3500);
+    ManualAllocation b(queue, "b", 3500);
+    ManualAllocation d(queue, "d", 3000);
+
+    // Park the scheduler so all requests below arrive in one activation.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    b.decreaseAsync(1500);
+    d.decreaseAsync(3000);
+    a.increaseAsync(1000); // key 4500: the next increase until `b`'s decrease is approved
+    b.increaseAsync(2000); // key 5500, then 4000 after `b`'s decrease: 8500 + 2000 > 10000 until `d` releases
+
+    release.set_value();
+
+    // After both decreases (5500) both grows fit (8500 <= 10000): nobody needs to be evicted.
+    a.waitSynced();
+    b.waitSynced();
+    d.waitSynced();
+    ASSERT_EQ(a.killCount(), 0u);
+    ASSERT_EQ(b.killCount(), 0u);
+    ASSERT_EQ(d.killCount(), 0u);
+    EXPECT_EQ(a.size(), 4500);
+    EXPECT_EQ(b.size(), 4000);
+    EXPECT_EQ(d.size(), 0);
+}
+
+
+/// A workload-settings callback can run before the activation of requests that query threads have already
+/// queued. When it publishes a newly selected increase, it must also publish the queued decrease; otherwise
+/// the limit evaluates the grow as if no release were pending. Here `b`'s queued decrease makes `a`'s grow fit.
+static void testNoKillWhenSettingsUpdatePublishesIncrease(std::function<void(AllocationQueue &)> settings_update)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation a(queue, "a", 7000);
+    ManualAllocation b(queue, "b", 3000);
+
+    // Park the scheduler, queue the settings callback first, then the requests (their activation runs after it).
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+    t.scheduler.event_queue.enqueue([&] { settings_update(*queue); });
+
+    b.decreaseAsync(3000);
+    a.increaseAsync(2000); // 10000 + 2000 > 10000 until `b`'s decrease is applied
+
+    release.set_value();
+
+    a.waitSynced();
+    b.waitSynced();
+    ASSERT_EQ(a.killCount(), 0u);
+    ASSERT_EQ(b.killCount(), 0u);
+    EXPECT_EQ(a.size(), 9000);
+    EXPECT_EQ(b.size(), 0);
+}
+
+TEST(SchedulerSpaceShared, NoKillWhenQueueLimitUpdatePublishesIncrease)
+{
+    testNoKillWhenSettingsUpdatePublishesIncrease([](AllocationQueue & queue) { queue.updateQueueLimit(100); });
+}
+
+TEST(SchedulerSpaceShared, NoKillWhenMinMaxAllocatedUpdatePublishesIncrease)
+{
+    testNoKillWhenSettingsUpdatePublishesIncrease([](AllocationQueue & queue) { queue.updateMinMaxAllocated(10000); });
+}
+
+/// A settings callback that runs before the activation admitting a zero-size allocation must not publish that
+/// allocation's grow: the limit would select a victim while the requester is not yet running. Here the
+/// high-score zero-reserve requester must fail its own grow; publishing the grow early evicts `peer` instead.
+static void testSettingsUpdateDoesNotPublishGrowBeforeAdmission(std::function<void(AllocationQueue &)> settings_update)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation peer(queue, "peer", 50, /* eviction_score = */ 0);
+
+    // Park the scheduler, queue the settings callback first, then the admission and the grow.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+    t.scheduler.event_queue.enqueue([&] { settings_update(*queue); });
+
+    ManualAllocation requester(queue, "requester", 0, /* eviction_score = */ 100);
+    requester.increaseAsync(60); // 50 + 60 > 100
+
+    release.set_value();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (requester.killCount() == 0 && peer.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    r.sync();
+    EXPECT_EQ(requester.killCount(), 1u);
+    EXPECT_EQ(peer.killCount(), 0u);
+}
+
+TEST(SchedulerSpaceShared, QueueLimitUpdateDoesNotPublishGrowBeforeAdmission)
+{
+    testSettingsUpdateDoesNotPublishGrowBeforeAdmission([](AllocationQueue & queue) { queue.updateQueueLimit(100); });
+}
+
+TEST(SchedulerSpaceShared, MinMaxAllocatedUpdateDoesNotPublishGrowBeforeAdmission)
+{
+    testSettingsUpdateDoesNotPublishGrowBeforeAdmission([](AllocationQueue & queue) { queue.updateMinMaxAllocated(100); });
+}
+
+
+/// `eviction_score` controls eviction order under memory pressure: the reservation with the highest
+/// `eviction_score` is evicted first, even when it is not the largest. Here `small_hi` is smaller than
+/// `big` but has a higher score, so `small_hi` is the victim even though the largest-first tie-break alone
+/// would pick `big`.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreEvictsHighestFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 30000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation big(queue, "big", 15000, /* eviction_score = */ 0);
+    auto small_hi = std::make_unique<ManualAllocation>(queue, "small_hi", 5000, /* eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 10000, /* eviction_score = */ 0);
+    // Total 30000 == limit; the increase below overflows and triggers the eviction decision.
+
+    killer.increaseAsync(1000);
+
+    // Bounded wait for the eviction signal, so a regression fails cleanly instead of hanging.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (small_hi->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(small_hi->killCount(), 1u) << "The reservation with the higher eviction_score must be evicted first";
+    EXPECT_EQ(big.killCount(), 0u);
+    EXPECT_EQ(killer.killCount(), 0u);
+
+    // The evicted reservation releases its memory (as a real query does on MEMORY_RESERVATION_KILLED),
+    // which frees room for the pending increase.
+    small_hi.reset();
+    killer.waitSynced();
+    EXPECT_EQ(killer.size(), 11000);
+}
+
+
+/// With a uniform `eviction_score` (the default), the largest reservation is evicted first.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 30000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    auto big = std::make_unique<ManualAllocation>(queue, "big", 15000, /* eviction_score = */ 0);
+    ManualAllocation small(queue, "small", 5000, /* eviction_score = */ 0);
+    ManualAllocation killer(queue, "killer", 10000, /* eviction_score = */ 0);
+
+    killer.increaseAsync(1000);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (big->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(big->killCount(), 1u) << "With a uniform eviction_score the largest reservation must be evicted first";
+    EXPECT_EQ(small.killCount(), 0u);
+    EXPECT_EQ(killer.killCount(), 0u);
+
+    big.reset();
+    killer.waitSynced();
+    EXPECT_EQ(killer.size(), 11000);
+}
+
+
+/// A running `reserve_memory = 0` requester with a high `eviction_score`, growing under the workload limit next
+/// to a lower-score memory holder, must fail its own grow rather than evict the holder. A zero-size allocation
+/// is admitted the moment it starts running, so the requester takes part in `ByKey` by score and, carrying the
+/// highest score, is selected as the victim of its own increase.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreZeroReserveRequesterSelfKillsBeforeLowerScorePeer)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // `peer` holds memory at the default (low) score.
+    ManualAllocation peer(queue, "peer", 50, /* eviction_score = */ 0);
+
+    // Park the scheduler so the zero-size admission of `requester` and its grow are queued together and
+    // processed in a single activation — this exercises the grow-before-promotion path.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    // `requester` reserves nothing but carries the highest score. Its grow of 60 takes the total (50 + 60)
+    // over the 100 limit without exceeding the limit on its own (60 <= 100), so it is a real eviction
+    // decision, not an impossible grow handled by `AllocationLimit`.
+    ManualAllocation requester(queue, "requester", 0, /* eviction_score = */ 100);
+    requester.increaseAsync(60);
+
+    release.set_value();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (requester.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(requester.killCount(), 1u)
+        << "The high-score zero-reserve requester must self-kill instead of evicting a lower-score peer";
+    EXPECT_EQ(peer.killCount(), 0u) << "The lower-score memory holder must survive";
+}
+
+
+/// Grow order follows the same `ByKey` order as eviction: under contention the allocation with the lower
+/// `eviction_score` is served first, even when it has the larger `fair_key`. Here `lo` has the lower score but the
+/// larger grow and `hi` the higher score but the smaller grow. `lo` is served first; `hi`'s grow then cannot fit
+/// and, being last in the order, fails its own request without ever growing. Ordering grows by `fair_key` alone
+/// would serve `hi` first instead.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreLowerScoreGrowsFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // Park the scheduler so both zero-size admissions and both grows are queued together and processed in a
+    // single activation, letting the ordering — not the arrival timing — decide which grow is served first.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    // Both start running at zero size (admitted immediately), so their grows below are regular increases.
+    ManualAllocation lo(queue, "lo", 0, /* eviction_score = */ 0);
+    ManualAllocation hi(queue, "hi", 0, /* eviction_score = */ 100);
+    lo.increaseAsync(70); // lower score, larger fair_key
+    hi.increaseAsync(60); // higher score, smaller fair_key; 70 + 60 > 100, so only one grow fits
+
+    release.set_value();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (hi.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    lo.waitSynced();
+
+    EXPECT_EQ(lo.size(), 70) << "The lower-score allocation must be served first even with the larger fair_key";
+    EXPECT_EQ(hi.killCount(), 1u) << "The higher-score allocation must fail its own grow";
+    EXPECT_FALSE(hi.everIncreased()) << "The higher-score allocation must never grow — it is served last";
+}
+
+
+/// Spilling under the soft limit follows the same order as eviction: the reclaimable allocation with the
+/// highest `eviction_score` is asked to spill first, even when it is smaller. Ordering by size alone would
+/// pick `big`.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreSpillsHighestFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation big(queue, "big", 6000, /* eviction_score = */ 0);
+    SpillableAllocation small_hi(queue, "small_hi", 3000, /* eviction_score = */ 100);
+    big.reportReclaimable(6000);
+    small_hi.reportReclaimable(3000);
+    EXPECT_EQ(big.spillCount(), 0);
+    EXPECT_EQ(small_hi.spillCount(), 0);
+
+    big.setSize(8000); // 11000 > 10000
+    r.sync();
+    EXPECT_EQ(small_hi.spillCount(), 1);
+    EXPECT_EQ(small_hi.lastSpillAtLeast(), 1000);
+    EXPECT_EQ(big.spillCount(), 0);
+}
+
+
+/// An eviction selected for one request stays in flight when another request becomes current. The new request
+/// waits for that release, unless it cannot fit even then: here `b`'s grow alone exceeds the limit, so `b` must fail
+/// at once instead of waiting for `victim`, which was selected for `a` and has not released yet.
+TEST(SchedulerSpaceShared, ImpossibleGrowSelfKillsWhileEvictionForAnotherRequestIsInFlight)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    auto victim = std::make_unique<ManualAllocation>(queue, "victim", 40, /* eviction_score = */ 100);
+    ManualAllocation a(queue, "a", 50, /* eviction_score = */ 0);
+    auto b = std::make_unique<ManualAllocation>(queue, "b", 5, /* eviction_score = */ -10);
+
+    a.increaseAsync(20); // 95 + 20 > 100: `victim` (the highest score) is selected and keeps its memory for now
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (victim->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(victim->killCount(), 1u);
+
+    b->increaseAsync(200); // `b` has the lowest score, so its grow becomes the current one; 205 > 100 can never fit
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (b->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(b->killCount(), 1u) << "An impossible grow must not wait for an eviction selected for another request";
+    EXPECT_EQ(victim->killCount(), 1u);
+    EXPECT_EQ(a.killCount(), 0u);
+
+    // `victim` releases first; the limit then waits for `b`'s release instead of evicting anything else.
+    victim.reset();
+    r.sync();
+    EXPECT_EQ(b->killCount(), 1u);
+    EXPECT_EQ(a.killCount(), 0u);
+
+    b.reset();
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (a.size() != 70 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(a.size(), 70);
+    EXPECT_EQ(a.killCount(), 0u);
+}
+
+
+/// Two impossible grows while an eviction is in flight: each requester is killed exactly once. `c` waits for the
+/// release of `b` (the first self-kill) and is killed after it; when `victim` leaves, the limit waits for `c`.
+TEST(SchedulerSpaceShared, ImpossibleGrowsWhileEvictionIsInFlightAreKilledOnce)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    auto victim = std::make_unique<ManualAllocation>(queue, "victim", 40, /* eviction_score = */ 100);
+    ManualAllocation a(queue, "a", 45, /* eviction_score = */ 0);
+    auto b = std::make_unique<ManualAllocation>(queue, "b", 5, /* eviction_score = */ -10);
+    auto c = std::make_unique<ManualAllocation>(queue, "c", 5, /* eviction_score = */ -20);
+
+    auto wait_kill = [](ManualAllocation & allocation, std::chrono::seconds timeout)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (allocation.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+    };
+
+    a.increaseAsync(20); // 95 + 20 > 100: `victim` is selected and keeps its memory for now
+    wait_kill(*victim, std::chrono::seconds(60));
+    ASSERT_EQ(victim->killCount(), 1u);
+
+    b->increaseAsync(200);
+    wait_kill(*b, std::chrono::seconds(10));
+    ASSERT_EQ(b->killCount(), 1u);
+
+    c->increaseAsync(200); // `c` has the lowest score, so its impossible grow is now current
+    r.sync();
+    EXPECT_EQ(c->killCount(), 0u) << "Only one self-kill is in flight at a time";
+
+    b.reset();
+    wait_kill(*c, std::chrono::seconds(10));
+    EXPECT_EQ(c->killCount(), 1u);
+
+    victim.reset();
+    r.sync();
+    EXPECT_EQ(c->killCount(), 1u);
+    EXPECT_EQ(a.killCount(), 0u);
+
+    c.reset();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (a.size() != 65 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(a.size(), 65);
+    EXPECT_EQ(a.killCount(), 0u);
+}
+
+
+/// Two limits may select the same victim: the inner one for a request inside it, the outer one for a request
+/// outside. The victim is asked to be killed once.
+TEST(SchedulerSpaceShared, VictimOfNestedLimitsIsKilledOnce)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * outer = r.addLimit("/", 100);
+    FairAllocation * fair = r.addFair("/fair", outer);
+    AllocationLimit * inner = r.addLimit("/fair/inner", 60, fair);
+    AllocationQueue * inner_queue = r.addQueueUnder("/fair/inner/queue", inner);
+    AllocationQueue * outer_queue = r.addQueueUnder("/fair/queue", fair);
+    r.registerResource();
+
+    auto victim = std::make_unique<ManualAllocation>(inner_queue, "victim", 50, /* eviction_score = */ 100);
+    ManualAllocation inside(inner_queue, "inside", 5);
+    ManualAllocation outside(outer_queue, "outside", 40);
+
+    auto wait_until = [](auto condition)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (!condition() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+    };
+
+    inside.increaseAsync(10); // 55 + 10 > 60: the inner limit selects `victim`, which keeps its memory for now
+    wait_until([&] { return victim->killCount() > 0; });
+    ASSERT_EQ(victim->killCount(), 1u);
+
+    outside.increaseAsync(10); // 95 + 10 > 100: the outer limit descends into the larger inner workload, to `victim`
+    r.sync();
+    EXPECT_EQ(victim->killCount(), 1u) << "An allocation must be asked to be killed once";
+
+    victim.reset();
+    wait_until([&] { return inside.size() == 15 && outside.size() == 50; });
+    EXPECT_EQ(inside.size(), 15);
+    EXPECT_EQ(outside.size(), 50);
+    EXPECT_EQ(inside.killCount(), 0u);
+    EXPECT_EQ(outside.killCount(), 0u);
+}
+
+
+/// Dropping the workload of a victim frees its memory, so the blocked increase that selected it must be granted.
+TEST(SchedulerSpaceShared, BlockedIncreaseIsGrantedWhenVictimWorkloadIsDetached)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100);
+    FairAllocation * fair = r.addFair("/fair", limit);
+    AllocationQueue * queue = r.addQueueUnder("/fair/queue", fair);
+    AllocationQueue * other = r.addQueueUnder("/fair/other", fair);
+    r.registerResource();
+
+    ManualAllocation victim(other, "victim", 60);
+    ManualAllocation requester(queue, "requester", 30);
+
+    requester.increaseAsync(20); // 90 + 20 > 100: `victim` is selected and keeps its memory for now
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (victim.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(victim.killCount(), 1u);
+
+    r.execute([&] { fair->removeChild(other); }); // destroys `other`, failing `victim`
+
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (requester.size() != 50 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(requester.size(), 50) << "The blocked increase must be re-evaluated after the victim's workload is detached";
+    EXPECT_EQ(requester.killCount(), 0u);
+}
+
+
+/// An impossible grow — the requester's own reservation exceeds the limit, so no eviction can make it fit —
+/// must fail the requester's own request rather than evict a peer. `AllocationLimit` (the limit-enforcing
+/// node) selects the requester before descending to a victim.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreImpossibleGrowSelfKills)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // `peer` holds a little memory and has the highest score; `killer` holds more and asks for a grow that
+    // alone exceeds the 10000 limit.
+    ManualAllocation peer(queue, "peer", 1000, /* eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 8000, /* eviction_score = */ 0);
+
+    killer.increaseAsync(3000); // 8000 + 3000 = 11000 > 10000: the requester alone exceeds the limit
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (killer.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    ASSERT_EQ(killer.killCount(), 1u) << "A requester whose grow exceeds the limit must self-kill";
+    EXPECT_EQ(peer.killCount(), 0u) << "A peer must not be evicted for a grow that can never fit";
+}
+
+
+/// A self-deadlocked scheduler thread holds `AllocationQueue::mutex` forever, so nothing can be torn down after a timeout.
+/// Hence the scenario runs in a child process that exits instead.
+[[noreturn]] static void runScenarioInChild(const std::function<void()> & scenario)
+{
+    std::promise<void> done;
+    auto done_future = done.get_future();
+    std::thread([&] { scenario(); done.set_value(); }).detach();
+    if (done_future.wait_for(std::chrono::seconds(60)) != std::future_status::ready)
+    {
+        std::cerr << "The scenario did not finish in 60 seconds: the scheduler thread is likely deadlocked\n";
+        std::_Exit(1);
+    }
+    std::_Exit(testing::Test::HasFailure() ? 1 : 0);
+}
+
+static void expectScenarioFinishes(const std::function<void()> & scenario)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(runScenarioInChild(scenario), ::testing::ExitedWithCode(0), "");
+}
+
+/// The demand exceeds the limit, so the scheduler evicts `a` or `b`. Release the victim, as a killed query does, and wait
+/// until the requests of the other one are approved.
+static void releaseVictimAndSync(std::unique_ptr<ManualAllocation> & a, std::unique_ptr<ManualAllocation> & b)
+{
+    while (a->killCount() == 0 && b->killCount() == 0)
+        std::this_thread::yield();
+    bool a_killed = a->killCount() > 0;
+    (a_killed ? a : b).reset();
+    (a_killed ? b : a)->waitSynced();
+}
+
+/// `approveDecrease` publishes the queue's next increase while holding the queue lock. Here `b`'s decrease moves its increase
+/// ahead of `a`'s and it does not fit, so `AllocationLimit` selects a victim in the same queue (#125116).
+TEST(SchedulerSpaceSharedDeathTest, NoDeadlockOnDecreaseApproval)
+{
+    expectScenarioFinishes([]
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        r.addLimit("/", 10000);
+        AllocationQueue * queue = r.addQueue("/queue");
+        r.registerResource();
+        auto a = std::make_unique<ManualAllocation>(queue, "a", 6000);
+        auto b = std::make_unique<ManualAllocation>(queue, "b", 3000);
+
+        // Park the scheduler so that the requests below arrive in one activation
+        std::promise<void> entered;
+        std::promise<void> release;
+        t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+        entered.get_future().get();
+
+        a->increaseAsync(1000); // 6000 + 1000: processed first, fits exactly
+        b->increaseAsync(5000); // 3000 + 5000
+        b->decreaseAsync(2000); // 1000 + 5000 after approval, ahead of `a`; 7000 + 5000 does not fit
+        release.set_value();
+
+        releaseVictimAndSync(a, b);
+    });
+}
+
+/// Workload settings updates run on the scheduler thread. If one runs after `a` requested an increase but before the queue
+/// activation published it, `update` publishes it while holding the queue lock; it does not fit, so `AllocationLimit` selects
+/// a victim in the same queue (#125116).
+static void expectNoDeadlockOnStaleIncrease(const std::function<void(AllocationLimit &, AllocationQueue &)> & update)
+{
+    expectScenarioFinishes([&]
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        AllocationLimit * limit = r.addLimit("/", 10000);
+        AllocationQueue * queue = r.addQueue("/queue");
+        r.registerResource();
+        auto a = std::make_unique<ManualAllocation>(queue, "a", 6000);
+        auto b = std::make_unique<ManualAllocation>(queue, "b", 4000);
+
+        std::promise<void> entered;
+        std::promise<void> release;
+        t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+        entered.get_future().get();
+
+        t.scheduler.event_queue.enqueue([&] { update(*limit, *queue); }); // processed before the activation of the increase below
+        a->increaseAsync(1000); // 10000 + 1000 does not fit
+        release.set_value();
+
+        releaseVictimAndSync(a, b);
+    });
+}
+
+TEST(SchedulerSpaceSharedDeathTest, NoDeadlockOnLimitUpdate)
+{
+    // Any settings update of a workload with `max_memory` re-applies the limit, even an unchanged one
+    expectNoDeadlockOnStaleIncrease([](AllocationLimit & limit, AllocationQueue &) { limit.updateLimit(10000); });
+}
+
+TEST(SchedulerSpaceSharedDeathTest, NoDeadlockOnQueueLimitUpdate)
+{
+    expectNoDeadlockOnStaleIncrease([](AllocationLimit &, AllocationQueue & queue) { queue.updateQueueLimit(100); });
 }
