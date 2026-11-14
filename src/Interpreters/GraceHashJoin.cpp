@@ -70,8 +70,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader is nullptr");
         }
 
-        /// A bucket file holds every input block split between all buckets, so a read merges
-        /// the parts back up to the join's input block size. The copy is made outside the lock.
+        /// Each input block is split between all buckets, so a read merges the small parts back up to the join's input block size.
         Block read()
         {
             std::unique_lock lock(mutex);
