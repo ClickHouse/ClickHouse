@@ -25,11 +25,12 @@ settings="max_threads = 2, max_threads_min_free_memory_per_thread = 0, max_block
     adaptive_aggregator_freeze_threshold = 1024, adaptive_aggregator_freeze_threshold_bytes = 4194304"
 
 # Prints the three queries of a cell: the query with the feature off, with it on, and the counters so far.
+# A row is hashed as a tuple, because `cityHash64` of a NULL key is NULL and `sum` would skip the NULL group.
 function cell()
 {
     local name=$1 query=$2 extra=${3:+, $3}
-    echo "SELECT '$name', count(), sum(cityHash64(*)) FROM ($query) SETTINGS enable_adaptive_aggregator = 0$extra;"
-    echo "SELECT '$name', count(), sum(cityHash64(*)) FROM ($query) SETTINGS enable_adaptive_aggregator = 1$extra;"
+    echo "SELECT '$name', count(), sum(cityHash64(tuple(*))) FROM ($query) SETTINGS enable_adaptive_aggregator = 0$extra;"
+    echo "SELECT '$name', count(), sum(cityHash64(tuple(*))) FROM ($query) SETTINGS enable_adaptive_aggregator = 1$extra;"
     echo "SELECT '$name', sumIf(value, event = 'AdaptiveAggregationLocalFreezes'),
         sumIf(value, event = 'AdaptiveAggregationSpills'), sumIf(value, event = 'AdaptiveAggregationProbeBypasses')
         FROM system.events;"
