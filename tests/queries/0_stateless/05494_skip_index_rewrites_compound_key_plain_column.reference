@@ -1,0 +1,11 @@
+primary key
+Granules: 1/25
+2
+skip index
+Name: idx
+Granules: 1/25
+2
+partition key
+Parts: 2/2
+Parts: 1/2
+50

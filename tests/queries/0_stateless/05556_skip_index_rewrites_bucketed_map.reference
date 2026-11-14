@@ -1,0 +1,26 @@
+primary key, with buckets
+Granules: 1/25
+98
+99
+primary key, basic
+Granules: 1/25
+98
+99
+skip index, with buckets
+Granules: 25/25
+Name: idx
+Granules: 1/25
+skip index, basic
+Granules: 25/25
+Name: idx
+Granules: 1/25
+partition key, with buckets
+Parts: 2/2
+Parts: 1/2
+Parts: 1/1
+50
+partition key, basic
+Parts: 2/2
+Parts: 1/2
+Parts: 1/1
+50
