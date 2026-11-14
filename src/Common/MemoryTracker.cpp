@@ -428,6 +428,16 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     if (unlikely(
             current_hard_limit && (will_be > current_hard_limit || (level == VariableContext::Global && will_be_rss > current_hard_limit))))
     {
+        const bool can_refuse = memoryTrackerCanThrow(level, false) && enforce_memory_limit;
+        /// Before the profile flush and the waits below, which can outlast a tick of `MemoryWorker`.
+        Int64 refusing_size = can_refuse ? size : 0;
+        if (refusing_size)
+            refusing_amount.fetch_add(refusing_size, std::memory_order_release);
+        SCOPE_EXIT({
+            if (refusing_size)
+                refusing_amount.fetch_sub(refusing_size, std::memory_order_release);
+        });
+
 #if USE_JEMALLOC
         /// Skip jemalloc profile flushing if allocations are denied in the current scope
         /// (e.g. in signal handlers or MergeTreeBackgroundExecutor), because flushProfile allocates.
@@ -482,11 +492,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         /// Try to evict from userspace page cache or kill a lower-priority query to free up memory.
         /// These operations are relatively slow, so we do them only if memoryTrackerCanThrow;
         /// otherwise all allocations may get slow when above memory limit.
-        if (memoryTrackerCanThrow(level, false) && enforce_memory_limit)
+        if (can_refuse)
         {
-            refusing_amount.fetch_add(size, std::memory_order_relaxed);
-            SCOPE_EXIT(refusing_amount.fetch_sub(size, std::memory_order_relaxed));
-
             OvercommitResult overcommit_result = OvercommitResult::NONE;
 
             /// Try to shrink the userspace page cache.
@@ -519,6 +526,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {
                 decrementLocalUsage(size);
+                refusing_amount.fetch_sub(std::exchange(refusing_size, 0), std::memory_order_release);
 
                 bool overcommit_result_ignore
                     = overcommit_result == OvercommitResult::NONE || overcommit_result == OvercommitResult::DISABLED;
@@ -1002,32 +1010,35 @@ void MemoryTracker::reset()
 
 void MemoryTracker::updateRSS(Int64 rss_)
 {
-    total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
+    /// The allocations being refused stay in `rss` until they are reverted, and a measurement cannot contain them.
+    total_memory_tracker.rss.store(
+        rss_ + total_memory_tracker.refusing_amount.load(std::memory_order_acquire), std::memory_order_relaxed);
 }
 
 void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 {
-    Int64 new_amount = allocated_;
+    /// The allocations being refused stay in `amount` until they are reverted, and a measurement cannot contain them.
+    const Int64 new_amount = allocated_ + total_memory_tracker.refusing_amount.load(std::memory_order_acquire);
+    auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
     if (log_change)
         LOG_INFO(
             getLogger("MemoryTracker"),
             "Correcting the value of global memory tracker from {} to {}",
-            ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-            ReadableSize(allocated_));
+            ReadableSize(current_amount),
+            ReadableSize(new_amount));
 
     /// Everything allocated and freed since the last tick went into `amount` and not into the
     /// corrected value we replace it with, so carry that net change over to the plain counter.
-    auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
     total_memory_tracker.last_corrected_amount = new_amount;
     CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())
-        CurrentMetrics::set(metric_loaded, new_amount);
+        CurrentMetrics::set(metric_loaded, allocated_);
 
     bool log_memory_usage = true;
-    total_memory_tracker.updatePeak(new_amount, log_memory_usage);
+    total_memory_tracker.updatePeak(allocated_, log_memory_usage);
 }
 
 void MemoryTracker::updateUncorrected()
