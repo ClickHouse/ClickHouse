@@ -117,10 +117,16 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     return body;
 }
 
-bool isStreamingTableOrMaterializedView(const Poco::JSON::Object::Ptr & table)
+bool isStreamingTableOrMaterializedView(const String & table_type)
 {
     static const std::unordered_set<std::string> types = {"STREAMING_TABLE", "MATERIALIZED_VIEW"};
-    return table->has("table_type") && !table->isNull("table_type") && types.contains(table->get("table_type").extract<String>());
+    return types.contains(table_type);
+}
+
+bool isStreamingTableOrMaterializedView(const Poco::JSON::Object::Ptr & table)
+{
+    return table->has("table_type") && !table->isNull("table_type")
+        && isStreamingTableOrMaterializedView(table->get("table_type").extract<String>());
 }
 
 }

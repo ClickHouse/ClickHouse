@@ -29,6 +29,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
 }
@@ -491,6 +492,14 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
     /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
     /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
     const auto table_type = getTableType(full_table_name);
+
+    /// A Databricks pipeline owns a streaming table or a materialized view, and a drop purges its managed storage.
+    if (isStreamingTableOrMaterializedView(table_type))
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Table {}.{} has table_type {} in Unity catalog. ClickHouse does not drop tables of this type, drop it in Databricks",
+            namespace_name, table_name, table_type);
+
     const bool data_will_be_deleted = table_type == "MANAGED";
     if (data_will_be_deleted != delete_data)
         throw DB::Exception(

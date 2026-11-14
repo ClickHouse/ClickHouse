@@ -32,6 +32,7 @@ inline const Poco::URI::QueryParameters READ_AS_MANAGED_PARAMS = {
 
 /// These table types get a `storage_location` only with `READ_AS_MANAGED_PARAMS`.
 bool isStreamingTableOrMaterializedView(const Poco::JSON::Object::Ptr & table);
+bool isStreamingTableOrMaterializedView(const String & table_type);
 
 }
 
