@@ -4,9 +4,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -272,19 +269,16 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         String name = String(name_ref);
         if (has_value)
         {
-            const size_t bytes_before = in.count();
-            readEscapedString(value, in);
-            /// This reader decodes escape sequences while the value path parses the original bytes, so a
-            /// field whose escapes were decoded must not infer a number: the number readers would stop at
-            /// the backslash. A decoded escape always changes the byte count, and the one escape branch
-            /// that does not keeps the backslash in the value, which never infers a number.
-            const bool had_escape = (in.count() - bytes_before) != value.size();
-
-            auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
-            if (had_escape && type && isNumber(removeNullable(recursiveRemoveLowCardinality(type))))
-                type = std::make_shared<DataTypeString>();
-
-            names_and_types.emplace_back(std::move(name), std::move(type));
+            /// The value path parses the original bytes, so inference must see the field undecoded.
+            readTSVField(value, in);
+            /// `\N` decodes to no bytes, and while it is the null representation the value path reads it as
+            /// a null instead of as data, so such a field holds no value to infer a type from.
+            const bool holds_no_value = value == "\\N" && format_settings.tsv.null_representation == "\\N";
+            names_and_types.emplace_back(
+                std::move(name),
+                holds_no_value
+                    ? nullptr
+                    : tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
         }
         else
         {
