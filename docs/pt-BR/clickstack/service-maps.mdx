@@ -8,7 +8,7 @@ keywords: ['clickstack', 'mapas de serviço', 'topologia', 'traces', 'dependênc
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 import { Video } from "/snippets/pt-BR/components/Video/Video.jsx";
 
 <BetaBadge />
@@ -17,7 +17,15 @@ Os mapas de serviço mostram como seus serviços interagem. O ClickStack constr�
 
 Clique em **Mapa de serviço** no painel de navegação à esquerda para abrir o grafo completo. Os serviços aparecem quando você está [ingerindo dados de trace](/pt-BR/clickstack/ingesting-data/overview) com OpenTelemetry.
 
-<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="Mapa de serviço mostrando nós de serviço e o fluxo de requisições entre eles" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Mapa de serviço mostrando nós de serviço e o fluxo de requisições entre eles](/images/clickstack/service-maps/service-map-overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="exploring-the-service-map">
   ## Explorando o mapa de serviço
@@ -29,15 +37,39 @@ A barra de ferramentas acima do mapa permite filtrar e ajustar a visualização.
 
 **Seletor de fonte** — filtre o mapa por uma fonte de trace específica (por exemplo, &quot;ClickPy Traces&quot;).
 
-<Image img="/images/clickstack/service-maps/source-selector.webp" alt="Seletor de fonte destacado na barra de ferramentas do mapa de serviço" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Seletor de fonte destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/source-selector.webp)
+
+</Frame>
+
+</div>
 
 **Controle deslizante de sampling** — ajuste a taxa de sampling para equilibrar desempenho e precisão. Taxas menores carregam mais rápido em clusters de alto volume.
 
-<Image img="/images/clickstack/service-maps/sampling.webp" alt="Controle deslizante de sampling destacado na barra de ferramentas do mapa de serviço" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Controle deslizante de sampling destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/sampling.webp)
+
+</Frame>
+
+</div>
 
 **Seletor de intervalo de datas** — defina a janela de tempo dos dados de trace usados para criar o mapa.
 
-<Image img="/images/clickstack/service-maps/date-selector.webp" alt="Seletor de intervalo de datas destacado na barra de ferramentas do mapa de serviço" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Seletor de intervalo de datas destacado na barra de ferramentas do mapa de serviço](/images/clickstack/service-maps/date-selector.webp)
+
+</Frame>
+
+</div>
 
 Use os botões **+/-** no canto inferior esquerdo do mapa ou a rolagem para aumentar e diminuir o zoom.
 

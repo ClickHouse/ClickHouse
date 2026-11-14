@@ -30,7 +30,7 @@ namespace ErrorCodes
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>, typename TLocker = std::mutex>
 class CacheBase
 {
 private:
@@ -401,7 +401,7 @@ public:
     virtual ~CacheBase() = default;
 
 protected:
-    mutable std::mutex mutex;
+    mutable TLocker mutex;
 
 private:
     std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
@@ -422,7 +422,7 @@ private:
     {
         explicit InsertToken(CacheBase & cache_) : cache(cache_) {}
 
-        std::mutex mutex;
+        TLocker mutex;
         bool cleaned_up TSA_GUARDED_BY(mutex) = false;
         MappedPtr value TSA_GUARDED_BY(mutex);
 
@@ -443,7 +443,7 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<std::mutex> & /* cache_lock */)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<TLocker> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             key = key_;
@@ -451,7 +451,7 @@ private:
             ++token->refcount;
         }
 
-        void cleanup(std::lock_guard<std::mutex> & /* token_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
+        void cleanup(std::lock_guard<TLocker> & /* token_lock */, std::lock_guard<TLocker> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);
