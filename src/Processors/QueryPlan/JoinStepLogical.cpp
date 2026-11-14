@@ -2287,6 +2287,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
 
     VectorWithMemoryTracking<const ActionsDAG::Node *> required_residual_nodes;
+    /// A condition can share nodes (`x + x` chains), so each node is visited once, not once per path.
+    std::unordered_set<const ActionsDAG::Node *> visited_condition_nodes;
     auto collect_required_input_nodes = [&](const JoinActionRef & condition)
     {
         if (!condition)
@@ -2297,6 +2299,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             const auto * node = stack.top();
             stack.pop();
+            if (!visited_condition_nodes.insert(node).second)
+                continue;
             if (node->type == ActionsDAG::ActionType::INPUT)
             {
                 if (actions_after_join_fold.contains(node))

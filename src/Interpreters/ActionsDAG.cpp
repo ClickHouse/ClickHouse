@@ -4686,6 +4686,9 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
 {
     NodeRawConstPtrs atoms;
 
+    /// The predicate DAG can share nodes (`p1 AND p1` where `p1 = p0 AND p0`), so visit each node once:
+    /// walking every path would yield exponentially many copies of the same atoms.
+    std::unordered_set<const ActionsDAG::Node *> visited;
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(predicate);
 
@@ -4693,6 +4696,8 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
     {
         const auto * node = stack.top();
         stack.pop();
+        if (!visited.insert(node).second)
+            continue;
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             const auto & name = node->function_base->getName();
