@@ -102,7 +102,6 @@ extern const int TOO_SLOW;
 namespace
 {
 
-/// The threads of index analysis: `max_threads`, capped by `max_threads_for_indexes` when it is set.
 size_t getMaxThreadsForIndexAnalysis(const Settings & settings)
 {
     size_t max_threads = settings[Setting::max_threads];

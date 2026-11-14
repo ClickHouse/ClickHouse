@@ -19,7 +19,6 @@ size_t estimateSortingWorkspace(size_t rows);
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable);
 
 /// Same as `sortBlock` without a limit and with an unstable sort, using up to `max_threads` threads for a large block.
-/// A small block or `max_threads <= 1` is sorted by `sortBlock`.
 void sortBlockInParallel(Block & block, const SortDescription & description, size_t max_threads);
 
 /// Sorts the block by `description` and keeps one row for each sort key. Stable sorting retains the

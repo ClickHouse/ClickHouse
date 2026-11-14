@@ -466,8 +466,7 @@ void sortBlockInParallel(Block & block, const SortDescription & description, siz
 
     const PartialSortingLessWithCollation less(columns);
 
-    /// A sample sort: range `r` gets the rows not less than splitter `r - 1` and less than splitter `r`,
-    /// so equal rows share a range and the sorted ranges, concatenated, are the sorted block.
+    /// Sample sort: range `r` gets the rows in [splitter `r - 1`, splitter `r`), so equal rows share a range.
     std::vector<size_t> samples(samples_per_range * num_ranges);
     for (size_t i = 0; i < samples.size(); ++i)
         samples[i] = i * rows / samples.size();
@@ -477,8 +476,7 @@ void sortBlockInParallel(Block & block, const SortDescription & description, siz
     for (size_t range = 0; range + 1 < num_ranges; ++range)
         splitters[range] = samples[(range + 1) * samples_per_range - 1];
 
-    /// Rows are classified and scattered in `num_ranges` contiguous chunks. `offsets[chunk * num_ranges + range]`
-    /// counts the rows of `chunk` in `range`, then holds the position where the next of them goes.
+    /// `offsets[chunk * num_ranges + range]` counts the rows of `chunk` in `range`, then holds where the next of them goes.
     PaddedPODArray<UInt32> range_of_row(rows);
     std::vector<size_t> offsets(num_ranges * num_ranges);
     std::vector<size_t> range_begin(num_ranges + 1);
