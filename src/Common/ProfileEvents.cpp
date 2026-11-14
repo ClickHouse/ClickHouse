@@ -1048,6 +1048,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
+    M(FilesystemCacheEvictedNoHitBytes, "Number of bytes evicted from filesystem cache from file segments that the cache did not serve after it cached or loaded them. A file segment loaded on startup counts as not served until its first cache hit. Needs `efficiency_window_sec` > 0", ValueType::Bytes) \
     M(FilesystemCacheDowngradedFileSegments, "Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.", ValueType::Number) \
     M(FilesystemCachePromotedFileSegments, "Number of file segments promoted (moved) from the probationary to the protected queue in SLRU cache policy.", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \

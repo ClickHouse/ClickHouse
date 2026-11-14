@@ -1,0 +1,5 @@
+-- The first process writes the entry
+-- The second process finds the entry idle, serves it from disk, and its bytes become active
+has_segments=1	has_active_bytes=0	classes_add_up_to_downloaded_size=1
+served_from_disk=1
+has_segments=1	has_active_bytes=1	classes_add_up_to_downloaded_size=1

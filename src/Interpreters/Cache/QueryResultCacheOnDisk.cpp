@@ -796,9 +796,13 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
             readStringBinary(column_origin.column, compressed_in);
         }
 
-        /// Treat the read as an access in the eviction policy of the filesystem cache, so that hot entries stay cached.
+        /// Treat the read as an access in the eviction policy of the filesystem cache, so that hot entries stay cached,
+        /// and as a read of the whole entry in its efficiency.
         for (const auto & file_segment : *holder)
+        {
             file_segment->increasePriority();
+            file_segment->markRead(file_segment->range().left, file_segment->getDownloadedSize());
+        }
 
         LOG_TRACE(logger, "Query result found on disk for query {}", doubleQuoteString(key.query_string));
 
