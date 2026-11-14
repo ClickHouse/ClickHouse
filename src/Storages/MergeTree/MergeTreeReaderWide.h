@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -294,6 +296,27 @@ private:
     void lookupColumnsCache(
         size_t first_mark, size_t end_mark, size_t num_columns,
         std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<UInt32> & cached_columns);
+
+    /// Wait for other readers' fills of the block's stripes and claim those it reads whole and will write,
+    /// see `ColumnsCache::claimFills`. The block touches the granules [first_mark, end_mark) and reads
+    /// [complete_first_mark, complete_end_mark) in full. The claims must be released by the end of the block.
+    ColumnsCacheFillClaims claimColumnsCacheFills(size_t first_mark, size_t end_mark, size_t complete_first_mark, size_t complete_end_mark);
+
+    bool willWriteColumnsCacheStripe(size_t stripe);
+
+    /// Add the granules in [begin, end) that the entries hold to the per-granule counts of cached
+    /// columns, which start at `counts_first_mark`.
+    static void countCachedGranules(
+        std::span<const ColumnsCache::MappedPtr> entries, size_t counts_first_mark, size_t begin, size_t end, std::vector<UInt32> & cached_columns);
+
+    /// Per stripe of the range, `ColumnsCache::releasedFills` as of its last lookup.
+    std::vector<UInt64> stripes_released_fills_seen;
+
+    /// Running average over the reads of this reader, 0 before the first one.
+    double read_nanoseconds_per_value = 0;
+
+    /// Look the stripes up again after other readers wrote them.
+    void refreshColumnsCacheStripes(size_t first_stripe, size_t end_stripe);
 
     /// Whether the granules [begin, end) of a lookup can be served from the cache as a whole.
     bool allGranulesServed(const std::vector<UInt32> & cached_columns, size_t begin, size_t end) const;

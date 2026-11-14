@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -187,6 +189,43 @@ struct ColumnsCacheWeightFunction
     }
 };
 
+/// A stripe of a column that a reader is reading from the part to write it to the cache, see `ColumnsCache::claimFills`.
+struct ColumnsCacheFill
+{
+    std::mutex mutex;
+    std::condition_variable done_cv;
+    bool done = false;
+};
+
+using ColumnsCacheFillPtr = std::shared_ptr<ColumnsCacheFill>;
+
+/// Exponential moving average with weight `1 / inverse_weight`; starts at the first sample.
+inline double updateRunningAverage(double average, double sample, double inverse_weight)
+{
+    return average > 0 ? average + (sample - average) / inverse_weight : sample;
+}
+
+class ColumnsCache;
+
+/// The keys a reader has claimed, see `ColumnsCache::claimFills`. Released on destruction, which wakes up their waiters.
+class ColumnsCacheFillClaims
+{
+public:
+    ColumnsCacheFillClaims() = default;
+    ColumnsCacheFillClaims(ColumnsCacheFillClaims && other) noexcept;
+    ColumnsCacheFillClaims & operator=(ColumnsCacheFillClaims &&) = delete;
+    ~ColumnsCacheFillClaims();
+
+    bool empty() const { return keys.empty(); }
+
+private:
+    friend class ColumnsCache;
+
+    ColumnsCache * cache = nullptr;
+    ColumnsCacheFillPtr fill;
+    std::vector<ColumnsCacheKey> keys;
+};
+
 /// Cache of deserialized columns for MergeTree tables.
 /// Eliminates the need to read compressed data, decompress, and deserialize
 /// for frequently accessed data parts and columns.
@@ -227,6 +266,9 @@ public:
     /// Does not update hit/miss profile events; the reader counts them per granule it reads.
     std::vector<MappedPtr> getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe);
 
+    /// nullptr for the keys that are not in the cache.
+    std::vector<MappedPtr> getMany(const std::vector<Key> & keys);
+
     /// Insert the entries of several stripes. The key of every entry is `entry->key`.
     ///
     /// An entry that holds a part of a stripe is merged with the entry the cache holds for the
@@ -254,6 +296,36 @@ public:
     /// Whether the cache holds an entry under every one of the keys. Unlike `getMany`, it neither touches the
     /// priorities of the entries nor marks them as used, so a writer can check what of its write survived.
     bool containsAll(const std::vector<Key> & keys) const;
+
+    /// Concurrent reads of the same uncached stripes read them from the part once: one reader claims
+    /// a stripe, the others wait for its write and are served from the cache.
+    ///
+    /// `needed` are the keys a reader is about to read from the part, `to_claim` those of them it will
+    /// write to the cache in full. Fills of `needed` by other readers are returned in `in_progress`;
+    /// only when there are none, the unclaimed keys of `to_claim` are claimed.
+    ///
+    /// A reader must not wait while it holds claims, and must release them before it returns to the
+    /// pipeline executor, so that waits cannot form a cycle. The claimant's write can still be
+    /// rejected; the waiters then read for themselves.
+    ColumnsCacheFillClaims claimFills(const std::vector<Key> & needed, const std::vector<Key> & to_claim, std::vector<ColumnsCacheFillPtr> & in_progress);
+
+    /// Unchanged since a lookup: no fill has written anything since.
+    UInt64 releasedFills() const { return released_fills.load(); }
+    bool anyFillsInProgress() const { return claimed_keys.load() != 0; }
+
+    /// Waits until the fills are released, at most `max_wait_ns` if given, and not after the query is cancelled.
+    ///
+    /// The claimant can be slower than the waiter (slower storage, less CPU), so a reader waits at most
+    /// `MAX_WAIT_TO_READ_RATIO` times as long as reading the data itself would take, then reads it itself.
+    /// Not less: with oversubscribed CPUs, waiters that give up early read the data again and slow down
+    /// every other read.
+    static constexpr double MAX_WAIT_TO_READ_RATIO = 4;
+    static void waitForFills(const std::vector<ColumnsCacheFillPtr> & fills, std::optional<UInt64> max_wait_ns);
+
+    /// Average over all readers, for a reader that has not measured its own reads yet.
+    static constexpr double DEFAULT_READ_NANOSECONDS_PER_VALUE = 1.0;
+    double readNanosecondsPerValue() const;
+    void recordRead(double nanoseconds_per_value);
 
     /// Whether a stripe that is not in the cache should be written to it. Nothing is written
     /// while the cache is shrunk to nothing by `autoResize`: the copy would be rejected anyway.
@@ -369,6 +441,20 @@ public:
     std::function<void()> on_entries_inserted_for_test;
 
 private:
+    friend class ColumnsCacheFillClaims;
+
+    /// See `claimFills`. Touched only by reads that miss, once per block, so one mutex is enough.
+    std::unordered_map<Key, ColumnsCacheFillPtr, ColumnsCacheKeyHash> fills;
+    std::mutex fills_mutex;
+    /// See `releasedFills` and `anyFillsInProgress`. Changed under `fills_mutex`, read without it.
+    std::atomic<UInt64> released_fills{0};
+    std::atomic<size_t> claimed_keys{0};
+
+    /// Updated without a lock: a lost update only delays the average. Own cache line: every reader writes it.
+    alignas(64) std::atomic<double> read_nanoseconds_per_value{0.0};
+
+    void releaseFills(ColumnsCacheFillClaims & claims);
+
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
 
     class Shard : public Base
