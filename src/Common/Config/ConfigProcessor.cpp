@@ -24,6 +24,8 @@
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -196,6 +198,16 @@ static size_t firstNonWhitespacePos(const std::string & s)
 static bool allWhitespace(const std::string & s)
 {
     return firstNonWhitespacePos(s) == std::string::npos;
+}
+
+/// An empty or whitespace-only file: there is nothing to merge from it.
+/// `ReadBufferFromFile` throws on a read error, which `std::ifstream` would report as a plain end of file.
+static bool isBlankFile(const std::string & path)
+{
+    ReadBufferFromFile in(path);
+    std::string contents;
+    readStringUntilEOF(contents, in);
+    return allWhitespace(contents);
 }
 
 static void deleteAttributesRecursive(Node * root)
@@ -873,6 +885,12 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
+            if (isBlankFile(merge_file))
+            {
+                LOG_WARNING(log, "Skipping configuration file '{}' because it is empty.", merge_file);
+                continue;
+            }
+
             if (is_config_changed)
                 LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
