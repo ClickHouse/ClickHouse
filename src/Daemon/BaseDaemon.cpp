@@ -24,6 +24,7 @@
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Util/MapConfiguration.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
 #include <Poco/Pipe.h>
@@ -257,6 +258,36 @@ void BaseDaemon::initialize(Application & self)
     bool is_daemon = config().getBool("application.runAsDaemon", false);
     if (is_daemon)
     {
+        /// Resolve relative paths from the command line against the directory the server was started from:
+        /// `ServerApplication::run` has already changed the current directory to `/` in daemon mode.
+        /// The command line arguments are stored in a read-only layer, so put the resolved paths into a layer above it.
+        ///
+        /// Every key here names a file the daemon opens after the `chdir` below. `config-file`, `pid`,
+        /// `logger.log` and `logger.errorlog` have their own options; `logger.stderr` and `logger.stdout` have
+        /// no option of their own and arrive through `argsToConfig` as `-- --logger.stderr=...`, but they are
+        /// read further down in this function just the same, after the `chdir`, so they need resolving too.
+        ///
+        /// An empty value is not a path: for `logger.log` and `logger.errorlog` it disables the
+        /// corresponding file channel, and for the other keys it is rejected where the file is opened.
+        /// Either way, prepending the start directory would turn it into the directory itself, so it is
+        /// left alone. The start directory is only prepended, never normalized lexically, because
+        /// collapsing `..` changes which file a path names as soon as a component is a symlink: started from
+        /// `/srv/launch`, with `conf` pointing to `/srv/releases/r1/conf`, `conf/../config.xml` is
+        /// `/srv/releases/r1/config.xml` and not `/srv/launch/config.xml`.
+        Poco::AutoPtr<Poco::Util::MapConfiguration> absolute_paths = new Poco::Util::MapConfiguration;
+        for (const auto * key : {"config-file", "pid", "logger.log", "logger.errorlog", "logger.stderr", "logger.stdout"})
+        {
+            if (config().has(key))
+            {
+                std::string value = config().getString(key);
+                if (!value.empty() && !fs::path(value).is_absolute())
+                {
+                    absolute_paths->setString(key, (fs::path(original_working_directory) / value).string());
+                }
+            }
+        }
+        config().add(absolute_paths, PRIO_APPLICATION - 101);
+
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
         std::string path = fs::path(config().getString("application.path")).replace_filename("");
