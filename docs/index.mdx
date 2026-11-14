@@ -373,7 +373,7 @@ export const PageWrapper = ({ children }) => {
                 ]}
             />
             <HeroCard
-                title="Our solutions"
+                title="Our Products"
                 galaxyEvent="docs.home.solutions"
                 description="I want to explore ClickHouse solutions"
                 href={localizeHref("/products/cloud/getting-started/intro")}
@@ -384,7 +384,7 @@ export const PageWrapper = ({ children }) => {
                 }
                 links={[
                     { label: "ClickHouse Cloud", href: localizeHref("/products/cloud/getting-started/cloud-get-started") },
-                    { label: "ClickStack", href: localizeHref("/clickstack") },
+                    { label: "ClickHouse Observability", href: localizeHref("/clickstack") },
                     { label: "ClickHouse Managed Postgres", href: localizeHref("/products/managed-postgres/overview") },
                     { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
                     { label: "chDB", href: localizeHref("/chdb") },
@@ -407,7 +407,7 @@ export const PageWrapper = ({ children }) => {
             <HeroCard
                 title="Observability"
                 galaxyEvent="docs.home.observability"
-                description="Store and query logs, metrics and traces at scale using ClickStack, the open source observability stack powered by ClickHouse."
+                description="Store and query logs, metrics and traces at scale using ClickHouse Observability, the open source observability stack powered by ClickHouse."
                 href={localizeHref("/clickstack/overview")}
                 showArrow
             />
@@ -422,7 +422,7 @@ export const PageWrapper = ({ children }) => {
                 title="Agents"
                 galaxyEvent="docs.home.agentic-analytics"
                 description="Let AI agents query your real-time data directly to deliver instant, conversational insights and visualizations"
-                href={localizeHref("/products/cloud/features/ai-ml/agents")}
+                href={localizeHref("/agents")}
                 showArrow
             />
         </div>
@@ -461,7 +461,7 @@ export const PageWrapper = ({ children }) => {
                 <div className="flex flex-col gap-4">
                     <HeroCard
                         filename="thumbnail-clickstack-light.webp"
-                        title="ClickStack"
+                        title="ClickHouse Observability"
                         galaxyEvent="docs.home.clickstack"
                         description="The all in one observability stack powered by ClickHouse, which gives you lightning-fast queries and powerful aggregations on logs, metrics, traces, session replays and errors."
                         href={localizeHref("/clickstack/overview")}

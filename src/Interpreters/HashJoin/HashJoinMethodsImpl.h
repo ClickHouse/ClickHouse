@@ -19,6 +19,8 @@
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event JoinPackedStringKeysInline;
+extern const Event JoinPackedStringKeysHashed;
 }
 
 namespace DB
@@ -292,8 +294,11 @@ BuildResult insertSlotRows(
 }
 
 /// Free of the join kind, so the instantiation units share one copy per maps type.
+/// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
+/// (5 KB to 43 KB), and the build loop then overlaps fewer of its independent cache misses with join software
+/// prefetch on (TPC-H Q9 1.3x slower at 4 to 16 threads on aarch64). The call runs once per block.
 template <typename MapsTemplate, typename KeyGetter, typename HashMap>
-BuildResult insertFromBlockImplTypeCase(
+NO_INLINE BuildResult insertFromBlockImplTypeCase(
     HashJoin & join,
     HashJoin::RightTableData & table,
     HashMap & map,
@@ -367,6 +372,13 @@ BuildResult insertFromBlockImplTypeCase(
     };
 
     slots.insert(per_slot, insert_slot);
+
+    /// `insertSlotRows` takes a key getter that is not trivially copyable by reference, so these counts cover all slots.
+    if constexpr (requires { key_getter.hashed_keys; })
+    {
+        ProfileEvents::increment(ProfileEvents::JoinPackedStringKeysInline, key_getter.emplaced_keys - key_getter.hashed_keys);
+        ProfileEvents::increment(ProfileEvents::JoinPackedStringKeysHashed, key_getter.hashed_keys);
+    }
     return result;
 }
 

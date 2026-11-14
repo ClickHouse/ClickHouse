@@ -8,15 +8,21 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 此数据集包含 Stack Overflow 上的所有 `Posts`、`Users`、`Votes`、`Comments`、`Badges`、`PostHistory` 和 `PostLinks` 数据。
 
 您既可以下载预先准备好的 Parquet 版本数据，其中包含截至 2024 年 4 月的全部数据，也可以下载 XML 格式的最新数据并将其加载。Stack Overflow 会定期更新这些数据——历史上通常每 3 个月更新一次。
 
 下图展示了 Parquet 格式下可用表的 schema。
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Stack Overflow schema" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Stack Overflow schema](/images/getting-started/example-datasets/stackoverflow.webp)
+
+</Frame>
+
+</div>
 
 有关这些数据的 schema 说明，请参见[此处](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede)。
 

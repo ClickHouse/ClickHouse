@@ -53,6 +53,10 @@ workflow = Workflow.Config(
         # request touches, which is cheap enough for the queue; the full check on
         # `master` still covers the rest of the tree.
         JobConfigs.tidy_changed_files_job,
+        # The cross-compiled builds that pull requests do not run, see
+        # `MERGE_QUEUE_SPECIAL_BUILD_TYPES`. They need nothing but the source,
+        # so they start right away and end before the flaky check.
+        *JobConfigs.special_build_mq_jobs,
     ],
     artifacts=[
         *[
