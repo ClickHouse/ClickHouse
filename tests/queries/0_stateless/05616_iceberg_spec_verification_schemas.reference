@@ -164,7 +164,7 @@ c	Nullable(Decimal(9, 2))
 types_primitive__decimal-38-0 valid
 c	Nullable(Decimal(38, 0))
 types_primitive__decimal-precision-over-38 invalid
-exception
+c	Nullable(Decimal(39, 0))
 types_primitive__decimal-missing-scale invalid
 exception
 types_primitive__decimal-empty-params invalid
