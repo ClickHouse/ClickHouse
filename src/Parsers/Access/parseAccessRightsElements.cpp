@@ -185,9 +185,6 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
 
             for (auto & [access_flags, columns] : access_and_columns)
             {
-                if ((wildcard || table_name.empty()) && !columns.empty())
-                    return false;
-
                 AccessRightsElement element;
                 element.access_flags = access_flags;
                 element.columns = std::move(columns);
