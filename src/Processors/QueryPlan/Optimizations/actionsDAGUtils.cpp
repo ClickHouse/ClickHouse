@@ -8,8 +8,10 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,6 +35,86 @@ namespace DB
 static bool hasNullConstantArgument(const ActionsDAG::Node & node)
 {
     return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
+}
+
+/// the name and the arguments of a lambda do not have its body; true for two functions that are not lambdas
+static bool hasSameLambdaBody(const IFunctionBase & inner, const IFunctionBase & outer)
+{
+    auto try_get_capture = [](const IFunctionBase & function) -> const LambdaCapture *
+    {
+        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(&function))
+            return &function_capture->getCapture();
+        if (const auto * function_expression = typeid_cast<const FunctionExpression *>(&function))
+            return &function_expression->getCapture();
+        return nullptr;
+    };
+
+    const auto * inner_capture = try_get_capture(inner);
+    const auto * outer_capture = try_get_capture(outer);
+    if (!inner_capture || !outer_capture)
+        return !inner_capture && !outer_capture;
+    return inner_capture->body_hash == outer_capture->body_hash;
+}
+
+/// compares two constants of one type
+static bool isSameConstant(const IColumn & inner, const IColumn & outer, size_t max_size_for_sets_from_tuple_to_compare)
+{
+    auto get_data = [](const IColumn & column) -> const IColumn &
+    {
+        const auto * column_const = typeid_cast<const ColumnConst *>(&column);
+        return column_const ? column_const->getDataColumn() : column;
+    };
+    const auto & inner_data = get_data(inner);
+    const auto & outer_data = get_data(outer);
+
+    if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner_data))
+    {
+        /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
+        /// set contents, so it cannot distinguish different
+        /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
+        /// hash (computed order-independently in its constructor) when both
+        /// fit under the size limit. Subquery/storage sets fall through to
+        /// non-matching: their content isn't known at planning time, and
+        /// matching them structurally here would be unsound.
+        const auto * outer_set = typeid_cast<const ColumnSet *>(&outer_data);
+        if (!outer_set || max_size_for_sets_from_tuple_to_compare == 0)
+            return false;
+
+        const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(inner_set->getData().get());
+        const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(outer_set->getData().get());
+        if (!inner_tuple || !outer_tuple)
+            return false;
+
+        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
+        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
+        /// Sizes are deduplicated counts; different sizes ⇒ different
+        /// contents, so skip hashing in that case.
+        return inner_rows == outer_rows
+            && inner_rows <= max_size_for_sets_from_tuple_to_compare
+            && inner_tuple->getContentHash() == outer_tuple->getContentHash();
+    }
+
+    if (const auto * inner_lambda = typeid_cast<const ColumnFunction *>(&inner_data))
+    {
+        /// the value of a lambda has only its captured constants, and not all of them have a value
+        const auto * outer_lambda = typeid_cast<const ColumnFunction *>(&outer_data);
+        if (!outer_lambda || !hasSameLambdaBody(*inner_lambda->getFunction(), *outer_lambda->getFunction()))
+            return false;
+
+        const auto & inner_captured = inner_lambda->getCapturedColumns();
+        const auto & outer_captured = outer_lambda->getCapturedColumns();
+        if (inner_captured.size() != outer_captured.size())
+            return false;
+
+        for (size_t i = 0; i < inner_captured.size(); ++i)
+            if (!inner_captured[i].column || !outer_captured[i].column
+                || !inner_captured[i].type->equals(*outer_captured[i].type)
+                || !isSameConstant(*inner_captured[i].column, *outer_captured[i].column, max_size_for_sets_from_tuple_to_compare))
+                return false;
+        return true;
+    }
+
+    return inner_data[0] == outer_data[0];
 }
 
 MatchedTrees::Matches matchTrees(
@@ -192,7 +274,8 @@ MatchedTrees::Matches matchTrees(
                             /// One function name resolves to different result types depending on the settings
                             /// the DAG was built with, and differently-typed results are not one calculation.
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
-                                && parent->result_type->equals(*frame.node->result_type))
+                                && parent->result_type->equals(*frame.node->result_type)
+                                && hasSameLambdaBody(*parent->function_base, *frame.node->function_base))
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)
@@ -204,46 +287,9 @@ MatchedTrees::Matches matchTrees(
                                         {
                                             const auto * inner_col = children[i]->column.get();
                                             const auto * outer_col = frame.node->children[i]->column.get();
-                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
-                                            {
-                                                all_children_matched = false;
-                                            }
-                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner_col->getDataColumn()))
-                                            {
-                                                /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
-                                                /// set contents, so `getField()` cannot distinguish different
-                                                /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
-                                                /// hash (computed order-independently in its constructor) when both
-                                                /// fit under the size limit. Subquery/storage sets fall through to
-                                                /// non-matching: their content isn't known at planning time, and
-                                                /// matching them structurally here would be unsound.
-                                                all_children_matched = false;
-                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(&outer_col->getDataColumn()) : nullptr;
-                                                if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
-                                                {
-                                                    const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
-                                                        inner_set->getData().get());
-                                                    const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(
-                                                        outer_set->getData().get());
-                                                    if (inner_tuple && outer_tuple)
-                                                    {
-                                                        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
-                                                        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
-                                                        /// Sizes are deduplicated counts; different sizes ⇒ different
-                                                        /// contents, so skip hashing in that case.
-                                                        if (inner_rows == outer_rows
-                                                            && inner_rows <= max_size_for_sets_from_tuple_to_compare)
-                                                        {
-                                                            all_children_matched =
-                                                                inner_tuple->getContentHash() == outer_tuple->getContentHash();
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            else
-                                            {
-                                                all_children_matched = inner_col->getField() == outer_col->getField();
-                                            }
+                                            all_children_matched = inner_col && outer_col
+                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
+                                                && isSameConstant(*inner_col, *outer_col, max_size_for_sets_from_tuple_to_compare);
                                         }
                                         else
                                             all_children_matched = frame.mapped_children[i] == children[i];
