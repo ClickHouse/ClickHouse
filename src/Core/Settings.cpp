@@ -3823,6 +3823,38 @@ If enable, remove duplicated rows during FINAL by marking rows as deleted and fi
       * Almost all limits apply to each stream individually. \
       */ \
     \
+    DECLARE(UInt64, abr_memory_buffer_size, 16 * 1024 * 1024, R"(
+Size in bytes of the in-memory buffer used by the `ABR` table engine to materialize each query attempt's results before they are
+replayed to the client. When the buffer is exhausted, additional output spills to temporary data on disk.
+
+Buffering is required because `ABR` may retry a query on a coarser source table after a fallback error
+(`TOO_MANY_ROWS`, `TOO_MANY_BYTES`, `TIMEOUT_EXCEEDED`); rows produced by a failed attempt must never reach the client.
+
+Set to `0` to skip the in-memory buffer entirely and always spill to disk.
+)", 0, \
+        {"26.11", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting for the `ABR` table engine."}) \
+    DECLARE(UInt64, abr_first_table_suffix, 0, R"(
+Minimum sample interval (suffix) to consider when the `ABR` table engine chooses a source table. Tables with a smaller sample
+interval are skipped even if their retention covers the query range.
+
+Useful when the finest-grained tables are known to be too expensive for a class of queries.
+
+`0` means no minimum: the finest available resolution is eligible.
+)", 0, \
+        {"26.11", 0, 0, "New setting for the `ABR` table engine."}) \
+    DECLARE(UInt64, abr_last_table_suffix, 0, R"(
+Maximum sample interval (suffix) to consider when the `ABR` table engine chooses a source table. Tables with a larger sample
+interval are excluded from selection.
+
+This setting overrides retention-based selection: if no table within `[abr_first_table_suffix, abr_last_table_suffix]` has enough
+retention for the query's time range, the query falls back to the table at `abr_last_table_suffix` rather than to a coarser one.
+
+The retries after `TOO_MANY_ROWS`, `TOO_MANY_BYTES` or `TIMEOUT_EXCEEDED` do not go beyond this table either, and the limits of the query are split
+only between the tables up to it.
+
+`0` means no maximum: the coarsest available table is eligible.
+)", 0, \
+        {"26.11", 0, 0, "New setting for the `ABR` table engine."}) \
     DECLARE(UInt64, max_rows_to_read, 0, R"(
 The maximum number of rows that can be read from a table when running a query.
 The restriction is checked for each processed chunk of data, applied only to the
@@ -11609,6 +11641,11 @@ Allow to create tables with `Paimon*` table engines.
 )", EXPERIMENTAL, allow_experimental_paimon_storage_engine, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_paimon_storage_engine`."}, \
         {"26.5", false, false, "New setting."}) \
+    DECLARE(Bool, allow_experimental_abr, false, R"(
+Allow to create tables with the experimental `ABR` table engine.
+It is only checked when a table is created: `ABR` tables are loaded and can be queried regardless of this setting.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting for the experimental `ABR` table engine."}) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
 for the specified snapshot_id without advancing the committed watermark.

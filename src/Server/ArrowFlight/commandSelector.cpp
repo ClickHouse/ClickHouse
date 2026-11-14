@@ -399,6 +399,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"YTsaurus", "REMOTE TABLE"},
 
     // Regular tables (MergeTree family and others)
+    {"ABR", "TABLE"},
     {"AggregatingMergeTree", "TABLE"},
     {"Alias", "TABLE"},
     {"CoalescingMergeTree", "TABLE"},

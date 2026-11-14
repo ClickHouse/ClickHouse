@@ -27,6 +27,7 @@ public:
     std::string getName() const override { return "Alias"; }
 
     bool isMergeTree() const override;
+    bool producesMergeableState(const ContextPtr & query_context) const override;
 
     bool readsFromOtherTables() const override { return true; }
     std::vector<StoragePtr> getUnderlyingStorages() const override
@@ -64,6 +65,18 @@ public:
     /// Returns the subset of `column_names` the current user has this access to on every table this
     /// alias resolves through. Resolves the chain once, whatever the grants look like.
     NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
+
+    /// The metadata of an alias is the one of the last table of its chain.
+    bool isExposedMetadataGranted(const ContextPtr & query_context, AccessType access_type, const String & column_name) const override
+    {
+        return isTargetTableGranted(query_context, access_type, column_name);
+    }
+
+    std::optional<NameSet> filterColumnsWithExposedMetadataGranted(
+        const ContextPtr & query_context, AccessType access_type, const Names & column_names) const override
+    {
+        return filterColumnsGrantedThroughChain(query_context, access_type, column_names);
+    }
 
     /// Returns the subset of `column_names` the current user can read with `SELECT` through every table this alias
     /// resolves through. Each name is decided separately at each table, as `read` decides it on each hop: a subcolumn is
@@ -214,6 +227,7 @@ public:
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool readRequiresAnalyzedQuery() const override { return getTargetTable()->readRequiresAnalyzedQuery(); }
+    bool readRequiresFullQuery() const override { return getTargetTable()->readRequiresFullQuery(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
     bool supportsReplication() const override
     {

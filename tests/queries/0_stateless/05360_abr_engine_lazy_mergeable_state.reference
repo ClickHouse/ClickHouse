@@ -1,0 +1,8 @@
+abr, enable_analyzer = 1, memory-efficient: 1
+100	49995000
+abr, enable_analyzer = 0, memory-efficient: 1
+100	49995000
+lazy abr, enable_analyzer = 1, memory-efficient: 1
+100	49995000
+lazy abr, enable_analyzer = 0, memory-efficient: 1
+100	49995000

@@ -657,6 +657,10 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
         return false;
 
+    /// A lazy proxy takes the columns from the definition, but `ABR` has none: they are those of its source tables.
+    if (query.storage && query.storage->engine && query.storage->engine->name == "ABR")
+        return false;
+
     if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 

@@ -1,0 +1,15 @@
+loading dependencies
+abr	['src_1','src_10']
+abr_expr	['src_1','src_10']
+['abr','abr_expr']
+DROP a source table
+HAVE_DEPENDENT_OBJECTS
+RENAME a source table
+HAVE_DEPENDENT_OBJECTS
+DROP a source table checking the referential dependencies
+HAVE_DEPENDENT_OBJECTS
+RESTORE
+1
+10
+1
+10

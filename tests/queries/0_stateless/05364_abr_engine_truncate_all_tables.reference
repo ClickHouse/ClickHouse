@@ -1,0 +1,9 @@
+TRUNCATE the ABR table
+TRUNCATE ALL TABLES
+0
+0
+0
+TRUNCATE ALL TABLES with a lazily loaded ABR table
+0
+0
+0

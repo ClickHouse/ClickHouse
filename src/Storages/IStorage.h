@@ -31,6 +31,7 @@ namespace DB
 
 using StorageActionBlockType = size_t;
 
+enum class AccessType : uint16_t;
 class ASTCreateQuery;
 class ASTInsertQuery;
 
@@ -133,6 +134,19 @@ public:
     /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
     /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
     virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
+
+    /// Returns true if `read` needs the whole query, filters included. The planner collects the filters of the query for
+    /// such a table before reading it. The table cannot be read from a serialized query plan, which only names the table
+    /// and the columns to read, so a remote server is sent the SQL of a query that reads it, even with `serialize_query_plan`.
+    virtual bool readRequiresFullQuery() const { return false; }
+
+    /// Returns true if the storage hands back already-processed, mergeable partial state that
+    /// must be combined like a remote shard's output, regardless of data locality.
+    /// The planner and interpreter use it to decide how to merge aggregated data.
+    /// Covers remote storages and `MergeTree` with parallel replicas (hence the context). A storage that
+    /// executes the query itself up to the requested processing stage should return true as well.
+    /// Wrappers answer for the table they forward to.
+    virtual bool producesMergeableState(const ContextPtr & /*query_context*/) const { return isRemote(); }
 
     /// Returns true for storages that do not store data themselves but read it from other tables,
     /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
@@ -277,6 +291,21 @@ public:
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias,
     /// and covers only the data visible to the user of `query_context`.
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & /*query_context*/) const { return getColumnSizes(); }
+
+    /// Whether the user of `query_context` has `access_type` on the tables whose metadata this table shows as its own, e.g. the
+    /// columns of the target of an `Alias`. An empty `column_name` stands for the whole table. Checked on top of the access to
+    /// this table where its metadata is shown (`DESCRIBE`, `system.columns`, `system.tables`).
+    virtual bool isExposedMetadataGranted(const ContextPtr & /*query_context*/, AccessType /*access_type*/, const String & /*column_name*/) const
+    {
+        return true;
+    }
+
+    /// The subset of `column_names` for which `isExposedMetadataGranted` holds, or nullopt if it holds for all of them.
+    virtual std::optional<NameSet> filterColumnsWithExposedMetadataGranted(
+        const ContextPtr & /*query_context*/, AccessType /*access_type*/, const Names & /*column_names*/) const
+    {
+        return std::nullopt;
+    }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.

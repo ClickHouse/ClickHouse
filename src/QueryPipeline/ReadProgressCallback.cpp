@@ -42,6 +42,13 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
     {
         Progress total_rows_progress = {0, 0, rows_approx};
 
+        /// The estimate of a pipeline that checks its limits on its own progress stays with it, see `checkLimitsOnOwnProgress`.
+        if (check_limits_on_own_progress)
+        {
+            own_progress.incrementPiecewiseAtomically(total_rows_progress);
+            return;
+        }
+
         progress_callback(total_rows_progress);
         process_list_elem->updateProgressIn(total_rows_progress);
     }
@@ -57,17 +64,24 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 
     Progress value {read_rows, read_bytes, total_rows_approx.exchange(0), total_bytes.exchange(0)};
 
+    /// A pipeline that checks its limits on its own progress keeps its estimates of the data to read, and reports
+    /// only the data it actually read, see `checkLimitsOnOwnProgress`.
+    const Progress read_value {read_rows, read_bytes};
+    if (check_limits_on_own_progress)
+        own_progress.incrementPiecewiseAtomically(value);
+    const Progress & reported_value = check_limits_on_own_progress ? read_value : value;
+
     if (progress_callback)
-        progress_callback(value);
+        progress_callback(reported_value);
 
     if (process_list_elem)
     {
-        if (!process_list_elem->updateProgressIn(value))
+        if (!process_list_elem->updateProgressIn(reported_value))
             return false;
 
-        /// The total amount of data processed or intended for processing in all sources, possibly on remote servers.
-
-        ProgressValues progress = process_list_elem->getProgressIn();
+        /// The total amount of data processed or intended for processing in all sources, possibly on remote servers,
+        /// or only by this pipeline, if `checkLimitsOnOwnProgress` was called.
+        ProgressValues progress = check_limits_on_own_progress ? own_progress.getValues() : process_list_elem->getProgressIn();
 
         for (const auto & limits : storage_limits)
         {

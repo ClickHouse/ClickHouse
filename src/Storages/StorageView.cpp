@@ -24,8 +24,10 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
@@ -691,6 +693,59 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     };
 
     return find_storage(inner_query_tree.get(), context);
+}
+
+bool StorageView::readRequiresFullQuery() const
+{
+    std::vector<std::pair<ASTPtr, String>> nodes;
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited_views;
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    auto add_view_query = [&](const StorageView & view)
+    {
+        if (!visited_views.insert(view.getStorageID()).second)
+            return;
+        const auto metadata = view.getInMemoryMetadataPtr(query_context, false);
+        const auto & inner_query = metadata->getSelectQuery().inner_query;
+        if (!inner_query)
+            return;
+
+        /// The tables of the `view` table function are in the current database of the query, as when it is read.
+        String database = view.getStorageID().database_name;
+        if (database == ITableFunction::getDatabaseName() && query_context)
+            database = query_context->getCurrentDatabase();
+        nodes.emplace_back(inner_query, std::move(database));
+    };
+    add_view_query(*this);
+
+    const auto context = Context::getGlobalContextInstance();
+    while (!nodes.empty())
+    {
+        auto [node, database] = std::move(nodes.back());
+        nodes.pop_back();
+
+        if (const auto * table_identifier = node->as<ASTTableIdentifier>())
+        {
+            StorageID storage_id = table_identifier->getTableId();
+            if (storage_id.database_name.empty())
+                storage_id.database_name = database;
+
+            /// A view is expanded here rather than asked, so that each view is traversed once.
+            if (const auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context); storage)
+            {
+                if (const auto view = castStorage<StorageView>(storage, DeferredTable::Load))
+                    add_view_query(*view);
+                else if (storage->readRequiresFullQuery())
+                    return true;
+            }
+        }
+        else
+        {
+            for (const auto & child : node->children)
+                if (child)
+                    nodes.emplace_back(child, database);
+        }
+    }
+    return false;
 }
 
 bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const

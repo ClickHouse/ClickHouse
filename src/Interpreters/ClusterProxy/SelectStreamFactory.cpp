@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/resolveStorages.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
@@ -156,9 +157,19 @@ void SelectStreamFactory::createForShardImpl(
             query_plan = createLocalPlan(
                 query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
 
-            shard_header = query_plan->getCurrentHeader();
+            /// A table that needs the whole query, such as `ABR`, cannot be read from a serialized plan, so send the SQL.
+            if (queryPlanReadsStorageRequiringFullQuery(*query_plan, context))
+            {
+                LOG_DEBUG(getLogger("ClusterProxy::SelectStreamFactory"),
+                    "Sending query to shard {} as SQL because it reads a table that cannot be read from a serialized query plan",
+                    shard_info.shard_num);
+                query_plan.reset();
+            }
+            else
+                shard_header = query_plan->getCurrentHeader();
         }
-        else
+
+        if (!query_plan)
         {
             std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         }

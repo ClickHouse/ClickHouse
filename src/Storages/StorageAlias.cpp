@@ -72,6 +72,12 @@ bool StorageAlias::isMergeTree() const
     return target && resolveLazyStandIn(target)->isMergeTree();
 }
 
+bool StorageAlias::producesMergeableState(const ContextPtr & query_context) const
+{
+    auto target = tryGetTargetTable();
+    return target && resolveLazyStandIn(target)->producesMergeableState(query_context);
+}
+
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
 {
     /// Table-level access check only. Column-level checks resolve subcolumns against the target

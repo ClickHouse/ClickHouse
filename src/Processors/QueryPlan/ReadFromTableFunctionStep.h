@@ -21,9 +21,14 @@ public:
     const std::string & getSerializedAST() const { return serialized_ast; }
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
 
+    /// Whether the storage of the table function needs the whole query, see `IStorage::readRequiresFullQuery`.
+    void setReadsStorageRequiringFullQuery(bool value) { reads_storage_requiring_full_query = value; }
+    bool readsStorageRequiringFullQuery() const { return reads_storage_requiring_full_query; }
+
 private:
     std::string serialized_ast;
     TableExpressionModifiers table_expression_modifiers;
+    bool reads_storage_requiring_full_query = false;
 };
 
 }
