@@ -29,8 +29,8 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1695,23 +1695,28 @@ bool sortPrefixCanGroupDistinctKeys(const InputOrder & order_info, const Names &
     return getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, header).size() == order_info.sort_description.size();
 }
 
-/// Whether a `LIMIT` above the step at the top of `stack` stops reading early, i.e. only streaming steps lie in between.
+/// Whether a `LIMIT` above the step at the top of `stack` can stop reading early, i.e. no step in between reads its input till the end.
 bool canStopReadingEarly(const Stack & stack)
 {
     for (size_t i = stack.size(); i-- > 0;)
     {
-        const IQueryPlanStep * step = stack[i].node->step.get();
+        const QueryPlan::Node & node = *stack[i].node;
+        const IQueryPlanStep * step = node.step.get();
         if (const auto * limit = typeid_cast<const LimitStep *>(step))
             return !limit->alwaysReadTillEnd();
-        if (const auto * distinct = typeid_cast<const DistinctStep *>(step))
-        {
-            if (distinct->getLimitHint())
-                return true;
-            continue;
-        }
-        if (!typeid_cast<const ExpressionStep *>(step) && !typeid_cast<const FilterStep *>(step)
-            && !typeid_cast<const ArrayJoinStep *>(step) && !typeid_cast<const LimitByStep *>(step)
-            && !typeid_cast<const OffsetStep *>(step))
+        if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(step); limit_range && limit_range->canStopReadingEarly())
+            return true;
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(step); distinct && distinct->getLimitHint())
+            return true;
+        if (typeid_cast<const SortingStep *>(step) || typeid_cast<const AggregatingStep *>(step)
+            || typeid_cast<const CreatingSetStep *>(step))
+            return false;
+        /// A join reads the input it builds its table from till the end, and which input that is is known only for a `JoinStep`.
+        if (typeid_cast<const JoinStepLogical *>(step))
+            return false;
+        const auto * join = typeid_cast<const JoinStep *>(step);
+        if (join && join->getJoin()->pipelineType() == JoinPipelineType::FillRightFirst
+            && stack[i + 1].node != node.children[join->swap_streams ? 1 : 0])
             return false;
     }
     return false;

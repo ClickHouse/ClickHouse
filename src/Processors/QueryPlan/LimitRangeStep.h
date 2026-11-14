@@ -42,6 +42,8 @@ public:
 
     bool hasCorrelatedExpressions() const override { return conditions.hasCorrelatedColumns(); }
     const ActionsDAG & getConditions() const { return conditions; }
+    /// Whether the transform closes its input once the range ends.
+    bool canStopReadingEarly() const { return !always_read_till_end && !start_all && (limit || end_column_name); }
 
 private:
     void updateOutputHeader() override
