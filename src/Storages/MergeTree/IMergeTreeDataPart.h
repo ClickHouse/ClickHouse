@@ -538,6 +538,8 @@ public:
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
+    /// Whether `getIndex` returns the index without reading it from disk: it is loaded, or in the primary index cache.
+    bool isIndexInMemory() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

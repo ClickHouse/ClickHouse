@@ -262,16 +262,93 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     probe_settings[Setting::merge_tree_generic_exclusion_search_max_steps]
         = user_max_steps ? std::min(user_max_steps, max_steps_per_part) : max_steps_per_part;
 
-    /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
-    size_t marks = 0;
-    for (const auto & part : parts)
+    auto probe_part = [&](const RangesInDataPart & part) -> size_t
     {
-        marks += markRangesFromPKRange(
+        return markRangesFromPKRange(
             part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
             /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, probe_settings, log).getNumberOfMarks();
+    };
 
-        if (marks >= limit)
-            return false;
+    size_t num_threads = std::min<size_t>(parts.size(), settings[Setting::max_threads]);
+    if (settings[Setting::max_threads_for_indexes])
+        num_threads = std::min<size_t>(num_threads, settings[Setting::max_threads_for_indexes]);
+    num_threads = std::max<size_t>(num_threads, 1);
+
+    /// Analyzing a part loads its primary index if it is not in memory. When more than one index of a window of
+    /// `num_threads` consecutive parts is not in memory, the parts of the window are analyzed in parallel, as the index
+    /// analysis of the read does. A window is consumed in order before the next one is started, so the decision and the
+    /// exception are those of the serial analysis, which analyzes fewer than `num_threads` parts less.
+    std::vector<size_t> window_marks(num_threads);
+    std::vector<std::exception_ptr> window_exceptions(num_threads);
+    /// Created on the first window with more than one index to load. Declared after the vectors to be destroyed first:
+    /// its destructor joins the jobs that still use them when scheduling throws.
+    std::optional<ThreadPool> pool;
+
+    /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
+    size_t marks = 0;
+    for (size_t window_begin = 0; window_begin < parts.size(); window_begin += num_threads)
+    {
+        const size_t window_end = std::min(parts.size(), window_begin + num_threads);
+
+        size_t indexes_to_load = 0;
+        if (num_threads > 1)
+        {
+            for (size_t part_index = window_begin; part_index < window_end; ++part_index)
+                indexes_to_load += !parts[part_index].data_part->isIndexInMemory();
+        }
+
+        if (indexes_to_load <= 1)
+        {
+            for (size_t part_index = window_begin; part_index < window_end; ++part_index)
+            {
+                marks += probe_part(parts[part_index]);
+                if (marks >= limit)
+                    return false;
+            }
+            continue;
+        }
+
+        if (!pool)
+        {
+            LOG_TRACE(log, "Analyzing the primary key of parts in {} threads to decide whether to load statistics", num_threads);
+            pool.emplace(
+                CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+                CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+                CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+                num_threads);
+        }
+
+        for (size_t part_index = window_begin; part_index < window_end; ++part_index)
+        {
+            pool->scheduleOrThrowOnError(
+                [&, part_index, slot = part_index - window_begin, thread_group = CurrentThread::getGroup(),
+                 component_name = Coordination::getCurrentComponent()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                    auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                    try
+                    {
+                        window_marks[slot] = probe_part(parts[part_index]);
+                    }
+                    catch (...)
+                    {
+                        window_exceptions[slot] = std::current_exception();
+                    }
+                });
+        }
+
+        pool->wait();
+
+        for (size_t part_index = window_begin; part_index < window_end; ++part_index)
+        {
+            const size_t slot = part_index - window_begin;
+            if (window_exceptions[slot])
+                std::rethrow_exception(window_exceptions[slot]);
+
+            marks += window_marks[slot];
+            if (marks >= limit)
+                return false;
+        }
     }
 
     return true;
