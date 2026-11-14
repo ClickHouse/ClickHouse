@@ -1,0 +1,12 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Each attempt against the unreachable endpoint is refused at once, but the
+                 default ten tries back off up to ten seconds each, so one statement spends
+                 over half a minute inside the disk lookup and outlives the client waiting
+                 on it. These tests only need the lookup to fail, not to be retried.
+                 A settings profile is only read from a users configuration. -->
+            <http_max_tries>1</http_max_tries>
+        </default>
+    </profiles>
+</clickhouse>
