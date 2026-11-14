@@ -1,0 +1,54 @@
+blocks	[20000]
+uid, ts	1
+uh, ts	1
+ih DESC, neg	1
+small, d	1
+i8, dc DESC	1
+e, b, dt	1
+ip, cat	1
+cat, uh, ts	1
+uid, uh, ts	1
+uid, uh, ih, ts	1
+spread, ts	1
+spread DESC, dc	1
+wide, cat	1
+c5, small	1
+inc, ts	1
+rev, ts	1
+n DESC, ts	1
+uid DESC, ts DESC	1
+cat, toString(n)	1
+mix, ts	1
+rep, ts	1
+cat, n	1
+uid, n	1
+spread, n	1
+small, rev DESC	1
+c5, n	1
+cat, rev	1
+cat, n DESC	1
+cat, late1	1
+cat, late2	1
+INSERT uid, ts	1
+INSERT uid, cat	1
+INSERT uh, ts	1
+INSERT ih DESC, neg	1
+INSERT cat, uh	1
+INSERT cat, uh, ts	1
+INSERT i8, dc DESC	1
+INSERT spread, cat	1
+INSERT spread DESC, dc	1
+INSERT inc, ts	1
+INSERT rev, ts	1
+INSERT small, identity(1), d	1
+INSERT mix, ts	1
+INSERT rep, ts	1
+INSERT b, inc	1
+INSERT uid, inc	1
+INSERT spread, inc	1
+INSERT small, rev DESC	1
+INSERT cat, rev	1
+INSERT cat DESC, rev	1
+INSERT cat, late1	1
+INSERT cat, late2	1
+DISTINCT cat, uh	1
