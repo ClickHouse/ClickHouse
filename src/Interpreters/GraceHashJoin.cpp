@@ -206,7 +206,7 @@ public:
 
     bool empty() const { return is_empty.load(); }
 
-    AccumulatedBlockReader startJoining(size_t min_block_rows, size_t min_block_bytes)
+    AccumulatedBlockReader startJoining(size_t min_block_rows = 0, size_t min_block_bytes = 0)
     {
         LOG_TRACE(log, "Joining file bucket {}", idx);
         {
@@ -363,7 +363,7 @@ void GraceHashJoin::initBuckets()
     LOG_TRACE(log, "Initialize {} bucket{}", buckets.size(), buckets.size() > 1 ? "s" : "");
 
     current_bucket = buckets.front().get();
-    current_bucket->startJoining(table_join->minJoinedBlockRows(), table_join->minJoinedBlockBytes());
+    current_bucket->startJoining();
 }
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
@@ -835,7 +835,11 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         }
 
         hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
-        auto right_reader = current_bucket->startJoining(table_join->minJoinedBlockRows(), table_join->minJoinedBlockBytes());
+        /// An ALL join stores every right block it is given. The ANY, SEMI and ANTI maps of a LEFT or INNER join
+        /// drop a block that adds no new key, and a merged read would keep the rows of the parts they drop.
+        const bool merge_right_reads = table_join->strictness() == JoinStrictness::All;
+        auto right_reader = current_bucket->startJoining(
+            merge_right_reads ? table_join->minJoinedBlockRows() : 0, merge_right_reads ? table_join->minJoinedBlockBytes() : 0);
         size_t num_rows = 0; /// count rows that were written and rehashed
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
