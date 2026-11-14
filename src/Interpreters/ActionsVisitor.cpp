@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include <Common/assert_cast.h>
@@ -423,6 +424,56 @@ ASTPtr makeScalarNonConstantInReplacement(
     return result;
 }
 
+/// Compare a `Decimal` and a floating value without rounding an exactly representable
+/// scaled decimal through a float-to-decimal cast.
+ASTPtr makeDecimalFloatInComparison(
+    const ASTPtr & decimal,
+    const ASTPtr & floating,
+    const DataTypePtr & decimal_type)
+{
+    auto float_value = makeASTFunction("toFloat64", floating->clone());
+    auto converted = makeASTFunction(
+        "accurateCastOrNull", float_value->clone(), make_intrusive<ASTLiteral>(decimal_type->getName()));
+    auto decimal_matches = makeASTFunction("equals", decimal->clone(), std::move(converted));
+    auto float_matches = makeASTFunction("equals", float_value->clone(), makeASTFunction("toFloat64", decimal->clone()));
+    auto cast_match = makeASTFunction(
+        "ifNull", makeASTFunction("and", std::move(decimal_matches), std::move(float_matches)),
+        make_intrusive<ASTLiteral>(0u));
+
+    String reinterpret_name;
+    String integer_cast_name;
+    switch (decimal_type->getTypeId())
+    {
+        case TypeIndex::Decimal32: reinterpret_name = "reinterpretAsInt32"; integer_cast_name = "toInt32"; break;
+        case TypeIndex::Decimal64: reinterpret_name = "reinterpretAsInt64"; integer_cast_name = "toInt64"; break;
+        case TypeIndex::Decimal128: reinterpret_name = "reinterpretAsInt128"; integer_cast_name = "toInt128"; break;
+        case TypeIndex::Decimal256: reinterpret_name = "reinterpretAsInt256"; integer_cast_name = "toInt256"; break;
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Decimal type in numeric `IN` comparison");
+    }
+
+    const auto scale = getDecimalScale(*decimal_type);
+    Int256 five_power = 1;
+    for (UInt32 i = 0; i < scale; ++i)
+        five_power *= 5;
+    auto five_power_node = makeASTFunction(integer_cast_name, make_intrusive<ASTLiteral>(toString(five_power)));
+    auto raw_decimal = makeASTFunction(reinterpret_name, decimal->clone());
+    auto remainder = makeASTFunction("modulo", raw_decimal->clone(), five_power_node->clone());
+    auto divisible = makeASTFunction("equals", std::move(remainder), make_intrusive<ASTLiteral>(0u));
+    auto quotient = makeASTFunction("intDiv", std::move(raw_decimal), std::move(five_power_node));
+    auto scaled_float = makeASTFunction(
+        "multiply", std::move(float_value),
+        make_intrusive<ASTLiteral>(std::ldexp(1.0, static_cast<int>(scale))));
+    auto exact_match = makeASTFunction(
+        "and", std::move(divisible), makeASTFunction("equals", std::move(quotient), scaled_float->clone()));
+    if (!scale)
+        return exact_match;
+
+    auto scaled_is_integral = makeASTFunction(
+        "equals", scaled_float->clone(), makeASTFunction("trunc", scaled_float->clone()));
+    auto fractional_match = makeASTFunction("and", makeASTFunction("not", std::move(scaled_is_integral)), std::move(cast_match));
+    return makeASTFunction("or", std::move(exact_match), std::move(fractional_match));
+}
+
 /// Compare each numeric candidate before an array can narrow it. Only a source
 /// `NULL`, not a failed string-to-number conversion, makes a nonmatch unknown.
 ASTPtr makeNumericNonConstantInReplacement(
@@ -474,14 +525,8 @@ ASTPtr makeNumericNonConstantInReplacement(
             const ASTPtr & decimal = isDecimal(left_bare_type) ? left_operand : candidate;
             const ASTPtr & floating = isFloat(left_bare_type) ? left_operand : candidate;
             const auto & decimal_type = isDecimal(left_bare_type) ? left_bare_type : element_bare_type;
-            auto converted = makeASTFunction(
-                "accurateCastOrNull", makeASTFunction("toFloat64", floating->clone()),
-                make_intrusive<ASTLiteral>(decimal_type->getName()));
-            auto decimal_matches = makeASTFunction("equals", decimal->clone(), converted->clone());
-            auto float_matches = makeASTFunction("equals", floating->clone(), makeASTFunction("toFloat64", std::move(converted)));
             auto match = makeASTFunction(
-                "ifNull", makeASTFunction("and", std::move(decimal_matches), std::move(float_matches)),
-                make_intrusive<ASTLiteral>(0u));
+                "ifNull", makeDecimalFloatInComparison(decimal, floating, decimal_type), make_intrusive<ASTLiteral>(0u));
             any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
             continue;
         }
