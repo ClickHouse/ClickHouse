@@ -84,7 +84,7 @@ template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
     , update_wait(saturatedMilliseconds(getCacheUpdateWaitMs(*storage.getSettings()).count()))
-    , path(fs::path(storage.getZooKeeperPath()) / dir_name)
+    , path(zkutil::joinZooKeeperPath(storage.getZooKeeperPath(), dir_name))
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {

@@ -39,6 +39,7 @@
 #include <Common/InterruptListener.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
+#include <Common/getUserHomePath.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
@@ -204,10 +205,7 @@ public:
 
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
-        std::string home_path;
-        const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-        if (home_path_cstr)
-            home_path = home_path_cstr;
+        const String home_path = getUserHomePath();
 
         std::optional<std::string> config_path;
         if (config().has("config-file"))
@@ -1095,6 +1093,9 @@ private:
     /// In the worker threads we do not accept INT signal.
     static void blockSigint()
     {
+#if !defined(OS_WINDOWS)
+        /// Nothing to do on Windows: a console control event is delivered to a thread the OS
+        /// creates for the purpose, never to one of these, so there is no per-thread mask to set.
         sigset_t sig_set;
         if (sigemptyset(&sig_set)
             || sigaddset(&sig_set, SIGINT)
@@ -1102,6 +1103,7 @@ private:
         {
             throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
         }
+#endif
     }
 
     void thread()

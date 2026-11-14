@@ -1,5 +1,6 @@
 #include <Common/AlignedBuffer.h>
 
+#include <base/alignedAlloc.h>
 #include <Common/CacheLine.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -24,11 +25,11 @@ void AlignedBuffer::alloc(size_t size, size_t alignment)
     size = ::Memory::alignUp(size, CH_CACHE_LINE_SIZE);
 
     void * new_buf = nullptr;
-    int res = ::posix_memalign(&new_buf, alignment, size);
+    int res = alignedPosixMemalign(&new_buf, alignment, size);
     if (0 != res)
         throw ErrnoException(
             ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-            "Cannot allocate memory (posix_memalign), size: {}, alignment: {}.",
+            "Cannot allocate memory (aligned allocation), size: {}, alignment: {}.",
             ReadableSize(size),
             ReadableSize(alignment));
     buf = new_buf;
@@ -37,7 +38,7 @@ void AlignedBuffer::alloc(size_t size, size_t alignment)
 void AlignedBuffer::dealloc()
 {
     if (buf)
-        ::free(buf);
+        alignedFree(buf);
 }
 
 void AlignedBuffer::reset(size_t size, size_t alignment)

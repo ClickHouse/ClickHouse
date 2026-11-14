@@ -13,6 +13,7 @@
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <Common/Hex.h>
+#include <base/pathToString.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/UUID.h>
@@ -126,7 +127,9 @@ namespace
     /// This prevents a corrupted or tampered backup from accessing files outside the intended directories during restore.
     void validateFileNameFromBackup(const String & file_name, const String & field_name, const String & backup_name_for_logging)
     {
-        fs::path path(file_name);
+        /// `pathFromString`, not the `fs::path` constructor: the name is UTF-8, which on Windows the
+        /// constructor would decode through the active code page.
+        fs::path path = pathFromString(file_name);
 
         /// Reject absolute or rooted paths.
         if (path.is_absolute() || path.has_root_name() || path.has_root_directory())
@@ -161,7 +164,11 @@ namespace
         /// The name is kept verbatim, and `listFiles` cuts a directory prefix off it by byte offset, so a
         /// name that is not already normalized yields a remainder that is rooted or escapes its directory.
         /// Compare the strings: two `fs::path` objects compare element-wise, so "a//b" equals "a/b".
-        if (normalized.string() != file_name)
+        /// `pathToGenericString`: a path inside a backup is always `/`-separated and UTF-8, while
+        /// `string` renders the preferred separator of the host and, on Windows, the active code page,
+        /// which would make every name with a directory or a non-ASCII character in it compare unequal
+        /// to itself.
+        if (pathToGenericString(normalized) != file_name)
             throw Exception(
                 ErrorCodes::INSECURE_PATH,
                 "Backup {}: <{}> {} is not a normalized path, which is not allowed",

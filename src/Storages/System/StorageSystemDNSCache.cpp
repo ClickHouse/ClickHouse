@@ -18,7 +18,10 @@ static DataTypePtr getIPFamilyEnumType()
         {
             {"IPv4",           static_cast<Int8>(Poco::Net::AddressFamily::IPv4)},
             {"IPv6",           static_cast<Int8>(Poco::Net::AddressFamily::IPv6)},
-            {"UNIX_LOCAL",     static_cast<Int8>(Poco::Net::AddressFamily::UNIX_LOCAL)},
+            /// Poco declares `UNIX_LOCAL` only where it has UNIX domain sockets, but this enum is
+            /// the column's type and so part of the table's schema, which must be the same
+            /// everywhere. It is the enumerator that follows `IPv6`.
+            {"UNIX_LOCAL",     static_cast<Int8>(Poco::Net::AddressFamily::IPv6) + 1},
         });
 }
 

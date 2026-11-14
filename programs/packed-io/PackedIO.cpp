@@ -1,6 +1,7 @@
 #include <Common/StringUtils.h>
 #include <Disks/DiskLocal.h>
 #include <IO/PackedFilesOperations.h>
+#include <base/pathToString.h>
 
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -73,7 +74,7 @@ Recursive create traverses input directory and subdirectories, collects all file
         {
             auto listings = listPackedRecursive(disk, input_path);
             for (const auto & [path, listing] : listings)
-                printListing(path.string(), listing, std::cout);
+                printListing(pathToGenericString(path), listing, std::cout);
         }
         else
         {

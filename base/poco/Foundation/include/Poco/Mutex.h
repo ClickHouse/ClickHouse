@@ -23,7 +23,11 @@
 #include "Poco/ScopedLock.h"
 
 
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#    include "Poco/Mutex_WIN32.h"
+#else
 #    include "Poco/Mutex_POSIX.h"
+#endif
 
 
 namespace Poco

@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/PrimaryIndexLoader.h>
 
+#include <base/pathToString.h>
+
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -87,7 +89,7 @@ Columns loadPrimaryIndexFromStorage(
     }
 
     const String index_name = getPrimaryIndexFileName(data_part_storage);
-    const String index_path = fs::path(data_part_storage.getRelativePath()) / index_name;
+    const String index_path = pathToGenericString(fs::path(data_part_storage.getRelativePath()) / index_name);
 
     auto index_file = readPartFile(data_part_storage, read_settings, index_name);
 

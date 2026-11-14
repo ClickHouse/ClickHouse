@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -13,7 +14,7 @@ namespace ErrorCodes
 }
 
 ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata(
-    const std::filesystem::path & zk_path,
+    const std::string & zk_path,
     const std::string & path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
@@ -25,9 +26,9 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
-        /* processing_node_path */zk_path / "processing" / getNodeName(path_),
-        /* processed_node_path */zk_path / "processed" / getNodeName(path_),
-        /* failed_node_path */zk_path / "failed" / getNodeName(path_),
+        /* processing_node_path */zkutil::joinZooKeeperPath(zk_path, "processing", getNodeName(path_)),
+        /* processed_node_path */zkutil::joinZooKeeperPath(zk_path, "processed", getNodeName(path_)),
+        /* failed_node_path */zkutil::joinZooKeeperPath(zk_path, "failed", getNodeName(path_)),
         file_status_,
         max_loading_retries_,
         metadata_ref_count_,
@@ -134,7 +135,7 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(
 
 void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
     std::vector<std::string> & paths,
-    const std::filesystem::path & zk_path_,
+    const std::string & zk_path_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
 {
@@ -142,8 +143,8 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
     for (const auto & path : paths)
     {
         const auto node_name = getNodeName(path);
-        check_paths.push_back(zk_path_ / "processed" / node_name);
-        check_paths.push_back(zk_path_ / "failed" / node_name);
+        check_paths.push_back(zkutil::joinZooKeeperPath(zk_path_, "processed", node_name));
+        check_paths.push_back(zkutil::joinZooKeeperPath(zk_path_, "failed", node_name));
     }
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;

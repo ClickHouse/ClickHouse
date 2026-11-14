@@ -8,6 +8,8 @@
     #include <syscall.h>
 #elif defined(OS_FREEBSD)
     #include <pthread_np.h>
+#elif defined(OS_WINDOWS)
+    #include <Poco/UnWindows.h>
 #elif defined(OS_WASM)
     #include <pthread.h>
 #else
@@ -26,6 +28,10 @@ static void setCurrentThreadId()
     current_tid = static_cast<uint64_t>(syscall(SYS_gettid)); /// This call is always successful. - man gettid
 #elif defined(OS_FREEBSD)
     current_tid = pthread_getthreadid_np();
+#elif defined(OS_WINDOWS)
+    /// The Win32 thread id, which is what the debugger, the task manager and `ETW` all show -
+    /// as opposed to the `pthread_t` that winpthreads hands out, which is an opaque pointer.
+    current_tid = GetCurrentThreadId();
 #elif defined(OS_SUNOS)
     // On Solaris-derived systems, this returns the ID of the LWP, analogous
     // to a thread.

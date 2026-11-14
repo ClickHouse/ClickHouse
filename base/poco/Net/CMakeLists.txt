@@ -1,5 +1,20 @@
 file (GLOB SRCS src/*.cpp)
 
+if (OS_WINDOWS)
+    # `NetworkInterface` enumerates the host's interfaces. Upstream Poco implements it on
+    # Windows through `GetAdaptersAddresses`, but that implementation relies on several members
+    # this fork removed along with the rest of its Windows support (`NetworkInterfaceImpl::
+    # setRunning`, the `IPAddress(const SOCKET_ADDRESS &)` constructor, the two-argument
+    # `setFlags`). Nothing in ClickHouse uses `Poco::Net::NetworkInterface` - `isLocalAddress`
+    # calls `getifaddrs` directly - and inside Poco::Net only `MulticastSocket` needs it, which
+    # ClickHouse does not use either, so both are left out here rather than restoring code that
+    # would have no caller. Reinstating them is a prerequisite for multicast on Windows.
+    list (REMOVE_ITEM SRCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/NetworkInterface.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/MulticastSocket.cpp"
+    )
+endif ()
+
 add_library (_poco_net ${SRCS})
 add_library (Poco::Net ALIAS _poco_net)
 
@@ -8,6 +23,8 @@ if (OS_LINUX)
 elseif (OS_DARWIN OR OS_FREEBSD)
     target_compile_definitions (_poco_net PRIVATE POCO_HAVE_FD_POLL)
 endif ()
+# Note: on Windows neither is set, so `SocketImpl::pollImpl` uses its `select()` path - mingw-w64
+# has no `poll()`, and Poco 1.9.3 does not know about `WSAPoll`.
 
 if (OS_SUNOS)
     target_link_libraries (_poco_net PUBLIC socket nsl)

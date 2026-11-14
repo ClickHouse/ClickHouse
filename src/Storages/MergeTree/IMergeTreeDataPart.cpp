@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/PrimaryIndexLoader.h>
@@ -1364,7 +1365,7 @@ PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
         return nullptr;
 
     const auto & storage_path = getDataPartStorage().getRelativePath();
-    const String packed_file = fs::path(storage_path) / filename;
+    const String packed_file = pathToGenericString(fs::path(storage_path) / filename);
     const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
 
     if (!disk_storage)
@@ -1402,7 +1403,7 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
         const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
         if (!disk_storage)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
-        const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
+        const String packed_file = pathToGenericString(fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME));
         file_buf = packed_reader->readFile(disk_storage->getDisk(), packed_file, filename, read_settings, packed_reader->getFileSize(filename));
     }
     else
@@ -2135,7 +2136,7 @@ void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesys
     if (columns.empty())
         return;
 
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    const std::string path = pathToGenericString(part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
     storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
@@ -2180,7 +2181,7 @@ std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
 
 void IMergeTreeDataPart::loadDefaultCompressionCodec()
 {
-    String path = fs::path(getDataPartStorage().getRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    String path = pathToGenericString(fs::path(getDataPartStorage().getRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
     if (auto file_buf = readFileIfExists(DEFAULT_COMPRESSION_CODEC_FILE_NAME))
     {
@@ -2936,7 +2937,7 @@ void IMergeTreeDataPart::loadUUID()
 
 void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 {
-    String path = fs::path(getDataPartStorage().getRelativePath()) / "columns.txt";
+    String path = pathToGenericString(fs::path(getDataPartStorage().getRelativePath()) / "columns.txt");
 
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
@@ -3238,11 +3239,11 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     }
 
     auto old_projection_root_path = getDataPartStorage().getRelativePath();
-    auto to = fs::path(relative_path) / new_relative_path;
+    auto to = pathFromString(relative_path) / pathFromString(new_relative_path);
 
-    getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log.load(), remove_new_dir_if_exists, fsync_dir);
+    getDataPartStorage().rename(pathToGenericString(to.parent_path()), pathToGenericString(to.filename()), storage.log.load(), remove_new_dir_if_exists, fsync_dir);
 
-    auto new_projection_root_path = to.string();
+    auto new_projection_root_path = pathToGenericString(to);
 
     for (const auto & [_, part] : projection_parts)
         part->getDataPartStorage().changeRootPath(old_projection_root_path, new_projection_root_path);
@@ -3326,13 +3327,13 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
                                        DetachedPartInfo::DETACH_REASONS.end(),
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
-        return fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path;
+        return pathToGenericString(fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path);
     return {};
 }
 
 String IMergeTreeDataPart::getRelativePathOfActivePart() const
 {
-    return fs::path(getDataPartStorage().getFullRootPath()) / name / "";
+    return pathToGenericString(fs::path(getDataPartStorage().getFullRootPath()) / name / "");
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)
@@ -3417,7 +3418,7 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
     if (directory_name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
-    String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
+    String path_to_clone = pathToGenericString(fs::path(storage.relative_data_path) / directory_name / "");
     return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook);
 }
 
@@ -3498,7 +3499,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
                 /// For projection parts check will mark them broken in loadProjections
                 if (!parent_part && filename.ends_with(".proj"))
                 {
-                    std::string projection_name = fs::path(filename).stem();
+                    std::string projection_name = pathToGenericString(fs::path(filename).stem());
                     LOG_INFO(storage.log, "Projection {} doesn't exist on start for part {}, marking it as broken", projection_name, name);
                     if (hasProjection(projection_name))
                         markProjectionPartAsBroken(projection_name, ex.message(), ex.code());
@@ -3520,7 +3521,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
                     getDataPartStorage().getFullPath(),
-                    std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+                    pathToGenericString(fs::path(getDataPartStorage().getFullPath()) / file_path));
             return file_size;
         };
 
@@ -4188,7 +4189,7 @@ namespace
 
 bool isCompressedFromFileName(const String & file_name)
 {
-    std::string extension = fs::path(file_name).extension();
+    std::string extension = pathToGenericString(fs::path(file_name).extension());
     return (MarkType::isMarkFileExtension(extension) && MarkType(extension).compressed)
         || isCompressedFromIndexExtension(extension);
 }

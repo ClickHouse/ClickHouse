@@ -2,6 +2,7 @@
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/ObjectStorageKey.h>
 #include <Common/Exception.h>
 #include <Common/Hex.h>
 #include <Common/StringUtils.h>
@@ -9,7 +10,6 @@
 #include <Poco/String.h>
 
 #include <algorithm>
-#include <filesystem>
 #include <iterator>
 #include <set>
 #include <tuple>
@@ -36,6 +36,22 @@ namespace DB::FailPoints
 
 namespace DataLake
 {
+
+namespace
+{
+
+/// The locations below are URIs, not filesystem paths, so they are joined in string space:
+/// `std::filesystem::path::operator/` appends `\` on Windows, and the narrow `path` constructor
+/// would decode a non-ASCII segment through the active code page on the way in.
+using DB::appendObjectStorageKeySegment;
+
+/// How the `std::filesystem` version spelled "and make sure this ends with a separator": `/ ""`.
+std::string withTrailingSlash(const std::string & location)
+{
+    return appendObjectStorageKeySegment(location, "");
+}
+
+}
 
 StorageType parseStorageTypeFromLocation(const std::string & location)
 {
@@ -210,7 +226,7 @@ std::string TableMetadata::getLocation() const
     if (path.empty())
         return location_without_path;
 
-    return (std::filesystem::path(location_without_path) / path).string();
+    return appendObjectStorageKeySegment(location_without_path, path);
 }
 
 std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
@@ -239,8 +255,8 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
         std::vector<std::string> endpoint_path_segments;
         Poco::URI(location, /* enable_url_encoding */ false).getPathSegments(endpoint_path_segments);
         if (!force_add_bucket && std::ranges::contains(endpoint_path_segments, bucket))
-            return std::filesystem::path(location) / path / "";
-        return std::filesystem::path(location) / bucket / path / "";
+            return withTrailingSlash(appendObjectStorageKeySegment(location, path));
+        return withTrailingSlash(appendObjectStorageKeySegment(appendObjectStorageKeySegment(location, bucket), path));
     }
 
     if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
@@ -255,7 +271,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
         std::string vhosted_base = endpoint_uri.toString();
         if (vhosted_base.ends_with('/'))
             vhosted_base.pop_back();
-        return std::filesystem::path(vhosted_base) / path / "";
+        return withTrailingSlash(appendObjectStorageKeySegment(vhosted_base, path));
     }
 
     if (uri_style == DB::S3UriStyle::PATH)
@@ -270,8 +286,8 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     }
 
     if (!force_add_bucket && location.ends_with(bucket))
-        return std::filesystem::path(location) / path / "";
-    return std::filesystem::path(location) / bucket / path / "";
+        return withTrailingSlash(appendObjectStorageKeySegment(location, path));
+    return withTrailingSlash(appendObjectStorageKeySegment(appendObjectStorageKeySegment(location, bucket), path));
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)

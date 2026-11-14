@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -661,11 +662,11 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
 
     for (const auto & key : keys)
     {
-        auto key_file = std::filesystem::path(key);
+        auto key_file = pathFromString(key);
         /// Hudi identifies a file group by the partition path relative to the table root and the file id.
         const String partition(directoryInTable(key, table_path));
 
-        const String file_name = key_file.filename();
+        const String file_name = pathToGenericString(key_file.filename());
         if (auto log_file = parseLogFileName(file_name))
         {
             const auto & [log_file_id, instant] = *log_file;
@@ -682,7 +683,7 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
         }
 
         Strings file_parts;
-        const String stem = key_file.stem();
+        const String stem = pathToGenericString(key_file.stem());
         splitInto<'_'>(file_parts, stem);
         if (file_parts.size() != 3)
             throw Exception(

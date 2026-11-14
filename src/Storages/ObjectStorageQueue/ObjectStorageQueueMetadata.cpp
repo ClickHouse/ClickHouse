@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/SipHash.h>
@@ -111,7 +112,7 @@ namespace
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     ObjectStorageType storage_type_,
     const std::string & zookeeper_name_,
-    const fs::path & zookeeper_path_,
+    const std::string & zookeeper_path_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     size_t cleanup_interval_min_ms_,
     size_t cleanup_interval_max_ms_,
@@ -141,7 +142,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
         zookeeper_name_ == zkutil::DEFAULT_ZOOKEEPER_NAME ? "" : zookeeper_name_ + ":",
-        zookeeper_path_.string())))
+        zookeeper_path_)))
     , local_file_statuses(
         CurrentMetrics::ObjectStorageQueueMetadataCacheSizeBytes,
         CurrentMetrics::ObjectStorageQueueMetadataCacheSizeElements,
@@ -374,7 +375,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     bool is_initial_query = !context->isDDLOrOnClusterInternal() ||
                             (context->getZooKeeperMetadataTransaction() && context->getZooKeeperMetadataTransaction()->isInitialQuery());
 
-    const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
+    const auto alter_settings_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "alter_settings_lock");
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
     auto zookeeper = getZooKeeper();
 
@@ -398,7 +399,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     }
 
     Coordination::Stat stat;
-    auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
+    auto metadata_str = zookeeper->get(zkutil::joinZooKeeperPath(zookeeper_path, "metadata"), &stat);
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
     auto new_table_metadata{table_metadata};
 
@@ -521,7 +522,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     const auto new_metadata_str = new_table_metadata.toString();
     LOG_TRACE(log, "New metadata: {}", new_metadata_str);
 
-    const fs::path table_metadata_path = zookeeper_path / "metadata";
+    const auto table_metadata_path = zkutil::joinZooKeeperPath(zookeeper_path, "metadata");
     /// Here we intentionally do not add zk retries,
     /// because we modify metadata under ephemeral metadata lock,
     /// so we do not want to retry if it expires.
@@ -551,7 +552,7 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const String & zookeeper_name,
-    const fs::path & zookeeper_path,
+    const std::string & zookeeper_path,
     const ObjectStorageQueueSettings & settings,
     const ColumnsDescription & columns,
     const std::string & format,
@@ -585,7 +586,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     }
 
     auto zk_retries = getKeeperRetriesControl(log);
-    const auto table_metadata_path = zookeeper_path / "metadata";
+    const auto table_metadata_path = zkutil::joinZooKeeperPath(zookeeper_path, "metadata");
     bool warned = false;
 
     zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
@@ -639,7 +640,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             for (const auto & path : metadata_paths)
             {
-                const auto zk_path = zookeeper_path / path;
+                const auto zk_path = zkutil::joinZooKeeperPath(zookeeper_path, path);
                 requests.emplace_back(zkutil::makeCreateRequest(zk_path, "", zkutil::CreateMode::Persistent));
             }
 
@@ -685,7 +686,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 LOG_INFO(log, "Got code `{}` for path: {}. "
                         "It looks like the table {} was created by another server at the same moment, "
                         "will retry",
-                        *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
+                        *code, exception.getPathForFirstFailedOp(), zookeeper_path);
                 continue;
             }
             if (*code != Coordination::Error::ZOK)
@@ -791,7 +792,7 @@ void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
     const auto id = getProcessorID(storage_id);
-    const auto table_path = zookeeper_path / "registry" / id;
+    const auto table_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry", id);
     const auto self = Info::create(storage_id);
 
     Coordination::Error code = {};
@@ -812,9 +813,9 @@ void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 
 void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id, bool & created_new_metadata)
 {
-    const auto registry_path = zookeeper_path / "registry";
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
     const auto self = Info::create(storage_id);
-    const auto drop_lock_path = zookeeper_path / "drop";
+    const auto drop_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "drop");
 
     auto zk_retries = getKeeperRetriesControl(log);
 
@@ -901,7 +902,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
 Strings ObjectStorageQueueMetadata::getRegistered(bool active)
 {
-    const auto registry_path = zookeeper_path / "registry";
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
     auto zk_retries = getKeeperRetriesControl(log);
     Strings registered;
     if (active)
@@ -923,8 +924,8 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
 
 void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 {
-    const auto registry_path = zookeeper_path / "registry";
-    const auto table_path = registry_path / getProcessorID(storage_id);
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
+    const auto table_path = zkutil::joinZooKeeperPath(registry_path, getProcessorID(storage_id));
 
     Coordination::Error code = {};
     getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(table_path); });
@@ -950,8 +951,8 @@ void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 
 void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
-    const auto registry_path = zookeeper_path / "registry";
-    const auto drop_lock_path = zookeeper_path / "drop";
+    const auto registry_path = zkutil::joinZooKeeperPath(zookeeper_path, "registry");
+    const auto drop_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "drop");
     const auto self = Info::create(storage_id);
 
     Coordination::Error code = Coordination::Error::ZOK;
@@ -1027,7 +1028,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
             if (remove_metadata_if_no_registered && count == 0)
             {
-                LOG_TRACE(log, "Removing all metadata in keeper by path: {}", zookeeper_path.string());
+                LOG_TRACE(log, "Removing all metadata in keeper by path: {}", zookeeper_path);
                 if (supports_remove_recursive)
                 {
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
@@ -1303,7 +1304,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds);
 
-    const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
+    const auto zookeeper_cleanup_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "cleanup_lock");
     const auto zk_client = getZooKeeper();
 
     /// Create a lock so that with distributed processing
@@ -1325,10 +1326,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (table_metadata.hasTrackedFilesLimit())
     {
         if (cleanup_processed_files)
-            cleanupTrackedNodes(zookeeper_path / "processed", "processed");
+            cleanupTrackedNodes(zkutil::joinZooKeeperPath(zookeeper_path, "processed"), "processed");
 
         if (cleanup_failed_files)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+            cleanupTrackedNodes(zkutil::joinZooKeeperPath(zookeeper_path, "failed"), "failed");
     }
 
     LOG_TRACE(log, "Node limits check finished");
@@ -1417,10 +1418,9 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         paths.clear();
     };
 
-    std::filesystem::path nodes_fs_path(nodes_path);
     for (const auto & node : nodes)
     {
-        paths.push_back(nodes_fs_path / node);
+        paths.push_back(zkutil::joinZooKeeperPath(nodes_path, node));
         if (paths.size() == keeper_multiread_batch_size)
             get_paths();
     }
@@ -1567,7 +1567,7 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
 void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 {
     auto zk_retries = getKeeperRetriesControl(log);
-    const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
+    const auto zookeeper_persistent_processing_path = zkutil::joinZooKeeperPath(zookeeper_path, "processing");
 
     Strings persistent_processing_nodes;
 
@@ -1580,7 +1580,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     {
         if (code == Coordination::Error::ZNONODE)
         {
-            LOG_TEST(log, "Path {} does not exist", zookeeper_persistent_processing_path.string());
+            LOG_TEST(log, "Path {} does not exist", zookeeper_persistent_processing_path);
             return;
         }
         else
@@ -1590,10 +1590,10 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     Strings bucket_lock_paths;
     if (useBucketsForProcessing())
     {
-        const auto buckets_path = zookeeper_path / "buckets";
+        const auto buckets_path = zkutil::joinZooKeeperPath(zookeeper_path, "buckets");
         for (size_t i = 0; i < getBucketsNum(); ++i)
         {
-            bucket_lock_paths.push_back(buckets_path / toString(i) / "lock");
+            bucket_lock_paths.push_back(zkutil::joinZooKeeperPath(buckets_path, toString(i), "lock"));
         }
     }
 
@@ -1629,7 +1629,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
     for (const auto & node : persistent_processing_nodes)
     {
-        get_batch.push_back(zookeeper_persistent_processing_path / node);
+        get_batch.push_back(zkutil::joinZooKeeperPath(zookeeper_persistent_processing_path, node));
         if (get_batch.size() == keeper_multiread_batch_size)
             get_paths();
     }

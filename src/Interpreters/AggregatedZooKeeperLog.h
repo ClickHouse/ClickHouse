@@ -1,7 +1,7 @@
 #pragma once
 
-#include <filesystem>
 #include <memory>
+#include <string_view>
 #include <Interpreters/PeriodicLog.h>
 #include <Common/ZooKeeper/ErrorCounter.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -43,7 +43,7 @@ public:
     void observe(
         Int64 session_id,
         Int32 operation,
-        const std::filesystem::path & path,
+        std::string_view path,
         UInt64 latency_microseconds,
         Coordination::Error error,
         StaticString component,

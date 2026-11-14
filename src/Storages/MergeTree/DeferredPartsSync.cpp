@@ -5,6 +5,7 @@
 #include <Disks/StoragePolicy.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <base/pathToString.h>
 
 #include <filesystem>
 
@@ -104,13 +105,13 @@ void DeferredPartsSync::sync(bool only_old)
     std::vector<size_t> path_part_indices;
     for (size_t part_index = 0; part_index < parts_to_sync.size(); ++part_index)
     {
-        for (const auto & entry : std::filesystem::recursive_directory_iterator(parts_to_sync[part_index]->getDataPartStorage().getFullPath()))
+        for (const auto & entry : std::filesystem::recursive_directory_iterator(pathFromString(parts_to_sync[part_index]->getDataPartStorage().getFullPath())))
         {
             /// Temporary files, such as `txn_version.txt.tmp`, are renamed over the files of a committed part
             /// when its metadata is updated. The writer syncs them itself, and they may disappear at any moment.
-            if (entry.is_regular_file() && !entry.path().filename().string().ends_with(".tmp"))
+            if (entry.is_regular_file() && !pathToString(entry.path().filename()).ends_with(".tmp"))
             {
-                paths.push_back(entry.path());
+                paths.push_back(pathToString(entry.path()));
                 path_part_indices.push_back(part_index);
             }
         }

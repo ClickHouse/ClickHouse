@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
@@ -24,10 +25,8 @@
 #include <base/sort.h>
 
 #include <algorithm>
-#include <filesystem>
 #include <unordered_map>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -176,9 +175,8 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
 
     if (!storage_properties.is_replicated)
     {
-        fs::path data_path_in_backup_fs{data_path_in_backup};
         for (const auto & [file_name, entry] : backup_entries)
-            backup_entries_collector.addBackupEntry(data_path_in_backup_fs / file_name, entry);
+            backup_entries_collector.addBackupEntry(joinBackupPath(data_path_in_backup, file_name), entry);
         return;
     }
 
@@ -200,10 +198,9 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
 
             for (const auto & dir : dirs)
             {
-                fs::path dir_fs{dir};
                 for (const auto & [file_name, entry] : my_backup_entries)
                 {
-                    backup_entries_collector.addBackupEntry(dir_fs / file_name, entry);
+                    backup_entries_collector.addBackupEntry(joinBackupPath(dir, file_name), entry);
                 }
             }
         });
@@ -334,7 +331,7 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         /// reported as such instead of being replaced.
         restorer.checkIsQueryCancelled();
 
-        String filepath = fs::path(entry_data_path) / filename;
+        String filepath = joinBackupPath(entry_data_path, filename);
         String stored;
         try
         {

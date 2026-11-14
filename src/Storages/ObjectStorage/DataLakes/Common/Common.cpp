@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <IO/WriteBufferFromString.h>
@@ -6,6 +7,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -31,13 +33,23 @@ namespace ErrorCodes
 namespace
 {
 
+/// `path`/`prefix`/, joined in object storage key space: the `std::filesystem` spelling `path / prefix / ""`
+/// would append `\` on Windows, where it is an ordinary character in a key.
+String keyDirectory(const String & path, const String & prefix)
+{
+    String key = appendObjectStorageKeySegment(path, prefix);
+    if (!key.empty() && !key.ends_with('/'))
+        key += '/';
+    return key;
+}
+
 /// Whether `key`, returned by listing `directory`, is an object directly inside it. A storage may return the keys
 /// without leading separators and with the directory in normal form (HDFS canonicalizes it).
 bool isDirectlyInside(std::string_view key, const String & directory)
 {
     while (key.starts_with('/'))
         key.remove_prefix(1);
-    for (const String & spelling : {directory, std::filesystem::path(directory).lexically_normal().string()})
+    for (const String & spelling : {directory, pathToGenericString(pathFromString(directory).lexically_normal())})
     {
         std::string_view dir = spelling;
         while (dir.starts_with('/'))
@@ -65,8 +77,9 @@ PrefixListing listPrefixImpl(
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
     PrefixListing listing;
+    /// An object storage key, not a filesystem path, so it is joined in key string space.
     /// Without the trailing separator the key also matches sibling directories such as `metadata_old/`.
-    listing.listed_prefix = (std::filesystem::path(path) / prefix / "").string() + name_prefix;
+    listing.listed_prefix = keyDirectory(path, prefix) + name_prefix;
     object_storage.listObjects(listing.listed_prefix, listing.entries, 0);
     for (const auto & file_with_metadata : listing.entries)
     {
@@ -113,10 +126,10 @@ PrefixListing listPrefixNonRecursive(
     const String & name_prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
-    auto directory = (std::filesystem::path(path) / prefix / "").string();
+    auto directory = keyDirectory(path, prefix);
     /// The local storage lists a relative directory under its root, the same way it resolves any other key.
     if (object_storage.getType() == ObjectStorageType::Local)
-        directory = resolvePathRelativelyToBase(directory, object_storage.getCommonKeyPrefix());
+        directory = pathToGenericString(resolvePathRelativelyToBase(directory, object_storage.getCommonKeyPrefix()));
     return listPrefixImpl(
         object_storage,
         path,
@@ -239,7 +252,7 @@ String describeObjectKeys(const std::vector<String> & keys, const String & liste
 bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
 {
     ProfileEvents::increment(ProfileEvents::DeltaLakeDeltaLogExistenceChecks);
-    const auto delta_log_dir = (std::filesystem::path(path) / "_delta_log").string() + "/";
+    const auto delta_log_dir = appendObjectStorageKeySegment(path, "_delta_log") + "/";
     RelativePathsWithMetadata files;
     object_storage.listObjects(delta_log_dir, files, /* max_keys */ 1);
     return !files.empty();
@@ -247,8 +260,12 @@ bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)
 {
-    auto base = std::filesystem::path(table_path);
-    auto combined = base / relative_path;
+    /// The containment test is what defines "inside" here, and it is `std::filesystem`'s notion of
+    /// it, so the two keys are converted into paths explicitly rather than through the narrow
+    /// constructor. The result is read back generically: `path::string()` would hand back the `\`
+    /// that `operator/` appends on Windows, where it is an ordinary character in a key.
+    const auto base = pathFromString(table_path);
+    const auto combined = base / pathFromString(relative_path);
 
     if (!pathStartsWith(combined, base))
         throw Exception(
@@ -257,6 +274,6 @@ String resolvePathInsideTable(const String & table_path, const String & relative
             relative_path,
             table_path);
 
-    return combined.string();
+    return pathToGenericString(combined);
 }
 }

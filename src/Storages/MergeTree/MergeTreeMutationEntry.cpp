@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
@@ -74,7 +75,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         if (tid.isNonTransactional())
             csn = Tx::NonTransactionalCSN;
 
-        auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
+        auto out = disk->writeFile(pathToGenericString(std::filesystem::path(path_prefix) / file_name), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         writeRecord(*out);
         out->finalize();
         out->sync();
