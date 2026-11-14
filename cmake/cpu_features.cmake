@@ -17,8 +17,8 @@ if (ARCH_AARCH64)
     if (NO_ARMV81_OR_HIGHER)
         # crc32 is optional in v8.0 and mandatory in v8.1. Enable it as __crc32()* is used in lot's of places and even very old ARM CPUs
         # support it.
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc,-neon")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc")
     else ()
         # ARMv8.2 is quite ancient but the lowest common denominator supported by both Graviton 2 and 3 processors [1, 10]. In particular, it
         # includes LSE (made mandatory with ARMv8.1) which provides nice speedups without having to fall back to compat flag
@@ -58,7 +58,7 @@ if (ARCH_AARCH64)
     # and the build machine is too old, i.e. doesn't satisfy above modern profile, then these intermediate binaries will not run (dump
     # SIGILL). Even if they could run, the build machine wouldn't be able to run the ClickHouse binary. In that case, suggest to run the
     # build with the compat profile.
-    if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)" AND NOT NO_ARMV81_OR_HIGHER)
+    if (OS_LINUX AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)" AND NOT NO_ARMV81_OR_HIGHER)
         # CPU features in /proc/cpuinfo and compiler flags don't align :( ... pick an obvious flag contained in the modern but not in the
         # legacy profile (full Graviton 3 /proc/cpuinfo is "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm
         # jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs paca pacg dcpodp svei8mm svebf16 i8mm
@@ -98,7 +98,7 @@ elseif (ARCH_AMD64)
 
     # Best-effort check: verify that the build host supports the requested microarchitecture level. Build-time tools
     # (tablegen, code generators) are compiled with these flags and will crash with SIGILL otherwise.
-    if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
+    if (OS_LINUX AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
         # Test for a representative flag at each level. We intentionally keep this simple - no real CPU has avx2 without
         # fma/bmi2, so checking the headline flag is enough while avoiding false positives from /proc/cpuinfo quirks
         # (containers, nested virtualization, unusual flag naming).

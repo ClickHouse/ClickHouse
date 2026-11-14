@@ -18,6 +18,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/checkHyperscanRegexp.h>
+#include <Functions/indexHint.h>
 #include <Functions/logical.h>
 
 #include <Interpreters/Context.h>
@@ -569,7 +570,7 @@ public:
                 index_hint_arg = std::move(original_or);
             }
 
-            auto index_hint_resolver = FunctionFactory::instance().get("indexHint", context);
+            auto index_hint_resolver = FunctionIndexHint::createImplied();
             auto index_hint_fn = std::make_shared<FunctionNode>("indexHint");
             index_hint_fn->getArguments().getNodes().push_back(std::move(index_hint_arg));
             index_hint_fn->resolveAsFunction(index_hint_resolver);
@@ -595,22 +596,12 @@ public:
         /// Clone the optimized OR node
         auto optimized_or_clone = node->clone();
 
-        /// Create AND of the optimized OR with indexHint:
-        /// optimized_or AND indexHint(original_like_chain)
-        auto and_node = std::make_shared<FunctionNode>("and");
-        and_node->getArguments().getNodes().push_back(std::move(optimized_or_clone));
-        and_node->getArguments().getNodes().push_back(std::move(index_hint_node));
-        and_node->resolveAsFunction(and_function_resolver);
+        /// Mark the cloned OR as processed to prevent re-visiting
+        processed_nodes.insert(optimized_or_clone->as<FunctionNode>());
 
-        /// Mark the AND node as processed to prevent re-visiting
-        processed_nodes.insert(and_node.get());
-
-        /// Also mark the cloned OR inside AND as processed
-        if (auto * or_child = and_node->getArguments().getNodes()[0]->as<FunctionNode>())
-            processed_nodes.insert(or_child);
-
-        /// Replace the original node with the AND expression
-        node = std::move(and_node);
+        /// Rewrite the node in place to optimized_or AND indexHint(original_like_chain), as it may be shared by several references.
+        function_node->getArguments().getNodes() = {std::move(optimized_or_clone), std::move(index_hint_node)};
+        function_node->resolveAsFunction(and_function_resolver);
     }
 private:
     const FunctionOverloadResolverPtr or_function_resolver;

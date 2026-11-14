@@ -6,8 +6,6 @@ keywords: ['data denormalization', 'denormalize', 'query optimization']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Data denormalization is a technique in ClickHouse to use flattened tables to help minimize query latency by avoiding joins.
 
 ## Comparing Normalized vs. Denormalized Schemas {#comparing-normalized-vs-denormalized-schemas}
@@ -16,7 +14,15 @@ Denormalizing data involves intentionally reversing the normalization process to
 
 This process reduces the need for complex joins at query time and can significantly speed up read operations, making it ideal for applications with heavy read requirements and complex queries. However, it can increase the complexity of write operations and maintenance, as any changes to the duplicated data must be propagated across all instances to maintain consistency.
 
-<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="Denormalization in ClickHouse"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Denormalization in ClickHouse](/images/data-modeling/denormalization-diagram.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -75,7 +81,7 @@ CREATE TABLE votes
         `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId)
+ORDER BY (VoteTypeId, CreationDate, PostId);
 
 INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
@@ -135,7 +141,15 @@ The main observation here is that aggregated vote statistics for each post would
 
 Now let's consider our `Users` and `Badges`:
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Users and Badges schema"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Users and Badges schema](/images/data-modeling/denormalization-schema.webp)
+
+</Frame>
+
+</div>
 
 <p></p>
 We first insert the data with the following command:
@@ -146,7 +160,7 @@ CREATE TABLE users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -172,7 +186,7 @@ CREATE TABLE badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId
+ORDER BY UserId;
 
 INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
@@ -223,7 +237,7 @@ CREATE TABLE postlinks
   `LinkTypeId` Enum('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId)
+ORDER BY (PostId, RelatedPostId);
 
 INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
@@ -283,7 +297,7 @@ In most cases, denormalization requires the adding of a single column or statist
 ```sql
 CREATE TABLE posts_with_duplicate_count
 (
-  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `Id` Int32 CODEC(Delta, Default),
    ... -other columns
    `DuplicatePosts` UInt16
 ) ENGINE = MergeTree
@@ -322,7 +336,7 @@ Each post can contain a number of links to other posts as shown in the `PostLink
 SET flatten_nested=0
 CREATE TABLE posts_with_links
 (
-  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `Id` Int32 CODEC(Delta, Default),
    ... -other columns
    `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
    `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),

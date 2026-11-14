@@ -38,10 +38,7 @@ void CachedCompressedReadBuffer::prefetch(Priority priority)
 
 bool CachedCompressedReadBuffer::nextImpl()
 {
-    /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
-    UInt128 key = UncompressedCache::hash(path, file_pos);
-
-    owned_cell = cache->getOrSet(key, [&]()
+    auto load = [&]()
     {
         initInput();
         file_in->seek(file_pos, SEEK_SET);
@@ -63,12 +60,23 @@ bool CachedCompressedReadBuffer::nextImpl()
         }
 
         return cell;
-    });
+    };
+
+    /// The cache is shared by every reader of the file, so a block at or past this reader's bound is not put into it.
+    if (read_until_position && file_pos >= *read_until_position)
+    {
+        owned_cell = load();
+    }
+    else
+    {
+        /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
+        owned_cell = cache->getOrSet(UncompressedCache::hash(path, file_pos), load);
+    }
 
     if (owned_cell->data.size() == 0)
         return false;
 
-    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - owned_cell->additional_bytes);
+    working_buffer = WorkingBuffer::fromPaddedStorage(owned_cell->data, 0, owned_cell->data.size() - owned_cell->additional_bytes);
 
     /// nextimpl_working_buffer_offset is set in the seek function (lazy seek). So we have to
     /// check that we are not seeking beyond working buffer.
@@ -92,8 +100,7 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 {
     /// Nothing to do if we already at required position
     if (!owned_cell && file_pos == offset_in_compressed_file
-        && ((!buffer().empty() && offset() == offset_in_decompressed_block) ||
-            nextimpl_working_buffer_offset == offset_in_decompressed_block))
+        && nextimpl_working_buffer_offset == offset_in_decompressed_block)
         return;
 
     if (owned_cell &&

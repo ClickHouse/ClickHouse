@@ -70,6 +70,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         if (!iceberg_metadata)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 
+        getContext()->onQueryExecutionStarted();
         iceberg_metadata->optimizeManifestFiles(metadata_snapshot, getContext(), object_storage_table->getCatalog(), table_id);
         return {};
 #else
@@ -135,10 +136,12 @@ BlockIO InterpreterOptimizeQuery::execute()
             part_names.emplace_back(literal.value.safeGet<String>());
         }
 
+        getContext()->onQueryExecutionStarted();
         merge_tree_data->optimizeDryRun(part_names, metadata_snapshot, ast.deduplicate, column_names, ast.cleanup, getContext());
         return {};
     }
 
+    getContext()->onQueryExecutionStarted();
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
     return {};
 }

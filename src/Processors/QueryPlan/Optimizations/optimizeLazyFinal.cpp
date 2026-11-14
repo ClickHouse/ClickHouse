@@ -1,4 +1,6 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -60,7 +62,7 @@ static void exposeNodesAsDAGOutputs(ActionsDAG & dag, const NameSet & names)
     if (names.empty())
         return;
 
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     for (const auto & node : dag.getNodes())
     {
         if (names.contains(node.result_name) && !outputs.contains(&node))
@@ -131,7 +133,7 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
 /// filter has consumed it.
 static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
 {
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     bool added = false;
     for (const auto * input : dag.getInputs())
     {
@@ -389,6 +391,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (!reading_step->isQueryWithFinal())
         return;
 
+    /// The reads built below do not keep the bucket ranges of a distributed read, so every bucket would return all rows.
+    if (reading_step->getDistributedReadBucketCount() > 0)
+        return;
+
     /// Only ReplacingMergeTree is supported.
     const auto & data = reading_step->getMergeTreeData();
     if (data.merging_params.mode != MergeTreeData::MergingParams::Replacing)
@@ -514,7 +520,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// Build the set for primary key columns only (PK is a prefix of sorting key;
     /// the remaining sorting key columns are useless for index analysis).
     SizeLimits set_size_limits(optimization_settings.max_rows_for_lazy_final, optimization_settings.max_bytes_for_lazy_final, OverflowMode::BREAK);
-    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ false);
+    /// This set selects FINAL winners by key identity, so a NULL key must equal itself here.
+    const bool pk_has_nullable_column = std::any_of(
+        primary_key.data_types.begin(),
+        primary_key.data_types.end(),
+        [](const auto & type) { return isNullableOrLowCardinalityNullable(type); });
+    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ pk_has_nullable_column);
     set->setHeader(primary_key.sample_block.cloneWithColumns(primary_key.sample_block.cloneEmptyColumns()).getColumnsWithTypeAndName());
     set->fillSetElements();
     auto set_and_key = std::make_shared<SetAndKey>(SetAndKey{.key = "__lazy_final_set", .set = set, .external_table = nullptr});
@@ -713,11 +724,14 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     }
 
     /// CreatingSetStep fills the Set from the pipeline.
+    /// Unlike the sets of `IN`, the set never spills to disk: it only serves index analysis, which needs its
+    /// values, and its own BREAK-mode size limits above bound its memory.
     set_plan.addStep(std::make_unique<CreatingSetStep>(
         set_plan.getCurrentHeader(),
         set_and_key,
         SizeLimits{},
-        nullptr));
+        nullptr,
+        FutureSetSettings{}));
 
     /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
     /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits
@@ -794,11 +808,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             true_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows);
         join_lazy_columns->setPassThrough(true);
 
-        std::vector<QueryPlanPtr> join_plans;
+        QueryPlanPtrs join_plans;
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
         true_plan = {};
-        true_plan.unitePlans(std::move(join_lazy_columns), {std::move(join_plans)});
+        true_plan.unitePlans(std::move(join_lazy_columns), std::move(join_plans));
 
         /// Apply row policy and prewhere as FilterSteps on top.
         const auto & query_info = reading_step->getQueryInfo();
@@ -845,11 +859,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         set_plan.getCurrentHeader(), false_plan.getCurrentHeader());
 
     QueryPlan result_plan;
-    std::vector<QueryPlanPtr> selector_plans;
+    QueryPlanPtrs selector_plans;
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(set_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(false_plan)));
-    result_plan.unitePlans(std::move(input_selector), {std::move(selector_plans)});
+    result_plan.unitePlans(std::move(input_selector), std::move(selector_plans));
 
     /// If we split non-intersecting parts, union them with the entire result.
     /// Both true and false branches now handle only intersecting parts.
@@ -859,10 +873,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             SharedHeaders{result_plan.getCurrentHeader(), split_result.non_intersecting_plan->getCurrentHeader()});
 
         QueryPlan combined;
-        std::vector<QueryPlanPtr> union_plans;
+        QueryPlanPtrs union_plans;
         union_plans.emplace_back(std::make_unique<QueryPlan>(std::move(result_plan)));
         union_plans.emplace_back(std::move(split_result.non_intersecting_plan));
-        combined.unitePlans(std::move(union_step), {std::move(union_plans)});
+        combined.unitePlans(std::move(union_step), std::move(union_plans));
         result_plan = std::move(combined);
     }
 

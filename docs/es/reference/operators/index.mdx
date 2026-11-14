@@ -106,6 +106,41 @@ Para la resta de tuplas: [tupleMinus](/es/reference/functions/regular-functions/
 
 `a !~* b`: la función `notMatchCaseInsensitive(a, b)` (comprueba que `a` no coincida con la expresión regular `b`, sin distinguir entre mayúsculas y minúsculas).
 
+### FUNCTION similarTo {#similarto-function}
+
+`a SIMILAR TO b` – La FUNCTION `similarTo(a, b)`.
+
+### FUNCTION notSimilarTo {#notsimilarto-function}
+
+`a NOT SIMILAR TO b` – La FUNCTION `notSimilarTo(a, b)`.
+
+`SIMILAR TO` es el predicado de coincidencia de patrones del estándar SQL. Su patrón combina los comodines de `LIKE` `%` (cualquier número de caracteres arbitrarios) y `_` (un único carácter arbitrario) con los metacaracteres de expresiones regulares `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` y `]`. Los metacaracteres `^`, `$` y `.` **no** forman parte de la gramática de `SIMILAR TO` y, fuera de las expresiones entre corchetes, representan los caracteres literales correspondientes. Dentro de una expresión entre corchetes, un `^` al principio conserva su significado habitual y niega la clase; por ejemplo, `[^aeiou]` coincide con un único carácter que no sea una vocal. El patrón debe coincidir con el operando izquierdo completo, no solo con una subcadena de este. `\` sirve para escapar cualquiera de los metacaracteres y también a sí mismo.
+
+```sql title="Query"
+SELECT
+    'ClickHouse' SIMILAR TO 'Cl_ck[hH]ouse'    AS matches,
+    'ClickHouse' NOT SIMILAR TO 'Cl%ck[0-9]ouse' AS does_not_match;
+```
+
+```text title="Response"
+┌─matches─┬─does_not_match─┐
+│       1 │              1 │
+└─────────┴────────────────┘
+```
+
+### Cláusula ESCAPE {#escape-clause}
+
+`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `SIMILAR TO` y `NOT SIMILAR TO` admiten, al final, una cláusula opcional `ESCAPE 'c'`, donde `c` es un único carácter ASCII. Este carácter sustituye a la barra invertida predeterminada como carácter de escape, y la barra invertida pasa a perder su significado especial (representa una barra invertida literal):
+
+```sql
+SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
+SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
+```
+
+Un carácter de escape *personalizado* debe ir seguido de un carácter especial del predicado o de sí mismo; cualquier otra cosa, incluidos `^`, `$`, `.` y la barra invertida (caracteres ordinarios en `SIMILAR TO` fuera de las expresiones entre corchetes), produce un error, ya que escapar un carácter ordinario no tiene ningún efecto. Esta estrictez se aplica únicamente a los caracteres de escape personalizados: la barra invertida *predeterminada* conserva el comportamiento heredado de `LIKE` y representa una barra invertida literal cuando precede a un carácter ordinario, por lo que `'\\mabc' SIMILAR TO '%\\mabc%'` devuelve `1`, mientras que `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'` se rechaza. Dentro de una expresión entre corchetes como `[...]`, el carácter de escape no tiene significado especial y se representa a sí mismo, de acuerdo con el comportamiento de POSIX y PostgreSQL.
+
+La cláusula `ESCAPE` también se puede combinar con el cuantificador de array `SOME` / `ALL` descrito [más abajo](#some-all-on-arrays), por ejemplo `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`.
+
 ### Función BETWEEN {#between-function}
 
 `a BETWEEN b AND c` – Equivale a `a >= b AND a <= c`.
@@ -157,7 +192,7 @@ SELECT
 
 ## Operadores para trabajar con conjuntos de datos {#operators-for-working-with-data-sets}
 
-Consulte los [operadores IN](/es/reference/statements/in) y el operador [EXISTS](/es/reference/operators/exists).
+Consulte los [operadores IN](/es/reference/statements/in) y [`EXISTS`](/es/reference/statements/exists).
 
 ### función in {#in-function}
 
@@ -227,7 +262,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ### `SOME` / `ALL` en arrays {#some-all-on-arrays}
 
-Además de la forma de subconsulta descrita anteriormente, el lado derecho de `SOME` / `ALL` puede ser una expresión de array (un literal de array, una columna de tipo array o cualquier expresión que devuelva un array). Esta es la sintaxis de cuantificador de array al estilo de PostgreSQL. Se reconoce durante el análisis y se reescribe como funciones de array, por lo que no hace falta ninguna reescritura manual:
+Además de la forma de subconsulta descrita anteriormente, el lado derecho de `SOME` / `ALL` puede ser una expresión de array (un literal de array, una columna de tipo array o cualquier expresión que devuelva un array). Esta es la sintaxis de cuantificador de array al estilo de PostgreSQL. Se reconoce durante el análisis y se reescribe como FUNCTIONS de array, por lo que no hace falta ninguna reescritura manual:
 
 | Sintaxis                                                 | Reescrito como                     |
 | -------------------------------------------------------- | ---------------------------------- |
@@ -236,16 +271,18 @@ Además de la forma de subconsulta descrita anteriormente, el lado derecho de `S
 | `expr OP SOME(arr)` (cualquier otro operador compatible) | `arrayExists(x -> expr OP x, arr)` |
 | `expr OP ALL(arr)` (cualquier otro operador compatible)  | `arrayAll(x -> expr OP x, arr)`    |
 
-`SOME` es el cuantificador existencial (el sinónimo de SQL de `ANY`). `=` y `<>` se tratan de forma especial como `has` / `NOT has` porque tienen una implementación optimizada; en la forma general se usan las funciones de orden superior `arrayExists` / `arrayAll`.
+`SOME` es el cuantificador existencial (el sinónimo de SQL de `ANY`). `=` y `<>` se tratan de forma especial como `has` / `NOT has` porque tienen una implementación optimizada; en la forma general se usan las FUNCTIONS de orden superior `arrayExists` / `arrayAll`.
 
-La forma de array se reconoce para los operadores de comparación `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, los predicados de comparación con palabras clave `IS DISTINCT FROM` y `IS NOT DISTINCT FROM`, y los predicados de búsqueda de cadenas `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` y `REGEXP`. Los predicados de comparación con palabras clave y los predicados de búsqueda de cadenas se reconocen solo para la forma de array, no para la forma con subconsulta (que se reduce a `IN`/`NOT IN`). Los operadores que no tienen significado como cuantificador de array —por ejemplo, `IN` en sí mismo— **no** se reescriben y conservan su significado habitual.
+La forma de array se reconoce para los operadores de comparación `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, los predicados de comparación con palabras clave `IS DISTINCT FROM` y `IS NOT DISTINCT FROM`, y los predicados de búsqueda de cadenas `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO` y `NOT SIMILAR TO`. Los predicados de comparación con palabras clave y los predicados de búsqueda de cadenas se reconocen solo para la forma de array, no para la forma con subconsulta (que se reduce a `IN`/`NOT IN`). Los operadores que no tienen significado como cuantificador de array —por ejemplo, `IN` en sí mismo— **no** se reescriben y conservan su significado habitual.
 
-Los predicados de búsqueda de cadenas funcionan porque `MatchImpl` (la implementación subyacente de `LIKE` / `ILIKE` / `REGEXP`) admite un haystack constante con un needle no constante. Por ejemplo, `'abc' LIKE SOME(['a%', 'b%'])` se reescribe como `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, y `'abc' NOT LIKE ALL(['x%', 'y%'])` como `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Esto compara una cadena con varios patterns; para hacer la comparación en una sola pasada combinada, puede seguir usando una función de búsqueda multipatrón como `multiMatchAny` (expresiones regulares) o `multiSearchAny` (subcadenas).
+Los predicados de búsqueda de cadenas funcionan porque `MatchImpl` (la implementación subyacente de `LIKE` / `ILIKE` / `REGEXP` / `SIMILAR TO`) admite un haystack constante con un needle no constante. Por ejemplo, `'abc' LIKE SOME(['a%', 'b%'])` se reescribe como `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, y `'abc' NOT LIKE ALL(['x%', 'y%'])` como `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Esto compara una cadena con varios patrones; para hacer la comparación en una sola pasada combinada, puede seguir usando una FUNCTION de búsqueda multipatrón como `multiMatchAny` (expresiones regulares) o `multiSearchAny` (subcadenas).
+
+Los predicados que admiten una [cláusula `ESCAPE`](#escape-clause) la conservan en la forma de array: un `ESCAPE 'c'` final después del cuantificador se aplica a todos los patrones del array. Por ejemplo, `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'` se reescribe como `arrayExists(x -> similarTo('a%b', x, '#'), ['a#%b', 'z%'])`.
 
 <Info>
   **`ANY` no es compatible con la forma de array**
 
-  Solo `SOME` y `ALL` aceptan un array en el lado derecho. `ANY` se excluye porque `any` también es una función de agregación, por lo que una expresión con la forma `expr = any(x)` conserva el significado de una llamada de función. Use `SOME` para el cuantificador de array.
+  Solo `SOME` y `ALL` aceptan un array en el lado derecho. `ANY` se excluye porque `any` también es una FUNCTION de agregación, por lo que una expresión con la forma `expr = any(x)` conserva el significado de una llamada de FUNCTION. Use `SOME` para el cuantificador de array.
 </Info>
 
 ```sql title="Query"
@@ -586,11 +623,33 @@ La función `transform` no funciona con `NULL`.
 
 `x -> expr` – La función `lambda(x, expr)`.
 
+## Operador de composición de funciones {#function-composition-operator}
+
+`f | g` – Composición de funciones: una función que aplica `f` y, a continuación, `g`. Puede utilizarse en cualquier lugar donde se espere una función, es decir, como argumento de una función de orden superior:
+
+```sql
+SELECT arrayMap(plus(_, 1) | multiply(_, 2), [1, 2, 3]); -- [4, 6, 8]
+```
+
+La composición se lee de izquierda a derecha: el valor fluye a través de los operandos en el orden en que están escritos, de modo que `f | g` significa `g(f(x))` y `f | g | h` significa `h(g(f(x)))`. Es la misma dirección que la del pipe de la shell y la del `|` de los rangos de C++, y por eso se utiliza el mismo símbolo. Es lo contrario del `∘` matemático y del `.` de Haskell, donde `g . f` aplica primero `f`; los equivalentes de izquierda a derecha en esos lenguajes se escriben `>>>` o `>>`.
+
+Cada operando puede ser una lambda, el nombre de una función, otra composición o una expresión con marcadores de posición de argumentos. Los marcadores de posición convierten una expresión en una lambda: `_1`, `_2`, ... hacen referencia al primer, segundo, ... argumento de la lambda y pueden usarse a cualquier nivel de profundidad de la expresión (excepto dentro de una subconsulta); el número de marcador de posición más alto determina el número de argumentos. El marcador de posición anónimo `_` introduce un argumento por cada aparición, en el orden en que aparecen, y debe ser un argumento directo de una llamada a función. Por ejemplo, tanto `plus(_, 1)` como `plus(_1, 1)` significan `x -> plus(x, 1)`. Los marcadores de posición no se buscan dentro de las subconsultas: allí, `_1` es un identificador normal, del mismo modo que una subconsulta no puede hacer referencia al argumento de una lambda explícita.
+
+Los marcadores de posición también pueden usarse sin el operador de composición en la posición de la lambda de una función de orden superior: `arrayMap(_1 * 2 + 1, [1, 2, 3])`. Los nombres vinculados en la consulta tienen prioridad sobre los marcadores de posición, por lo que una columna, un alias o una lambda vinculada con `WITH` que se llame `_1` conserva su significado. Los marcadores de posición situados en la posición de la lambda de una función de orden superior anidada pertenecen a esa llamada anidada: `arrayMap(arrayMap(_ + 1, _1), [[1, 2], [3]])` significa `arrayMap(x -> arrayMap(y -> y + 1, x), [[1, 2], [3]])`.
+
+La composición se resuelve durante el análisis de consultas insertando `f` en línea dentro de `g`, igual que ocurre con las funciones definidas por el usuario en SQL, y el resultado es una lambda ordinaria. El operando derecho debe ser una función de un solo argumento.
+
+Un marcador de posición aislado es la función identidad, por lo que `_1 | toString` equivale a `toString(_1)`.
+
+Tenga en cuenta que el `|` simple no es el OR bit a bit; para ello, utilice la función `bitOr`. El operador no tiene un nombre de función propio visible para el usuario y no reserva ningún nombre: cualquier identificador, incluido `compose`, sigue estando disponible para una función definida por el usuario.
+
 Los siguientes operadores no tienen prioridad, ya que son corchetes:
 
 ## Operador de creación de Array {#array-creation-operator}
 
 `[x1, ...]` – La función `array(x1, ...)`.
+
+`ARRAY[x1, ...]` – Lo mismo, con la sintaxis del estándar SQL, PostgreSQL y Trino.
 
 ## Operador de creación de tupla {#tuple-creation-operator}
 

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
-#include <vector>
 
 #include <Common/GeoBbox.h>
 #include <Common/StringUtils.h>
@@ -22,12 +22,16 @@ struct SpatialFilter
 
     /// Bounding box of the constant query geometry.
     double query_xmin = 0, query_ymin = 0, query_xmax = 0, query_ymax = 0;
+
+    /// Whether the geometry column is read as a single point (a `Tuple`), so the predicate cannot
+    /// interpret its value as a line or a polygon connecting several vertices.
+    bool column_is_point = false;
 };
 
 /// Walk filter_actions_dag looking for calls to spatial functions with isSpatialPredicate()==true
 /// where one argument is a column reference and the other is a compile-time constant geometry.
 /// Returns one SpatialFilter per qualifying call. Silently skips non-constant arguments.
-std::vector<SpatialFilter> extractSpatialFilters(
+VectorWithMemoryTracking<SpatialFilter> extractSpatialFilters(
     const DB::ActionsDAG & filter_dag,
     const DB::Block & sample_block);
 
@@ -35,9 +39,9 @@ std::vector<SpatialFilter> extractSpatialFilters(
 /// using only geospatial_statistics.bbox baked into the geometry column's ColumnMetaData.
 /// covering.bbox is handled via the standard KeyCondition hyperrectangle path.
 bool rowGroupFailsSpatialFilters(
-    const parq::RowGroup & rg_meta,
-    const std::vector<Reader::PrimitiveColumnInfo> & primitive_columns,
-    const std::vector<SpatialFilter> & filters);
+    const Reader & reader,
+    size_t row_group_idx,
+    const VectorWithMemoryTracking<SpatialFilter> & filters);
 
 /// Build a KeyCondition for: (xmin <= q_xmax) AND (xmax >= q_xmin) AND (ymin <= q_ymax) AND (ymax >= q_ymin).
 /// The 4 bbox columns must already be present in extended_sample_block.

@@ -14,6 +14,9 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
@@ -24,6 +27,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
@@ -40,6 +44,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <algorithm>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -99,6 +104,7 @@ void MongoDBLogger::operator()(
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
@@ -125,6 +131,58 @@ void MongoDBConfiguration::checkCollection() const
     /// effectively empty collection name, which aborts the process inside the driver.
     if (collection.empty() || collection.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
+}
+
+namespace
+{
+
+void throwIfServerCredentials(const mongocxx::uri & uri, std::string_view remedy)
+{
+    /// Only these take the credentials from the connection string; `MONGODB-OIDC`, `MONGODB-AWS`, `GSSAPI` and
+    /// `MONGODB-X509` use the server's. Without a mechanism the driver uses SCRAM or no authentication. Names are case-insensitive.
+    static constexpr std::string_view allowed_mechanisms[] = {"SCRAM-SHA-1", "SCRAM-SHA-256", "PLAIN"};
+
+    const String mechanism = uri.auth_mechanism();
+    const bool is_allowed_mechanism = mechanism.empty()
+        || std::ranges::any_of(allowed_mechanisms, [&](std::string_view allowed) { return equalsCaseInsensitive(mechanism, allowed); });
+
+    if (!is_allowed_mechanism)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB authentication mechanism '{}' is not allowed, because it authenticates with "
+            "credentials of the server process. Use SCRAM-SHA-1, SCRAM-SHA-256 or PLAIN with a username and a password "
+            "in the connection string{}.",
+            mechanism, remedy);
+
+    /// The driver stores the deprecated `sslClientCertificateKeyFile` under the canonical name, so this covers both.
+    if (uri.tls_certificate_key_file())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB connection option `tlsCertificateKeyFile` is not allowed, because it makes the server present a "
+            "client certificate from its own filesystem. Use SCRAM-SHA-1, SCRAM-SHA-256 or PLAIN with a username and a "
+            "password in the connection string{}.",
+            remedy);
+}
+
+}
+
+void MongoDBConfiguration::checkServerCredentialsForTable(const ContextPtr & context) const
+{
+    if (!context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    throwIfServerCredentials(*uri,
+#if CLICKHOUSE_CLOUD
+        ""
+#else
+        ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
+#endif
+    );
+}
+
+void MongoDBConfiguration::checkServerCredentialsForDictionary() const
+{
+    throwIfServerCredentials(*uri, ", or define the dictionary in the server configuration files");
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -162,6 +220,9 @@ Pipe StorageMongoDB::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
+    /// Checked per read, with the query's settings: a table created with `mongodb(...)` is built with the global context.
+    configuration.checkServerCredentialsForTable(context);
+
     storage_snapshot->check(column_names);
 
     Block sample_block;
@@ -594,6 +655,13 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     bool throw_on_error = context->getSettingsRef()[Setting::mongodb_throw_on_unsupported_query];
 
+    if (!query.query_tree)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage requires the query tree, which is not available for this query. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
+        return make_document();
+    }
+
     const auto & query_tree = query.query_tree->as<QueryNode &>();
 
     if (throw_on_error)
@@ -647,7 +715,8 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     if (limit || offset)
     {
         /// Otherwise it was already checked above.
-        if (!query_tree.hasGroupBy() && !query_tree.hasLimitBy())
+        /// With `SHUFFLE`, the limit must be applied after shuffling all rows.
+        if (!query_tree.hasGroupBy() && !query_tree.hasLimitBy() && !query_tree.isShuffle())
         {
             auto limit_value = limit ? limit->getValue().safeGet<UInt64>() : 0;
             auto offset_value = offset ? offset->getValue().safeGet<UInt64>() : 0;
@@ -721,6 +790,159 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 }
 
 
+/// The secret options of a MongoDB connection string or option list, after the password and the uri are hidden.
+static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    auto & result = finder.result;
+    const auto & function = finder.function;
+
+    auto is_masked = [&](size_t index)
+    {
+        return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
+            || (result.start <= index && index < result.start + result.count);
+    };
+
+    auto mask_argument = [&](size_t index, bool hide_unreadable)
+    {
+        const auto argument = function->arguments->at(index);
+        String value;
+        if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*argument, &value))
+        {
+            if (hide_unreadable)
+                result.replaced_arguments[index] = HIDDEN_SECRET_LITERAL;
+        }
+        else if (maskMongoDBConnectionString(value))
+        {
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
+        }
+    };
+
+    const bool is_engine = function->name() == "MongoDB";
+    const bool is_named_collection = finder.isNamedCollectionName(0);
+    const size_t size = function->arguments->size();
+
+    /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
+    /// there can move them into the user or password slot.
+    bool shifted = false;
+    if (!is_engine && size > 4 && !is_named_collection)
+    {
+        for (size_t i = 0; i < 5; ++i)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+                shifted = true;
+        }
+    }
+
+    bool seen_named = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto equals = function->arguments->at(i)->getFunction();
+        if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+        {
+            seen_named = true;
+            if (is_masked(i))
+                continue;
+
+            String key;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(0), &key))
+            {
+                /// The key is evaluated as a constant expression, so it can name `options`.
+                result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+                continue;
+            }
+            if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
+            {
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+                continue;
+
+            String value;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(1), &value))
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+            else if (maskMongoDBConnectionString(value))
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+            continue;
+        }
+
+        if (is_masked(i))
+            continue;
+
+        /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
+        if ((shifted && i > 5) || (is_named_collection && i > 0))
+        {
+            result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+            continue;
+        }
+
+        if (seen_named)
+        {
+            /// A positional argument after a named one shifts the others, so its role is unknown.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (i == 0)
+        {
+            /// The URI.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (is_engine ? i == 5 : i >= 6)
+        {
+            /// The positional `options` of the `host:port` forms.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+    }
+}
+
+SecretArgumentsSpec mongoDBSecretArguments()
+{
+    /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
+    /// MongoDB(named_collection, ..., password = 'password', ...)
+    return {.positional_secret_slots = {4}, .secret_keys = {"password"}, .custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        /// Hides the secrets of a uri, or the whole value when it is not a plain string literal.
+        auto mask_uri = [&finder](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
+        {
+            String uri;
+            if (!value.tryGetString(&uri, /* allow_identifier= */ false))
+                finder.markSecretArgument(index, argument_is_named);
+            else if (maskMongoDBConnectionString(uri))
+                finder.result.replaced_arguments[index] = String(prefix) + quoteString(uri);
+        };
+
+        /// MongoDB('mongodb://username:password@127.0.0.1:27017/database', 'collection'[, ...]). Not gated
+        /// on the argument count, which a rejected named argument changes; a `host:port` has no password.
+        if (finder.function->arguments->size() != 0)
+        {
+            const auto first = finder.function->arguments->at(0);
+            const auto first_function = first->getFunction();
+            if (first->isIdentifier())
+            {
+                String name;
+                /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
+                if (first->tryGetString(&name, /* allow_identifier= */ true) && maskMongoDBConnectionString(name))
+                    finder.result.replaced_arguments[0] = backQuoteIfNeed(name);
+            }
+            else if (!first_function || first_function->name() != "equals")
+            {
+                mask_uri(0, *first, "", /* argument_is_named= */ false);
+            }
+        }
+
+        /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+        /// Every occurrence: a duplicated or conflicting override is logged before validation rejects it.
+        for (ssize_t i = finder.findNamedArgument(nullptr, "uri"); i >= 0;
+             i = finder.findNamedArgument(nullptr, "uri", static_cast<size_t>(i) + 1))
+        {
+            const auto index = static_cast<size_t>(i);
+            mask_uri(index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
+        }
+
+        findMongoDBConnectionStringSecretArguments(finder);
+    }};
+}
+
 void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory)
 {
@@ -737,6 +959,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.constraints,
             args.comment);
     },
+    mongoDBSecretArguments(),
     {
         .source_access_type = AccessTypeObjects::Source::MONGO,
     },

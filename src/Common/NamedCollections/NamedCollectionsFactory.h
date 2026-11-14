@@ -86,6 +86,40 @@ public:
 
     bool usesReplicatedStorage();
 
+    /// Properties of the metadata storage needed by BACKUP and RESTORE
+    /// (see Common/NamedCollections/NamedCollectionsBackup.cpp).
+    struct MetadataStorageProperties
+    {
+        bool is_encrypted = false;
+        bool is_replicated = false;
+        /// Only set when `is_replicated` is true: identifies the shared storage for backup coordination.
+        std::string replication_id;
+    };
+    /// Never loads the key of an encrypted storage: BACKUP and RESTORE ask for these properties
+    /// before knowing whether they carry any collection, and a backup or restore carrying none
+    /// must not depend on the key being loadable.
+    MetadataStorageProperties getMetadataStorageProperties();
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// Describes the key of the metadata storage, which must be encrypted (see
+    /// `MetadataStorageProperties::is_encrypted`), see
+    /// NamedCollectionsMetadataStorage::getEncryptionKeyInfo. Loads the key if it is not loaded
+    /// yet, so this must be asked only when the key is needed anyway.
+    NamedCollectionsEncryptionKeyInfo getEncryptionKeyInfo();
+#endif
+
+    /// Stored bytes of the SQL-created collections, exactly as the metadata storage holds them,
+    /// keyed by the collection name. Never decrypts anything.
+    std::map<std::string, std::string> getRawEntriesForBackup();
+
+    /// Appends a message authentication code to stored bytes exported into a backup, see
+    /// NamedCollectionsMetadataStorage::authenticateStoredForBackup.
+    std::string authenticateStoredEntryForBackup(const std::string & stored);
+
+    /// Turns the bytes of a backup entry back into the `CREATE NAMED COLLECTION` statement, see
+    /// NamedCollectionsMetadataStorage::decryptStoredFromBackup.
+    std::string decryptStoredEntryFromBackup(const std::string & data);
+
     void loadIfNot();
 
     void shutdown();

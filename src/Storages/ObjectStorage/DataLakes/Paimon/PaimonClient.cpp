@@ -144,19 +144,27 @@ ReadSettings PaimonTableClient::getPaimonMetadataReadSettings(bool disable_files
 std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
 {
     /// list all schema files
-    const auto schema_files = listFiles(
+    const auto listing = listPrefixNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SCHEMA_DIR,
+        "",
         [](const RelativePathWithMetadata & path_with_metadata)
         {
             String relative_path = path_with_metadata.relative_path;
             String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
             return file_name.starts_with(PAIMON_SCHEMA_PREFIX);
         });
+    const auto & schema_files = listing.matched;
     if (schema_files.empty())
     {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Paimon table with path {} doesn't exist", table_location);
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Paimon table with path {} doesn't exist. No schema file was found under {}, "
+            "which held {}",
+            table_location,
+            listing.listed_prefix,
+            describeListedObjects(listing.entries, listing.listed_prefix, MAX_REPORTED_LISTING_ENTRIES));
     }
     /// find max schema version
     std::vector<std::pair<UInt32, String>> schema_files_with_versions;
@@ -262,7 +270,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     }
 
     // find real latest snapshot
-    auto snapshot_files = listFiles(
+    auto snapshot_files = listFilesNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SNAPSHOT_DIR,
@@ -344,7 +352,7 @@ std::optional<Int64> PaimonTableClient::getEarliestSnapshotId()
     }
 
     /// The hint is missing, unusable or stale - the snapshot directory is the source of truth.
-    auto snapshot_files = listFiles(
+    auto snapshot_files = listFilesNonRecursive(
         *object_storage,
         table_location,
         PAIMON_SNAPSHOT_DIR,
@@ -428,6 +436,27 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
         paimon_manifest.entries.emplace_back(manifest_deserializer, "", i, table_schema, partition_default_name);
     }
     return paimon_manifest;
+}
+
+PaimonIndexManifest PaimonTableClient::getIndexManifest(const String & index_manifest_path, bool disable_filesystem_cache)
+{
+    Paimon::checkPathIsRelativeToTable(index_manifest_path, "index manifest");
+    auto context = getContext();
+    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / index_manifest_path);
+    auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
+    auto index_manifest_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
+    Iceberg::AvroForIcebergDeserializer index_manifest_deserializer(
+        std::move(index_manifest_buf), Iceberg::IcebergPathFromMetadata::deserialize(index_manifest_path), getFormatSettings(context));
+
+    for (size_t i = 0; i < index_manifest_deserializer.rows(); ++i)
+    {
+        /// When compaction removes the last deletion vector of a bucket, Paimon writes an empty index file for it.
+        if (index_manifest_deserializer.getValueFromRowByName(i, COLUMN_PAIMON_INDEX_MANIFEST_INDEX_TYPE, TypeIndex::String).safeGet<String>()
+                == PAIMON_DELETION_VECTORS_INDEX
+            && index_manifest_deserializer.getValueFromRowByName(i, COLUMN_PAIMON_INDEX_MANIFEST_ROW_COUNT, TypeIndex::Int64).safeGet<Int64>() > 0)
+            return {.has_deletion_vectors = true};
+    }
+    return {};
 }
 
 }

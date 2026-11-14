@@ -1,0 +1,5 @@
+-- identical results with transported filters off and on
+20000
+20000
+-- admitted with the estimate-derived row bound
+1

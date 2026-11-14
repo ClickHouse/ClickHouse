@@ -1,9 +1,13 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 #include <limits>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -14,11 +18,11 @@ namespace DB
 /// outside the conjunction — under an OR or a NOT, or in an unrelated expression of the same
 /// DAG — is not applied to every row and is not reported. The overload takes the filter
 /// column of a FilterStep by name.
-std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
-std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
+VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
+VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
 
-using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
-using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+using NodeSet = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
+using NodeMap = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>;
 
 /// Describes how one `ActionsDAG` output can be traced to one input.
 /// `ValuePreserving` is deliberately restricted to operations explicitly known
@@ -62,7 +66,7 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
 /// Trace every output to at most one input using iterative, memoized traversal.
 /// The returned vector is ordered by output position and remains unambiguous even
 /// when input or output names are duplicated.
-std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions);
+VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions);
 
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
@@ -101,7 +105,7 @@ struct MatchedTrees
         std::optional<Monotonicity> monotonicity;
     };
 
-    using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
+    using Matches = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Match>;
 };
 
 /// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
@@ -144,10 +148,15 @@ void applyActionsToSortDescription(
 /// a consistent input substitution map cannot be constructed.
 ///
 /// The primary use case is to construct the input substitution map required by `ActionsDAG::foldActionsByProjection`.
-std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
-    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
+
+/// The arguments of a function node in the shape `IFunctionBase` methods expect: the result type of
+/// every child, and its constant column where the child has one. Whether a function is injective or
+/// monotonic can depend on them, so a caller that has a node has no reason to pass nothing.
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node);
 
 /// What each column of a header is to a DAG's inputs: one entry per header column, in header order,
 /// holding the position in `inputs` of the input reading it, or `passes_through` when no input reads it
@@ -162,26 +171,13 @@ struct HeaderColumnsToInputs
 {
     static constexpr size_t passes_through = std::numeric_limits<size_t>::max();
 
-    std::vector<size_t> read_by;
+    VectorWithMemoryTracking<size_t> read_by;
 
     size_t size() const { return read_by.size(); }
     bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
 };
 
 HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
-
-/// All nodes reachable from `roots`, including the roots themselves. `roots` may hold duplicates.
-/// A node for which `is_barrier` returns true is included, but the walk does not descend into its
-/// children.
-///
-/// Used to answer what `removeUnusedActions` would keep without modifying the DAG: pass the nodes it
-/// treats as roots - the kept outputs, every ARRAY_JOIN (it never drops them, they change the number
-/// of rows), and every input when inputs may not be removed - and, when it may fold constants, a
-/// barrier for the nodes it would fold, because folding clears their children before it collects the
-/// nodes to keep.
-NodeSet findReachableNodes(
-    const ActionsDAG::NodeRawConstPtrs & roots,
-    const std::function<bool(const ActionsDAG::Node *)> & is_barrier = {});
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 

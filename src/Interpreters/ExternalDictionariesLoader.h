@@ -45,8 +45,7 @@ public:
     std::string resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
     /// The same, but resolving an unqualified name against the given database rather than the
-    /// current database of a context. Used when the name has to resolve against the database
-    /// owning the definition, e.g. when the metadata of a table is loaded.
+    /// current database of a context.
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
@@ -67,7 +66,7 @@ public:
 
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
 
-    std::optional<bool> isObjectLazy(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
+    std::optional<bool> getObjectLazyLoadOverride(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 
     static void resetAll();
 

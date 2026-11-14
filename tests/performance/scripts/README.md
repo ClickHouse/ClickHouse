@@ -30,7 +30,7 @@ ClickHouse cluster.
 | `perf_test_perf_changes_v1` | Per-test summary of performance changes. |
 | `perf_partial_queries_v1` | Backward-incompatible queries that ran only on the new server. |
 | `perf_skipped_tests_v1` | Tests skipped during the run and why. |
-| `perf_run_errors_v1` | Errors captured from `run-errors.tsv`. |
+| `perf_run_errors_v1` | Errors captured from `run-errors.tsv`. Rows with `test = '(warning)'` are warnings about the run, such as a reference build older than the master revision tested with the PR. |
 | `perf_metric_changes_v1` | Changes in `system.asynchronous_metric_log` medians. |
 | `perf_flamegraph_stacks_v1` | Collapsed flamegraph stacks per query/side/trace type. |
 
@@ -82,11 +82,16 @@ These are the queries for which we observe a statistically significant change in
 You can find flame graphs for queries with performance changes in the test output archive, in files named as 'my_test_0_Cpu_SELECT 1 FROM....FORMAT Null.left.svg'. First goes the test name, then the query number in the test, then the trace type (same as in `system.trace_log`), and then the server version (left is old and right is new). Besides the CPU and real-time profilers, the profile runs also enable allocation sampling, so `MemorySample` (`MemoryTracker` samples) and `JemallocSample` (jemalloc heap samples) flame graphs are produced as well; these are weighted by allocated bytes rather than by sample count. Because allocation sampling can make a query orders of magnitude slower, each statement of a profile run is bounded by the profiling budget (`--profile-seconds`), so a query too slow to finish inside that budget yields a flame graph of the part of it that did run, on both servers alike, and a query item made of several statements can take a multiple of the budget.
 Apart from flame graphs for execution on each of the nodes, we also build differential flame graphs, that can be quite useful to quickly spot the cause of a performance change. See an example [here](https://github.com/ClickHouse/ClickHouse/pull/87366#discussion_r2426184017).
 
+The columns "Instructions ratio", "Cycles ratio", "IPC old" and "IPC new" come from the hardware counters (`PerfInstructions`, `PerfCPUCycles`) of the profile runs, averaged per run. The measured runs do not collect them (`metrics_perf_events_enabled` is off there, because the counters add overhead and noise to the timings), and the cells are empty for a query that was not profiled. An instructions ratio close to 1 together with a changed cycles ratio means the same code takes a different time per instruction, e.g. because of memory stalls, cache or TLB misses, alignment or contention, rather than because a different code path is executed. A changed instructions ratio means more or less work is done.
+
 Profile runs are normally limited to the queries whose performance changed, because they cost `--profile-seconds` per query per server. A test can ask for profile runs on every one of its queries with `<test profile_all_queries="1">`, and the whole run can be forced with `perf.py --profile-all-queries`. Then the trace-log metrics and the flame graphs are produced for all queries of that test, whether their performance changed or not.
 
 In CI, most tests run only a random sample of their queries (`perf.py --max-queries 10`). A fixed benchmark suite such as `tpch.xml` can opt out with `<test run_all_queries="1">`; the attribute takes effect only when the runner also passes `--soft-max-queries`.
 
 Tests can reuse ordered setup and measured queries with `<include file="shared_workload.xml.inc"/>` inside `<test>`. An included file has a `<fragment>` root; its children are inserted at the include's position before substitutions are expanded. Nested includes and `file` attributes inside fragments resolve relative to the fragment that declares them. Keep fragments outside the `*.xml` test selection (for example, use `.xml.inc`).
+
+To compare a test with a server failpoint active, add `<failpoint action="enable">name</failpoint>` under `<test>`. The runner enables it on both servers before setup. The whole test appears in Skipped Tests with `failpoint name not supported - skip` if a build has failpoint support disabled, or the reference server lacks a failpoint that the new server accepts. An unknown name on the new server and other enable errors fail the test.
+Add `<failpoint action="disable">name</failpoint>` to explicitly disable it after teardown. The runner also disables any remaining enabled failpoints on exit, including after a failed query or a partially successful enable. Failpoint names must be identifiers; each enable and optional disable may appear only once per test.
 
 #### Unstable Queries
 Action required for the cells marked in red.

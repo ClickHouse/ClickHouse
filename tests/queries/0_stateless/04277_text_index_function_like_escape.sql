@@ -3,7 +3,6 @@
 -- Tests that the text index is still used when the predicate uses
 -- `LIKE pattern ESCAPE 'c'` or `ILIKE pattern ESCAPE 'c'`.
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SET use_query_condition_cache = 0;

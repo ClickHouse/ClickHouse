@@ -1,15 +1,20 @@
 #pragma once
 
+#include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <type_traits>
+#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
 
 class ActionsDAG;
+class ReadFromMergeTree;
 
 struct IDescriptionHolder
 {
@@ -72,9 +77,16 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
+/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
+[[nodiscard]] bool canProduceTotals(QueryPlan::Node & root);
+
 [[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
+
+[[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
+
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
 
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
@@ -85,16 +97,30 @@ enum class FilterResult
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
+/// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
+using ConstantColumns = UnorderedMapWithMemoryTracking<const QueryPlan::Node *, NameSet>;
+
+[[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
+
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
     const Block & input_stream_header,
-    bool allow_unknown_function_arguments = false);
+    bool allow_unknown_function_arguments = false,
+    /// The plan node of the side, to also refuse a constant below it.
+    const QueryPlan::Node * side_node = nullptr);
 
 [[nodiscard]] FilterResult filterResultForMatchedRows(
     ActionsDAG pre_actions_dag,
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
+
+/// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
+/// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows
+[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
+
+/// the `ReadFromMergeTree` at the end of a chain of single-child steps, or nullptr
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
 
 struct NoOp
 {
@@ -115,6 +141,10 @@ struct NoOp
 /// instrumented in one plan and matched in the other. It is narrower than "contributes nothing to the
 /// key": a full `SortingStep` contributes nothing yet must remain a boundary of its own.
 bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step);
+
+/// Whether a MergeTree read allows a second, row-addressed read of the rows it selected, which lazy materialization
+/// needs. Shared by both lazy materialization paths, so that they agree on it.
+bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading);
 
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
