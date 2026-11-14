@@ -2614,6 +2614,44 @@ def test_explicit_version_longer_than_the_latest_is_read_whole(started_cluster):
     )
 
 
+def test_failed_lookup_of_the_selected_version_releases_the_file(started_cluster):
+    """The lookup of a version selected by the URL runs after the file is claimed. When it fails, the claim is
+    released without spending a retry, so the file is consumed later even with `s3queue_loading_retries = 0`."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"selected_version_lookup_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.csv"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    selected_version = client.put_object(Bucket=bucket, Key=source_key, Body=b"1,2,3\n")["VersionId"]
+    client.put_object(Bucket=bucket, Key=source_key, Body=b"4,5,6\n")
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*?versionId={selected_version}"
+    node.query(
+        f"""
+        CREATE TABLE {table_name} (column1 UInt32, column2 UInt32, column3 UInt32)
+        ENGINE = S3Queue('{url}', '{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}', CSV)
+        SETTINGS mode = 'exclusive', after_processing = 'keep', keeper_path = '/clickhouse/test_{table_name}',
+            s3queue_loading_retries = 0
+        """
+    )
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_selected_version_lookup")
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1, timeout=60)
+    assert node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst") == "1\t2\t3\n"
+    assert node.contains_in_log(f"Failed to get the metadata of the version {selected_version}")
+
+
 @pytest.mark.parametrize("after_processing", ["move", "delete"])
 def test_same_byte_reupload_between_listing_and_read(started_cluster, after_processing):
     """The listing has no versions, so the read is pinned by `ETag` only. A same-byte re-upload

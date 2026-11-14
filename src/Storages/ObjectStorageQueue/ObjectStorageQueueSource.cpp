@@ -83,6 +83,7 @@ namespace FailPoints
     extern const char object_storage_queue_sleep_in_generate[];
     extern const char object_storage_queue_pause_after_listing[];
     extern const char object_storage_queue_fail_tags_fetch[];
+    extern const char object_storage_queue_fail_selected_version_lookup[];
 }
 
 namespace ErrorCodes
@@ -735,7 +736,34 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             const auto & selected_version_id = s3_storage.getURI().version_id;
             if (!selected_version_id.empty())
             {
-                if (auto selected = s3_storage.tryGetObjectVersionMetadata(object_info->getPath(), selected_version_id, /*with_tags=*/false))
+                std::optional<ObjectMetadata> selected;
+                try
+                {
+                    fiu_do_on(FailPoints::object_storage_queue_fail_selected_version_lookup, {
+                        throw Exception(
+                            ErrorCodes::UNKNOWN_EXCEPTION,
+                            "Failpoint-triggered failure of the lookup of the selected version of {}", object_info->getPath());
+                    });
+                    selected = s3_storage.tryGetObjectVersionMetadata(object_info->getPath(), selected_version_id, /*with_tags=*/false);
+                }
+                catch (...)
+                {
+                    /// The file is claimed, but not returned yet, so no source can account the failure of the lookup.
+                    /// Release the claim, so that the file is taken again later with its retry budget intact.
+                    tryLogCurrentException(log, fmt::format(
+                        "Failed to get the metadata of the version {} of {}, will release the file",
+                        selected_version_id, object_info->getPath()));
+                    try
+                    {
+                        file_metadata->resetProcessing();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to release the processing of {}", object_info->getPath()));
+                    }
+                    throw;
+                }
+                if (selected)
                     object_info->relative_path_with_metadata.metadata = std::move(selected);
             }
         }
