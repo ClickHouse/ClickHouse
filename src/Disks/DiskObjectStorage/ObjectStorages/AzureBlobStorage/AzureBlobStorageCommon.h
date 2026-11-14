@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
+#include <azure/core/etag.hpp>
 #include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -221,9 +222,20 @@ AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, cons
 AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
-/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
-/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
-String getETag(const Azure::ETag & etag, const String & blob_path);
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the
+/// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` expands to a bare `std::abort`
+/// under `NDEBUG`. Never call it directly on a value that comes from a remote endpoint; use this
+/// function instead.
+///
+/// Azure Blob Storage and every known compatible implementation send the header in every
+/// `GetProperties`, `ListBlobs` and `Download` answer, so its absence means the endpoint is not
+/// what it claims to be: in practice a fake server set up to probe this server (every hit of this
+/// condition in production so far was a deliberately non-conformant endpoint under an
+/// `azureBlobStorage(...)` call with an attacker-controlled URL). The absence is deliberately
+/// reported as `LOGICAL_ERROR`, not handled gracefully, so that it stays on the logical-error
+/// radar of monitoring; note that debug and sanitizer builds abort when such an exception is
+/// constructed, so tests of this behavior only run in release builds.
+String getETag(const Azure::ETag & etag);
 
 #endif
 

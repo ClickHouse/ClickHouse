@@ -503,11 +503,12 @@ void ReadBufferFromAzureBlobStorage::setAccessConditions(Azure::Storage::Blobs::
 
 void ReadBufferFromAzureBlobStorage::checkReturnedGeneration(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details) const
 {
-    /// A response without an `ETag` cannot be checked, the same as in `ReadBufferFromS3`.
-    if (expected_etag.empty() || !details.ETag.HasValue())
+    if (expected_etag.empty())
         return;
 
-    const String returned_etag = quotedETag(details.ETag.ToString());
+    /// A pinned read sent `If-Match`, so a conforming endpoint always answers with an `ETag`;
+    /// `getETag` reports an answer without one.
+    const String returned_etag = quotedETag(AzureBlobStorage::getETag(details.ETag));
     if (returned_etag != expected_etag)
         throw Exception(
             ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
@@ -680,7 +681,7 @@ void ReadBufferFromAzureBlobStorage::setMetadataFromResponse(const Azure::Storag
 {
     ObjectMetadata new_metadata;
     new_metadata.size_bytes = blob_size;
-    new_metadata.etag = AzureBlobStorage::getETag(details.ETag, path);
+    new_metadata.etag = AzureBlobStorage::getETag(details.ETag);
     new_metadata.last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
     if (!details.Metadata.empty())
     {

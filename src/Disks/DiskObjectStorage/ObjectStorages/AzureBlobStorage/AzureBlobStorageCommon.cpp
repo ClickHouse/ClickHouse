@@ -92,7 +92,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
-    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
@@ -488,10 +487,12 @@ AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, cons
     return auth_config;
 }
 
-String getETag(const Azure::ETag & etag, const String & blob_path)
+String getETag(const Azure::ETag & etag)
 {
     if (!etag.HasValue())
-        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Azure Blob Storage endpoint did not return an ETag for blob {}", blob_path);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Azure Blob Storage endpoint did not return an ETag; a conforming endpoint always sends it");
     return etag.ToString();
 }
 
