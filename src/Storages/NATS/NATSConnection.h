@@ -37,6 +37,8 @@ struct NATSConfiguration
     int reconnect_wait{};
 
     bool secure{};
+    /// Whether `nats_secure` was set explicitly. Otherwise the library enables TLS by itself for `tls://` addresses.
+    bool secure_explicitly_set{};
 };
 
 using NATSOptionsPtr = std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)>;
