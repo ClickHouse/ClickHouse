@@ -109,7 +109,8 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 Приведённые выше сопоставления типов данных относятся к чтению. При создании или изменении схем Iceberg и записи данных в ClickHouse действуют следующие ограничения:
 
-* ClickHouse не может создать схему Iceberg, содержащую `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16` или `UInt16`, а также добавить столбец одного из этих типов или изменить тип столбца на один из них. Операция завершается исключением о неподдерживаемом типе. Это не препятствует вставке значений `Bool` или `Decimal` в существующие столбцы Iceberg.
+* ClickHouse не может создать схему Iceberg, содержащую `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time` или `Time64`, а также добавить столбец одного из этих типов или изменить тип столбца на один из них. Операция завершается исключением о неподдерживаемом типе. Это не препятствует вставке значений `Bool` в существующие столбцы Iceberg.
+* ClickHouse также не может создать схему Iceberg, содержащую `UInt64`: самый широкий целочисленный тип Iceberg — знаковый 64-битный `long`, который не может представить все значения `UInt64`. Используйте `Int64` или `Decimal(20, 0)`. Создание таблицы со столбцом `UInt64`, в том числе вложенным, например `Array(UInt64)`, завершается исключением, даже если таблица Iceberg по указанному пути уже существует. По той же причине столбец `UInt32` расширяется до типа Iceberg `long` и поэтому при чтении возвращается как `Int64`.
 * При создании или изменении схемы Iceberg ClickHouse сопоставляет каждый столбец `DateTime` и `DateTime64` с типом Iceberg `timestamp`, который имеет микросекундную точность и не содержит информации о часовом поясе. ClickHouse не может генерировать типы схемы `timestamptz`, `timestamp_ns` или `timestamptz_ns`, поэтому более высокая точность и семантика часового пояса не отражаются в схеме Iceberg.
 * ClickHouse не может записывать данные в таблицу Iceberg, где столбец `decimal`, `fixed`, `timestamp_ns` или `timestamptz_ns` используется как непосредственное поле партиции. Операция завершается исключением о неподдерживаемом типе.
 * Для файлов данных, содержащих типы, границы которых ClickHouse не может сериализовать, включая `Bool` и `Decimal`, ClickHouse не указывает в записи манифеста Iceberg нижние и верхние границы всех столбцов. Размеры столбцов и количество значений null по-прежнему включаются, а данные остаются корректными, но средства чтения не могут использовать отсечение min-max на уровне манифеста для этих файлов.
@@ -132,7 +133,7 @@ ClickHouse поддерживает отсечение партиций в за�
 
 ## `DROP PARTITION` {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` удаляет все файлы данных, относящиеся к одной партиции, и создаёт новый снимок, который больше на них не ссылается. Сейчас операция поддерживается для локальных таблиц Iceberg и таблиц Iceberg в объектном хранилище, но не для таблиц, управляемых каталогом.
+`ALTER TABLE ... DROP PARTITION <value>` удаляет все файлы данных, относящиеся к одной партиции, и создаёт новый снимок, который больше на них не ссылается. Операция поддерживается для локальных таблиц Iceberg и таблиц Iceberg в объектном хранилище, а также для таблиц в базе данных `DataLakeCatalog` с типом каталога `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables` или `unity` (при `use_unity_catalog_v2 = 1`).
 
 Чтобы использовать эту операцию, включите настройку `allow_insert_into_iceberg`.
 
@@ -154,7 +155,7 @@ ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
 
 Операция отклоняет явно заданные настройки `iceberg_snapshot_id`, `iceberg_timestamp_ms` и `iceberg_metadata_file_path`. Она изменяет текущее состояние таблицы, а не исторический снимок или явно выбранную версию метаданных.
 
-Формы `DROP PARTITION ID '...'` и `DROP PARTITION ALL` не поддерживаются. Удаление несуществующей партиции ничего не делает. Операция не удаляет файлы данных физически. Более ранние снимки по-прежнему дают доступ к удалённым строкам и остаются доступными для запросов с перемещением во времени (time travel), пока срок действия этих снимков не истечёт, а их файлы не будут удалены.
+Формы `DROP PARTITION ID '...'` и `DROP PARTITION ALL` не поддерживаются. Удаление несуществующей партиции ничего не делает. Операция не удаляет файлы данных физически. Более ранние снимки по-прежнему дают доступ к удалённым строкам и остаются доступными для запросов с путешествием во времени (time travel), пока срок действия этих снимков не истечёт, а их файлы не будут удалены.
 
 ## Путешествия во времени {#time-travel}
 
@@ -358,6 +359,7 @@ ts = now();
 3. **Поиск по умолчанию**:
 
 * Если ни один из указанных выше параметров не задан, кандидатами считаются все файлы `.metadata.json` в каталоге `metadata`
+* В S3 и Azure при включённой настройке на уровне запроса `iceberg_list_only_v_prefixed_metadata_files` и отключённой `iceberg_use_version_hint`, если имена некоторых из этих файлов начинаются с `v` (так их называют каталоги ClickHouse и Hadoop), кандидатами считаются только эти файлы, и только они попадают в листинг (по префиксу ключа `metadata/v`, поэтому манифесты, хранящиеся в том же каталоге, в него не включаются). Включайте эту настройку только для таблиц, у которых все файлы метаданных названы по этой схеме: если в каталоге встречаются обе схемы именования, файлы `<N>-<uuid>.metadata.json` никогда не становятся кандидатами
 
 ### Выбор самого нового файла {#most-recent-file}
 
@@ -415,6 +417,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 **Примечание**: Асинхронная предварительная загрузка метаданных выполняется в `ICEBERG_SCEDULE_POOL`, который представляет собой серверный пул потоков для фоновых операций с активными таблицами `Iceberg`. Размер этого пула потоков задается параметром конфигурации сервера `iceberg_background_schedule_pool_size` (по умолчанию — 10).
 
 **Примечание**: В настоящее время предполагается, что размер кэша метаданных достаточен для полного хранения последнего снимка метаданных для всех активных таблиц, если включена асинхронная предварительная загрузка.
+
+## Изменение настроек таблицы {#modify-settings}
+
+Настройки, которые хранятся только в определении таблицы, но не в метаданных Iceberg, можно изменить для существующей таблицы с помощью `ALTER TABLE ... MODIFY SETTING` и `ALTER TABLE ... RESET SETTING`:
+
+* поиск файла метаданных: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` и `iceberg_metadata_async_prefetch_period_ms`;
+* фоновая компакция и последующая очистка: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` и `iceberg_data_file_size_upper_threshold_compaction`.
+
+Новые значения вступают в силу для последующих запросов и сохраняются в определении таблицы. На время изменения настроек фоновые задания таблицы останавливаются, а затем перезапускаются с новыми настройками. Поэтому отключение `allow_experimental_iceberg_compaction` останавливает фоновую компакцию таблицы, а включение — запускает её. Остальные настройки изменить нельзя; кроме того, изменение настроек нельзя совмещать с другими командами `ALTER` в одном запросе. Для таблиц базы данных `DataLakeCatalog` изменение настроек не поддерживается.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
 
 ## См. также {#see-also}
 

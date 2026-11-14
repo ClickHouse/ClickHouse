@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
@@ -74,6 +75,7 @@ struct FormatSettings;
 class ASTSelectQuery;
 
 class SystemLogs;
+class DirectoryWatchReactor;
 
 class ColumnsDescription;
 struct ContextSharedPart;
@@ -326,7 +328,7 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class ContextTimeSeriesTagsCollector;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
@@ -683,6 +685,9 @@ protected:
     /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
     /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
     bool is_automatic_parallel_replicas_probe = false;
+    /// Set for the context `system.tables` reads table totals with: a storage that would have to read remote
+    /// storage (e.g. data lake metadata) to compute `totalRows`/`totalBytes` returns nullopt instead.
+    bool totals_without_storage_access = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -694,6 +699,10 @@ protected:
     /// Resource classifier for a query, holds smart pointers required for ResourceLink
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
+
+    /// The query changes only metadata (see `isMetadataQuery`), so it is exempt from workload scheduling.
+    /// Copied to child contexts, so the sub-queries it runs are exempt too.
+    bool is_metadata_query = false;
 
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
@@ -1063,6 +1072,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Marks the query as a metadata query (see `is_metadata_query`).
+    /// Must be called before the workload classifier is first acquired.
+    void setMetadataQuery();
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
@@ -1909,6 +1921,12 @@ public:
     BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
     BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// The one thread that watches the directories of all `FileLog` tables, created on the first call. Returns a
+    /// `shared_ptr` that the watchers keep, so that the reactor outlives all of them even if `shutdown` runs first.
+    std::shared_ptr<DirectoryWatchReactor> getDirectoryWatchReactor() const;
+#endif
+
     /// Return the pool only if it has already been created, null otherwise, so that reading
     /// `system.background_schedule_pool` does not instantiate one.
     BackgroundSchedulePoolPtr getBufferFlushSchedulePoolIfExists() const;
@@ -2100,6 +2118,9 @@ public:
 
     bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
     void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
+
+    bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
+    void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
