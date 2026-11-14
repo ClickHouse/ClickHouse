@@ -48,6 +48,7 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -155,6 +156,37 @@ void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr &
                 }
             }
         }
+    }
+}
+
+void buildGlobalInSetsOfExternalTables(const ActionsDAG & dag, const ContextPtr & context)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() < 2
+            || !functionIsGlobalInOperator(node.function_base->getName()))
+            continue;
+
+        const auto * set_node = node.children[1];
+        if (set_node->type != ActionsDAG::ActionType::COLUMN || !set_node->column)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node->column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
+        if (!set_from_subquery || future_set->get())
+            continue;
+
+        const auto source_ast = set_from_subquery->getSourceAST();
+        const auto * table = source_ast ? source_ast->as<ASTTableIdentifier>() : nullptr;
+        if (!table || table->compound()
+            || !context->tryResolveStorageID(StorageID("", table->name()), Context::ResolveExternal))
+            continue;
+
+        set_from_subquery->buildOrderedSetInplace(context);
     }
 }
 

@@ -539,7 +539,10 @@ void prepareEagerKeyConditionSets(
     if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
             filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
             /*allow_partial_result=*/ true))
+    {
         VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
+        VirtualColumnUtils::buildGlobalInSetsOfExternalTables(*split, context);
+    }
 }
 
 size_t clampClusterFunctionNumStreams(UInt64 num_streams)
