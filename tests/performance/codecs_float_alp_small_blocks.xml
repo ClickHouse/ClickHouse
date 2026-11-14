@@ -1,0 +1,32 @@
+<test>
+    <!-- Compact parts compress every granule separately, so with small granules the ALP codec sees one compressed block of a
+         few hundred values per granule. The samples tables of TimeSeries use 256-row granules, and a part written by one
+         remote-write request holds about one sample per row. -->
+    <settings>
+        <enable_alp_codec>1</enable_alp_codec>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>seq_type</name>
+            <values>
+                <value>rtn</value>
+                <value>rnd</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE codec_alp_small_blocks_{seq_type} (n Float64 CODEC(ALP, ZSTD(3)))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS index_granularity = 256, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = '1Gi',
+            parts_to_delay_insert = 5000, parts_to_throw_insert = 5000, auto_statistics_types = '';
+    </create_query>
+    <create_query>SYSTEM STOP MERGES</create_query>
+
+    <query>INSERT INTO codec_alp_small_blocks_rtn (n) SELECT round(number / 20 + sin(number), 3) FROM system.numbers LIMIT 2000000 SETTINGS max_threads = 1</query>
+    <query>INSERT INTO codec_alp_small_blocks_rnd (n) SELECT (intHash64(number) - 4294967295) / pi() FROM system.numbers LIMIT 2000000 SETTINGS max_threads = 1</query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_alp_small_blocks_{seq_type}</drop_query>
+</test>
