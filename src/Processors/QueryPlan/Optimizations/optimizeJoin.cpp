@@ -1,4 +1,8 @@
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/SipHash.h>
 #include <Common/safe_cast.h>
 
@@ -10,6 +14,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -18,6 +23,7 @@
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -26,8 +32,12 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <algorithm>
@@ -41,6 +51,7 @@
 #include <unordered_set>
 #include <vector>
 #include <base/types.h>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -73,13 +84,13 @@ struct RuntimeHashStatisticsContext
     /// where the contribution hashes the parent join's equi-key columns on the side N sits on.
     /// Populated for every node by `calculateHashTableCacheKeys`; mutated during join reorder
     /// to reflect the post-reorder parent of each node.
-    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> cache_keys;
     /// Bottom-up hash of the subtree rooted at the node — does NOT include any parent-join
     /// contribution, so it identifies "what data" but not "what hash table keyed how". Used
     /// by join-reorder code in `chooseJoinOrder` to derive cache keys for sub-join nodes
     /// built during reorder, where the post-reorder parent's contribution differs from
     /// whatever was originally stamped into `cache_keys` during the pre-reorder walk.
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> raw_hashes;
     StatsCollectingParams params;
 
     RuntimeHashStatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
@@ -281,25 +292,25 @@ struct QueryGraphBuilder
 {
     JoinExpressionActions expression_actions;
 
-    std::vector<RelationStats> relation_stats;
-    std::vector<QueryPlan::Node *> inputs;
+    VectorWithMemoryTracking<RelationStats> relation_stats;
+    VectorWithMemoryTracking<QueryPlan::Node *> inputs;
 
-    std::vector<JoinActionRef> join_edges;
+    VectorWithMemoryTracking<JoinActionRef> join_edges;
     /// See QueryGraph::edge_conflict_ops
-    std::vector<size_t> join_edge_ops;
+    VectorWithMemoryTracking<size_t> join_edge_ops;
 
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
     /// The `join_kinds` maps (join relation index) -> (set of relations it depends on, join kind)
-    std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
-    std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<BitSet, JoinKind>> join_kinds;
+    UnorderedMapWithMemoryTracking<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
     /// ON-clause predicates of outer joins, see QueryGraph::outer_join_conditions
-    std::unordered_map<JoinActionRef, BitSet> outer_join_conditions;
+    UnorderedMapWithMemoryTracking<JoinActionRef, BitSet> outer_join_conditions;
     /// See QueryGraph::null_supplying_subtree_relations and QueryGraph::requires_conflict_detector
     BitSet null_supplying_subtree_relations;
     bool requires_conflict_detector = false;
     /// See QueryGraph::cross_product_links
-    std::vector<std::pair<BitSet, BitSet>> cross_product_links;
+    VectorWithMemoryTracking<std::pair<BitSet, BitSet>> cross_product_links;
 
     /// Whether the disjunction push-down already ran on the joins this graph was built from. Reordering
     /// rebuilds the join steps, and a fresh step would let the push-down run a second time and add the
@@ -310,7 +321,7 @@ struct QueryGraphBuilder
     /// One record per binary join operator of the original tree, captured for the optional conflict
     /// detector (CD-A/CD-C). Relation ids are local to this (sub)graph and shifted in `uniteGraphs`.
     /// See QueryGraph::conflict_ops / ConflictJoinOp.
-    std::vector<ConflictJoinOp> conflict_ops;
+    VectorWithMemoryTracking<ConflictJoinOp> conflict_ops;
 
     struct BuilderContext
     {
@@ -457,7 +468,7 @@ static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings
 /// expression a second time, so such an expression must not be merged into a join graph.
 static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 {
-    std::unordered_set<std::string_view> input_names;
+    UnorderedSetWithMemoryTracking<std::string_view> input_names;
     for (const auto * input : dag.getInputs())
         input_names.insert(input->result_name);
 
@@ -664,7 +675,7 @@ static size_t addChildQueryGraph(
 /// one. It excludes NULL-blocking functions on purpose (`coalesce`, `ifNull`, `assumeNotNull`, ...).
 static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
 {
-    static const std::unordered_set<std::string_view> names = {
+    static const UnorderedSetWithMemoryTracking<std::string_view> names = {
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
@@ -703,30 +714,30 @@ static bool nullExtensionIsNull(const DataTypePtr & type)
 /// Recurses only through null-propagating functions; any other node is opaque and contributes {}.
 static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
 {
-    switch (node->type)
+    BitSet result;
+    visitReachableNodes({node}, [&](const ActionsDAG::Node * cur)
     {
-        case ActionsDAG::ActionType::INPUT:
-        case ActionsDAG::ActionType::PLACEHOLDER:
-            if (!nullExtensionIsNull(node->result_type))
-                return {};
-            /// A leaf column reference is null exactly on its own relation.
-            return JoinActionRef(node, actions).getSourceRelations();
-        case ActionsDAG::ActionType::ALIAS:
-            return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
-        case ActionsDAG::ActionType::FUNCTION:
+        switch (cur->type)
         {
-            if (!node->function_base || !isNullPropagatingFunction(*node))
-                return {};
-            BitSet result;
-            for (const auto * child : node->children)
-                result |= strictOnRelations(child, actions);
-            return result;
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                /// A leaf column reference is null exactly on its own relation.
+                if (nullExtensionIsNull(cur->result_type))
+                    result |= JoinActionRef(cur, actions).getSourceRelations();
+                return VisitResult::SkipChildren;
+            case ActionsDAG::ActionType::ALIAS:
+                return VisitResult::Continue;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (!cur->function_base || !isNullPropagatingFunction(*cur))
+                    return VisitResult::SkipChildren;
+                return VisitResult::Continue;
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                return VisitResult::SkipChildren;
         }
-        case ActionsDAG::ActionType::COLUMN:
-        case ActionsDAG::ActionType::ARRAY_JOIN:
-            return {};
-    }
-    return {};
+        return VisitResult::SkipChildren;
+    });
+    return result;
 }
 
 /// Relations R such that the boolean `node` is false or unknown when all of R's columns are NULL
@@ -974,12 +985,12 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
 }
 
-static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
+static VectorWithMemoryTracking<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
 {
-    std::vector<DPJoinEntry *> result;
+    VectorWithMemoryTracking<DPJoinEntry *> result;
     result.reserve(root->relations.count() * 2);
 
-    std::vector<DPJoinEntry *> stack;
+    VectorWithMemoryTracking<DPJoinEntry *> stack;
     stack.push_back(root.get());
 
     while (!stack.empty())
@@ -1047,6 +1058,103 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+/// Whether the column `name` of `node` is the column `column` of the read below, only renamed by expressions and filters: a
+/// key `optimizeJoinByShards` can split by, which matches it to the primary key exactly, not through a monotonic function.
+static bool isReadColumn(const QueryPlan::Node & node, const QueryPlan::Node & reading, String name, const String & column)
+{
+    for (const auto * current = &node; current != &reading; current = current->children.front())
+    {
+        if (current->children.size() != 1)
+            return false;
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(current->step.get()))
+            dag = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<const FilterStep *>(current->step.get()))
+            dag = &filter->getExpression();
+        else
+            return false;
+
+        const auto * output = dag->tryFindInOutputs(name);
+        if (!output)
+            return false;
+        while (output->type == ActionsDAG::ActionType::ALIAS)
+            output = output->children.front();
+        if (output->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        name = output->result_name;
+    }
+    return name == column;
+}
+
+/// For each input, the longest sequence of its `candidates` columns that `optimizeReadInOrder` could read it in order of.
+static VectorWithMemoryTracking<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
+    const VectorWithMemoryTracking<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings, const VectorWithMemoryTracking<NameSet> & candidates)
+{
+    /// A longer sequence only matters for a join on all of its columns, and joins on more keys are rare.
+    constexpr size_t max_prefix_size = 8;
+
+    VectorWithMemoryTracking<QueryGraph::ReadInOrder> prefixes(inputs.size());
+    for (size_t i = 0; i < inputs.size() && i < candidates.size(); ++i)
+    {
+        const auto & header = inputs[i]->step->getOutputHeader();
+        Names columns;
+        for (const auto & column : candidates[i])
+            if (header->has(column))
+                columns.push_back(column);
+        if (columns.empty())
+            continue;
+        auto * reading_node = findReadingStepForReadInOrder(*inputs[i], /*read_in_order_through_join=*/ false);
+        auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+        if (!reading || reading->isParallelReadingFromReplicas())
+            continue;
+
+        /// Whether the input can be read in order of all of `names`: storage key columns fixed by a filter do not count.
+        auto is_read_in_order = [&](const Names & names)
+        {
+            SortDescription sort_description;
+            for (const auto & name : names)
+                sort_description.emplace_back(name);
+            SortingStep sorting(header, std::move(sort_description), 0, sorting_settings);
+            auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), *inputs[i]);
+            return order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size();
+        };
+
+        const auto & primary_key = reading->getStorageMetadata()->getPrimaryKey();
+
+        std::ranges::sort(columns);
+        auto & prefix = prefixes[i].prefix;
+        for (const auto & first : columns)
+        {
+            if (!is_read_in_order({first}))
+                continue;
+            prefix = {first};
+            /// Extend by the next column of the storage order among the candidates.
+            for (bool extended = true; extended && prefix.size() < max_prefix_size;)
+            {
+                extended = false;
+                for (const auto & next : columns)
+                {
+                    if (std::ranges::contains(prefix, next))
+                        continue;
+                    prefix.push_back(next);
+                    extended = is_read_in_order(prefix);
+                    if (extended)
+                        break;
+                    prefix.pop_back();
+                }
+            }
+            /// The range split uses the leading primary key columns themselves, of types it supports.
+            auto & usable = prefixes[i].primary_key_prefix;
+            while (!reading->isQueryWithFinal() && usable < prefix.size() && usable < primary_key.column_names.size()
+                && isSafePrimaryDataKeyType(*primary_key.data_types[usable])
+                && isReadColumn(*inputs[i], *reading_node, prefix[usable], primary_key.column_names[usable]))
+                ++usable;
+            break;
+        }
+    }
+    return prefixes;
+}
+
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
@@ -1055,6 +1163,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.edge_conflict_ops = std::move(query_graph_builder.join_edge_ops);
+    BitSet null_supplying_relations;
+    for (const auto & [relation, restriction] : query_graph_builder.join_kinds)
+        if (restriction.second != JoinKind::Inner)
+            null_supplying_relations.set(relation);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
@@ -1071,12 +1183,24 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             query_graph.prepared_storage_relations.set(i);
     }
 
+    /// The joins of this graph may become sort-merge joins unless their own `join_algorithm` is explicit without it.
+    if (const auto & context = *query_graph_builder.context; context.optimization_settings.query_plan_join_order_use_interesting_orders)
+    {
+        const auto & join_settings = context.join_settings;
+        /// An explicit `join_algorithm` is a priority list: the optimizer does not choose another algorithm over it.
+        query_graph.use_interesting_orders = join_settings.hasDefaultJoinAlgorithms();
+        /// `CreateSetAndFilterOnTheFlyStep` (`max_rows_in_set_to_optimize_join`) prevents reading in order.
+        if (query_graph.use_interesting_orders && context.optimization_settings.read_in_order && join_settings.max_rows_in_set_to_optimize_join == 0)
+            query_graph.find_read_in_order_prefixes = [inputs = query_graph_builder.inputs, sorting_settings = context.sorting_settings](
+                const VectorWithMemoryTracking<NameSet> & candidates) { return findReadInOrderPrefixes(inputs, sorting_settings, candidates); };
+    }
+
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
-    std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
+    UnorderedMapWithMemoryTracking<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
     Strings relations_estimated_from_data_lake_metadata;
-    std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    VectorWithMemoryTracking<UInt8> leaf_imprecise(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -1087,7 +1211,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate,
-            .composite = rel.composite};
+            .composite = rel.composite,
+            .column_stats = rel.column_stats};
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
@@ -1130,9 +1255,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     /// Mapping from node to maximal step position where it is used
     /// It's used to drop unused expressions
-    std::unordered_map<const ActionsDAG::Node *, size_t> usage_level_map;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> usage_level_map;
     {
-        std::deque<std::pair<const ActionsDAG::Node *, size_t>> stack;
+        DequeWithMemoryTracking<std::pair<const ActionsDAG::Node *, size_t>> stack;
 
         /// Join expressions used by i-th join step
         for (size_t i = 0; i < sequence.size(); ++i)
@@ -1163,7 +1288,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         }
     }
 
-    std::stack<QueryPlan::Node *> node_stack;
+    StackWithMemoryTracking<QueryPlan::Node *> node_stack;
     auto & input_nodes = query_graph_builder.inputs;
 
     if (!query_graph_builder.context)
@@ -1177,10 +1302,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     /// Each next step uses mapped columns as inputs
 
     /// Input in global dag -> it's position
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_node_map;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> input_node_map;
 
     /// input_position -> (relation no, input)
-    std::vector<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
+    VectorWithMemoryTracking<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
 
     const auto & global_inputs = global_actions_dag->getInputs();
     for (size_t input_idx = 0; input_idx < global_inputs.size(); ++input_idx)
@@ -1257,6 +1382,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     && lhs_estimation.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
+            /// A merge join keeps the sides the optimizer chose, the later joins rely on the order of its left input.
+            if (entry->join_method == JoinMethod::Merge)
+                flip_join = false;
 
             /// fixme: USING clause handled specially in join algorithm, so swap breaks it
             /// At the time of writing, we're not able to swap inputs for ANY or SEMI partial merge join, because it only supports inner or left joins, but not right
@@ -1292,13 +1420,15 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             ActionsDAG::NodeRawConstPtrs required_output_nodes;
 
             /// input pos -> new input node
-            std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
+            UnorderedMapWithMemoryTracking<size_t, const ActionsDAG::Node *> current_step_type_changes;
 
-            for (auto rel_id : {left_rels.getSingleBit(), right_rels.getSingleBit()})
+            /// NULL padding applies where the relation is joined alone; other type changes only after all predicates on original columns.
+            const bool is_last_step = entry_idx + 1 == sequence.size();
+            for (const auto & [relation, new_inputs] : query_graph_builder.type_changes)
             {
-                if (!rel_id.has_value())
+                const bool joined_alone = left_rels.getSingleBit() == relation || right_rels.getSingleBit() == relation;
+                if (!(null_supplying_relations.test(relation) ? joined_alone : is_last_step))
                     continue;
-                const auto & new_inputs = query_graph_builder.type_changes[rel_id.value()];
                 for (const auto * new_input : new_inputs)
                 {
                     const auto * input_node = trackInputColumn(new_input);
@@ -1438,6 +1568,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 sorting_settings);
 
             join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
+            /// The physical join runs it, with the user's `join_algorithm` list as its fallback.
+            if (entry->join_method == JoinMethod::Merge)
+                join_step->setPlannedAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;
@@ -1450,7 +1583,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .name = join_step->getReadableRelationName(),
                 .estimated_rows = entry->estimated_rows,
                 .imprecise_estimate = imprecise_estimate,
-                .composite = true};
+                .composite = true,
+                .column_stats = entry->column_stats};
 
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
@@ -1485,7 +1619,7 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers,
+    VectorWithMemoryTracking<SharedHeader> & relation_headers,
     bool allow_semi_anti_children,
     bool below_null_supplying);
 
@@ -1498,7 +1632,7 @@ static void collectJoinGraphRelationHeadersForJoin(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers,
+    VectorWithMemoryTracking<SharedHeader> & relation_headers,
     bool allow_semi_anti_children,
     bool below_null_supplying = false)
 {
@@ -1534,7 +1668,7 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers,
+    VectorWithMemoryTracking<SharedHeader> & relation_headers,
     bool allow_semi_anti_children,
     bool below_null_supplying)
 {
@@ -1581,10 +1715,10 @@ static bool joinGraphHasOverlappingColumnNames(
     bool merge_expression_into_join,
     bool allow_semi_anti_children)
 {
-    std::vector<SharedHeader> relation_headers;
+    VectorWithMemoryTracking<SharedHeader> relation_headers;
     collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
 
-    std::unordered_set<std::string_view> seen_names;
+    UnorderedSetWithMemoryTracking<std::string_view> seen_names;
     for (const auto & header : relation_headers)
     {
         if (!header)
@@ -1644,7 +1778,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     bool reorder_semi_anti = conflictDetectorReordersSemiAnti(optimization_settings);
     if (reorder_semi_anti)
     {
-        std::vector<SharedHeader> flattened_relations;
+        VectorWithMemoryTracking<SharedHeader> flattened_relations;
         collectJoinGraphRelationHeadersForJoin(
             node, query_graph_size_limit, join_step->getJoinSettings(),
             optimization_settings.merge_expression_into_join, flattened_relations, /*allow_semi_anti_children=*/ true);

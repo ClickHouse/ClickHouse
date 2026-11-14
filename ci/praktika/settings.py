@@ -194,7 +194,6 @@ class _Settings:
 
     # to post links for reading statistics in html report (with read-only user)
     CI_DB_READ_USER: str = ""
-    CI_DB_READ_URL: str = ""
 
     # Substrings to classify test failures. Used to generate helper queries for checking failure history.
     # Not required to cover all failures, but recommended to maximize coverage.
@@ -275,7 +274,6 @@ _USER_DEFINED_SETTINGS = [
     "ENABLE_SUBMODULE_CACHE",
     "ENABLE_SUBMODULE_CLONE_AUTH",
     "CI_DB_READ_USER",
-    "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
     "PRAKTIKA_BASE_VENV",
     "HOST_METRICS_ENABLED",

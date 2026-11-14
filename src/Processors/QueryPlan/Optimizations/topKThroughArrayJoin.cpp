@@ -85,16 +85,17 @@ void addArrayJoinEmptinessFilter(const ArrayJoinStep & array_join, QueryPlan::No
 /// so the top-n input rows give the top-n output rows if each of them gives at least one row
 size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
+    /// a sort that this function moved has `ARRAY JOIN` above it and the checked `LIMIT` higher up, so it can move again
     auto * limit_step = typeid_cast<LimitStep *>(parent_node->step.get());
-    if (!limit_step)
+    if (!limit_step && !typeid_cast<ArrayJoinStep *>(parent_node->step.get()))
         return 0;
 
     /// `WITH TIES` needs all rows equal to the last one
-    if (limit_step->withTies())
+    if (limit_step && limit_step->withTies())
         return 0;
 
     /// `WITH TOTALS` and `exact_rows_before_limit` need all rows
-    if (limit_step->alwaysReadTillEnd())
+    if (limit_step && limit_step->alwaysReadTillEnd())
         return 0;
 
     if (parent_node->children.size() != 1)
@@ -137,7 +138,7 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
         if (std::ranges::contains(array_join_columns, sort_column.column_name) || !array_join_input_header->has(sort_column.column_name))
             return 0;
 
-    const size_t n = limit_step->getLimitForSorting();
+    const size_t n = limit_step ? limit_step->getLimitForSorting() : sort_step->getLimit();
     if (n == 0)
         return 0;
 
@@ -162,8 +163,11 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     array_join_step->updateInputHeader(sort_node->step->getOutputHeader());
     parent_node->children[0] = first_node_below_sort;
 
-    /// depth to optimize again: `ArrayJoin -> Sorting -> [Filter]` and one `Expression` above
-    return 4;
+    /// optimize again down to the node below the moved sort, so the emptiness filter merges before `tryOptimizeTopK`
+    size_t depth = 1;
+    for (const auto * node = parent_node; node != array_join_input_node; node = node->children.front())
+        ++depth;
+    return depth;
 }
 
 }

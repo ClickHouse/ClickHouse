@@ -21,6 +21,9 @@ struct JSONExtractInsertSettings
     bool saturate_on_overflow = true;
     /// If false, a DateTime value with fractional seconds is rejected instead of truncated.
     bool truncate_fractional_seconds = true;
+    /// If false, a JSON null is rejected by Array, Tuple, Map and JSON types
+    /// instead of being inserted as the default value with `null_as_default`.
+    bool null_as_default_in_complex_types = true;
     /// If true, during insert into Dynamic column we first try to insert value into existing variants
     /// and only if failed we try to infer the new variant type.
     bool try_existing_variants_in_dynamic_first = true;

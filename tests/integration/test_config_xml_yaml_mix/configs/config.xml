@@ -23,7 +23,6 @@
         <compression_level>medium</compression_level>
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
-        <verbose_logs>false</verbose_logs>
     </grpc>
     <openSSL>
         <server>

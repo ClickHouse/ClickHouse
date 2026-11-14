@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_expire_snapshots=1 --use_iceberg_metadata_files_cache=0"
+CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_expire_snapshots=1 --use_iceberg_metadata_files_cache=0"
 
 # main: the table as ClickHouse writes it; branch: plus a branch `b` at the oldest snapshot;
 # no_refs: no `refs`, so `current-snapshot-id` is the only head.

@@ -11,8 +11,8 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from integration.helpers.client import Client, CommandRequest
-from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from tests.integration.helpers.client import Client, CommandRequest
+from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 
 @dataclass
@@ -167,10 +167,10 @@ class ElOracloDeLeaks:
                     f"RESTORE ALL FROM File('/var/lib/clickhouse/user_files/leaks{backupn}');"
                 )
             else:
-                start_time = time.time()
+                start_time = time.monotonic()
                 while (
                     active_merges != 0 or active_mutations != 0
-                ) and time.time() - start_time < timeout:
+                ) and time.monotonic() - start_time < timeout:
                     # Check for active merges and mutations
                     result1 = client.query("SELECT count() FROM system.merges;")
                     result2 = client.query(

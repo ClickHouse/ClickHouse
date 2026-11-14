@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Os índices de omissão de dados devem ser considerados quando as melhores práticas anteriores tiverem sido seguidas, ou seja, quando os tipos estiverem otimizados, uma boa chave primária tiver sido selecionada e visões materializadas tiverem sido aproveitadas. Se você ainda não conhece índices de omissão, [este guia](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) é um bom ponto de partida.
 
 Esses tipos de índices podem ser usados para acelerar o desempenho das consultas, desde que sejam usados com cuidado e com entendimento de como funcionam.
@@ -192,7 +190,15 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 A animação a seguir ilustra como nosso índice minmax de omissão é criado para a tabela de exemplo, registrando os valores mínimo e máximo de `ViewCount` para cada bloco de linhas (grânulo) da tabela:
 
-<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Criando índices de omissão" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Criando índices de omissão](/images/bestpractices/building_skipping_indices.webp)
+
+</Frame>
+
+</div>
 
 Ao repetir a consulta anterior, vemos melhorias significativas no desempenho. Observe o número reduzido de linhas analisadas:
 
@@ -257,7 +263,15 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 Também mostramos uma animação de como o índice minmax de omissão descarta todos os blocos de linhas que não podem conter correspondências para o predicado `ViewCount` &gt; 10,000,000 em nossa consulta de exemplo:
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Usando índices de omissão" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Usando índices de omissão](/images/bestpractices/using_skipping_indices.webp)
+
+</Frame>
+
+</div>
 
 <div id="related-docs">
   ## Documentação relacionada
