@@ -1636,6 +1636,16 @@ static bool containsFunction(const IAST * node, size_t depth, size_t max_depth)
     return false;
 }
 
+/// `[element]`, made like `ArrayLayer` makes it, so that the result is the same after formatting and parsing back:
+/// an array of a literal without an alias is a literal.
+static ASTPtr makeSingleElementArray(ASTPtr element)
+{
+    ASTs elements{std::move(element)};
+    if (allElementsAreCompatibleLiterals(elements, Field::Types::Array))
+        return make_intrusive<ASTLiteral>(Array{elements[0]->as<ASTLiteral &>().value});
+    return makeASTOperator("array", std::move(elements));
+}
+
 /** Like `applySubscripts`, but the subscripts after the first empty subscript that are not literals are calculated outside
   * of the generated lambda functions, if one of them contains a function, so that a generated parameter cannot capture a free name:
   *   arr[][f(0)] -> arrayMap((b, s1) -> arrayMap(x -> x[s1], b), [arr], [f(0)])[1]
@@ -1652,7 +1662,7 @@ static ASTPtr applySubscriptsWithoutCapture(ASTPtr base, std::span<const ASTPtr>
     base = applySubscripts(std::move(base), subscripts.first(first_empty - subscripts.begin()), max_depth);
 
     Strings names{"b"};
-    ASTs arrays{makeASTOperator("array", std::move(base))};
+    ASTs arrays{makeSingleElementArray(std::move(base))};
     ASTs rest;
     for (auto it = first_empty; it != subscripts.end(); ++it)
     {
@@ -1662,7 +1672,7 @@ static ASTPtr applySubscriptsWithoutCapture(ASTPtr base, std::span<const ASTPtr>
             continue;
         }
         names.push_back("s" + std::to_string(names.size()));
-        arrays.push_back(makeASTOperator("array", *it));
+        arrays.push_back(makeSingleElementArray(*it));
         rest.push_back(make_intrusive<ASTIdentifier>(names.back()));
     }
 
