@@ -116,6 +116,11 @@ size_t SpillingHashJoin::getMaxBuildThreads() const
     return hash_join->getMaxBuildThreads();
 }
 
+bool SpillingHashJoin::resizeProbeSideToMaxStreams() const
+{
+    return hash_join->resizeProbeSideToMaxStreams();
+}
+
 std::string SpillingHashJoin::getAlgorithm() const
 {
     switch (state.load(std::memory_order_acquire))

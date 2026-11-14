@@ -1220,10 +1220,17 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (params.rhs_size_estimation && *params.rhs_size_estimation < params.min_rows_for_packed_string_keys_in_hash_join)
         table_join->setPackedStringKeysInHashJoinEnabled(false);
 
-    const auto build_layout
-        = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold)
-        ? HashJoinBuildLayout::twoLevel(params.max_threads)
-        : HashJoinBuildLayout::oneBucket(1);
+    const bool parallel_layout
+        = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold);
+    auto build_layout = parallel_layout ? HashJoinBuildLayout::twoLevel(params.max_threads) : HashJoinBuildLayout::oneBucket(1);
+
+    /// A small right table makes the threshold choose the serial layout, but says nothing about the size of the probe side.
+    /// `parallel` is asked only to tell the kinds that can have a parallel layout from the ones that always build one part.
+    if (!parallel_layout && params.hash_join_layout == HashJoinLayout::AUTO
+        && table_join->preferParallelHashLayout(HashJoinLayout::PARALLEL, params.rhs_size_estimation, params.parallel_hash_join_threshold))
+    {
+        build_layout = build_layout.withWideProbe();
+    }
 
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
