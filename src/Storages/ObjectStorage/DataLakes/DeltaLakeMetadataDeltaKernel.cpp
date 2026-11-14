@@ -809,6 +809,17 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     return info;
 }
 
+void DeltaLakeMetadataDeltaKernel::checkInsertIsPossible(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Delta Lake writes are a Beta feature disabled by default. "
+            "To enable them, set allow_delta_lake_writes = 1");
+    }
+}
+
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
     const StorageID & table_id,
@@ -818,13 +829,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
-    {
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Delta Lake writes are a Beta feature disabled by default. "
-            "To enable them, set allow_delta_lake_writes = 1");
-    }
+    checkInsertIsPossible(context);
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
