@@ -734,7 +734,8 @@ void Connection::receiveHello()
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
         {
             Settings settings;
-            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            /// A server of another version may send values that this version rejects.
+            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS, /* skip_invalid_values= */ true);
             settings_from_server = settings.changes();
         }
 
