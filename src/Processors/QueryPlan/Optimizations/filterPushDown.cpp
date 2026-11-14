@@ -138,11 +138,12 @@ void materializeFilterColumnIfNeededAfterPushDown(FilterStep & filter, const boo
 /// but the remaining expression after extracting the constant parts is non-const, we must constify it back.
 /// Otherwise, parent steps that cached the original (const) output header will see a non-const column, causing
 /// a "Block structure mismatch" exception or "non constant in source stream but must be constant in result" error.
-bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & filter_column_name, const ColumnPtr & original_const_column)
+/// The filter step must stay, because the conjunct that made the column constant, such as `max(x) + NULL`, may not be pushed down.
+void constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & filter_column_name, const ColumnPtr & original_const_column)
 {
     auto * filter_node = const_cast<ActionsDAG::Node *>(expression.tryFindInOutputs(filter_column_name));
     if (!filter_node || filter_node->type == ActionsDAG::ActionType::INPUT)
-        return false;
+        return;
 
     ActionsDAG::Node const_node;
     const_node.type = ActionsDAG::ActionType::COLUMN;
@@ -151,7 +152,6 @@ bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & f
     const_node.column = filter_node->result_type->createColumnConst(0, (*original_const_column)[0]);
 
     *filter_node = std::move(const_node);
-    return true;
 }
 }
 
@@ -190,8 +190,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
         {
             /// The filter column was const before push-down (e.g., AND short-circuits to constant false)
             /// but became non-const after extracting the constant parts. Restore constness.
-            result->is_filter_const_after_push_down
-                = constifyFilterColumnAfterPushDown(expression, filter_column_name, original_filter_const_column);
+            constifyFilterColumnAfterPushDown(expression, filter_column_name, original_filter_const_column);
         }
         else
         {
@@ -905,8 +904,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
-        join_filter_push_down_actions.is_filter_const_after_all_push_downs
-            = constifyFilterColumnAfterPushDown(filter->getExpression(), filter->getFilterColumnName(), original_filter_const_column);
+        constifyFilterColumnAfterPushDown(filter->getExpression(), filter->getFilterColumnName(), original_filter_const_column);
     }
     else
     {
