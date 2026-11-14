@@ -71,6 +71,26 @@ echo "nor does the next insert, whose parent has rows but no sketches"
 run t_off "INSERT INTO t_off $(values 2000 1000);"
 stats t_off "${NAMES}"
 
+echo "a parent blob kept from an earlier snapshot is not unioned"
+local_query "CREATE TABLE t_stale (id Int64, s String) ENGINE = IcebergLocal('${WORK_DIR}/t_stale/');
+    INSERT INTO t_stale SELECT number, toString(number % 10) FROM numbers(1000);"
+# Give the blob of `s` (field 2) another snapshot id, as a file that keeps it from an earlier snapshot does.
+python3 - "$(find "${WORK_DIR}/t_stale/metadata/" -name '*.stats')" <<'EOF'
+import json, struct, sys
+path = sys.argv[1]
+data = open(path, 'rb').read()
+start = len(data) - 12 - struct.unpack('<i', data[-12:-8])[0]
+footer = json.loads(data[start:-12])
+for blob in footer['blobs']:
+    if blob['fields'] == [2]:
+        blob['snapshot-id'] -= 1
+payload = json.dumps(footer).encode()
+open(path, 'wb').write(data[:start] + payload + struct.pack('<i', len(payload)) + data[-8:])
+EOF
+local_query "CREATE TABLE t_stale ENGINE = IcebergLocal('${WORK_DIR}/t_stale/');
+    INSERT INTO t_stale SELECT number + 1000, toString(number % 10 + 10) FROM numbers(1000);"
+stats t_stale "id s"
+
 echo "a delete keeps the parent's sketches"
 run t_delete "INSERT INTO t_delete $(values 0 20000); ALTER TABLE t_delete DELETE WHERE id < 10000;"
 stats t_delete "${NAMES}"

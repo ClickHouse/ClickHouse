@@ -58,3 +58,11 @@ SELECT referenced_data_file
 FROM file('$DATA/dense_range_100k.puffin', Puffin)
 SETTINGS input_format_allow_seeks = 0
 "
+
+# A Trino table statistics file: `PuffinMetadata` lists its theta sketch blob.
+THETA="$CURDIR/data_iceberg/trino/conflict_truncate/metadata/20251120_083640_00013_gjr7f-1ebded37-babd-41d1-aee5-5bd4120a74b2.stats"
+echo "--- theta sketch statistics ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT blob_type, snapshot_id, sequence_number, fields, offset, length, compression_codec, properties
+FROM file('$THETA', PuffinMetadata)
+"

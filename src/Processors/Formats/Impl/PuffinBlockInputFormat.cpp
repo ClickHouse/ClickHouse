@@ -47,7 +47,6 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
@@ -387,12 +386,10 @@ VectorWithMemoryTracking<PuffinBlob> parseFooterJSON(const String & footer_json,
         }
         else
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unsupported blob type '{}', only '{}' is supported",
-                i,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+            if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
+                blob.compression_codec = requireBlobMetadataString(blob_obj, "compression-codec", i);
+
+            parseBlobProperties(blob_obj, blob, i, /*required=*/false);
         }
 
         requireBlobMetadataField(blob_obj, "fields", i);
@@ -476,6 +473,8 @@ VectorWithMemoryTracking<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBu
     return parseFooterJSON(footer_json, blob_region_end);
 }
 
+}
+
 PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
 {
     PuffinFooter result;
@@ -533,6 +532,36 @@ String readPuffinBlobBytes(
     seekable->readStrict(result.data(), length);
     return result;
 }
+
+Poco::JSON::Object::Ptr PuffinBlob::toJSON(bool in_footer) const
+{
+    Poco::JSON::Object::Ptr json = new Poco::JSON::Object;
+    json->set("type", type);
+    Poco::JSON::Array::Ptr fields_json = new Poco::JSON::Array;
+    for (const Int32 field : fields)
+        fields_json->add(field);
+    json->set("fields", fields_json);
+    json->set("snapshot-id", snapshot_id);
+    json->set("sequence-number", sequence_number);
+    if (in_footer)
+    {
+        json->set("offset", offset);
+        json->set("length", length);
+        if (!compression_codec.empty())
+            json->set("compression-codec", compression_codec);
+    }
+    if (!properties.empty())
+    {
+        Poco::JSON::Object::Ptr properties_json = new Poco::JSON::Object;
+        for (const auto & [key, value] : properties)
+            properties_json->set(key, value);
+        json->set("properties", properties_json);
+    }
+    return json;
+}
+
+namespace
+{
 
 void readDeletionVectorEnvelopePrefix(
     const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read, UInt8 header[8])
@@ -908,6 +937,14 @@ Chunk PuffinInputFormat::read()
     {
         blob_index = 0;
         footer = readPuffinFooter(*in, seekable_read);
+        for (size_t i = 0; i < footer.blobs.size(); ++i)
+            if (footer.blobs[i].type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Puffin blob {}: unexpected blob type '{}', only '{}' is supported",
+                    i,
+                    footer.blobs[i].type,
+                    PUFFIN_DELETION_VECTOR_BLOB_TYPE);
         if (!need_deleted_rows)
         {
             footer.data.clear();
@@ -920,14 +957,6 @@ Chunk PuffinInputFormat::read()
     {
         const size_t current_blob_index = blob_index;
         const auto & blob = footer.blobs[blob_index++];
-
-        if (blob.type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unexpected blob type '{}', only '{}' is supported",
-                current_blob_index,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
@@ -1020,7 +1049,7 @@ void registerInputFormatPuffin(FormatFactory & factory)
 Special input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) file footer metadata.
 It outputs one row per blob entry from the footer `BlobMetadata` list.
 
-`deletion-vector-v1` is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+Blobs of every type are listed, for example `apache-datasketches-theta-v1`. The properties of `deletion-vector-v1` blobs are validated.
 
 Fixed output columns:
 - `blob_type` (`String`) - blob type, for example `deletion-vector-v1`

@@ -4,6 +4,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
 
+#include <Poco/JSON/Object.h>
+
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -11,6 +13,8 @@
 
 namespace DB
 {
+
+inline constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 
 struct PuffinBlob
 {
@@ -22,6 +26,9 @@ struct PuffinBlob
     Int64 length = 0;
     String compression_codec;
     MapWithMemoryTracking<String, String> properties;
+
+    /// The `BlobMetadata` JSON. Without `in_footer`, the `blob-metadata` of an Iceberg table statistics entry: no offset, length or codec.
+    Poco::JSON::Object::Ptr toJSON(bool in_footer) const;
 };
 
 struct PuffinFooter
@@ -29,6 +36,15 @@ struct PuffinFooter
     VectorWithMemoryTracking<PuffinBlob> blobs;
     VectorWithMemoryTracking<UInt8> data;
 };
+
+/// TODO: the input formats could read through `PuffinReader` (PuffinFile.h) instead; it would first need their
+/// `input_format_allow_seeks` flag, the deletion vector envelope peek and dropping the buffered file when no blob is read.
+/// Reads and validates the footer. Buffers the whole file in `data` if `buf` cannot seek.
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read);
+
+/// The stored bytes of `blob`, from `data` if `readPuffinFooter` buffered the file.
+String readPuffinBlobBytes(
+    const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read);
 
 class PuffinMetadataInputFormat : public IInputFormat
 {

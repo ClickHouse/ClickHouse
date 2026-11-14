@@ -26,3 +26,5 @@ deletion-vector-v1	-1	-1	4	44		['cardinality','referenced-data-file']	['2','/dat
 /data/table/part-00000.parquet
 /data/table/part-00000.parquet
 /data/table/part-00000.parquet
+--- theta sketch statistics ---
+apache-datasketches-theta-v1	1176079920173818583	2	[1]	4	29	zstd	{'ndv':'1'}

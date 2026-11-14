@@ -86,6 +86,11 @@ do
     id=$((id + 1))
 done
 
+# `Puffin` reads deletion vectors only and rejects the file before its first row: a `LIMIT` that stops at the deletion vector still fails.
+launch "$id" raw_puffin 'puffin_deletion_vector_then_theta_sketch' "Puffin blob 1: unexpected blob type 'apache-datasketches-theta-v1'" \
+    "SELECT referenced_data_file FROM file('$DATA/deletion_vector_then_theta_sketch.puffin', Puffin) LIMIT 1"
+id=$((id + 1))
+
 launch "$id" raw_puffin 'puffin_wrong_type' 'Unexpected type' \
     "SELECT deleted_rows FROM file('$PUFFIN', Puffin, 'deleted_rows Array(String)')"
 id=$((id + 1))

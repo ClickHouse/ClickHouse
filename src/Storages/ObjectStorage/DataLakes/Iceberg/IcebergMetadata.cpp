@@ -27,6 +27,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Processors/Formats/Impl/PuffinFile.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -1713,7 +1714,7 @@ std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::
 
             const auto type = blob->get(f_type);
             const auto fields = blob->getArray(f_fields);
-            if (!type.isString() || type.convert<String>() != Iceberg::theta_sketch_blob_type || !fields || fields->size() != 1
+            if (!type.isString() || type.convert<String>() != PUFFIN_THETA_SKETCH_BLOB_TYPE || !fields || fields->size() != 1
                 || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
                 continue;
 

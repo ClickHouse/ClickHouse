@@ -16,12 +16,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/castColumn.h>
+#include <Processors/Formats/Impl/PuffinFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PuffinThetaSketches.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/assert_cast.h>
@@ -90,14 +90,17 @@ public:
             = resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(parent_entry->getValue<String>(Iceberg::f_statistics_path)));
         RelativePathWithMetadata object_info(parent_path);
         auto buf = createReadBuffer(object_info, object_storage, context, getLogger("IcebergTableStatisticsNdv"));
-        String puffin_bytes;
-        readStringUntilEOF(puffin_bytes, *buf);
-        const auto serialized_sketches = readPuffinThetaSketches(puffin_bytes);
-        if (!serialized_sketches)
-            return {};
+        PuffinReader reader(*buf);
         ParentSketches parent{.has_rows = true, .sketches = {}};
-        for (const auto & [field_id, bytes] : *serialized_sketches)
-            parent.sketches.emplace(field_id, datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size()));
+        for (const auto & blob : reader.getBlobs())
+        {
+            /// A file can keep the blobs of an earlier snapshot (Trino's `ANALYZE` of some columns): they miss later rows.
+            if (blob.type != PUFFIN_THETA_SKETCH_BLOB_TYPE || blob.fields.size() != 1 || blob.snapshot_id != parent_snapshot_id)
+                continue;
+            const auto bytes = reader.readBlob(blob);
+            if (bytes)
+                parent.sketches.emplace(blob.fields[0], datasketches::compact_theta_sketch::deserialize(bytes->data(), bytes->size()));
+        }
         return parent;
     }
 
@@ -109,23 +112,33 @@ public:
         const Int64 sequence_number
             = snapshot->has(Iceberg::f_metadata_sequence_number) ? snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number) : 0;
 
-        std::vector<PuffinThetaSketchBlob> blobs;
+        WriteBufferFromOwnString out;
+        PuffinWriter writer(out);
+        Poco::JSON::Array::Ptr blob_metadata = new Poco::JSON::Array;
         for (const auto & [field_id, sketch] : sketches)
         {
+            PuffinBlob blob;
+            blob.type = PUFFIN_THETA_SKETCH_BLOB_TYPE;
+            blob.snapshot_id = snapshot_id;
+            blob.sequence_number = sequence_number;
+            blob.fields.push_back(field_id);
+            blob.properties.emplace(Iceberg::f_ndv, std::to_string(static_cast<UInt64>(sketch.get_estimate())));
             const auto bytes = sketch.serialize();
-            blobs.push_back(
-                {field_id, String(reinterpret_cast<const char *>(bytes.data()), bytes.size()), static_cast<UInt64>(sketch.get_estimate())});
+            writer.addBlob(blob, std::string_view(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
+            blob_metadata->add(blob.toJSON(/*in_footer=*/ false));
         }
-        const auto file = writePuffinThetaSketches(blobs, snapshot_id, sequence_number);
+        const size_t footer_size = writer.finalize();
+        out.finalize();
+        const String & file = out.str();
 
-        Iceberg::writeMessageToFile(file.bytes, resolver.resolve(path), object_storage, context, /*write_if_none_match=*/ "");
+        Iceberg::writeMessageToFile(file, resolver.resolve(path), object_storage, context, /*write_if_none_match=*/ "");
 
         Poco::JSON::Object::Ptr statistics_entry = new Poco::JSON::Object;
         statistics_entry->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
         statistics_entry->set(Iceberg::f_statistics_path, path.serialize());
-        statistics_entry->set(Iceberg::f_metadata_file_size_in_bytes, file.bytes.size());
-        statistics_entry->set(Iceberg::f_file_footer_size_in_bytes, file.footer_size);
-        statistics_entry->set(Iceberg::f_blob_metadata, file.blob_metadata);
+        statistics_entry->set(Iceberg::f_metadata_file_size_in_bytes, file.size());
+        statistics_entry->set(Iceberg::f_file_footer_size_in_bytes, footer_size);
+        statistics_entry->set(Iceberg::f_blob_metadata, blob_metadata);
 
         auto statistics_entries = metadata->getArray(Iceberg::f_statistics);
         if (!statistics_entries)

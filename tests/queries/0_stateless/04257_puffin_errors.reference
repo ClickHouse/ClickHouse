@@ -32,6 +32,8 @@ property 'cardinality' must be an unsigned integer
 property 'cardinality' must be an unsigned integer
 --- invalid_cardinality_negative_subset ---
 property 'cardinality' must be an unsigned integer
+--- puffin_deletion_vector_then_theta_sketch ---
+Puffin blob 1: unexpected blob type 'apache-datasketches-theta-v1'
 --- puffin_wrong_type ---
 Unexpected type
 --- puffin_unknown_column ---

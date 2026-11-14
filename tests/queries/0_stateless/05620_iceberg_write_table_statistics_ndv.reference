@@ -4,6 +4,8 @@ an insert with the setting off writes no statistics
 no statistics
 nor does the next insert, whose parent has rows but no sketches
 no statistics
+a parent blob kept from an earlier snapshot is not unioned
+id:2000/2000
 a delete keeps the parent's sketches
 id:0 s:100/50 d:50/25 n:20/10 dec:200/100 ts:400/200 f:500/250 b:2/2
 an update adds the new values

@@ -630,6 +630,30 @@ def generate_unparseable_footer_json() -> None:
     )
 
 
+def generate_deletion_vector_then_theta_sketch() -> None:
+    """`Puffin` must reject the file before its first row, not when it reaches the theta sketch blob."""
+    dv_blob = wrap_deletion_vector_blob(struct.pack("<q", 0))
+    theta_blob = b"theta"
+    payload = {
+        "blobs": [
+            json.loads(footer_json_for_blob(dv_blob))["blobs"][0],
+            {
+                "type": "apache-datasketches-theta-v1",
+                "fields": [1],
+                "snapshot-id": -1,
+                "sequence-number": -1,
+                "offset": 4 + len(dv_blob),
+                "length": len(theta_blob),
+                "properties": {"ndv": "1"},
+            },
+        ]
+    }
+    write_fixture(
+        "deletion_vector_then_theta_sketch.puffin",
+        build_puffin_file_from_blobs([dv_blob, theta_blob], json.dumps(payload, separators=(", ", ": ")).encode("utf-8")),
+    )
+
+
 def main() -> None:
     spark_fixture = OUTPUT_DIR / "spark_deletion_vector.puffin"
     if not spark_fixture.exists():
@@ -662,6 +686,7 @@ def main() -> None:
     generate_multi_bitmap_keys()
     generate_bitmap_keys_out_of_order()
     generate_bitmap_count_exceeds_data()
+    generate_deletion_vector_then_theta_sketch()
 
 
 if __name__ == "__main__":
