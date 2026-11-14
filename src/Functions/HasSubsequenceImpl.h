@@ -127,6 +127,8 @@ private:
 
         if (!needle_size)
             return 1;
+        if (!haystack_size)
+            return 0;
 
         auto haystack_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
         auto needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);

@@ -34,10 +34,12 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
@@ -146,6 +148,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
@@ -988,6 +991,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
+    /// Authorize the text index transforms of every definition the user supplies now. A replay of stored
+    /// metadata is not checked, so such a table still attaches.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
+        for (const auto & index : properties.indices)
+            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+    }
+
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
@@ -1713,6 +1724,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
+
+    /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
+    /// A replay of a stored definition was checked when it was created.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        checkExportAccess(create);
 
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
@@ -2500,6 +2516,20 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     prepareOnClusterQuery(create, getContext(), create.cluster);
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
+    params.additional_access_check = [captured_query_ptr = query_ptr](bool throw_if_unresolved)
+    {
+        /// `throw_if_unresolved` means the hosts do not run the query as this user.
+        if (!throw_if_unresolved)
+            return;
+
+        const auto & captured_create = captured_query_ptr->as<const ASTCreateQuery &>();
+        if (!captured_create.columns_list || !captured_create.columns_list->indices)
+            return;
+
+        for (const auto & index : captured_create.columns_list->indices->children)
+            if (const auto * declaration = index->as<ASTIndexDeclaration>())
+                rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+    };
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
 
@@ -2539,6 +2569,46 @@ BlockIO InterpreterCreateQuery::execute()
 
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+
+                /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
+                /// its inner engines while normalizing, so add the ones this query does not give itself
+                if (inherited.is_time_series_table)
+                {
+                    auto as_create_ptr = DatabaseCatalog::instance().getDatabase(inherited.as_database)->getCreateTableQuery(inherited.as_table, getContext());
+                    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
+                    if (as_create.targets)
+                        for (const auto & target : as_create.targets->targets)
+                            if (target.inner_engine && !inherited.getTargetInnerEngine(target.kind))
+                                inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
+                }
+
+                /// the worker inherits the move destination of the source too, and runs with no user
+                checkExportAccess(inherited);
+
+                /// A worker copies the source's indices with no user, so declare their transforms here.
+                if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
+                {
+                    /// Before resolving it: an error below would otherwise disclose a source the user
+                    /// cannot see.
+                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+                    StoragePtr as_storage = resolveStorageProxyLoading(
+                        DatabaseCatalog::instance().getTable({create.as_database, create.as_table}, getContext()));
+                    /// The query dispatches `AS src`, so each host materializes its own source, which
+                    /// may define the transform differently from the one authorized here.
+                    const bool workers_use_initiator_user
+                        = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+                        && on_cluster_version >= DDLLogEntry::INITIATOR_USER_VERSION;
+
+                    auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
+                    for (const auto & index : as_storage_metadata->getSecondaryIndices())
+                    {
+                        if (index.isImplicitlyCreated())
+                            continue;
+                        if (!workers_use_initiator_user)
+                            rejectTextIndexTransformWithoutInitiatorUser(index);
+                        checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                    }
+                }
             }
 
             return executeQueryOnCluster(create);
@@ -2623,7 +2693,26 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
+    /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
+    /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
+    /// taking it away from `user_files` needs `WRITE`, like renaming files after processing does. Without this,
+    /// `CREATE TABLE` on a table of their own would let a user read or consume any data staged in `user_files`.
+    if (create.has_attach_from_path)
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
+
+    /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
+    required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
     return required_access;
+}
+
+void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) const
+{
+    /// Internal queries (initiated by the server itself) always have access to everything.
+    if (internal)
+        return;
+
+    getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

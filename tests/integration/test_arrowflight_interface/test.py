@@ -519,6 +519,43 @@ def test_doget_multiple_chunks():
     assert actual[1].column("name").equals(pa.chunked_array([pa.array(["cde"], type=pa.string())]))
 
 
+# A result is split across several Arrow arrays only when it exceeds the 32-bit offsets of the
+# String/Binary/List buffers, so a small one must arrive as a single chunk per column for every type.
+def test_doget_single_chunk_per_column():
+    node.query(
+        """
+        CREATE TABLE mytable (
+            id Int64,
+            s String,
+            ns Nullable(String),
+            lc LowCardinality(String),
+            arr Array(String),
+            m Map(String, String),
+            t Tuple(String, String),
+            fs FixedString(3)
+        ) ORDER BY id
+        """
+    )
+    node.query(
+        """
+        INSERT INTO mytable SELECT
+            number, toString(number), if(number % 2, NULL, toString(number)), toString(number % 2),
+            [toString(number)], map('k', toString(number)), (toString(number), 'x'), toFixedString('abc', 3)
+        FROM numbers(4)
+        """
+    )
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_command("SELECT * FROM mytable ORDER BY id")
+    flight_info = client.get_flight_info(descriptor, options)
+    table = client.do_get(flight_info.endpoints[0].ticket, options).read_all()
+
+    assert table.num_rows == 4
+    for name, column in zip(table.schema.names, table.columns):
+        assert column.num_chunks == 1, f"column {name} was split into {column.num_chunks} chunks"
+
+
 # We don't support any formats different from "Arrow".
 def test_doget_cmd_select_invalid_format():
     node.query("CREATE TABLE mytable (id Int64, name String) ORDER BY id")

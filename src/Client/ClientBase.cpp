@@ -3582,13 +3582,13 @@ void ClientBase::runInteractive()
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
+    ReplxxLineReader::Highlighter highlight_callback{};
 
     if (getClientConfiguration().getBool("highlight", true))
     {
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos, bool & last_is_delimiter)
         {
-            highlight(query, colors, *client_context, pos);
+            highlight(query, colors, *client_context, pos, &last_is_delimiter);
         };
     }
 

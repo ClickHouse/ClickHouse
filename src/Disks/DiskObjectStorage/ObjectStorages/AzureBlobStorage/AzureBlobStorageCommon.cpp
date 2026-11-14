@@ -88,6 +88,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -227,6 +228,28 @@ String ConnectionParams::getConnectionURL() const
     return endpoint.storage_account_url;
 }
 
+String ConnectionParams::getConnectionURLWithoutQuery() const
+{
+    if (std::holds_alternative<ConnectionString>(auth_method))
+    {
+        try
+        {
+            /// `ParseConnectionString` appends the SAS of the connection string to `BlobServiceUrl` as its query.
+            auto url = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url).BlobServiceUrl;
+            const auto query = url.GetQueryParameters();
+            for (const auto & [key, value] : query)
+                url.RemoveQueryParameter(key);
+            return url.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
+    }
+
+    return endpoint.storage_account_url.substr(0, endpoint.storage_account_url.find_first_of("?#"));
+}
+
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
     try
@@ -357,6 +380,13 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
             return params.createForContainer();
         throw;
     }
+}
+
+String getETag(const Azure::ETag & etag, const String & blob_path)
+{
+    if (!etag.HasValue())
+        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Azure Blob Storage endpoint did not return an ETag for blob {}", blob_path);
+    return etag.ToString();
 }
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)

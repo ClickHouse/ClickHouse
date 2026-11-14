@@ -1,5 +1,10 @@
 #include <Storages/StorageDistributed.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
+
 #include <Databases/IDatabase.h>
 
 #include <Disks/IDisk.h>
@@ -179,6 +184,7 @@ namespace Setting
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace DistributedSetting
@@ -1364,6 +1370,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
 
     StoragePtr src_storage;
+    bool src_is_table_function = false;
 
     /// Distributed write only works in the most trivial case INSERT ... SELECT
     /// without any unions or joins on the right side
@@ -1380,11 +1387,25 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
             if (joined_tables.tablesCount() == 1)
             {
                 src_storage = joined_tables.getLeftTableStorage();
+                src_is_table_function = joined_tables.isLeftTableFunction();
             }
         }
     }
 
     if (!src_storage)
+        return {};
+
+    /// This is the only place source SELECT access is enforced in this case
+    /// (table functions have been already checked in ITableFunction::execute)
+    const auto src_id = src_storage->getStorageID();
+    if (!src_is_table_function
+        && !local_context->getAccess()->isGranted(AccessType::SELECT, src_id.database_name, src_id.table_name))
+        return {};
+    if (auto row_policy_filter = local_context->getRowPolicyFilter(src_id.database_name, src_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        return {};
+    /// It is not easy to match this table only, analyzer also do not do it
+    if (!settings[Setting::additional_table_filters].value.empty())
         return {};
 
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))

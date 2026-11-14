@@ -92,6 +92,8 @@ static constexpr int32_t PASSWORD_LENGTH = 16;
 static constexpr int32_t MAX_STRING_OR_ARRAY_SIZE = 1 << 28;  /// 256 MiB
 /// Upper bound on elements reserved up front when reading an array; the declared size is attacker-controlled
 static constexpr int32_t MAX_ARRAY_PREALLOCATION = 4096;
+/// Bytes read per step when reading a string; the declared size is attacker-controlled, so memory grows with the bytes received
+static constexpr int32_t MAX_STRING_PREALLOCATION = 1 << 16;  /// 64 KiB
 static constexpr int32_t DEFAULT_SESSION_TIMEOUT_MS = 30000;
 static constexpr int32_t DEFAULT_MIN_SESSION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_MAX_SESSION_TIMEOUT_MS = 100000;
