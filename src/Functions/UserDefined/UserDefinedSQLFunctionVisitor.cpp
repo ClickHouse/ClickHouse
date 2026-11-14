@@ -92,6 +92,12 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             "Recursive function call detected during function call {}",
             function.name);
 
+    /// `UNIQUE(subquery)` is parsed into the operator `__unique`, which is a syntax construct rather than
+    /// a call of a function with this name. A user defined function named `__unique` must not replace it.
+    /// An ordinary call `__unique(...)` is expanded as usual.
+    if (function.name == "__unique" && function.isOperator())
+        return nullptr;
+
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;

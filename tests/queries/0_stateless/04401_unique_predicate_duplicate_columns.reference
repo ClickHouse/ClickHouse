@@ -1,0 +1,10 @@
+Duplicate qualified names, every row has a NULL (vacuously unique)
+1
+Duplicate qualified names, no NULL, duplicate rows
+0
+Identical column names, all rows distinct
+1
+Identical column names, duplicate rows
+0
+Qualified names with NULLs (join_use_nulls), distinct after filtering
+1

@@ -5,6 +5,7 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
@@ -1367,6 +1368,144 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     return result;
 }
 
+namespace
+{
+
+/// Give the columns of a resolved subquery the unique names `__unique_predicate_column_N` by their positions.
+/// The columns of `UNION` are matched by position, so all of its queries are renamed the same way.
+void renameProjectionColumnsByPosition(const QueryTreeNodePtr & node)
+{
+    if (auto * query_node = node->as<QueryNode>())
+    {
+        auto projection_columns = query_node->getProjectionColumns();
+        Names unique_names;
+        unique_names.reserve(projection_columns.size());
+        for (size_t i = 0; i < projection_columns.size(); ++i)
+            unique_names.push_back("__unique_predicate_column_" + std::to_string(i));
+        /// The override takes precedence over the names passed to `resolveProjectionColumns`, so it is replaced as well.
+        query_node->setProjectionAliasesToOverride(std::move(unique_names));
+        query_node->resolveProjectionColumns(std::move(projection_columns));
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            renameProjectionColumnsByPosition(query);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a query or a union node, got {}", node->getNodeTypeName());
+    }
+}
+
+}
+
+/** Rewrite `UNIQUE(subquery)` into the scalar subquery
+  * `ifNull((SELECT count() = uniqExact(*) FROM (subquery) WHERE and(1, * APPLY isNotNull)), 1)`.
+  * Per the SQL standard, rows that have a NULL in any column are never duplicates, so they are filtered out.
+  * The rewritten subquery is resolved as an ordinary scalar subquery: it is evaluated during analysis
+  * if it is not correlated, and it is decorrelated by the planner otherwise.
+  * The aggregation always returns exactly one row over a non-empty input. The decorrelated subquery returns NULL
+  * for an outer row without inner rows, and an empty input is vacuously unique, hence `ifNull(..., 1)`.
+  * It also removes the `Nullable` wrapper that a scalar subquery result gets.
+  */
+ProjectionNames QueryAnalyzer::resolveUniquePredicate(
+    QueryTreeNodePtr & node,
+    const FunctionNodePtr & function_node_ptr,
+    IdentifierResolveScope & scope,
+    bool allow_niladic_functions)
+{
+    checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+
+    if (function_node_ptr->getArguments().getNodes().size() != 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function 'UNIQUE' expects exactly one subquery argument. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    const auto & unique_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+    auto unique_subquery_argument_node_type = unique_subquery_argument->getNodeType();
+    if (unique_subquery_argument_node_type != QueryTreeNodeType::QUERY
+        && unique_subquery_argument_node_type != QueryTreeNodeType::UNION)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Function 'UNIQUE' expects a subquery argument. Actual: {}. In scope {}",
+            unique_subquery_argument->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
+
+    auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+    new_unique_subquery->setIsSubquery(true);
+
+    /// The rewrite reads the columns of the subquery with matchers, and a matcher refers to the columns by name.
+    /// The subquery can have several columns with the same name, e.g. `SELECT toNullable(1) AS x, toNullable(1) AS x UNION ALL ...`,
+    /// and all of them would be read as the first one. So resolve the subquery first and give its columns unique names.
+    /// It is resolved in a scope nested in the scope of the rewritten subquery, so that if it is correlated,
+    /// the rewritten subquery is marked as correlated as well. The rewritten subquery reuses this scope when it is resolved,
+    /// and the already resolved subquery is not resolved again as its table expression.
+    {
+        IdentifierResolveScope & new_unique_subquery_scope = createIdentifierResolveScope(new_unique_subquery, &scope);
+        IdentifierResolveScope & unique_subquery_argument_scope = createIdentifierResolveScope(unique_subquery_argument, &new_unique_subquery_scope);
+        new_unique_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+        unique_subquery_argument_scope.subquery_depth = scope.subquery_depth + 2;
+
+        if (unique_subquery_argument_node_type == QueryTreeNodeType::QUERY)
+            resolveQuery(unique_subquery_argument, unique_subquery_argument_scope);
+        else
+            resolveUnion(unique_subquery_argument, unique_subquery_argument_scope);
+
+        renameProjectionColumnsByPosition(unique_subquery_argument);
+    }
+
+    /// The functions of the rewrite are resolved in the scope of the query, so they are marked as built-in:
+    /// a lambda that happens to be named like one of them, e.g. `WITH (x -> 0) AS isNotNull`, must not replace it.
+    auto make_builtin_function = [](const String & name)
+    {
+        auto function = std::make_shared<FunctionNode>(name);
+        function->markAsBuiltin();
+        return function;
+    };
+
+    auto uniq_exact_function = make_builtin_function("uniqExact");
+    uniq_exact_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>());
+    auto equals_function = make_builtin_function("equals");
+    equals_function->getArguments().getNodes().push_back(make_builtin_function("count"));
+    equals_function->getArguments().getNodes().push_back(std::move(uniq_exact_function));
+    new_unique_subquery->getProjection().getNodes().push_back(std::move(equals_function));
+    new_unique_subquery->getJoinTreeNode() = unique_subquery_argument;
+
+    /// The matcher expands to every column of the subquery, which have unique names now.
+    /// The constant makes `and` have at least two arguments.
+    ColumnTransformersNodes is_not_null_transformers;
+    is_not_null_transformers.push_back(std::make_shared<ApplyColumnTransformerNode>(make_builtin_function("isNotNull")));
+    auto where_function = make_builtin_function("and");
+    where_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), std::make_shared<DataTypeUInt8>()));
+    where_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>(std::move(is_not_null_transformers)));
+    new_unique_subquery->getWhere() = std::move(where_function);
+
+    QueryTreeNodePtr new_unique_argument = new_unique_subquery;
+    auto unique_subquery_projection_names = resolveExpressionNode(
+        new_unique_argument,
+        scope,
+        false /*allow_lambda_expression*/,
+        false /*allow_table_expression*/,
+        false /*ignore_alias*/,
+        allow_niladic_functions);
+
+    auto if_null_function = make_builtin_function("ifNull");
+    if_null_function->getArguments().getNodes().push_back(std::move(new_unique_argument));
+    if_null_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), std::make_shared<DataTypeUInt8>()));
+    node = std::move(if_null_function);
+    resolveExpressionNode(
+        node,
+        scope,
+        false /*allow_lambda_expression*/,
+        false /*allow_table_expression*/,
+        false /*ignore_alias*/,
+        allow_niladic_functions);
+
+    /// The same projection name as for a correlated `EXISTS`, but with the public name of the predicate.
+    return {"UNIQUE(" + unique_subquery_projection_names.at(0) + ")"};
+}
+
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
@@ -1468,9 +1607,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             "For bitwise OR, use the function bitOr. In scope {}",
             scope.scope_node->formatASTForErrorMessage());
 
+    /** `UNIQUE(subquery)` is parsed into the operator `__unique`. The check runs before the function name
+      * is looked up in the scope, so that a lambda bound under the name `__unique` cannot change the meaning
+      * of the predicate. An ordinary call to a function named `__unique` resolves as usual.
+      */
+    if (function_name == "__unique" && function_node_ptr->isOperator() && !function_node_ptr->isWindowFunction())
+        return resolveUniquePredicate(node, function_node_ptr, scope, allow_niladic_functions);
+
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
+    if (!function_node_ptr->isWindowFunction() && !function_node_ptr->isBuiltin())
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
@@ -3035,7 +3181,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       */
     if (!function_node.isWindowFunction())
     {
-        user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
+        if (!function_node.isBuiltin())
+            user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
         if (!lambda_expression_untyped && user_defined_function)
             /// Try to substitute user defined SQL expression
