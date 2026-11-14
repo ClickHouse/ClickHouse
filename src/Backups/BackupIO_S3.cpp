@@ -133,6 +133,7 @@ private:
         String external_id,
         bool gcp_oauth_supplied_by_query,
         bool from_named_collection,
+        bool endpoint_section_matched,
         const S3Settings & settings,
         const ContextPtr & context)
     {
@@ -162,11 +163,16 @@ private:
         /// Drop them: the explicit-key form must not send the server's material alongside the query's keys, and
         /// the bare-URL form that resolves to an anonymous/NOSIGN client must stay genuinely anonymous rather
         /// than still sending operator headers or encryption keys. A named collection is handled by its caller.
+        /// The headers of the matched endpoint section stay with a request that the server config's static keys sign.
         if (!from_named_collection && context->shouldRestrictUserQueryS3Credentials())
         {
             sse_customer_key.clear();
             sse_kms_config = {};
-            headers.clear();
+            const bool signed_with_server_keys = endpoint_section_matched && !base_keys_supplied_by_query && role_arn.empty()
+                && !credentials.GetAWSAccessKeyId().empty() && !credentials.GetAWSSecretKey().empty()
+                && !settings.auth_settings[S3AuthSetting::no_sign_request];
+            if (!signed_with_server_keys)
+                headers.clear();
         }
 
         const auto & request_settings = settings.request_settings;
@@ -287,6 +293,8 @@ private:
         /// S3 credentials.
         credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
 
+        context->getHTTPHeaderFilter().checkHeaders(headers);
+
         /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
         if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
         {
@@ -401,8 +409,9 @@ BackupReaderS3::BackupReaderS3(
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    const auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+        s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup);
+    if (endpoint_settings)
     {
         s3_settings.updateIfChanged(*endpoint_settings);
     }
@@ -425,7 +434,7 @@ BackupReaderS3::BackupReaderS3(
     /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), /* endpoint_section_matched */ endpoint_settings.has_value(), s3_settings, context_);
 }
 
 BackupReaderS3::~BackupReaderS3() = default;
@@ -547,8 +556,9 @@ BackupWriterS3::BackupWriterS3(
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
+    const auto endpoint_settings = context_->getStorageS3Settings().getSettings(
+        s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup);
+    if (endpoint_settings)
     {
         s3_settings.updateIfChanged(*endpoint_settings);
     }
@@ -572,7 +582,7 @@ BackupWriterS3::BackupWriterS3(
     /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
     const bool gcp_oauth_supplied_by_query = named_collection_auth
         && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), /* endpoint_section_matched */ endpoint_settings.has_value(), s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {

@@ -1,7 +1,12 @@
+import os
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from helpers.mock_servers import start_mock_servers
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # The server is given S3 credentials by server-managed mechanisms that user SQL must not be able to reuse
 # when `s3_allow_server_credentials_in_user_queries` is disabled (the default). Here we exercise the AWS
@@ -12,7 +17,10 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     with_minio=True,
-    main_configs=["configs/named_collections.xml"],
+    main_configs=[
+        "configs/named_collections.xml",
+        "configs/s3_endpoint_header_keyless.xml",
+    ],
     user_configs=["configs/users.xml"],
     env_variables={
         "AWS_SHARED_CREDENTIALS_FILE": "/tmp/aws_credentials",
@@ -97,6 +105,19 @@ node_with_includes = cluster.add_instance(
     },
 )
 
+# A separate instance whose `<s3>` endpoint section for a requester-pays proxy carries static keys and a
+# `header`, to verify that the header is sent with the requests those keys sign, and only with them.
+node_with_endpoint_header = cluster.add_instance(
+    "node_with_endpoint_header",
+    with_minio=True,
+    main_configs=["configs/s3_endpoint_header.xml"],
+    user_configs=["configs/users.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+    stay_alive=True,
+)
+
 ALLOW = "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
 
 
@@ -112,6 +133,11 @@ def start_cluster():
                 "printf '[default]\\naws_access_key_id = %s\\naws_secret_access_key = %s\\n' > /tmp/aws_credentials"
                 % (minio_access_key, minio_secret_key),
             ]
+        )
+        start_mock_servers(
+            cluster,
+            os.path.join(SCRIPT_DIR, "s3_mocks"),
+            [("request_payer_proxy.py", "resolver", "8080")],
         )
         yield
     finally:
@@ -682,3 +708,190 @@ def test_server_data_disk_unaffected():
     node.query("INSERT INTO t_local SELECT 4")
     assert node.query("SELECT sum(x) FROM t_local").strip() == "4"
     node.query("DROP TABLE t_local SYNC")
+
+
+PAYER_PROXY = "http://resolver:8080/root"
+
+
+def payer_proxy_reset():
+    cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        ["curl", "-s", "-X", "POST", "http://localhost:8080/__reset"],
+    )
+
+
+def payer_proxy_requests():
+    return cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        ["curl", "-s", "http://localhost:8080/__requests"],
+    ).splitlines()
+
+
+def assert_access_denied(error):
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+
+def put_payer_test_object(path):
+    node_with_endpoint_header.query(
+        f"INSERT INTO FUNCTION s3('http://minio1:9001/root/{path}', '{minio_access_key}', "
+        f"'{minio_secret_key}', 'TSV', 'x UInt32') SELECT number FROM numbers(10) "
+        "SETTINGS s3_truncate_on_insert = 1"
+    )
+
+
+def test_endpoint_header_reaches_requests_signed_with_endpoint_keys():
+    # The proxy refuses every request without `x-amz-request-payer: requester`, like a requester-pays bucket. The
+    # `header` of the matching endpoint section must be sent with every request its own keys sign.
+    put_payer_test_object("rp/data.tsv")
+    node_with_endpoint_header.query("DROP TABLE IF EXISTS t_rp SYNC")
+    node_with_endpoint_header.query("DROP TABLE IF EXISTS t_rp_src SYNC")
+    node_with_endpoint_header.query("DROP TABLE IF EXISTS t_rp_restored SYNC")
+    node_with_endpoint_header.query(
+        "CREATE TABLE t_rp_src (x UInt32) ENGINE = MergeTree ORDER BY x"
+    )
+    node_with_endpoint_header.query(
+        "INSERT INTO t_rp_src SELECT number FROM numbers(10)"
+    )
+    payer_proxy_reset()
+
+    # HeadObject + GetObject.
+    assert (
+        node_with_endpoint_header.query(
+            f"SELECT count() FROM s3('{PAYER_PROXY}/rp/data.tsv', 'TSV', 'x UInt32')"
+        ).strip()
+        == "10"
+    )
+    # ListObjectsV2 + GetObject.
+    assert (
+        node_with_endpoint_header.query(
+            f"SELECT count() FROM s3('{PAYER_PROXY}/rp/data*.tsv', 'TSV', 'x UInt32')"
+        ).strip()
+        == "10"
+    )
+    # Schema inference of an `S3` table.
+    node_with_endpoint_header.query(
+        f"CREATE TABLE t_rp ENGINE = S3('{PAYER_PROXY}/rp/data.tsv', 'TSV')"
+    )
+    assert node_with_endpoint_header.query("SELECT count() FROM t_rp").strip() == "10"
+    # The table still sends the header after the server loads it from its metadata at startup.
+    node_with_endpoint_header.restart_clickhouse()
+    assert node_with_endpoint_header.query("SELECT count() FROM t_rp").strip() == "10"
+    node_with_endpoint_header.query("DROP TABLE t_rp SYNC")
+    # BACKUP and RESTORE with the bare URL.
+    node_with_endpoint_header.query(
+        f"BACKUP TABLE t_rp_src TO S3('{PAYER_PROXY}/rp/backup1')"
+    )
+    node_with_endpoint_header.query(
+        f"RESTORE TABLE t_rp_src AS t_rp_restored FROM S3('{PAYER_PROXY}/rp/backup1')"
+    )
+    assert (
+        node_with_endpoint_header.query("SELECT count() FROM t_rp_restored").strip()
+        == "10"
+    )
+
+    requests = payer_proxy_requests()
+    assert requests and all(r.endswith(" payer=requester") for r in requests), requests
+    assert any(" list=1 " in r for r in requests), requests
+    assert any(r.startswith("HEAD ") for r in requests), requests
+    assert any(r.startswith("PUT ") for r in requests), requests
+
+    node_with_endpoint_header.query("DROP TABLE t_rp_src SYNC")
+    node_with_endpoint_header.query("DROP TABLE t_rp_restored SYNC")
+
+
+def test_endpoint_header_not_sent_without_endpoint_keys():
+    # The header of the endpoint section is not sent with an anonymous request or with the query's own keys, and
+    # the header of the global `<s3>` section does not reach a URL that matches no endpoint section.
+    put_payer_test_object("rp/data.tsv")
+    put_payer_test_object("other/data.tsv")
+    node_with_endpoint_header.query("DROP TABLE IF EXISTS t_rp_keys_src SYNC")
+    node_with_endpoint_header.query(
+        "CREATE TABLE t_rp_keys_src (x UInt32) ENGINE = MergeTree ORDER BY x"
+    )
+    node_with_endpoint_header.query("INSERT INTO t_rp_keys_src SELECT 1")
+
+    def assert_no_payer_header():
+        requests = payer_proxy_requests()
+        assert requests and all(r.endswith(" payer=-") for r in requests), requests
+
+    payer_proxy_reset()
+    node_with_endpoint_header.query_and_get_error(
+        f"SELECT count() FROM s3('{PAYER_PROXY}/rp/data.tsv', NOSIGN, 'TSV', 'x UInt32')"
+    )
+    assert_no_payer_header()
+
+    payer_proxy_reset()
+    assert_access_denied(
+        node_with_endpoint_header.query_and_get_error(
+            f"SELECT count() FROM s3('{PAYER_PROXY}/rp/data.tsv', '{minio_access_key}', "
+            f"'{minio_secret_key}', 'TSV', 'x UInt32')"
+        )
+    )
+    assert_no_payer_header()
+
+    payer_proxy_reset()
+    assert_access_denied(
+        node_with_endpoint_header.query_and_get_error(
+            f"SELECT count() FROM s3('{PAYER_PROXY}/other/data.tsv', 'TSV', 'x UInt32')"
+        )
+    )
+    assert_no_payer_header()
+
+    payer_proxy_reset()
+    assert_access_denied(
+        node_with_endpoint_header.query_and_get_error(
+            f"BACKUP TABLE t_rp_keys_src TO S3('{PAYER_PROXY}/rp/backup2', "
+            f"'{minio_access_key}', '{minio_secret_key}')"
+        )
+    )
+    assert_no_payer_header()
+
+    payer_proxy_reset()
+    assert_access_denied(
+        node_with_endpoint_header.query_and_get_error(
+            f"BACKUP TABLE t_rp_keys_src TO S3('{PAYER_PROXY}/other/backup4')"
+        )
+    )
+    assert_no_payer_header()
+
+    node_with_endpoint_header.query("DROP TABLE t_rp_keys_src SYNC")
+
+
+# The header of an endpoint section without keys is not sent with an anonymous BACKUP.
+def test_backup_endpoint_header_not_sent_without_server_keys():
+    node.query("DROP TABLE IF EXISTS t_rp_keyless_src SYNC")
+    node.query("CREATE TABLE t_rp_keyless_src (x UInt32) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO t_rp_keyless_src SELECT 1")
+
+    def assert_no_payer_header():
+        requests = payer_proxy_requests()
+        assert requests and all(r.endswith(" payer=-") for r in requests), requests
+
+    payer_proxy_reset()
+    node.query_and_get_error(
+        f"BACKUP TABLE t_rp_keyless_src TO S3('{PAYER_PROXY}/rp_keyless/backup3')"
+    )
+    assert_no_payer_header()
+
+    node.query("DROP TABLE t_rp_keyless_src SYNC")
+
+
+# An endpoint header that `http_forbid_headers` forbids rejects the query before any request is sent.
+def test_forbidden_endpoint_header_rejected():
+    node_with_endpoint_header.query("DROP TABLE IF EXISTS t_rp_forbidden_src SYNC")
+    node_with_endpoint_header.query(
+        "CREATE TABLE t_rp_forbidden_src (x UInt32) ENGINE = MergeTree ORDER BY x"
+    )
+
+    payer_proxy_reset()
+    for query in [
+        f"SELECT count() FROM s3('{PAYER_PROXY}/forbidden/data.tsv', 'TSV', 'x UInt32')",
+        f"BACKUP TABLE t_rp_forbidden_src TO S3('{PAYER_PROXY}/forbidden/backup5')",
+        f"RESTORE TABLE t_rp_forbidden_src AS t_rp_forbidden_restored "
+        f"FROM S3('{PAYER_PROXY}/forbidden/backup5')",
+    ]:
+        error = node_with_endpoint_header.query_and_get_error(query)
+        assert "is forbidden in configuration file" in error, error
+    assert payer_proxy_requests() == []
+
+    node_with_endpoint_header.query("DROP TABLE t_rp_forbidden_src SYNC")

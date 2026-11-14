@@ -688,7 +688,7 @@ The following settings can be specified in configuration file for given endpoint
 - `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Optional, default value is `false`.
 - `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
 - `no_sign_request` - Ignore all the credentials so requests are not signed. Useful for accessing public buckets.
-- `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
+- `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times. With `s3_allow_server_credentials_in_user_queries = 0` (the default), it is not sent with `NOSIGN` requests from user queries or with ones that use keys from the query.
 - `access_header` - Adds specified HTTP header to a request to given endpoint, in cases where there are no other credentials from another source.
 - `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set. Optional.
 - `server_side_encryption_kms_key_id` - If specified, required headers for accessing S3 objects with [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) will be set. If an empty string is specified, the AWS managed S3 key will be used. Optional.

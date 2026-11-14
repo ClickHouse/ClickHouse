@@ -183,6 +183,11 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 {
     assertInitialized();
 
+    /// A catalog credential replaces the server keys, so the server headers kept for those keys are dropped as well.
+    if (context->shouldRestrictUserQueryS3Credentials()
+        && (refresh_credentials_callback || s3_settings->auth_settings.google_credentials_explicit))
+        s3_settings->auth_settings.headers.clear();
+
     if (!headers_from_ast.empty())
         s3_settings->auth_settings.headers.append(headers_from_ast);
 
@@ -778,7 +783,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
     const String user_external_id = s3_settings->auth_settings[S3AuthSetting::external_id];
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    const auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName());
+    if (endpoint_settings)
     {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
@@ -793,12 +799,6 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         /// Drop any GCP OAuth mechanism inherited from `<s3>` config: the bare-URL `s3(...)` form cannot supply
         /// these fields, so a value here is always server-configured and would mint a server-identity token.
         s3_settings->auth_settings.clearServerManagedGcpOAuth();
-
-        /// The bare-URL `s3(...)` form likewise cannot supply request-auth material, so the headers/access
-        /// headers and SSE-C/SSE-KMS keys here come from the server `<s3>`/endpoint config. Drop them so an
-        /// anonymous/NOSIGN request does not send the server's `Authorization` header or encryption keys to the
-        /// user-chosen endpoint.
-        s3_settings->auth_settings.clearServerManagedRequestAuth();
     }
 
     /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
@@ -900,6 +900,20 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         no_sign_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
+    }
+
+    /// Under the restriction the server `<s3>` request-auth material is dropped, so that an anonymous request or one with the query's
+    /// own credentials carries none of it. Only a request signed with the server-config keys keeps the matched endpoint's headers.
+    if (restrict_server_credentials)
+    {
+        const auto & auth = s3_settings->auth_settings;
+        const bool signed_with_server_keys = endpoint_settings.has_value()
+            && !query_provided_access_key_id && !query_provided_secret_access_key && !query_provided_session_token
+            && !String(auth[S3AuthSetting::access_key_id]).empty() && !String(auth[S3AuthSetting::secret_access_key]).empty()
+            && !auth[S3AuthSetting::no_sign_request];
+        auto kept_headers = signed_with_server_keys ? auth.headers : NormalizedHTTPHeaderEntries{};
+        s3_settings->auth_settings.clearServerManagedRequestAuth();
+        s3_settings->auth_settings.headers = std::move(kept_headers);
     }
 
     /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).

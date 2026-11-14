@@ -268,7 +268,9 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         && (credentials_configuration.no_sign_request || credentials_configuration.anonymous_fallback_for_server_credentials)
         && is_loading_from_existing_metadata)
     {
-        headers.clear();
+        /// A complete key pair still signs the requests (see `getCredentialsProvider`), so its headers stay.
+        if (credentials_configuration.no_sign_request || access_key_id.empty() || secret_access_key.empty())
+            headers.clear();
         server_side_encryption_customer_key_base64.clear();
         server_side_encryption_kms_config = {};
     }

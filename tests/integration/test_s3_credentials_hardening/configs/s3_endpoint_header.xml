@@ -1,0 +1,23 @@
+<clickhouse>
+    <s3>
+        <use_environment_credentials>0</use_environment_credentials>
+        <access_key_id>minio</access_key_id>
+        <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        <header>x-amz-request-payer: global</header>
+        <requester_pays>
+            <endpoint>http://resolver:8080/root/rp/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            <header>x-amz-request-payer: requester</header>
+        </requester_pays>
+        <forbidden_header>
+            <endpoint>http://resolver:8080/root/forbidden/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            <header>X-Forbidden-Header: 1</header>
+        </forbidden_header>
+    </s3>
+    <http_forbid_headers>
+        <header>X-Forbidden-Header</header>
+    </http_forbid_headers>
+</clickhouse>
