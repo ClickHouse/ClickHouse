@@ -2,8 +2,10 @@
 
 import difflib
 import hashlib
+import http.client
 import json
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -249,6 +251,23 @@ def manifest_url(job):
     return f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/{branch}/{job['commit_sha']}/nightlycoverage/{name}/manifest.json"
 
 
+def read_manifest(url):
+    # 403 and 404 are answers: `coverage_cohort` treats them as an unpublished manifest.
+    for attempt in range(1, 6):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+        except (OSError, http.client.HTTPException) as error:
+            if attempt == 5 or (
+                isinstance(error, urllib.error.HTTPError) and error.code < 500
+            ):
+                raise
+            print(
+                f"WARNING: Coverage manifest read failed, attempt {attempt}: {url}: {error}"
+            )
+            time.sleep(2**attempt)
+
+
 def coverage_identity(manifest):
     # A corrected wrapper can finish a collection without changing its inputs.
     # The workflow SHA binds each manifest to its own successful job below;
@@ -484,11 +503,6 @@ class PerformanceSelection(Targeting):
               AND check_start_time + toIntervalSecond(ceil(check_duration_ms / 1000)) < toDateTime({sql_string(cutoff)}, 'UTC')
             ORDER BY check_start_time DESC FORMAT JSONEachRow
         """)
-
-        def read_manifest(url):
-            with urllib.request.urlopen(url, timeout=60) as response:
-                return json.load(response)
-
         jobs, manifests, superseded = coverage_cohort(jobs, read_manifest)
         snapshots, tests = validate_manifests(manifests, cutoff)
         rows = self.rows(f"""
