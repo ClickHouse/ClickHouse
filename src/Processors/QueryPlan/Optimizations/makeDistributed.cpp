@@ -262,7 +262,7 @@ std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFr
 
     /// A `STREAM` read cannot be serialized, and every distributed read ships as a
     /// serialized fragment; reject it here instead of from `serialize` mid-execution.
-    if (read->getQueryInfo().isStream())
+    if (!read->isSerializable())
         return std::make_optional(
             PreformattedMessage::create("make_distributed_plan does not support a distributed read with the STREAM modifier"));
 

@@ -7764,6 +7764,15 @@ void ReadFromMergeTree::verifyBucketedReadSupported() const
             "make_distributed_plan does not support a distributed read using direct text index tasks");
 }
 
+bool ReadFromMergeTree::selectsPartsAtPlanTime() const
+{
+    return !query_info.isStream();
+}
+
+bool ReadFromMergeTree::isSerializable() const
+{
+    return !query_info.isStream();
+}
 
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {

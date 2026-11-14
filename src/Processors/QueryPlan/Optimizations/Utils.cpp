@@ -604,7 +604,7 @@ bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 {
     /// A STREAM read selects its parts and ranges during execution, so the range set captured
     /// here is not the one that will be read.
-    if (reading->getQueryInfo().isStream())
+    if (!reading->selectsPartsAtPlanTime())
         return false;
 
     /// Allow FINAL only for ReplacingMergeTree.

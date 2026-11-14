@@ -764,8 +764,10 @@ public:
     /// a projection, or direct text index tasks); such a read stays serial.
     bool supportsBucketedRead() const;
 
+    bool selectsPartsAtPlanTime() const;
+
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    bool isSerializable() const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:

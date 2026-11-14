@@ -61,7 +61,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         /// sorted by the sorting key even though the key is non-empty. Requesting read-in-order would
         /// make it advertise that order and feed unsorted data to order-dependent transforms (DISTINCT,
         /// aggregation and LIMIT BY in order), which then return wrong results or hit a sort assertion.
-        if (reading->getQueryInfo().isStream())
+        if (!reading->selectsPartsAtPlanTime())
             return nullptr;
 
         /// Already read-in-order, skip.
