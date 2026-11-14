@@ -23,9 +23,11 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 
+#include <chrono>
 #include <condition_variable>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -155,6 +157,10 @@ private:
     const ReadSettings read_settings;
     const ConnectionTimeouts timeouts;
 
+    /// The request ends by it: each try's socket timeouts are capped at the time left, and no try or backoff
+    /// starts after it. Not strict against a reply that trickles in: each received byte restarts the receive timeout.
+    const std::optional<std::chrono::steady_clock::time_point> deadline;
+
     const Poco::Net::HTTPBasicCredentials & credentials;
     const RemoteHostFilter * remote_host_filter;
 
@@ -212,6 +218,11 @@ private:
     /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
     bool waitBeforeRetry(size_t milliseconds) const;
 
+    /// `timeouts` capped at the time left before `deadline`.
+    ConnectionTimeouts getTimeoutsForTry() const;
+
+    [[noreturn]] static void throwDeadlineExceeded(const Poco::URI & uri, const String & error_message);
+
     /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
     bool isReadCancelled() const;
 
@@ -259,6 +270,7 @@ private:
         ProxyConfiguration proxy_config_,
         ReadSettings read_settings_,
         ConnectionTimeouts timeouts_,
+        std::optional<std::chrono::steady_clock::time_point> deadline_,
         const Poco::Net::HTTPBasicCredentials & credentials_,
         const RemoteHostFilter * remote_host_filter_,
         size_t buffer_size_,
@@ -324,6 +336,7 @@ class BuilderRWBufferFromHTTP
     bool bypass_proxy = false;
     ReadSettings read_settings{};
     ConnectionTimeouts timeouts{};
+    std::optional<std::chrono::steady_clock::time_point> deadline{};
     const RemoteHostFilter * remote_host_filter = nullptr;
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t max_redirects = 0;
@@ -355,6 +368,7 @@ public:
     setterMember(withBypassProxy, bypass_proxy)
     setterMember(withSettings, read_settings)
     setterMember(withTimeouts, timeouts)
+    setterMember(withDeadline, deadline)
     setterMember(withHostFilter, remote_host_filter)
     setterMember(withBufSize, buffer_size)
     setterMember(withRedirects, max_redirects)

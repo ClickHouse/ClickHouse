@@ -6,9 +6,11 @@
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/unit.h>
@@ -24,8 +26,10 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Util/MapConfiguration.h>
 
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <limits>
 
@@ -34,6 +38,11 @@
 namespace DB::FailPoints
 {
 extern const char http_connection_socket_inode_unavailable[];
+}
+
+namespace DB::ErrorCodes
+{
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -1104,6 +1113,96 @@ TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTP)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 }
 
+/// The code of the `DB::Exception` a request with `deadline` fails with, 0 if it succeeds.
+static int requestWithDeadline(
+    const Poco::URI & uri,
+    std::chrono::steady_clock::time_point deadline,
+    bool bypass_proxy = true,
+    std::chrono::milliseconds body_delay = {})
+{
+    Poco::Net::HTTPBasicCredentials empty_creds;
+    try
+    {
+        DB::BuilderRWBufferFromHTTP(uri)
+            .withBypassProxy(bypass_proxy)
+            .withDeadline(deadline)
+            .withOutCallback([body_delay] (DB::WriteBuffer & out)
+            {
+                std::this_thread::sleep_for(body_delay);
+                DB::writeString("Hello", out);
+            })
+            .withDelayInit(false)
+            .create(empty_creds);
+    }
+    catch (const DB::Exception & e)
+    {
+        return e.code();
+    }
+    return 0;
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPEndsAtDeadline)
+{
+    setSlowDown(2);
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(Poco::URI(getServerUrl()), start + std::chrono::milliseconds(500)));
+
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    ASSERT_GE(elapsed, std::chrono::milliseconds(400));
+    ASSERT_LT(elapsed, std::chrono::milliseconds(1500));
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPSlowBodyLeavesLessTimeForResponse)
+{
+    setSlowDown(2);
+
+    /// Writing the request body takes 400 ms of the 500 ms.
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_EQ(
+        DB::ErrorCodes::TIMEOUT_EXCEEDED,
+        requestWithDeadline(
+            Poco::URI(getServerUrl()), start + std::chrono::milliseconds(500), /*bypass_proxy=*/ true, std::chrono::milliseconds(400)));
+
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    ASSERT_GE(elapsed, std::chrono::milliseconds(400));
+    ASSERT_LT(elapsed, std::chrono::milliseconds(750));
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineOpensNoConnection)
+{
+    auto metrics = getPool()->getMetrics();
+
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(Poco::URI(getServerUrl()), std::chrono::steady_clock::now()));
+
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+}
+
+TEST_F(ConnectionPoolTest, ReadWriteBufferFromHTTPPastDeadlineSkipsProxyDiscovery)
+{
+    /// A proxy resolver that accepts connections and never replies.
+    Poco::Net::ServerSocket resolver_server(Poco::Net::SocketAddress("127.0.0.1", 0));
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration());
+    config->setString("proxy", "");
+    config->setString("proxy.http", "");
+    config->setString("proxy.http.resolver", "");
+    config->setString("proxy.http.resolver.endpoint", "http://" + resolver_server.address().toString() + "/hostname");
+    config->setString("proxy.http.resolver.proxy_scheme", "http");
+    config->setString("proxy.http.resolver.proxy_port", "3128");
+    auto context = getContext().context;
+    context->setConfig(config);
+    SCOPE_EXIT({ context->setConfig(Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration())); });
+
+    const auto uri = Poco::URI(getServerUrl());
+    ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, requestWithDeadline(uri, std::chrono::steady_clock::now(), /*bypass_proxy=*/ false));
+    ASSERT_FALSE(resolver_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
+
+    /// The configuration does route proxy discovery to that resolver.
+    ASSERT_ANY_THROW(DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve());
+    ASSERT_TRUE(resolver_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
+}
+
 TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
 {
     /// In proxy mode `Poco::Net::HTTPClientSession::reconnect` connects to the proxy
@@ -1275,6 +1374,197 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 
     /// The recovered connection is fully usable.
     echoRequest("Hello", *connection);
+}
+
+/// Connects to `server` until its accept queue is full, so that it answers no further SYN and a connect to it waits
+/// until its timeout. Returns false if the queue does not fill up.
+static bool fillAcceptQueue(Poco::Net::ServerSocket & server, std::vector<Poco::Net::StreamSocket> & queued)
+{
+    while (queued.size() < 16)
+    {
+        Poco::Net::StreamSocket socket;
+        try
+        {
+            socket.connect(server.address(), Poco::Timespan(100'000));
+        }
+        catch (const Poco::TimeoutException &)
+        {
+            return true;
+        }
+        queued.push_back(socket);
+    }
+    return false;
+}
+
+TEST_F(ConnectionPoolTest, NoNextAddressAfterDeadline)
+{
+    /// The first address keeps the connect until the deadline: its accept queue is full, so it does not answer a SYN.
+    /// The second address accepts.
+    constexpr UInt16 port = 9873;
+    const String test_host = "deadline-test.invalid";
+    const Poco::Net::IPAddress slow_ip("127.0.0.98");
+    const Poco::Net::IPAddress good_ip("127.0.0.1");
+
+    Poco::Net::ServerSocket good_server(Poco::Net::SocketAddress(good_ip, port));
+    Poco::Net::ServerSocket slow_server(Poco::Net::SocketAddress(slow_ip, port), /*backlog=*/ 1);
+    std::vector<Poco::Net::StreamSocket> queued;
+    ASSERT_TRUE(fillAcceptQueue(slow_server, queued));
+
+    /// Resolving the host again would take 3 s. A failed connect asks for it, and so does `resolve` 400 ms after the last
+    /// resolution, which is sooner than the connect gives up.
+    auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
+    auto resolve_func = [resolve_calls, slow_ip, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
+    {
+        if (resolve_calls->fetch_add(1) > 0)
+            sleepForSeconds(3);
+        return {slow_ip, good_ip};
+    };
+
+    struct ResolveMock : public DB::HostResolver
+    {
+        using ResolveFunction = DB::HostResolver::ResolveFunction;
+        ResolveMock(String h, Poco::Timespan history_, ResolveFunction f)
+            : DB::HostResolver(std::move(f), std::move(h), history_)
+        {}
+    };
+
+    auto resolver = std::make_shared<ResolveMock>(test_host, Poco::Timespan(1200 * 1000), std::move(resolve_func));
+    DB::HostResolversPool::instance().injectResolverForTest(test_host, resolver);
+
+    /// Ban the good address, so that the pool tries the slow one first.
+    bool good_banned = false;
+    for (size_t i = 0; i < 64 && !good_banned; ++i)
+    {
+        auto entry = resolver->resolve();
+        good_banned = *entry == good_ip.toString();
+        if (good_banned)
+            entry.setFail(/*refresh=*/ false);
+        else
+            entry.setUnused();
+    }
+    ASSERT_TRUE(good_banned);
+
+    auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(port));
+    auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(500)));
+    ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+
+    /// Once the slow address fails, both are banned, so both are selectable again: the good one is not tried after the
+    /// deadline, and the host is not resolved again.
+    ASSERT_EQ(1, resolve_calls->load());
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+}
+
+TEST_F(ConnectionPoolTest, NoConnectAfterResolutionUsesUpDeadline)
+{
+    constexpr UInt16 port = 9874;
+    const String test_host = "slow-resolution-test.invalid";
+    const Poco::Net::IPAddress good_ip("127.0.0.1");
+    Poco::Net::ServerSocket good_server(Poco::Net::SocketAddress(good_ip, port));
+
+    /// The refresh due on the first `resolve` takes 600 ms, longer than the 300 ms deadline.
+    auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
+    auto resolve_func = [resolve_calls, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
+    {
+        if (resolve_calls->fetch_add(1) > 0)
+            sleepForMilliseconds(600);
+        return {good_ip};
+    };
+
+    struct ResolveMock : public DB::HostResolver
+    {
+        using ResolveFunction = DB::HostResolver::ResolveFunction;
+        ResolveMock(String h, Poco::Timespan history_, ResolveFunction f)
+            : DB::HostResolver(std::move(f), std::move(h), history_)
+        {}
+    };
+
+    /// History 3 us: a refresh is due 1 us after the first resolution.
+    DB::HostResolversPool::instance().injectResolverForTest(
+        test_host, std::make_shared<ResolveMock>(test_host, Poco::Timespan(3), std::move(resolve_func)));
+
+    auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(port));
+    auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+
+    try
+    {
+        pool->getConnection(timeouts, nullptr, std::chrono::steady_clock::now() + std::chrono::milliseconds(300));
+        FAIL() << "connected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+
+    ASSERT_EQ(2, resolve_calls->load());
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_FALSE(good_server.poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ));
+}
+
+TEST_F(ConnectionPoolTest, ProxyConnectKeepsToDeadline)
+{
+    /// A proxy that does not answer a SYN.
+    Poco::Net::ServerSocket proxy_server(Poco::Net::SocketAddress("127.0.0.97", 9875), /*backlog=*/ 1);
+    std::vector<Poco::Net::StreamSocket> queued;
+    ASSERT_TRUE(fillAcceptQueue(proxy_server, queued));
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.97";
+    proxy_config.port = 9875;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, Poco::URI("http://proxy-deadline-target.invalid:9999"), proxy_config);
+    auto metrics = pool->getMetrics();
+
+    try
+    {
+        pool->getConnection(timeouts, nullptr, std::chrono::steady_clock::now());
+        FAIL() << "connected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+
+    const auto start = std::chrono::steady_clock::now();
+    ASSERT_ANY_THROW(pool->getConnection(timeouts, nullptr, start + std::chrono::milliseconds(300)));
+    ASSERT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.created]);
+}
+
+TEST_F(ConnectionPoolTest, ReconnectWithoutPoolKeepsToDeadline)
+{
+    auto pool = getPool();
+    const auto metrics = pool->getMetrics();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    auto connection = pool->getConnection(timeouts, nullptr, deadline);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+
+    /// The endpoint pool goes away while the connection is borrowed, and the connection loses its socket, so the next
+    /// request reconnects it directly.
+    pool.reset();
+    DB::HTTPConnectionPools::instance().dropCache();
+    (*connection).reset();
+    std::this_thread::sleep_until(deadline);
+
+    try
+    {
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        DB::sendHTTPRequest(*connection, request)->finalize();
+        FAIL() << "reconnected after the deadline";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(DB::ErrorCodes::TIMEOUT_EXCEEDED, e.code());
+    }
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
 }
 
 TEST_F(ConnectionPoolTest, StoreLimit)

@@ -131,6 +131,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_URI_SCHEME;
     extern const int HTTP_CONNECTION_LIMIT_REACHED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -574,18 +575,23 @@ private:
 
         void reconnect(UInt64 * connect_time) override
         {
+            if (deadline && std::chrono::steady_clock::now() >= *deadline)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "The deadline passed before reconnecting to {}", Session::getHost());
+
             Session::close();
             forgetSocketIdentity();
 
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getPooledConnection(timeouts, connect_time);
+                auto new_connection = lock->getPooledConnection(timeouts, connect_time, deadline);
                 assignFrom(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
             {
+                if (deadline)
+                    setTimeouts(*this, getTimeouts(*this).getCappedAt(*deadline));
                 auto timer = CurrentThread::getProfileEvents().timer(metrics.elapsed_microseconds);
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
@@ -876,6 +882,8 @@ private:
         Poco::Timespan last_idle_time;
         /// When the socket was last stored in the pool.
         Poco::Timestamp idle_since;
+        /// The deadline of the request the connection is handed out for, a reconnect keeps to it as well.
+        std::optional<std::chrono::steady_clock::time_point> deadline;
     };
 
     using Connection = PooledConnection;
@@ -915,14 +923,18 @@ public:
         return host;
     }
 
-    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
+    using IHTTPConnectionPoolForEndpoint::getConnection;
+
+    IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline) override
     {
-        return getPooledConnection(timeouts, connect_time);
+        return getPooledConnection(timeouts, connect_time, deadline);
     }
 
     /// Same as `getConnection`, but keeps the concrete type: `PooledConnection::reconnect` needs it
     /// in order to inherit the socket's identity from the connection it takes over.
-    ConnectionPtr getPooledConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    ConnectionPtr getPooledConnection(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline)
     {
         std::vector<IHTTPConnectionPoolForEndpoint::ConnectionPtr> expired_connections;
 
@@ -954,6 +966,7 @@ public:
             reused_connection->sampleIdleTime();
 
             setTimeouts(*reused_connection, timeouts);
+            reused_connection->deadline = deadline;
 
             /// Apply socket buffer sizes outside the lock because applySocketBufferSizes
             /// can throw, and PooledConnection destructor during stack unwinding would
@@ -963,7 +976,9 @@ public:
             return reused_connection;
         }
 
-        return prepareNewConnection(timeouts, connect_time);
+        auto new_connection = prepareNewConnection(timeouts, connect_time, deadline);
+        new_connection->deadline = deadline;
+        return new_connection;
     }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
@@ -1100,8 +1115,14 @@ private:
     /// target). A connect failure here belongs to the proxy, so it propagates without resolver
     /// bookkeeping or per-address retry.
     ConnectionPtr prepareConnectionViaProxy(
-        const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
+        const ConnectionTimeouts & timeouts,
+        UInt64 * connect_time,
+        const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config,
+        std::optional<std::chrono::steady_clock::time_point> deadline)
     {
+        if (deadline && std::chrono::steady_clock::now() >= *deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "The deadline passed before connecting to {} through a proxy", host);
+
         /// The proxy host name is resolved by Poco (`HTTPClientSession::reconnect` builds a
         /// `SocketAddress` out of `ProxyConfig::host`), so it does not go through the DNS cache.
         /// It cannot be replaced with a resolved address here: when TLS terminates at the proxy
@@ -1116,7 +1137,7 @@ private:
 
         try
         {
-            setTimeouts(*connection, timeouts);
+            setTimeouts(*connection, deadline ? timeouts.getCappedAt(*deadline) : timeouts);
 
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
             connection->doConnect(connect_time);
@@ -1133,7 +1154,8 @@ private:
         return connection;
     }
 
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
+    ConnectionPtr prepareNewConnection(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, std::optional<std::chrono::steady_clock::time_point> deadline)
     {
         /// `Poco::Net::HTTPClientSession::reconnect` uses the proxy only when
         /// `!_proxyConfig.host.empty() && !bypassProxy()`; route that case to
@@ -1152,7 +1174,7 @@ private:
         const bool retry_resolved_addresses = proxy_configuration.isEmpty() || proxy_bypassed_for_host;
 
         if (!retry_resolved_addresses)
-            return prepareConnectionViaProxy(timeouts, connect_time, poco_proxy_config);
+            return prepareConnectionViaProxy(timeouts, connect_time, poco_proxy_config, deadline);
 
         /// When DNS returns several addresses (e.g. an IPv4 and an IPv6 record), try the next one
         /// if the first fails with a network error. `max_connect_attempts` bounds real connect
@@ -1168,12 +1190,13 @@ private:
         size_t connect_attempts = 0;
 
         /// Pessimize the resolved address, swallowing any exception so we don't mask the original failure
-        /// or abort the retry across addresses.
-        auto pessimize = [](HostResolver::Entry & failed_address) noexcept
+        /// or abort the retry across addresses. The DNS refresh that comes with it is synchronous, so it is
+        /// skipped after the deadline.
+        auto pessimize = [&deadline](HostResolver::Entry & failed_address) noexcept
         {
             try
             {
-                failed_address.setFail();
+                failed_address.setFail(/*refresh=*/ !deadline || std::chrono::steady_clock::now() < *deadline);
             }
             catch (...)
             {
@@ -1207,9 +1230,28 @@ private:
         UInt64 total_connect_time = 0;
         SCOPE_EXIT({ if (connect_time) *connect_time = total_connect_time; });
 
+        /// No connect and no address refresh starts after the deadline; the error of the last connect, if any, is the reason.
+        auto expired = [&] { return deadline && std::chrono::steady_clock::now() >= *deadline; };
+        auto throw_expired = [&]
+        {
+            if (last_net_error)
+                std::rethrow_exception(last_net_error);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "The deadline passed before connecting to {}", host);
+        };
+
         for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
         {
+            /// `resolve` can refresh the addresses synchronously.
+            if (expired())
+                throw_expired();
+
             auto address = resolver->resolve();
+            if (expired())
+            {
+                address.setUnused();
+                throw_expired();
+            }
+
             if (!tried_addresses.insert(*address).second)
             {
                 /// Already attempted this address in an earlier iteration. No real network
@@ -1219,6 +1261,8 @@ private:
                 address.setUnused();
                 continue;
             }
+
+            const ConnectionTimeouts attempt_timeouts = deadline ? timeouts.getCappedAt(*deadline) : timeouts;
 
             ++connect_attempts;
 
@@ -1247,7 +1291,7 @@ private:
 
             try
             {
-                setTimeouts(*connection, timeouts);
+                setTimeouts(*connection, attempt_timeouts);
 
                 auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
                 /// `reconnect` records this attempt's duration on success and failure; accumulate it

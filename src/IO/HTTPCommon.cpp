@@ -58,10 +58,11 @@ HTTPSessionPtr makeHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
     const ProxyConfiguration & proxy_configuration,
-    UInt64 * connect_time)
+    UInt64 * connect_time,
+    std::optional<std::chrono::steady_clock::time_point> deadline)
 {
     auto connection_pool = HTTPConnectionPools::instance().getPool(group, uri, proxy_configuration);
-    return connection_pool->getConnection(timeouts, connect_time);
+    return connection_pool->getConnection(timeouts, connect_time, deadline);
 }
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status)
