@@ -1,4 +1,5 @@
 #include <GPU/Cudf.cuh>
+#include <GPU/GPUMemoryTracking.h>
 
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>
@@ -15,11 +16,57 @@
 namespace DB::GPU
 {
 
+namespace
+{
+
+/// The device's memory pool, with every allocation accounted to the query of the thread that makes it.
+class TrackedPoolResource
+{
+public:
+    explicit TrackedPoolResource(cudaMemPool_t pool) : upstream(pool) {}
+
+    void * allocate(cuda::stream_ref stream, std::size_t bytes, std::size_t alignment = rmm::CUDA_ALLOCATION_ALIGNMENT)
+    {
+        void * memory = upstream.allocate(stream, bytes, alignment);
+        trackDeviceAllocation(memory, bytes);
+        return memory;
+    }
+
+    void deallocate(cuda::stream_ref stream, void * memory, std::size_t bytes, std::size_t alignment = rmm::CUDA_ALLOCATION_ALIGNMENT) noexcept
+    {
+        trackDeviceDeallocation(memory);
+        upstream.deallocate(stream, memory, bytes, alignment);
+    }
+
+    void * allocate_sync(std::size_t bytes, std::size_t alignment = rmm::CUDA_ALLOCATION_ALIGNMENT)
+    {
+        void * memory = upstream.allocate_sync(bytes, alignment);
+        trackDeviceAllocation(memory, bytes);
+        return memory;
+    }
+
+    void deallocate_sync(void * memory, std::size_t bytes, std::size_t alignment = rmm::CUDA_ALLOCATION_ALIGNMENT) noexcept
+    {
+        trackDeviceDeallocation(memory);
+        upstream.deallocate_sync(memory, bytes, alignment);
+    }
+
+    bool operator==(const TrackedPoolResource & other) const noexcept { return upstream == other.upstream; }
+    bool operator!=(const TrackedPoolResource & other) const noexcept { return !(*this == other); }
+
+    friend void get_property(const TrackedPoolResource &, cuda::mr::device_accessible) noexcept {}
+
+private:
+    rmm::mr::cuda_async_view_memory_resource upstream;
+};
+
+}
+
 __host__ void setCudfMemoryPool(cudaMemPool_t pool)
 {
     guarded("making cuDF allocate from the device's memory pool", [&]
     {
-        rmm::mr::set_current_device_resource(rmm::mr::cuda_async_view_memory_resource{pool});
+        rmm::mr::set_current_device_resource(TrackedPoolResource{pool});
     });
 }
 

@@ -825,6 +825,8 @@ The server successfully detected this situation and will download merged part fr
     M(SharedPartsLocks, "Number of times shared data parts lock has been acquired for MergeTree tables", ValueType::Number) \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).", ValueType::Microseconds) \
+    M(GPUSMActiveMicroseconds, "Time the streaming multiprocessors of the GPU were active while the query held device memory, its share when several queries did, from the PM sampling of CUPTI (see the server setting `gpu_activity_sampling_interval_ms`).", ValueType::Microseconds) \
+    M(GPUTensorActiveMicroseconds, "Time the tensor pipes of the GPU were active while the query held device memory, its share when several queries did, from the PM sampling of CUPTI.", ValueType::Microseconds) \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This includes time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.", ValueType::Microseconds) \
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel mode. This is time spent in syscalls, excluding waiting time during blocking syscalls.", ValueType::Microseconds) \
     M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.", ValueType::Microseconds) \

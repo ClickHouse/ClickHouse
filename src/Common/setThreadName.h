@@ -112,6 +112,7 @@ namespace DB
     M(MERGETREE_PREWARM_CACHE, "PrewarmCaches") \
     M(MERGETREE_READ, "MergeTreeRead") \
     M(MERGETREE_VECTOR_SIM_INDEX, "VectorSimIndex") \
+    M(GPU_ACTIVITY, "GPUActivity") \
     M(METRIC_LOG, "MetricLog") \
     M(METRICS_TRANSMITTER, "MetricsTransmtr") \
     M(MSG_BROKER_SCHEDULE_POOL, "BgMBSchPool") \
