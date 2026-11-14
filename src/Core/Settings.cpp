@@ -1469,6 +1469,10 @@ Reject TTL expressions that don't depend on any of table's columns. It indicates
 In CREATE TABLE statement allows specifying Variant type with similar variant types (for example, with different numeric or date types). Enabling this setting may introduce some ambiguity when working with values with similar types.
 )", 0, \
         {"24.2", true, false, "Don't allow creating Variant type with suspicious variants by default"}) \
+    DECLARE(Bool, allow_suspicious_aggregate_function_version_0, false, R"(
+Allows declaring an `AggregateFunction` type with an explicit state version 0 of an aggregate function whose default state version is not 0 (for example `AggregateFunction(0, sumMap, Array(UInt8), Array(UInt8))`) in `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY COLUMN` and `CAST`. The type name does not keep such a version: it is printed without it and reads back as the default version, so the type does not survive a round trip through its name, for example inside a `Variant`.
+)", 0, \
+        {"26.11", true, false, "New setting. An explicit state version 0 of an aggregate function whose default state version is not 0 is refused by default, because the type name does not keep it."}) \
     DECLARE(Bool, allow_suspicious_primary_key, false, R"(
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
 )", 0, \

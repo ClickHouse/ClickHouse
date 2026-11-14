@@ -1092,6 +1092,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         auto create_query_context = Context::createCopy(context);
         create_query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
         create_query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+        create_query_context->setSetting("allow_suspicious_aggregate_function_version_0", 1);
 
         /// Creating of replicated tables may need retries.
         create_query_context->setSetting("keeper_max_retries", zookeeper_retries_info.max_retries);
