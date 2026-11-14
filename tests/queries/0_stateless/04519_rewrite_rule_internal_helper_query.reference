@@ -1,0 +1,4 @@
+SHOW PRIVILEGES with rule active:
+not rejected
+direct user query with rule active:
+REWRITE_RULE_REJECTION

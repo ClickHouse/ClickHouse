@@ -1,0 +1,6 @@
+drop function exact: rejected
+drop function: other name is not over-matched
+drop named collection exact: rejected
+drop named collection: other name is not over-matched
+drop resource exact: rejected
+drop resource: other name is not over-matched
