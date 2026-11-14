@@ -45,6 +45,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -91,6 +92,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const SettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsHashJoinLayout hash_join_layout;
@@ -680,7 +682,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 {
     if (context->getSettingsRef()[Setting::enable_hash_join_row_store]
         && context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
-        analyzed_join->setRowStoreEnabled(true);
+        analyzed_join->setRowStoreCandidateColumns(computeRowStoreCandidateColumns(
+            *analyzed_join, *right_sample_block, 0, context->getSettingsRef()[Setting::min_string_column_bytes_for_hash_join_row_store]));
 
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);

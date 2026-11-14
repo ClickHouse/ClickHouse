@@ -1031,14 +1031,18 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        modified_context,
-        poll_max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(modified_context->getSettingsRef()));
+    auto parser_shared_resources = FormatParserSharedResources::singleThreaded(modified_context->getSettingsRef());
+    auto create_format = [&]
+    {
+        return FormatFactory::instance().getInput(
+            getFormatName(),
+            empty_buf,
+            non_virtual_header,
+            modified_context,
+            poll_max_block_size,
+            std::nullopt,
+            parser_shared_resources);
+    };
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -1094,7 +1098,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         }
     };
 
-    StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
+    StreamingFormatExecutor executor(non_virtual_header, std::move(create_format), std::move(on_error));
 
     const auto storage_id = getStorageID();
     const Field table_name = storage_id.getTableName();
@@ -1117,7 +1121,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         return true;
     };
 
-    KeeperHandlingConsumer::MessageSinkFunction msg_sink = [&](ReadBufferPtr buf, const KeeperHandlingConsumer::MessageInfo & msg_info, bool has_more_polled_messages, bool stalled) mutable
+    KeeperHandlingConsumer::MessageSinkFunction msg_sink = [&](ReadBufferPtr buf, const KeeperHandlingConsumer::MessageInfo & msg_info, bool has_more_polled_messages, bool stalled, bool replaying_intent) mutable
     {
         size_t new_rows = 0;
         exception_message.reset();
@@ -1235,8 +1239,14 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 msg_info.currentOffset());
         }
 
+        /// A replayed batch is bounded by its intent instead of the row limit: the intent may
+        /// legitimately contain more than `poll_max_block_size` rows (e.g. when messages contain
+        /// multiple rows), and the broker may deliver the intended messages in several smaller
+        /// pulls. Closing a replay at the row limit would cut it short of the intent and discard
+        /// it, over and over again. The flush interval and the failed poll limit still bound it.
+        const bool batch_is_full = !replaying_intent && total_rows >= poll_max_block_size;
         if (!has_more_polled_messages
-            && (total_rows >= poll_max_block_size || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (batch_is_full || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             LOG_TRACE(
                 log,
@@ -1572,6 +1582,13 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
 
     if (isConsumeCancelRequested(cycle_epoch))
     {
+        /// The batch (if there is one) is abandoned before the insert started. If it is a fresh
+        /// batch, nobody tried to insert its messages, so there is nothing to deduplicate and its
+        /// intent is discarded; otherwise the next batch would needlessly replay exactly the same
+        /// messages. If the batch replays an existing intent, the intent is preserved, because the
+        /// insert of an earlier attempt may have committed the rows.
+        if (maybe_blocks_and_guard.has_value())
+            maybe_blocks_and_guard->guard.rollbackBeforeInsert();
         block_io.onCancelOrConnectionLoss();
         return std::nullopt;
     }

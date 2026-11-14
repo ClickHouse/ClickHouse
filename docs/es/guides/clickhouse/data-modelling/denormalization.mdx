@@ -6,8 +6,6 @@ keywords: ['desnormalización de datos', 'desnormalizar', 'optimización de cons
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 La desnormalización de datos es una técnica de ClickHouse que utiliza tablas aplanadas para ayudar a minimizar la latencia de las consultas al evitar joins.
 
 <div id="comparing-normalized-vs-denormalized-schemas">
@@ -18,7 +16,15 @@ La desnormalización de datos consiste en revertir intencionadamente el proceso 
 
 Este proceso reduce la necesidad de joins complejos en tiempo de consulta y puede acelerar considerablemente las operaciones de lectura, por lo que resulta ideal para aplicaciones con una alta carga de lectura y consultas complejas. Sin embargo, puede aumentar la complejidad de las operaciones de escritura y del mantenimiento, ya que cualquier cambio en los datos duplicados debe propagarse a todas las instancias para mantener la coherencia.
 
-<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="Desnormalización en ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Desnormalización en ClickHouse](/images/data-modeling/denormalization-diagram.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -147,7 +153,15 @@ La principal observación aquí es que las estadísticas agregadas de votos de c
 
 Ahora consideremos `Users` e `Insignias`:
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Esquema de Users e Insignias" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Esquema de Users e Insignias](/images/data-modeling/denormalization-schema.webp)
+
+</Frame>
+
+</div>
 
 <p />
 

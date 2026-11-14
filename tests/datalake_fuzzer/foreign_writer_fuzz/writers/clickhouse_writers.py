@@ -12,7 +12,7 @@ import re
 from ..ltypes import LType
 from ..model import ID_COLUMN, arrow_schema, rows_to_arrow
 from ..predicates import clickhouse_literal, pred_from_json, render
-from .base import Capabilities, ForeignReadError, Source, Writer
+from .base import Capabilities, ForeignReadError, Source, Writer, is_tool_error
 from .spark_common import q
 
 ICEBERG_PREFIX = "var/lib/clickhouse/user_files/fwf_ch_iceberg"
@@ -207,7 +207,9 @@ class ClickHouseIcebergWriter(Writer):
             result["pyiceberg"] = (
                 StaticTable.from_metadata(metadata).scan().to_arrow().select(names)
             )
-        except Exception as e:
+        except BaseException as e:
+            if not is_tool_error(e):
+                raise
             raise ForeignReadError(
                 f"PyIceberg cannot read the ClickHouse-written table {metadata}: {type(e).__name__}: {e}"
             ) from None
@@ -308,7 +310,9 @@ class ClickHouseDeltaWriter(Writer):
                 .to_pyarrow_table()
                 .select(names)
             )
-        except Exception as e:
+        except BaseException as e:
+            if not is_tool_error(e):
+                raise
             raise ForeignReadError(
                 f"delta-rs cannot read the ClickHouse-written table: {type(e).__name__}: {e}"
             ) from None

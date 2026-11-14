@@ -19,7 +19,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
-#include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -30,7 +29,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -85,6 +83,8 @@ struct DataObjectInfo : public DB::ObjectInfo
         , size(size_)
     {
     }
+
+    std::shared_ptr<DB::ObjectInfo> clone() const override { return std::make_shared<DataObjectInfo>(*this); }
 
     std::optional<size_t> getFileSizeHint() const override
     {
@@ -190,18 +190,24 @@ public:
 
     ~Iterator() override
     {
-        shutdown.store(true);
+        {
+            /// Under the mutex, so that the scanning thread does not miss the notification between checking
+            /// the condition and starting to wait.
+            std::lock_guard lock(next_mutex);
+            shutdown.store(true);
+        }
         schedule_next_batch_cv.notify_one();
         if (thread.joinable())
             thread.join();
     }
 
-    const std::string & getDataPath() const { return helper->getDataPath(); }
-
     const std::string & getTableLocation() const { return helper->getTableLocation(); }
 
+    /// Called on the scanning thread. Under the mutex, so that `next` does not miss the notification between
+    /// checking the condition and starting to wait, and reads `scan_exception` after it is set.
     void setScanException()
     {
+        std::lock_guard lock(next_mutex);
         if (!scan_exception)
         {
             scan_exception = std::current_exception();
@@ -622,8 +628,7 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        std::string full_path = DB::resolvePathInsideTable(
-            context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
+        std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path), context->getContext());
         auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
         object->data_lake_metadata.emplace();
         if (stats)

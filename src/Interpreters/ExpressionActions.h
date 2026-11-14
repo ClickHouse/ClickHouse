@@ -3,6 +3,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
@@ -97,7 +98,7 @@ public:
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
+    const ActionsDAG::Nodes & getNodes() const { return actions_dag.getNodes(); }
     const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }
@@ -167,8 +168,8 @@ private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(
-        const std::unordered_set<const Node *> & lazy_executed_nodes,
-        const std::unordered_set<const Node *> & reorderable_short_circuit_arguments,
+        const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes,
+        const UnorderedSetWithMemoryTracking<const Node *> & reorderable_short_circuit_arguments,
         const std::unordered_map<const Node *, size_t> & short_circuit_eager_arguments);
 };
 

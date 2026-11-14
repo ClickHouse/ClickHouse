@@ -35,7 +35,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 [FINAL](/ko/reference/statements/select/from#final-modifier) 수정자가 있는 [SELECT](/ko/reference/statements/select/index) 쿼리에서 자동 [PREWHERE](/ko/reference/statements/select/prewhere) 최적화의 사용 여부를 설정합니다.
 
 정렬 키에만 의존하면서 쿼리 내에서 결정적인 조건만 이동하므로,
-`FINAL`의 결과에는 영향이 없습니다.
+`FINAL`의 결과에는 영향이 없습니다. [GraphiteMergeTree](/ko/reference/engines/table-engines/mergetree-family/graphitemergetree)에서는
+`FINAL`이 동일한 경로의 인접한 행을 하나의 행으로 머지합니다. 따라서 이 최적화는 경로가 정렬 키의 첫 번째 컬럼인 경우에만,
+경로 컬럼에 대한 조건만 이동합니다.
 
 [*MergeTree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블에서만 작동합니다.
 

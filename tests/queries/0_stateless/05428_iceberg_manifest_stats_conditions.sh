@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Iceberg needs Avro and Parquet, which the fasttest build lacks.
 
-# Issue 120440: with `use_iceberg_manifest_statistics`, the conditions of an Iceberg read (the filter above it, its
+# Issue 120440: with `use_datalake_metadata_statistics`, the conditions of an Iceberg read (the filter above it, its
 # `PREWHERE` and row policy) are estimated on the column statistics of its remaining data files, as for MergeTree tables
 # with column statistics.
 # - T1: filters that prune no file. Equality and `IN` on an integer divide by its counted NDV, `IS NULL` uses the NULL
@@ -29,8 +29,8 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
     --query_plan_propagate_predicate_across_join=0 --use_statistics=1 --materialize_statistics_on_insert=1
     --explain_query_plan_default=legacy --max_insert_threads=1 --max_threads=1 --max_block_size=1000000
     --allow_insert_into_iceberg=1"
-ON="--use_iceberg_manifest_statistics=1"
-OFF="--use_iceberg_manifest_statistics=0"
+ON="--use_datalake_metadata_statistics=1"
+OFF="--use_datalake_metadata_statistics=0"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
@@ -89,7 +89,7 @@ echo '--- T1: n IS NULL'
 echo 'Expect ~9000: the NULL counts of the manifests, 9000 of the 10000 rows.'
 labels t v 't.n IS NULL' ${ON}
 echo '--- T1: k BETWEEN 1000 AND 8999, every file overlaps'
-echo 'Expect ~7999: interpolated between min 0 and max 9999, so about 8000 of the 10000 rows.'
+echo 'Expect ~8000: interpolated between min 0 and max 9999, so about 8000 of the 10000 rows.'
 labels t v 't.k BETWEEN 1000 AND 8999' ${ON}
 echo "--- T1: s = 'rare'"
 echo 'Expect ~100: a string has no counted NDV, so equality takes the default 1% of 10000 (true 200).'
