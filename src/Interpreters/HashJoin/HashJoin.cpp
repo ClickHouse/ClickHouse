@@ -1727,13 +1727,15 @@ HashJoin::~HashJoin()
     {
         if (build_phase_finished)
         {
-            /// A parallel build of a fixed-key map has nothing to preallocate and leaves no entry, unless it is empty.
-            if (stats_collecting_params.build.isCollectionAndUseEnabled()
-                && ((data->type != Type::two_level_key8 && data->type != Type::two_level_key16) || data->rows_to_join == 0))
+            if (stats_collecting_params.build.isCollectionAndUseEnabled())
             {
+                /// A non-empty parallel build of a fixed-key map has nothing to preallocate, so it only updates an existing entry.
                 /// An empty build is recorded too: its `source_rows = 0` is the estimate of the next run.
+                const bool fixed_key_parallel = data->type == Type::two_level_key8 || data->type == Type::two_level_key16;
                 getHashTablesStatistics<HashJoinEntry>().update(
-                    {.ht_size = getTotalRowCount(), .source_rows = data->rows_to_join}, stats_collecting_params.build);
+                    {.ht_size = getTotalRowCount(), .source_rows = data->rows_to_join},
+                    stats_collecting_params.build,
+                    /*insert=*/!fixed_key_parallel || data->rows_to_join == 0);
             }
 
             if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())

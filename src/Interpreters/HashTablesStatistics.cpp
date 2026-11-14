@@ -31,7 +31,7 @@ std::optional<Entry> HashTablesStatistics<Entry>::getSizeHint(const Params & par
 
 /// Collection and use of the statistics should be enabled.
 template <typename Entry>
-void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params & params)
+void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params & params, bool insert)
 {
     if (!params.isCollectionAndUseEnabled())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
@@ -42,7 +42,7 @@ void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params &
 
     const auto hint = cache->get(params.key);
     // We'll maintain the maximum among all the observed values until another prediction is much lower (that should indicate some change)
-    if (!hint || hint->shouldBeUpdated(new_entry))
+    if (hint ? hint->shouldBeUpdated(new_entry) : insert)
     {
         LOG_TRACE(getLogger("HashTablesStatistics"), "Statistics updated for key={}: {}", params.key, new_entry.dump());
         cache->set(params.key, std::make_shared<Entry>(new_entry));

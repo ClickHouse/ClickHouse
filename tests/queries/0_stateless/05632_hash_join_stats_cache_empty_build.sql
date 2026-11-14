@@ -20,6 +20,10 @@ INSERT INTO lhs16 SELECT number FROM numbers(1000);
 INSERT INTO rhs16 VALUES (0);
 SELECT * FROM lhs16 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs16 WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_empty_cold_uint16' FORMAT Null;
 SELECT * FROM lhs16 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs16 WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_empty_warm_uint16' FORMAT Null;
+-- Then rows: a parallel build forced by `parallel_hash_join_threshold = 0` updates the cached 0 rows, so the next run is parallel
+INSERT INTO rhs16 SELECT number + 1 FROM numbers(3000);
+SELECT * FROM lhs16 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs16 WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS parallel_hash_join_threshold = 0, log_comment = '05632_filled_uint16' FORMAT Null;
+SELECT * FROM lhs16 AS t0 LEFT JOIN (SELECT DISTINCT a FROM rhs16 WHERE a > 0) AS t1 ON t0.a = t1.a SETTINGS log_comment = '05632_after_filled_uint16' FORMAT Null;
 
 CREATE TABLE lhs2 (a String) ENGINE = MergeTree ORDER BY ();
 CREATE TABLE rhs2 (a String, b UInt8) ENGINE = MergeTree ORDER BY ();
@@ -66,7 +70,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05632_empty_cold', '05632_empty_warm', '05632_empty_cold_uint16', '05632_empty_warm_uint16', '05632_one_key', '05632_emptied',
-        '05632_after_empty', '05632_rows_many', '05632_rows_few', '05632_after_rows_few', '05632_half_one', '05632_half_emptied',
-        '05632_half_after', '05632_log', '05632_empty_table', '05632_log_after_empty')
+    AND log_comment IN ('05632_empty_cold', '05632_empty_warm', '05632_empty_cold_uint16', '05632_empty_warm_uint16', '05632_filled_uint16',
+        '05632_after_filled_uint16', '05632_one_key', '05632_emptied', '05632_after_empty', '05632_rows_many', '05632_rows_few',
+        '05632_after_rows_few', '05632_half_one', '05632_half_emptied', '05632_half_after', '05632_log', '05632_empty_table',
+        '05632_log_after_empty')
 ORDER BY event_time_microseconds;

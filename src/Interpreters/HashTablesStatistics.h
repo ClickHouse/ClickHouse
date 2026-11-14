@@ -137,8 +137,8 @@ public:
     /// Collection and use of the statistics should be enabled.
     std::optional<Entry> getSizeHint(const Params & params);
 
-    /// Collection and use of the statistics should be enabled.
-    void update(const Entry & new_entry, const Params & params);
+    /// Collection and use of the statistics should be enabled. Without `insert`, only an existing entry is updated.
+    void update(const Entry & new_entry, const Params & params, bool insert = true);
 
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
 
