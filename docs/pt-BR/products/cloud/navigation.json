@@ -252,8 +252,6 @@
       "group": "Ferramentas e agentes de IA",
       "pages": [
         "pt-BR/products/cloud/features/ai-ml/index",
-        "pt-BR/products/cloud/features/ai-ml/aichat/using-ai-chat",
-        "pt-BR/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
         "pt-BR/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
@@ -261,32 +259,6 @@
           "pages": [
             "pt-BR/products/cloud/features/ai-ml/remote-mcp",
             "pt-BR/products/cloud/features/ai-ml/mcp/remote-mcp"
-          ]
-        },
-        {
-          "group": "ClickHouse Agents",
-          "pages": [
-            "pt-BR/products/cloud/features/ai-ml/agents/index",
-            "pt-BR/products/cloud/features/ai-ml/agents/quickstart",
-            "pt-BR/products/cloud/features/ai-ml/agents/chat",
-            {
-              "group": "Construtor de agentes",
-              "pages": [
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/index",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/model-parameters",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/code-interpreter",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/web-search",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/image-generation",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/vision",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/mcp-servers",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/skills",
-                "pt-BR/products/cloud/features/ai-ml/agents/builder/subagents"
-              ]
-            },
-            "pt-BR/products/cloud/features/ai-ml/agents/prompts",
-            "pt-BR/products/cloud/features/ai-ml/agents/memory",
-            "pt-BR/products/cloud/features/ai-ml/agents/marketplace",
-            "pt-BR/products/cloud/features/ai-ml/agents/sharing-and-access"
           ]
         },
         "pt-BR/products/cloud/features/ai-ml/model-developer-terms"
@@ -356,6 +328,5 @@
       "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
-  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }

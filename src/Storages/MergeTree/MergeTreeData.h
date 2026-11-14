@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <mutex>
 #include <span>
 #include <string_view>
@@ -103,7 +104,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 class UniqueKeyDenseIndexOps;
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 
 namespace ErrorCodes
 {
@@ -376,10 +377,6 @@ public:
     choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
-
-    /// return pair <exists, pointer to part>. Sometimes we may fail to load existing part (network issues, oom and so on),
-    /// in this case pair of <true, nullptr> is returned.
-    std::pair<bool, MutableDataPartPtr> loadDataPartForRemovalIfExists(const String & name, bool ignore_no_such_key = false);
 
     MergeTreeDataPartBuilder getDataPartBuilder(
         const String & name,
