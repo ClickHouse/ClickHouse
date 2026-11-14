@@ -525,6 +525,14 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         }
     }
 
+    if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
+        snapshot_data && snapshot_data->parts)
+    {
+        auto stored_columns = MergeTreeData::getColumnsStoredInAllParts(column_names_and_types, *snapshot_data->parts);
+        if (!stored_columns.empty())
+            column_names_and_types = std::move(stored_columns);
+    }
+
     /// A table expression can resolve to no columns at all, for example a table function over a
     /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
     if (column_names_and_types.empty())

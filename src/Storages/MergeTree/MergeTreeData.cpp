@@ -9907,6 +9907,23 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
     return result;
 }
 
+NamesAndTypesList MergeTreeData::getColumnsStoredInAllParts(const NamesAndTypesList & columns, const RangesInDataParts & parts)
+{
+    /// Parts with the same columns share one interned set of column positions, so each set is checked once.
+    std::unordered_set<const IMergeTreeDataPart::NameToNumber *> part_columns;
+    for (const auto & part : parts)
+        part_columns.insert(&part.data_part->getColumnPositions());
+
+    NamesAndTypesList result;
+    for (const auto & column : columns)
+    {
+        const auto name_in_storage = column.getNameInStorage();
+        if (std::ranges::all_of(part_columns, [&](const auto * positions) { return positions->contains(name_in_storage); }))
+            result.push_back(column);
+    }
+    return result;
+}
+
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
