@@ -307,7 +307,7 @@ GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
         Settings settings;
         try
         {
-            settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            settings.read(in);
             FAIL() << value << " was accepted";
         }
         catch (const Exception & e)
@@ -319,7 +319,7 @@ GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
     const String bytes = wire("60");
     ReadBufferFromString in(bytes);
     Settings settings;
-    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    settings.read(in);
     ASSERT_TRUE(settings.isChanged("max_execution_time"));
     ASSERT_EQ(settings.get("max_execution_time"), Field(Float64(60)));
 }
