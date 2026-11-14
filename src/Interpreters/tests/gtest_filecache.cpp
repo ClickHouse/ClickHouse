@@ -56,6 +56,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BoundedReadBuffer.h>
+#include <IO/DiskCacheProvider.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -4547,3 +4548,154 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
     }
 }
+
+namespace
+{
+
+/// Without a holder: releasing one on the downloader's thread would complete the segment.
+ChainedBuffers bytesAt(size_t offset, const String & data)
+{
+    auto block = std::make_shared<OwnedChainedBuffer>(data.size());
+    memcpy(block->data(), data.data(), data.size());
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{std::move(block), 0, data.size(), offset});
+    return chain;
+}
+
+}
+
+TEST_F(FileCacheTest, TemporarySegmentRemovedAtLastReleaseUnlessUsed)
+{
+    /// A segment created as temporary leaves the cache at its last release, unless a reader or writer
+    /// outside the temporary-cache mode used it.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("temporary_segments", settings);
+    cache->initialize();
+    const auto & user = FileCache::getCommonOrigin();
+
+    CreateFileSegmentSettings temporary;
+    temporary.temporary = true;
+    String data(1_KiB, 'x');
+    /// Fills the whole segment; a temporary-mode writer passes `keep_temporary`.
+    auto fill = [&](const FileCacheKey & key, bool keep_temporary)
+    {
+        auto holder = cache->getOrSet(key, 0, data.size(), data.size(), temporary, 0, user);
+        auto & segment = holder->front();
+        EXPECT_EQ(segment.getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        EXPECT_TRUE(segment.reserve(data.size(), 1000, failure_reason));
+        fs::create_directories(cache->getKeyPath(key, user));
+        segment.write(data.data(), data.size(), 0, keep_temporary);
+        return holder;
+    };
+    auto cached = [&](const FileCacheKey & key) { return !cache->tryGetFileSegmentInfos(key, user.user_id).empty(); };
+
+    const auto unused = FileCacheKey::fromPath("temporary_unused");
+    {
+        auto holder = fill(unused, /*keep_temporary=*/true);
+    }
+    EXPECT_FALSE(cached(unused));
+
+    const auto written = FileCacheKey::fromPath("temporary_written_by_normal_writer");
+    {
+        auto holder = fill(written, /*keep_temporary=*/false);
+    }
+    EXPECT_TRUE(cached(written));
+
+    const auto read = FileCacheKey::fromPath("temporary_read_by_normal_reader");
+    {
+        auto holder = fill(read, /*keep_temporary=*/true);
+        holder->front().increasePriority();
+    }
+    EXPECT_TRUE(cached(read));
+
+    /// Another holder delays the removal until its own release.
+    const auto held = FileCacheKey::fromPath("temporary_held_by_other");
+    {
+        auto holder = fill(held, /*keep_temporary=*/true);
+        auto other = cache->getOrSet(held, 0, data.size(), data.size(), CreateFileSegmentSettings{}, 0, user);
+        holder.reset();
+        EXPECT_TRUE(cached(held));
+    }
+    EXPECT_FALSE(cached(held));
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
+{
+    /// In the temporary-cache mode a segment that the reader created leaves the cache at its last release,
+    /// unless a reader or writer outside the mode used it.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+    FileCacheSettings settings;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::boundary_alignment] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto cache = std::make_shared<FileCache>("disk_cache_provider_temporary", settings);
+    cache->initialize();
+
+    const String data(1_KiB, 'x');
+    FilesystemCacheSettings temporary_settings;
+    temporary_settings.read_if_exists_otherwise_bypass = true;
+    temporary_settings.cache_temporarily = true;
+    DiskCacheProvider temporary(cache, temporary_settings);
+    DiskCacheProvider regular(cache, FilesystemCacheSettings{});
+
+    /// Fills `[0, size)` of the object through a temporary writer and returns its cells.
+    auto fill = [&](const StoredObject & object, size_t size)
+    {
+        auto cells = temporary.resolve(object, 0, ByteRange{0, data.size()});
+        CacheWriter & writer = *cells.back().writer;
+        auto role = writer.takeFillRole();
+        EXPECT_EQ(writer.write(bytesAt(0, data.substr(0, size)), role), size);
+        return cells;
+    };
+    /// Takes no holder: releasing one can be the last release.
+    auto cached = [&](const StoredObject & object)
+    {
+        return !cache->tryGetFileSegmentInfos(FileCacheKey::fromPath(object.remote_path), FileCache::getCommonOrigin().user_id).empty();
+    };
+
+    const StoredObject unused("temporary_unused", "", data.size());
+    fill(unused, data.size());
+    EXPECT_FALSE(cached(unused));
+
+    const StoredObject read_by_normal_reader("temporary_read_by_normal_reader", "", data.size());
+    {
+        auto cells = fill(read_by_normal_reader, data.size());
+        auto normal_cells = regular.resolve(read_by_normal_reader, 0, ByteRange{0, data.size()});
+        EXPECT_EQ(normal_cells.front().reader->read(ByteRange{0, data.size()}).totalBytes(), data.size());
+    }
+    EXPECT_TRUE(cached(read_by_normal_reader));
+
+    const StoredObject held_by_normal_reader("temporary_held_by_normal_reader", "", data.size());
+    {
+        auto cells = fill(held_by_normal_reader, data.size());
+        auto normal_cells = regular.resolve(held_by_normal_reader, 0, ByteRange{0, data.size()});
+        cells.clear();
+        EXPECT_TRUE(cached(held_by_normal_reader));
+    }
+    EXPECT_FALSE(cached(held_by_normal_reader));
+
+    const StoredObject written_by_normal_writer("temporary_written_by_normal_writer", "", data.size());
+    {
+        auto cells = fill(written_by_normal_writer, data.size() / 2);
+        auto normal_cells = regular.resolve(written_by_normal_writer, 0, ByteRange{0, data.size()});
+        CacheWriter & normal_writer = *normal_cells.back().writer;
+        auto role = normal_writer.takeFillRole();
+        ASSERT_TRUE(role);
+        EXPECT_EQ(normal_writer.write(bytesAt(data.size() / 2, data.substr(data.size() / 2)), role), data.size() / 2);
+    }
+    EXPECT_TRUE(cached(written_by_normal_writer));
+}
+

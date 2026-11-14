@@ -28,7 +28,8 @@ public:
         ByteRange range_in_file,
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
-        ReaderAnchorCache * anchors_);
+        ReaderAnchorCache * anchors_,
+        bool counts_hits_ = true);
     ~DiskCacheReader() override;
 
     ByteRange range() const override { return hit_range; }
@@ -46,6 +47,7 @@ private:
     ReaderAnchorCache * anchors = nullptr;
     /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
     bool served = false;
+    bool counts_hits = true;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 

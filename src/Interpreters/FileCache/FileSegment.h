@@ -51,6 +51,8 @@ struct CreateFileSegmentSettings
 {
     FileSegmentKind kind = FileSegmentKind::Regular;
     bool unbounded = false;
+    /// Removed at its last release, unless it was written outside the temporary-cache mode or had a hit (`increasePriority`).
+    bool temporary = false;
 
     CreateFileSegmentSettings() = default;
 
@@ -259,7 +261,8 @@ public:
         FileCacheReserveAhead * reserve_ahead = nullptr);
 
     /// Write data into reserved space.
-    void write(char * from, size_t size, size_t offset_in_file);
+    /// Clears the temporary mark, unless `keep_temporary`.
+    void write(char * from, size_t size, size_t offset_in_file, bool keep_temporary = false);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
@@ -342,6 +345,8 @@ private:
     /// is_unbound == true for temporary data in cache.
     const bool is_unbound;
     const bool background_download_enabled;
+    /// See `CreateFileSegmentSettings::temporary`.
+    std::atomic<bool> is_temporary;
 
     /// Whether the on-disk file is named `<offset>_<size>` (size encoded) rather than `<offset>`.
     /// Only ever transitions false -> true, under `segment_guard`, when the segment becomes
