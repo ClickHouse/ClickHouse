@@ -1,4 +1,8 @@
 <test>
+  <settings>
+    <use_columns_cache>0</use_columns_cache>
+  </settings>
+
   <create_query>create table t_lz4(a UInt64) engine=MergeTree order by tuple()</create_query>
   <create_query>create table t_lz4_norm(a UInt64) engine=MergeTree order by tuple()</create_query>
   <create_query>create table t_lz4_uncomp(a UInt32) engine=MergeTree order by a</create_query>

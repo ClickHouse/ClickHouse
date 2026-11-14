@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
 
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+# The test checks the filesystem cache, so the reads must not be served from the columns cache above it.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --use_columns_cache=0"
 # shellcheck source=./cache.lib
 . "$CUR_DIR"/cache.lib
 

@@ -3,6 +3,9 @@
     The 200 row groups hold disjoint ranges of `t`, not in file order, so the filter and the top-K threshold can skip most of them.
 -->
 <test>
+    <settings>
+        <use_columns_cache>0</use_columns_cache>
+    </settings>
     <fill_query>
         INSERT INTO FUNCTION file('test_parquet_int64_datetime_statistics.parquet', Parquet)
         SELECT toInt64(1700000000 + (number % 100000) + 100000 * ((intDiv(number, 100000) * 37 + 11) % 200)) AS t, toString(number) AS s

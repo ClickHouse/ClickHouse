@@ -2720,11 +2720,12 @@ def test_column_pruning(started_cluster):
     # 128 KiB, which is more than this (much smaller) file, so the whole file would be read and the
     # numbers below would no longer say anything about which columns were fetched.
     footer_read_size = 64 * 1024
+    # The columns cache is disabled so that the column is always read from the file.
 
     query_id = f"query_{TABLE_NAME}"
     assert num_rows * (num_rows - 1) // 2 == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0, input_format_parquet_footer_read_size={footer_read_size}",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0, input_format_parquet_footer_read_size={footer_read_size}, use_columns_cache=0",
             query_id=query_id,
         )
     )

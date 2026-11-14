@@ -19,12 +19,14 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["config.d/backups.xml"],
+            user_configs=["users.d/no_columns_cache.xml"],
             stay_alive=True,
             with_zookeeper=True,
         )
         cluster.add_instance(
             "node_restart",
             main_configs=["config.d/dont_start_broken.xml"],
+            user_configs=["users.d/no_columns_cache.xml"],
             stay_alive=True,
             with_zookeeper=True,
         )

@@ -1,6 +1,7 @@
 <test requires_s3="1" requires_s3_read_dataset="1">
     <!-- Synthetic-IO twin of iceberg_suite_s3_read.xml: add a fixed delay to each HTTP response on the job-local S3 path. -->
     <settings>
+        <use_columns_cache>0</use_columns_cache>
         <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
     </settings>
     <substitutions>

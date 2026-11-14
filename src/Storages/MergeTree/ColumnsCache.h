@@ -325,7 +325,8 @@ public:
     ///
     /// Called periodically by `MemoryWorker`, and by `MemoryTracker` when an allocation is about
     /// to exceed the limit, before it resorts to stopping a query. Returns true if the memory
-    /// usage fits the limit after the resize.
+    /// usage fits the limit after the resize. Does nothing for an allocation that an operation
+    /// of the cache makes in the same thread: it may hold a mutex the resize takes.
     bool autoResize(Int64 memory_usage, size_t memory_limit) override;
 
     /// The size in effect, see `autoResize`; the configured size while the server has memory to spare.
@@ -367,6 +368,18 @@ public:
     /// reader which started after the invalidation writes the same keys, and its entries are the
     /// ones the recheck has to leave alone, see `removeStaleEntries`.
     std::function<void()> on_entries_inserted_for_test;
+
+    /// Test seam: `setMany` calls this after it has checked the residency of an entry it inserted and
+    /// recorded its stripe again, before it checks the next one. Another thread can evict entries there.
+    std::function<void()> on_residency_checked_for_test;
+
+    /// Test seam: `clearAll` calls this after it has cleared a shard and erased its stripes from the
+    /// index, before it clears the next one. A write can record stripes there.
+    std::function<void(size_t)> on_shard_cleared_for_test;
+
+    /// Test seam: `removeTable` and `removePart` call this after they have erased the stripes from the
+    /// index, before they remove the entries from the shards. A write can record stripes there.
+    std::function<void()> on_removal_staged_for_test;
 
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
