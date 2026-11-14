@@ -1,0 +1,75 @@
+---
+sidebarTitle: 'Compute generations'
+slug: /cloud/features/compute-generations
+title: 'ClickHouse compute generations: Gen 2'
+description: 'Compare the Gen 1 and Gen 2 compute generations in ClickHouse Cloud.'
+keywords: ['compute generations', 'Gen 1', 'Gen 2', 'Graviton', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+## Overview {#overview}
+
+ClickHouse Cloud compute now comes in generations. Gen 1 is the standard compute you run today. Gen 2 runs on newer AWS Graviton hardware and delivers higher performance at a higher price. Moving to Gen 2 is optional and set per service. Existing services stay on Gen 1 at their current price.
+
+<PrivatePreviewBadge/>
+
+Gen 2 is available by request, behind a feature flag. Capabilities, regions, pricing, and terms may evolve before general availability.
+
+When a generation is eventually retired, services on it migrate to the newer generation on an announced date.
+
+## Gen 1 and Gen 2 {#gen-1-and-gen-2}
+
+Gen 2 gives roughly 30 to 50% better performance than Gen 1 for the same CPU and memory footprint. It delivers more performance per dollar. Actual results depend on your configuration and workload, so test with your own workloads to verify the effect on cost, performance, or both.
+
+|  | Gen 1 | Gen 2 |
+| --- | --- | --- |
+| Hardware | Standard compute (Intel or Graviton 3) | Latest-generation AWS Graviton (Graviton 4 or newer) |
+| Performance | Baseline | Up to roughly 30 to 50% faster |
+| Price | Standard compute price | Higher than Gen 1 |
+| CPU to memory ratio | 1:4 | 1:4, so no re-sizing needed |
+| Availability | Basic, Scale, and Enterprise tiers, in all regions and clouds | Scale and Enterprise tiers, select AWS regions |
+| Autoscaling and idling | Supported | Coming soon. Manual scaling and scheduled scaling settings are available. |
+
+## Availability {#availability}
+
+Gen 2 is available on the Scale and Enterprise tiers for organizations on AWS in the following regions with confirmed capacity:
+
+- `us-east-1`
+- `us-east-2`
+- `us-west-2`
+- `eu-central-1`
+- `eu-west-1`
+
+More regions, tiers, and clouds are coming. Contact your ClickHouse account team to confirm eligibility and have the feature flag enabled for your organization.
+
+## Hardware allocation {#hardware-allocation}
+
+Gen 2 targets a prioritized list of machine types, starting with the latest Graviton, so your service runs on the best hardware available.
+
+If the preferred hardware is unavailable, ClickHouse allocates each node from the next machine type on the list, so your service keeps running. The service is still billed at the Gen 2 price.
+
+To maximize access to the latest hardware, ClickHouse reserves Gen 2 capacity in advance and offers Gen 2 only in regions with confirmed supply. Availability varies by region and over time.
+
+## Get started {#get-started}
+
+<Steps>
+<Step title="Request access" id="request-access">
+
+Ask your account team to enable Gen 2 for your organization.
+
+</Step>
+<Step title="Create a service" id="create-a-service">
+
+Once enabled, create a service in the ClickHouse Cloud console and select **Gen 2** in the Create service flow. While autoscaling is not supported, you can use scheduled scaling to change the size of your service at specific times to meet workload needs.
+
+</Step>
+<Step title="Upgrade an existing service" id="upgrade-an-existing-service">
+
+To upgrade an existing Gen 1 service to Gen 2, change service settings.
+
+</Step>
+</Steps>
+
+For questions or feedback during Private Preview, contact your account team or [ClickHouse Support](https://clickhouse.com/support/program).

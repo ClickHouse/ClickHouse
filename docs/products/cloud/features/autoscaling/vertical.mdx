@@ -11,6 +11,10 @@ import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadg
 
 <ScalePlanFeatureBadge feature="Automatic vertical scaling"/>
 
+<Note>
+[Gen 2 compute](/products/cloud/features/compute-generations) does not support vertical autoscaling during Private Preview. See the Gen 2 documentation for its supported scaling options.
+</Note>
+
 Scale tier services and Enterprise tier services with standard `1:4` profiles support autoscaling based on CPU and memory usage. Service usage is constantly monitored over a lookback window to make scaling decisions. If the usage rises above or falls below certain thresholds, the service is scaled appropriately to match the demand.
 
 ## Configuring vertical auto scaling {#configuring-vertical-auto-scaling}
