@@ -29,11 +29,9 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
     }
 }
 
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
-    : DataFileStatistics(schema_)
+DataFileStatistics::DataFileStatistics(std::vector<Int64> written_field_ids)
+    : field_ids(std::move(written_field_ids))
 {
-    if (!written_field_ids.empty())
-        field_ids = std::move(written_field_ids);
 }
 
 /// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on

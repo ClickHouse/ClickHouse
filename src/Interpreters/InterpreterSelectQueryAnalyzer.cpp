@@ -188,6 +188,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     const SelectQueryOptions & select_options,
     const QueryTreeNodePtr & single_node_query_tree,
     const BuiltSetsByHashPtr & built_sets,
+    const MakeSingleNodeReadFinder & make_single_node_read_finder,
     const LoggerPtr & logger,
     Args &&... interpreter_args)
 {
@@ -306,6 +307,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.materialize_ctes = false;
     // If the parallel replicas plan will be chosen, the index analysis result will be reused from the single-replica plan.
     optimization_settings.query_plan_optimize_primary_key = false;
+    optimization_settings.find_single_node_read = make_single_node_read_finder(single_node_table_occurrences, replicas_table_occurrences);
     // Depends on PK optimizations that we don't perform here
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
@@ -486,8 +488,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets, const MakeSingleNodeReadFinder & make_single_node_read_finder, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, make_single_node_read_finder, logger, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -510,8 +512,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            storage = storage_,
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets, const MakeSingleNodeReadFinder & make_single_node_read_finder, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, make_single_node_read_finder, logger, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -531,8 +533,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
            select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
-           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
+           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const MakeSingleNodeReadFinder & make_single_node_read_finder, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, make_single_node_read_finder, logger); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
