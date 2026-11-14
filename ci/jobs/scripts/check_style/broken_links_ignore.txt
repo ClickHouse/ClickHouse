@@ -3,4 +3,6 @@
 #
 # One URL prefix per line: a link that starts with any of them is not checked.
 https://storage.azure.com
+# The page is reachable, but CI runners get exactly this error for it: HTTP 520 from Cloudflare.
+https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
 https://oauth2.googleapis.com/token

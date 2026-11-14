@@ -39,6 +39,8 @@
 #include <base/scope_guard.h>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Common/quoteString.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 
@@ -77,6 +79,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
@@ -662,9 +665,51 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
     /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    /// A node that runs a secondary query passes on the current roles of the initial user it received, so that the next
+    /// node takes the row policies of the initial user for these roles too. Without an interserver secret, the query
+    /// runs here as the cluster user, or as the initial user but with its default roles, so the current roles of this
+    /// node are not the ones of the initial query. The received roles are dropped where the initial user is changed
+    /// (`remote` with another user), so they always belong to `initial_user`.
+    std::optional<Strings> received_roles_of_initial_user;
+    if (modified_client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        received_roles_of_initial_user = modified_client_info.current_roles;
+
+    const bool push_roles = context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     modified_client_info.current_roles.reset();
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
-        && modified_client_info.initial_user == modified_client_info.current_user)
+    if (push_roles && received_roles_of_initial_user)
+    {
+        /// The next node may be connected with an interserver secret, which is used only if the initial user is
+        /// the current user (see `Connection::sendQuery`), and then it enables the forwarded roles without checking
+        /// their grants. Roles received on a connection without a secret come from the client, so they must be granted
+        /// to the user here, as `SET ROLE` requires. Otherwise they are used only to find row policies.
+        if (modified_client_info.initial_user == modified_client_info.current_user
+            && context->getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
+        {
+            /// A context may have no user (`SQL SECURITY NONE`, full access): the query does not run with the roles of
+            /// the initial user then, so they are not passed on.
+            const auto user = context->getAccess()->tryGetUser();
+            if (!user)
+            {
+                received_roles_of_initial_user.reset();
+            }
+            else
+            {
+                /// Fail closed: dropping a role could drop a restrictive row policy on the next node.
+                const auto & access_control = context->getAccessControl();
+                for (const auto & role_name : *received_roles_of_initial_user)
+                {
+                    auto role_id = access_control.find<Role>(role_name);
+                    if (!role_id || !user->granted_roles.isGranted(*role_id))
+                        throw Exception(ErrorCodes::ACCESS_DENIED,
+                            "The current role {} of the initial user is not granted to the user {} on this node",
+                            backQuote(role_name), backQuote(user->getName()));
+                }
+            }
+        }
+        modified_client_info.current_roles = std::move(received_roles_of_initial_user);
+    }
+    else if (push_roles && modified_client_info.initial_user == modified_client_info.current_user)
     {
         const auto & access_control = context->getAccessControl();
         Strings current_role_names;
