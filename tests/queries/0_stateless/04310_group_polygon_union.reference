@@ -1,0 +1,21 @@
+two_overlapping
+7
+two_disjoint
+2
+single
+100
+three_overlapping
+8
+ring_input
+7
+multipolygon_input
+1.75
+empty_group
+MULTIPOLYGON()
+group_by
+1	7
+2	175
+containment
+100
+geometric_equivalence
+1

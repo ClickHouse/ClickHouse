@@ -1,0 +1,24 @@
+direct
+1
+shuffled
+1
+merged_states
+1
+merged_deferred_states
+1
+window
+0
+state_round_trip
+1
+exterior_switch
+1
+island
+2	1
+holes_one_ulp_apart
+97	1
+hole_touching_exterior_edge
+3861	1
+holes_enclosing_island
+4090	2
+corner_touching_cells_enclosing_island
+10142	2

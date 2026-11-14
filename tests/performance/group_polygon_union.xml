@@ -1,0 +1,51 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: Iceberg has no type for the geometry columns (`Point`, `Ring`, `Polygon`, `MultiPolygon`); the test measures the aggregate functions, not the storage. -->
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union_strip</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union_grid</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union_corner</drop_query>
+
+    <!-- Overlapping squares along a strip: the general overlay. -->
+    <create_query>CREATE TABLE bench_polygon_union_strip (poly Polygon, group_id UInt32) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_polygon_union_strip SELECT
+            [[(toFloat64(number), 0.), (toFloat64(number + 2), 0.), (toFloat64(number + 2), 2.), (toFloat64(number), 2.), (toFloat64(number), 0.)]],
+            number % 64
+        FROM numbers(400000)
+        SETTINGS max_threads = 1
+    </fill_query>
+
+    <!-- Disjoint squares and triangles on a grid in shuffled order: the disjoint shortcuts. -->
+    <create_query>CREATE TABLE bench_polygon_union_grid (id UInt64, square Polygon, triangle Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_polygon_union_grid
+        WITH toFloat64(number % 200 * 2) AS x, toFloat64(intDiv(number, 200) * 2) AS y
+        SELECT number,
+            [[(x, y), (x, y + 1), (x + 1, y + 1), (x + 1, y), (x, y)]],
+            [[(x, y), (x + 0.5, y + 1), (x + 1, y), (x, y)]]
+        FROM numbers(40000) ORDER BY cityHash64(number)
+        SETTINGS max_threads = 1
+    </fill_query>
+
+    <!-- Squares touching at corners. -->
+    <create_query>CREATE TABLE bench_polygon_union_corner (id UInt64, p Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_polygon_union_corner WITH toFloat64(number) AS x
+        SELECT number, [[(x, x), (x, x + 1), (x + 1, x + 1), (x + 1, x), (x, x)]] FROM numbers(4096)
+        SETTINGS max_threads = 1
+    </fill_query>
+
+    <query>SELECT groupPolygonUnion(poly) FROM bench_polygon_union_strip FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT group_id, groupPolygonUnion(poly) FROM bench_polygon_union_strip GROUP BY group_id FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonUnion(square) FROM bench_polygon_union_grid FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonUnion(triangle) FROM bench_polygon_union_grid FORMAT Null SETTINGS max_threads = 1</query>
+    <query>
+        SELECT groupPolygonUnionMerge(s)
+        FROM (SELECT groupPolygonUnionState(triangle) AS s FROM bench_polygon_union_grid GROUP BY intDiv(id, 64))
+        FORMAT Null SETTINGS max_threads = 1
+    </query>
+    <query>SELECT groupPolygonUnion(p) FROM bench_polygon_union_corner FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union_strip</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union_grid</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union_corner</drop_query>
+</test>
