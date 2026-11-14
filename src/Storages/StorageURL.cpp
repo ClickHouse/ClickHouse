@@ -1691,9 +1691,7 @@ namespace
         {
             /// `current_url_option` is kept raw for requests and schema cache keys, but the diagnostic
             /// path can reach the client, server log and `system.query_log`, so mask credentials here.
-            String masked = current_url_option;
-            maskURICredentials(masked);
-            return masked;
+            return maskURICredentials(current_url_option);
         }
 
         bool supportsLastReadBufferRecreation() const override { return true; }

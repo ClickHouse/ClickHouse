@@ -1638,10 +1638,7 @@ protected:
 
         if (uri.getScheme() != "https")
         {
-            std::string masked_uri = uri.toString();
-            maskURIUserinfo(masked_uri);
-            maskPresignedURLParameters(masked_uri);
-            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", masked_uri);
+            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", maskURICredentials(uri.toString()));
         }
 
         if (!proxy_configuration.isEmpty())
