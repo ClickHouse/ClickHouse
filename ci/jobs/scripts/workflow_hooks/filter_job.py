@@ -328,16 +328,11 @@ SMALL_PR_WORKFLOW = "PR"
 
 # The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
 # symbols, i.e. they are designed for exactly the small PRs this rule skips the
-# untargeted fuzzers on, so they keep running. `SQLLogic test` and `SQLStorm test`
-# run fixed third-party suites unrelated to the change: over the 30 days before
-# 2026-09-19 their only PR failures were infrastructure (`Start ClickHouse`,
-# `Download dataset`), at 108 and 19 minutes per run.
+# untargeted fuzzers on, so they keep running.
 _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.STRESS,
     JobNames.ASTFUZZER,
     JobNames.LACASADELDOLOR,
-    JobNames.SQL_LOGIC_TEST,
-    JobNames.SQL_STORM_TEST,
 )
 
 # Digest inputs of the skippable jobs that must not switch the skip off: a fifth

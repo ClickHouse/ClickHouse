@@ -4832,7 +4832,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_msan, 8/8)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_1_4:
+  integration_tests_arm_binary_1_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4840,8 +4840,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDEvNCk=') }}
-    name: "Integration tests (arm_binary, 1/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDEvNSk=') }}
+    name: "Integration tests (arm_binary, 1/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4869,9 +4869,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 1/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 1/5)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_2_4:
+  integration_tests_arm_binary_2_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4879,8 +4879,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDIvNCk=') }}
-    name: "Integration tests (arm_binary, 2/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDIvNSk=') }}
+    name: "Integration tests (arm_binary, 2/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4908,9 +4908,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 2/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 2/5)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_3_4:
+  integration_tests_arm_binary_3_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4918,8 +4918,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDMvNCk=') }}
-    name: "Integration tests (arm_binary, 3/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDMvNSk=') }}
+    name: "Integration tests (arm_binary, 3/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4947,9 +4947,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 3/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 3/5)' --workflow "MasterCI" --ci --timestamp
 
-  integration_tests_arm_binary_4_4:
+  integration_tests_arm_binary_4_5:
     runs-on: [self-hosted, arm-medium]
     needs:
     - build_arm_binary
@@ -4957,8 +4957,8 @@ jobs:
     - dockers_build_amd
     - dockers_build_arm
     - dockers_build_multiplatform_manifest
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDQvNCk=') }}
-    name: "Integration tests (arm_binary, 4/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDQvNSk=') }}
+    name: "Integration tests (arm_binary, 4/5)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -4986,7 +4986,46 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 4/4)' --workflow "MasterCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 4/5)' --workflow "MasterCI" --ci --timestamp
+
+  integration_tests_arm_binary_5_5:
+    runs-on: [self-hosted, arm-medium]
+    needs:
+    - build_arm_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFybV9iaW5hcnksIDUvNSk=') }}
+    name: "Integration tests (arm_binary, 5/5)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 5/5)' --workflow "MasterCI" --ci --timestamp
 
   stress_test_amd_debug:
     runs-on: [self-hosted, amd-medium]
@@ -6590,10 +6629,11 @@ jobs:
     - integration_tests_amd_tsan_6_8
     - integration_tests_amd_tsan_7_8
     - integration_tests_amd_tsan_8_8
-    - integration_tests_arm_binary_1_4
-    - integration_tests_arm_binary_2_4
-    - integration_tests_arm_binary_3_4
-    - integration_tests_arm_binary_4_4
+    - integration_tests_arm_binary_1_5
+    - integration_tests_arm_binary_2_5
+    - integration_tests_arm_binary_3_5
+    - integration_tests_arm_binary_4_5
+    - integration_tests_arm_binary_5_5
     - integration_tests_arm_binary_distributed_plan_1_4
     - integration_tests_arm_binary_distributed_plan_2_4
     - integration_tests_arm_binary_distributed_plan_3_4
