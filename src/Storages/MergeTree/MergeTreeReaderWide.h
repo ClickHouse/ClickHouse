@@ -95,6 +95,42 @@ private:
 
     FileStreams streams;
 
+    /// A substream of a column resolved once, in `addStreams`: the name of its file in the part (none when the part
+    /// has no file for it), its key in the substreams cache and its slot in `avg_value_size_hints` (none without
+    /// a file, or until `avgValueSizeHintSlot` for a substream resolved later). The callbacks `readData` hands to
+    /// the serialization run for every substream of every granule, and building these names there again
+    /// (`getFileNameForStream`, `getSubstreamsCacheKeyForStream`) dominated the cost of reading a column of many
+    /// substreams.
+    struct ResolvedSubstream
+    {
+        std::optional<String> stream_name;
+        String cache_key;
+        double * avg_value_size_hint = nullptr;
+    };
+
+    /// The resolved substreams of one column by their substreams cache key, the only rendering of a path that is
+    /// injective (several paths may share a file). Filled in `addStreams` and read-only afterwards, so the reading
+    /// threads look paths up without synchronization; a path missing from it (a dynamic subcolumn discovered by
+    /// the prefix) is resolved the slow way by the caller.
+    using ResolvedSubstreams = std::unordered_map<String, ResolvedSubstream>;
+
+    std::unordered_map<String, ResolvedSubstreams> resolved_substreams_by_column;
+
+    /// The resolved substreams of a column, or nullptr for a column `addStreams` wasn't called for.
+    const ResolvedSubstreams * findResolvedSubstreams(const String & column_name) const;
+
+    /// The substream of `substream_path`: its entry in `substreams` (nullptr for a column without entries), or,
+    /// for a path unknown there, `computed` filled on the spot, which must outlive the returned reference.
+    const ResolvedSubstream & resolveSubstream(
+        const ResolvedSubstreams * substreams,
+        const NameAndTypePair & name_and_type,
+        const ISerialization::SubstreamPath & substream_path,
+        ResolvedSubstream & computed) const;
+
+    /// The slot of the average value size hint of `resolved`, or nullptr when the part has no file for it.
+    /// Called on the reading thread only, see the body.
+    double * avgValueSizeHintSlot(const ResolvedSubstream & resolved);
+
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.
     using ColumnReadSelector = std::function<std::optional<bool>(size_t pos)>;
@@ -124,14 +160,15 @@ private:
     /// Only the part's own serialization tells a stream it lacks by design from a subcolumn its type lacks.
     bool isReadWithTypeInPart(const NameAndTypePair & name_and_type) const;
 
+    /// `resolved` is the substream of `substream_path`, see `resolveSubstream`.
     ReadBuffer * getStream(
         bool seek_to_start,
         const ISerialization::SubstreamPath & substream_path,
-        const MergeTreeDataPartChecksums & checksums,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool seek_to_mark,
-        ISerialization::SubstreamsCache & cache);
+        ISerialization::SubstreamsCache & cache,
+        const ResolvedSubstream & resolved);
 
     MergeTreeReaderStream & getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
 
