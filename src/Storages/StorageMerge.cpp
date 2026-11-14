@@ -1184,8 +1184,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     QueryStatusPtr query_status = context->getProcessListElementSafe();
 
-    /// The planner reads this column only to count the rows, see `TableExpressionData::getRowCountOnlyColumnIdentifier`.
-    /// A filter the planner attaches to this read is built later and may read it too.
+    /// The planner reads this column only to count the rows, unless a filter it attaches later reads it too.
     const bool has_planner_filter = query_info.prewhere_info || query_info.row_level_filter || query_info.additional_filter_ast
         || getEffectiveRowPolicyFilter(*storage_merge, context) || context->canUseParallelReplicasCustomKey();
     std::optional<String> row_count_only_column;
@@ -1332,7 +1331,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
-            /// The child's row policy may read the carrier (`extendNames` does not add a name twice), then it is read as usual.
             const String * column_to_skip = row_count_only_column && !(row_policy_data_opt && row_policy_data_opt->readsColumn(*row_count_only_column))
                 ? &*row_count_only_column : nullptr;
 
@@ -1434,7 +1432,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_query_info.row_level_filter = std::move(row_level_filter_copy);
             }
 
-            /// A child counts its rows like `SELECT count()` from it does; a carrier it does not stream gets the default of its type in `convertAndFilterSourceStream`.
             /// `column_names_as_aliases` lists the carrier only when another ALIAS column of the child reads it.
             if (column_to_skip)
                 std::erase(real_column_names, *column_to_skip);
@@ -1489,7 +1486,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 auto carrier = chooseSmallestColumnToReadFromStorage(storage, nested_storage_snapshot, allowed);
                 column_names_to_read.push_back(carrier.name);
 
-                /// A child that is itself a `Merge` table does the same for its children.
                 if (modified_query_info.planner_context && modified_query_info.table_expression)
                 {
                     auto & child_data = modified_query_info.planner_context->getOrCreateTableExpressionData(modified_query_info.table_expression);
