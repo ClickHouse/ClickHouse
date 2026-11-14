@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'échantillonnage des traces', 'tail sampling', "taux d'échantillonnage", 'agrégations pondérées selon le taux d’échantillonnage', 'OpenTelemetry', 'SampleRate']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Les services à fort débit peuvent produire des millions de spans par seconde. Stocker chaque span coûte cher, c’est pourquoi les équipes utilisent couramment le [tail-sampling processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) de l’OpenTelemetry Collector pour ne conserver qu’1 span sur N. Chaque span conservé porte un attribut `SampleRate` qui enregistre N.
 
 Une fois les données échantillonnées, les agrégations naïves sont erronées : `count()` renvoie N fois moins d’événements que ce qui s’est réellement produit, `sum()` et `avg()` sont biaisés, et les percentiles sont faussés. Les tableaux de bord affichent des volumes de requêtes, un débit et des taux d’erreur trompeusement bas.
@@ -51,6 +49,14 @@ Ouvrez votre source de traces dans **Paramètres de la source** et saisissez, da
 
 Par exemple, si votre tail-sampling processor OpenTelemetry écrit ce taux dans `SpanAttributes['SampleRate']` :
 
-<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Champ Expression de taux d’échantillonnage dans les paramètres de la source ClickStack" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Champ Expression de taux d’échantillonnage dans les paramètres de la source ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
+
+</Frame>
+
+</div>
 
 Une fois cette configuration en place, tous les graphiques, tableaux de bord, alertes et panneaux du tableau de bord du service appliquent automatiquement des agrégations pondérées selon le taux d’échantillonnage. Il n’est pas nécessaire de modifier les requêtes individuellement.

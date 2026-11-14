@@ -6,8 +6,6 @@ tags: ['Erros e Exceções']
 keywords: ['OOM', 'limite de memória excedido']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="troubleshooting-out-of-memory-issues">
   ## limite de memória excedido em consulta
 </div>
@@ -66,7 +64,15 @@ impossíveis, por exemplo, em uma subconsulta complexa. Nesse caso, tanto o lado
 são ordenados em disco se não couberem na memória, permitindo que tabelas grandes sejam
 unidas.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Algoritmos de junção" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Algoritmos de junção](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</Frame>
+
+</div>
 
 Desde a versão 20.3, o ClickHouse oferece suporte ao valor auto para a configuração `join_algorithm`.
 Isso instrui o ClickHouse a aplicar uma abordagem adaptativa de junção, em que o hash join

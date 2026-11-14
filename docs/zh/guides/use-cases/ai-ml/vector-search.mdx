@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Info>
   **在本指南中，您将：**
 
@@ -47,7 +45,15 @@ ClickHouse 支持[暴力向量搜索](/zh/reference/engines/table-engines/merget
 我们通过一个简单示例来了解向量搜索的工作原理。
 先来看单词的嵌入向量 (向量表示) ：
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="水果和动物嵌入向量可视化" />
+<div className="ch-image-md">
+
+<Frame>
+
+![水果和动物嵌入向量可视化](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+
+</Frame>
+
+</div>
 
 创建下表，并填入一些示例嵌入向量：
 
@@ -118,7 +124,15 @@ ClickHouse 的向量化查询执行引擎可以在每次操作中将更多值装
   ### 分层可导航小世界 (HNSW)
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="HNSW 分层结构" />
+<div className="ch-image-md">
+
+<Frame>
+
+![HNSW 分层结构](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+
+</Frame>
+
+</div>
 
 HNSW 由多层节点 (向量) 组成。每个节点会被随机分配到一层或多层中，而且出现在更高层的概率会呈指数下降。
 
@@ -154,7 +168,15 @@ HNSW 由多层节点 (向量) 组成。每个节点会被随机分配到一层�
 QBit 是一种新的数据结构，它利用浮点数按位表示的特性来存储 `BFloat16`、`Float32` 和 `Float64` 值。
 QBit 并不是将每个数字作为一个整体存储，而是将这些值拆分为**位平面**：所有第 1 位、所有第 2 位、所有第 3 位，依此类推。
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="QBit 位平面概念" />
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit 位平面概念](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+
+</Frame>
+
+</div>
 
 这种方法解决了传统量化的主要局限。既不需要存储重复数据，也无需承担数值失去意义的风险。由于 QBit 直接基于已存储的数据工作，而不是维护内存中的索引，因此它也避开了 HNSW 的 RAM 瓶颈。
 
@@ -195,7 +217,15 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="QBit 数据结构转置" />
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit 数据结构转置](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+
+</Frame>
+
+</div>
 
 当数据插入 QBit 列时，会经过转置：所有第 1 位排在一起、所有第 2 位排在一起，依此类推。我们将这些称为**组**。
 
@@ -237,13 +267,29 @@ ORDER BY distance;
   ### I/O 优化
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="QBit I/O 优化" />
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit I/O 优化](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+
+</Frame>
+
+</div>
 
 在计算距离之前，必须先从磁盘读取所需数据，然后进行逆转置 (即将分组的位表示还原为完整向量) 。由于 QBit 按精度级别以位转置形式存储数值，ClickHouse 只需读取重建到目标精度所需的高位位平面。
 
 在上面的查询中，我们使用的精度级别为 16。由于 Float64 有 64 位，我们只需读取前 16 个位平面，**跳过 75% 的数据**。
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="QBit 重建" />
+<div className="ch-image-md">
+
+<Frame>
+
+![QBit 重建](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+
+</Frame>
+
+</div>
 
 读取后，我们只根据已加载的位平面重建每个数值的高位部分，未读取的位则保留为 0。
 
@@ -251,7 +297,15 @@ ORDER BY distance;
   ### 计算优化
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="降精度转换比较" />
+<div className="ch-image-md">
+
+<Frame>
+
+![降精度转换比较](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+
+</Frame>
+
+</div>
 
 有人可能会问，将其转换为更小的类型 (如 Float32 或 BFloat16) 是否能消除这部分未使用的空间。确实可以，但如果对每一行都显式进行类型转换，开销会很高。
 

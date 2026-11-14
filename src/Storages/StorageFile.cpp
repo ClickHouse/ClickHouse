@@ -81,6 +81,7 @@
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -112,6 +113,7 @@ namespace ProfileEvents
     extern const Event EngineFileLikeReadFiles;
     extern const Event QueryConditionCacheHits;
     extern const Event QueryConditionCacheMisses;
+    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace fs = std::filesystem;
@@ -661,39 +663,6 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     return file_stat;
 }
 
-/// Sub-second-precision version token for a file, folding in the inode and size so that an
-/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
-/// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
-String computeFileCacheVersionToken(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-    return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        file_stat.st_size);
-}
-
-/// Whether the version token of the file proves a rewrite: the last modification is far enough in
-/// the past that any further write changes the token, see the settle-window comment at the call site.
-bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-    static constexpr Int64 file_version_settle_seconds = 3;
-    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
-}
-
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
 /// local-file read (once right after opening, once right before trusting the read for the Query
 /// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
@@ -735,6 +704,13 @@ void writeQueryConditionCacheEntry(
             table_uuid, cache_file_key, condition_hash, condition, unmatched_ranges, total_row_groups, /*has_final_mark=*/false);
 }
 
+std::unique_ptr<ReadBuffer> wrapReadBufferWithCompression(std::unique_ptr<ReadBuffer> nested_buffer, CompressionMethod method, const ContextPtr & context)
+{
+    const auto & file_settings = context->getSettingsRef();
+    int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max, file_settings[Setting::snappy_mode]);
+}
+
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     const struct stat & file_stat,
@@ -750,10 +726,44 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
+    return wrapReadBufferWithCompression(std::move(nested_buffer), method, context);
+}
 
-    const auto & file_settings = context->getSettingsRef();
-    int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max, file_settings[Setting::snappy_mode]);
+/// Makes `read_buf`, which reads a file inside an archive, decompress it by `method`, like `createReadBuffer` does
+/// for a plain file. The archive reader needs its own buffer back to move to the next file (see `IArchiveReader::nextFile`),
+/// so that buffer is kept in `archive_entry_buf` and the decompressing buffer only references it.
+void decompressArchiveEntryReadBuffer(
+    std::unique_ptr<ReadBuffer> & read_buf,
+    std::unique_ptr<ReadBuffer> & archive_entry_buf,
+    CompressionMethod method,
+    const ContextPtr & context)
+{
+    archive_entry_buf.reset();
+    if (!read_buf || method == CompressionMethod::None)
+        return;
+
+    archive_entry_buf = std::move(read_buf);
+    read_buf = wrapReadBufferWithCompression(wrapReadBufferReference(*archive_entry_buf), method, context);
+}
+
+/// Returns the archive reader's own buffer for `read_buf` made by `decompressArchiveEntryReadBuffer`.
+std::unique_ptr<ReadBuffer> takeArchiveEntryReadBuffer(std::unique_ptr<ReadBuffer> read_buf, std::unique_ptr<ReadBuffer> & archive_entry_buf)
+{
+    if (!archive_entry_buf)
+        return read_buf;
+
+    read_buf.reset();
+    return std::move(archive_entry_buf);
+}
+
+/// The schema and row-count cache key of an archive entry. The same entry gives different rows under
+/// different member compression methods, so the effective method is part of the key.
+std::string getArchiveEntryCacheKey(const std::string & path, std::optional<size_t> position, CompressionMethod method)
+{
+    /// An entry read without decompression keeps the plain key, so the key of a not compressed entry does not change.
+    if (method == CompressionMethod::None)
+        return getArchiveEntryKey(path, position);
+    return getArchiveEntryKey(fmt::format("{}#compression_method={}", path, toContentEncodingName(method)), position);
 }
 
 }
@@ -946,11 +956,13 @@ namespace
         ReadBufferFromArchiveIterator(
             const StorageFile::ArchiveInfo & archive_info_,
             std::optional<String> format_,
+            const String & compression_method_,
             const std::optional<FormatSettings> & format_settings_,
             const ContextPtr & context_)
             : WithContext(context_)
             , archive_info(archive_info_)
             , format(std::move(format_))
+            , compression_method(compression_method_)
             , format_settings(format_settings_)
         {
         }
@@ -963,7 +975,11 @@ namespace
             {
                 for (const auto & archive : archive_info.paths_to_archives)
                 {
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, fmt::format("{}::{}", archive, archive_info.path_in_archive)))
+                    auto cache_key = getArchiveEntryCacheKey(
+                        fmt::format("{}::{}", archive, archive_info.path_in_archive),
+                        std::nullopt,
+                        chooseCompressionMethod(archive_info.path_in_archive, compression_method));
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, cache_key))
                         return {nullptr, cached_schema, format};
                 }
             }
@@ -1025,22 +1041,27 @@ namespace
                         continue;
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
-                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, std::nullopt);
+                    auto method = chooseCompressionMethod(archive_info.path_in_archive, compression_method);
+                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, std::nullopt, method);
                     is_first = false;
 
                     if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                         return {nullptr, cached_schema, format};
+
+                    decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
                 }
                 else
                 {
                     if (last_read_buffer)
                     {
                         file_enumerator = archive_reader->nextFile(std::move(last_read_buffer));
+                        ++current_entry_index;
                     }
                     else
                     {
                         file_enumerator = archive_reader->firstFile();
                         entry_positions.reset();
+                        current_entry_index = 0;
                     }
 
                     if (!file_enumerator)
@@ -1059,6 +1080,7 @@ namespace
                             break;
                         }
 
+                        ++current_entry_index;
                         filename = &file_enumerator->getFileName();
                         entry_position = entry_positions.onEntry(*filename);
                     }
@@ -1070,7 +1092,8 @@ namespace
                     }
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
-                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, entry_position);
+                    auto method = chooseCompressionMethod(*filename, compression_method);
+                    last_read_file_cache_key = getArchiveEntryCacheKey(last_read_file_path, entry_position, method);
                     is_first = false;
 
                     /// If format is unknown we can try to determine it by the file name.
@@ -1092,6 +1115,7 @@ namespace
                     }
 
                     read_buf = archive_reader->readFile(std::move(file_enumerator));
+                    decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
                 }
 
                 break;
@@ -1103,7 +1127,7 @@ namespace
         void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> buffer) override
         {
             if (buffer)
-                last_read_buffer = std::move(buffer);
+                last_read_buffer = takeArchiveEntryReadBuffer(std::move(buffer), archive_entry_read_buffer);
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -1146,15 +1170,32 @@ namespace
                 chassert(current_archive_index > 0 && current_archive_index <= archive_info.paths_to_archives.size());
                 const auto & archive = archive_info.paths_to_archives[current_archive_index - 1];
                 auto archive_reader = createArchiveReader(archive);
-                return archive_reader->readFile(archive_info.path_in_archive, false);
+                std::unique_ptr<ReadBuffer> read_buf = archive_reader->readFile(archive_info.path_in_archive, false);
+                decompressArchiveEntryReadBuffer(
+                    read_buf, archive_entry_read_buffer, chooseCompressionMethod(archive_info.path_in_archive, compression_method), getContext());
+                return read_buf;
             }
 
             chassert(current_archive_index >= 0 && current_archive_index < archive_info.paths_to_archives.size());
             const auto & archive = archive_info.paths_to_archives[current_archive_index];
             auto archive_reader = createArchiveReader(archive);
-            chassert(last_read_buffer);
-            file_enumerator = archive_reader->currentFile(std::move(last_read_buffer));
-            return archive_reader->readFile(std::move(file_enumerator));
+            /// The previous buffer has already consumed some data of the entry, and not every archive reader can rewind it
+            /// (`LibArchiveReader::currentFile` for tar continues where the previous buffer stopped), so the entry is opened
+            /// again from its beginning by enumerating the archive up to it.
+            last_read_buffer.reset();
+            file_enumerator = archive_reader->firstFile();
+            for (size_t i = 0; file_enumerator && i < current_entry_index; ++i)
+            {
+                if (!file_enumerator->nextFile())
+                    file_enumerator.reset();
+            }
+            if (!file_enumerator)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Cannot find entry {} in archive {} to read it again", current_entry_index, archive);
+            auto method = chooseCompressionMethod(file_enumerator->getFileName(), compression_method);
+            std::unique_ptr<ReadBuffer> read_buf = archive_reader->readFile(std::move(file_enumerator));
+            decompressArchiveEntryReadBuffer(read_buf, archive_entry_read_buffer, method, getContext());
+            return read_buf;
         }
 
     private:
@@ -1211,9 +1252,14 @@ namespace
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
         ArchiveEntryPositions entry_positions;
+        /// The 0-based position of the last read entry in enumeration order of the current archive.
+        size_t current_entry_index = 0;
         std::unique_ptr<ReadBuffer> last_read_buffer;
+        /// See `decompressArchiveEntryReadBuffer`.
+        std::unique_ptr<ReadBuffer> archive_entry_read_buffer;
 
         std::optional<String> format;
+        String compression_method;
         const std::optional<FormatSettings> & format_settings;
         std::vector<std::string> paths_for_schema_cache;
     };
@@ -1339,7 +1385,7 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
 
     if (archive_info)
     {
-        ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, format_settings, context);
+        ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, compression_method, format_settings, context);
         if (format)
             return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
 
@@ -1632,10 +1678,12 @@ StorageFileSource::FilesIterator::FilesIterator(
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.assign(filter_sources.size(), archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_,
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filter_sources,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, actions, virtual_columns_, hive_columns_, context_,
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
         }
         else
             deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
@@ -1674,10 +1722,12 @@ String StorageFileSource::FilesIterator::next()
             std::vector<String> archive_member_names;
             if (!archive_member_path.empty())
                 archive_member_names.push_back(archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(
-                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
-                /*format_settings=*/std::nullopt,
-                archive_member_path.empty() ? nullptr : &archive_member_names);
+            VirtualColumnUtils::filterSourcesByIndexes(
+                filtered_files,
+                VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                    filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
+                    /*format_settings=*/std::nullopt,
+                    archive_member_path.empty() ? nullptr : &archive_member_names));
             if (filtered_files.empty())
                 continue;
         }
@@ -1713,7 +1763,8 @@ StorageFileSource::StorageFileSource(
     FormatFilterInfoPtr format_filter_info_,
     LazyFileRegistryPtr lazy_row_index_registry_,
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
-    const UUID & query_condition_cache_table_id_)
+    const UUID & query_condition_cache_table_id_,
+    SplitFilePtr split_file_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -1723,6 +1774,7 @@ StorageFileSource::StorageFileSource(
     , format_filter_info(std::move(format_filter_info_))
     , query_condition_cache_table_id(query_condition_cache_table_id_)
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
+    , split_file(std::move(split_file_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
@@ -1830,7 +1882,21 @@ bool StorageFileSource::canSkipFileByCachedStatistics()
     if (!num_row_groups || !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         return false;
 
-    ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    if (split_file)
+    {
+        /// The source of each bucket counts the row groups of its bucket as pruned, so that the total does not depend
+        /// on which sources read their buckets and which skip them: the statistics kept by the reader of one bucket
+        /// may let the sources of the other buckets, that start later in the same query, skip the file.
+        /// The file is counted as skipped once.
+        const auto * bucket = typeid_cast<const ParquetFileBucketInfo *>(split_file->buckets.at(split_file_bucket).get());
+        if (!bucket)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A bucket of the split Parquet file {} is not a Parquet bucket", current_path);
+        ParquetCachedStatisticsFilter::countSkippedFile(bucket->row_group_ids.size(), /*count_file=*/ split_file_bucket == 0);
+    }
+    else
+    {
+        ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    }
     return true;
 #else
     return false;
@@ -1929,7 +1995,8 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, std::nullopt);
+                        current_archive_entry_cache_key = getArchiveEntryCacheKey(
+                            current_path, std::nullopt, chooseCompressionMethod(*filename_override, storage->compression_method));
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
@@ -1949,6 +2016,9 @@ Chunk StorageFileSource::generate()
 
                             if (auto progress_callback = getContext()->getFileProgressCallback())
                                 progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+
+                            decompressArchiveEntryReadBuffer(
+                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
                         }
                     }
                     else
@@ -2003,7 +2073,8 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, entry_position);
+                        current_archive_entry_cache_key = getArchiveEntryCacheKey(
+                            current_path, entry_position, chooseCompressionMethod(*filename_override, storage->compression_method));
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
@@ -2019,18 +2090,38 @@ Chunk StorageFileSource::generate()
                             read_buf = archive_reader->readFile(std::move(file_enumerator));
                             if (auto progress_callback = getContext()->getFileProgressCallback())
                                 progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+
+                            decompressArchiveEntryReadBuffer(
+                                read_buf, archive_entry_read_buf, chooseCompressionMethod(*filename_override, storage->compression_method), getContext());
                         }
                     }
                 }
                 else
                 {
-                    current_path = files_iterator->next();
+                    if (split_file)
+                    {
+                        split_file_bucket = split_file->next_bucket.fetch_add(1);
+                        current_path = split_file_bucket < split_file->buckets.size() ? split_file->path : String{};
+                    }
+                    else
+                    {
+                        current_path = files_iterator->next();
+                    }
                     current_archive_entry_cache_key.reset();
                     if (current_path.empty())
+                    {
+                        read_buf.reset();
                         return {};
+                    }
 
                     if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
+                        /// The file existed when it was split, and the other buckets may be read already:
+                        /// skipping only this one would return a part of the file.
+                        if (split_file)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was removed while being read. Rerun the query", current_path);
+
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                         {
                             /// The file existed when the TopK key was made, so it has changed since.
@@ -2052,7 +2143,8 @@ Chunk StorageFileSource::generate()
                 }
             }
 
-            if (!read_buf)
+            /// The source of a split file keeps its buffer between buckets but checks the file version for each.
+            if (!read_buf || split_file)
             {
                 struct stat file_stat{};
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
@@ -2077,6 +2169,11 @@ Chunk StorageFileSource::generate()
                 /// rather than risking stale results.
                 current_file_version_settled = isFileCacheVersionTokenSettled(file_stat);
 
+                /// The buckets of a split file describe the version of the file that was split.
+                if (split_file && *current_file_cache_version != split_file->file_cache_version)
+                    throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                        "File {} was modified while being read. Rerun the query", current_path);
+
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                 {
                     /// A skipped file still counts: it may have been emptied after the TopK key was made.
@@ -2099,7 +2196,7 @@ Chunk StorageFileSource::generate()
                     /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
                     read_buf = std::make_unique<EmptyReadBuffer>();
                 }
-                else
+                else if (!read_buf)
                 {
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
 
@@ -2110,9 +2207,14 @@ Chunk StorageFileSource::generate()
                     /// opening: if the token no longer matches what we just opened, it cannot be trusted to
                     /// pin this read's generation, so fail close (the gates below skip both the Query
                     /// Condition Cache lookup and, per the bracketing check further down, its population).
-                    if (!storage->use_table_fd && current_file_version_settled
+                    if (!storage->use_table_fd && (current_file_version_settled || split_file)
                         && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    {
+                        if (split_file)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was modified while being read. Rerun the query", current_path);
                         current_file_version_settled = false;
+                    }
                 }
 
                 checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
@@ -2173,18 +2275,20 @@ Chunk StorageFileSource::generate()
             /// same predicate, and the TopK key of this query (see `TopKQueryConditionCacheKey`), whose
             /// entries only a previous run of the same TopN over the same file set could have written.
             /// A row group may be skipped iff either verdict excludes it.
+            /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
             FileBucketInfoPtr buckets_to_read;
             std::optional<UInt64> plain_condition_hash;
             if (format_filter_info && format_filter_info->condition_hash
-                && (!format_filter_info->top_k_filter
+                && (!format_filter_info->top_k_filter || !format_filter_info->top_k_filter->filter_rows
                     || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
                 plain_condition_hash = format_filter_info->condition_hash;
 
             std::optional<UInt64> top_k_condition_hash = getTopKConditionHashForCurrentFile();
 
             QueryConditionCachePtr query_condition_cache;
+            /// For a split file, the cache was consulted once for all buckets (see `ReadFromFile::trySplitSingleFile`).
             if (object_with_metadata.has_value() && current_file_version_settled && (plain_condition_hash || top_k_condition_hash)
-                && query_condition_cache_table_id != UUIDHelpers::Nil)
+                && query_condition_cache_table_id != UUIDHelpers::Nil && !split_file)
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
@@ -2243,7 +2347,7 @@ Chunk StorageFileSource::generate()
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
-                    std::vector<size_t> matching_row_groups;
+                    RowGroupIndices matching_row_groups;
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
@@ -2311,7 +2415,7 @@ Chunk StorageFileSource::generate()
                     need_only_count);
             }
 
-            input_format->setBucketsToRead(buckets_to_read);
+            input_format->setBucketsToRead(split_file ? split_file->buckets.at(split_file_bucket) : buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
 
             if (need_only_count)
@@ -2445,8 +2549,10 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
+        /// A source reading a bucket of a split file has seen only some of its rows.
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied()
+            && !split_file)
             addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -2479,14 +2585,26 @@ Chunk StorageFileSource::generate()
         if (input_format && current_file_cache_version.has_value() && top_k_query_condition_cache_key)
             checkTopKQueryConditionCacheKeyHolds(fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version));
 
-        if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
+        if (input_format && split_file)
+        {
+            finishReadingSplitFileBucket();
+
+            /// Only the reader of one of the buckets has recorded the statistics, the others do nothing here.
+            if (current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
+                && getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+            {
+                if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                    input_format->cacheFilterColumnStatistics();
+            }
+        }
+        else if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
             {
                 auto buckets_opt = input_format->getMatchedBuckets();
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                if (buckets_opt.has_value() && format_filter_info->top_k_filter)
+                if (buckets_opt.has_value() && format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows)
                 {
                     if (getTopKConditionHashForCurrentFile())
                         pending_top_k_query_condition_cache_entries.push_back(PendingTopKQueryConditionCacheEntry{
@@ -2531,14 +2649,64 @@ Chunk StorageFileSource::generate()
             }
             else
             {
-                file_enumerator = archive_reader->nextFile(std::move(read_buf));
+                file_enumerator = archive_reader->nextFile(takeArchiveEntryReadBuffer(std::move(read_buf), archive_entry_read_buf));
             }
         }
 
-        read_buf.reset();
+        if (!split_file)
+            read_buf.reset();
+        archive_entry_read_buf.reset();
     }
 
     return {};
+}
+
+void StorageFileSource::finishReadingSplitFileBucket()
+{
+    /// The other row groups of the file belong to the other buckets, so they must not be recorded as
+    /// having no matching rows until those buckets are read too. A row group that was
+    /// not assigned to any bucket was skipped by the query condition cache entry for the same condition.
+    bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled
+        && query_condition_cache_table_id != UUIDHelpers::Nil;
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> buckets_opt;
+    if (can_write)
+    {
+        /// Re-stat, to not write an entry derived from bytes the version token no longer describes.
+        if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+            buckets_opt = input_format->getMatchedBuckets();
+        can_write = buckets_opt.has_value();
+    }
+
+    size_t total_row_groups = 0;
+    std::unordered_set<size_t> matched_row_groups;
+    {
+        std::lock_guard lock(split_file->mutex);
+        if (can_write && split_file->can_write_query_condition_cache)
+        {
+            split_file->total_row_groups = buckets_opt->second;
+            split_file->matched_row_groups.insert(buckets_opt->first.begin(), buckets_opt->first.end());
+        }
+        else
+        {
+            split_file->can_write_query_condition_cache = false;
+        }
+
+        ++split_file->buckets_read;
+        if (split_file->buckets_read < split_file->buckets.size() || !split_file->can_write_query_condition_cache)
+            return;
+
+        total_row_groups = split_file->total_row_groups;
+        matched_row_groups = std::move(split_file->matched_row_groups);
+    }
+
+    writeQueryConditionCacheEntry(
+        query_condition_cache_table_id,
+        QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version),
+        *format_filter_info->condition_hash,
+        format_filter_info->filter_actions_dag->dumpNames(),
+        total_row_groups,
+        matched_row_groups,
+        getContext());
 }
 
 std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() const
@@ -2592,12 +2760,18 @@ void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
+    if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
+        return;
+
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
     StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
 }
 
 std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const
 {
+    if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
+        return std::nullopt;
+
     auto & schema_cache = StorageFile::getSchemaCache(getContext());
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
@@ -2848,6 +3022,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
+    if (!top_k_filter->filter_rows)
+        return {};
+
     /// Only plain local files have version tokens. A table without a UUID (the `file` table function, or a
     /// `File` table in a database without UUIDs) keeps its entries under a synthetic `table_id`
     /// (see `QueryConditionCache::getTableIdForFileEntries`), which partitions the TopK entries as well.
@@ -2929,6 +3106,125 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     return key;
 }
 
+StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
+    const FormatFilterInfoPtr & format_filter_info, const UUID & query_condition_cache_table_id, RWLockImpl::LockHolder & read_lock) const
+{
+    const auto & context = getContext();
+
+    /// `parallelize_output_from_storages = 0` asks to read a file by a single stream. A TopN read and
+    /// lazy materialization keep per-file state, that would have to be shared between the buckets.
+    /// Counting rows and taking min / max from statistics read only the metadata.
+    if (max_num_streams < 2 || need_only_count || format_filter_info->min_max_from_statistics
+        || top_k_filter || lazy_row_index_registry
+        || !context->getSettingsRef()[Setting::parallelize_output_from_storages]
+        || storage->use_table_fd || storage->archive_info || storage->distributed_processing
+        || !FormatFactory::instance().checkIfFormatHasSplitter(storage->format_name)
+        || !storage->parallelizeOutputAfterReading(context))
+        return nullptr;
+
+    /// The files left after filtering by `_path` and `_file`, if known in advance.
+    auto files = files_iterator->tryGetFiles();
+    if (!files || files->size() != 1)
+        return nullptr;
+    const String & path = files->front();
+
+    /// The buckets are read by seeking, which is not possible in a compressed file.
+    if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
+        return nullptr;
+
+    /// Wait for a concurrent `INSERT` to finish writing the file (including the footer) before reading
+    /// its metadata, as the sources do. The caller keeps the lock until the sources take their own.
+    read_lock = storage->lockRwlock(RWLockImpl::Read, context);
+
+    /// A file that has disappeared is handled by the source, according to `engine_file_empty_if_not_exists`.
+    struct stat file_stat{};
+    if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || file_stat.st_size == 0)
+        return nullptr;
+
+    auto split_file = std::make_shared<StorageFileSource::SplitFile>();
+    split_file->path = path;
+    split_file->file_cache_version = computeFileCacheVersionToken(file_stat);
+
+    auto read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/ false, /*table_fd=*/ -1, storage->compression_method, context);
+    /// The file may have been rewritten between `stat` and opening it, then the version token does not
+    /// describe what we read. Every source checks the token again when it opens the file.
+    if (!fileCacheVersionTokenStillHolds(path, split_file->file_cache_version))
+        return nullptr;
+
+    /// The same metadata cache key as `StorageFileSource::generate` uses.
+    ObjectMetadata object_metadata;
+    object_metadata.size_bytes = file_stat.st_size;
+    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+    object_metadata.etag = split_file->file_cache_version;
+    std::optional<RelativePathWithMetadata> object_with_metadata(std::in_place, path, std::move(object_metadata));
+
+    static constexpr size_t split_file_buckets_per_stream = 4;
+    split_file->buckets = FormatFactory::instance().getSplitter(storage->format_name)->splitForParallelReading(
+        max_num_streams * split_file_buckets_per_stream,
+        *read_buf,
+        storage->format_settings ? *storage->format_settings : getFormatSettings(context),
+        object_with_metadata,
+        context);
+    if (split_file->buckets.size() < 2)
+        return nullptr;
+
+    /// Consult the query condition cache once for the whole file, rather than in every source, and drop
+    /// the row groups it knows to have no matching rows. See the comments in `StorageFileSource::generate`.
+    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat) && query_condition_cache_table_id != UUIDHelpers::Nil)
+    {
+        if (auto query_condition_cache = context->getQueryConditionCache())
+        {
+            auto matching_marks = query_condition_cache->read(
+                query_condition_cache_table_id,
+                QueryConditionCache::makeFilePartName(path, split_file->file_cache_version),
+                *format_filter_info->condition_hash,
+                /*increment_profile_events=*/ false);
+
+            RowGroupIndices matching_row_groups;
+            VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
+            if (matching_marks)
+            {
+                for (size_t i = 0; i < matching_marks->size(); ++i)
+                    if ((*matching_marks)[i])
+                        matching_row_groups.push_back(i);
+
+                for (const auto & bucket : split_file->buckets)
+                    if (auto filtered_bucket = bucket->filterByMatchingRowGroups(matching_row_groups))
+                        buckets.push_back(std::move(filtered_bucket));
+
+                /// No row group of the file can match: do not split it. Its only source then skips it by the
+                /// same cache entry (and counts it), and still finalizes the file, e.g. renames it according
+                /// to `rename_files_after_processing`, which is done when a source is destroyed.
+                if (buckets.empty())
+                    return nullptr;
+            }
+
+            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+
+            if (matching_marks)
+            {
+                LOG_DEBUG(
+                    getLogger("StorageFile"),
+                    "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
+                    matching_marks->size() - matching_row_groups.size(),
+                    matching_marks->size(),
+                    format_filter_info->filter_actions_dag->dumpNames(),
+                    path);
+
+                /// The readers of the buckets count as pruned only the row groups of their own buckets. When the
+                /// file is not split, the row groups dropped here count as pruned too, by its only reader.
+                /// Only Parquet has a splitter.
+                ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, matching_marks->size() - matching_row_groups.size());
+
+                /// Fewer buckets may be left, and they are still read as a split file.
+                split_file->buckets = std::move(buckets);
+            }
+        }
+    }
+
+    return split_file;
+}
+
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
@@ -2944,9 +3240,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
 
-    Pipes pipes;
-    pipes.reserve(num_streams);
-
     auto ctx = getContext();
 
     /// Set total number of bytes to process. For progress bar.
@@ -2955,7 +3248,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
-    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->need_row_numbers
@@ -2988,6 +3280,22 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info->column_mapper.get(),
             storage->format_settings ? &*storage->format_settings : nullptr);
 
+    /// Held until the sources are constructed, see `trySplitSingleFile`.
+    RWLockImpl::LockHolder split_file_read_lock;
+    auto split_file = trySplitSingleFile(format_filter_info, query_condition_cache_table_id, split_file_read_lock);
+    if (split_file)
+        num_streams = std::min(split_file->buckets.size(), max_num_streams);
+
+    Pipes pipes;
+    pipes.reserve(num_streams);
+
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
+    /// If the sources of a split file get no more than one parsing thread each, let them parse in the
+    /// threads of the pipeline instead. It saves starting a thread pool as large as the pipeline (which
+    /// is noticeable for short queries), and passing every task of the readers between the threads.
+    if (split_file && num_streams >= parser_shared_resources->max_parsing_threads)
+        parser_shared_resources = FormatParserSharedResources::singleThreaded(ctx->getSettingsRef(), num_streams);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         /// In case of reading from fd we have to check whether we have already created
@@ -3010,7 +3318,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info,
             lazy_row_index_registry,
             top_k_query_condition_cache_key,
-            query_condition_cache_table_id);
+            query_condition_cache_table_id,
+            split_file);
 
         pipes.emplace_back(std::move(source));
     }
@@ -3022,6 +3331,16 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
         pipe.resize(resize_to);
+    /// The sources of a split file read whole buckets, and the rows passing a filter may all be in one of them.
+    else if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && split_file && output_ports > 1)
+    {
+        /// The setting's default (24) splits only from 48 streams, but one `Resize` over 16 or 32 streams already slows short queries.
+        static constexpr UInt64 split_file_min_streams_per_resize = 8;
+        pipe.resize(
+            resize_to,
+            /*strict=*/ false,
+            std::min<UInt64>(build_settings.min_outstreams_per_resize_after_split, split_file_min_streams_per_resize));
+    }
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
@@ -3044,7 +3363,7 @@ public:
         ReadFromFormatInfo info_,
         const ContextPtr & context_,
         size_t max_block_size_,
-        std::vector<FileLazyMaterializingRows::FileRows> files_)
+        VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files_)
         : ISource(std::move(header), false)
         , WithContext(context_)
         , storage(std::move(storage_))
@@ -3214,7 +3533,7 @@ private:
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
     size_t max_block_size;
-    std::vector<FileLazyMaterializingRows::FileRows> files;
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files;
     size_t next_file_index = 0;
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -3231,7 +3550,7 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
     const ReadFromFormatInfo & info,
     const ContextPtr & context,
     size_t max_block_size,
-    std::vector<FileLazyMaterializingRows::FileRows> files)
+    VectorWithMemoryTracking<FileLazyMaterializingRows::FileRows> files)
 {
     return std::make_shared<StorageFileLazyRowsSource>(
         std::make_shared<const Block>(info.source_header), storage, info, context, max_block_size, std::move(files));
@@ -3359,6 +3678,17 @@ public:
             return;
 
         finalizeBuffers();
+        releaseBuffers();
+    }
+
+    void onPipelineFinished() override
+    {
+        /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
+        if (isCancelled() && stage != Stage::Exception)
+        {
+            finalizeBuffers();
+            releaseBuffers();
+        }
     }
 
 private:
@@ -3464,6 +3794,12 @@ public:
             format_name,
             context,
             flags);
+    }
+
+    void onPipelineFinished() override
+    {
+        if (isCancelled() && stage != Stage::Exception)
+            PartitionedSink::onFinish();
     }
 
 private:
@@ -3702,6 +4038,8 @@ void registerStorageFile(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     factory.registerStorage(
@@ -3906,9 +4244,9 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`CREATE TABLE ... ENGINE = File` does not support `PARTITION BY`. To write separate files by a partition key, use `INSERT INTO FUNCTION file(...) PARTITION BY` with `{_partition_id}` in the file name. For example, `INSERT INTO FUNCTION file('out_{_partition_id}.csv', 'CSV', 'd Date, v String') PARTITION BY toYYYYMM(d) SELECT ...` writes one file per month, such as `out_202601.csv`. The placeholder is not expanded when reading, so read the files back with a glob, such as `file('out_*.csv')`.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+To read data stored in Hive-style `key=value/` directories, use the [`file`](/reference/functions/table-functions/file#hive-style-partitioning) table function with `use_hive_partitioning = 1`. A filter on a partition column then reads only the matching files.
 
 ## Virtual columns {#virtual-columns}
 

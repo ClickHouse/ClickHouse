@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 --{echoOn}
 SELECT '---map--';
 SELECT arrayMap(x -> 123, emptyArrayUInt8());

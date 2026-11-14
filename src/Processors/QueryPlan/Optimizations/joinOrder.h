@@ -1,14 +1,18 @@
 #pragma once
 
 #include <concepts>
+#include <functional>
 #include <vector>
 #include <Core/Joins.h>
+#include <Core/Names.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <base/types.h>
 #include <Common/EquivalenceClasses.h>
 #include <Common/logger_useful.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -40,7 +44,7 @@ struct DPJoinEntry
     /// NDV-based selectivity of the join predicates, see `SelectivityEstimate::reported_value`; reported by `EXPLAIN` as `estimated (NDV)`.
     double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
-    std::unordered_map<String, ColumnStats> column_stats = {};
+    UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
 
     /// For join nodes
     JoinOperator join_operator;
@@ -50,7 +54,7 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {});
+    DPJoinEntry(size_t id, std::optional<UInt64> rows, UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_ = {});
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
@@ -88,19 +92,19 @@ struct ConflictJoinOp
 
 struct QueryGraph
 {
-    std::vector<RelationStats> relation_stats;
+    VectorWithMemoryTracking<RelationStats> relation_stats;
 
-    std::vector<JoinActionRef> edges;
+    VectorWithMemoryTracking<JoinActionRef> edges;
 
     /// For each of `edges`, the index in `conflict_ops` of the join step whose ON clause it comes
     /// from. An inner join's ON clause is split into conjuncts placed on their own, and a conjunct
     /// placed on its own still has to obey the conflict rules of its join step.
-    std::vector<size_t> edge_conflict_ops;
+    VectorWithMemoryTracking<size_t> edge_conflict_ops;
 
     /// Operators of the original join tree, in tree (not enumeration) order. Populated during
     /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
     /// otherwise. See `ConflictJoinOp`.
-    std::vector<ConflictJoinOp> conflict_ops;
+    VectorWithMemoryTracking<ConflictJoinOp> conflict_ops;
 
     /// When not `NONE`, DPsub builds its reordering constraints from the selected conflict detector
     /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
@@ -124,7 +128,7 @@ struct QueryGraph
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
     /// The relation may be joined (as a singleton side) only against a set that contains all
     /// relations its ON clause depends on; the remaining relations may be joined outside.
-    std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<BitSet, JoinKind>> join_kinds;
 
     /// Predicates from the ON clause of an outer join, mapped to the null-supplying side of that
     /// join (both sides for `FULL`). Such a predicate must be applied in the ON clause of the join
@@ -134,7 +138,7 @@ struct QueryGraph
     /// All other predicates are filters: they may be applied at any step where all their source
     /// relations are available, but they must not be merged into an outer join's ON clause -
     /// they go to the post-join `residual_filter` instead.
-    std::unordered_map<JoinActionRef, BitSet> outer_join_conditions;
+    UnorderedMapWithMemoryTracking<JoinActionRef, BitSet> outer_join_conditions;
 
     /// Relations on the null-supplying side of an outer join that `join_kinds` cannot hold, because
     /// that side has more than one relation. They are kept out of column equivalences like the
@@ -152,7 +156,7 @@ struct QueryGraph
     /// and a graph that only cross products hold together would otherwise fall apart. Each one links
     /// its two sides instead, as a join with selectivity 1: the reordered join it ends up as still has
     /// no condition, so it stays `Cross`.
-    std::vector<std::pair<BitSet, BitSet>> cross_product_links;
+    VectorWithMemoryTracking<std::pair<BitSet, BitSet>> cross_product_links;
 
     /// Column equivalence classes derived from equi-join edges (e.g., A.x = B.x AND B.x = C.x
     /// implies A.x, B.x, C.x are all equivalent). Used by the join order optimizer to detect
@@ -163,6 +167,25 @@ struct QueryGraph
     /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
+
+    /// DPsub chooses between hash and sort-merge joins by the sort order of their inputs; set from the graph's join settings.
+    bool use_interesting_orders = false;
+    /// The order of a sort-merge join result is used by the sort of a later join (`optimize_sorting_by_input_stream_properties`).
+    bool reuse_join_output_order = false;
+    /// A hash join's runtime filter prunes the granules of the probe side by its primary key (`enable_join_runtime_filters_index_analysis`).
+    bool runtime_filter_prunes_probe = false;
+    /// A sort-merge join of inputs read in order by their primary key runs sharded by key ranges (`query_plan_join_shard_by_pk_ranges`).
+    bool shard_merge_by_pk_ranges = false;
+
+    /// How a relation can be read in order: the longest sequence of its `candidates`, and how many of its leading columns
+    /// are the leading primary key columns themselves, which a sharded merge splits by (`optimizeJoinByShards`).
+    struct ReadInOrder
+    {
+        Names prefix;
+        size_t primary_key_prefix = 0;
+    };
+    /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
+    std::function<VectorWithMemoryTracking<ReadInOrder>(const VectorWithMemoryTracking<NameSet> & candidates)> find_read_in_order_prefixes;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
