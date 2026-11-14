@@ -4,6 +4,8 @@ across partitions	[(2,2)]
 across partitions, lazy	1
 tail	[(1,0,1),(1,900,1),(2,0,2)]
 tail, split	1
+nullable, per partition	[1,2]
+nullable, across partitions	[2]
 by key	[(0,2),(250,2),(500,2),(750,2)]
 by key, lazy	1
 no partition	[(0,2)]

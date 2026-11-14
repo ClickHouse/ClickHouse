@@ -38,6 +38,22 @@ FROM (EXPLAIN indexes = 1 SELECT p, k, ver FROM t_lazy_final_tail FINAL WHERE v 
 
 DROP TABLE t_lazy_final_tail;
 
+-- `NULL` keys compare equal, but `assumeNotNull` puts them in the partitions of their nested values.
+DROP TABLE IF EXISTS t_lazy_final_nullable;
+CREATE TABLE t_lazy_final_nullable (n UInt64, k Nullable(UInt64), v UInt8, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) PARTITION BY assumeNotNull(k) ORDER BY (n, k)
+SETTINGS allow_nullable_key = 1, index_granularity = 100, index_granularity_bytes = '10Mi';
+SYSTEM STOP MERGES t_lazy_final_nullable;
+INSERT INTO t_lazy_final_nullable SELECT number, nullIf(toUInt64(1), toUInt64(1)), number = 0, 1 FROM numbers(1000);
+INSERT INTO t_lazy_final_nullable SELECT number, nullIf(toUInt64(2), toUInt64(2)), number = 0, 2 FROM numbers(1000);
+
+SELECT 'nullable, per partition', arraySort(groupArray(ver)) FROM t_lazy_final_nullable FINAL WHERE v = 1
+SETTINGS do_not_merge_across_partitions_select_final = 1;
+SELECT 'nullable, across partitions', arraySort(groupArray(ver)) FROM t_lazy_final_nullable FINAL WHERE v = 1
+SETTINGS do_not_merge_across_partitions_select_final = 0, query_plan_optimize_lazy_final = 0;
+
+DROP TABLE t_lazy_final_nullable;
+
 -- Without a partition key, or with one computed from the primary key, a key is in one partition: lazy FINAL applies.
 DROP TABLE IF EXISTS t_lazy_final_by_key;
 CREATE TABLE t_lazy_final_by_key (k UInt64, v UInt8, ver UInt64)
