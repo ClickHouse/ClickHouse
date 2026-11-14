@@ -964,6 +964,7 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 Access [operator[]](/reference/operators/index#access-operators) can be used with the text index to filter out keys and values.
 The text index is utilized if it uses a [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer on top of the `Map` column, or if it is built on a `mapKeys(map)` or `mapValues(map)` index expression.
 In the former case (`keyValuePairs` tokenizer), direct read can be used, otherwise direct read with hint.
+For `hasToken`, `hasAnyTokens`, `hasAllTokens` and `hasPhrase` on `map['key']`, the tokenizer and postprocessor of a `mapValues(map)` index apply; a `mapKeys(map)` index only skips granules that do not contain the key (the same holds for `JSONAllValues` and `JSONAllPaths` on a JSON path).
 A `keyValuePairs` index also answers `IN` on a map element, as one index lookup per value of the list.
 
 Example:

@@ -17,6 +17,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
@@ -526,7 +527,9 @@ public:
         const auto * filter_node = filter_column_name.empty() ? nullptr : &actions_dag.findInOutputs(filter_column_name);
 
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
-        auto nodes_ptrs = actions_dag.getNodesPointers();
+        /// Children come first, so that the predicate a hint keeps can include the rewrites of its arguments.
+        ActionsDAG::NodeRawConstPtrs nodes_ptrs;
+        visitNodesPostOrder(actions_dag.getNodesPointers(), [&](const ActionsDAG::Node * node) { nodes_ptrs.push_back(node); });
 
         for (const auto * node : nodes_ptrs)
         {
@@ -536,7 +539,13 @@ public:
         }
 
         if (replacements.empty())
+        {
+            /// Remove the nodes of a rewrite that `processTextIndexFunction` dropped.
+            if (actions_dag.getNodes().size() != nodes_ptrs.size())
+                actions_dag.removeUnusedActions(original_inputs);
+
             return std::nullopt;
+        }
 
         for (auto & output : actions_dag.outputs)
         {
@@ -584,6 +593,7 @@ private:
     {
         String index_name;
         const TextIndexReadInfo * info = nullptr;
+        TextSearchQueryPtr search_query;
         /// The virtual column replacing the function. An empty name means the inject-only rewrite (no direct read).
         IndexReadTask::Column virtual_column;
     };
@@ -595,6 +605,8 @@ private:
     UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
     IndexReadTasks index_read_tasks;
+    /// Text-search functions rewritten by `processTextIndexFunction`, by the original node.
+    NodesReplacementMap rewritten_functions;
 
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
@@ -653,20 +665,26 @@ private:
                 continue;
 
             /// The search query is built from the canonicalized subtree, but the rewrites below apply to
-            /// the original node, so check that node as well.
-            if (!text_index_condition.canAnswerFunctionNode(function_node))
+            /// the original node, so check that node as well. A key-existence query does not use the tokenizer argument:
+            /// it is kept for the missing-key check in `processTextIndexFunction`, but adds no hint.
+            const auto function_name = function_node.function_base->getName();
+            const bool can_answer = text_index_condition.canAnswerFunctionNode(function_node);
+            const bool ignores_tokenizer_argument = needApplyTokenizer(function_name) && search_query->getFunctionName() != function_name;
+            if (!can_answer && !ignores_tokenizer_argument)
                 continue;
 
             SelectedCondition condition
             {
                 .index_name = index_name,
                 .info = &info,
+                .search_query = search_query,
                 .virtual_column = {},
             };
 
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise, or if
             /// the query has no virtual column, just inject the tokenizer/preprocessor/postprocessor, same as None mode.
             if (direct_read_from_text_index
+                && can_answer
                 && info.index
                 && !drops_nullable
                 && search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
@@ -706,7 +724,11 @@ private:
         const ActionsDAG::Node * node = &function_node;
 
         if (need_transform_function)
+        {
             node = processTextIndexFunction(*node, selected_conditions, context);
+            if (node != &function_node)
+                rewritten_functions[&function_node] = node;
+        }
 
         if (direct_read_from_text_index)
             node = replaceFunctionsToVirtualColumns(*node, std::move(selected_conditions), context);
@@ -720,7 +742,26 @@ private:
         const VectorWithMemoryTracking<SelectedCondition> & selected_conditions,
         const ContextPtr & context)
     {
-        if (selected_conditions.size() != 1 || function_node.children.size() < 2 || function_node.children.size() > 3)
+        if (function_node.children.size() < 2 || function_node.children.size() > 3)
+            return &function_node;
+
+        auto function_name = function_node.function_base->getName();
+
+        /// A key-existence query (`mapContainsKey`, `JSONPathExists`) comes from an index on the keys or paths,
+        /// not on the searched value, so its transforms do not apply.
+        const SelectedCondition * condition = nullptr;
+        for (const auto & selected_condition : selected_conditions)
+        {
+            if (selected_condition.search_query->getFunctionName() != function_name)
+                continue;
+
+            if (condition)
+                return &function_node;
+
+            condition = &selected_condition;
+        }
+
+        if (!condition)
             return &function_node;
 
         auto new_children = function_node.children;
@@ -736,13 +777,11 @@ private:
         Field needles_field = (*arg_needles->column)[0];
         DataTypePtr needles_type = arg_needles->result_type;
 
-        const auto & condition = selected_conditions.front();
-        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->condition);
+        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition->info->condition);
         auto preprocessor = condition_text.getPreprocessor();
         auto postprocessor = condition_text.getPostprocessor();
         const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         const auto * tokenizer = condition_text.getTokenizer();
-        auto function_name = function_node.function_base->getName();
 
         /// All three transforms follow the index definition, so they apply to every occurrence of the function.
         const bool apply_preprocessor = needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
@@ -925,6 +964,16 @@ private:
         if (!new_function_node->result_type->equals(*function_node.result_type))
             new_function_node = &actions_dag.addCast(*new_function_node, function_node.result_type, "", context);
 
+        /// The other selected conditions are key-existence ones: the index skipped granules and adds hints assuming that
+        /// this predicate and the ones enclosing it are false for a missing key or path. Rewrite only if the value for
+        /// a missing key or path stays the same.
+        if (selected_conditions.size() > 1)
+        {
+            auto default_value = condition_text.evaluateOnDefaultValue(function_node);
+            if (!default_value || default_value != condition_text.evaluateOnDefaultValue(*new_function_node))
+                return &function_node;
+        }
+
         return &actions_dag.addAlias(*new_function_node, function_node.result_name);
     }
 
@@ -1016,8 +1065,9 @@ private:
             for (auto & condition : selected_conditions)
                 children.push_back(add_condition_to_input(condition));
 
+            /// The predicate keeps the rewrites of the text-search functions in its arguments.
             if (!has_exact_search)
-                children.push_back(&function_node);
+                children.push_back(replaceNodes(actions_dag, &function_node, rewritten_functions));
 
             result_node = &actions_dag.addFunction(function_builder, children, "");
         }
