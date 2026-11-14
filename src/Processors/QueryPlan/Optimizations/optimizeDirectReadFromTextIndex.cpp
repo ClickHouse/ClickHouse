@@ -765,20 +765,35 @@ private:
             auto haystack_name = getNameWithoutAliases(haystack);
 
             /// Check that preprocessor contains current expression as its argument.
-            if (hasSubexpression(preprocessor_output, haystack_name))
+            const bool is_index_expression = hasSubexpression(preprocessor_output, haystack_name);
+            const bool is_map_element = !is_index_expression && condition_text.isMapElementValue(*haystack);
+            if (is_index_expression || is_map_element)
             {
                 /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
                 new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
 
+                if (is_map_element)
+                {
+                    const auto element_type = preprocessor->getElementType(new_children[0]->result_type);
+                    if (!element_type->equals(*new_children[0]->result_type))
+                        new_children[0] = &actions_dag.addCast(*new_children[0], element_type, {}, context);
+                }
+
                 if (apply_postprocessor)
                 {
-                    preprocessor_source_ast = preprocessor->getExpressionAST(new_children[0]->result_name);
+                    preprocessor_source_ast = is_map_element
+                        ? preprocessor->getElementExpressionAST(new_children[0]->result_name)
+                        : preprocessor->getExpressionAST(new_children[0]->result_name);
                 }
                 else
                 {
+                    const auto & column_name = new_children[0]->result_name;
+                    const auto & column_type = new_children[0]->result_type;
                     ActionsDAG::NodeRawConstPtrs merged_outputs;
                     actions_dag.mergeNodes(
-                        preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type),
+                        is_map_element
+                            ? preprocessor->getActionsDAGForElement(column_name, column_type)
+                            : preprocessor->getActionsDAGForColumn(column_name, column_type),
                         &merged_outputs);
 
                     chassert(merged_outputs.size() == 1);
@@ -884,13 +899,18 @@ private:
                 /// If the postprocessed token contains separator characters it would be ill-formed as a
                 /// hasToken* needle (BAD_ARGUMENTS / NULL on non-indexed parts in Exact mode), so keep
                 /// the original needle in that case.
-                VectorWithMemoryTracking<String> tokens = postprocessor->processTokens(VectorWithMemoryTracking<String>{needles_field.safeGet<String>()});
-                if (tokens.empty())
-                    needles_field = String{};
-                else if (std::ranges::any_of(tokens.front(), isTokenSeparator))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", tokens.front());
-                else
-                    needles_field = tokens.front();
+                /// An empty needle has no token to postprocess.
+                const String needle = needles_field.safeGet<String>();
+                if (!needle.empty())
+                {
+                    VectorWithMemoryTracking<String> tokens = postprocessor->processTokens(VectorWithMemoryTracking<String>{needle});
+                    if (tokens.empty())
+                        needles_field = String{};
+                    else if (std::ranges::any_of(tokens.front(), isTokenSeparator))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", tokens.front());
+                    else
+                        needles_field = tokens.front();
+                }
             }
             else if (needles_field.getType() == Field::Types::Array)
             {
