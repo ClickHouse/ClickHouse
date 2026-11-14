@@ -286,6 +286,13 @@ public:
     /// Should be called when the last task for the part has finished.
     void clear(size_t part_index);
 
+    /// Whether a result for the part was built and not cleaned up yet.
+    bool hasIndexReadResult(size_t part_index) const
+    {
+        std::shared_lock lock(index_read_result_registry_mutex);
+        return index_read_result_registry.contains(part_index);
+    }
+
     /// Whether index read results may include a skip index part (for any part of the query).
     bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
 
@@ -300,7 +307,7 @@ private:
 
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
     std::unordered_map<size_t, IndexReadResultEntry> index_read_result_registry;
-    SharedMutex index_read_result_registry_mutex;
+    mutable SharedMutex index_read_result_registry_mutex;
 };
 
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
