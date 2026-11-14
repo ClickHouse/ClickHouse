@@ -70,6 +70,7 @@ namespace ErrorCodes
 namespace Setting
 {
 
+extern const SettingsBool cast_keep_nullable;
 extern const SettingsBool enable_positional_arguments_for_projections;
 extern const SettingsBool prefer_column_name_to_alias;
 
@@ -602,15 +603,25 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
     /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
     mut_context->setSetting("optimize_respect_aliases", true);
-    /// Resolve aliases as a reload of the stored definition does, which analyzes it with the server settings.
-    mut_context->setSetting(
-        "prefer_column_name_to_alias", query_context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
+    /// Resolve aliases and `CAST` nullability as a reload of the stored definition does, which analyzes it with the server settings.
+    const auto & global_settings = query_context->getGlobalContext()->getSettingsRef();
+    mut_context->setSetting("prefer_column_name_to_alias", global_settings[Setting::prefer_column_name_to_alias].value);
+    mut_context->setSetting("cast_keep_nullable", global_settings[Setting::cast_keep_nullable].value);
     /// A projection is always calculated locally. With parallel replicas the analysis treats the source as remote
     /// and replaces the right hand side of `GLOBAL IN` in the stored query in place with a temporary table, which
     /// does not exist when the projection is calculated. The context may be the global one (with the settings of the
     /// default profile) when the storage is created or attached, so a session setting cannot prevent it.
     mut_context->setSetting("enable_parallel_replicas", Field(0));
     mut_context->setQueryKindInitial();
+
+    /// The projection writer derives this key in the storage's global context.
+    ContextPtr key_context = query_context->getGlobalContext();
+    if (query_context->isAnalyzingBackgroundExpressions())
+    {
+        auto background_key_context = Context::createCopy(key_context);
+        background_key_context->setAnalyzingBackgroundExpressions(true);
+        key_context = background_key_context;
+    }
 
     bool is_aggregate = false;
     {
@@ -635,7 +646,14 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         /// so the last resolved projection column has aliases fully expanded.
         if (projection_order_by)
         {
-            auto & projection_nodes = query_node.getProjection().getNodes();
+            /// Analyzed with the settings of a reload, so the constants folded into the key get the types the writer derives.
+            auto key_analysis_context = Context::createCopy(key_context);
+            key_analysis_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+            key_analysis_context->setSetting("optimize_respect_aliases", true);
+            key_analysis_context->setSetting("enable_parallel_replicas", Field(0));
+            key_analysis_context->setQueryKindInitial();
+            auto key_query_tree = buildProjectionQueryTree(result.query_ast, analyzer_storage, key_analysis_context);
+            auto & projection_nodes = key_query_tree->as<QueryNode &>().getProjection().getNodes();
             projection_order_by = projection_nodes.back()->toAST(ast_options);
             projection_order_by->setAlias({});
         }
@@ -734,8 +752,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
         const auto virtuals = metadata_snapshot->virtuals;
-        metadata.sorting_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
-        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
+        metadata.sorting_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, key_context);
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, key_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 

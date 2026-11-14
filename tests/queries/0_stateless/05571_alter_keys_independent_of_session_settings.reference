@@ -19,3 +19,28 @@
 3
 -- ReplicatedMergeTree, INSERT after a comment-only ALTER
 3
+-- Projection sorting key, INSERT after the ALTER
+3
+p	3
+-- Projection sorting key, merge after the ALTER
+5	11
+1
+p	5
+-- Projection added by the ALTER, INSERT after it
+3
+p	3
+-- Aggregate projection, an unrelated ALTER is not refused
+1	1
+2	2
+p	2
+-- Projection sorting key, another type-affecting setting, INSERT after the ALTER
+3
+p	3
+-- Projection sorting key with a folded constant, reload after the ALTER
+['plus(_CAST(\'2020-01-01\', \'Date\'), y)']
+['plus(_CAST(\'2020-01-01\', \'Date\'), y)']
+1
+p	3
+-- ReplicatedMergeTree projection, INSERT after a comment-only ALTER
+3
+p	3
