@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
@@ -120,6 +121,43 @@ public:
       */
     QueryTreeNodePtr & getWindowNode() { return children[window_child_index]; }
 
+    /** Check whether the function has an ORDER BY combinator clause.
+      * Example: groupArray(x ORDER BY y LIMIT 10) — the ORDER BY clause is stored as a sort list child.
+      */
+    bool hasOrderByCombinator() const { return children.size() > order_by_columns_child_index; }
+
+    /** Get the ORDER BY combinator sort list (a ListNode of SortNode children).
+      * Valid only when hasOrderByCombinator() is true.
+      */
+    const QueryTreeNodePtr & getOrderByColumnsNode() const { return children.at(order_by_columns_child_index); }
+
+    /** Set the ORDER BY combinator sort list.
+      * The child is appended only when the clause is present, so that the tree hash of
+      * ordinary functions does not depend on the existence of this feature.
+      */
+    void setOrderByColumnsNode(QueryTreeNodePtr order_by_columns_node)
+    {
+        chassert(order_by_columns_node);
+        children.resize(order_by_columns_child_index + 1);
+        children[order_by_columns_child_index] = std::move(order_by_columns_node);
+    }
+
+    /// Remove the ORDER BY combinator sort list and the LIMIT value.
+    void clearOrderByCombinator()
+    {
+        children.resize(children_size);
+        order_by_limit.reset();
+    }
+
+    /** Get the LIMIT N value of the ORDER BY combinator, if specified.
+      * Example: groupArray(x ORDER BY y LIMIT 10) returns 10.
+      */
+    std::optional<UInt64> getOrderByLimit() const { return order_by_limit; }
+
+    /** Set the LIMIT N value of the ORDER BY combinator.
+      */
+    void setOrderByLimit(std::optional<UInt64> limit) { order_by_limit = limit; }
+
     /** Get ordinary function.
       * If function is not resolved or is resolved as non ordinary function nullptr is returned.
       */
@@ -231,11 +269,15 @@ private:
     bool wrap_with_nullable = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
+    /// LIMIT N for ORDER BY combinator: groupArray(x ORDER BY y LIMIT 10).
+    std::optional<UInt64> order_by_limit;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
     static constexpr size_t children_size = window_child_index + 1;
+    /// Optional child, present only when the function has the ORDER BY combinator clause.
+    static constexpr size_t order_by_columns_child_index = children_size;
 };
 
 }

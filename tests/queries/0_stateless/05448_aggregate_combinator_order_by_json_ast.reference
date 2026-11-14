@@ -1,0 +1,5 @@
+SELECT groupArray(x ORDER BY y ASC) FROM t
+SELECT groupArray(x ORDER BY y DESC, z ASC NULLS FIRST LIMIT 3) FROM t
+SELECT groupArray(x ORDER BY y ASC LIMIT 0), sumDistinct(x ORDER BY y ASC LIMIT 1) FROM t
+SELECT quantile(0.5)(x ORDER BY y ASC LIMIT 2) FROM t
+7	1
