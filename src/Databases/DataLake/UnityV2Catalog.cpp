@@ -469,6 +469,14 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
     /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
     /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
     const auto table_type = getTableType(full_table_name);
+
+    /// The data fate on drop is known only for these types.
+    if (!READABLE_TABLE_TYPES.contains(table_type))
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot drop table {}.{} because it has table_type {} in Unity catalog. Droppable table types are: [{}]",
+            namespace_name, table_name, table_type, fmt::join(READABLE_TABLE_TYPES, ", "));
+
     const bool data_will_be_deleted = table_type == "MANAGED";
     if (data_will_be_deleted != delete_data)
         throw DB::Exception(
