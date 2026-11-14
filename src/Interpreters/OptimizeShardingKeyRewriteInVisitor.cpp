@@ -10,6 +10,8 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -278,41 +280,52 @@ public:
                 /// (and the other way around) prune the right shards.
                 const auto & element_types = assert_cast<const DataTypeTuple &>(*constant->getResultType()).getElements();
 
-                Tuple new_tuple;
-                new_tuple.reserve(tuple.size());
-                DataTypes new_element_types;
-                new_element_types.reserve(tuple.size());
                 const bool have_element_types = element_types.size() == tuple.size();
+
+                std::vector<size_t> retained_indices;
+                retained_indices.reserve(tuple.size());
 
                 for (size_t i = 0; i < tuple.size(); ++i)
                 {
                     auto element_type_hint = have_element_types ? getSourceTypeHint(element_types[i]) : nullptr;
                     if (shardContains(tuple[i], name, data, element_type_hint.get()))
-                    {
-                        new_tuple.push_back(tuple[i]);
-                        if (have_element_types)
-                            new_element_types.push_back(element_types[i]);
-                    }
+                        retained_indices.push_back(i);
                 }
 
-                if (new_tuple.empty())
-                {
-                    new_tuple.push_back(tuple.back());
-                    if (have_element_types)
-                        new_element_types.push_back(element_types.back());
-                }
+                if (retained_indices.empty())
+                    retained_indices.push_back(tuple.size() - 1);
 
-                if (new_tuple.size() == tuple.size())
+                if (retained_indices.size() == tuple.size())
                     return;
 
-                /// Keep the element types: a value whose type does not survive a literal round trip - such as
-                /// `UUID2`, which is formatted with `UUID` semantics unless the constant carries its type - would
-                /// otherwise be sent to the shard as a different value.
                 if (!have_element_types)
+                {
+                    Tuple new_tuple;
+                    new_tuple.reserve(retained_indices.size());
+                    for (size_t i : retained_indices)
+                        new_tuple.push_back(tuple[i]);
                     arguments[1] = std::make_shared<ConstantNode>(std::move(new_tuple));
+                }
                 else
+                {
+                    /// Build the new constant from the retained subcolumns of the original typed column rather
+                    /// than from `Field`s: a `Field` loses the active alternative of a `Variant` (a value stored
+                    /// under `UUID2` in `Variant(UUID, UUID2)` would be reinserted as `UUID`) and the nested types
+                    /// of a `Dynamic`, which would send a different value to the shard.
+                    const auto & tuple_column = assert_cast<const ColumnTuple &>(constant->getColumn()->getDataColumn());
+                    Columns new_element_columns;
+                    DataTypes new_element_types;
+                    new_element_columns.reserve(retained_indices.size());
+                    new_element_types.reserve(retained_indices.size());
+                    for (size_t i : retained_indices)
+                    {
+                        new_element_columns.push_back(tuple_column.getColumnPtr(i));
+                        new_element_types.push_back(element_types[i]);
+                    }
+                    auto new_column = ColumnConst::create(ColumnTuple::create(std::move(new_element_columns)), 1);
                     arguments[1] = std::make_shared<ConstantNode>(
-                        Field(std::move(new_tuple)), std::make_shared<DataTypeTuple>(std::move(new_element_types)));
+                        std::move(new_column), std::make_shared<DataTypeTuple>(std::move(new_element_types)));
+                }
                 rerunFunctionResolve(function_node, getContext());
             }
         }
