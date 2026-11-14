@@ -3228,28 +3228,80 @@ bool PostgreSQLReplicationHandler::tryRemoveOwnReplicaRegistration(const zkutil:
     /// the drop path are fail-close, and the rollback caller catches).
     const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
 
-    String registered_owner;
-    if (!zookeeper->tryGet(replica_path, registered_owner))
-        return true;
-
-    if (registered_owner != coordination_replica_owner)
+    while (true)
     {
-        LOG_WARNING(log,
-            "Not removing the replica registration node {}: it belongs to another replica that resolved "
-            "materialized_postgresql_replica_name to the same value '{}'",
-            replica_path, coordination_replica_name);
-        return false;
+        Coordination::Stat replica_stat;
+        String registered_owner;
+        if (!zookeeper->tryGet(replica_path, registered_owner, &replica_stat))
+            return true;
+
+        if (registered_owner != coordination_replica_owner)
+        {
+            LOG_WARNING(log,
+                "Not removing the replica registration node {}: it belongs to another replica that resolved "
+                "materialized_postgresql_replica_name to the same value '{}'",
+                replica_path, coordination_replica_name);
+            return false;
+        }
+
+        /// The registration changed between the read and the removal: re-check its owner.
+        if (tryRemoveRegistrationWithPendingRecreation(zookeeper, replica_path, replica_stat.version)
+            == Coordination::Error::ZBADVERSION)
+            continue;
+
+        return true;
     }
+}
 
+
+Coordination::Error PostgreSQLReplicationHandler::tryRemoveRegistrationWithPendingRecreation(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, int32_t replica_version)
+{
     /// An unregistered replica never completes a pending recreation of its nested tables, which would block the
-    /// snapshot of the remaining replicas.
-    removePendingNestedRecreation(zookeeper);
+    /// snapshot of the remaining replicas, so the record goes together with the registration. Both are removed in
+    /// one multi-request: if the record were removed first and the removal of the registration then failed, the
+    /// replica would stay registered without the fence. The other replicas could then reload and publish a new
+    /// snapshot and drop their copies (this replica's registration keeps the shared slot and marker alive), and a
+    /// later retry of this replica would resume from them into its empty replacement.
+    const String record_path = getOwnPendingNestedRecreationPath();
+    while (true)
+    {
+        const bool has_record = zookeeper->exists(record_path);
 
-    if (auto code = zookeeper->tryRemove(replica_path);
-        code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw zkutil::KeeperException::fromPath(code, replica_path);
+        Coordination::Requests ops;
+        if (has_record)
+            ops.emplace_back(zkutil::makeRemoveRequest(record_path, -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(replica_path, replica_version));
+        Coordination::Responses responses;
+        const auto code = zookeeper->tryMulti(ops, responses);
 
-    return true;
+        if (code == Coordination::Error::ZOK)
+        {
+            if (has_record)
+                LOG_INFO(log, "Removed the pending recreation of the nested tables of replica '{}'", coordination_replica_name);
+            return code;
+        }
+
+        const size_t failed_op = zkutil::getFailedOpIndex(code, responses);
+        const size_t registration_op = has_record ? 1 : 0;
+
+        /// The record appeared or disappeared since the check above; nothing was removed.
+        if (has_record && failed_op == 0 && code == Coordination::Error::ZNONODE)
+            continue;
+
+        if (failed_op == registration_op && code == Coordination::Error::ZNONODE)
+        {
+            /// Not registered anymore, so nothing else would ever remove the record.
+            removePendingNestedRecreation(zookeeper);
+            return code;
+        }
+
+        /// The registration changed since the caller read it. Nothing was removed; the caller re-reads it.
+        if (failed_op == registration_op && code == Coordination::Error::ZBADVERSION)
+            return code;
+
+        throw zkutil::KeeperMultiException(code, ops, responses);
+    }
 }
 
 
@@ -3518,11 +3570,8 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast(bool keep_regis
                 /// removing this node may leave the parent empty, making this replica the last one out.
                 /// A pending recreation of this replica's nested tables will never complete, and it would block
                 /// the snapshot of the remaining replicas.
-                removePendingNestedRecreation(zookeeper);
-                if (const auto remove_code = zookeeper->tryRemove(replica_path, replica_stat.version);
-                    remove_code != Coordination::Error::ZOK && remove_code != Coordination::Error::ZNONODE
-                    && remove_code != Coordination::Error::ZBADVERSION)
-                    throw zkutil::KeeperException::fromPath(remove_code, replica_path);
+                /// Both are removed atomically (see `tryRemoveRegistrationWithPendingRecreation`).
+                tryRemoveRegistrationWithPendingRecreation(zookeeper, replica_path, replica_stat.version);
                 continue;
             }
 

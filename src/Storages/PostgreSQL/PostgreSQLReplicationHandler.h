@@ -389,6 +389,13 @@ private:
     /// already-absent node counts as removed. Throws on Keeper errors.
     bool tryRemoveOwnReplicaRegistration(const zkutil::ZooKeeperPtr & zookeeper);
 
+    /// Removes the registration node `replica_path` (expected at `replica_version`) together with this replica's
+    /// pending recreation record in one multi-request. Returns `ZOK`, `ZNONODE` (the registration is already gone;
+    /// the record is removed anyway) or `ZBADVERSION` (the registration changed; nothing was removed). Throws on
+    /// other Keeper errors.
+    Coordination::Error tryRemoveRegistrationWithPendingRecreation(
+        const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, int32_t replica_version);
+
     /// True if any of this replica's nested tables has already been created (owns a copy of the shared
     /// replicated data). Used on the register-first error path to decide whether the registration may be undone.
     bool hasAnyNestedTable() const;
