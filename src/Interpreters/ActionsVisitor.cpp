@@ -1591,7 +1591,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         && !(canContainNull(*right_array_type->getNestedType())
                             && !isArray(removeNullable(right_array_type->getNestedType()))
                             && !isMap(removeNullable(right_array_type->getNestedType()))
-                            && !isStringOrFixedString(removeNullable(right_array_type->getNestedType()))))
+                            && !isStringOrFixedString(removeNullable(right_array_type->getNestedType()))
+                            && !tryGetLeastSupertype(DataTypes{left_argument_type, right_argument_type})))
                         right_argument_is_array = false;
                 }
 

@@ -3317,7 +3317,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const auto * lhs_array = typeid_cast<const DataTypeArray *>(in_first_argument->getResultType().get());
                         if (rhs_array && lhs_array
                             && rhs_array->getNumberOfDimensions() == lhs_array->getNumberOfDimensions()
-                            && !isIncompatibleNullableScalarForComplexIn(rhs_array->getNestedType()))
+                            && !(isIncompatibleNullableScalarForComplexIn(rhs_array->getNestedType())
+                                && !tryGetLeastSupertype(DataTypes{in_first_argument->getResultType(), non_const_set_candidate->getResultType()})))
                         {
                             auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                             node = buildScalarInComparison(
