@@ -3164,18 +3164,20 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 {
                     auto result_exact_range = result_range;
                     if (result_exact_range.begin < result_exact_range.end &&
-                        check_in_range({result_exact_range.begin, result_exact_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
+                        check_in_range({result_exact_range.begin, result_exact_range.begin + 1},
+                            BoolMask::consider_only_can_be_false_or_null).canBeFalseOrNull())
                         ++result_exact_range.begin;
 
                     if (result_exact_range.begin < result_exact_range.end &&
-                        check_in_range({result_exact_range.end - 1, result_exact_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
+                        check_in_range({result_exact_range.end - 1, result_exact_range.end},
+                            BoolMask::consider_only_can_be_false_or_null).canBeFalseOrNull())
                         --result_exact_range.end;
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
                         const size_t num_unevaluable_before = KeyCondition::getNumUnevaluableChainApplications();
-                        const bool exact_range_can_be_false
-                            = check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false;
+                        const bool exact_range_can_be_false_or_null
+                            = check_in_range(result_exact_range, BoolMask::consider_only_can_be_false_or_null).canBeFalseOrNull();
                         /// A monotonic function chain that could not be evaluated on the range answers "unknown":
                         /// an over-approximation that supports no exactness claim and contradicts none either.
                         const bool exact_range_unevaluable
@@ -3185,7 +3187,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         {
                             /// Neither an exact range nor an inconsistency.
                         }
-                        else if (exact_range_can_be_false)
+                        else if (exact_range_can_be_false_or_null)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
                             /// range doesn't seem to be continuous. Something's broken - most likely a
