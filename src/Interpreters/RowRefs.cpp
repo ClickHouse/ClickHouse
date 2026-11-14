@@ -19,6 +19,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -368,22 +369,40 @@ static void addLiveRowsBytes(StoredColumnsIndex::EmitColumn & emit_column, const
     emit_column.emit_rows += block.selector.size();
 }
 
-/// The join emits a `ColumnReplicated` materialized, so each row the block's selector keeps counts in full.
+/// The join emits a `ColumnReplicated` materialized. Takes the largest of: one row sized from each of `samples` equal
+/// ranges of the kept rows (weights values by their references), the mean nested value, and the column's compact share.
 static void addLiveReplicatedRowsBytes(
     StoredColumnsIndex::EmitColumn & emit_column, const StoredBlock & block, const ColumnReplicated & column)
 {
+    static constexpr size_t max_sampled_rows = 32;
+    const size_t rows = block.selector.size();
+    const size_t block_rows = block.blockRows();
+    if (rows == 0 || block_rows == 0)
+        return;
+
     const IColumn & nested = *column.getNestedColumn();
     const ColumnIndex & indexes = column.getIndexes();
-    PaddedPODArray<UInt64> references(nested.size(), 0);
-    if (block.selector.size() == indexes.size())
-        indexes.countRowsInIndexedData(references);
-    else
-        for (size_t row : block.selector)
-            ++references[indexes.getIndexAt(row)];
-    for (size_t i = 0; i < references.size(); ++i)
-        if (references[i])
-            emit_column.emit_bytes += references[i] * nested.byteSizeAt(i);
-    emit_column.emit_rows += block.selector.size();
+    const size_t samples = std::min(rows, max_sampled_rows);
+    size_t sampled_bytes = 0;
+    size_t prev_index = std::numeric_limits<size_t>::max();
+    size_t prev_bytes = 0;
+    for (size_t i = 0; i < samples; ++i)
+    {
+        const size_t begin = i * rows / samples;
+        const size_t end = (i + 1) * rows / samples;
+        const size_t index = indexes.getIndexAt(block.selector[begin + intHash64(i) % (end - begin)]);
+        if (index != prev_index)
+        {
+            prev_index = index;
+            prev_bytes = nested.byteSizeAt(index);
+        }
+        sampled_bytes += prev_bytes;
+    }
+    const size_t sampled_estimate = sampled_bytes / samples * rows + sampled_bytes % samples * rows / samples;
+    const size_t mean_estimate = nested.byteSize() / std::max<size_t>(1, nested.size()) * rows;
+    const size_t compact_estimate = column.byteSize() / block_rows * rows;
+    emit_column.emit_bytes += std::max({sampled_estimate, mean_estimate, compact_estimate});
+    emit_column.emit_rows += rows;
 }
 
 void StoredColumnsIndex::resolveEmitColumns(

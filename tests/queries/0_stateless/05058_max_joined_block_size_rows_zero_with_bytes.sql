@@ -94,3 +94,66 @@ FROM
 )
 SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
          enable_lazy_columns_replication = 1, join_algorithm = 'hash';
+
+-- Right values alternate between empty and 4 KiB, two copies of each: a sample of the stored rows taken
+-- at a fixed stride sees only one of the two widths.
+SELECT max(chunk_bytes) < 4 * 65536, sum(chunk_rows)
+FROM
+(
+    SELECT sum(b) AS chunk_bytes, count() AS chunk_rows
+    FROM
+    (
+        SELECT blockNumber() AS bn, byteSize(r.v) AS b
+        FROM (SELECT number % 64 AS k FROM numbers(4096)) AS l
+        INNER JOIN
+        (
+            SELECT number AS k, if(number % 2, rightPad('', 4096, 'x'), '') AS v
+            FROM numbers(64) ARRAY JOIN range(2) AS n
+        ) AS r ON l.k = r.k
+    )
+    GROUP BY bn
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         enable_lazy_columns_replication = 1, join_algorithm = 'hash';
+
+-- Same with every twelfth value wide: a sample can miss all of them, the mean of the stored values cannot.
+SELECT max(chunk_bytes) < 4 * 65536, sum(chunk_rows)
+FROM
+(
+    SELECT sum(b) AS chunk_bytes, count() AS chunk_rows
+    FROM
+    (
+        SELECT blockNumber() AS bn, byteSize(r.v) AS b
+        FROM (SELECT number % 64 AS k FROM numbers(4096)) AS l
+        INNER JOIN
+        (
+            SELECT number AS k, if(number % 12 = 3, rightPad('', 4096, 'x'), '') AS v
+            FROM numbers(64) ARRAY JOIN range(2) AS n
+        ) AS r ON l.k = r.k
+    )
+    GROUP BY bn
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         enable_lazy_columns_replication = 1, join_algorithm = 'hash';
+
+-- One 4 KiB value replicated 1000 times among 63 empty ones: the mean of the stored values is small, only a sample
+-- of the stored rows, which weights each value by its copies, sees that nearly every row is wide.
+SELECT max(chunk_bytes) < 4 * 65536, sum(chunk_rows)
+FROM
+(
+    SELECT sum(b) AS chunk_bytes, count() AS chunk_rows
+    FROM
+    (
+        SELECT blockNumber() AS bn, byteSize(r.v) AS b
+        FROM (SELECT number % 1000 AS k FROM numbers(4096)) AS l
+        INNER JOIN
+        (
+            SELECT n AS k, v
+            FROM (SELECT number, if(number = 0, rightPad('', 4096, 'x'), '') AS v FROM numbers(64))
+            ARRAY JOIN range(if(number = 0, 1000, 1)) AS n
+        ) AS r ON l.k = r.k
+    )
+    GROUP BY bn
+)
+SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
+         enable_lazy_columns_replication = 1, join_algorithm = 'hash';
