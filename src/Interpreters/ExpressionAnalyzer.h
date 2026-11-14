@@ -127,7 +127,8 @@ public:
     /// If add_aliases, only the calculated values in the desired order and add aliases.
     ///     If also remove_unused_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ActionsDAG getActionsDAG(bool add_aliases, bool remove_unused_result = true);
+    /// With `no_makeset_for_subqueries`, an `IN` with a subquery or a table on the right builds no set; only its type is resolved.
+    ActionsDAG getActionsDAG(bool add_aliases, bool remove_unused_result = true, bool no_makeset_for_subqueries = false);
     ExpressionActionsPtr getActions(bool add_aliases, bool remove_unused_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
     /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
