@@ -284,6 +284,7 @@ void CSVFormatReader::skipHeaderRow()
 template <bool is_header>
 VectorWithMemoryTracking<String> CSVFormatReader::readRowImpl()
 {
+    skipComments();
     VectorWithMemoryTracking<String> fields;
     do
     {
@@ -463,13 +464,77 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
     return false;
 }
 
+static void skipCommentLine(PeekableReadBuffer & buf, bool allow_cr_end_of_line)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = allow_cr_end_of_line
+            ? find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end())
+            : find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\n')
+        {
+            ++buf.position();
+            return;
+        }
+        if (*buf.position() == '\r')
+        {
+            ++buf.position();
+            if (!buf.eof() && *buf.position() == '\n')
+                ++buf.position();
+            return;
+        }
+    }
+}
+
+void CSVFormatReader::skipComments()
+{
+    if (format_settings.csv.comment_prefix.empty())
+        return;
+
+    while (!buf->eof())
+    {
+        buf->setCheckpoint();
+        bool match = true;
+        for (char c : format_settings.csv.comment_prefix)
+        {
+            if (buf->eof() || *buf->position() != c)
+            {
+                match = false;
+                break;
+            }
+            ++buf->position();
+        }
+
+        if (!match)
+        {
+            buf->rollbackToCheckpoint(true);
+            return;
+        }
+
+        buf->dropCheckpoint();
+        skipCommentLine(*buf, format_settings.csv.allow_cr_end_of_line);
+    }
+}
+
+void CSVFormatReader::skipRowBetweenDelimiter()
+{
+    skipComments();
+}
+
 void CSVFormatReader::skipPrefixBeforeHeader()
 {
+    skipComments();
     for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
     {
         if (buf->eof())
             break;
         readRow();
+        skipComments();
     }
 }
 
@@ -481,16 +546,25 @@ void CSVFormatReader::setReadBuffer(ReadBuffer & in_)
 
 bool CSVFormatReader::checkForSuffix()
 {
-    if (!format_settings.csv.skip_trailing_empty_lines)
-        return buf->eof();
+    if (format_settings.csv.skip_trailing_empty_lines)
+    {
+        PeekableReadBufferCheckpoint checkpoint(*buf);
+        while (true)
+        {
+            skipComments();
+            if (buf->eof())
+                return true;
+            if (checkChar('\n', *buf) || checkChar('\r', *buf))
+                continue;
+            break;
+        }
 
-    PeekableReadBufferCheckpoint checkpoint(*buf);
-    while (checkChar('\n', *buf) || checkChar('\r', *buf));
-    if (buf->eof())
-        return true;
+        buf->rollbackToCheckpoint();
+        return false;
+    }
 
-    buf->rollbackToCheckpoint();
-    return false;
+    skipComments();
+    return buf->eof();
 }
 
 bool CSVFormatReader::checkForEndOfRow()
@@ -515,6 +589,7 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 
 std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
+    reader.skipComments();
     if (buf.eof())
         return {};
 
@@ -605,6 +680,7 @@ If input data contains only ENUM ids, it's recommended to enable the setting [in
 | [input_format_csv_arrays_as_nested_csv](/reference/settings/formats/input-format#input_format_csv_arrays_as_nested_csv)                                   | when reading Array from CSV, expect that its elements were serialized in nested CSV and then put into string.      | `false` |                                                                                                                                                                                              |
 | [output_format_csv_crlf_end_of_line](/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line)                                         | if it is set to true, end of line in CSV output format will be `\r\n` instead of `\n`.                             | `false` |                                                                                                                                                                                              |
 | [input_format_csv_skip_first_lines](/reference/settings/formats/input-format#input_format_csv_skip_first_lines)                                           | skip the specified number of lines at the beginning of data.                                                       | `0`     |                                                                                                                                                                                              |
+| [input_format_csv_comment_prefix](/reference/settings/formats/input-format#input_format_csv_comment_prefix)                                                 | prefix of lines that should be skipped as comments.                                                                 | `""`    |                                                                                                                                                                                              |
 | [input_format_csv_detect_header](/reference/settings/formats/input-format#input_format_csv_detect_header)                                                 | automatically detect header with names and types in CSV format.                                                    | `true`  |                                                                                                                                                                                              |
 | [input_format_csv_skip_trailing_empty_lines](/reference/settings/formats/input-format#input_format_csv_skip_trailing_empty_lines)                         | skip trailing empty lines at the end of data.                                                                      | `false` |                                                                                                                                                                                              |
 | [input_format_csv_trim_whitespaces](/reference/settings/formats/input-format#input_format_csv_trim_whitespaces)                                           | trim spaces and tabs in non-quoted CSV strings.                                                                    | `true`  |                                                                                                                                                                                              |
@@ -936,6 +1012,8 @@ void registerCSVSchemaReader(FormatFactory & factory)
         {
             String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
             result += fmt::format(", skip_first_lines={}", settings.csv.skip_first_lines);
+            if (!settings.csv.comment_prefix.empty())
+                result += fmt::format(", comment_prefix={}", settings.csv.comment_prefix);
             if (!with_names)
                 result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header);
             return result;

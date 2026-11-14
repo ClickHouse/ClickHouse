@@ -77,6 +77,8 @@ public:
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
     void skipPrefixBeforeHeader() override;
+    void skipRowBetweenDelimiter() override;
+    void skipComments();
 
     bool checkForEndOfRow() override;
 

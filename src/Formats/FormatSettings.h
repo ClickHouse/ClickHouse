@@ -37,6 +37,7 @@ struct CSVFormatSettings
     char tuple_delimiter = ',';
     bool use_best_effort_in_schema_inference = true;
     UInt64 skip_first_lines = 0;
+    String comment_prefix;
     String custom_delimiter;
     bool try_detect_header = true;
     bool skip_trailing_empty_lines = false;
@@ -498,6 +499,7 @@ struct FormatSettings : FormatSettingsEnums
         bool enum_as_number = false;
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
+        String comment_prefix;
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
