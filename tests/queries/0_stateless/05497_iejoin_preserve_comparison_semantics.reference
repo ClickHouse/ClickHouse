@@ -1,0 +1,28 @@
+tuple	ie_join,hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+tuple	hash,ie_join	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+float	ie_join,hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+float	hash,ie_join	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+tuple	ie_join,parallel_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+float	ie_join,parallel_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+tuple	ie_join,grace_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+float	ie_join,grace_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+ordinary	1
+tuple-only-ie-result	1	[(3,13)]
+float-only-ie-result	1	[(3,13)]
+grace-hash-unrunnable-ie	1
+outer-partial-merge-ie	3
+outer-auto-ie	3
+outer-prefer-ie	3
+inner-auto-hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+inner-prefer-hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
+fsm-one-sided-ie	1
+dynamic-disallowed-ie	1
+nullsafe-no-supertype-ie	0
+outer-ie	5	11431333502086094602
+outer-hash	5	11431333502086094602
+string-le-where	1
+string-le-on	1
+string-gt-where	0
+string-gt-on	0
+string-key-hash	0
+string-key-ie	0
