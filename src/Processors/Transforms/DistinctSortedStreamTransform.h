@@ -54,6 +54,8 @@ private:
     template <typename Method>
     size_t buildFilterForRange(Method & method, IColumnFilter & filter, size_t range_begin, size_t range_end);
 
+    bool fillFilterRangeWithPolling(IColumnFilter & filter, size_t begin, size_t end);
+
 
     ClearableSetVariants data;
     const size_t limit_hint;
