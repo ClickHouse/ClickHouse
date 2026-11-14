@@ -217,6 +217,11 @@ nan	nan	2
 -- 34 the same for a comparison whose result is resolved per row inside a composite type:
 --     refused, so the `NO_COMMON_TYPE` a removed row raises still fires.
 34 a composite comparison resolved per row	0
+-- 34b `not` over a `Dynamic` or `Variant` argument is resolved per row: refused, so the error a
+--     removed row raises still fires. Over a `Nullable` number it is admitted.
+34b not over Dynamic	0
+34b not over Variant	0
+34b not over Nullable fires	1
 -- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the
 --    prefilter is admitted and the expanded rows must be unchanged
 1	1	1

@@ -184,6 +184,20 @@ SELECT '34 a composite comparison resolved per row', count() FROM (EXPLAIN actio
 SELECT count() FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_var) WHERE v = tuple(1::Variant(String, UInt8)) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, variant_throw_on_type_mismatch = 1; -- { serverError NO_COMMON_TYPE }
 SELECT count() FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_var) WHERE v = tuple(1::Variant(String, UInt8)) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, variant_throw_on_type_mismatch = 1; -- { serverError NO_COMMON_TYPE }
 
+SELECT '-- 34b `not` over a `Dynamic` or `Variant` argument is resolved per row: refused, so the error a';
+SELECT '--     removed row raises still fires. Over a `Nullable` number it is admitted.';
+DROP TABLE IF EXISTS t_wtkp_dyn;
+CREATE TABLE t_wtkp_dyn (p UInt8, o UInt8, d Dynamic, v Variant(String, UInt8), n Nullable(UInt8)) ENGINE = Memory;
+-- The middle row is the one the prefilter would remove at `rk <= 1`, and it holds the only String.
+INSERT INTO t_wtkp_dyn VALUES (1,10,0,0::UInt8,0),(1,9,'a','a',0),(1,8,0,0::UInt8,0);
+SELECT '34b not over Dynamic', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, d, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_dyn) WHERE not(d) AND rk <= 1) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT '34b not over Variant', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_dyn) WHERE not(v) AND rk <= 1) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT '34b not over Nullable fires', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, n, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_dyn) WHERE not(n) AND rk <= 1) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT count() FROM (SELECT p, d, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_dyn) WHERE not(d) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, short_circuit_function_evaluation = 'disable', dynamic_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM (SELECT p, d, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_dyn) WHERE not(d) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, short_circuit_function_evaluation = 'disable', dynamic_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_dyn) WHERE not(v) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, short_circuit_function_evaluation = 'disable', variant_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT count() FROM (SELECT p, v, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_dyn) WHERE not(v) AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, short_circuit_function_evaluation = 'disable', variant_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT '-- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the';
 SELECT '--    prefilter is admitted and the expanded rows must be unchanged';
 SELECT p, rk, a FROM (SELECT p, rk, a FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, [1, 2] AS arr FROM t_wtkp) ARRAY JOIN arr AS a) WHERE rk <= 3 ORDER BY p, rk, a;
@@ -296,6 +310,7 @@ WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND qu
 );
 
 DROP TABLE t_wtkp_ord;
+DROP TABLE t_wtkp_dyn;
 DROP TABLE t_wtkp_var;
 DROP TABLE t_wtkp_ip;
 DROP TABLE t_wtkp_merge;

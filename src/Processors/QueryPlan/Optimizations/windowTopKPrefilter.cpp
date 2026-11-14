@@ -1,5 +1,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
@@ -79,8 +80,8 @@ std::optional<UInt64> tryGetIntegerConstant(const ActionsDAG::Node * node)
 }
 
 /// A row the prefilter removes must be a row the filter above removes anyway, so nothing the filter computes
-/// may depend on it. `and`/`or`/`not` are admitted because they reject any argument that is not a native
-/// number at analysis time, so they have no value-dependent failure mode; every other function is refused.
+/// may depend on it. `and`/`or`/`not` over native numbers have no value-dependent failure mode, but over a
+/// `Dynamic` or `Variant` argument they are dispatched per row under the same name; every other function is refused.
 bool computesOnlyTheBound(const ActionsDAG & dag, const std::unordered_set<const ActionsDAG::Node *> & bound_atoms)
 {
     static const NameSet connectives = {"and", "or", "not"};
@@ -93,6 +94,12 @@ bool computesOnlyTheBound(const ActionsDAG & dag, const std::unordered_set<const
                 continue;
             if (!node.function_base || !connectives.contains(node.function_base->getName()))
                 return false;
+            for (const auto * argument : node.children)
+            {
+                const auto argument_type = removeLowCardinalityAndNullable(argument->result_type);
+                if (!isNativeNumber(argument_type) && !isNothing(argument_type))
+                    return false;
+            }
         }
     }
     return true;
