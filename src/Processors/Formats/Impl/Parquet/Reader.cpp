@@ -3756,6 +3756,8 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         }
     }
 
+    column.dictionary.flushStringValueFilterStats();
+
     for (const auto & offsets : subchunk.arrays_offsets)
     {
         /// If repetition levels say that the column chunk starts in the middle of an array

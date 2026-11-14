@@ -59,6 +59,12 @@ struct Dictionary
     /// `index` reports its statistics to it and stops applying the mask when the filter disables
     /// itself, same as the non-dictionary decoding paths.
     const StringValueFilter * string_value_filter = nullptr;
+    /// Rows decided by `string_value_filter_mask` and not yet reported to `string_value_filter`.
+    /// A report per RLE run would cost more than reading the run, so the rows are reported in
+    /// batches, see `accountStringValueFilterRows`.
+    size_t string_value_filter_rows_checked = 0;
+    size_t string_value_filter_rows_replaced = 0;
+    size_t string_value_filter_bytes_skipped = 0;
 
     /// Points into `col`, or `decompressed_buf`, or into Prefetcher's memory (kept alive by dictionary_page_prefetch).
     std::span<const char> data;
@@ -89,6 +95,12 @@ struct Dictionary
     /// consulted once for the entire run, and the run is accounted in the filter statistics as a
     /// whole - the adaptive disable covers repeated runs exactly as it covers explicit indexes.
     void appendRepeated(size_t idx, size_t n, IColumn & out);
+    /// Adds rows to the pending statistics and reports them to `string_value_filter` every
+    /// `StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES` rows.
+    void accountStringValueFilterRows(size_t checked, size_t replaced, size_t bytes_skipped);
+    /// Reports the pending statistics. Called once per decoded column subchunk: a subchunk read
+    /// through a filter calls `index` / `decodeAndIndex` once per passing row range.
+    void flushStringValueFilterStats();
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
     /// Checks every dictionary entry against the filter, see `string_value_filter_mask`.
     /// `num_rows` is the number of rows expected to consult the mask, or 0 to credit every entry with a single row.
