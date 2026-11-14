@@ -566,6 +566,20 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
     return result_plan;
 }
 
+QueryPlan decorrelateQueryPlan(DecorrelationContext & context, QueryPlan::Node * node);
+
+/// An equality above a step that keeps a number of rows per evaluation (`LIMIT`, `OFFSET`) does not
+/// constrain the rows the step chooses from, so its equivalences must not be used below the step.
+QueryPlan decorrelateRowLimitingStepInput(DecorrelationContext & context, QueryPlan::Node * input)
+{
+    DecorrelationScope input_scope;
+    input_scope.identifiers_used_outside_equalities = context.scope_stack.back().identifiers_used_outside_equalities;
+    context.scope_stack.push_back(std::move(input_scope));
+    auto decorrelated_input = decorrelateQueryPlan(context, input);
+    context.scope_stack.pop_back();
+    return decorrelated_input;
+}
+
 QueryPlan decorrelateQueryPlan(
     DecorrelationContext & context,
     QueryPlan::Node * node
@@ -1217,7 +1231,7 @@ QueryPlan decorrelateQueryPlan(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Correlated subquery decorrelation does not support LIMIT ... WITH TIES");
 
-        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto decorrelated_query_plan = decorrelateRowLimitingStepInput(context, node->children.front());
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         /// Convert `LIMIT N OFFSET M` into `LIMIT N OFFSET M BY correlated_columns`.
@@ -1242,7 +1256,7 @@ QueryPlan decorrelateQueryPlan(
     }
     if (auto * offset_step = typeid_cast<OffsetStep *>(node->step.get()))
     {
-        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto decorrelated_query_plan = decorrelateRowLimitingStepInput(context, node->children.front());
         auto input_header = decorrelated_query_plan.getCurrentHeader();
 
         /// A bare `OFFSET M` (without `LIMIT`) becomes `LIMIT <unbounded> OFFSET M BY correlated_columns`,
