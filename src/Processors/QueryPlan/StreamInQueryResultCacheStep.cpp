@@ -23,14 +23,20 @@ static ITransformingStep::Traits getTraits()
 
 StreamInQueryResultCacheStep::StreamInQueryResultCacheStep(
     const SharedHeader & input_header_,
-    std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer_)
+    std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer_,
+    std::shared_ptr<QueryResultCacheHerdTokenHolder> herd_token_holder_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , query_result_cache_writer(query_result_cache_writer_)
+    , herd_token_holder(std::move(herd_token_holder_))
 {
 }
 
 void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    std::shared_ptr<StreamInQueryResultCacheSubqueryCompletion> subquery_completion;
+    if (herd_token_holder)
+        subquery_completion = std::make_shared<StreamInQueryResultCacheSubqueryCompletion>(herd_token_holder);
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
@@ -52,7 +58,7 @@ void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipe
                     break;
             }
 
-            return std::make_shared<StreamInQueryResultCacheTransform>(*header, query_result_cache_writer, chunk_type);
+            return std::make_shared<StreamInQueryResultCacheTransform>(*header, query_result_cache_writer, chunk_type, subquery_completion);
         });
 }
 
