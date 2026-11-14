@@ -149,6 +149,17 @@ INSTANTIATE_TEST_SUITE_P(data_type,
             {"Tuple(Int64) Tuple(UInt64)", nullptr},
             {"Tuple(Int64,Int8) Tuple(UInt64)", nullptr},
             {"Array(Int64) Array(String)", nullptr},
+
+            {"Point Point", "Point"},
+            {"Point Polygon", "Geometry"},
+            {"Point MultiPoint", "Geometry"},
+            {"LineString MultiLineString", "Geometry"},
+            {"Polygon MultiPolygon", "Geometry"},
+            {"Point Geometry", "Geometry"},
+            {"Nullable(Point) Point", "Nullable(Point)"},
+            {"Nullable(Point) Polygon", "Geometry"},
+            {"Array(Point) Array(Polygon)", "Array(Geometry)"},
+            {"Point Int32", nullptr},
         }
     )
 );
