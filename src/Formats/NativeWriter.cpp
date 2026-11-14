@@ -134,9 +134,10 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
 
 SerializationInfoSettings NativeWriter::getSerializationInfoSettings(UInt64 client_revision)
 {
-    /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
+    /// The size-stream String layout and the compact null map follow the peer revision and need no per-column wire marker.
     return SerializationInfoSettings::enableAllSupportedSerializations(
-        client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+        client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION,
+        client_revision >= DBMS_MIN_REVISION_WITH_COMPACT_NULL_MAP_SERIALIZATION);
 }
 
 NativeWriterTypeCache::Entry & NativeWriter::getCachedType(const DataTypePtr & type)
