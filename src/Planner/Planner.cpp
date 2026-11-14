@@ -786,8 +786,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
-    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
-    /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
+    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys.
+    /// With aggregate functions, also enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
     /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
     /// External aggregation stays configured as usual: before the kept keys are frozen a spill
     /// abandons the cutoff, and after the freeze a table already rebuilt to the kept keys still
@@ -827,7 +827,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
         settings[Setting::adaptive_aggregator_disable_thaw],
         settings[Setting::use_aggregation_memory_tracker]);
-    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
+    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value() && !aggregate_descriptions.empty();
 
     return aggregator_params;
 }
@@ -3297,10 +3297,16 @@ void Planner::buildPlanForQueryNode()
                     useful_sets);
 
             /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET`
-            /// keys. Unlike the settings-based rewrite of `OptimizeTrivialGroupByLimitPass`
-            /// (which is restricted to aggregate-free projections), the shared kept-keys cutoff
-            /// keeps the aggregate values of the kept keys exact, so it also fires with aggregate
-            /// functions in the projection. It is only sound when this node performs the complete
+            /// keys. It is not set with `max_rows_to_group_by`: the views that the query reads, and the
+            /// shards with all the subqueries that they execute, inherit the settings, so that would
+            /// cap their aggregations too.
+            ///
+            /// Without aggregate functions in the projection, every thread and every node can keep
+            /// other keys, so the cap also applies on shards. Subqueries are left to the `GROUP BY`
+            /// top-K heap.
+            ///
+            /// With aggregate functions, the shared kept-keys cutoff keeps the aggregate values of the
+            /// kept keys exact. It is only sound when this node performs the complete
             /// aggregation itself (both stages): partial states sent to a remote initiator would
             /// be merged with other nodes' states, whose kept keys differ, and the values of the
             /// kept keys would be undercounted again — one level up, across nodes instead of
@@ -3313,9 +3319,11 @@ void Planner::buildPlanForQueryNode()
                 query_settings[Setting::group_by_overflow_mode].setChanged(true);
 
             std::optional<UInt64> trivial_group_by_limit;
-            if (!query_settings[Setting::make_distributed_plan]
-                && query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
-                && hasAggregateFunctionNodes(query_node.getProjectionNode()))
+            const bool has_aggregate_functions = hasAggregateFunctionNodes(query_node.getProjectionNode());
+            const bool can_limit_groups = has_aggregate_functions
+                ? !query_settings[Setting::make_distributed_plan] && query_processing_info.isSecondStage()
+                : !select_query_options.is_subquery;
+            if (can_limit_groups)
             {
                 trivial_group_by_limit = getTrivialGroupByLimit(query_node, query_settings);
 
@@ -3329,7 +3337,8 @@ void Planner::buildPlanForQueryNode()
                     trivial_group_by_limit.reset();
 
                 /// Leave the `GROUP BY` top-K heap in charge wherever it applies: it is faster.
-                if (trivial_group_by_limit && preferGroupByTopKOverKeptKeysCutoff(query_settings, *trivial_group_by_limit))
+                if (trivial_group_by_limit && has_aggregate_functions
+                    && preferGroupByTopKOverKeptKeysCutoff(query_settings, *trivial_group_by_limit))
                     trivial_group_by_limit.reset();
             }
 

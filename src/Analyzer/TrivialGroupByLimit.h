@@ -23,8 +23,7 @@ struct Settings;
 /// Returns `LIMIT + OFFSET` when the shape matches, the value is non-zero and does not
 /// overflow, and the user has not set a non-`ANY` `group_by_overflow_mode` (which the
 /// optimization would silently override). Comparing the result against a user-set
-/// `max_rows_to_group_by` is left to the callers because they need different comparisons
-/// (see `OptimizeTrivialGroupByLimitPass` and `addAggregationStep` in the planner).
+/// `max_rows_to_group_by` is left to the planner.
 std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Settings & settings);
 
 }

@@ -2,9 +2,9 @@
 -- `LIMIT n UNTIL cond`: the range window is anchored at a boundary row that is only found
 -- once the boundary key is produced, so capping the aggregation at `n + offset` arbitrary
 -- groups can stop it before the boundary key appears and return an empty window while the
--- groups exist. Test `04343_limit_after_optimizer_guards` pins this for the settings-based
--- rewrite of aggregate-free projections; this test pins it for projections with aggregate
--- functions, where the planner applies the kept-keys cutoff through the shared helper.
+-- groups exist. Test `04343_limit_after_optimizer_guards` pins this for
+-- aggregate-free projections; this test pins it for projections with aggregate
+-- functions, where the planner applies the kept-keys cutoff.
 --
 -- The outer queries consume the inner aggregates, otherwise the analyzer removes them from
 -- the projection and the planner path is not exercised. The key is `UInt64` on purpose: for
