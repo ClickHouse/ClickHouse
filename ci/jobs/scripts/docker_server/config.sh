@@ -4,7 +4,7 @@
 currentDir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
 # iterate over all directories in current path
-clickhouseTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'clickhouse-*' -not -name 'clickhouse-distroless-*' -type d -exec basename {} \; )
+clickhouseTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'clickhouse-*' -not -name 'clickhouse-distroless-*' -not -name 'clickhouse-scratch-*' -type d -exec basename {} \; )
 keeperTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'keeper-*' -not -name 'keeper-distroless-*' -type d -exec basename {} \; )
 
 # Distroless images have no shell or coreutils inside the container, so run
@@ -14,10 +14,20 @@ clickhouseDistrolessSafeTests="clickhouse-basics ${clickhouseDistrolessTests}"
 keeperDistrolessTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'keeper-distroless-*' -type d -exec basename {} \; )
 keeperDistrolessSafeTests="clickhouse-distroless-no-shell ${keeperDistrolessTests}"
 
+# The default server image is built `FROM scratch`: no shell or coreutils inside either, but, unlike the
+# distroless one, it starts as root and prepares the directories like `entrypoint.sh`, so every server test
+# runs on it. The tests must therefore not run programs other than `clickhouse` inside the container.
+# The official-images `override-cmd` test supports single-binary images.
+# `clickhouse-scratch-*` tests check what only the `FROM scratch` image guarantees, e.g. the standard Protobuf
+# schemas, which images installed from a single binary with `clickhouse install` do not have.
+clickhouseScratchOnlyTests=$( find "$currentDir"/tests/ -maxdepth 1 -name 'clickhouse-scratch-*' -type d -exec basename {} \; )
+clickhouseScratchTests="override-cmd ${clickhouseTests} ${clickhouseDistrolessTests} ${clickhouseScratchOnlyTests}"
+
 # Distroless images cannot run the official-images global tests that assume a
 # shell/coreutils are available. Mark these image variants as explicit so the
 # runner uses only the imageTests listed below instead of adding global tests.
-# Arch-suffixed local CI tags are handled in docker_server.py.
+# Arch-suffixed local CI tags, including the un-suffixed `scratch` server image,
+# are handled in docker_library.py.
 explicitTests+=(
 	['clickhouse/clickhouse-server:distroless']=1
 	['clickhouse/clickhouse-keeper:distroless']=1

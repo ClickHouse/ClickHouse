@@ -39,3 +39,26 @@ function dumpServerLogs {
   rm -rf "$tmp" || true
   return 0
 }
+
+# The helpers below inspect a container from the host: the default image is built `FROM scratch` and has no
+# `sed`, `test`, or `stat` to run inside it.
+
+# The uid of the container's main process.
+function serverUid {
+  local cid="$1" pid
+  pid="$(docker inspect -f '{{.State.Pid}}' "$cid")"
+  docker top "$cid" -eo pid,uid | awk -v pid="$pid" '$1 == pid { print $2 }'
+}
+
+# The uid owning a directory in the container, or nothing if the path is not a directory. `docker cp` is done by
+# the daemon, so it reads the directory regardless of its permissions and of the container's capabilities.
+function directoryOwner {
+  local cid="$1" path="$2"
+  { docker cp "$cid:$path" - 2> /dev/null || true; } \
+    | tar -tv --numeric-owner 2> /dev/null \
+    | awk 'NR == 1 && substr($1, 1, 1) == "d" { split($2, ids, "/"); print ids[1] }'
+}
+
+function pathExists {
+  docker cp "$1:$2" - > /dev/null 2>&1
+}
