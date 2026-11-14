@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Hay situaciones en las que puede resultar útil pausar un ClickPipe de Postgres. Por ejemplo, quizá quieras ejecutar análisis sobre datos existentes en un estado estático. O puede que estés realizando actualizaciones en Postgres. A continuación, se explica cómo pausar y reanudar un ClickPipe de Postgres.
 
 <div id="pause-clickpipe-steps">
@@ -22,11 +20,27 @@ Hay situaciones en las que puede resultar útil pausar un ClickPipe de Postgres.
 2. Ve a la pestaña **Configuración**.
 3. Haz clic en el botón **Pausar**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp)
+
+</Frame>
+
+</div>
 
 4. Aparecerá un cuadro de diálogo de confirmación. Haz clic en **Pausar** de nuevo.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp)
+
+</Frame>
+
+</div>
 
 4. Ve a la pestaña **Métricas**.
 5. En unos 5 segundos (y también al recargar la página), el estado del ClickPipe debería ser **Pausado**.
@@ -35,7 +49,15 @@ Hay situaciones en las que puede resultar útil pausar un ClickPipe de Postgres.
   Pausar un ClickPipe de Postgres no detendrá el crecimiento de los slots de replicación.
 </Warning>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp)
+
+</Frame>
+
+</div>
 
 <div id="resume-clickpipe-steps">
   ## Pasos para reanudar un ClickPipe de Postgres
@@ -45,11 +67,27 @@ Hay situaciones en las que puede resultar útil pausar un ClickPipe de Postgres.
 2. Ve a la pestaña **Configuración**.
 3. Haz clic en el botón **Reanudar**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp)
+
+</Frame>
+
+</div>
 
 4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic de nuevo en **Reanudar**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp)
+
+</Frame>
+
+</div>
 
 5. Ve a la pestaña **Métricas**.
 6. Tras unos 5 segundos (o al actualizar la página), el estado del ClickPipe debería ser **En ejecución**.

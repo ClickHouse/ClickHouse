@@ -42,6 +42,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -272,7 +274,7 @@ void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_
     params.top_k->threshold_tracker = std::move(threshold_tracker);
 }
 
-std::vector<size_t> AggregatingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::PartialAggregation),
@@ -293,7 +295,7 @@ String AggregatingStep::getStepGroupName(size_t group) const
 static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processors)
 {
     /// The transforms of one aggregation share an aggregator; grouping sets have one per set.
-    std::unordered_set<const Aggregator *> aggregators;
+    UnorderedSetWithMemoryTracking<const Aggregator *> aggregators;
     UInt64 peak_memory = 0;
     bool tracked = false;
     for (const auto * processor : step_processors)
@@ -1192,7 +1194,7 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     updateInputHeaders(std::move(input_headers_));
 }
 
-std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingProjectionStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),
