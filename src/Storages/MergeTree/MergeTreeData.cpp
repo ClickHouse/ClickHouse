@@ -322,6 +322,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
+    extern const MergeTreeSettingsBool allow_vector_similarity_index_in_specialized_merge_tree;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -619,6 +620,16 @@ void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & c
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Column {} contains a LowCardinality type, so it cannot be compressed with a lossy codec", backQuoteIfNeed(column.name));
     }
+}
+
+void MergeTreeData::checkVectorSimilarityIndexIsAllowed(const MergingParams & merging_params, const MergeTreeSettings & settings)
+{
+    /// Vector similarity indexes must only be created on ordinary merge tree tables unless the user gives permission via a setting
+    if (merging_params.mode != MergingParams::Ordinary && !settings[MergeTreeSetting::allow_vector_similarity_index_in_specialized_merge_tree])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Vector similarity indexes are not supported for {}MergeTree, because SELECT ... FINAL may return wrong results with them. "
+            "Set MergeTree setting 'allow_vector_similarity_index_in_specialized_merge_tree' = 1 to create them anyway",
+            merging_params.getModeName());
 }
 
 namespace
@@ -7305,6 +7316,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)
         checkLossyCodecOnLowCardinality(new_metadata.columns);
+    if (!is_secondary_replay)
+    {
+        for (const auto & index_name : commands.getAddedIndexNames(old_metadata.secondary_indices))
+            if (new_metadata.secondary_indices.getByName(index_name).type == "vector_similarity")
+                checkVectorSimilarityIndexIsAllowed(merging_params, *alter_effective_settings);
+    }
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);

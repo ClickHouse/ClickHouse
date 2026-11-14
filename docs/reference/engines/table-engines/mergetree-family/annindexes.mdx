@@ -158,6 +158,7 @@ Further restrictions apply:
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/reference/statements/create/table#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
+- Vector similarity indexes can only be created on tables with engine `MergeTree` or `ReplicatedMergeTree`. Other engines of the family, e.g. `ReplacingMergeTree` or `CollapsingMergeTree`, are refused because `SELECT ... FINAL` may return wrong results with the index. MergeTree setting `allow_vector_similarity_index_in_specialized_merge_tree` allows it anyway.
 
 **Estimating storage and memory consumption**
 
