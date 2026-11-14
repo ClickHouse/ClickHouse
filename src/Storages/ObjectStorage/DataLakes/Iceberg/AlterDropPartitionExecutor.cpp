@@ -252,8 +252,25 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = catalog
-            ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
+        std::optional<MetadataFileWithInfo> catalog_metadata_file;
+        if (catalog)
+        {
+            catalog_metadata_file = getLatestMetadataFileAndVersionWithCatalog(
+                object_storage,
+                catalog,
+                storage_id.getTableName(),
+                components.table_path,
+                data_lake_settings,
+                components.metadata_cache,
+                context,
+                log.get(),
+                components.table_uuid,
+                components.metadata_compression_method);
+            state.catalog_metadata_location = catalog_metadata_file->catalog_metadata_location;
+        }
+
+        auto [snapshot, table_state] = catalog_metadata_file
+            ? metadata.getRelevantState(context, *catalog_metadata_file)
             : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_metadata_pointer_overrides=*/true);
         if (!snapshot)
             return std::nullopt;
@@ -698,8 +715,12 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
     {
         auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, state.catalog_metadata_location, new_snapshot, state.metadata_object))
+        {
+            if (!catalog_writes_metadata_file)
+                removeRejectedMetadataFile(components.path_resolver, metadata_info, object_storage);
             return false;
+        }
     }
 
     return true;
@@ -726,8 +747,9 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     /// table can move from uncompressed to e.g. `vN.gz.metadata.json` (external writer or changed
     /// setting), and the replacement metadata must follow the same convention.
     const auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
-    FileNamesGenerator filename_generator(components.path_resolver.getTableLocation(), false, compression_method, write_format);
-    filename_generator.setVersion(state.table_state.metadata_version + 1);
+    FileNamesGenerator filename_generator(
+        components.path_resolver.getTableLocation(), /* use_uuid_in_metadata */ catalog != nullptr, compression_method, write_format);
+    filename_generator.setBaseMetadataFile(state.table_state.metadata_version, state.table_state.metadata_file_path);
     filename_generator.setCompressionMethod(compression_method);
 
     std::vector<std::string> files_for_cleanup;

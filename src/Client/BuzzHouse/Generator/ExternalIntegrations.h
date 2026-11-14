@@ -163,7 +163,7 @@ private:
     /// No custom deleter: unlike MYSQL* and sqlite3*, the destructor closes safely.
     std::unique_ptr<pqxx::connection> postgres_connection;
 
-    int sqlstateToInt(const String & sqlstate);
+    int sqlstateToInt(std::string_view sqlstate);
 
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<pqxx::connection> pcon)
