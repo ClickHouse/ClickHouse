@@ -9,6 +9,8 @@
 #include <condition_variable>
 #include <atomic>
 #include <chrono>
+#include <string>
+#include <vector>
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/Util/Application.h>
@@ -157,6 +159,12 @@ protected:
     /// only the preferred one: the file is looked up with every supported extension, see
     /// `getConfigPathForAnySupportedFormat`.
     virtual std::string getDefaultConfigFileName() const;
+
+    /// The command line that `initialize` imports into the highest-priority configuration layer with
+    /// `argsToConfig`. By default it is `argv` as is; a daemon whose options can take values that
+    /// `argsToConfig` would misparse (e.g. a value starting with `-` given as a separate argument) can
+    /// return a canonicalized form instead.
+    virtual ArgVec getCommandLineForConfig();
 
     std::optional<DB::StatusFile> pid_file;
 

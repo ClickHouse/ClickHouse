@@ -58,6 +58,9 @@ public:
         return BaseDaemon::isCancelled();
     }
 
+    /// The options of the daemon and of the server itself, without the server settings.
+    void defineBuiltinOptions(Poco::Util::OptionSet & _options);
+
     void defineOptions(Poco::Util::OptionSet & _options) override;
 
 protected:
@@ -70,6 +73,8 @@ protected:
     int main(const std::vector<std::string> & args) override;
 
     std::string getDefaultCorePath() const override;
+
+    ArgVec getCommandLineForConfig() override;
 
 private:
     ContextMutablePtr global_context;

@@ -595,6 +595,132 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
+namespace
+{
+
+/// `Poco::Util::OptionSet` resolves a long option by any unique prefix, so before the server settings
+/// were registered as command-line options, `--config` (used by the systemd unit and by
+/// `clickhouse restart`), `--co`, `--lo`, ... all resolved to the built-in option they abbreviate.
+/// Registering hundreds of additional options makes most of these abbreviations ambiguous, which stops
+/// the server from starting (`AmbiguousOptionException`). Refusing to register the settings that collide
+/// with such an abbreviation is not an option either: even a single letter can be a unique prefix of a
+/// built-in option (`d` of `daemon`, `h` of `help`, `u` of `umask`, `v` of `version`), so this would make
+/// whole families of settings - `distributed_*`, `http_*`, `logger_*`, `user_*`, ... - unavailable on the
+/// command line, which is exactly what this feature is about.
+///
+/// Instead, rewrite every abbreviation that used to resolve to a built-in option into the full name of
+/// that option, before the command line is processed. The previously accepted spellings keep their
+/// previous meaning, and every setting can be registered under its own name. An argument that does not
+/// resolve to exactly one built-in option is left alone: it either names a server setting, or it was
+/// already unknown or ambiguous before.
+
+/// Resolve a long option (without the leading `--`) the same way as `Poco::Util::OptionSet::getOption`:
+/// case-insensitively, by the name up to the first `:` or `=`, preferring a full match over a unique
+/// partial one. Returns null for an unknown or an ambiguous option.
+const Poco::Util::Option * tryResolveLongOption(const Poco::Util::OptionSet & options, const std::string & name_and_value)
+{
+    const Poco::Util::Option * resolved = nullptr;
+    bool ambiguous = false;
+    for (const auto & option : options)
+    {
+        if (option.matchesFull(name_and_value))
+            return &option;
+        if (option.matchesPartial(name_and_value))
+        {
+            ambiguous = resolved != nullptr;
+            resolved = &option;
+        }
+    }
+    return ambiguous ? nullptr : resolved;
+}
+
+/// Resolve a short option (without the leading `-`) the same way as `Poco::Util::OptionSet::getOption`.
+/// Returns null for an unknown or an ambiguous option.
+const Poco::Util::Option * tryResolveShortOption(const Poco::Util::OptionSet & options, const std::string & name_and_value)
+{
+    const Poco::Util::Option * resolved = nullptr;
+    for (const auto & option : options)
+    {
+        if (option.matchesShort(name_and_value))
+        {
+            if (resolved)
+                return nullptr;
+            resolved = &option;
+        }
+    }
+    return resolved;
+}
+
+/// `all_options` is the complete option set `Poco` processes the command line with (the built-in options
+/// and the server settings). It is needed to tell which arguments are values: `Poco` takes the value of
+/// an option that requires one from the next argument when it is not given inline, verbatim - also when
+/// that argument starts with `-` or is `--` (`--default_replica_name --co`, `--display_name --d`). Such a
+/// value must not be expanded, and it does not end the options either.
+std::vector<std::string> expandBuiltinOptionAbbreviations(
+    const std::vector<std::string> & arguments,
+    const Poco::Util::OptionSet & builtin_options,
+    const Poco::Util::OptionSet & all_options)
+{
+    std::vector<std::string> result;
+    result.reserve(arguments.size());
+
+    bool options_ended = false;
+    bool value_expected = false;
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        const auto & argument = arguments[i];
+
+        /// The first argument is the name of the program.
+        if (i == 0 || options_ended || value_expected)
+        {
+            value_expected = false;
+            result.push_back(argument);
+            continue;
+        }
+
+        if (argument == "--")
+        {
+            options_ended = true;
+            result.push_back(argument);
+            continue;
+        }
+
+        if (argument.starts_with("--"))
+        {
+            std::string option = argument.substr(std::string_view("--").size());
+            bool has_inline_value = option.find_first_of(":=") != std::string::npos;
+
+            if (const auto * builtin = tryResolveLongOption(builtin_options, option))
+            {
+                size_t value_position = option.find_first_of(":=");
+                std::string value = value_position == std::string::npos ? "" : option.substr(value_position);
+                result.push_back("--" + builtin->fullName() + value);
+                value_expected = builtin->argumentRequired() && !has_inline_value;
+                continue;
+            }
+
+            /// Not a built-in option: `Poco` will resolve it against all options as is.
+            const auto * resolved = tryResolveLongOption(all_options, option);
+            value_expected = resolved && resolved->argumentRequired() && !has_inline_value;
+            result.push_back(argument);
+            continue;
+        }
+
+        if (argument.starts_with("-") && argument.size() > 1)
+        {
+            std::string option = argument.substr(1);
+            const auto * resolved = tryResolveShortOption(all_options, option);
+            value_expected = resolved && resolved->argumentRequired() && option.size() == resolved->shortName().size();
+        }
+
+        result.push_back(argument);
+    }
+
+    return result;
+}
+
+}
+
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
@@ -617,9 +743,23 @@ int mainEntryClickHouseServer(int argc, char ** argv)
             app.shouldSetupWatchdog(argv[0]);
     }
 
+    /// The abbreviations of the built-in options have to be resolved before `Poco::Util::Application`
+    /// processes the command line, because by then the option set also contains the server settings.
+    Poco::Util::OptionSet builtin_options;
+    app.defineBuiltinOptions(builtin_options);
+    Poco::Util::OptionSet all_options(builtin_options);
+    DB::ServerSettings::addToProgramOptions(all_options);
+    std::vector<std::string> arguments
+        = expandBuiltinOptionAbbreviations(std::vector<std::string>(argv, argv + argc), builtin_options, all_options);
+
+    std::vector<char *> expanded_argv;
+    expanded_argv.reserve(arguments.size());
+    for (auto & argument : arguments)
+        expanded_argv.push_back(argument.data());
+
     try
     {
-        return app.run(argc, argv);
+        return app.run(argc, expanded_argv.data());
     }
     catch (...)
     {
@@ -898,6 +1038,16 @@ void Server::initialize(Poco::Util::Application & self)
     application_properties = properties;
 
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
+
+    /// The command-line values of the settings backed by a nested config key have to be mirrored into that key
+    /// before the configuration file is loaded and before the loggers are built, because the components reading
+    /// the raw configuration do not go through `ServerSettings`. The built-in options are passed so that
+    /// `--log-file` counts as another spelling of `logger_log` (both bind `logger.log`), and likewise for
+    /// `--errorlog-file` and `logger_errorlog`.
+    Poco::Util::OptionSet builtin_options;
+    defineBuiltinOptions(builtin_options);
+    ServerSettings::mirrorCommandLineToConfigPaths(argv(), builtin_options, config());
+
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -912,7 +1062,18 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH), original_working_directory) + "cores";
 }
 
-void Server::defineOptions(Poco::Util::OptionSet & options)
+/// The server settings are registered as direct options, and `Poco` takes the value of such an option from the
+/// next argument, also when it starts with `-` (`--os_threads_nice_value_merge_mutate -5`, `--default_replica_name
+/// -replica`). The raw `argsToConfig` would take that value for another option and store `1` for the setting in a
+/// layer above the `Poco` binding, so import the canonicalized command line instead, same as on a config reload.
+Poco::Util::Application::ArgVec Server::getCommandLineForConfig()
+{
+    Poco::Util::OptionSet builtin_options;
+    defineBuiltinOptions(builtin_options);
+    return ServerSettings::canonicalizeCommandLine(argv(), builtin_options);
+}
+
+void Server::defineBuiltinOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
         Poco::Util::Option("help", "h", "show help and exit")
@@ -925,6 +1086,13 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
             .repeatable(false)
             .binding("version"));
     BaseDaemon::defineOptions(options);
+}
+
+void Server::defineOptions(Poco::Util::OptionSet & options)
+{
+    defineBuiltinOptions(options);
+
+    ServerSettings::addToProgramOptions(options);
 }
 
 
@@ -1897,7 +2065,13 @@ try
         config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+    /// The server settings whose name is also the name of a user-level setting
+    /// (`query_cache_max_entries`, `query_cache_max_size_in_bytes`) legitimately appear as top-level
+    /// keys of the layered config: that is where a direct option (`--query_cache_max_entries 10`), the
+    /// `--` separator form and `ServerSettings::mirrorCommandLineToConfigPaths` store them, and where
+    /// `ServerSettings::loadSettingsFromConfig` reads them from. Exempt the server setting names, so
+    /// that the top-level spelling of a server setting is not rejected as a misplaced user setting.
+    Settings::checkNoSettingNamesAtTopLevel(config(), config_path, ServerSettings::allNames());
     /// Validate the loaded XML config directly (not the layered config) so that command-line
     /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
     /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
@@ -2648,11 +2822,16 @@ try
     /// unknown key would still be skipped — diverging from a fresh startup with the same file,
     /// which would reject it. Re-parsing `argv()` with `argsToConfig` (exactly as `BaseDaemon`
     /// populates the command-line layer) reproduces the command-line-only view; the priority is
-    /// irrelevant because the throwaway config has a single layer.
+    /// irrelevant because the throwaway config has a single layer. The arguments are canonicalized
+    /// first, so that every spelling `Poco` accepts for the direct option at startup
+    /// (`--SKIP_CHECK_FOR_INCORRECT_SETTINGS 1`, `--skip_check_for_incorrect_settings:1`, ...) is
+    /// also honored here.
     bool command_line_skip_check = false;
     {
+        Poco::Util::OptionSet builtin_options;
+        defineBuiltinOptions(builtin_options);
         Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line_config(new Poco::Util::LayeredConfiguration);
-        argsToConfig(argv(), *command_line_config, PRIO_DEFAULT);
+        argsToConfig(ServerSettings::canonicalizeCommandLine(argv(), builtin_options), *command_line_config, PRIO_DEFAULT);
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
@@ -2673,7 +2852,7 @@ try
             const bool skip_check
                 = command_line_skip_check || loaded_config->getBool("skip_check_for_incorrect_settings", false);
             if (!skip_check)
-                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
+                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path, ServerSettings::allNames());
             /// Same as on initial load: validate the reloaded XML config rather than the layered
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
@@ -2695,9 +2874,17 @@ try
 
             /// The Prometheus check below, the reloaders and `latest_config` keep the configuration they are given, so it must have
             /// the command line on top of the file and, like `config()`, resolve `${application.*}` and `${system.*}` references.
+            /// The command line is canonicalized and the values of the path-backed server settings are mirrored into their
+            /// config paths, same as for `config()` at startup, so that a direct option (`--prometheus_keeper_metrics_only 1`,
+            /// `--ASYNCHRONOUS_METRICS_KEY_VALUES_MODE legacy_names`, ...) is seen here exactly as in the live configuration.
             Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
             file_and_command_line->add(loaded_config, PRIO_DEFAULT);
-            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            {
+                Poco::Util::OptionSet builtin_options;
+                defineBuiltinOptions(builtin_options);
+                argsToConfig(ServerSettings::canonicalizeCommandLine(argv(), builtin_options), *file_and_command_line, PRIO_APPLICATION - 100);
+                ServerSettings::mirrorCommandLineToConfigPaths(argv(), builtin_options, *file_and_command_line);
+            }
             file_and_command_line->add(application_properties, PRIO_APPLICATION, /* shared */ true);
             file_and_command_line->add(new Poco::Util::SystemConfiguration, PRIO_SYSTEM, /* shared */ false);
             const ConfigurationPtr reload_config = file_and_command_line;
