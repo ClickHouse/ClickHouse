@@ -334,6 +334,7 @@ public:
         bool use_sampling,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
+        UInt64 query_condition_cache_salt,
         const ContextPtr & context,
         LoggerPtr log);
 

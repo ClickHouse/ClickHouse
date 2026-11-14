@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
-#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -166,9 +165,7 @@ static MergeTreeReaderSettings setColumnsCacheSchemaIdentity(
     if (!columns_cache || (!settings.enable_columns_cache_reads && !settings.enable_columns_cache_writes))
         return settings;
 
-    SipHash hash;
-    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
-    settings.columns_cache_schema_identity = hash.get64();
+    settings.columns_cache_schema_identity = storage_snapshot->metadata->getColumns().getHash();
     return settings;
 }
 
