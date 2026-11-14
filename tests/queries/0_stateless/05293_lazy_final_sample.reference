@@ -1,0 +1,11 @@
+sample	52	104
+sample offset	48	96
+prewhere	52	104
+sample 1	100	100
+sample 1000000	100	100
+plan no sample	1
+plan sample 1	1
+plan sample 1000000	1
+plan sample 1/2	0
+partial split	104	208
+non-intersecting	104	208
