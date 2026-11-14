@@ -630,6 +630,8 @@ private:
         DataTypePtr key_column_type;
         Field value;
         DataTypePtr type;
+        /// `value` as a single-row column of `type`.
+        ColumnPtr column;
         /// Whether the value is a `FixedString`, including an active `Variant` or `Dynamic` member.
         bool is_fixed_string = false;
         /// True when this transformation requires a relaxed atom. Otherwise, subsequent type
@@ -653,6 +655,8 @@ private:
         std::optional<size_t> argument_num_of_space_filling_curve;
         Field const_value;
         DataTypePtr const_type;
+        /// The constant's single row as a column of `const_type`.
+        ColumnPtr const_column;
         /// Whether the constant is a `FixedString`, including an active `Variant` or `Dynamic` member.
         /// This describes the candidate's value after any transform, not the predicate's original value.
         bool const_is_fixed_string = false;

@@ -2327,6 +2327,24 @@ static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     return true;
 }
 
+/// The type of the single non-NULL row of `column`: the active member of a `Variant` or `Dynamic`, otherwise `type`.
+static DataTypePtr activeValueType(const IColumn & column, const DataTypePtr & type)
+{
+    if (isDynamic(type))
+        return assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
+
+    if (isVariant(type))
+    {
+        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+        const auto discriminator = variant_column.globalDiscriminatorAt(0);
+        chassert(discriminator < variant_type.getVariants().size());
+        return variant_type.getVariant(discriminator);
+    }
+
+    return type;
+}
+
 /// Identifies a `FixedString` constant, including an active `Variant` or `Dynamic` member.
 /// The column holds the constant's single data row, without a `ColumnConst` wrapper. A string `Field`
 /// is non-NULL, so an erased constant must have an active member type. `ColumnDynamic::getTypeAt` also
@@ -2337,22 +2355,9 @@ static bool isFixedStringConstant(
     if (value.getType() != Field::Types::String)
         return false;
 
-    DataTypePtr value_type = type;
-    if (isDynamic(type))
-    {
-        value_type = assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
-        chassert(value_type);
-    }
-    else if (isVariant(type))
-    {
-        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
-        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
-        const auto discriminator = variant_column.globalDiscriminatorAt(0);
-        chassert(discriminator < variant_type.getVariants().size());
-        value_type = variant_type.getVariant(discriminator);
-    }
-
-    value_type = removeLowCardinalityAndNullable(value_type);
+    const DataTypePtr active_type = activeValueType(column, type);
+    chassert(active_type);
+    const DataTypePtr value_type = removeLowCardinalityAndNullable(active_type);
     if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(value_type.get()))
     {
         chassert(value.safeGet<String>().size() == fixed_string_type->getN());
@@ -2390,6 +2395,40 @@ static bool fixedStringConstantLosesPadding(
 
     const auto * fixed_string_input_type = typeid_cast<const DataTypeFixedString *>(input_type.get());
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
+}
+
+/// Whether converting a `Tuple` constant to `target_type` drops the padding of a `FixedString` element. Tuples compare
+/// element by element; an `Array` or a `Map` compares after both sides are cast to a common type.
+static bool tupleConstantLosesFixedStringPadding(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & target_type)
+{
+    const ColumnPtr data_column = removeNullable(column->convertToFullColumnIfConst());
+    const DataTypePtr data_type = removeLowCardinalityAndNullable(type);
+    const DataTypePtr data_target_type = removeLowCardinalityAndNullable(target_type);
+    /// A `Variant` or `Dynamic` compares as its active member.
+    if (isVariant(data_type) || isDynamic(data_type))
+    {
+        if (data_column->isNullAt(0) || !isTuple(data_target_type))
+            return false;
+        const DataTypePtr active_type = removeLowCardinalityAndNullable(activeValueType(*data_column, data_type));
+        return isTuple(active_type)
+            && anyInTypeTree(*active_type, [](const IDataType & node) { return isFixedString(node) || isDynamic(node); });
+    }
+    const auto * tuple_column = typeid_cast<const ColumnTuple *>(data_column.get());
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
+    const auto * target_tuple_type = typeid_cast<const DataTypeTuple *>(data_target_type.get());
+    if (!tuple_column || !tuple_type || !target_tuple_type || tuple_type->getElements().size() != target_tuple_type->getElements().size())
+        return false;
+
+    for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+    {
+        const ColumnPtr & element_column = tuple_column->getColumnPtr(i);
+        const Field element = (*element_column)[0];
+        const bool is_fixed_string = isFixedStringConstant(element, *element_column, tuple_type->getElement(i));
+        if (fixedStringConstantLosesPadding(element, is_fixed_string, target_tuple_type->getElement(i))
+            || tupleConstantLosesFixedStringPadding(element_column, tuple_type->getElement(i), target_tuple_type->getElement(i)))
+            return true;
+    }
+    return false;
 }
 
 static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
@@ -2599,6 +2638,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
+                || tupleConstantLosesFixedStringPadding(constant.column, constant.type, transform_input_type)
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
@@ -2621,6 +2661,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
                 .key_column_type = chain.key_column_type,
                 .value = std::move(transformed_value),
                 .type = transformed_const_type,
+                .column = transformed_const_column,
                 .is_fixed_string = transformed_is_fixed_string,
                 .requires_relaxed_atom = true,
                 .reverse_comparison = !chain.chain_is_positive});
@@ -2847,6 +2888,69 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
             throw;
         return nullptr;
     }
+}
+
+
+/// `type` with each `Nothing` replaced by the type at the same place of `target_type`; a `Nothing` holds no value.
+static DataTypePtr replaceNothingByTargetType(const DataTypePtr & type, const DataTypePtr & target_type)
+{
+    if (isNothing(type))
+        return target_type;
+    if (!type->isNullable() && target_type->isNullable())
+        return replaceNothingByTargetType(type, removeNullable(target_type));
+    if (type->getTypeId() != target_type->getTypeId() || type->getNumberOfChildren() != target_type->getNumberOfChildren()
+        || !anyInTypeTree(*type, [](const IDataType & node) { return isNothing(node); }))
+        return type;
+
+    DataTypes children;
+    children.reserve(type->getNumberOfChildren());
+    for (size_t i = 0; i < type->getNumberOfChildren(); ++i)
+        children.push_back(replaceNothingByTargetType(type->getChild(i), target_type->getChild(i)));
+    return type->cloneWithChildren(children);
+}
+
+/// The constant cast to `target_type` as the comparison casts it, or `Null` when the cast fails or does not round-trip.
+static Field castCompositeConstant(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & target_type)
+{
+    if (tupleConstantLosesFixedStringPadding(column, type, target_type))
+        return {};
+
+    try
+    {
+        const ColumnPtr cast_column = castColumn({column, type, ""}, target_type);
+        if ((*castColumn({cast_column, target_type, ""}, replaceNothingByTargetType(type, target_type)))[0] != (*column)[0])
+            return {};
+        return (*cast_column)[0];
+    }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return {};
+    }
+}
+
+/// Whether casting a key value to `common_type` changes how it compares with the constant: a `Dynamic` or `Variant`
+/// keeps the key's own type, a `FixedString` loses its zero padding, and an `Enum` cast to a string compares by name.
+static bool keyCastChangesComparison(const DataTypePtr & key_type, const DataTypePtr & common_type)
+{
+    const DataTypePtr key = removeLowCardinalityAndNullable(key_type);
+    const DataTypePtr common = removeLowCardinalityAndNullable(common_type);
+    if (key->equals(*common))
+        return false;
+    if (isDynamic(common) || isVariant(common) || (isFixedString(key) && !isFixedString(common))
+        || (isEnum(key) && isStringOrFixedString(common)))
+        return true;
+
+    const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
+    const auto * common_tuple = typeid_cast<const DataTypeTuple *>(common.get());
+    if (!key_tuple || !common_tuple || key_tuple->getElements().size() != common_tuple->getElements().size())
+        return false;
+
+    for (size_t i = 0; i < key_tuple->getElements().size(); ++i)
+        if (keyCastChangesComparison(key_tuple->getElement(i), common_tuple->getElement(i)))
+            return true;
+    return false;
 }
 
 
@@ -3352,6 +3456,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     {
         /// The DAG casts the constant to its input type.
         if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
+            || tupleConstantLosesFixedStringPadding(constant.column, constant.type, candidate.dag.input_type)
             || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type, std::make_shared<DataTypeFloat64>()))
             continue;
 
@@ -3420,6 +3525,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             .key_column_type = std::move(candidate.key_column_type),
             .value = std::move(transformed_value),
             .type = transformed_const_type,
+            .column = transformed_const_column,
             .is_fixed_string = transformed_is_fixed_string,
             .requires_relaxed_atom = requires_relaxed_atom});
     }
@@ -5860,6 +5966,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .argument_num_of_space_filling_curve = std::nullopt,
             .const_value = transformed.value,
             .const_type = transformed.type,
+            .const_column = transformed.column,
             .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
             .reverse_comparison = transformed.reverse_comparison});
@@ -5920,6 +6027,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
                 .const_value = const_value,
                 .const_type = const_type,
+                .const_column = removeNullable(constant_for_transform.column),
                 .const_is_fixed_string = isFixedStringConstant(const_value, *constant_for_transform.column, const_type),
                 .is_relaxed = false});
         }
@@ -6201,7 +6309,10 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 if (!const_type->equals(*common_type))
                 {
                     /// An unrepresentable constant cannot supply a comparison bound.
-                    Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                    const bool is_composite = isTuple(const_type) || isArray(const_type) || isMap(const_type);
+                    Field converted = is_composite
+                        ? castCompositeConstant(candidate.const_column, const_type, common_type)
+                        : tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                     if (converted.isNull())
                         return std::nullopt;
 
@@ -6213,6 +6324,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 }
                 if (!key_expr_type_not_null->equals(*common_type))
                 {
+                    if (keyCastChangesComparison(key_expr_type_not_null, common_type))
+                        return std::nullopt;
+
                     auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                         ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                         : common_type;
