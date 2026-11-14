@@ -62,6 +62,14 @@ Number of threads in the AI request thread pool running a task.
 
 Number of queued or active jobs in the AI request thread pool.
 
+### AmberConnectionsStored {#amberconnectionsstored}
+
+Total count of sessions stored in the session pool for Amber
+
+### AmberConnectionsTotal {#amberconnectionstotal}
+
+Total count of all sessions: stored in the pool and actively used right now for Amber
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.
@@ -874,13 +882,13 @@ Number of threads in global thread pool running a task.
 
 Number of queued or active jobs in global thread pool.
 
-### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+### GPUExpressionKernelCacheBytes {#gpuexpressionkernelcachebytes}
 
-Size of the cache of current Iceberg schema field types in Glue catalogs in bytes
+Bytes of the PTX of the kernels that the GPU engine compiled for expressions and keeps loaded on the device.
 
-### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+### GPUExpressionKernelCacheCount {#gpuexpressionkernelcachecount}
 
-Number of entries in the cache of current Iceberg schema field types in Glue catalogs
+Kernels that the GPU engine compiled for expressions and keeps loaded on the device.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -981,6 +989,14 @@ Size of the Iceberg metadata cache in bytes
 ### IcebergMetadataFilesCacheFiles {#icebergmetadatafilescachefiles}
 
 Number of cached files in the Iceberg metadata cache
+
+### IcebergRESTCatalogWarehouseCacheEntries {#icebergrestcatalogwarehousecacheentries}
+
+Number of warehouses in the warehouse cache of the Iceberg REST catalog server
+
+### IcebergRESTCatalogWarehouseCacheSize {#icebergrestcatalogwarehousecachesize}
+
+Size of the warehouse cache of the Iceberg REST catalog server. Each warehouse counts as 1
 
 ### IcebergSchedulePoolSize {#icebergschedulepoolsize}
 

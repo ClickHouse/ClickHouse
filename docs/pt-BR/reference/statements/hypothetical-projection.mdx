@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Projeções hipotéticas são projeções virtuais, com escopo de sessão, que você pode anexar a uma tabela da família `MergeTree` sem de fato construí-las ou armazená-las. Elas existem apenas dentro da sessão atual e são listadas pelo [`EXPLAIN WHATIF`](/pt-BR/reference/statements/explain#explain-whatif).
 
-O `EXPLAIN WHATIF` estima projeções hipotéticas normais (ordenadas): quantas marcas e linhas a leitura da projeção acessaria em uma consulta e se o otimizador a escolheria em vez da tabela base. Nem toda projeção é estimada — projeções de agregação e projeções com uma cláusula `WHERE` são dois exemplos disso —, e um candidato não estimado é listado com o respectivo motivo. Consulte [`EXPLAIN WHATIF`](/pt-BR/reference/statements/explain#explain-whatif) para ver a lista completa. As projeções hipotéticas da sessão também ficam visíveis em [`system.hypothetical_projections`](/pt-BR/reference/system-tables/hypothetical_projections).
+O `EXPLAIN WHATIF` estima projeções hipotéticas normais (ordenadas). Para uma consulta, ele mostra quantas marcas e linhas a leitura da projeção acessaria. Também indica se o otimizador escolheria a projeção em vez da tabela base. Ele não estima projeções de agregação nem algumas outras projeções, e lista cada um desses candidatos com o respectivo motivo. Consulte [`EXPLAIN WHATIF`](/pt-BR/reference/statements/explain#explain-whatif) para ver a lista completa. As projeções hipotéticas da sessão também ficam visíveis em [`system.hypothetical_projections`](/pt-BR/reference/system-tables/hypothetical_projections).
 
 ## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 

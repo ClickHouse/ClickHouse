@@ -7,8 +7,6 @@ title: 'Query Insights'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O recurso **Query Insights** torna mais fácil usar o log de consultas integrado do ClickHouse por meio de visualizações e tabelas. A tabela `system.query_log` do ClickHouse é uma fonte essencial de informações para otimização de consultas, depuração e monitoramento da integridade e do desempenho geral do cluster.
 
 <div id="query-overview">
@@ -17,7 +15,15 @@ O recurso **Query Insights** torna mais fácil usar o log de consultas integrado
 
 Após selecionar um serviço, o item de navegação **Monitoring** na barra lateral esquerda deve se expandir para exibir um novo subitem, **Query insights**. Ao clicar nessa opção, a nova página do Query insights é aberta:
 
-<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Visão geral da UI do Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Visão geral da UI do Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</Frame>
+
+</div>
 
 <div id="top-level-metrics">
   ## Métricas principais
@@ -25,7 +31,15 @@ Após selecionar um serviço, o item de navegação **Monitoring** na barra late
 
 As caixas de estatísticas no topo mostram algumas métricas básicas de consulta para o período selecionado. Abaixo delas, disponibilizamos três gráficos de séries temporais que mostram o volume de consultas, a latência e a taxa de erros, segmentados por tipo de consulta (select, insert, other) na janela de tempo selecionada. O gráfico de latência também pode ser ajustado para exibir as latências p50, p90 e p99:
 
-<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="Gráfico de latência da UI do Query Insights" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Gráfico de latência da UI do Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</Frame>
+
+</div>
 
 <div id="recent-queries">
   ## Consultas recentes
@@ -33,7 +47,15 @@ As caixas de estatísticas no topo mostram algumas métricas básicas de consult
 
 Abaixo das métricas principais, uma tabela exibe entradas do log de consultas (agrupadas por hash da consulta normalizada e usuário) no intervalo de tempo selecionado:
 
-<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="UI do Query Insights: tabela de Consultas recentes" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![UI do Query Insights: tabela de Consultas recentes](/images/cloud/sqlconsole/insights_recent.webp)
+
+</Frame>
+
+</div>
 
 As consultas recentes podem ser filtradas e ordenadas por qualquer campo disponível. A tabela também pode ser configurada para exibir ou ocultar campos adicionais, como tabelas e latências p90 e p99.
 
@@ -43,11 +65,27 @@ As consultas recentes podem ser filtradas e ordenadas por qualquer campo dispon�
 
 Ao selecionar uma consulta na tabela de consultas recentes, será aberto um painel lateral com métricas e informações específicas da consulta selecionada:
 
-<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="UI do Query Insights: detalhamento da consulta" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![UI do Query Insights: detalhamento da consulta](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</Frame>
+
+</div>
 
 Como podemos ver no painel lateral, esta consulta específica foi executada mais de 3000 vezes nas últimas 24 horas. Todas as métricas na aba **Informações da consulta** são métricas agregadas, mas também podemos ver as métricas de execuções individuais selecionando a aba **Histórico da consulta**:
 
-<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="UI do Query Insights: informações da consulta" border />
+<div className="ch-image-sm">
+
+<Frame>
+
+![UI do Query Insights: informações da consulta](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</Frame>
+
+</div>
 
 <br />
 

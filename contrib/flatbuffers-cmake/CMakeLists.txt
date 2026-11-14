@@ -73,17 +73,18 @@ set(FLATC_SRCS
   ${LIBRARY_DIR}/grpc/src/compiler/swift_generator.cc
   ${LIBRARY_DIR}/grpc/src/compiler/ts_generator.cc)
 
-add_executable(flatc ${FLATC_SRCS})
-target_link_libraries(flatc PRIVATE _flatbuffers)
-target_include_directories(flatc SYSTEM PRIVATE
-  "${LIBRARY_DIR}/include"
-  "${LIBRARY_DIR}"
-  "${LIBRARY_DIR}/grpc")
-target_compile_definitions(flatc PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
-
 # When cross-compiling, `flatc` has to run on the host, so it is built by the native sub-build
 # (see `add_native_target` in the top-level `CMakeLists.txt`), same as `protoc`.
 add_native_target (flatc)
 if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    add_executable(flatc IMPORTED GLOBAL)
     set_target_properties (flatc PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/contrib/flatbuffers-cmake/flatc")
+else ()
+    add_executable(flatc ${FLATC_SRCS})
+    target_link_libraries(flatc PRIVATE _flatbuffers)
+    target_include_directories(flatc SYSTEM PRIVATE
+      "${LIBRARY_DIR}/include"
+      "${LIBRARY_DIR}"
+      "${LIBRARY_DIR}/grpc")
+    target_compile_definitions(flatc PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 endif ()

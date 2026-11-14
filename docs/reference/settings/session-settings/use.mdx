@@ -104,6 +104,14 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
+## use_datalake_metadata_statistics {#use_datalake_metadata_statistics}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to estimate the rows and column statistics of data lake reads (Iceberg for now) for join reordering from the table metadata."}]}]}/>
+
+With [`use_statistics`](/reference/settings/session-settings/use-statistics#use_statistics) enabled, estimate a data lake read for join reordering from the table metadata, without reading data. Only Iceberg is supported: the estimate comes from the manifest files of its data files left after partition and min-max pruning by the query filter, the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning) to be enabled.
+
 ## use_hash_table_stats_for_join_reordering {#use_hash_table_stats_for_join_reordering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -155,6 +163,16 @@ Enable pushing OR-connected parts of JOIN conditions down to the corresponding i
 This allows storage engines to filter earlier, which can reduce data read.
 The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
 predicate for the target side.
+
+## use_join_runtime_filters_for_iceberg_pruning {#use_join_runtime_filters_for_iceberg_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to prune Iceberg data files, Parquet row groups and pages by JOIN runtime filters."}]}]}/>
+
+Skip Iceberg data files, and the Parquet row groups and pages of the files that are read, that cannot contain a key of a JOIN runtime filter (see [enable_join_runtime_filters](/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Once the build side of the join finishes, the filter's keys (or their min/max range, if the set is too large) are checked against the column bounds in the manifest files, the row group statistics and the page index. Data files requested earlier are read in full.
+
+Requires [enable_join_runtime_filters_index_analysis](/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Row groups also require [input_format_parquet_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_filter_push_down), and pages also require [input_format_parquet_page_filter_push_down](/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down).
 
 ## use_legacy_to_time {#use_legacy_to_time}
 
