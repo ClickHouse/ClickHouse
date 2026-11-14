@@ -192,6 +192,10 @@ struct ConnectionParams
     /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
     /// is restricted. Does not change the parameters, so a client kept for others is not affected.
     void checkSessionMayUseServerIdentity(bool restrict_server_credentials) const;
+
+    /// Like `checkSessionMayUseServerIdentity`, but does not read `forbid_implicit_credentials`, which every session
+    /// overwrites in `applyNewSettings`. For delta-kernel, which builds its credentials from these parameters.
+    void checkSessionMayUseServerIdentityIgnoringSharedFlag(bool restrict_server_credentials) const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
