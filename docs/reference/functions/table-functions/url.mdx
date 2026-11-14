@@ -17,7 +17,7 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers])
+url(URL [,format] [,structure] [,compression_method] [,headers] [,body])
 ```
 
 ## Parameters {#parameters}
@@ -27,7 +27,9 @@ url(URL [,format] [,structure] [,headers])
 | `URL`       | A single-quoted URL whose scheme selects the backend. An `http`/`https` (or unrecognized) URL is a server address accepting `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly); a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is delegated to the matching table function — see [Dispatching by URL scheme](#scheme-dispatch). Type: [String](/reference/data-types/string). |
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
+| `compression_method` | Optional. Compression method of the data, e.g. `gzip`, `zstd`, `xz`. By default (`auto`), it is detected from the file extension. Type: [String](/reference/data-types/string). |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
+| `body`      | Request body in `body(content)` form. `content` is either a constant string or a `SELECT` query with an optional `FORMAT` clause, whose output rows are streamed into the request body in that format (`JSONLines` by default). Specifying a body promotes the request from `GET` to `POST`. |
 
 ## Returned value {#returned-value}
 
@@ -48,6 +50,66 @@ CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
 INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
 SELECT * FROM test_table;
 ```
+
+## Sending an HTTP request body {#sending-a-body}
+
+When the remote endpoint expects a `POST` payload, pass the body via the `body(...)` argument. The body can be a constant string or the result of a `SELECT` subquery. Specifying a body promotes the request from `GET` to `POST`; the body is streamed to the server as the subquery produces rows, so no intermediate buffering is required.
+
+Constant string body:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/echo',
+    JSONEachRow,
+    headers('Content-Type'='application/json'),
+    body('{"user":"alice"}')
+);
+```
+
+Query body (the default output format is `JSONLines`):
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    body(SELECT id, name FROM local_table WHERE active)
+);
+```
+
+Query body with an output format specified in the `FORMAT` clause:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    body(SELECT id, name FROM local_table WHERE active FORMAT CSVWithNames)
+);
+```
+
+The query can also be written in parentheses, as a usual subquery, with or without the `FORMAT` clause: `body((SELECT id, name FROM local_table WHERE active FORMAT CSVWithNames))`. The `SETTINGS` clause of the query can be written before or after `FORMAT`, as in a top-level query. `INTO OUTFILE` is not supported.
+
+For a query body, the `Content-Type` header is set to the content type of the output format (for example, `application/x-ndjson; charset=UTF-8` for `JSONLines`, or `text/csv; charset=UTF-8; header=present` for `CSVWithNames`), unless the `Content-Type` header is specified in `headers(...)`. A constant string body has no format, so no `Content-Type` header is added for it.
+
+<Note>
+When the `structure` argument is omitted, `url` first sends a request to infer the response schema and then sends a second request to read the data. This double request is the same behavior as for plain `GET` reads with automatic structure, but with a body it means the `POST` (and any subquery used to build the body) is sent twice. Specifying an explicit `structure` avoids the extra schema-inference request:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    'id UInt64, name String',
+    body(SELECT id, name FROM local_table WHERE active)
+);
+```
+
+Even with an explicit `structure`, the request is not guaranteed to be delivered exactly once: the HTTP layer re-sends the same method and body when following redirects, and retries the request (re-running the subquery that builds the body) on retriable network failures. Endpoints that receive a body should be prepared to handle repeated delivery, for example by being idempotent.
+</Note>
+
+`MATERIALIZED` common table expressions cannot be used in a query body.
+
+A URL with a pattern that generates multiple URLs, such as `{1..3}` or `{a,b}`, sends a separate request to each of the URLs. A constant string body is sent with every request, while a query body is rejected for such URLs, because the query would be executed for every URL. Alternatives separated by `|` are failover options of a single request: when the request falls over to the next alternative, the body is sent again, and the query is executed again, as for a retry.
+
+A query body is not supported for clustered reads: [`urlCluster`](/reference/functions/table-functions/urlCluster) rejects it, and `url` does not use parallel replicas when the body is a query. Every participating server would re-execute the query locally, so the request body could differ between the servers. A constant string body is identical everywhere and works with both.
 
 ## Dispatching by URL scheme {#scheme-dispatch}
 

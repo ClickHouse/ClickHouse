@@ -1,0 +1,14 @@
+1
+2
+3
+4
+SELECT * FROM url(\'http://127.0.0.1:8123/\', body((SELECT 1), \'TSVRaw\'))
+12
+13
+14
+SELECT * FROM url(\'http://127.0.0.1:8123/\', body((SELECT 1 UNION ALL SELECT 2 SETTINGS max_threads = 1), \'TSVRaw\'))
+5
+6
+9
+9
+11

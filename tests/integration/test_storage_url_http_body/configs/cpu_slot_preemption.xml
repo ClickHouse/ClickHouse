@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- A CPU slot is held for the whole lifetime of a thread, see `test_subquery_body_reading_url_under_cpu_workload`. -->
+    <cpu_slot_preemption>false</cpu_slot_preemption>
+</clickhouse>
