@@ -129,6 +129,9 @@ public:
 
     void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
+    /// Every scalar subquery this analyzer resolves is appended to `sink` before it is replaced by its value.
+    void setResolvedScalarSubqueriesSink(QueryTreeNodes * sink) { resolved_scalar_subqueries = sink; }
+
 private:
     /// Utility functions
 
@@ -413,6 +416,8 @@ private:
     /// True while a parameterized view argument value is resolved: a scalar subquery there must
     /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
     bool parameterized_view_arguments_in_resolve_process = false;
+
+    QueryTreeNodes * resolved_scalar_subqueries = nullptr;
 };
 
 }

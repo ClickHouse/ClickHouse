@@ -45,10 +45,12 @@
 
 #include <Core/Settings.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -419,6 +421,100 @@ void hideLambdaArgumentsShadowingAliasExpression(
                 hidden_arguments.hide(*lambda_scope, argument_name);
         }
     }
+}
+
+/// Original AST of a table expression -> the AST of the table or table function it was resolved to.
+using BoundTableExpressions = std::unordered_map<const IAST *, ASTPtr>;
+
+void collectBoundTableExpressions(const QueryTreeNodePtr & node, BoundTableExpressions & bound)
+{
+    if (const auto * table_node = node->as<TableNode>())
+    {
+        if (table_node->hasOriginalAST() && !table_node->isMaterializedCTE())
+            bound.emplace(table_node->getOriginalAST().get(), table_node->toAST());
+    }
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        if (table_function_node->hasOriginalAST() && table_function_node->isResolved())
+            bound.emplace(table_function_node->getOriginalAST().get(), table_function_node->toAST());
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectBoundTableExpressions(child, bound);
+}
+
+void replaceBoundTableExpressions(IAST & ast, const BoundTableExpressions & bound)
+{
+    if (auto * table_expression = ast.as<ASTTableExpression>())
+    {
+        if (auto it = bound.find(table_expression); it != bound.end())
+            table_expression->database_and_table_name = it->second;
+        else if (auto function_it = bound.find(table_expression->table_function.get()); function_it != bound.end())
+            table_expression->table_function = function_it->second;
+    }
+    else if (auto * function = ast.as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
+    {
+        auto & arguments = function->arguments->children;
+        /// `db.t AS s` cannot define the table alias `s`, so an aliased operand is sent as written.
+        if (arguments.size() == 2 && arguments[1]->tryGetAlias().empty())
+            if (auto it = bound.find(arguments[1].get()); it != bound.end())
+                arguments[1] = it->second;
+    }
+
+    for (const auto & child : ast.children)
+        replaceBoundTableExpressions(*child, bound);
+}
+
+/// Replaces the table expressions of `query` with the tables and table functions the analyzer resolves them to.
+void bindViewQuery(QueryTreeNodePtr & query, const ContextPtr & context)
+{
+    auto ast = query->toAST();
+    auto copy = buildQueryTree(ast, context);
+    ASTPtr rewritten = copy->getOriginalAST();
+
+    /// The tree keeps only the value of a scalar subquery, the analyzer hands the subquery here.
+    QueryTreeNodes scalar_subqueries;
+    QueryAnalyzer analyzer(/*only_analyze=*/ true);
+    analyzer.setResolvedScalarSubqueriesSink(&scalar_subqueries);
+    analyzer.resolve(copy, {}, context);
+
+    BoundTableExpressions bound;
+    collectBoundTableExpressions(copy, bound);
+    for (const auto & subquery : scalar_subqueries)
+        collectBoundTableExpressions(subquery, bound);
+
+    replaceBoundTableExpressions(*rewritten, bound);
+    if (!rewritten->as<ASTSelectWithUnionQuery>())
+    {
+        ast->as<ASTSelectWithUnionQuery &>().list_of_selects->children = {rewritten};
+        rewritten = ast;
+    }
+
+    query = buildQueryTree(rewritten->clone(), context);
+}
+
+bool isRemoteOrCluster(const String & table_function_name)
+{
+    return table_function_name == "remote" || table_function_name == "remoteSecure" || table_function_name == "cluster"
+        || table_function_name == "clusterAllReplicas";
+}
+
+void bindViewQueries(TableFunctionNode & table_function_node, const ContextPtr & context)
+{
+    const auto & name = table_function_node.getTableFunctionName();
+    if (isRemoteOrCluster(name) || name == "viewIfPermitted")
+        return;
+
+    auto & arguments = table_function_node.getArguments().getNodes();
+    if (name == "view" && !arguments.empty()
+        && (arguments[0]->getNodeType() == QueryTreeNodeType::QUERY || arguments[0]->getNodeType() == QueryTreeNodeType::UNION))
+        bindViewQuery(arguments[0], context);
+
+    for (const auto & argument : arguments)
+        if (auto * argument_table_function = argument->as<TableFunctionNode>())
+            bindViewQueries(*argument_table_function, context);
 }
 
 }
@@ -1943,6 +2039,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, replaced_storage);
+        auto & table_node = resolve_result.resolved_identifier;
+        if (table_node && identifier_lookup.original_ast_node && !table_node->hasOriginalAST())
+            table_node->setOriginalAST(identifier_lookup.original_ast_node);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -3980,7 +4079,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node && allow_table_expression)
             {
-                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
+                IdentifierLookup table_identifier_lookup{unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION};
+                if (node->hasOriginalAST())
+                    table_identifier_lookup.original_ast_node = node->getOriginalAST();
+                resolved_identifier_node = tryResolveIdentifier(table_identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions }).resolved_identifier;
 
                 if (resolved_identifier_node)
                 {
@@ -5718,9 +5820,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
                 if (table_function_argument_function_name == "view"
-                    || (table_function_argument_function_name == "merge"
-                        && (table_function_name == "remote" || table_function_name == "remoteSecure"
-                            || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
+                    || (table_function_argument_function_name == "merge" && isRemoteOrCluster(table_function_name)))
                 {
                     /// The `view` table function contains a subquery that may reference tables
                     /// not available on the initiator.
@@ -7107,6 +7207,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
             resolveTableFunction(join_tree_node, scope, expressions_visitor, false /*nested_table_function*/);
+
+            /// The servers a query is sent to resolve the query of `view` themselves: send its tables as resolved here.
+            if (!positional_arguments_already_resolved
+                && scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                bindViewQueries(join_tree_node->as<TableFunctionNode &>(), scope.context);
             break;
         }
         case QueryTreeNodeType::TABLE:
