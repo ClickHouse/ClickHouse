@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- The tests apply every config change with an explicit `SYSTEM RELOAD CONFIG`: a periodic reload
+         could apply a change before the statement whose audit record is checked is admitted. -->
+    <config_reload_interval_ms>3600000</config_reload_interval_ms>
+    <allow_experimental_audit_log>false</allow_experimental_audit_log>
+    <logger>
+        <level>warning</level>
+        <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog>
+        <auditlog_types>DDL</auditlog_types>
+    </logger>
+</clickhouse>
