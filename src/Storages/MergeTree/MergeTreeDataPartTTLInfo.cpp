@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/TTLDescription.h>
 
 #include <base/JSON.h>
@@ -142,6 +143,46 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         const JSON & rows_where = json["rows_where"];
         fill_ttl_info_map(rows_where, rows_where_ttl, true);
     }
+}
+
+bool MergeTreeDataPartTTLInfos::applyColumnRenames(const AlterConversions & alter_conversions)
+{
+    if (alter_conversions.getRenameMap().empty())
+        return false;
+
+    TTLInfoMap new_columns_ttl;
+    bool changed = false;
+    for (const auto & [name, ttl_info] : columns_ttl)
+    {
+        if (alter_conversions.columnHasNewName(name))
+        {
+            auto new_name = alter_conversions.getColumnNewName(name);
+            if (new_name != name)
+                changed = true;
+            new_columns_ttl.insert_or_assign(std::move(new_name), ttl_info);
+        }
+        else if (alter_conversions.isColumnRenamed(name))
+            changed = true;
+        else
+            new_columns_ttl.emplace(name, ttl_info);
+    }
+
+    if (!changed)
+        return false;
+
+    columns_ttl = std::move(new_columns_ttl);
+
+    part_min_ttl = 0;
+    part_max_ttl = 0;
+    for (const auto & [_, ttl_info] : columns_ttl)
+        updatePartMinMaxTTL(ttl_info);
+    updatePartMinMaxTTL(table_ttl);
+    for (const auto & [_, ttl_info] : group_by_ttl)
+        updatePartMinMaxTTL(ttl_info);
+    for (const auto & [_, ttl_info] : rows_where_ttl)
+        updatePartMinMaxTTL(ttl_info);
+
+    return true;
 }
 
 
