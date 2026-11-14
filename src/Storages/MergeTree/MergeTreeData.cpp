@@ -9250,19 +9250,65 @@ void MergeTreeData::throwIfTemporaryTableSizeLimitsExceededForReplacement(
             ReadableSize(total_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
 }
 
+std::function<void()> MergeTreeData::makeTooManyPartsCheck(const ContextPtr & query_context) const
+{
+    std::weak_ptr<const MergeTreeData> weak_table = std::static_pointer_cast<const MergeTreeData>(shared_from_this());
+    /// Only the limits are retained, not the context: a `Buffer` may keep the check until a much later flush,
+    /// and the context would pin the query-scoped state (external tables, etc.) until then.
+    const auto limits = getTooManyPartsLimits(query_context);
+    return [weak_table, storage_id = getStorageID(), limits]
+    {
+        /// The storage may have been replaced by the time the check runs: a `Buffer` keeps the check until its flush,
+        /// and `DETACH` / `ATTACH` of the table in between creates another instance with the same `UUID`. The flush
+        /// writes into the current instance then, so check it, not skip the check. If the table does not exist
+        /// anymore, the nested INSERT fails without writing anything.
+        std::shared_ptr<const MergeTreeData> merge_tree = weak_table.lock();
+        if (!merge_tree)
+        {
+            /// The flush is about to write into this table, so loading a lazily loaded one is its expected cost.
+            if (auto table = DatabaseCatalog::instance().tryGetTable(storage_id, Context::getGlobalContextInstance()))
+                merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
+        }
+        if (!merge_tree)
+            return;
+        /// Only the throw thresholds are used without `allow_delay`, the delay ones fall back to the table settings.
+        merge_tree->delayInsertOrThrowIfNeededImpl(nullptr, InsertQueryLimits{.parts_to_throw_insert = limits.parts_to_throw_insert,
+            .dead_blobs_to_throw_insert = limits.dead_blobs_to_throw_insert}, /*allow_throw=*/ true, /*allow_delay=*/ false);
+    };
+}
+
+InsertStartGate::TooManyPartsLimits MergeTreeData::getTooManyPartsLimits(const ContextPtr & query_context)
+{
+    /// The settings of `delayInsertOrThrowIfNeeded` that may make it throw. The other ones are table-level.
+    const auto & query_settings = query_context->getSettingsRef();
+    return {query_settings[Setting::parts_to_throw_insert], query_settings[Setting::dead_blobs_to_throw_insert]};
+}
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
-    const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
+    delayInsertOrThrowIfNeededImpl(until,
+        InsertQueryLimits{
+            .parts_to_delay_insert = query_settings[Setting::parts_to_delay_insert],
+            .parts_to_throw_insert = query_settings[Setting::parts_to_throw_insert],
+            .dead_blobs_to_delay_insert = query_settings[Setting::dead_blobs_to_delay_insert],
+            .dead_blobs_to_throw_insert = query_settings[Setting::dead_blobs_to_throw_insert],
+        },
+        allow_throw, allow_delay);
+}
+
+void MergeTreeData::delayInsertOrThrowIfNeededImpl(Poco::Event * until, const InsertQueryLimits & query_limits, bool allow_throw, bool allow_delay) const
+{
+    const auto settings = getSettings();
     const size_t parts_count_in_total = getActivePartsCount();
 
     if (allow_throw)
         throwIfTableSizeLimitsExceeded();
 
-    const auto active_parts_to_delay_insert = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
-    const auto active_parts_to_throw_insert = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
-    const auto dead_blobs_to_delay_insert = query_settings[Setting::dead_blobs_to_delay_insert] ? query_settings[Setting::dead_blobs_to_delay_insert] : (*settings)[MergeTreeSetting::dead_blobs_to_delay_insert];
-    const auto dead_blobs_to_throw_insert = query_settings[Setting::dead_blobs_to_throw_insert] ? query_settings[Setting::dead_blobs_to_throw_insert] : (*settings)[MergeTreeSetting::dead_blobs_to_throw_insert];
+    const auto active_parts_to_delay_insert = query_limits.parts_to_delay_insert ? query_limits.parts_to_delay_insert : (*settings)[MergeTreeSetting::parts_to_delay_insert];
+    const auto active_parts_to_throw_insert = query_limits.parts_to_throw_insert ? query_limits.parts_to_throw_insert : (*settings)[MergeTreeSetting::parts_to_throw_insert];
+    const auto dead_blobs_to_delay_insert = query_limits.dead_blobs_to_delay_insert ? query_limits.dead_blobs_to_delay_insert : (*settings)[MergeTreeSetting::dead_blobs_to_delay_insert];
+    const auto dead_blobs_to_throw_insert = query_limits.dead_blobs_to_throw_insert ? query_limits.dead_blobs_to_throw_insert : (*settings)[MergeTreeSetting::dead_blobs_to_throw_insert];
 
     /// Check if we have too many parts in total
     if (allow_throw && parts_count_in_total >= (*settings)[MergeTreeSetting::max_parts_in_total])
@@ -9355,6 +9401,10 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             /// if parts_count == parts_to_delay_insert -> we're 1 part over threshold
             active_parts_over_threshold = parts_count_in_partition - active_parts_to_delay_insert + 1;
     }
+
+    /// The caller asked only for the throw checks (it applies the backpressure elsewhere).
+    if (!allow_delay)
+        return;
 
     /// no need for delay
     if (!allow_delay || (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold))
