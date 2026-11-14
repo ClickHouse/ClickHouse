@@ -1,0 +1,10 @@
+stored	[1,2]
+final	[2]
+prewhere	[]
+lambda	[]
+prewhere kept	1
+row policy	[]
+skip index	[]
+partitions	['1','2']
+partition pruning	[]
+partition pruning kept	1

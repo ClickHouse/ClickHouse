@@ -2086,6 +2086,8 @@ once for the whole query, such as `currentUser()`, `now()` or the set of `IN (su
 optimization; the set of a `Set` table, which can change while the query runs, does. Floating-point columns
 or columns containing floating-point (such as `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
 are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
+So is a policy that applies `assumeNotNull` to a `Nullable` column: every `NULL` deduplicates as one key, while
+`assumeNotNull` returns the value stored under each one.
 `GraphiteMergeTree` rolls up rows with different times into one row, so for it only the path column counts, and only
 when it is the first `ORDER BY` column.
 
@@ -2102,7 +2104,7 @@ and you want FINAL to select the winning row before filtering. When disabled, PR
 Note: PREWHERE is also deferred, regardless of this setting, whenever a row policy is deferred by
 `apply_row_policy_after_final`, because the row policy must be applied before PREWHERE. That happens when the
 policy expression is non-deterministic, or reads a column that is not in ORDER BY, or reads an ORDER BY column
-whose type is or contains a floating-point type.
+whose type is or contains a floating-point type, or applies `assumeNotNull` to a `Nullable` column.
 
 Possible values:
 
