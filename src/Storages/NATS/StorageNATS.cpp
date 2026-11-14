@@ -628,7 +628,7 @@ size_t StorageNATS::getMaxBlockSize() const
 }
 
 
-/// The messages do not contain the MATERIALIZED columns: compute the ones `header` needs from their expressions, as an INSERT does.
+/// The messages do not contain the MATERIALIZED columns: compute the ones `header` needs from their expressions.
 static void addMaterializedColumns(Pipe & pipe, const Block & header, const ColumnsDescription & columns, const ContextPtr & context)
 {
     const auto & pipe_header = pipe.getHeader();
