@@ -21,6 +21,10 @@ SELECT formatQuery(formatQuery(q)) = formatQuery(q) FROM
         'SELECT 1 LIMIT 3645369518 UNTIL `settings` INTO OUTFILE \'/tmp/file.data\' TRUNCATE FORMAT Null']) AS q
 );
 
+-- Nested boundaries that need the parentheses: each is formatted once, the time is not exponential in the nesting.
+SELECT formatQuery(formatQuery(q)) = formatQuery(q), formatQuerySingleLine(q) LIKE '%UNTIL (settings + (SELECT 1 LIMIT  UNTIL (settings + (%'
+FROM (SELECT concat(repeat('SELECT 1 LIMIT UNTIL `settings` + (', 25), 'SELECT 1', repeat(')', 25)) AS q);
+
 -- Executed queries: debug builds verify that the formatted query parses back.
 SELECT number AS `settings` FROM numbers(10) LIMIT UNTIL `settings` = 3;
 SELECT number AS `format` FROM numbers(10) LIMIT AFTER `format` = 7;
