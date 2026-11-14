@@ -1,0 +1,8 @@
+-- Native, a valid Bool text for a Bool column is not a mismatch
+explanation missing
+-- Native, text that is not a valid Bool is a mismatch
+explanation present
+-- Native, a valid Array text for an Array column is not a mismatch
+explanation missing
+-- Native, text that is not a valid Array is a mismatch
+explanation present

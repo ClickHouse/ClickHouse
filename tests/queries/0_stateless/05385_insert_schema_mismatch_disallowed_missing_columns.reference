@@ -1,0 +1,8 @@
+-- Arrow, input_format_arrow_allow_missing_columns = 1
+explanation missing
+-- Arrow, input_format_arrow_allow_missing_columns = 0
+explanation present
+-- ORC, input_format_orc_allow_missing_columns = 1
+explanation missing
+-- ORC, input_format_orc_allow_missing_columns = 0
+explanation present

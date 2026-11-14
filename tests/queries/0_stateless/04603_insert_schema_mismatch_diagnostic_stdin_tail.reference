@@ -1,0 +1,4 @@
+-- inline prefix parses fine, the streamed stdin tail has a type mismatch
+explanation present
+-- inline prefix parses fine, the streamed stdin tail also matches (no false positive)
+explanation missing

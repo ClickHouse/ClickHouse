@@ -1,0 +1,26 @@
+-- several inserts read one piped stdin: each continues where the previous one stopped
+[1,2]
+-- the same with a regular file as stdin
+[1,2]
+-- Parquet from a regular file as stdin
+1000	499500
+-- a genuine mismatch in a regular file as stdin is explained
+explanation present
+-- MySQLDump with a declared schema: only the fractional value is invalid
+explanation missing
+-- schema_inference_hints do not manufacture a mismatch
+explanation missing
+-- a valid nested value beside an unrelated failing field
+explanation missing
+explanation missing
+-- a nested value with text where numbers are expected is still explained
+explanation present
+-- a quoted Bool beside an unrelated failing field
+explanation missing
+explanation missing
+-- a quoted text that is not a Bool is still explained
+explanation present
+-- aggregate_function_input_format: compared with the values the format parses
+explanation missing
+explanation missing
+explanation present

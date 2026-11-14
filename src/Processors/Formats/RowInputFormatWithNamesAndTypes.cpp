@@ -21,6 +21,7 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -95,7 +96,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     }
 
     /// Skip prefix before names and types.
-    format_reader->skipPrefixBeforeHeader();
+    size_t skipped_prefix_rows = format_reader->skipPrefixBeforeHeader();
 
     VectorWithMemoryTracking<String> column_names;
     VectorWithMemoryTracking<String> type_names;
@@ -111,6 +112,9 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
 
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, type_names);
+
+    number_of_header_rows = skipped_prefix_rows + static_cast<size_t>(with_names || is_header_detected)
+        + static_cast<size_t>(with_types || !type_names.empty());
 
     if (!column_names.empty())
     {
@@ -473,7 +477,12 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
     }
 
     if (!with_names && !with_types && try_detect_header)
+    {
         tryDetectHeader(column_names, data_type_names);
+        header_detection_attempted = true;
+        names_detected_from_data = !column_names.empty();
+        types_detected_from_data = !data_type_names.empty();
+    }
 
     if (!data_type_names.empty())
     {
@@ -485,6 +494,13 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
         NamesAndTypesList result;
         for (size_t i = 0; i != data_type_names.size(); ++i)
             result.emplace_back(column_names[i], DataTypeFactory::instance().get(data_type_names[i]));
+        declared_type_names.clear();
+        UnorderedSetWithMemoryTracking<String> repeated_names;
+        for (size_t i = 0; i != data_type_names.size(); ++i)
+            if (!declared_type_names.emplace(column_names[i], data_type_names[i]).second)
+                repeated_names.insert(column_names[i]);
+        for (const auto & name : repeated_names)
+            declared_type_names.erase(name);
         return result;
     }
 

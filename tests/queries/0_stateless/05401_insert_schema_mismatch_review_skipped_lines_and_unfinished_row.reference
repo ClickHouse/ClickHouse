@@ -1,0 +1,11 @@
+-- TSV with skipped first lines
+explanation missing
+explanation missing
+explanation present
+-- TSVWithNames from INFILE
+explanation missing
+explanation missing
+explanation present
+-- A streamed row longer than the first captured buffer
+explanation missing
+explanation present
