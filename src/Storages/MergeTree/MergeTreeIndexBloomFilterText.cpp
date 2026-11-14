@@ -576,6 +576,53 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
+/// How a comparison treats the trailing zero bytes of a `FixedString` constant.
+enum class ConstantPadding
+{
+    Compared,      /// `has`, `mapContainsKey`, `mapContains`, `mapContainsValue`
+    Stripped,      /// `hasAny`, `hasAll`: only the constant is cast to `String`
+    BothStripped,  /// `equals`, `notEquals`, `IN`: the stored value loses its trailing zero bytes as well
+};
+
+ConstantPadding constantPadding(const String & function_name)
+{
+    if (function_name == "equals" || function_name == "notEquals")
+        return ConstantPadding::BothStripped;
+    if (function_name == "hasAny" || function_name == "hasAll")
+        return ConstantPadding::Stripped;
+    return ConstantPadding::Compared;
+}
+
+/// Like `convertConstantToIndexDomain`, but also gives a string constant the width of a `FixedString` column, so its probe
+/// tokens are a subset of the granule's. Returns false when no single probe covers every matching value.
+bool normalizeConstantForIndexDomain(
+    ConstantPadding padding, const ITokenizer & tokenizer, const DataTypePtr & indexed_type,
+    const DataTypePtr & constant_type, const Field & constant, String & value)
+{
+    if (!convertConstantToIndexDomain(indexed_type, constant_type, constant, value))
+        return false;
+
+    const auto primitive_type = BloomFilter::getPrimitiveType(indexed_type);
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(primitive_type.get()))
+    {
+        value.resize(value.find_last_not_of('\0') + 1);
+        /// A constant longer than the column equals no stored value, so its own tokens are the most selective probe.
+        if (value.size() <= fixed_string_type->getN())
+            value.resize(fixed_string_type->getN(), '\0');
+        return true;
+    }
+
+    /// Without a width, a trailing NUL is data a matching stored value carries too, unless the comparison drops the
+    /// padding of a `FixedString` constant.
+    if (!isString(primitive_type) || padding == ConstantPadding::Compared
+        || !isFixedString(removeNullable(removeLowCardinality(constant_type))))
+        return true;
+
+    value.resize(value.find_last_not_of('\0') + 1);
+    /// A matching stored value may then carry zero bytes the constant lacks, which can change its last token.
+    return padding == ConstantPadding::Stripped || tokensSurviveTrailingNuls(tokenizer.getType(), value);
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -617,6 +664,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Travels with `const_value`: the map branches below replace the value with the map key, whose
     /// type is not the compared expression's type. `convertFieldToType` dispatches on this.
     DataTypePtr const_source_type = value_type;
+    const auto padding = constantPadding(function_name);
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows.
@@ -745,7 +793,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.key_column = *map_key_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
-            auto & value = const_value.safeGet<String>();
+            String value;
+            if (!normalizeConstantForIndexDomain(
+                    padding, *tokenizer, index_data_types[*map_key_index], const_source_type, const_value, value))
+                return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
         }
@@ -768,7 +819,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             out.key_column = *map_value_index;
             out.function = RPNElement::FUNCTION_HAS;
             out.bloom_filter = std::make_unique<BloomFilter>(params);
-            auto & value = const_value.safeGet<String>();
+            String value;
+            if (!normalizeConstantForIndexDomain(
+                    padding, *tokenizer, index_data_types[*map_value_index], const_source_type, const_value, value))
+                return false;
             tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
             return true;
         }
@@ -789,6 +843,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.key_column = *key_index;
         out.function = function_name == "hasAll" ? RPNElement::FUNCTION_HAS_ALL : RPNElement::FUNCTION_HAS_ANY;
 
+        /// `has` reaches this arm only as `has(<constant array>, <indexed scalar>)`, which does not ignore the padding.
+        const auto * array_value_type = typeid_cast<const DataTypeArray *>(const_source_type.get());
+        const bool normalize = function_name != "has" && array_value_type;
+
         // 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;
         bloom_filters.emplace_back();
@@ -797,8 +855,13 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (element.getType() != Field::Types::String)
                 return false;
 
+            String value = element.safeGet<String>();
+            if (normalize
+                && !normalizeConstantForIndexDomain(
+                    padding, *tokenizer, index_data_types[*key_index], array_value_type->getNestedType(), element, value))
+                return false;
+
             bloom_filters.back().emplace_back(params);
-            const auto & value = element.safeGet<String>();
             tokenizer->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
         }
         out.set_bloom_filters = std::move(bloom_filters);
@@ -809,7 +872,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_HAS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        auto & value = const_value.safeGet<String>();
+        String value;
+        if (!normalizeConstantForIndexDomain(padding, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
+            return false;
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
@@ -818,7 +883,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (!value_data_type.isStringOrFixedString())
             return false;
         String value;
-        if (!convertConstantToIndexDomain(index_data_types[*key_index], const_source_type, const_value, value))
+        if (!normalizeConstantForIndexDomain(padding, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
@@ -831,7 +896,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (!value_data_type.isStringOrFixedString())
             return false;
         String value;
-        if (!convertConstantToIndexDomain(index_data_types[*key_index], const_source_type, const_value, value))
+        if (!normalizeConstantForIndexDomain(padding, *tokenizer, index_data_types[*key_index], const_source_type, const_value, value))
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -995,12 +1060,8 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
-        /// A set element's own bytes are the index encoding only when the indexed column is a string; on
-        /// any other domain each element needs the same re-encoding a single constant gets.
         const DataTypePtr & indexed_type = index_data_types[elem.key_index];
-        const bool convert = !WhichDataType(BloomFilter::getPrimitiveType(indexed_type)).isStringOrFixedString();
         const DataTypePtr & element_type = prepared_set->getElementsTypes()[tuple_idx];
-        const bool is_fixed_string_element = WhichDataType(removeNullable(element_type)).isFixedString();
 
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
@@ -1008,22 +1069,13 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
             if (column->isNullAt(row))
                 return false;
 
-            String converted;
-            /// One unconvertible element would under-approximate membership, so decline the whole atom.
-            if (convert && !convertConstantToIndexDomain(indexed_type, element_type, (*column)[row], converted))
+            /// One element without a probe would under-approximate membership, so decline the whole atom.
+            String element;
+            if (!normalizeConstantForIndexDomain(
+                    ConstantPadding::BothStripped, *tokenizer, indexed_type, element_type, (*column)[row], element))
                 return false;
 
             bloom_filters.back().emplace_back(params);
-
-            std::string_view element = converted;
-            if (!convert)
-            {
-                /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
-                element = column->getDataAt(row);
-                if (is_fixed_string_element)
-                    element = element.substr(0, element.find_last_not_of('\0') + 1);
-            }
-
             forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
         }
     }
