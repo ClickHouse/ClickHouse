@@ -589,6 +589,11 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     auto column_type = column_node->getResultType();
     auto const_value = const_node->getValue();
 
+    /// `$ne` and `$nin` also match a missing field, a `null` and a value of another BSON type, which the reader may convert
+    /// to an excluded value (`NULL`, the default, or a number read as a string), so the local `WHERE` drops them.
+    if (func_name == "$ne" || func_name == "$nin")
+        is_superset = true;
+
     /// The reader wraps BSON numbers to `UInt8`, and set membership probes their truth value.
     /// Comparing the original BSON value cannot express either conversion, even for an ordinary bound.
     /// A BSON bool is read as 0 or 1, so the filter drops the bools that cannot match and the `WHERE` decides the rest.

@@ -1553,6 +1553,65 @@ def test_where_bool_default_settings(started_cluster, bool_type):
         collection.drop()
 
 
+def test_where_nullable_negative_limit(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    collection_name = "nullable_negative_limit"
+    drop_mongo_collection_if_exists(db, collection_name)
+    collection = db[collection_name]
+    collection.insert_many(
+        [
+            {"id": 1, "s": "a"},
+            {"id": 2, "s": "b", "v": None, "w": 1},
+            {"id": 3, "s": "c", "v": "y", "w": "y"},
+            {"id": 4, "s": "d", "v": "z", "w": "z"},
+            {"id": 5, "s": "e", "v": "x", "w": "x"},
+        ]
+    )
+
+    node = started_cluster.instances["node"]
+    structure = "id Int32, s String, v Nullable(String), w String"
+    arguments = f"'mongo1:27017', 'test', '{collection_name}', 'root', '{mongo_pass}'"
+    reference = f"{collection_name}_reference"
+    node.query(
+        f"CREATE OR REPLACE TABLE {collection_name} ({structure}) "
+        f"ENGINE = MongoDB({arguments})"
+    )
+    try:
+        node.query(
+            f"CREATE OR REPLACE TABLE {reference} ENGINE = Memory "
+            f"AS SELECT * FROM {collection_name}"
+        )
+        for source in (collection_name, f"mongodb({arguments}, '{structure}')"):
+            # A missing `w` is read as '', and the number 1 as '1'.
+            for predicate, first, second in (
+                ("v != 'x'", "3", "4"),
+                ("'x' != v", "3", "4"),
+                ("v NOT IN ('x')", "3", "4"),
+                ("w != ''", "2", "3"),
+                ("w NOT IN ('', '1')", "3", "4"),
+            ):
+                for suffix, expected in (
+                    ("ORDER BY s LIMIT 1", f"{first}\n"),
+                    ("ORDER BY s LIMIT 1 OFFSET 1", f"{second}\n"),
+                ):
+                    query = f"SELECT id FROM {{}} WHERE {predicate} {suffix}"
+                    assert node.query(query.format(reference)) == expected
+                    assert node.query(query.format(source)) == expected
+                query = (
+                    f"SELECT count() FROM (SELECT id FROM {{}} "
+                    f"WHERE {predicate} LIMIT 1)"
+                )
+                assert node.query(query.format(reference)) == "1\n"
+                assert node.query(query.format(source)) == "1\n"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {reference}")
+        node.query(f"DROP TABLE {collection_name}")
+        collection.drop()
+
+
 def test_defaults(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
